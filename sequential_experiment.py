@@ -2443,3 +2443,113 @@ def MultiRBAM_sweep_depth_run(soccfg=None, path=None, prefix=None, config_path=N
         # run_exp.cfg.device.storage.readout_length = 5
 
         run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+
+def single_dual_rail_tomography(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================#
+
+    experiment_class = 'single_qubit.dual_rail_single_shot'
+    experiment_name = 'HistogramPrepulseDualRailExperiment'   
+
+
+    ## tomography measurement pulses:
+    measurement_pulse = ['I', 'X', 'Y']
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded['SingleDualRailTomographyExperiment'][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    # constructing the correct prepulse+measurement pulse sequence
+
+    # vz2add = loaded['SingleDualRailTomographyExperiment']['vz']
+
+    for index, qubit_gate in enumerate(measurement_pulse):
+
+        # print('Tomography rotation:', qubit_gate)
+        #print(type(loaded[experiment_name]['cavity_name']))
+        loaded[experiment_name]['measurement_pulse_list'] = []
+        stor_no=loaded['SingleDualRailTomographyExperiment']['dual_rail_storage_id']
+        man_idx=1
+
+        mm_base = MM_base(cfg = yaml_cfg)
+        post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0],
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]# measure]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        I_gate1 = creator.pulse.tolist()
+        post_selection_pulse_str = [
+                        ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0],
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]# measure]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        I_gate2 = creator.pulse.tolist()
+
+
+        I_gate = [I_gate1, I_gate2]
+
+        post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0],
+                        ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0], 
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        X_gate1 = creator.pulse.tolist()
+        post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0],
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        X_gate2 = creator.pulse.tolist()
+
+        X_gate = [X_gate1, X_gate2]
+
+        post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[0]), 'hpi',0],
+                        ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',90], 
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        Y_gate1 = creator.pulse.tolist()
+        post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0], 
+                            ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no[1]), 'hpi',0],
+                        ['qubit', 'ge', 'hpi',0], # Starting parity meas
+                        ['qubit', 'ge', 'parity_M' + str(man_idx),0], 
+                        ['qubit', 'ge', 'hpi',0]]
+        creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
+        Y_gate2 = creator.pulse.tolist()
+
+        Y_gate = [Y_gate1, Y_gate2]
+        if qubit_gate == 'I':
+            loaded[experiment_name]['measurement_pulse_list'] = I_gate
+            print('Running I gate')
+        elif qubit_gate == 'X':
+            loaded[experiment_name]['measurement_pulse_list'] = X_gate
+            print('Running X gate')
+        else:
+            loaded[experiment_name]['measurement_pulse_list'] = Y_gate
+            print('Running Y gate')
+
+
+        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+        run_exp.go(analyze=False, display=False, progress=False, save=True)
