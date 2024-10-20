@@ -1,2 +1,3 @@
-3D Random Access Quantum Memory experiment code 
-ZiqianLi, EeshG
+# 3D Random Access Quantum Memory experiment code 
+
+Contributors: ZiqianLi, EeshG
