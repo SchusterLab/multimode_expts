@@ -2344,7 +2344,7 @@ def fit_fidelity(xlist, fids_list):
         - fidelity_list (list): List of computed fidelities for each mode.
         - fit_params_list (list): List of fit parameters for each mode.
     """
-    fidelity_list = []
+    p_survival_list = []
     fit_params_list = []
     for i in range(len(fids_list)):
         ypts = fids_list[i]
@@ -2352,18 +2352,18 @@ def fit_fidelity(xlist, fids_list):
 
         p = fit
         pCov = err
-        alpha = np.exp(-1 / fit[3])
-        r = 1 - alpha - (1 - alpha) / 3
-        fidelity = 1 - r
+        # alpha = np.exp(-1 / fit[3])
+        # r = 1 - alpha - (1 - alpha) / 3
+        # fidelity = 1 - r
 
-        fidelity_list.append(fidelity)
+        p_survival_list.append(np.exp(-1/fit[3]))
         fit_params_list.append(fit)
 
-    return fidelity_list, fit_params_list
+    return p_survival_list, fit_params_list
 
 def fit_fidelity_reference(xlist_ref, fids_list_ref):
     """
-    Fits the reference fidelity data using an exponential model.
+    Computes decay parameter (and hence survival probability) for the reference data.
 
     Parameters:
     xlist_ref (list): List of depth values for the reference data.
@@ -2448,7 +2448,19 @@ import matplotlib.pyplot as plt
 
 #     return fidelity_list_wrt_ref
 
-def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
+def find_gate_fidelity(p_survival, dim, interleaved = False, p_survival_interleaved_upon = 1):
+    '''
+    Computes gate fidelity according to https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.109.080505 
+
+    If interleaved, p_survival_interleaved_upon is the survival probability of the sequence without the interleaved gates
+    '''
+    p = p_survival
+    if interleaved: 
+        p = p_survival/p_survival_interleaved_upon
+    r = (dim-1)/dim * (1-p)
+    return 1 - r 
+
+def plot_fidelity(xlist, fids_list, ebars_list, p_survival_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
     """
     Plots the fidelity data and the fitted results, including reference data.
 
@@ -2456,7 +2468,7 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
     xlist (list): List of depth values.
     fids_list (list of lists): List of fidelity values for each mode.
     ebars_list (list of lists): List of error bars for each mode.
-    fidelity_list (list): List of computed fidelities for each mode.
+    p_survival_list (list): List of computed survival probabilities for each mode.
     fit_params_list (list): List of fit parameters for each mode.
     xlist_ref (list): List of depth values for the reference data.
     fids_list_ref (list): List of fidelity values for the reference data.
@@ -2468,7 +2480,7 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
     scale_factor (float): Scale factor for xlist.
     scale_factor_ref (float): Scale factor for xlist_ref.
     """
-    fig, axs = plt.subplots(1, 2, figsize=(20, 5))
+    fig, axs = plt.subplots(2, 1, figsize=(15, 15))
 
     # Unscaled plot
     axs[0].set_ylabel("Fidelity")
@@ -2479,15 +2491,17 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
         fit_x = np.linspace(min(xlist), max(xlist), 100)
         fit_y = fitter.expfunc(fit_x, *fit_params_list[i])
-        axs[0].plot(fit_x, fit_y, color=color_list[i], label=f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
+        axs[0].plot(fit_x, fit_y, color=color_list[i], label=f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f}')
 
     axs[0].errorbar(xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'{captionStr_ref} Data', color='b')
     fit_x_ref = np.linspace(min(xlist_ref), max(xlist_ref), 100)
     fit_y_ref = fitter.expfunc(fit_x_ref, *fit_params_ref)
-    fidelity_ref = 1 - ((1 - np.exp(-1 / fit_params_ref[3])) - (1 - np.exp(-1 / fit_params_ref[3])) / 3)
+    p_survival_ref = np.exp(-1/fit_params_ref[3])
+    fidelity_ref = find_gate_fidelity(p_survival_ref, 3, False)
     axs[0].plot(fit_x_ref, fit_y_ref, color='b', label=f'{captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
 
-    fidelity_list_wrt_ref = [np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
+    fidelity_list_wrt_ref = [np.sqrt(find_gate_fidelity(p_survival_list[i], 3, True, p_survival_ref)) for i in range(len(p_survival_list))] # sqrt because each interleaved gate includes 2 swaps
+                             #[np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
     axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
     axs[0].set_xlabel('Gates')
     axs[0].legend()
@@ -2500,16 +2514,17 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
         axs[1].errorbar(scaled_xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Scaled Mode {i+1} Data', color=color_list[i])
         fit_x = np.linspace(min(scaled_xlist), max(scaled_xlist), 100)
         fit_y = fitter.expfunc(fit_x / scale_factor, *fit_params_list[i])
-        axs[1].plot(fit_x, fit_y, color=color_list[i], label=f'Scaled Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
+        axs[1].plot(fit_x, fit_y, color=color_list[i], label=f'Scaled Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f}')
 
     axs[1].errorbar(scaled_xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'Scaled {captionStr_ref} Data', color='b')
     fit_x_ref = np.linspace(min(scaled_xlist_ref), max(scaled_xlist_ref), 100)
     fit_y_ref = fitter.expfunc(fit_x_ref / scale_factor_ref, *fit_params_ref)
     axs[1].plot(fit_x_ref, fit_y_ref, color='b', label=f'Scaled {captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
 
-    axs[1].set_title('Scaled Sim RB on storage modes ' + str(mode_list))
+    # axs[1].set_title('Scaled Sim RB on storage modes ' + str(mode_list))
     axs[1].set_xlabel('Time')
     axs[1].legend()
+    plt.tight_layout()
 
     if close_plt: 
         plt.close()
