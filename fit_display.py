@@ -2196,7 +2196,7 @@ def generate_mode_combinations(mode_list, num_modes_sim_rb, skip_combos):
     return combinations
 
 # for computing gate_length 
-from MM_rb_base import *
+from multimode_expts.MM_rb_base import *
 
 def get_spec_idling_time(spec_reps, spectator_mode_no, cfg): 
     '''computes total idling time for the spectator mode pulse sequence'''
@@ -2290,11 +2290,12 @@ def compute_fidelity_list(prev_data, file_list, name, mode_length, expt_path):
     fids_list = [[] for _ in range(mode_length)]
     ebars_list = [[] for _ in range(mode_length)]
     xlist = []
+    mode_idxs = [i for i in range(mode_length)]
 
     for file_no in file_list:
         full_name = str(file_no).zfill(5) + name
         temp_data, attrs = prev_data(expt_path, full_name)
-        mean, err = RBAM_extract(temp_data, mode_idxs=[0, 1], post_select=False)
+        mean, err = RBAM_extract(temp_data, mode_idxs=mode_idxs, post_select=False)
         for i in range(mode_length):
             fids_list[i].append(mean[i])
             ebars_list[i].append(err[i])
@@ -2378,6 +2379,75 @@ def fit_fidelity_reference(xlist_ref, fids_list_ref):
 import numpy as np
 import matplotlib.pyplot as plt
 
+# def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
+#     """
+#     Plots the fidelity data and the fitted results, including reference data.
+
+#     Parameters:
+#     xlist (list): List of depth values.
+#     fids_list (list of lists): List of fidelity values for each mode.
+#     ebars_list (list of lists): List of error bars for each mode.
+#     fidelity_list (list): List of computed fidelities for each mode.
+#     fit_params_list (list): List of fit parameters for each mode.
+#     xlist_ref (list): List of depth values for the reference data.
+#     fids_list_ref (list): List of fidelity values for the reference data.
+#     ebars_list_ref (list): List of error bars for the reference data.
+#     fit_params_ref (list): List of fit parameters for the reference data.
+#     captionStr_ref (str): Caption for the reference data.
+#     mode_list (list): List of modes.
+#     close_plt (bool): Whether to close the plot after showing.
+#     scale_factor (float): Scale factor for xlist.
+#     scale_factor_ref (float): Scale factor for xlist_ref.
+#     """
+#     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
+
+#     # Unscaled plot
+#     axs[0].set_ylabel("Fidelity")
+#     color_list = ['r', 'g']
+
+#     for i in range(len(fids_list)):
+#         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
+#         fit_x = np.linspace(min(xlist), max(xlist), 100)
+#         fit_y = fitter.expfunc(fit_x, *fit_params_list[i])
+#         axs[0].plot(fit_x, fit_y, color=color_list[i], label=f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
+
+#     axs[0].errorbar(xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'{captionStr_ref} Data', color='b')
+#     fit_x_ref = np.linspace(min(xlist_ref), max(xlist_ref), 100)
+#     fit_y_ref = fitter.expfunc(fit_x_ref, *fit_params_ref)
+#     fidelity_ref = 1 - ((1 - np.exp(-1 / fit_params_ref[3])) - (1 - np.exp(-1 / fit_params_ref[3])) / 3)
+#     axs[0].plot(fit_x_ref, fit_y_ref, color='b', label=f'{captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
+
+#     fidelity_list_wrt_ref = [np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
+#     axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
+#     axs[0].set_xlabel('Gates')
+#     axs[0].legend()
+
+#     # Scaled plot
+#     scaled_xlist = [x * scale_factor for x in xlist]
+#     scaled_xlist_ref = [x * scale_factor_ref for x in xlist_ref]
+
+#     for i in range(len(fids_list)):
+#         axs[1].errorbar(scaled_xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Scaled Mode {i+1} Data', color=color_list[i])
+#         fit_x = np.linspace(min(scaled_xlist), max(scaled_xlist), 100)
+#         fit_y = fitter.expfunc(fit_x / scale_factor, *fit_params_list[i])
+#         axs[1].plot(fit_x, fit_y, color=color_list[i], label=f'Scaled Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
+
+#     axs[1].errorbar(scaled_xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'Scaled {captionStr_ref} Data', color='b')
+#     fit_x_ref = np.linspace(min(scaled_xlist_ref), max(scaled_xlist_ref), 100)
+#     fit_y_ref = fitter.expfunc(fit_x_ref / scale_factor_ref, *fit_params_ref)
+#     axs[1].plot(fit_x_ref, fit_y_ref, color='b', label=f'Scaled {captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
+
+#     axs[1].set_title('Scaled Sim RB on storage modes ' + str(mode_list))
+#     axs[1].set_xlabel('Time')
+#     axs[1].legend()
+
+#     if close_plt: 
+#         plt.close()
+#     else: 
+#         plt.show()
+
+#     return fidelity_list_wrt_ref
+
 def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
     """
     Plots the fidelity data and the fitted results, including reference data.
@@ -2402,7 +2472,8 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
 
     # Unscaled plot
     axs[0].set_ylabel("Fidelity")
-    color_list = ['r', 'g']
+    color_list =  ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+
 
     for i in range(len(fids_list)):
         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
@@ -2446,15 +2517,14 @@ def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, 
         plt.show()
 
     return fidelity_list_wrt_ref
-
-def get_gate_time_RBAM(target_mode_no, spec_mode_no, cfg ): 
+def get_gate_time_RBAM(target_mode_no, spec_mode_nos, cfg ): 
     '''computes total idling time for the spectator mode pulse sequence'''
     mm_base = MM_rb_base(cfg = cfg)
 
     full_pulse_str = []
     time = 0 
 
-    for mode_no in [target_mode_no, spec_mode_no]:
+    for mode_no in [target_mode_no] + spec_mode_nos:
         stor_output = mm_base.compound_storage_gate(input = False, storage_no = mode_no)
         time += mm_base.get_total_time(stor_output, gate_based = True)
         pulse_ge_str = [['qubit', 'ge', 'pi', 0]] 

@@ -2408,6 +2408,8 @@ def MultiRBAM_sweep_depth(soccfg=None, path=None, prefix=None, config_file=None,
     num_modes_sim_rb = loaded['MultiRBAM_sweep_depth']['num_modes_sim_rb']
     skip_combos = loaded['MultiRBAM_sweep_depth']['skip_combos']
     all_combinations = generate_mode_combinations(mode_list, num_modes_sim_rb, skip_combos )
+    if loaded['MultiRBAM_sweep_depth']['random_selection'][0]:
+        all_combinations = random.sample(all_combinations, loaded['MultiRBAM_sweep_depth']['random_selection'][1])
     print('All combinations:', all_combinations)
 
     for combination in all_combinations:
