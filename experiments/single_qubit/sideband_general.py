@@ -192,7 +192,7 @@ class SidebandGeneralProgram(MMAveragerProgram):
                     phase=0,
                     gain=self.rf_gain_test, 
                     waveform="rf_test")
-            self.wait_all(self.us2cycles(0.01))
+            self.sync_all(self.us2cycles(0.01))
 
         self.sync_all()  # align channels
 
@@ -202,10 +202,8 @@ class SidebandGeneralProgram(MMAveragerProgram):
             
 
         # align channels and wait 50ns and measure
-        self.wait_all(self.us2cycles(0.05))
-        self.sync_all(self.us2cycles(0.2))
-        #self.sync_all()
-        #self.sync_all(self.us2cycles(0.05))
+        self.sync_all(self.us2cycles(0.05))
+
         self.measure(
             pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],

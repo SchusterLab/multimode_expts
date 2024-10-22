@@ -1903,7 +1903,7 @@ def filter_data_BS(a1, a2, a3, threshold, post_selection = False):
                 result_2.append(a3[k])
     
     return np.array(result_1), np.array(result_2)
-def RB_extract_postselction_excited(temp_data, active_reset = False):
+def RB_extract_postselction_excited(temp_data, attrs, active_reset = False):
     # remember the parity mapping rule:
     # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg
     gg_list = []
@@ -1922,7 +1922,7 @@ def RB_extract_postselction_excited(temp_data, active_reset = False):
 
         #  post selection due to active reset
         if active_reset:
-            data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'])
+            data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
         else: 
             data_init = temp_data['Idata'][aa][0]
             data_post_select = temp_data['Idata'][aa][1]
@@ -1944,11 +1944,74 @@ def RB_extract_postselction_excited(temp_data, active_reset = False):
         ge_list.append(ge/(eg+ge+gg+ee))
         eg_list.append(eg/(eg+ge+gg+ee))
         ee_list.append(ee/(eg+ge+gg+ee))
-        
-        fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-        fid_post_list.append(ge/(ge+ee))
+
+        try:
+            if attrs['config']['expt']['reset_qubit_after_parity']:
+                print('using new method to calculate post selection fidelity ')
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+eg))
+            else:
+                print('using old method to calculate post selection fidelity ')
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+ee))
+        except KeyError:
+            print('using old method to calculate post selection fidelity ')
+            fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+            fid_post_list.append(ge/(ge+ee))
     print(eg + ge + gg + ee)
     return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
+
+def RB_extract_postselction_parity_fixed_excited(temp_data, active_reset = False):
+    # remember the parity mapping rule:
+    # 00 -> ee, 01 -> eg, 10 -> ge, 11 -> gg
+    gg_list = []
+    ge_list = []
+    eg_list = []
+    ee_list = []
+    fid_raw_list = []
+    fid_post_list = []
+
+
+    for aa in range(len(temp_data['Idata'])):
+        gg = 0
+        ge = 0
+        eg = 0
+        ee = 0
+
+        #  post selection due to active reset
+        if active_reset:
+            data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
+        else: 
+            data_init = temp_data['Idata'][aa][0]
+            data_post_select = temp_data['Idata'][aa][1]
+
+        # print(data_init)
+        # print(data_post_select)
+        
+        # beamsplitter post selection 
+        for j in range(len(data_init)):
+            #  check if the counts are the same as initial counts
+            if data_init[j]>temp_data['thresholds'][0]: # classified as e
+                if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                    ee += 1
+                else:
+                    eg +=1
+            else:  # classified as g
+                if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                    ge +=1
+                else:
+                    gg += 1
+        gg_list.append(gg/(eg+ge+gg+ee))
+        ge_list.append(ge/(eg+ge+gg+ee))
+        eg_list.append(eg/(eg+ge+gg+ee))
+        ee_list.append(ee/(eg+ge+gg+ee))
+        
+        fid_raw_list.append((gg+ge)/(eg+ge+gg+ee))
+        fid_post_list.append(ge/(ge+eg))
+    print(eg + ge + gg + ee)
+    return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
+
+
 import random
 import numpy as np
 

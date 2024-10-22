@@ -337,7 +337,7 @@ class MM_base():
                     self.tempch = self.tempch[0]
                 # determine the pulse shape
                 if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g":
-                    # print('gaussian')
+                    # print('gaussian') 
                     self.pisigma_resolved = self.us2cycles(
                         pulse_data[6][jj], gen_ch=self.tempch)
                     self.add_gauss(ch=self.tempch, name="temp_gaussian"+str(jj)+prefix,
@@ -350,6 +350,7 @@ class MM_base():
                                      gain=pulse_data[1][jj], 
                                      waveform="temp_gaussian"+str(jj)+prefix)
                 elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
+                    # print('flat')
                     
                     self.pisigma_resolved = self.us2cycles(
                         pulse_data[6][jj], gen_ch=self.tempch)
@@ -608,6 +609,20 @@ class MM_base():
         # self.wait_all() 
         # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
         self.sync_all(self.us2cycles(0.2))
+
+    def get_parity_str(self, man_mode_no, return_pulse=False): 
+        '''
+        Create parity pulse 
+        '''
+        parity_str = [['qubit', 'ge', 'hpi', 0],
+                    ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
+                    ['qubit', 'ge', 'hpi', 0]]
+        if return_pulse:
+            # mm_base = MM_rb_base(cfg = self.cfg)
+            creator = self.get_prepulse_creator(parity_str)
+            return creator.pulse.tolist()
+
+        return parity_str
 
     def collect_shots(self):
         # collect shots for the relevant adc and I and Q channels

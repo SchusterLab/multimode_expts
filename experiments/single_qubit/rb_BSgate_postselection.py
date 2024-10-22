@@ -230,12 +230,12 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
             self.freq_beamsplitter = self.freq2reg(self.f_bs, gen_ch=self.flux_low_ch[0])
             self.pibs = self.us2cycles(self.ramp_beamsplitter, gen_ch=self.flux_low_ch[0])
             self.bs_ch = self.flux_low_ch
-            self.add_gauss(ch=self.flux_low_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*4)
+            self.add_gauss(ch=self.flux_low_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*6)
         else:
             self.freq_beamsplitter = self.freq2reg(self.f_bs, gen_ch=self.flux_high_ch[0])
             self.pibs = self.us2cycles(self.ramp_beamsplitter, gen_ch=self.flux_high_ch[0])
             self.bs_ch = self.flux_high_ch
-            self.add_gauss(ch=self.flux_high_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*4)
+            self.add_gauss(ch=self.flux_high_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*6)
         # print(f'BS channel: {self.bs_ch} MHz')
         # print(f'BS frequency: {self.f_bs} MHz')
         # print(f'BS frequency register: {self.freq_beamsplitter}')
@@ -270,6 +270,7 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
 
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
+        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True)
 
         self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
@@ -372,8 +373,9 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
             #if idx == len(self.cfg.expt.running_list)-1:
         # self.wait_all(self.us2cycles(0.05))
         self.sync_all()
-        if cfg.expt.postpulse:
-            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post22')#, advance_qubit_phase=self.vz)
+        # if cfg.expt.postpulse:
+            # self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post22')#, advance_qubit_phase=self.vz)
+
                     # self.vz += self.cfg.expt.f0g1_offset 
                 
         # align channels and wait 50ns and measure
@@ -381,7 +383,10 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         # align channels and measure
         
         # self.wait_all(self.us2cycles(0.05))
+        self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
         self.sync_all(self.us2cycles(0.05))
+        
+
         self.measure(
             pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],
@@ -389,10 +394,18 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
             wait=True,
             syncdelay=self.us2cycles(self.cfg.expt.postselection_delay)
         )
+
         # self.wait_all(self.us2cycles(0.05))
         # self.sync_all()
+        # parity meas to reset qubit 
+        if self.cfg.expt.reset_qubit_after_parity: 
+            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_post_meas1')
         # Swap gate between two modes
-        self.custom_pulse(cfg, cfg.expt.post_selection_pulse, prefix='selection11')
+
+        # self.custom_pulse(cfg, cfg.expt.post_selection_pulse, prefix='selection11')
+        self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
+        self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas2')
+
         self.sync_all(self.us2cycles(0.05))
         # self.wait_all(self.us2cycles(0.05))
         self.measure(

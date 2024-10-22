@@ -56,7 +56,7 @@ class MultiRBAMrun(MMRBAveragerProgram):
             self.custom_pulse_with_preloaded_wfm(self.cfg,creator.pulse.tolist(), prefix='Rb ge pulse' +  str(idx) + str(jdx), same_qubit_pulse= True) # prefix to make it unique
         #print('ge pulse played ' + str(creator.pulse.tolist()))
     
-
+    
         
     
     def body(self):
