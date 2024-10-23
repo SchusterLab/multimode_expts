@@ -16,9 +16,9 @@ from slab.dsfit import *
 from scipy.optimize import curve_fit
 import experiments.fitting as fitter
 from scipy.fft import fft, fftfreq
-from MM_base import MM_base
-from MM_rb_base import MM_rb_base
-from fit_display import * # for generate combos in MultiRBAM
+from multimode_expts.MM_base import MM_base
+from multimode_expts.MM_rb_base import MM_rb_base
+from multimode_expts.fit_display import * # for generate combos in MultiRBAM
 
 '''
 Updates: 
@@ -1060,6 +1060,66 @@ def SingleBeamSplitterRBPostSelection_sweep_depth_storsweep(soccfg=None, path=No
             print(run_exp.cfg.expt)
             run_exp.go(analyze=False, display=False, progress=False, save=True)
 
+def SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================# 
+
+    experiment_class = 'single_qubit.rb_BSgate_postselection'
+    experiment_name = 'SingleBeamSplitterRBPostSelection'   
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep'][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    
+    for stor_idx, stor_no in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['stor_list']): 
+
+        print('-------------------------------------------------')
+        print('Storage Index: %s Storage No. = %s ' %(stor_idx, stor_no))
+        man_idx = 1   # 1 or 2
+
+        # create prepulse , postpulse, post selection pulse 
+        mm_base = MM_base(cfg = yaml_cfg)
+        pre_sweep_pulse_str = [['qubit', 'ge', 'pi', 0],
+                           ['qubit', 'ef', 'pi', 0],
+                            ['man', 'M' + str(man_idx) , 'pi', 0]]
+        
+        creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
+        loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
+        loaded[experiment_name]['bs_para'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['bs_para_list'][stor_no-1]
+
+        print('Prepulse: ', loaded[experiment_name]['pre_sweep_pulse'])
+        print('BS Para: ', loaded[experiment_name]['bs_para'])
+
+        for index, depth in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['depth_list']):
+            print('Index: %s depth. = %s ' %(index, depth))
+            loaded[experiment_name]['rb_depth'] = depth
+
+            loaded[experiment_name]['rb_reps'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['reps_list'][index]
+            
+
+            run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+
+
+            run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+            # special updates on device_config file
+            run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+            print(run_exp.cfg.expt)
+            run_exp.go(analyze=False, display=False, progress=False, save=True)
+
 def cross_kerr_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
     '''
     Assumiung photon loaded into storage via man  1
@@ -1429,7 +1489,7 @@ def length_rabi_f0g1_sweep(soccfg=None, path=None, prefix=None, config_file=None
         # special updates on device_config file
         # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
         if loaded[experiment_name]['active_reset']:
-            print('hi in seq exp')
+            print('doesnt make sense to active reset in this exp')
         run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
         # run_exp.cfg.device.manipulate.readout_length = 5
         # run_exp.cfg.device.storage.readout_length = 5
@@ -2271,36 +2331,134 @@ def rb_bs_optimization(soccfg=None, path=None, prefix=None, config_file=None, ex
         print('Half pi length is %s us' % hpi_length)
 
 
+        length_step = loaded['rb_bs_optimization']['length_step']
+        length_points = loaded['rb_bs_optimization']['length_points']
+        hpi_lengths = np.linspace(-length_step*length_points/2, length_step*length_points/2, length_points) + hpi_length
 
-        #========================= RB Bs gate expt  ==========================#
-        experiment_class = 'single_qubit.rb_BSgate'
-        experiment_name = 'SingleBeamSplitterRB'
-        loaded[experiment_name]['bs_para'][0]= freq
-        loaded[experiment_name]['bs_para'][1] = loaded['rb_bs_optimization']['gain']
-        loaded[experiment_name]['bs_para'][2] = hpi_length
-        #loaded[experiment_name]['post_sweep_pulse'][:][0] = loaded[experiment_name]['pre_sweep_pulse'][:][-1]
+        for h_pi_length in hpi_lengths:
+            #========================= RB Bs gate expt  ==========================#
+            experiment_class = 'single_qubit.rb_BSgate'
+            experiment_name = 'SingleBeamSplitterRB'
+            loaded[experiment_name]['bs_para'][0]= freq
+            loaded[experiment_name]['bs_para'][1] = loaded['rb_bs_optimization']['gain']
+            loaded[experiment_name]['bs_para'][2] = h_pi_length
+            #loaded[experiment_name]['post_sweep_pulse'][:][0] = loaded[experiment_name]['pre_sweep_pulse'][:][-1]
 
-        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
-        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+            run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+            run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
 
-        # special updates on device_config file
-        run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
+            # special updates on device_config file
+            run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
 
-        run_exp.go(analyze=False, display=False, progress=True, save=True)
-        temp_data = run_exp.data
+            run_exp.go(analyze=False, display=False, progress=True, save=True)
+            temp_data = run_exp.data
 
-        avg_readout = []
-        for i in range(len(temp_data['Idata'])):
-            counting = 0
-            for j in temp_data['Idata'][i]:
-                if j>temp_data['thresholds']:
-                    counting += 1
-            avg_readout.append(counting/len(temp_data['Idata'][i]))
-        #
-        # avg_readout = RB_extract(temp_data)
-        mean = np.average(avg_readout)
-        err = np.std(avg_readout)/np.sqrt(len(avg_readout))
-        print(mean, err)
+            avg_readout = []
+            for i in range(len(temp_data['Idata'])):
+                counting = 0
+                for j in temp_data['Idata'][i]:
+                    if j>temp_data['thresholds']:
+                        counting += 1
+                avg_readout.append(counting/len(temp_data['Idata'][i]))
+            #
+            # avg_readout = RB_extract(temp_data)
+            mean = np.average(avg_readout)
+            err = np.std(avg_readout)/np.sqrt(len(avg_readout))
+            print(mean, err)
+
+def rb_bs_dual_rail_optimization(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+    #=========================Outer loop: sweeping different mdoe freqs==========================#
+
+    for idx, freq in enumerate(loaded['rb_bs_dual_rail_optimization']['freqs']):
+        print('Index1: %s Freq. = %s ' %(idx, freq))
+
+        # short sideband length rabi
+        if not loaded['rb_bs_dual_rail_optimization']['skip_length_for_freq_calib'][0]: 
+            experiment_class = 'single_qubit.sideband_general'
+            experiment_name = 'SidebandGeneralExperiment'  
+            loaded[experiment_name]['flux_drive'][0] = 'low'
+            if freq > 1000:
+                loaded[experiment_name]['flux_drive'][0] = 'high'
+            loaded[experiment_name]['flux_drive'][1] = freq
+            loaded[experiment_name]['flux_drive'][2] = loaded['rb_bs_dual_rail_optimization']['gain'][idx]
+            loaded[experiment_name]['flux_drive'][3] = 0.005  # 2 sigma ramp set by default
+            #loaded[experiment_name]['start'] = 0.007
+            #loaded[experiment_name]['step'] = loaded['sideband_fidelity_optimization']['step_fitting']
+            run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+            run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+            # special updates on device_config file
+            run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
+
+            run_exp.go(analyze=False, display=False, progress=True, save=True)
+            temp_data1 = run_exp.data
+
+            # fit data to extract pi pulse length and half pi pulse length 
+            pi_length, hpi_length = pi_length_calibration(temp_data1)
+            print('Pi length is %s us' % pi_length)
+            print('Half pi length is %s us' % hpi_length)
+        else: 
+            hpi_length = loaded['rb_bs_dual_rail_optimization']['skip_length_for_freq_calib'][1][idx]
+
+
+        length_step = loaded['rb_bs_dual_rail_optimization']['length_step']#[idx]
+        length_calib_bool = True
+
+        while length_calib_bool:
+
+            length_points = loaded['rb_bs_dual_rail_optimization']['length_points']
+            hpi_lengths = np.linspace(-length_step*length_points/2, length_step*length_points/2, length_points) + hpi_length
+            raw_fids = []
+            post_fids = []
+
+            for jdx, h_pi_length in enumerate(hpi_lengths):
+                print('Index2: %s hpi_length. = %s ' %(idx, h_pi_length))
+                #========================= RB Bs gate expt  ==========================#
+                experiment_class_ = 'single_qubit.rb_BSgate_postselection'
+                experiment_name_ = 'SingleBeamSplitterRBPostSelection'
+                loaded[experiment_name_]['bs_para'][0]= freq
+                loaded[experiment_name_]['bs_para'][1] = loaded['rb_bs_dual_rail_optimization']['gain'][idx]
+                loaded[experiment_name_]['bs_para'][2] = h_pi_length
+                #loaded[experiment_name]['post_sweep_pulse'][:][0] = loaded[experiment_name]['pre_sweep_pulse'][:][-1]
+
+                run_exp = eval(f"meas.{experiment_class_}.{experiment_name_}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+                run_exp.cfg.expt = eval(f"loaded['{experiment_name_}']")
+
+                # special updates on device_config file
+                # run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
+
+                run_exp.go(analyze=False, display=False, progress=True, save=True)
+                temp_data = run_exp.data
+                # attrs = run_exp.attrs
+                attrs = {'config': run_exp.cfg}
+
+                avg_readout, avg_readout_post, gg, ge, eg, ee = RB_extract_postselction_excited(temp_data,attrs, active_reset=loaded[experiment_name_]['rb_active_reset'])
+                raw_fid = np.average(avg_readout)
+                post_fid = np.average(avg_readout_post)
+                print('Raw Fidelity:', raw_fid)
+                print('Post Fidelity:', post_fid)
+                raw_fids.append(raw_fid)
+                post_fids.append(post_fid)
+
+            # redo length calib but now zoom in 
+            length_step = length_step/4
+            hpi_length = hpi_lengths[np.argmax(raw_fids)]
+            if length_step < loaded['rb_bs_dual_rail_optimization']['precision']:
+                print('----------------------------------------------------')
+                print('FINAL hpi_length:', hpi_length)
+                length_calib_bool = False
+
 
 
 

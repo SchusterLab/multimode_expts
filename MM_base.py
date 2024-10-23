@@ -294,6 +294,9 @@ class MM_base():
         #  drive channel=1 (flux low), 
         # 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
         '''
+        
+        # print('------------------Beginning Custom Pulse----------------------------')
+        # print(pulse_data)
         if pulse_data is None:
             return None
         self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
@@ -369,6 +372,7 @@ class MM_base():
                                                         gen_ch=self.tempch),
                                     waveform="temp_gaussian"+str(jj)+prefix)
                 else:
+                    # print('constant')
                     if sync_zero_const and pulse_data[1][jj] ==0: 
                         self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
                                                            #gen_ch=self.tempch))
@@ -381,6 +385,7 @@ class MM_base():
                                                            gen_ch=self.tempch))
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
+        # print('------------------End Custom Pulse----------------------------')
 
     def man_reset(self, man_idx, chi_dressed = True ): 
         '''

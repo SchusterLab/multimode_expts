@@ -823,6 +823,84 @@ def multiple_Ramsey_display(prev_data, file_list, label_list, color_list,
 
     return np.array(fit_i_list) - fit_i_list[0], np.array(fit_i_err_list)
 
+# def parity_mapping_display(data, fit=True, fitparams=None,
+#                             title='sideband_rabi', active_reset = False, threshold = 4, readouts_per_rep = 4):
+        
+#     # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
+#     # Remove the first and last point from fit in case weird edge measurements
+#     # fitparams = [None, 1/max(data['xpts']), None, None]
+#     # fitparams = None
+
+#     if active_reset:
+#         Ilist, Qlist = post_select_averager_data(data['idata'], threshold, readouts_per_rep)
+        
+#     else:
+        
+#         Ilist = data["avgi"][0:-1]
+#         Qlist = data["avgq"][0:-1]
+
+#     p_avgi, pCov_avgi = fitter.fitdecaysin(
+#         data['xpts'], Ilist, fitparams=fitparams)
+#     p_avgq, pCov_avgq = fitter.fitdecaysin(
+#         data['xpts'], Qlist, fitparams=fitparams)
+#     # p_amps, pCov_amps = fitter.fitdecaysin(
+#     #     data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+#     data['fit_avgi'] = p_avgi
+#     data['fit_avgq'] = p_avgq
+#     # data['fit_amps'] = p_amps
+#     data['fit_err_avgi'] = pCov_avgi
+#     data['fit_err_avgq'] = pCov_avgq
+#     # data['fit_err_amps'] = pCov_amps
+
+#     xpts_ns = data['xpts']*1e3
+
+#     plt.figure(figsize=(10, 8))
+
+#     plt.subplot(
+#         211, title=title, ylabel="I [adc level]")
+#     plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
+#     if fit:
+#         p = data['fit_avgi']
+#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+#         if p[2] > 180:
+#             p[2] = p[2] - 360
+#         elif p[2] < -180:
+#             p[2] = p[2] + 360
+#         if p[2] < 0:
+#             pi_length = (1/2 - p[2]/180)/2/p[1]
+#         else:
+#             pi_length = (3/2 - p[2]/180)/2/p[1]
+#         pi2_length = pi_length/2
+#         print('Decay from avgi [us]', p[3])
+#         print(f'Pi length from avgi data [us]: {pi_length}')
+#         print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
+#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+
+#     print()
+#     plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
+#     plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
+#     if fit:
+#         p = data['fit_avgq']
+#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+#         if p[2] > 180:
+#             p[2] = p[2] - 360
+#         elif p[2] < -180:
+#             p[2] = p[2] + 360
+#         if p[2] < 0:
+#             pi_length = (1/2 - p[2]/180)/2/p[1]
+#         else:
+#             pi_length = (3/2 - p[2]/180)/2/p[1]
+#         pi2_length = pi_length/2
+#         print('Decay from avgq [us]', p[3])
+#         print(f'Pi length from avgq data [us]: {pi_length}')
+#         print(f'Pi/2 length from avgq data [us]: {pi2_length}')
+#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+#     plt.tight_layout()
+#     plt.show()
+
+
 def cross_kerr_display(prev_data, file_list, label_list, color_list,  orig_idx = 0,
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):
@@ -955,10 +1033,12 @@ def amp_display(data, sigma = 0.04, fit=True, fitparams=None, vline = None, norm
         elif p[2] < -180: p[2] = p[2] + 360
         if p[2] < 0: pi_gain = (1/2 - p[2]/180)/2/p[1]
         else: pi_gain= (3/2 - p[2]/180)/2/p[1]
-        pi2_gain = pi_gain/2
+        period = 1/p[1]
+        pi2_gain = pi_gain - period/4 
+        # pi2_gain = pi_gain/2
         print(f'Pi gain from avgi data [dac units]: {int(pi_gain)}')
-        # print(f'\tPi/2 gain from avgi data [dac units]: {int(pi2_gain)}')
-        print(f'\tPi/2 gain from avgi data [dac units]: {int(1/4/p[1])}')
+        print(f'\tPi/2 gain from avgi data [dac units]: {int(pi2_gain)}')
+        # print(f'\tPi/2 gain from avgi data [dac units]: {int(1/4/p[1])}')
         plt.axvline(pi_gain, color='0.2', linestyle='--')
         plt.axvline(pi2_gain, color='0.2', linestyle='--')
         if not(vline==None):
@@ -972,10 +1052,11 @@ def amp_display(data, sigma = 0.04, fit=True, fitparams=None, vline = None, norm
         elif p[2] < -180: p[2] = p[2] + 360
         if p[2] < 0: pi_gain = (1/2 - p[2]/180)/2/p[1]
         else: pi_gain= (3/2 - p[2]/180)/2/p[1]
-        pi2_gain = pi_gain/2
+        period = 1/p[1]
+        pi2_gain = pi_gain - period/4 
         print(f'Pi gain from avgq data [dac units]: {int(pi_gain)}')
-        # print(f'\tPi/2 gain from avgq data [dac units]: {int(pi2_gain)}')
-        print(f'\tPi/2 gain from avgq data [dac units]: {int(1/4/p[1])}')
+        print(f'\tPi/2 gain from avgq data [dac units]: {int(pi2_gain)}')
+        # print(f'\tPi/2 gain from avgq data [dac units]: {int(1/4/p[1])}')
         plt.axvline(pi_gain, color='0.2', linestyle='--')
         plt.axvline(pi2_gain, color='0.2', linestyle='--')
     if normalize[0]:
@@ -1200,75 +1281,75 @@ def ECD_pulse_spectroscopy( data=None, fit=True, signs=[1,1,1], fitparams = None
     plt.tight_layout()
     plt.show()
 ## length rabi
-def length_rabi_display(data, fit=True, fitparams=None, title='sideband_rabi', vlines = []):
+# def length_rabi_display(data, fit=True, fitparams=None, title='sideband_rabi', vlines = []):
         
-    # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-    # Remove the first and last point from fit in case weird edge measurements
-    # fitparams = [None, 1/max(data['xpts']), None, None]
-    # fitparams = None
-    p_avgi, pCov_avgi = fitter.fitdecaysin(
-        data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-    p_avgq, pCov_avgq = fitter.fitdecaysin(
-        data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-    p_amps, pCov_amps = fitter.fitdecaysin(
-        data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-    data['fit_avgi'] = p_avgi
-    data['fit_avgq'] = p_avgq
-    data['fit_amps'] = p_amps
-    data['fit_err_avgi'] = pCov_avgi
-    data['fit_err_avgq'] = pCov_avgq
-    data['fit_err_amps'] = pCov_amps
+#     # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
+#     # Remove the first and last point from fit in case weird edge measurements
+#     # fitparams = [None, 1/max(data['xpts']), None, None]
+#     # fitparams = None
+#     p_avgi, pCov_avgi = fitter.fitdecaysin(
+#         data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
+#     p_avgq, pCov_avgq = fitter.fitdecaysin(
+#         data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
+#     p_amps, pCov_amps = fitter.fitdecaysin(
+#         data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+#     data['fit_avgi'] = p_avgi
+#     data['fit_avgq'] = p_avgq
+#     data['fit_amps'] = p_amps
+#     data['fit_err_avgi'] = pCov_avgi
+#     data['fit_err_avgq'] = pCov_avgq
+#     data['fit_err_amps'] = pCov_amps
 
-    xpts_ns = data['xpts']*1e3
+#     xpts_ns = data['xpts']*1e3
 
-    plt.figure(figsize=(10, 8))
+#     plt.figure(figsize=(10, 8))
 
-    plt.subplot(
-        211, title=title, ylabel="I [adc level]")
-    plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
-    if fit:
-        p = data['fit_avgi']
-        plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-        if p[2] > 180:
-            p[2] = p[2] - 360
-        elif p[2] < -180:
-            p[2] = p[2] + 360
-        if p[2] < 0:
-            pi_length = (1/2 - p[2]/180)/2/p[1]
-        else:
-            pi_length = (3/2 - p[2]/180)/2/p[1]
-        period = 1/p[1]
-        pi2_length = pi_length - period/4 #fitter.decaysin(, *p)#pi_length/2
-        print('Decay from avgi [us]', p[3])
-        print(f'Pi length from avgi data [us]: {pi_length}')
-        print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
-        plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-        for vline in vlines:
-            plt.axvline(vline, color='0.2', linestyle='--')
+#     plt.subplot(
+#         211, title=title, ylabel="I [adc level]")
+#     plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
+#     if fit:
+#         p = data['fit_avgi']
+#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+#         if p[2] > 180:
+#             p[2] = p[2] - 360
+#         elif p[2] < -180:
+#             p[2] = p[2] + 360
+#         if p[2] < 0:
+#             pi_length = (1/2 - p[2]/180)/2/p[1]
+#         else:
+#             pi_length = (3/2 - p[2]/180)/2/p[1]
+#         period = 1/p[1]
+#         pi2_length = pi_length - period/4 #fitter.decaysin(, *p)#pi_length/2
+#         print('Decay from avgi [us]', p[3])
+#         print(f'Pi length from avgi data [us]: {pi_length}')
+#         print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
+#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+#         for vline in vlines:
+#             plt.axvline(vline, color='0.2', linestyle='--')
 
-    print()
-    plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
-    plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
-    if fit:
-        p = data['fit_avgq']
-        plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-        if p[2] > 180:
-            p[2] = p[2] - 360
-        elif p[2] < -180:
-            p[2] = p[2] + 360
-        if p[2] < 0:
-            pi_length = (1/2 - p[2]/180)/2/p[1]
-        else:
-            pi_length = (3/2 - p[2]/180)/2/p[1]
-        pi2_length = pi_length/2
-        print('Decay from avgq [us]', p[3])
-        print(f'Pi length from avgq data [us]: {pi_length}')
-        print(f'Pi/2 length from avgq data [us]: {pi2_length}')
-        plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-    plt.tight_layout()
-    plt.show()
+#     print()
+#     plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
+#     plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
+#     if fit:
+#         p = data['fit_avgq']
+#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+#         if p[2] > 180:
+#             p[2] = p[2] - 360
+#         elif p[2] < -180:
+#             p[2] = p[2] + 360
+#         if p[2] < 0:
+#             pi_length = (1/2 - p[2]/180)/2/p[1]
+#         else:
+#             pi_length = (3/2 - p[2]/180)/2/p[1]
+#         pi2_length = pi_length/2
+#         print('Decay from avgq [us]', p[3])
+#         print(f'Pi length from avgq data [us]: {pi_length}')
+#         print(f'Pi/2 length from avgq data [us]: {pi2_length}')
+#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+#     plt.tight_layout()
+#     plt.show()
 def phase_calibration(xpts, ypts, fitparams=None, vlines=None, hlines=None, min_pi = False,
                        title='Phase Calibration', xlabel='Phase (deg)', ylabel='|g> population'):
     '''
@@ -1473,23 +1554,32 @@ def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
                 result_Ie.append(IQ[index_4k_plus_3])
     
     return np.array(result_Ig), np.array(result_Ie)
+def post_select_averager_data(data, threshold, readout_per_round=4):
+    '''
+    Post select the data based on the threshold 
+    '''
+    Ilist = []
+    Qlist = []
+    for ii in range(len(data)):
+        Ig, Qg = filter_data_IQ(data[ii], data[ii], threshold, readout_per_round)
+        Ilist.append(np.mean(Ig))
+        Qlist.append(np.mean(Qg))
+    return Ilist, Qlist
 def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_data', 'e_data'], vlines = None, title='sideband_rabi',
                         active_reset=True, readout_per_round=4, threshold=-4.0):
         
     xlist = data['xpts'][0:-1]
     if active_reset:
-        # for each time, post select the single shot data
-        Ilist = []
-        Qlist = []
-        for ii in range(len(data['idata'])-1):
-            Ig, Qg = filter_data_IQ(data['idata'][ii], data['qdata'][ii], threshold, readout_per_experiment=readout_per_round)
-            Ilist.append(np.mean(Ig))
-            Qlist.append(np.mean(Qg))
+        try: 
+            Ilist, Qlist = post_select_averager_data(data['Idata'][:-1], threshold, readout_per_round)
+        except KeyError: 
+            Ilist, Qlist = post_select_averager_data(data['idata'][:-1], threshold, readout_per_round)
         
     else:
         
         Ilist = data["avgi"][0:-1]
         Qlist = data["avgq"][0:-1]
+    
 
     p_avgi, pCov_avgi = fitter.fitdecaysin(
         xlist, Ilist, fitparams=fitparams)
@@ -1524,7 +1614,7 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
         
         T = 1/p[1]/2
 
-        pi2_length = pi_length - (T/2)
+        pi2_length = pi_length- (T/2)
         data['pi_length'] = pi_length
         data['pi2_length'] = pi2_length
         print(p)
@@ -1532,6 +1622,9 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
         print('Rate [MHz]', p[1])
         print(f'Pi length from avgi data [us]: {pi_length}')
         print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
+        # plot vline at pi and pi/2 length
+        plt.axvline(pi_length*1e3, color='0.2', linestyle='--', label = 'pi')
+        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--',    label = 'pi/2')
         if vlines is not None:
             for vline in vlines:
                 plt.axvline(vline, color='r', ls='--')
@@ -1556,6 +1649,8 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
         print('Rate [MHz]', p[1])
         print(f'Pi length from avgq data [us]: {pi_length}')
         print(f'Pi/2 length from avgq data [us]: {pi2_length}')
+        plt.axvline(pi_length*1e3, color='0.2', linestyle='--', label = 'pi')
+        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--',    label = 'pi/2')
         if vlines is not None:
             for vline in vlines:
                 plt.axvline(vline, color='r', ls='--')
@@ -1564,6 +1659,7 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
     if normalize[0]:
         axi,axq = normalize_data(axi, axq, data, normalize)
     plt.tight_layout()
+    plt.legend()
     plt.show()
     return Ilist
 ## sideband rabi sweep
@@ -1818,8 +1914,8 @@ def plot_rb(fids_list , fids_post_list , xlist,
     # Shots subplot
     ax2.errorbar(xlist, gg_list, yerr=gg_list_err, fmt='-o', label='|11>', capsize=5)
     ax2.errorbar(xlist, ge_list, yerr=ge_list_err, fmt='-o', label='|10>', capsize=5)
-    ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label='|00>', capsize=5)
-    ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label='|01>', capsize=5)
+    ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label='|01>', capsize=5)
+    ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label='|00>', capsize=5)
     ax2.set_yscale('log')
     ax2.legend()
     ax2.set_title('Shots')
@@ -1903,7 +1999,7 @@ def filter_data_BS(a1, a2, a3, threshold, post_selection = False):
                 result_2.append(a3[k])
     
     return np.array(result_1), np.array(result_2)
-def RB_extract_postselction_excited(temp_data, attrs, active_reset = False):
+def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf_matrix = None):
     # remember the parity mapping rule:
     # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg
     gg_list = []
@@ -1940,6 +2036,11 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False):
                     ge +=1
                 else:
                     gg += 1
+        if conf_matrix is not None: ## correct counts from histogram
+            gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
+            ge = gg * conf_matrix[1,0] + ge * conf_matrix[1,1] + eg * conf_matrix[1,2] + ee * conf_matrix[1,3]
+            eg = gg * conf_matrix[2,0] + ge * conf_matrix[2,1] + eg * conf_matrix[2,2] + ee * conf_matrix[2,3]
+            ee = gg * conf_matrix[3,0] + ge * conf_matrix[3,1] + eg * conf_matrix[3,2] + ee * conf_matrix[3,3]
         gg_list.append(gg/(eg+ge+gg+ee))
         ge_list.append(ge/(eg+ge+gg+ee))
         eg_list.append(eg/(eg+ge+gg+ee))
@@ -1947,15 +2048,15 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False):
 
         try:
             if attrs['config']['expt']['reset_qubit_after_parity']:
-                print('using new method to calculate post selection fidelity ')
+                # print('using new method to calculate post selection fidelity ')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+eg))
             else:
-                print('using old method to calculate post selection fidelity ')
+                # print('using old method to calculate post selection fidelity ')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+ee))
         except KeyError:
-            print('using old method to calculate post selection fidelity ')
+            # print('using old method to calculate post selection fidelity ')
             fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
             fid_post_list.append(ge/(ge+ee))
     print(eg + ge + gg + ee)

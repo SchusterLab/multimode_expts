@@ -385,6 +385,15 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         # self.wait_all(self.us2cycles(0.05))
         self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
         self.sync_all(self.us2cycles(0.05))
+
+        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas11')
+        # self.sync_all(self.us2cycles(0.05))
+        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas21')
+        # self.sync_all(self.us2cycles(0.05))
+        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas13')
+        # self.sync_all(self.us2cycles(0.05))
+        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas14')
+        # self.sync_all(self.us2cycles(0.05))
         
 
         self.measure(
