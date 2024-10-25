@@ -15,7 +15,7 @@ from tqdm import tqdm_notebook as tqdm
 from experiments.single_qubit.single_shot import  HistogramProgram
 
 import experiments.fitting as fitter
-from MM_base import *
+from MM_dual_rail_base import *
 
 """
 Single Beam Splitter RB sequence generator
@@ -131,7 +131,7 @@ def generate_sequence(rb_depth, iRB_gate_no=-1, debug=False, matrix_ref=matrix_r
         print(max_index)
     return gate_list
 
-class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
+class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
     """
     RB program for single qubit gates
     """
@@ -207,9 +207,9 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre11')#, advance_qubit_phase=self.vz)
             
             # prepare a photon in manipulate cavity 
-            self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
-            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
-            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
+            # self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
+            # self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
+            # self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
             # self.vz += self.cfg.expt.f0g1_offset 
         
         # prepare bs gate 

@@ -2124,10 +2124,10 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
                     ge +=1
                 else:
                     gg += 1
-        print('gg', gg)
-        print('ge', ge)
-        print('eg', eg)
-        print('ee', ee)
+        # print('gg', gg)
+        # print('ge', ge)
+        # print('eg', eg)
+        # print('ee', ee)
         # print('total', eg + ge + gg + ee)
         if conf_matrix is not None: ## correct counts from histogram
             gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
@@ -2146,13 +2146,16 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
 
         try:
             if attrs['config']['expt']['reset_qubit_after_parity']:
+                print('reset_qubit_after_parity')
                 # print('using new method to calculate post selection fidelity ')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+eg))
             elif not attrs['config']['expt']['parity_meas']: 
+                print('not parity_meas')
                 fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
                 fid_post_list.append(eg/(ge+eg))
             elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
+                print('reset_qubit_via_active_reset_after_first_meas')
                 
                                          # gg_label = '|11>'
                                             # ge_label = '|10>'
@@ -2162,10 +2165,11 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
                 fid_post_list.append(ge/(ge+eg))
             else:
                 # print('using old method to calculate post selection fidelity ')
+                print('old method')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+ee))
         except KeyError:
-            # print('using old method to calculate post selection fidelity ')
+            print('using old method to calculate post selection fidelity ')
             fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
             fid_post_list.append(ge/(ge+ee))
     print(eg + ge + gg + ee)

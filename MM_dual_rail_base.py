@@ -83,7 +83,40 @@ class MM_dual_rail_base(MM_base):
 
         return pulse_str
     
+    def prepulse_str_for_random_ram_state(self, num_occupied_smodes, skip_modes): 
+        '''
+        prepare a random state in the storage modes
+
+        num_occupied_smodes: number of occupied storage modes
+        skip_modes: list of modes to skip [if have 7 modes, then 7- len(skip_modes) > num_occupied_smodes]
+        '''
+        # set up storage modes
+        mode_list = []
+        for i in range(1, 7+1): 
+            if i in skip_modes: 
+                continue
+            mode_list.append(i)
+
+        # set up states 
+        state_list = [1+i for i in range(6)] # for 6 cardinal states
+        
+        prepulse_str = [] # gate based 
+        for i in range(num_occupied_smodes): 
+            state_num = random.choice(state_list)
+            mode_num = random.choice(mode_list)
+            print(f'Preparing state {state_num} in mode {mode_num}')
+            mode_list.remove(mode_num) # remove the mode from the list
+            prepulse_str += self.prep_random_state_mode(state_num, i+1)
+        return prepulse_str
+
+class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
+    def __init__(self, soccfg, cfg):
+        super().__init__(soccfg, cfg)
     
+        
+
+    
+
     
         
 
