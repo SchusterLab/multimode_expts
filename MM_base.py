@@ -149,7 +149,7 @@ class MM_base():
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
-        self.wait_all(self.us2cycles(0.2))
+        # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
 
     def initialize_waveforms(self): 
@@ -440,7 +440,7 @@ class MM_base():
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(stor_idx) + 'dump')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
 
-    def active_reset(self, man_reset = False, storage_reset = False):
+    def active_reset(self, man_reset = False, storage_reset = False, ef_reset = True, pre_selection_reset = True, prefix = 'base'):
         '''
         Performs active reset on g,e,f as well as man/storage modes 
         Includes post selection measurement
@@ -517,7 +517,7 @@ class MM_base():
 
         # perform Qubit active reset comparison, jump if condition is true to the label1 location
         self.condj(0, self.r_read_q, "<", self.r_thresh_q,
-                   "LABEL_1")  # compare the value recorded above to the value stored in threshold.
+                   prefix + "LABEL_1")  # compare the value recorded above to the value stored in threshold.
 
         #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
         # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="arb",
@@ -527,48 +527,49 @@ class MM_base():
                                  phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
                                  gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
         self.pulse(ch=self.qubit_chs[qTest])
-        self.label("LABEL_1")  # location to be jumped to
+        self.label(prefix + "LABEL_1")  # location to be jumped to
         # self.wait_all(self.us2cycles(0.05)) 
         self.sync_all(self.us2cycles(0.25))
         # ======================================================
 
         # Reset ef level
-        # ======================================================
-        # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="arb",
-        #                          phase=self.deg2reg(0),
-        #                          gain=self.gain_ef_init, waveform='pi_qubit_ef_active_reset')
-        self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="flat_top",
-                                 phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ef[1]),
-                                 gain=cfg.device.active_reset.qubit_ef[0], waveform='pi_ef_ramp')
-        self.pulse(ch=self.qubit_chs[qTest])
-        # self.wait_all(self.us2cycles(0.05))
-        self.sync_all(self.us2cycles(0.05))
-        self.measure(pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                     t='auto', wait=True, syncdelay=self.us2cycles(2))  # self.us2cycles(1))
-        
-        self.wait_all(self.us2cycles(0.2))  # to allow the read to be complete might be reduced
-        
-        self.read(0, 0, "lower", self.r_read_q_ef)  # read data from I buffer, QA, and store
-        # self.wait_all(self.us2cycles(0.05))  # to allow the read to be complete might be reduced
-        self.sync_all(self.us2cycles(0.05))
+        if ef_reset:    
+            # ======================================================
+            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="arb",
+            #                          phase=self.deg2reg(0),
+            #                          gain=self.gain_ef_init, waveform='pi_qubit_ef_active_reset')
+            self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="flat_top",
+                                    phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ef[1]),
+                                    gain=cfg.device.active_reset.qubit_ef[0], waveform='pi_ef_ramp')
+            self.pulse(ch=self.qubit_chs[qTest])
+            # self.wait_all(self.us2cycles(0.05))
+            self.sync_all(self.us2cycles(0.05))
+            self.measure(pulse_ch=self.res_chs[qTest],
+                        adcs=[self.adc_chs[qTest]],
+                        adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                        t='auto', wait=True, syncdelay=self.us2cycles(2))  # self.us2cycles(1))
+            
+            self.wait_all(self.us2cycles(0.2))  # to allow the read to be complete might be reduced
+            
+            self.read(0, 0, "lower", self.r_read_q_ef)  # read data from I buffer, QA, and store
+            # self.wait_all(self.us2cycles(0.05))  # to allow the read to be complete might be reduced
+            self.sync_all(self.us2cycles(0.05))
 
-        # perform Qubit active reset comparison, jump if condition is true to the label1 location
-        self.condj(0, self.r_read_q_ef, "<", self.r_thresh_q,
-                   "LABEL_2")  # compare the value recorded above to the value stored in threshold.
+            # perform Qubit active reset comparison, jump if condition is true to the label1 location
+            self.condj(0, self.r_read_q_ef, "<", self.r_thresh_q,
+                    prefix + "LABEL_2")  # compare the value recorded above to the value stored in threshold.
 
-        #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
-        # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="arb",
-        #                          phase=self.deg2reg(0),
-        #                          gain=self.gain_ge_init, waveform='pi_qubit_ge_active_reset')
-        self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="flat_top",
-                                 phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
-                                 gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
-        self.pulse(ch=self.qubit_chs[qTest])
-        self.label("LABEL_2")  # location to be jumped to
-        # self.wait_all(self.us2cycles(0.05)) 
-        self.sync_all(self.us2cycles(0.25))
+            #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
+            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="arb",
+            #                          phase=self.deg2reg(0),
+            #                          gain=self.gain_ge_init, waveform='pi_qubit_ge_active_reset')
+            self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="flat_top",
+                                    phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
+                                    gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
+            self.pulse(ch=self.qubit_chs[qTest])
+            self.label(prefix + "LABEL_2")  # location to be jumped to
+            # self.wait_all(self.us2cycles(0.05)) 
+            self.sync_all(self.us2cycles(0.25))
 
         # ======================================================
         # Dump manipulate 1 and 2 to lossy mode
@@ -605,23 +606,24 @@ class MM_base():
         # post selection
 
         # ======================================================
-        self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
+        if pre_selection_reset: 
+            self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
 
-        self.measure(pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                     t='auto', wait=True, syncdelay=self.us2cycles(2.0))  # self.us2cycles(1))
-        # self.wait_all() 
-        # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
-        self.sync_all(self.us2cycles(0.2))
+            self.measure(pulse_ch=self.res_chs[qTest],
+                        adcs=[self.adc_chs[qTest]],
+                        adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                        t='auto', wait=True, syncdelay=self.us2cycles(2.0))  # self.us2cycles(1))
+            # self.wait_all() 
+            # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
+            self.sync_all(self.us2cycles(0.2))
 
-    def get_parity_str(self, man_mode_no, return_pulse=False): 
+    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0): 
         '''
         Create parity pulse 
         '''
         parity_str = [['qubit', 'ge', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
-                    ['qubit', 'ge', 'hpi', 0]]
+                    ['qubit', 'ge', 'hpi', second_phase]]
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
             creator = self.get_prepulse_creator(parity_str)
@@ -1273,7 +1275,7 @@ class prepulse_creator2:
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
             qubit_pulse = np.array([[freq], 
                     [0],
-                    [self.cfg.device.manipulate.revival_time[man_idx] - 0.02], # parity delay experiment doesn't involve 10 ns syncs 
+                    [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs 
                     [phase],
                     [2],
                     ['const'],

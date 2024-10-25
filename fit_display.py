@@ -1870,9 +1870,9 @@ def plot_spectroscopy1(xdata_g, g_data, xdata_e, e_data, fitparams=None, title="
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_rb(fids_list , fids_post_list , xlist, 
+def plot_rb( fids_list , fids_post_list , xlist, 
             gg_list , gg_list_err , ge_list, ge_list_err , 
-            eg_list, eg_list_err , ee_list , ee_list_err , ebars_list, ebars_post_list,
+            eg_list, eg_list_err , ee_list , ee_list_err , ebars_list, ebars_post_list,reset_qubit_after_parity = False, parity_meas = True, 
             title='M1-S4 RB Post selection'):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red']
@@ -1912,10 +1912,33 @@ def plot_rb(fids_list , fids_post_list , xlist,
     ax1.set_ylabel('Man1 |1> population')
 
     # Shots subplot
-    ax2.errorbar(xlist, gg_list, yerr=gg_list_err, fmt='-o', label='|11>', capsize=5)
-    ax2.errorbar(xlist, ge_list, yerr=ge_list_err, fmt='-o', label='|10>', capsize=5)
-    ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label='|01>', capsize=5)
-    ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label='|00>', capsize=5)
+    gg_label = '|11>'
+    ge_label = '|10>'
+    eg_label = '|00>'
+    ee_label = '|01>'
+
+    if reset_qubit_after_parity:
+        gg_label  = '|11>'
+        ge_label = '|10>'
+        eg_label = '|01>'
+        ee_label = '|00>'
+    elif not parity_meas: 
+        gg_label  = '|00>'
+        ge_label = '|01>'
+        eg_label = '|10>'
+        ee_label = '|11>'
+
+    ax2.errorbar(xlist, gg_list, yerr=gg_list_err, fmt='-o', label=gg_label, capsize=5)
+    ax2.errorbar(xlist, ge_list, yerr=ge_list_err, fmt='-o', label=ge_label, capsize=5)
+    ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label=eg_label, capsize=5)
+    ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label=ee_label, capsize=5)
+
+    # print number of 10 and 01 counts
+    # print(str(gg_label) + ' counts:', gg_list)
+    # print(str(ge_label) + ' counts:', ge_list)
+    # print(str(eg_label) + ' counts:', eg_list)
+    # print(str(ee_label) + ' counts:', ee_list)
+
     ax2.set_yscale('log')
     ax2.legend()
     ax2.set_title('Shots')
@@ -1926,6 +1949,68 @@ def plot_rb(fids_list , fids_post_list , xlist,
     fig.suptitle(title)
     plt.tight_layout()
     plt.show()
+def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep.h5', title = 'RB'):
+    '''show the rb result for a list of files'''
+
+    Pgg = 0.997573060976843
+    Pge = 0.0024269390231570487
+    Peg = 0.012984367839503025
+    Pee = 0.9870156321604969
+
+    P_matrix = np.matrix([[Pgg, Peg],[Pge, Pee]])
+    conf_matrix = inv(P_matrix)
+
+    tensor_product_matrix = np.kron(conf_matrix, conf_matrix)
+
+    fids_list = []
+    fids_post_list = []
+    gg_list = []
+    ge_list = []
+    eg_list = []
+    ee_list = []
+    gg_list_err = []
+    ge_list_err = []
+    eg_list_err = []
+    ee_list_err = []
+    xlist = []
+    depth_list = []
+    ebars_list = []
+    ebars_post_list = []
+    for file_no in file_list:
+        full_name = str(file_no).zfill(5)+name
+        temp_data, attrs = prev_data(expt_path, full_name)  
+        avg_readout, avg_readout_post, gg, ge, eg, ee = RB_extract_postselction_excited(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix)
+        # print(gg[0]+ge[0]+eg[0]+ee[0])
+        # print number of gg shots
+        
+        gg_list.append(np.average(gg))
+        ge_list.append(np.average(ge))
+        eg_list.append(np.average(eg))
+        ee_list.append(np.average(ee))
+        fids_list.append(np.average(avg_readout))
+        ebars_list.append(np.std(avg_readout)/np.sqrt(len(avg_readout)))
+        gg_list_err.append(np.std(ge)/np.sqrt(len(ge)))
+        ge_list_err.append(np.std(ge)/np.sqrt(len(ge)))
+        eg_list_err.append(np.std(eg)/np.sqrt(len(eg)))
+        ee_list_err.append(np.std(ee)/np.sqrt(len(ee)))
+
+
+        fids_post_list.append(np.average(avg_readout_post))
+        ebars_post_list.append(np.std(avg_readout_post)/np.sqrt(len(avg_readout_post)))
+        xlist.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
+        depth_list.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
+
+    try: 
+        reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
+    except KeyError:
+        reset_bool = attrs['config']['expt']['reset_qubit_after_parity']
+    plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
+                gg_list = gg_list, gg_list_err = gg_list_err, ge_list = ge_list, ge_list_err = ge_list_err, 
+                eg_list = eg_list, eg_list_err = eg_list_err, ee_list = ee_list, ee_list_err = ee_list_err,
+                ebars_list=ebars_list, ebars_post_list=ebars_post_list, reset_qubit_after_parity = reset_bool,
+                parity_meas=attrs['config']['expt']['parity_meas'],
+                title=title)
+    return fids_list, fids_post_list, gg_list, ge_list, eg_list, ee_list, gg_list_err, ge_list_err, eg_list_err, ee_list_err, xlist, depth_list, ebars_list, ebars_post_list
 def RB_extract_excited(temp_data):
     avg_readout = []
     for i in range(len(temp_data['Idata'])):
@@ -2023,6 +2108,9 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
             data_init = temp_data['Idata'][aa][0]
             data_post_select = temp_data['Idata'][aa][1]
         
+        # print('len data_init', len(data_init))
+        # print('len data_post_select', len(data_post_select))
+        
         # beamsplitter post selection 
         for j in range(len(data_init)):
             #  check if the counts are the same as initial counts
@@ -2036,6 +2124,11 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
                     ge +=1
                 else:
                     gg += 1
+        print('gg', gg)
+        print('ge', ge)
+        print('eg', eg)
+        print('ee', ee)
+        # print('total', eg + ge + gg + ee)
         if conf_matrix is not None: ## correct counts from histogram
             gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
             ge = gg * conf_matrix[1,0] + ge * conf_matrix[1,1] + eg * conf_matrix[1,2] + ee * conf_matrix[1,3]
@@ -2046,9 +2139,25 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
         eg_list.append(eg/(eg+ge+gg+ee))
         ee_list.append(ee/(eg+ge+gg+ee))
 
+        # print('gg_list', gg_list)
+        # print('ge_list', ge_list)
+        # print('eg_list', eg_list)
+        # print('ee_list', ee_list)
+
         try:
             if attrs['config']['expt']['reset_qubit_after_parity']:
                 # print('using new method to calculate post selection fidelity ')
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+eg))
+            elif not attrs['config']['expt']['parity_meas']: 
+                fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
+                fid_post_list.append(eg/(ge+eg))
+            elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
+                
+                                         # gg_label = '|11>'
+                                            # ge_label = '|10>'
+                                            # eg_label = '|01>'
+                                            # ee_label = '|00>'
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+eg))
             else:

@@ -147,132 +147,17 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-        # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.qubits = self.cfg.expt.qubits
+        self.MM_base_initialize()
+        self.initialize_beam_splitter_pulse()
 
-        qTest = self.qubits[0]
+        # -------set up pulse parameters for measurement pulses -------
 
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
+        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
+        self.f0g1_for_custom_pulse = self.get_prepulse_creator([['man', 'M1' , 'pi',0 ]]).pulse.tolist()
+        self.ef_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ef', 'pi', 0]]).pulse.tolist()
+        self.ge_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]]).pulse.tolist()
 
-        # get register page for qubit_chs
-        # self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        # self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
-
-        self.f_ge_reg = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-
-        # self.f_ge_resolved_reg = [self.freq2reg(
-        #     self.cfg.expt.qubit_resolved_pi[0], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        # self.f_rf_reg = [self.freq2reg(self.cfg.expt.flux_drive[1], gen_ch=self.rf_ch[0])]
-
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-        
-        gen_chs = []
-         # declare res dacs
-        mask = None
-        mixer_freq = 0  # MHz
-        mux_freqs = None  # MHz
-        mux_gains = None
-        ro_ch = None
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest],
-                         mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
-                             freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-
-        # declare qubit dacs
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(
-                    ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
-
-        # self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_chs)
-        # self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_chs)
-
-        # self.q_rps = self.ch_page(self.qubit_chs) # get register page for qubit_chs
-        # self.f_ge_reg = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_chs)
-
-        # defining BS gate frequency, gain, and channels, assume gaussian pulse shape for now
-        ## bs_para = [[frequency], [gain], [length (us)], [sigma]]
-        self.f_bs = cfg.expt.bs_para[0]
-        self.gain_beamsplitter = cfg.expt.bs_para[1]
-        self.length_beamsplitter = cfg.expt.bs_para[2]
-        # self.phase_beamsplitter = cfg.expt.bs_para[3]
-        self.ramp_beamsplitter = cfg.expt.bs_para[3]
-        if self.f_bs < 1000:
-            self.freq_beamsplitter = self.freq2reg(self.f_bs, gen_ch=self.flux_low_ch[0])
-            self.pibs = self.us2cycles(self.ramp_beamsplitter, gen_ch=self.flux_low_ch[0])
-            self.bs_ch = self.flux_low_ch
-            self.add_gauss(ch=self.flux_low_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*6)
-        else:
-            self.freq_beamsplitter = self.freq2reg(self.f_bs, gen_ch=self.flux_high_ch[0])
-            self.pibs = self.us2cycles(self.ramp_beamsplitter, gen_ch=self.flux_high_ch[0])
-            self.bs_ch = self.flux_high_ch
-            self.add_gauss(ch=self.flux_high_ch[0], name="ramp_bs", sigma=self.pibs, length=self.pibs*6)
-        # print(f'BS channel: {self.bs_ch} MHz')
-        # print(f'BS frequency: {self.f_bs} MHz')
-        # print(f'BS frequency register: {self.freq_beamsplitter}')
-        # print(f'BS gain: {self.gain_beamsplitter}')
-        self.r_bs_phase = self.sreg(self.bs_ch[0], "phase") # register
-        self.page_bs_phase = self.ch_page(self.bs_ch[0]) # page
-        # print(f'BS page register: {self.page_bs_phase}')
-        # print(f'Low BS page register: {self.ch_page(self.flux_low_ch[0])}')
-        # print(f'High BS page register: {self.ch_page(self.flux_high_ch[0])}')
-        # print(f'BS phase register: {self.r_phase}')
-        self.safe_regwi(self.page_bs_phase, self.r_bs_phase, 0) 
-
-        # self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_chs, ro_ch=self.adc_chs)
-        # self.readout_lengths_dac = self.us2cycles(self.cfg.device.readout.readout_length, gen_ch=self.res_chs) 
-        # self.readout_lengths_adc = 1+self.us2cycles(self.cfg.device.readout.readout_length, ro_ch=self.adc_chs) 
-
-        # self.declare_readout(ch=self.adc_chs, length=self.readout_lengths_adc, freq=cfg.device.readout.frequency, gen_ch=self.res_chs)
-        # self.declare_gen(ch=self.qubit_chs, nqz=cfg.hw.soc.dacs.qubit.nyquist)
-        # gen_chs.append(self.qubit_chs)
-
-
-        # self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_chs)
-        # self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain
-        # self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma, gen_ch=self.qubit_chs)
-        # self.hpi_gain = cfg.device.qubit.pulses.hpi_ge.gain
-        
-
-
-        # define all 2 different pulses
-        # self.add_gauss(ch=self.qubit_chs, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
-        # self.add_gauss(ch=self.qubit_chs, name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
-
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
-            cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True)
-
-        self.wait_all(self.us2cycles(0.2))
+        # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
 
    
@@ -289,6 +174,7 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
             self.safe_regwi(self.page_bs_phase, self.r_bs_phase, self.deg2reg(phase)) 
         
         for _ in range(times): 
+            # print(f'Playing BS gate with phase {phase}')
             self.pulse(ch=self.bs_ch[0]) 
         if wait:
             self.sync_all(self.us2cycles(0.01))
@@ -310,7 +196,8 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
 
         #do the active reset
         if cfg.expt.rb_active_reset:
-            self.active_reset( man_reset= self.cfg.expt.rb_man_reset, storage_reset= self.cfg.expt.rb_storage_reset)
+            self.active_reset( man_reset= self.cfg.expt.rb_man_reset, storage_reset= self.cfg.expt.rb_storage_reset, 
+                              ef_reset = True, pre_selection_reset = True, prefix = 'base')
 
         # self.wait_all(self.us2cycles(0.2))
         # self.sync_all(self.us2cycles(0.2))
@@ -318,6 +205,11 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         # prepulse 
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre11')#, advance_qubit_phase=self.vz)
+            
+            # prepare a photon in manipulate cavity 
+            self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
             # self.vz += self.cfg.expt.f0g1_offset 
         
         # prepare bs gate 
@@ -330,6 +222,9 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
                                     waveform="ramp_bs")
         factor = self.cfg.expt.bs_repeat
         wait_bool = False
+
+        # store photon in storage 
+        # self.play_bs_gate(cfg, phase=0, times = 2, wait=wait_bool)
         # self.cfg.expt.running_list = [4,6]   #[3,5]
         for idx, ii in enumerate(self.cfg.expt.running_list):
             wait_bool = False
@@ -383,7 +278,12 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         # align channels and measure
         
         # self.wait_all(self.us2cycles(0.05))
-        self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
+        if cfg.expt.parity_meas: 
+            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
+        else: 
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1')
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1')
+
         self.sync_all(self.us2cycles(0.05))
 
         # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas11')
@@ -395,25 +295,38 @@ class SingleBeamSplitterRBPostselectionrun(MMAveragerProgram):
         # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas14')
         # self.sync_all(self.us2cycles(0.05))
         
-
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(self.cfg.expt.postselection_delay)
-        )
+        if cfg.expt.reset_qubit_via_active_reset_after_first_meas:
+            self.active_reset(man_reset=False, storage_reset=False, ef_reset=False, pre_selection_reset=False, 
+                              prefix = 'first_meas') # just reset ge state
+        else: 
+            self.measure(
+                pulse_ch=self.res_chs[qTest],
+                adcs=[self.adc_chs[qTest]],
+                adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                wait=True,
+                syncdelay=self.us2cycles(self.cfg.expt.postselection_delay)
+            )
 
         # self.wait_all(self.us2cycles(0.05))
-        # self.sync_all()
+        self.sync_all()
         # parity meas to reset qubit 
         if self.cfg.expt.reset_qubit_after_parity: 
-            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_post_meas1')
+            parity_str = self.parity_pulse_for_custom_pulse
+            self.custom_pulse(cfg, parity_str, prefix='parity_post_meas1')
+            # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_post_meas1')
         # Swap gate between two modes
 
         # self.custom_pulse(cfg, cfg.expt.post_selection_pulse, prefix='selection11')
-        self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
-        self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas2')
+        
+        if cfg.expt.parity_meas: 
+            self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
+            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas2')
+        else: 
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1_post')
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1_post')
+            self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas2')
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas2')
 
         self.sync_all(self.us2cycles(0.05))
         # self.wait_all(self.us2cycles(0.05))
