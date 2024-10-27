@@ -287,14 +287,16 @@ class HistogramPrepulseDualRailProgram(MMRBAveragerProgram):
                     syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
                 )
             else:
-                self.sync_all(self.us2cycles(0.05))
-                self.measure(
-                    pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                    wait=True,
-                    syncdelay=self.us2cycles(cfg.expt.delay_between_measurements)
-            )
+                # self.sync_all(self.us2cycles(0.05))
+                # self.measure(
+                #     pulse_ch=self.res_chs[qTest],
+                #     adcs=[self.adc_chs[qTest]],
+                #     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                #     wait=True,
+                #     syncdelay=self.us2cycles(cfg.expt.delay_between_measurements)
+                # )
+                self.active_reset(man_reset=False, storage_reset=False, ef_reset=False, pre_selection_reset=False, 
+                              prefix = f'{i}_measazx_') # just reset ge state
 
     # def collect_shots(self):
     #     # collect shots for the relevant adc and I and Q channels

@@ -64,10 +64,13 @@ class MM_dual_rail_base(MM_base):
         6: |-i>
         '''
         qubit_hpi_pulse_str = [['qubit', 'ge', 'hpi', 0 ]]
+        qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
         qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]
         man_pulse_str = [['man', 'M1', 'pi', 0]]
         storage_pusle_str = [['storage', 'M1-S'+ str(mode_no), 'pi', 0]]
 
+        if state_num == 4: 
+            qubit_hpi_pulse_str[0][3] = 180
         if state_num == 5:
             qubit_hpi_pulse_str[0][3] = 90
         if state_num == 6:
@@ -75,8 +78,8 @@ class MM_dual_rail_base(MM_base):
         
         pulse_str = []
         if state_num == 2: 
-            pulse_str += qubit_hpi_pulse_str + qubit_hpi_pulse_str
-        elif state_num == ( 3 or 4 or 5 or 6): 
+            pulse_str +=  qubit_pi_pulse_str #qubit_hpi_pulse_str + qubit_hpi_pulse_str
+        elif state_num !=1:  # is 3,4,5,6
             pulse_str += qubit_hpi_pulse_str 
         
         pulse_str += qubit_ef_pulse_str + man_pulse_str + storage_pusle_str
@@ -87,7 +90,7 @@ class MM_dual_rail_base(MM_base):
         '''
         prepare a random state in the storage modes
 
-        num_occupied_smodes: number of occupied storage modes
+        num_occupied_smodes: number of occupied storage modes or total spectator storage modes with populations
         skip_modes: list of modes to skip [if have 7 modes, then 7- len(skip_modes) > num_occupied_smodes]
         '''
         # set up storage modes
@@ -106,7 +109,7 @@ class MM_dual_rail_base(MM_base):
             mode_num = random.choice(mode_list)
             print(f'Preparing state {state_num} in mode {mode_num}')
             mode_list.remove(mode_num) # remove the mode from the list
-            prepulse_str += self.prep_random_state_mode(state_num, i+1)
+            prepulse_str += self.prep_random_state_mode(state_num, mode_num)
         return prepulse_str
 
 class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):

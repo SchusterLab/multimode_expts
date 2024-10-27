@@ -153,6 +153,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
         # -------set up pulse parameters for measurement pulses -------
 
         self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
+        
         self.f0g1_for_custom_pulse = self.get_prepulse_creator([['man', 'M1' , 'pi',0 ]]).pulse.tolist()
         self.ef_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ef', 'pi', 0]]).pulse.tolist()
         self.ge_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]]).pulse.tolist()
@@ -204,13 +205,14 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
         # prepulse 
         if cfg.expt.prepulse:
-            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre11')#, advance_qubit_phase=self.vz)
+            prepulse_for_custom_pulse = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse).pulse.tolist() # pre-sweep-pulse is not Gate based
+            self.custom_pulse(cfg, prepulse_for_custom_pulse, prefix='pre10')#, advance_qubit_phase=self.vz)
             
-            # prepare a photon in manipulate cavity 
-            # self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
-            # self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
-            # self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
-            # self.vz += self.cfg.expt.f0g1_offset 
+        # prepare a photon in manipulate cavity 
+        self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
+        self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
+        self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
+        # self.vz += self.cfg.expt.f0g1_offset 
         
         # prepare bs gate 
         self.set_pulse_registers(ch=self.bs_ch[0], style="flat_top", 
@@ -296,8 +298,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
         # self.sync_all(self.us2cycles(0.05))
         
         if cfg.expt.reset_qubit_via_active_reset_after_first_meas:
-            self.active_reset(man_reset=False, storage_reset=False, ef_reset=False, pre_selection_reset=False, 
-                              prefix = 'first_meas') # just reset ge state
+            self.active_reset(man_reset= False, storage_reset= False, ef_reset = False, pre_selection_reset = False, prefix = 'post_meas')
         else: 
             self.measure(
                 pulse_ch=self.res_chs[qTest],
@@ -431,22 +432,34 @@ class SingleBeamSplitterRBPostSelection(Experiment):
         self.cfg.expt.reps = self.cfg.expt.rb_reps
         # data['running_lists'] = []
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
-            # generate random gate list
+            #rb sequence
             self.cfg.expt.running_list =  generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
-            # data['running_lists'].append(self.cfg.expt.running_list)
-            # print(f'Running list: {self.cfg.expt.running_list}')
 
+            #for ram prepulse 
+            if self.cfg.expt.ram_prepulse[0]:
+                self.cfg.expt.prepulse = True
+                dummy = MM_dual_rail_base( cfg=self.cfg)
+                prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
+                                                                         skip_modes=self.cfg.expt.ram_prepulse[2])
+                                                                         for _ in range(self.cfg.expt.ram_prepulse[3])] 
+                                 #  for _ in range(self.cfg.expt.ram_prepulse[3])]
+            else: 
+                self.cfg.expt.prepulse = False
+                prepulse_strs = [[None]]
+
+            for prepulse_str in prepulse_strs:
         
-            rb_shot = SingleBeamSplitterRBPostselectionrun(soccfg=self.soccfg, cfg=self.cfg)
-            read_num =2 
-            if self.cfg.expt.rb_active_reset: read_num = 5
-            self.prog = rb_shot
-            avgi, avgq = rb_shot.acquire(
-                self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
-                        readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
-            II, QQ = rb_shot.collect_shots_rb(read_num)
-            data['Idata'].append(II)
-            data['Qdata'].append(QQ)
+                self.cfg.expt.pre_sweep_pulse = prepulse_str
+                rb_shot = SingleBeamSplitterRBPostselectionrun(soccfg=self.soccfg, cfg=self.cfg)
+                read_num =2 
+                if self.cfg.expt.rb_active_reset: read_num = 5
+                self.prog = rb_shot
+                avgi, avgq = rb_shot.acquire(
+                    self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
+                            readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
+                II, QQ = rb_shot.collect_shots_rb(read_num)
+                data['Idata'].append(II)
+                data['Qdata'].append(QQ)
         #data['running_lists'] = running_lists   
         #print(self.prog)
             

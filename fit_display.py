@@ -1893,13 +1893,13 @@ def plot_rb( fids_list , fids_post_list , xlist,
     pCov = err
     rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
     abs_err = rel_err * np.exp(-1 / fit[3])
-    captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.4f} $\pm$ {abs_err*100:.4f} %'
+    captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
 
     p_post = fit_post
     pCov_post = err_post
     rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
     abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
-    captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.4f} $\pm$ {abs_err_post*100:.4f}%'
+    captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
 
     ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
     ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])
