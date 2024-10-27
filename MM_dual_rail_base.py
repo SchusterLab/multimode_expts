@@ -107,7 +107,7 @@ class MM_dual_rail_base(MM_base):
         for i in range(num_occupied_smodes): 
             state_num = random.choice(state_list)
             mode_num = random.choice(mode_list)
-            print(f'Preparing state {state_num} in mode {mode_num}')
+            # print(f'Preparing state {state_num} in mode {mode_num}')
             mode_list.remove(mode_num) # remove the mode from the list
             prepulse_str += self.prep_random_state_mode(state_num, mode_num)
         return prepulse_str

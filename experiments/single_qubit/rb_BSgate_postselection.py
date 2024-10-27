@@ -266,20 +266,9 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
                     self.play_bs_gate(cfg, phase=-90, wait=wait_bool)
                     
 
-            ##postpulse
-            #if idx == len(self.cfg.expt.running_list)-1:
-        # self.wait_all(self.us2cycles(0.05))
+           
         self.sync_all()
-        # if cfg.expt.postpulse:
-            # self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post22')#, advance_qubit_phase=self.vz)
-
-                    # self.vz += self.cfg.expt.f0g1_offset 
-                
-        # align channels and wait 50ns and measure
-
-        # align channels and measure
-        
-        # self.wait_all(self.us2cycles(0.05))
+ 
         if cfg.expt.parity_meas: 
             self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
         else: 
@@ -288,14 +277,6 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
         self.sync_all(self.us2cycles(0.05))
 
-        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas11')
-        # self.sync_all(self.us2cycles(0.05))
-        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas21')
-        # self.sync_all(self.us2cycles(0.05))
-        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas13')
-        # self.sync_all(self.us2cycles(0.05))
-        # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas14')
-        # self.sync_all(self.us2cycles(0.05))
         
         if cfg.expt.reset_qubit_via_active_reset_after_first_meas:
             self.active_reset(man_reset= False, storage_reset= False, ef_reset = False, pre_selection_reset = False, prefix = 'post_meas')

@@ -927,7 +927,7 @@ def SingleRB_sweep_depth(soccfg=None, path=None, prefix=None, config_file=None, 
 
         run_exp.go(analyze=False, display=False, progress=False, save=True)
 
-def SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+def SingleBeamSplitterRBPostSelection_sweep_depth_and_ram(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
 #====================================================================#
     config_path = config_file
     print('Config will be', config_path)
@@ -943,20 +943,64 @@ def SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=None, path=None, prefix
 
     experiment_class = 'single_qubit.rb_BSgate_postselection'
     experiment_name = 'SingleBeamSplitterRBPostSelection'   
+    sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth_and_ram'
 
     for keys in loaded[experiment_name].keys():
         try:
-            loaded[experiment_name][keys] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth'][keys]   # overwrite the single experiment file with new paramters
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
         except:
             pass
 
     #depth_array = np.array([1,2,3,4,5,10,20])
-    for index, depth in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth']['depth_list']):
+    for jdx, num_occupied_smodes in enumerate(loaded[sweep_experiment_name]['num_occupied_smodes_list']):
+    #for index, depth in enumerate(depth_array):
+        print('-------------------------------------------------')
+        print('Jndex: %s depth. = %s ' %(jdx, num_occupied_smodes))
+        loaded[experiment_name]['ram_prepulse'][1] = num_occupied_smodes
+        loaded[experiment_name]['ram_prepulse'][3] = loaded[sweep_experiment_name]['prepulse_vars_list'][jdx] 
+
+        SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+        
+
+def SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                                                  prep_init = False, prep_params = None):
+    '''
+    Prep_init: True if the config, experiment names are already initialized in some other parent function that calls this as a child
+    prep_params: [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name]
+    '''
+    if prep_init: 
+        config_path, loaded, experiment_class, experiment_name, sweep_experiment_name = prep_params
+    else: 
+    #====================================================================#
+        config_path = config_file
+        print('Config will be', config_path)
+
+        with open(config_file, 'r') as cfg_file:
+            yaml_cfg = yaml.safe_load(cfg_file)
+        yaml_cfg = AttrDict(yaml_cfg)
+
+        with open(exp_param_file, 'r') as file:
+            # Load the YAML content
+            loaded = yaml.safe_load(file)
+    #===================================================================# 
+
+        experiment_class = 'single_qubit.rb_BSgate_postselection'
+        experiment_name = 'SingleBeamSplitterRBPostSelection'  
+        sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth' 
+
+        for keys in loaded[experiment_name].keys():
+            try:
+                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+            except:
+                pass
+
+    #depth_array = np.array([1,2,3,4,5,10,20])
+    for index, depth in enumerate(loaded[sweep_experiment_name]['depth_list']):
     #for index, depth in enumerate(depth_array):
         print('Index: %s depth. = %s ' %(index, depth))
         loaded[experiment_name]['rb_depth'] = depth
-
-        loaded[experiment_name]['rb_reps'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth']['reps_list'][index]
+        loaded[experiment_name]['rb_reps'] = loaded[sweep_experiment_name]['reps_list'][index]
         
 
         run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
@@ -964,13 +1008,6 @@ def SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=None, path=None, prefix
 
         run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
 
-        # special updates on device_config file
-        #run_exp.cfg.device.qubit.pulses.hpi_ge.gain = [amp]
-        # run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
-        # run_exp.cfg.device.readout.relax_delay = 300 # Wait time between experiments [us]
-        # run_exp.cfg.device.manipulate.readout_length = 5
-        # run_exp.cfg.device.storage.readout_length = 5
-        run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
         print(run_exp.cfg.expt)
         run_exp.go(analyze=False, display=False, progress=False, save=True)
 
@@ -1059,6 +1096,9 @@ def SingleBeamSplitterRBPostSelection_sweep_depth_storsweep(soccfg=None, path=No
             run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
             print(run_exp.cfg.expt)
             run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+
+
 
 def SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
 #====================================================================#
