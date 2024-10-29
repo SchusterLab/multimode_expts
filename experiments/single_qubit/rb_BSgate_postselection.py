@@ -415,18 +415,21 @@ class SingleBeamSplitterRBPostSelection(Experiment):
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
             #rb sequence
             self.cfg.expt.running_list =  generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
-
+            
             #for ram prepulse 
-            if self.cfg.expt.ram_prepulse[0]:
-                self.cfg.expt.prepulse = True
-                dummy = MM_dual_rail_base( cfg=self.cfg)
-                prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
-                                                                         skip_modes=self.cfg.expt.ram_prepulse[2])
-                                                                         for _ in range(self.cfg.expt.ram_prepulse[3])] 
-                                 #  for _ in range(self.cfg.expt.ram_prepulse[3])]
+            if self.cfg.expt.ram_prepulse_strs is None: 
+                if self.cfg.expt.ram_prepulse[0]:
+                    self.cfg.expt.prepulse = True
+                    dummy = MM_dual_rail_base( cfg=self.cfg)
+                    prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
+                                                                            skip_modes=self.cfg.expt.ram_prepulse[2])
+                                                                            for _ in range(self.cfg.expt.ram_prepulse[3])] 
+                                    #  for _ in range(self.cfg.expt.ram_prepulse[3])]
+                else: 
+                    self.cfg.expt.prepulse = False
+                    prepulse_strs = [[None]]
             else: 
-                self.cfg.expt.prepulse = False
-                prepulse_strs = [[None]]
+                prepulse_strs = self.cfg.expt.ram_prepulse_strs
 
             for prepulse_str in prepulse_strs:
         

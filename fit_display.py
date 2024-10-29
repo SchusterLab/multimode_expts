@@ -1949,8 +1949,13 @@ def plot_rb( fids_list , fids_post_list , xlist,
     fig.suptitle(title)
     plt.tight_layout()
     plt.show()
-def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep.h5', title = 'RB'):
-    '''show the rb result for a list of files'''
+def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep.h5', title = 'RB', 
+            dual_rail_spec = False, skip_spec_state_idx = None):
+    '''show the rb result for a list of files
+    
+    Args: dual_rail_spec: if True, then we use that rb data extract function 
+    skip_spec_state_idx: if dual_rail_spec is True, then we skip the state index in the list
+    '''
 
     Pgg = 0.997573060976843
     Pge = 0.0024269390231570487
@@ -1979,7 +1984,10 @@ def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSe
     for file_no in file_list:
         full_name = str(file_no).zfill(5)+name
         temp_data, attrs = prev_data(expt_path, full_name)  
-        avg_readout, avg_readout_post, gg, ge, eg, ee = RB_extract_postselction_excited(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix)
+        if not dual_rail_spec:
+            avg_readout, avg_readout_post, gg, ge, eg, ee = RB_extract_postselction_excited(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix)#, start_idx = start_idx)
+        else: 
+            avg_readout, avg_readout_post, gg, ge, eg, ee = RB_extract_postselction_excited_dual_rail_spec(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix, skip_spec_states_idx = skip_spec_state_idx)
         # print(gg[0]+ge[0]+eg[0]+ee[0])
         # print number of gg shots
         
@@ -2146,16 +2154,16 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
 
         try:
             if attrs['config']['expt']['reset_qubit_after_parity']:
-                print('reset_qubit_after_parity')
+                # print('reset_qubit_after_parity')
                 # print('using new method to calculate post selection fidelity ')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+eg))
             elif not attrs['config']['expt']['parity_meas']: 
-                print('not parity_meas')
+                # print('not parity_meas')
                 fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
                 fid_post_list.append(eg/(ge+eg))
             elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
-                print('reset_qubit_via_active_reset_after_first_meas')
+                # print('reset_qubit_via_active_reset_after_first_meas')
                 
                                          # gg_label = '|11>'
                                             # ge_label = '|10>'
@@ -2165,7 +2173,105 @@ def RB_extract_postselction_excited(temp_data, attrs, active_reset = False, conf
                 fid_post_list.append(ge/(ge+eg))
             else:
                 # print('using old method to calculate post selection fidelity ')
-                print('old method')
+                # print('old method')
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+ee))
+        except KeyError:
+            print('using old method to calculate post selection fidelity ')
+            fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+            fid_post_list.append(ge/(ge+ee))
+    print(eg + ge + gg + ee)
+    return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
+
+def RB_extract_postselction_excited_dual_rail_spec(temp_data, attrs, active_reset = False, conf_matrix = None,
+                                    skip_spec_states_idx = None):
+    '''
+    This is specially for dual rail spectator analysis where we skip over 0 and 1 population of the spectator mode
+    '''
+    # remember the parity mapping rule:
+    # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg
+    gg_list = []
+    ge_list = []
+    eg_list = []
+    ee_list = []
+    fid_raw_list = []
+    fid_post_list = []
+
+    
+    for aa in range(len(temp_data['Idata'])):
+        if aa%6 in skip_spec_states_idx:
+            continue
+
+        gg = 0
+        ge = 0
+        eg = 0
+        ee = 0
+
+        #  post selection due to active reset
+        if active_reset:
+            data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
+        else: 
+            data_init = temp_data['Idata'][aa][0]
+            data_post_select = temp_data['Idata'][aa][1]
+        
+        # print('len data_init', len(data_init))
+        # print('len data_post_select', len(data_post_select))
+        
+        # beamsplitter post selection 
+        for j in range(len(data_init)):
+            #  check if the counts are the same as initial counts
+            if data_init[j]>temp_data['thresholds'][0]: # classified as e
+                if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                    ee += 1
+                else:
+                    eg +=1
+            else:  # classified as g
+                if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                    ge +=1
+                else:
+                    gg += 1
+        # print('gg', gg)
+        # print('ge', ge)
+        # print('eg', eg)
+        # print('ee', ee)
+        # print('total', eg + ge + gg + ee)
+        if conf_matrix is not None: ## correct counts from histogram
+            gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
+            ge = gg * conf_matrix[1,0] + ge * conf_matrix[1,1] + eg * conf_matrix[1,2] + ee * conf_matrix[1,3]
+            eg = gg * conf_matrix[2,0] + ge * conf_matrix[2,1] + eg * conf_matrix[2,2] + ee * conf_matrix[2,3]
+            ee = gg * conf_matrix[3,0] + ge * conf_matrix[3,1] + eg * conf_matrix[3,2] + ee * conf_matrix[3,3]
+        gg_list.append(gg/(eg+ge+gg+ee))
+        ge_list.append(ge/(eg+ge+gg+ee))
+        eg_list.append(eg/(eg+ge+gg+ee))
+        ee_list.append(ee/(eg+ge+gg+ee))
+
+        # print('gg_list', gg_list)
+        # print('ge_list', ge_list)
+        # print('eg_list', eg_list)
+        # print('ee_list', ee_list)
+
+        try:
+            if attrs['config']['expt']['reset_qubit_after_parity']:
+                # print('reset_qubit_after_parity')
+                # print('using new method to calculate post selection fidelity ')
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+eg))
+            elif not attrs['config']['expt']['parity_meas']: 
+                # print('not parity_meas')
+                fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
+                fid_post_list.append(eg/(ge+eg))
+            elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
+                # print('reset_qubit_via_active_reset_after_first_meas')
+                
+                                         # gg_label = '|11>'
+                                            # ge_label = '|10>'
+                                            # eg_label = '|01>'
+                                            # ee_label = '|00>'
+                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
+                fid_post_list.append(ge/(ge+eg))
+            else:
+                # print('using old method to calculate post selection fidelity ')
+                # print('old method')
                 fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                 fid_post_list.append(ge/(ge+ee))
         except KeyError:

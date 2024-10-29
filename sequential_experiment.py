@@ -18,6 +18,7 @@ import experiments.fitting as fitter
 from scipy.fft import fft, fftfreq
 from multimode_expts.MM_base import MM_base
 from multimode_expts.MM_rb_base import MM_rb_base
+from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
 from multimode_expts.fit_display import * # for generate combos in MultiRBAM
 
 '''
@@ -926,6 +927,121 @@ def SingleRB_sweep_depth(soccfg=None, path=None, prefix=None, config_file=None, 
         # run_exp.cfg.device.storage.readout_length = 5
 
         run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+
+def DualRail_sweep_depth_and_single_spec_and_stor(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+    '''
+     This performs dual rail rb for a given target mode in presence of a single spectator. 
+     This function sweeps the single spectator modes and also internally sweeps all the cardinal states 
+     that the spectator mode can be in . 
+     This function will also sweep the target modes
+    '''
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================# 
+
+    experiment_class = 'single_qubit.rb_BSgate_postselection'
+    experiment_name = 'SingleBeamSplitterRBPostSelection'   
+    sweep_experiment_name = 'DualRail_sweep_depth_and_single_spec_and_stor'
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+    
+    start_pair = loaded[sweep_experiment_name]['start_pair']
+    target_start, spec_start = start_pair
+    
+    for kdx, target_mode in enumerate(loaded[sweep_experiment_name]['target_mode_list']):
+        if target_mode < target_start: continue
+
+        print('----------------------############---------------------------')
+        print('Kndex: %s target mode. = %s ' %(kdx, target_mode))
+        loaded[sweep_experiment_name]['target_mode'] = target_mode
+        mode_list = [1,2,3,4,5,6,7]
+        mode_list.remove(target_mode)
+        new_mode_list = mode_list.copy()
+        for spec in mode_list: 
+            if spec < spec_start: 
+                new_mode_list.remove(spec)
+        loaded[sweep_experiment_name]['target_spec_list'] = new_mode_list
+        print(mode_list)
+
+        loaded[experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][kdx]
+        print(loaded[experiment_name]['bs_para'])
+
+        SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+        
+
+
+
+
+
+def SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
+                                                                  prep_init = False, prep_params = None):
+    '''
+     This performs dual rail rb for a given target mode in presence of a single spectator. 
+     This function sweeps the single spectator modes and also internally sweeps all the cardinal states 
+     that the spectator mode can be in . 
+    '''
+    if prep_init: 
+        config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
+        # target_mode = loaded[sexperiment_name]['target_mode']
+    else: 
+        #====================================================================#
+        config_path = config_file
+        print('Config will be', config_path)
+
+        with open(config_file, 'r') as cfg_file:
+            yaml_cfg = yaml.safe_load(cfg_file)
+        yaml_cfg = AttrDict(yaml_cfg)
+
+        with open(exp_param_file, 'r') as file:
+            # Load the YAML content
+            loaded = yaml.safe_load(file)
+        #===================================================================# 
+
+        experiment_class = 'single_qubit.rb_BSgate_postselection'
+        experiment_name = 'SingleBeamSplitterRBPostSelection'   
+        sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec'
+
+
+        for keys in loaded[experiment_name].keys():
+            try:
+                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+            except:
+                pass
+        
+    
+    target_mode = loaded[sweep_experiment_name]['target_mode']
+
+    #depth_array = np.array([1,2,3,4,5,10,20])
+    for jdx, target_spec in enumerate(loaded[sweep_experiment_name]['target_spec_list']):
+    #for index, depth in enumerate(depth_array):
+        print('-------------------------------------------------')
+        print('Jndex: %s target spec. = %s ' %(jdx, target_spec))
+        # loaded[experiment_name]['ram_prepulse'][1] = #num_occupied_smodes
+        # loaded[experiment_name]['ram_prepulse'][3] = loaded[sweep_experiment_name]['prepulse_vars_list'][jdx] 
+
+        dummy = MM_dual_rail_base(cfg = yaml_cfg)
+        prepulse_strs = [dummy.prepulse_str_for_random_ram_state(1, [target_mode], target_spec, i) for i in range(1, 7)]
+        print(prepulse_strs)
+        loaded[experiment_name]['ram_prepulse_strs'] = prepulse_strs
+        SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+        
+
 
 def SingleBeamSplitterRBPostSelection_sweep_depth_and_ram(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
 #====================================================================#

@@ -86,13 +86,20 @@ class MM_dual_rail_base(MM_base):
 
         return pulse_str
     
-    def prepulse_str_for_random_ram_state(self, num_occupied_smodes, skip_modes): 
+    def prepulse_str_for_random_ram_state(self, num_occupied_smodes, skip_modes,
+                                        target_spectator_mode = None, target_state = None): 
         '''
         prepare a random state in the storage modes
 
         num_occupied_smodes: number of occupied storage modes or total spectator storage modes with populations
         skip_modes: list of modes to skip [if have 7 modes, then 7- len(skip_modes) > num_occupied_smodes]
+        
+        target_spectator_mode: if not None, then the target spectator mode to prepare the state in (only compatible with num_occupied_smodes = 1)
+        target_state: if not None, then the target state to prepare the state in (only compatible with num_occupied_smodes = 1)
         '''
+        if target_spectator_mode is not None and num_occupied_smodes != 1: 
+            raise ValueError('target_spectator_mode can only be used with num_occupied_smodes = 1')
+
         # set up storage modes
         mode_list = []
         for i in range(1, 7+1): 
@@ -109,8 +116,14 @@ class MM_dual_rail_base(MM_base):
             mode_num = random.choice(mode_list)
             # print(f'Preparing state {state_num} in mode {mode_num}')
             mode_list.remove(mode_num) # remove the mode from the list
+            
+            if target_spectator_mode is not None: 
+                mode_num = target_spectator_mode
+            if target_state is not None:
+                state_num = target_state
             prepulse_str += self.prep_random_state_mode(state_num, mode_num)
         return prepulse_str
+    
 
 class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):
