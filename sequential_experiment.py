@@ -972,10 +972,10 @@ def DualRail_sweep_depth_and_single_spec_and_stor(soccfg=None, path=None, prefix
         mode_list.remove(target_mode)
         new_mode_list = mode_list.copy()
         for spec in mode_list: 
-            if spec < spec_start: 
+            if target_mode == target_start and spec < spec_start: 
                 new_mode_list.remove(spec)
         loaded[sweep_experiment_name]['target_spec_list'] = new_mode_list
-        print(mode_list)
+        # print(new_mode_list)
 
         loaded[experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][kdx]
         print(loaded[experiment_name]['bs_para'])

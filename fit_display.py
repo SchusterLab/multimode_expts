@@ -1893,12 +1893,16 @@ def plot_rb( fids_list , fids_post_list , xlist,
     pCov = err
     rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
     abs_err = rel_err * np.exp(-1 / fit[3])
+    fid = np.exp(-1 / fit[3])
+    fid_err = abs_err
     captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
 
     p_post = fit_post
     pCov_post = err_post
     rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
     abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
+    fid_post = np.exp(-1 / fit_post[3])
+    fid_err_post = abs_err_post
     captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
 
     ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
@@ -1949,6 +1953,7 @@ def plot_rb( fids_list , fids_post_list , xlist,
     fig.suptitle(title)
     plt.tight_layout()
     plt.show()
+    return fid, fid_err, fid_post, fid_err_post
 def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep.h5', title = 'RB', 
             dual_rail_spec = False, skip_spec_state_idx = None):
     '''show the rb result for a list of files
@@ -2012,13 +2017,13 @@ def show_rb(prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSe
         reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
     except KeyError:
         reset_bool = attrs['config']['expt']['reset_qubit_after_parity']
-    plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
+    fid, fid_err, fid_post, fid_post_err = plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
                 gg_list = gg_list, gg_list_err = gg_list_err, ge_list = ge_list, ge_list_err = ge_list_err, 
                 eg_list = eg_list, eg_list_err = eg_list_err, ee_list = ee_list, ee_list_err = ee_list_err,
                 ebars_list=ebars_list, ebars_post_list=ebars_post_list, reset_qubit_after_parity = reset_bool,
                 parity_meas=attrs['config']['expt']['parity_meas'],
                 title=title)
-    return fids_list, fids_post_list, gg_list, ge_list, eg_list, ee_list, gg_list_err, ge_list_err, eg_list_err, ee_list_err, xlist, depth_list, ebars_list, ebars_post_list
+    return fids_list, fids_post_list, gg_list, ge_list, eg_list, ee_list, gg_list_err, ge_list_err, eg_list_err, ee_list_err, xlist, depth_list, ebars_list, ebars_post_list, fid, fid_err, fid_post, fid_post_err
 def RB_extract_excited(temp_data):
     avg_readout = []
     for i in range(len(temp_data['Idata'])):

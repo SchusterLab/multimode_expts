@@ -116,7 +116,7 @@ class MM_dual_rail_base(MM_base):
             mode_num = random.choice(mode_list)
             # print(f'Preparing state {state_num} in mode {mode_num}')
             mode_list.remove(mode_num) # remove the mode from the list
-            
+
             if target_spectator_mode is not None: 
                 mode_num = target_spectator_mode
             if target_state is not None:
@@ -124,6 +124,26 @@ class MM_dual_rail_base(MM_base):
             prepulse_str += self.prep_random_state_mode(state_num, mode_num)
         return prepulse_str
     
+    def play_bs_gate(self, cfg, phase=0, times = 1, wait = False):
+        if cfg.expt.setup:
+            self.set_pulse_registers(ch=self.bs_ch[0], style="flat_top", 
+                                     freq=self.freq_beamsplitter, 
+                                     phase=self.deg2reg(phase), 
+                                     gain=self.gain_beamsplitter, 
+                                     length=self.us2cycles(self.length_beamsplitter, 
+                                                           gen_ch=self.bs_ch[0]),
+                                    waveform="ramp_bs")
+        else: 
+            self.safe_regwi(self.page_bs_phase, self.r_bs_phase, self.deg2reg(phase)) 
+        
+        for _ in range(times): 
+            # print(f'Playing BS gate with phase {phase}')
+            self.pulse(ch=self.bs_ch[0]) 
+        if wait:
+            self.sync_all(self.us2cycles(0.01))
+
+        if cfg.expt.sync:
+            self.sync_all()
 
 class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):

@@ -246,27 +246,6 @@ class MM_rb_base(MM_base):
             self.sync_all(self.us2cycles(0.01))
             # print(waveform_name)
         
-   
-    
-    def get_total_time(self, test_pulse, gate_based = False, cycles = False, cycles2us = 0.0023251488095238095):
-        '''
-        Takes in pulse str of form 
-        # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]]s
-        '''
-        if gate_based: 
-            test_pulse = self.get_prepulse_creator(test_pulse).pulse
-            # print(test_pulse)
-        t = 0 
-        for i in range(len(test_pulse[0])):
-            if test_pulse[5][i] == 'g' or test_pulse[5][i] == 'gauss' or test_pulse[5][i] == 'gaussian':
-                t += test_pulse[-1][i] * 4
-            elif test_pulse[5][i] == 'flat_top' or test_pulse[5][i] == 'f':
-                t += test_pulse[-1][i] * 6 + test_pulse[2][i]
-            t+= 0.01 # 10ns delay
-        if cycles: 
-            # QickConfig(im[yaml_cfg['aliases']['soc']].get_cfg())
-            return int(round(t / cycles2us))
-        return t 
     
     def init_gate_length(self): 
         ''' Creates a dictionary of the form 
