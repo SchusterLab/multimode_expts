@@ -21,117 +21,9 @@ from MM_dual_rail_base import *
 Single Beam Splitter RB sequence generator
 Gate set = {+-X/2, +-Y/2, X, Y}
 """
-## generate sequences of random pulses
-## 1:X,   2:Y, 3:X/2
-## 4:Y/2, 5:-X/2, 6:-Y/2
-## 0:I
 
 
-## Calculate inverse rotation
-matrix_ref = {}
-# Z, X, Y, -Z, -X, -Y
-matrix_ref['0'] = np.matrix([[1, 0, 0, 0, 0, 0],
-                                [0, 1, 0, 0, 0, 0],
-                                [0, 0, 1, 0, 0, 0],
-                                [0, 0, 0, 1, 0, 0],
-                                [0, 0, 0, 0, 1, 0],
-                                [0, 0, 0, 0, 0, 1]])
-matrix_ref['1'] = np.matrix([[0, 0, 0, 1, 0, 0],
-                                [0, 1, 0, 0, 0, 0],
-                                [0, 0, 0, 0, 0, 1],
-                                [1, 0, 0, 0, 0, 0],
-                                [0, 0, 0, 0, 1, 0],
-                                [0, 0, 1, 0, 0, 0]])
-matrix_ref['2'] = np.matrix([[0, 0, 0, 1, 0, 0],
-                                [0, 0, 0, 0, 1, 0],
-                                [0, 0, 1, 0, 0, 0],
-                                [1, 0, 0, 0, 0, 0],
-                                [0, 1, 0, 0, 0, 0],
-                                [0, 0, 0, 0, 0, 1]])
-matrix_ref['3'] = np.matrix([[0, 0, 1, 0, 0, 0],
-                                [0, 1, 0, 0, 0, 0],
-                                [0, 0, 0, 1, 0, 0],
-                                [0, 0, 0, 0, 0, 1],
-                                [0, 0, 0, 0, 1, 0],
-                                [1, 0, 0, 0, 0, 0]])
-matrix_ref['4'] = np.matrix([[0, 0, 0, 0, 1, 0],
-                                [1, 0, 0, 0, 0, 0],
-                                [0, 0, 1, 0, 0, 0],
-                                [0, 1, 0, 0, 0, 0],
-                                [0, 0, 0, 1, 0, 0],
-                                [0, 0, 0, 0, 0, 1]])
-matrix_ref['5'] = np.matrix([[0, 0, 0, 0, 0, 1],
-                                [0, 1, 0, 0, 0, 0],
-                                [1, 0, 0, 0, 0, 0],
-                                [0, 0, 1, 0, 0, 0],
-                                [0, 0, 0, 0, 1, 0],
-                                [0, 0, 0, 1, 0, 0]])
-matrix_ref['6'] = np.matrix([[0, 1, 0, 0, 0, 0],
-                                [0, 0, 0, 1, 0, 0],
-                                [0, 0, 1, 0, 0, 0],
-                                [0, 0, 0, 0, 1, 0],
-                                [1, 0, 0, 0, 0, 0],
-                                [0, 0, 0, 0, 0, 1]])
-
-def no2gate(no):
-    g = 'I'
-    if no==1:
-        g = 'X'
-    elif no==2:
-        g = 'Y'
-    elif no==3:
-        g = 'X/2'
-    elif no==4:
-        g = 'Y/2'
-    elif no==5:
-        g = '-X/2'
-    elif no==6:
-        g = '-Y/2'  
-
-    return g
-
-def gate2no(g):
-    no = 0
-    if g=='X':
-        no = 1
-    elif g=='Y':
-        no = 2
-    elif g=='X/2':
-        no = 3
-    elif g=='Y/2':
-        no = 4
-    elif g=='-X/2':
-        no = 5
-    elif g=='-Y/2':
-        no = 6
-
-    return no
-
-def generate_sequence(rb_depth, iRB_gate_no=-1, debug=False, matrix_ref=matrix_ref):
-    gate_list = []
-    for ii in range(rb_depth):
-        gate_list.append(random.randint(1, 6))
-        if iRB_gate_no > -1:   # performing iRB
-            gate_list.append(iRB_gate_no)
-
-    a0 = np.matrix([[1], [0], [0], [0], [0], [0]])
-    anow = a0
-    for i in gate_list:
-        anow = np.dot(matrix_ref[str(i)], anow)
-    anow1 = np.matrix.tolist(anow.T)[0]
-    max_index = anow1.index(max(anow1))
-    # inverse of the rotation
-    inverse_gate_symbol = ['-Y/2', 'X/2', 'X', 'Y/2', '-X/2']
-    if max_index == 0:
-        pass
-    else:
-        gate_list.append(gate2no(inverse_gate_symbol[max_index-1]))
-    if debug:
-        print(gate_list)
-        print(max_index)
-    return gate_list
-
-class SingleBeamSplitter_check_target(MMDualRailAveragerProgram):
+class SingleBeamSplitterRB_check_target_prog(MMDualRailAveragerProgram):
     """
     RB program for single qubit gates
     """
@@ -276,10 +168,12 @@ class SingleBeamSplitter_check_target(MMDualRailAveragerProgram):
         shots_q0 = self.dq_buf[0].reshape((read_num, self.cfg["reps"]),order='F') / self.readout_lengths_adc
 
         return shots_i0, shots_q0
+    
+    
 
 # ===================================================================== #
 # play the pulse
-class SingleBeamSplitterRBPostSelection(Experiment):
+class SingleBeamSplitterRB_check_target(Experiment):
     def __init__(self, soccfg=None, path='', prefix='SingleBeamSplitterRBPostSelection', config_file=None, progress=None):
             super().__init__(path=path, soccfg=soccfg, prefix=prefix, config_file=config_file, progress=progress)
     
@@ -358,41 +252,48 @@ class SingleBeamSplitterRBPostSelection(Experiment):
         #sequences = np.array([[0], [1]])#[1,1,1,1], [2,2,2,2],  [1,2,1,1], [1,2,2,2], [1,1,2,1]])
         #for var in sequences:
         self.cfg.expt.reps = self.cfg.expt.rb_reps
+        dummy = MM_dual_rail_base( cfg=self.cfg)
         # data['running_lists'] = []
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
             #rb sequence
-            self.cfg.expt.running_list =  generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
-            # Need to calculate total time 
+            self.cfg.expt.running_list =  dummy.generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+            # Need to calculate total time taken up by running list and consequently, the phase on the second pi/2 pulse
+            
+            rb_time = dummy.get_total_time_from_running_list( running_list=self.cfg.expt.running_list,
+                                                                            bs_time=self.cfg.expt.bs_para[2])
+            phase = self.cfg.expt.wait_freq*rb_time
+            self.post_sweep_pulse[-1][-1] = phase
+            
+            # print(self.cfg.expt.rb_time)
 
+            # #for ram prepulse 
+            # if self.cfg.expt.ram_prepulse_strs is None: 
+            #     if self.cfg.expt.ram_prepulse[0]:
+            #         self.cfg.expt.prepulse = True
+            #         #dummy = MM_dual_rail_base( cfg=self.cfg)
+            #         prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
+            #                                                                 skip_modes=self.cfg.expt.ram_prepulse[2])
+            #                                                                 for _ in range(self.cfg.expt.ram_prepulse[3])] 
+            #                         #  for _ in range(self.cfg.expt.ram_prepulse[3])]
+            #     else: 
+            #         self.cfg.expt.prepulse = False
+            #         prepulse_strs = [[None]]
+            # else: 
+            #     prepulse_strs = self.cfg.expt.ram_prepulse_strs
 
-            #for ram prepulse 
-            if self.cfg.expt.ram_prepulse_strs is None: 
-                if self.cfg.expt.ram_prepulse[0]:
-                    self.cfg.expt.prepulse = True
-                    dummy = MM_dual_rail_base( cfg=self.cfg)
-                    prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
-                                                                            skip_modes=self.cfg.expt.ram_prepulse[2])
-                                                                            for _ in range(self.cfg.expt.ram_prepulse[3])] 
-                                    #  for _ in range(self.cfg.expt.ram_prepulse[3])]
-                else: 
-                    self.cfg.expt.prepulse = False
-                    prepulse_strs = [[None]]
-            else: 
-                prepulse_strs = self.cfg.expt.ram_prepulse_strs
-
-            for prepulse_str in prepulse_strs:
+            # for prepulse_str in prepulse_strs:
         
-                self.cfg.expt.pre_sweep_pulse = prepulse_str
-                rb_shot = SingleBeamSplitterRBPostselectionrun(soccfg=self.soccfg, cfg=self.cfg)
-                read_num =2 
-                if self.cfg.expt.rb_active_reset: read_num = 5
-                self.prog = rb_shot
-                avgi, avgq = rb_shot.acquire(
-                    self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
-                            readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
-                II, QQ = rb_shot.collect_shots_rb(read_num)
-                data['Idata'].append(II)
-                data['Qdata'].append(QQ)
+            # self.cfg.expt.pre_sweep_pulse = prepulse_str
+            rb_shot = SingleBeamSplitterRB_check_target_prog(soccfg=self.soccfg, cfg=self.cfg)
+            read_num =1
+            if self.cfg.expt.rb_active_reset: read_num = 4
+            self.prog = rb_shot
+            avgi, avgq = rb_shot.acquire(
+                self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
+                        readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
+            II, QQ = rb_shot.collect_shots_rb(read_num)
+            data['Idata'].append(II)
+            data['Qdata'].append(QQ)
         #data['running_lists'] = running_lists   
         #print(self.prog)
             

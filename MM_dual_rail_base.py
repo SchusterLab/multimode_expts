@@ -145,6 +145,134 @@ class MM_dual_rail_base(MM_base):
         if cfg.expt.sync:
             self.sync_all()
 
+    def get_total_time_from_running_list(self, running_list, bs_time):
+        '''
+        Calculate total time taken up by a RB sequence
+        '''
+        total_time = 0
+        for ii in running_list:
+            if ii == 0:
+                total_time += 0
+            elif ii == 1:
+                total_time += 2*bs_time
+            else: 
+                total_time += bs_time
+        return total_time
+    
+    
+
+    def no2gate(self, no):
+        g = 'I'
+        if no==1:
+            g = 'X'
+        elif no==2:
+            g = 'Y'
+        elif no==3:
+            g = 'X/2'
+        elif no==4:
+            g = 'Y/2'
+        elif no==5:
+            g = '-X/2'
+        elif no==6:
+            g = '-Y/2'  
+
+        return g
+
+    def gate2no(self, g):
+        no = 0
+        if g=='X':
+            no = 1
+        elif g=='Y':
+            no = 2
+        elif g=='X/2':
+            no = 3
+        elif g=='Y/2':
+            no = 4
+        elif g=='-X/2':
+            no = 5
+        elif g=='-Y/2':
+            no = 6
+
+        return no
+
+    def generate_sequence(self, rb_depth, iRB_gate_no=-1, debug=False):
+        
+        # matrices 
+        ## generate sequences of random pulses
+        ## 1:X,   2:Y, 3:X/2
+        ## 4:Y/2, 5:-X/2, 6:-Y/2
+        ## 0:I
+
+
+        ## Calculate inverse rotation
+        matrix_ref = {}
+        # Z, X, Y, -Z, -X, -Y
+        matrix_ref['0'] = np.matrix([[1, 0, 0, 0, 0, 0],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [0, 0, 1, 0, 0, 0],
+                                        [0, 0, 0, 1, 0, 0],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [0, 0, 0, 0, 0, 1]])
+        matrix_ref['1'] = np.matrix([[0, 0, 0, 1, 0, 0],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [0, 0, 0, 0, 0, 1],
+                                        [1, 0, 0, 0, 0, 0],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [0, 0, 1, 0, 0, 0]])
+        matrix_ref['2'] = np.matrix([[0, 0, 0, 1, 0, 0],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [0, 0, 1, 0, 0, 0],
+                                        [1, 0, 0, 0, 0, 0],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [0, 0, 0, 0, 0, 1]])
+        matrix_ref['3'] = np.matrix([[0, 0, 1, 0, 0, 0],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [0, 0, 0, 1, 0, 0],
+                                        [0, 0, 0, 0, 0, 1],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [1, 0, 0, 0, 0, 0]])
+        matrix_ref['4'] = np.matrix([[0, 0, 0, 0, 1, 0],
+                                        [1, 0, 0, 0, 0, 0],
+                                        [0, 0, 1, 0, 0, 0],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [0, 0, 0, 1, 0, 0],
+                                        [0, 0, 0, 0, 0, 1]])
+        matrix_ref['5'] = np.matrix([[0, 0, 0, 0, 0, 1],
+                                        [0, 1, 0, 0, 0, 0],
+                                        [1, 0, 0, 0, 0, 0],
+                                        [0, 0, 1, 0, 0, 0],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [0, 0, 0, 1, 0, 0]])
+        matrix_ref['6'] = np.matrix([[0, 1, 0, 0, 0, 0],
+                                        [0, 0, 0, 1, 0, 0],
+                                        [0, 0, 1, 0, 0, 0],
+                                        [0, 0, 0, 0, 1, 0],
+                                        [1, 0, 0, 0, 0, 0],
+                                        [0, 0, 0, 0, 0, 1]])
+
+        gate_list = []
+        for ii in range(rb_depth):
+            gate_list.append(random.randint(1, 6))
+            if iRB_gate_no > -1:   # performing iRB
+                gate_list.append(iRB_gate_no)
+
+        a0 = np.matrix([[1], [0], [0], [0], [0], [0]])
+        anow = a0
+        for i in gate_list:
+            anow = np.dot(matrix_ref[str(i)], anow)
+        anow1 = np.matrix.tolist(anow.T)[0]
+        max_index = anow1.index(max(anow1))
+        # inverse of the rotation
+        inverse_gate_symbol = ['-Y/2', 'X/2', 'X', 'Y/2', '-X/2']
+        if max_index == 0:
+            pass
+        else:
+            gate_list.append(self.gate2no(inverse_gate_symbol[max_index-1]))
+        if debug:
+            print(gate_list)
+            print(max_index)
+        return gate_list
+
 class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
