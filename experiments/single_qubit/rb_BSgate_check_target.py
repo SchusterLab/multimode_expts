@@ -79,9 +79,10 @@ class SingleBeamSplitterRB_check_target_prog(MMDualRailAveragerProgram):
             self.custom_pulse(cfg, prepulse_for_custom_pulse, prefix='pre10')#, advance_qubit_phase=self.vz)
             
         # prepare a photon in manipulate cavity 
-        self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
-        self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
-        self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
+        if cfg.expt.prep_man_photon: 
+            self.custom_pulse(cfg, self.ge_for_custom_pulse, prefix='pre11')#
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='pre12')#
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='pre13')#
         # self.vz += self.cfg.expt.f0g1_offset 
         
         # prepare bs gate 
@@ -141,13 +142,13 @@ class SingleBeamSplitterRB_check_target_prog(MMDualRailAveragerProgram):
                         
 
            
-        self.sync_all()
+        # self.sync_all()
  
-        if cfg.expt.parity_meas: 
-            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
-        else: 
-            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1')
-            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1')
+        # if cfg.expt.parity_meas: 
+        #     self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
+        # else: 
+        #     self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1')
+        #     self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1')
 
         self.sync_all(self.us2cycles(0.05))
 
@@ -251,18 +252,26 @@ class SingleBeamSplitterRB_check_target(Experiment):
 
         #sequences = np.array([[0], [1]])#[1,1,1,1], [2,2,2,2],  [1,2,1,1], [1,2,2,2], [1,1,2,1]])
         #for var in sequences:
+
         self.cfg.expt.reps = self.cfg.expt.rb_reps
         dummy = MM_dual_rail_base( cfg=self.cfg)
         # data['running_lists'] = []
+
+        self.cfg.expt.rb_times = [] # for analysis
+        self.cfg.expt.bs_gate_nums = [] # for analysis
+
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
             #rb sequence
             self.cfg.expt.running_list =  dummy.generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
             # Need to calculate total time taken up by running list and consequently, the phase on the second pi/2 pulse
             
-            rb_time = dummy.get_total_time_from_running_list( running_list=self.cfg.expt.running_list,
+            rb_time, bs_gate_num = dummy.get_total_time_from_running_list( running_list=self.cfg.expt.running_list,
                                                                             bs_time=self.cfg.expt.bs_para[2])
-            phase = self.cfg.expt.wait_freq*rb_time
-            self.post_sweep_pulse[-1][-1] = phase
+            phase = self.cfg.expt.wait_freq*rb_time * 360 # convert to degrees
+            self.cfg.expt.post_sweep_pulse[-1][-1] = phase
+            # for analysis
+            self.cfg.expt.rb_times.append(rb_time)
+            self.cfg.expt.bs_gate_nums.append(bs_gate_num)
             
             # print(self.cfg.expt.rb_time)
 

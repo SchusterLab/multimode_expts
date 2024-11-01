@@ -150,14 +150,17 @@ class MM_dual_rail_base(MM_base):
         Calculate total time taken up by a RB sequence
         '''
         total_time = 0
+        bs_gate_num = 0
         for ii in running_list:
             if ii == 0:
                 total_time += 0
-            elif ii == 1:
+            elif ii == 1 or ii == 2:
                 total_time += 2*bs_time
+                bs_gate_num += 2
             else: 
                 total_time += bs_time
-        return total_time
+                bs_gate_num += 1
+        return total_time, bs_gate_num
     
     
 
