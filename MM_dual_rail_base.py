@@ -279,6 +279,10 @@ class MM_dual_rail_base(MM_base):
 class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
+
+class MMDualRailRAveragerProgram(RAveragerProgram, MM_dual_rail_base):
+    def __init__(self, soccfg, cfg):
+        super().__init__(soccfg, cfg)
     
         
 

@@ -1,0 +1,3381 @@
+T1Experiment: 
+    start: 0 # start time in us
+    step: 15  # step in us
+    expts: 100
+    reps: 401
+    rounds: 1
+    qubit: 0
+    qubit_ef: True
+    normalize: False
+
+ParityDelayExperiment: 
+    start: 0.01 #2.5 #0.01 # start time in us
+    step: 0.05  # step in us
+    expts: 100
+    reps: 2000
+    rounds: 1
+    qubits: [0]
+    prepulse: True
+    normalize: False
+    active_reset: True
+    man_reset: True
+    storage_reset: True
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.060],
+       [10716, 8236, 15000],
+       [0, 0, 0.609889],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['g', 'g', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2006.72],
+    #    [9653, 7575, 15000],
+    #    [0, 0, 0.6168960348389007],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005]]
+                       
+                       
+                       # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    
+
+T1CavityExperiment:
+    start: 0 # wait time [us]
+    step: 10
+    expts: 60
+    reps: 100
+    rounds: 10
+    cavity_prepulse: [False, 300, 1.5]   # Cavity prepulse, [on/off, amplitude, length]
+    f0g1_prep: True
+    f0g1_param: [2006.72, 15000, 0.615106737507514]    # f0g1 prepulse, [freq, gain, length]
+    # f0g1_param: [1832.75, 3000, 1.4432303930717378]    # f0g1 prepulse, [freq, gain, length]
+    resolved_pi: False
+    cavity: 1 # 1 for manipulate
+    qubit: 0
+    normalize: False
+
+T1CavityExperiment_DC_sweep:
+    flux_start: -1.25      # in mA
+    flux_stop: 0.7      # in mA
+    flux_expts: 31      
+    sweet_spot: -0.275   # in mA
+    period: 1.95         # in mA
+    start: 0 # wait time [us]
+    step: 8
+    expts: 50
+    reps: 50
+    rounds: 10
+    cavity_prepulse: [False, 300, 1.5]   # Cavity prepulse, [on/off, amplitude, length]
+    f0g1_prep: True
+    f0g1_freq_fit_param: [ 2.00600452e+03 , 1.60340455e+00, -1.28684761e+00]   # [a,b,c] f0g1_freq = a+b/(np.sqrt(abs(np.cos(np.pi*x)))+c)
+    f0g1_gain: 15000      # f0g1 drive gain
+    f0g1_pi: 0.620740890403745       # f0g1 pi length in us
+    resolved_pi: False
+    cavity: 1 # 1 for manipulate
+    qubit: 0
+
+
+DemolutionMeasurementExperiment: 
+    cavity_name: 0   # displaced cavity name
+    time_start: 0.0
+    time_step: 0.5
+    time_expts: 8
+    reps: 20000
+    qubits: [0]
+    pi_pulse: True   # Whether to flip qubit ge between two sequential readout
+
+
+HistogramExperiment:
+    qubits: [0]
+    reps: 20000
+    check_f: False
+    active_reset: True
+    man_reset: True
+    storage_reset: True
+    qubit: 0
+    pulse_manipulate: False
+    cavity_freq: 4984.373226159381
+    cavity_gain: 1000 # this is not needed since no prepulse
+    cavity_length: 2
+
+HistogramExperiment_oldold:
+    qubits: [0]
+    reps: 20000
+    check_f: False
+    active_reset: False
+    #man_reset: False
+    #storage_reset: False
+    qubit: 0
+    pulse_manipulate: False
+    cavity_freq: 4984.373226159381
+    cavity_gain: 1000 # this is not needed since no prepulse
+    cavity_length: 2
+
+HistogramExperiment_old:
+    qubits: [0]
+    reps: 20000
+    check_f: False
+    active_reset: True
+    qubit: 0
+    pulse_manipulate: False
+    cavity_freq: 4984.373226159381
+    cavity_gain: 1000 # this is not needed since no prepulse
+    cavity_length: 2
+
+HistogramExperiment_freq_sweep: 
+    reps: 25000
+    check_f: False
+    qubit: 0
+    pulse_manipulate: False
+    freq_start: 3567.7143637946836
+    freq_stop: 3568.3143637946836
+    freq_step: 0.06
+    cavity_freq: 4984.373226159381
+    cavity_gain: 1000 # this is not needed since no prepulse
+    cavity_length: 2
+
+HistogramExperiment_ef_freq_sweep: 
+    reps: 10000
+    check_f: True
+    qubit: 0
+    pulse_manipulate: False
+    freq_start: 3422.4015098021477
+    freq_stop: 3422.8015098021477
+    freq_step: 0.04
+    cavity_freq: 4984.373226159381
+    cavity_gain: 1000 # this is not needed since no prepulse
+    cavity_length: 2
+
+DragCalibrationExperiment:
+    reps: 20000
+    qubit: 0
+    CheckEF: False
+    Drag_gain: [9610, 5916]  # used for [ge Drag, ef Drag]
+    Drag_sigma: [0.035, 0.045] # used for [ge Drag, ef Drag]
+    Drag_beta: [0.0, 0.2]   # used for [ge Drag, ef Drag]
+    pulse_round: 5  # how many pulse cycles before histogram
+
+
+HistogramPrepulseExperiment: # prepulse is the experiment 
+    reps: 10000
+    qubits: [0]
+    prepulse: True   
+    active_reset: True
+    man_reset: True  
+    storage_reset: True    
+    
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06, 2007.06,
+    #     3425.5564066067, 3425.5564066067, 2007.06],
+    #    [10716, 8236, 15000, 15000, 8236, 8236, 15000],
+    #    [0, 0, 0.6562866896346518, 0.6562866896346518, 0, 0,
+    #     0.6562866896346518],
+    #    [0, 0, 0, 0, 0, 0, 0],
+    #    [2, 2, 0, 0, 2, 2, 0],
+    #    ['g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top'],
+    #    [0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005]]
+    pre_sweep_pulse: [['qubit', 'ge', 'pi', 0],
+                    ['qubit', 'ef', 'pi', 0],
+                    ['man', 'M1', 'pi', 0],
+                    ['storage', 'M1-S1', 'pi', 0],
+                    ['qubit', 'ge', 'pi', 0],
+                    ['qubit', 'ef', 'pi', 0],
+                    ['man', 'M1', 'pi', 0],
+                    ['qubit', 'ge', 'hpi', 0],
+                    ['qubit', 'ge', 'parity_M1', 0],
+                    ['qubit', 'ge', 'hpi', 0],
+                    ['storage', 'M1-S1', 'pi', 0],
+                    ['qubit', 'ge', 'hpi', 0],
+                    ['qubit', 'ge', 'parity_M1', 0],
+                    ['qubit', 'ge', 'hpi', 0]]
+    gate_based: True
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+    
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 
+    #     3425.5537944060666, 3425.5537944060666, 
+    #     3425.5537944060666, 3425.5537944060666, 
+    #     3425.5537944060666, 3425.5537944060666, 
+    #     3425.5537944060666],
+    #    [4000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000],
+    #    [0.0698768406142038, 0.149552252503385, 0.149552252503385, 0.149552252503385, 0.149552252503385, 0.149552252503385, 0.149552252503385, 0.149552252503385, 0.149552252503385],
+    #    [0, 0, 180, 0, 180, 0, 180, 0, 180],
+    #    [2, 2, 2, 2, 2, 2, 2, 2, 2],
+    #    ['flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top'],
+    #    [0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]]
+
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2006.72, 2006.72, 3425.5537944060666, 3568.1751638611518],
+    #                    [4000, 3000, 15000, 15000, 3000, 4000],
+    #                    [0.0698768406142038,0.149552252503385,0.6015035177548363, 0.6015035177548363, 0.149552252503385, 0.0698768406142038],
+    #                    [0,0,0,120,180, 180],
+    #                    [2,2,5,5,2, 2],['flat_top','flat_top','flat_top', 'flat_top','flat_top', 'flat_top'], 
+    #                    [0.005,0.005,0.005, 0.005,0.005, 0.005]]
+
+    # pre_sweep_pulse: [[500, 500, 500, 500, 500],
+    #                    [1000, 2000, 4000, 3000, 5000],
+    #                    [0.1, 0.1, 0.1, 0.1, 0.1],
+    #                    [0,0,0,0,0],
+    #                    [2,2,2,2,2],['const','const','const','const','const'], 
+    #                    [0.1,0.1,0.1,0.1,0.1]]
+
+    # pre_sweep_pulse: [[3568.192723394974, 3425.5626665473087, 2006.76, 2006.76, 3425.5626665473087, 3568.192723394974],
+    #                    [4000, 3000, 15000, 15000, 3000, 4000],
+    #                    [0.0684524785103811,0.145795166444184,0.620964539247996, 0.620964539247996, 0.145795166444184, 0.0684524785103811],
+    #                    [0,0,0,180,180, 90.55167786562026],
+    #                    [2,2,5,5,2, 2],['flat_top','flat_top','flat_top', 'flat_top','flat_top', 'flat_top'], 
+    #                    [0.005,0.005,0.005, 0.005,0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.192723394974, 3425.5626665473087, 2006.76, 2006.76, 3425.5626665473087, 3568.192723394974, 3425.5626665473087, 2006.76, 2006.76, 3425.5626665473087, 3568.192723394974],
+    #                    [4000, 3000, 15000, 15000, 3000, 4000, 3000, 15000, 15000, 3000, 4000],
+    #                    [0.0684524785103811,0.145795166444184,0.620964539247996, 0.620964539247996, 0.145795166444184, 0.0684524785103811,0.145795166444184,0.620964539247996, 0.620964539247996, 0.145795166444184, 0.136904957020762],
+    #                    [-90,0,0,0,0, -90,0,0,0,0, 0],
+    #                    [2,2,2,2,2, 2,2,2,2,2, 2],['flat_top','flat_top','flat_top', 'flat_top','flat_top', 'flat_top','flat_top','flat_top', 'flat_top','flat_top', 'flat_top'], 
+    #                    [0.005,0.005,0.005, 0.005,0.005, 0.005,0.005,0.005, 0.005,0.005, 0.005]]
+    
+
+    # pre_sweep_pulse: [[3568.187817769269, 3425.557033831784, 3425.557033831784, 3568.187817769269],
+    #                    [9670, 7575, 7575, 9670],
+    #                    [0.0,0.0,0.0, 0.0],
+    #                    [0,0,0, 0],
+    #                    [2,2,2, 2],['gaussian','gaussian','gaussian', 'gaussian'], 
+    #                    [0.035,0.035,0.035, 0.035]]
+
+    # pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728, 2006.76, 2006.76, 3425.559887601728, 3568.1782381859975],
+    #                    [3500, 3000, 15000, 15000, 3000, 3500],
+    #                    [0.069064637288869,0.146324483174444,0.620964539247996, 0.620964539247996, 0.146324483174444, 0.069064637288869],
+    #                    [0,0,0, 0, 0, 0],
+    #                    [2,2,5, 5, 2, 2],['flat_top','flat_top','flat_top', 'flat_top','flat_top', 'flat_top'], 
+    #                    [0.005,0.005,0.005, 0.005,0.005, 0.005]]
+
+
+    # pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728, 2006.76, 349.37, 349.37, 2006.76, 3425.559887601728, 3568.1782381859975],
+    #                    [3500, 3000, 15000, 5000, 5000, 15000, 3000, 3500],
+    #                    [0.138129274577738,0.146324483174444,0.620964539247996, 0.59335798311167, 0.59335798311167, 0.620964539247996, 0.146324483174444, 0.138129274577738],
+    #                    [0,0,0, 0, 180, 0,0,0],
+    #                    [2,2,2,1, 1, 2,2, 2],['flat_top','flat_top','flat_top','flat_top','flat_top','flat_top','flat_top',  'flat_top'], 
+    #                    [0.005,0.005,0.005, 0.005,0.005, 0.005,0.005, 0.005]]
+
+
+HistogramActiveResetExperiment: # prepulse is the experiment 
+    reps: 1
+    qubit: 0
+    active_reset: True
+    threshold: -4.8
+    prepulse: True         
+    
+    # pre_sweep_pulse: [[3568.184366463191, 3425.5534173931096, 2006.7, 3568.184366463191],
+    #    [9612, 7470, 15000, 50],
+    #    [0, 0, 0.6118025076957371, 6.504911065860095],
+    #    [0, 0, 0, 0],
+    #    [2, 2, 5, 2],
+    #    ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+    #    [0.035, 0.035, 0.005, 0.005]]
+
+    pre_sweep_pulse: [[3568.182183286917],
+                       [4000],
+                       [0.06],
+                       [0],
+                       [2],['flat_top'], 
+                       [0.005]]
+
+
+HistogramPrepulseExperimentTimeSweep: 
+    reps: 5000
+    qubit: 0
+    prepulse: True
+    active_reset: True
+    man_reset: True  
+    storage_reset: True
+    time2sweep:  -5   # index of time length to sweep
+    time_start: 0.01
+    time_step: 0.01
+    time_stop: 1.5
+
+    active_reset: True
+    man_reset: True  
+    storage_reset: True
+    gate_based: True # If true, prepulse does not matter!
+    target_mode_no: 7
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+
+
+    
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 349.41, 0,
+    #     349.41, 2007.09, 3425.5537944060666, 3568.1751638611518],
+    #    [5272, 3000, 15000, 3000, 0, 3000, 15000, 3000, 5272],
+    #    [0, 0.15377089082752435, 0.6152866896346518, 0.919488,
+    #     0, 0.919488, 0.6152866896346518, 0.15377089082752435,
+    #     0],
+    #    [0, 0, 0, 0, 0, 180, 180, 180, 180],
+    #    [2, 2, 0, 1, 1, 1, 0, 2, 2],
+    #    ['gauss', 'flat_top', 'flat_top', 'flat_top', 'const', 'flat_top',
+    #     'flat_top', 'flat_top', 'gauss'],
+    #    [0.035, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.035]]
+
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 0, 2007.09,
+    #     3425.5537944060666, 3568.1751638611518],
+    #    [5272, 3000, 15000, 0, 15000, 3000, 5272],
+    #    [0, 0.15377089082752435, 0.6152866896346518, 0,
+    #     0.6152866896346518, 0.15377089082752435, 0],
+    #    [0, 0, 0, 0, 180, 180, 0],
+    #    [2, 2, 0, 1, 0, 2, 2],
+    #    ['gauss', 'flat_top', 'flat_top', 'const', 'flat_top',
+    #     'flat_top', 'gauss'],
+    #    [0.035, 0.005, 0.005, 0.005, 0.005, 0.005, 0.035]]
+    # pre_sweep_pulse: [[3567.09, 3422.72, 0, 2003.5, 3566.1350733159775, 3566.1350733159775, 3566.1350733159775],
+    #                    [16049, 8389,  0, 15000, 8389, 0, 8389],
+    #                    [0.0,0.0, 0.01, 0.617429846443048, 0.0, 1.6612596565537676, 0.0],
+    #                    [0,0,0, 0, 0, 0, 0],
+    #                    [2,2,5, 5, 2, 2, 2],['gaussian','gaussian','flat_top','flat_top', 'gaussian', 'const', 'gaussian'], 
+    #                    [0.02,0.035, 0.005, 0.005, 0.02, 0.0, 0.02]]
+
+HistogramPrepulseExperimentFreqSweep: 
+    reps: 10000
+    qubit: 0
+    prepulse: True
+    freq2sweep: 3    # index of freqeuncy to sweep
+    freq_start: 1828.8
+    freq_step: 0.02
+    freq_stop: 1829.2
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+    pre_sweep_pulse: [[3566.399099493234, 3422.72, 0, 1829.0],
+                       [9362, 7766,  0, 15000],
+                       [0.0,0.0, 0.01, 1.1189045927437378],
+                       [0,0,0, 0],
+                       [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+                       [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3567.09, 3422.72, 0, 2003.5, 3566.1350733159775, 3566.1350733159775, 3566.1350733159775],
+    #                    [16049, 8389,  0, 15000, 8389, 0, 8389],
+    #                    [0.0,0.0, 0.01, 0.617429846443048, 0.0, 1.6612596565537676, 0.0],
+    #                    [0,0,0, 0, 0, 0, 0],
+    #                    [2,2,5, 5, 2, 2, 2],['gaussian','gaussian','flat_top','flat_top', 'gaussian', 'const', 'gaussian'], 
+    #                    [0.02,0.035, 0.005, 0.005, 0.02, 0.0, 0.02]]
+
+
+HistogramPrepulseExperimentPhaseSweep: 
+    reps: 5000
+    qubit: 0
+    active_reset: True
+    man_reset: True  
+    storage_reset: True
+    prepulse: True
+    phase_start: 0
+    phase_step: 12
+    phase_stop: 361
+    sweep_id: -1   #-1 is the last
+
+    gate_based: True # if true, prepulse does not matter!
+    spectator_mode_no: None # This will autofilled 
+    target_mode_no: None # This will autofilled
+    target_mode_list: [1,2, 3]
+    spectator_mode_list: [5,6,7]
+    skip_mode_no: -1 # will skip (i, j) = (target_mode_no, spec_mode_no) combos where both i,j <= skip_mode_no
+    spec_reps_list: [1,2] # repeats spec mode-man swap 2*n -1 times where n is specified in list
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 349.41, 349.41,
+        2007.09, 3425.5537944060666, 3568.1751638611518],
+       [5272, 3000, 15000, 3000, 3000, 15000, 3000, 5272],
+       [0, 0.15377089082752435, 0.6152866896346518, 0.9194881293991884,
+        0.9194881293991884, 0.6152866896346518, 0.15377089082752435, 0],
+       [0, 0, 0, 0, 180, 180, 180, 180],
+       [2, 2, 0, 1, 1, 0, 2, 2],
+       ['g', 'f', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'f',
+        'g'],
+       [0.035, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.035]]
+
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 
+    #     2007.09, 3425.5537944060666, 3568.1751638611518],
+    #    [5272, 3000, 15000,  15000, 3000, 5272],
+    #    [0, 0.15377089082752435, 0.6152866896346518,  0.6152866896346518, 0.15377089082752435, 0],
+    #    [0, 0, 0, 180, 180, 180],
+    #    [2, 2, 0, 0, 2, 2],
+    #    ['gauss', 'flat_top', 'flat_top', 
+    #     'flat_top', 'flat_top', 'gauss'],
+    #    [0.035, 0.005, 0.005, 0.005, 0.005, 0.035]]
+
+PhaseSweepAveragerExperiment: # Averger 
+    phase_start: 0 # wait time tau [us]
+    phase_step: 6  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 75
+    reps: 1000
+    rounds: 1
+    qubits: [0]
+    normalize: True
+
+    piEF: False
+    prepulse: False
+    postpulse: False
+    post_prepulse_reset: False  # runs phase reset after prepulse
+    # following pulse played with 0 phase
+    pre_sweep_pulse: [[ 3567.3995281841685],
+                       [1434], # amplitude 
+                       [0.0], # length of flat top
+                       [0],
+                       [2],['gaussian'], 
+                       [0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+   
+    # pre_sweep_pulse: [[ 3567.3995281841685,  3424.266002753798],
+    #                    [1434, 2558], # amplitude 
+    #                    [0.0, 0.0], # length of flat top
+    #                    [0, 0],
+    #                    [2, 2],['gaussian', 'gaussian'], 
+    #                    [0.03,  0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+   
+    # pre_sweep_pulse: [[ 3567.3995281841685,  3424.266002753798, 0, 2004.725],
+    #                    [1434, 2558,  0, 3000], # amplitude 
+    #                    [0.0, 0.0, 0.01, 0.7330613015613162], # length of flat top
+    #                    [0, 0, 0, 0],
+    #                    [2, 2, 5,5],['gaussian', 'gaussian', 'flat_top', 'flat_top'], 
+    #                    [0.03,  0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    # init_hpi_pulse: [[ 3567.4143637946836],
+    #                    [1623], # amplitude 
+    #                    [0.0], # length of flat top
+    #                    [0],
+    #                    [2],['gaussian'], 
+    #                    [0.03]]
+    # following pulse played with advanced phase determined by phase sweep
+    # post_hpi_pulse: [[ 3424.2965691707564,  3567.4143637946836],
+    #                    [1302, 1623], # amplitude 
+    #                    [0.0, 0.0 ], # length of flat top
+    #                    [180, 180],
+    #                    [2, 2],['gaussian', 'gaussian'], 
+    #                    [0.03,  0.03]]    
+    # post_hpi_pulse: [[  3567.4143637946836],
+    #                    [ 1623], # amplitude 
+    #                    [ 0.0 ], # length of flat top
+    #                    [ 180],
+    #                    [2],['gaussian', 'gaussian'], 
+    #                    [  0.03]]  
+
+    #advance_qubit_phase: 180 # advance phase of second pi/2 by this much [degrees]
+    zz_phase: 0 # update zz phase every time we do the rep
+    reps_middlepulse: 1 # number of times to iterate middling pulse (for debugging )
+    middlepulse: True # this is played after first pi/2 (not exact middle of sequence)
+    # mid_sweep_pulse: [[   2004.725,0],
+    #                    [  3000, 0], # amplitude 
+    #                    [ 0.7330613015613162, 0.01], # length of flat top
+    #                    [  0,0],
+    #                    [ 5,5],[  'flat_top','flat_top'], 
+    #                    [ 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    mid_sweep_pulse: [[ 3424.268953869353,3424.268953869353],
+                       [ 0,  0], # amplitude 
+                       [ 0,0], # length of flat top
+                       [ 0,180],
+                       [ 2,2],[ 'gaussian', 'gaussian'], 
+                       [0.03, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+                  
+    # mid_sweep_pulse: [[ 3424.266002753798, 0, 2004.725, 2004.725,0, 3424.266002753798],
+    #                    [ 2558, 0, 3000, 3000, 0, 2558], # amplitude 
+    #                    [ 0, 0.01, 0.7330613015613162,0.7330613015613162, 0.01,0], # length of flat top
+    #                    [ 0,0, 0, 0,0,0],
+    #                    [ 2,5,5,5,5,2],[ 'gaussian', 'flat_top','flat_top', 'flat_top','flat_top', 'gaussian'], 
+    #                    [0.03, 0.005, 0.005, 0.005, 0.005,0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+               
+PhaseSweepAverager_sweep_reps_middlepulse:
+    reps_start: 0
+    reps_stop: 20
+    reps_step: 1
+    phase_start: 0 # wait time tau [us]
+    phase_step: 6  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 75
+    reps: 1000
+    rounds: 1
+    qubits: [0]
+    normalize: True
+
+    piEF: False
+    prepulse: False
+    postpulse: False
+    post_prepulse_reset: False  # runs phase reset after prepulse
+    # following pulse played with 0 phase
+    pre_sweep_pulse: [[ 3567.3995281841685],
+                       [1434], # amplitude 
+                       [0.0], # length of flat top
+                       [0],
+                       [2],['gaussian'], 
+                       [0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+    zz_phase: 0 # update zz phase every time we do the rep
+    reps_middlepulse: 2 # number of times to iterate middling pulse (for debugging )
+    middlepulse: True # this is played after first pi/2 (not exact middle of sequence)
+    # mid_sweep_pulse: [[   2004.725,0],
+    #                    [  3000, 0], # amplitude 
+    #                    [ 0.7330613015613162, 0.01], # length of flat top
+    #                    [  0,0],
+    #                    [ 5,5],[  'flat_top','flat_top'], 
+    #                    [ 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    mid_sweep_pulse: [[ 3424.268953869353,3424.268953869353],
+                       [ 0,  0], # amplitude 
+                       [ 0,0], # length of flat top
+                       [ 0, 180],
+                       [ 2,2],[ 'gaussian', 'gaussian'], 
+                       [0.03, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+              
+    # mid_sweep_pulse: [[ 3424.266002753798, 0, 2004.725, 2004.725,0, 3424.266002753798],
+    #                    [ 2558, 0, 3000, 3000, 0, 2558], # amplitude 
+    #                    [ 0, 0.01, 0.7330613015613162,0.7330613015613162, 0.01,0], # length of flat top
+    #                    [ 0,0, 0, 0,0,0],
+    #                    [ 2,5,5,5,5,2],[ 'gaussian', 'flat_top','flat_top', 'flat_top','flat_top', 'gaussian'], 
+    #                    [0.03, 0.005, 0.005, 0.005, 0.005,0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    
+
+
+PhaseSweepExperiment: # RAverger 
+    start: 0 # wait time tau [us]
+    step: 6  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 75
+    reps: 100
+    rounds: 1
+    qubits: [0]
+    normalize: True
+
+    prepulse: False
+    postpulse: False
+    # following pulse played with 0 phase
+    # init_hpi_pulse: [[ 3567.4143637946836,  3424.2965691707564],
+    #                    [1623, 1302], # amplitude 
+    #                    [0.0, 0.0 ], # length of flat top
+    #                    [0, 0],
+    #                    [2, 2],['gaussian', 'gaussian'], 
+    #                    [0.03,  0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    # init_hpi_pulse: [[ 3567.4143637946836],
+    #                    [1623], # amplitude 
+    #                    [0.0], # length of flat top
+    #                    [0],
+    #                    [2],['gaussian'], 
+    #                    [0.03]]
+    # following pulse played with advanced phase determined by phase sweep
+    # post_hpi_pulse: [[ 3424.2965691707564,  3567.4143637946836],
+    #                    [1302, 1623], # amplitude 
+    #                    [0.0, 0.0 ], # length of flat top
+    #                    [180, 180],
+    #                    [2, 2],['gaussian', 'gaussian'], 
+    #                    [0.03,  0.03]]    
+    # post_hpi_pulse: [[  3567.4143637946836],
+    #                    [ 1623], # amplitude 
+    #                    [ 0.0 ], # length of flat top
+    #                    [ 180],
+    #                    [2],['gaussian', 'gaussian'], 
+    #                    [  0.03]]  
+
+    advance_qubit_phase: 88 # advance phase of second pi/2 by this much [degrees]
+    reps_middlepulse: 1 # number of times to iterate middling pulse (for debugging )
+    middlepulse: True # this is played after first pi/2 (not exact middle of sequence)
+    mid_sweep_pulse: [[  0, 2004.775, 2004.775,0],
+                       [ 0, 3000, 3000, 0], # amplitude 
+                       [ 0.01, 0.740015963968996,0.740015963968996, 0.01], # length of flat top
+                       [ 0, 0, 0,0],
+                       [ 5,5,5,5],[ 'flat_top','flat_top', 'flat_top','flat_top'], 
+                       [0.005, 0.005, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+                       
+   
+RamseyExperiment:
+    start: 0.01 # wait time tau [us]
+    step: 0.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 100
+    ramsey_freq: 0.2 # [MHz]
+    reps: 500
+    rounds: 1
+    qubits: [0]
+    checkEF: False # 
+    user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+    qubit_ge_init: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
+    normalize: False
+    active_reset: True #True
+    man_reset: True  # True
+    storage_reset: True #True
+
+    prepulse: False
+    postpulse: False
+    pre_active_reset_pulse: False
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 349.41],
+        [10819, 8327, 15000, 3000],
+        [0, 0, 0.6152866896346518, 0.993722],
+        [0, 0, 0, 0],
+        [2, 2, 0, 1],
+        ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+        [0.035, 0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2006.72, 349.41],
+    #      [9653, 7575, 15000, 3000],
+    #      [0, 0, 0.6087495795755329, 0.9937219465181768],
+    #      [0, 0, 0, 0],
+    #      [2, 2, 5, 1],
+    #      ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+    #      [0.035, 0.035, 0.005, 0.005]]
+
+
+#     post_sweep_pulse:  [[4984.026194477733],
+#  [3300],
+#  [0],
+#  [0],
+#  [4],
+#  ['gaussian'],
+#  [0.15]]
+
+
+    reps_middlepulse: 0 # number of times to iterate middling pulse (for debugging )
+    advance_phase: 0 # advance phase of second pi/2 by this much [degrees]
+    middlepulse: False # this is played after first pi/2 (not exact middle of sequence)
+    mid_sweep_pulse: [[ 3424.2965691707564,  0, 2004.775, 2004.775,0, 3424.2965691707564],
+                       [2563, 0, 3000, 3000, 0, 2563], # amplitude 
+                       [0.0, 0.01, 0.740015963968996,0.740015963968996, 0.01, 0.0 ], # length of flat top
+                       [0, 0, 0, 0,0,0],
+                       [2, 5,5,5,5,2],['gaussian', 'flat_top','flat_top', 'flat_top','flat_top','gaussian'], 
+                       [0.03, 0.005, 0.005, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+RamseySweep:
+    freq_start: 4983
+    freq_step: 0.0025
+    freq_stop: 4984
+    start: 0 # wait time tau [us]
+    step: 0.4  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 40
+    ramsey_freq: 0 # [MHz]
+    reps: 1000
+    rounds: 1
+    qubits: [0]
+    checkEF: False  # 
+    user_defined_freq: [False, 4986.935933, 0, 0.005] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+    qubit_ge_init: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
+    normalize: False
+
+    prepulse: True
+    postpulse: False
+    # pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728, 0, 2006.8],
+    #    [13639, 10338, 0, 15000],
+    #    [0, 0, 0.01, 3.141592653589793],
+    #    [0, 0, 0, 0],
+    #    [2, 2, 5, 5],
+    #    ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+    #    [0.025, 0.025, 0.005, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    pre_sweep_pulse: [[4983.05],
+       [1000],
+       [0],
+       [0],
+       [6],
+       ['gaussian'],
+       [0.05]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+    reps_middlepulse: 0 # number of times to iterate middling pulse (for debugging )
+    advance_phase: 0 # advance phase of second pi/2 by this much [degrees]
+    middlepulse: False # this is played after first pi/2 (not exact middle of sequence)
+    mid_sweep_pulse: [[ 3424.2965691707564,  0, 2004.775, 2004.775,0, 3424.2965691707564],
+                       [2563, 0, 3000, 3000, 0, 2563], # amplitude 
+                       [0.0, 0.01, 0.740015963968996,0.740015963968996, 0.01, 0.0 ], # length of flat top
+                       [0, 0, 0, 0,0,0],
+                       [2, 5,5,5,5,2],['gaussian', 'flat_top','flat_top', 'flat_top','flat_top','gaussian'], 
+                       [0.03, 0.005, 0.005, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+                       
+    
+RamseyEchoExperiment:
+    start: 0 # total wait time b/w the two pi/2 pulses [us]
+    step: 2 # [us]
+    expts: 101
+    ramsey_freq: 0.02 # frequency by which to advance phase [MHz]
+    num_pi: 1 # number of pi pulses
+    cpmg: True # set either cp or cpmg to True
+    cp: False # set either cp or cpmg to True
+    reps: 500
+    rounds: 10
+    qubit: 0
+
+CavityRamseyExperiment:
+    start: 0.01 # wait time tau [us]
+    step: 0.02 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 101
+    ramsey_freq: 0 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 500
+    rounds: 1
+    qubits: [0]
+    checkEF: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    init_gf: False
+
+    active_reset: True #True
+    man_reset: True # True
+    storage_reset: True #True
+    
+
+    # user_defined_pulse: [False, 4984.026194477733, 4500, 0.15, 0, 4] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    user_defined_pulse: [True , 2006.72, 15000, 0.005, 0.6168960348389007, 5] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    parity_meas: False
+    man_idx: 1 # 1/2 for manipulate
+    # manipulate: 1
+    storage_ramsey: [False, 1, False] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), whether to use storage ch as phase update ch] 
+    prepulse: False
+    postpulse: True
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2006.72],
+    #    [4930, 7575, 15000],
+    #    [0, 0, 0.6168960348389007],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005]]
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666],
+       [4930, 7575],
+       [0, 0],
+       [0, 0],
+       [2, 2],
+       ['gaussian', 'gaussian'],
+       [0.035, 0.035]]
+    # post_sweep_pulse: [[2006.72, 3425.5537944060666, 3568.1751638611518],
+    #    [15000, 7575, 4930],
+    #    [0.6168960348389007, 0, 0],
+    #    [0, 0, 0],
+    #    [5, 2, 2],
+    #    ['flat_top', 'gaussian', 'gaussian'],
+    #    [0.005, 0.035, 0.035]]
+    post_sweep_pulse: [[3425.5537944060666, 3568.1751638611518],
+       [ 7575, 4930],
+       [ 0, 0],
+       [ 0, 0],
+       [ 2, 2],
+       [ 'gaussian', 'gaussian'],
+       [ 0.035, 0.035]]
+    # post_sweep_pulse: [[3567.9194338546786],
+    #    [50],
+    #    [6.288721018841144],
+    #    [0],
+    #    [2],
+    #    ['flat_top'],
+    #    [0.005]]
+cross_kerr_sweep:
+    targ_list: ['S2'] #['S1',  'S3', 'S4', 'S5', 'S6', 'S7']
+    spec_list: ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']
+    ramsey_freq_list: [-3.235] #[-2.945, -2.83, -2.21] # [-2.95,-3.235 -2.83, -2.21, -3.625, -3.595, -3.31]
+
+    start: 0.01 # wait time tau [us]
+    step: 6 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 101
+    ramsey_freq: 0 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 1000
+    rounds: 1
+    qubits: [0]
+    checkEF: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    init_gf: False
+
+    active_reset: True #True
+    man_reset: True # True
+    storage_reset: True #True
+
+    user_defined_pulse: [] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    parity_meas: False
+    man_idx: 1 # 1/2 for manipulate
+    # manipulate: 1
+    storage_ramsey: [False, 1] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7)] 
+    prepulse: True
+    postpulse: True
+    pre_sweep_pulse: []
+    post_sweep_pulse: []
+
+CavityRamseyExperiment_old:
+    start: 0 # wait time tau [us]
+    step: 0.2 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 101
+    ramsey_freq: -0.1 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 500
+    rounds: 1
+    qubits: [0]
+    checkEF: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    init_gf: False
+
+    user_defined_pulse: [True, 4984.02431625832, 500, 0.15, 0, 4] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    parity_meas: True
+    man_idx: 1 # 1/2 for manipulate
+    manipulate: 0 
+    storage_ramsey: [False, 1] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7)] 
+    prepulse: False
+    postpulse: False
+    pre_sweep_pulse: [[3568.187817769269, 3425.557033831784, 2006.76],
+       [9653, 7575, 15000],
+       [0, 0, 0.6151067375075144],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]] # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    # post_sweep_pulse: [[349.37],
+    #    [5000],
+    #    [0.5905848097264548],
+    #    [0],
+    #    [1],
+    #    ['flat_top'],
+    #    [0.005]]
+    post_sweep_pulse: [[3567.9194338546786],
+       [50],
+       [6.288721018841144],
+       [0],
+       [2],
+       ['flat_top'],
+       [0.005]]
+    # post_sweep_pulse: [[3568.1832921185774],
+    #    [50],
+    #    [6.553697146578866],
+    #    [0],
+    #    [2],
+    #    ['flat_top'],
+    #    [0.005]]
+    
+    # post_sweep_pulse: [[2004.775],
+    #                    [3000], # amplitude 
+    #                    [  0.740015963968996], # length of flat top
+    #                    [ 0 ],
+    #                    [ 5],['flat_top'], 
+    #                    [ 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+  
+
+CavityRamseySweep:
+    gain_start: 250
+    gain_stop: 3000
+    gain_step: 75
+    start: 0 # wait time tau [us]
+    step: 0.125 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 151
+    ramsey_freq: -0.35 #-0.1 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 500
+    rounds: 1
+    qubits: [0]
+    checkEF: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    init_gf: False
+    active_reset: True #True
+    man_reset: True # True
+    storage_reset: True #True
+
+    user_defined_pulse: [True, 4984.026194477733, 800, 0.15, 0, 4] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    # user_defined_pulse: [False , 2006.72, 15000, 0.005, 0.6168960348389007, 5] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    parity_meas: False
+    man_idx: 1 # 1/2 for manipulate
+    # manipulate: 1
+    storage_ramsey: [True, 5, False] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), whether to use storage ch as phase update ch]  
+    prepulse: False
+    postpulse: True
+    pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728, 0],
+                        [13639, 10338, 0],
+                        [0, 0, 0.01],
+                        [0, 0, 0],
+                        [2, 2, 5],
+                        ['gaussian', 'gaussian', 'flat_top'],
+                        [0.025, 0.025, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    post_sweep_pulse: [[3568.1782381859975],
+       [50],
+       [6.504911065860095],
+       [0],
+       [2],
+       ['flat_top'],
+       [0.005]]
+    # post_sweep_pulse: [[2004.775],
+    #                    [3000], # amplitude 
+    #                    [  0.740015963968996], # length of flat top
+    #                    [ 0 ],
+    #                    [ 5],['flat_top'], 
+    #                    [ 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+  
+
+
+ParityGainExperiment: 
+    start: 0 # DAC Units
+    step: 150 # DAC Units  
+    expts: 100
+    reps: 1000
+    rounds: 1
+    qubit: 0
+    qubits: [0]
+    normalize: False
+    active_reset: False
+    single_shot: True
+    singleshot_reps: 10000
+    span: 1000   # single shot plot span
+    prep_e: False # for debugging
+    manipulate: 1 # 1/2 for manipulate
+    displace: [True, 0.05] # [whether to displace True/False, sigma]
+    const_pulse: [False, 1] # [whether to use constant pulse True/False, length]
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    prepulse: False
+    pre_sweep_pulse: [[3568.8966491011734, 3426.261788276324, 0, 2007.75, 3568.8966491011734, 3426.261788276324, 0, 2007.6],
+                       [25672, 8827,  0, 15000, 25672, 8827,  0, 15000],
+                       [0.0,0.0, 0.02, 0.617721280574556, 0.0,0.0, 0.02, 0.5145362275106597],
+                       [0,0,0, 0, 0,0,0, 0],
+                       [2,2,5, 5, 2,2,5, 5],['gaussian','gaussian','flat_top','flat_top', 'gaussian','gaussian','flat_top', 'flat_top'], 
+                       [0.015,0.03, 0.005, 0.005, 0.015,0.03, 0.005, 0.005]]
+
+    ECD_pulse: False  # running ECD prepulse or not
+    #cavity_name: 0 (see manipulate argument)
+    man_delay: 0  #  manipulate pulse should be [cycles] after qubit pulse
+    pulse_fname: 'E:/Shared drives/multimode/Multimode/experiment/240624/optimal control/file_2400721_ECD1of10_pulse_gauss_param5'
+
+ParityFreqExperiment: 
+    start: 5140 # Mhz
+    stop: 5170 # Mhz  
+    step: 0.1  # MHz
+    reps: 500
+    rounds: 1
+    qubit: 0
+    normalize: False
+    single_shot: False
+    singleshot_reps: 10000
+    span: 20   # single shot plot span
+    prep_e: False # for debugging
+    manipulate: 2 # 1/2 for manipulate
+    displace: [True, 0.15, 1000] # [whether to displace True/False, sigma, gain]
+    const_pulse: [False, 1] # [whether to use constant pulse True/False, length]
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    prepulse: False
+    pre_sweep_pulse:  [[3568.1782381859975, 3425.559887601728, 0, 2006.8],
+       [13639, 10338, 0, 15000],
+       [0, 0, 0.01, 3.141592653589793],
+       [0, 0, 0, 0],
+       [2, 2, 5, 5],
+       ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+       [0.025, 0.025, 0.005, 0.005]]
+
+ParityFreqExperimentDCSweep: 
+    start: 4970 # DAC Units
+    stop: 5020 # DAC Units  
+    step: 0.3  # DAC Units
+    reps: 500
+    rounds: 1
+    qubit: 0
+
+    flux_start: -2.0
+    flux_stop: 2.0
+    flux_expts: 61
+    normalize: False
+    single_shot: False
+    singleshot_reps: 10000
+    span: 60   # single shot plot span
+    prep_e: False # for debugging
+    manipulate: 1 # 1/2 for manipulate
+    displace: [True, 0.15, 2000] # [whether to displace True/False, sigma, gain]
+    const_pulse: [False, 1] # [whether to use constant pulse True/False, length]
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    prepulse: False
+    pre_sweep_pulse:  [[3568.1782381859975, 3425.559887601728, 0, 2006.8],
+       [13639, 10338, 0, 15000],
+       [0, 0, 0.01, 3.141592653589793],
+       [0, 0, 0, 0],
+       [2, 2, 5, 5],
+       ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
+       [0.025, 0.025, 0.005, 0.005]]
+    
+
+OutAndBackExperiment: 
+    start: 0 # mus
+    step: 0.1  # mus 
+    expts: 51
+    reps: 101
+    rounds: 10
+    qubit: 0
+    prepulse: False
+    normalize: True
+    parity_meas: True
+    manipulate: 1 # 1 for manipulate 1; 0 for no displacement
+    displace: [0.2, 1] # sigma, alpha
+    ramp: [0.005,0.1] # us [sigma,  detuning] gain is determined by detuning
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    pre_sweep_pulse: [[3568.8966491011734, 3426.261788276324, 0, 2007.75, 3568.8966491011734, 3426.261788276324, 0, 2007.6],
+                       [25672, 8827,  0, 15000, 25672, 8827,  0, 15000],
+                       [0.0,0.0, 0.02, 0.617721280574556, 0.0,0.0, 0.02, 0.5145362275106597],
+                       [0,0,0, 0, 0,0,0, 0],
+                       [2,2,5, 5, 2,2,5, 5],['gaussian','gaussian','flat_top','flat_top', 'gaussian','gaussian','flat_top', 'flat_top'], 
+                       [0.015,0.03, 0.005, 0.005, 0.015,0.03, 0.005, 0.005]]
+
+
+AmplitudeRabiExperiment:
+    start: 100 # qubit gain [dac level]
+    step: 150 # [dac level]
+    expts: 151
+    reps: 300
+    rounds: 1
+    sigma_test: 0.035 # gaussian sigma for pulse length - overrides config [us]
+    qubit: 0
+    pulse_type: 'gauss'   #'gauss' or 'flat_top' or 'drag' or 'const'
+    drag_beta: 0.0
+    pulse_ge: True
+    checkZZ: False
+    checkEF: True
+    qubits: [0]
+    flat_length: 0
+    normalize: False
+
+    single_shot: False # for debugging 
+    singleshot_reps: 10000
+    span: 50   # single shot plot span
+
+    user_defined_freq: [False, 3567.90056386609] # [on/off, freq]  # if off, use config freq
+    prepulse: False
+    postpulse: False
+    # pre_sweep_pulse: [[3566.400927905901, 3422.72, 0, 2003.5],
+    #                    [9385, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.6162580197117158],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784, 2006.76, 3567.90056386609, 3425.30098176373, 2006.22],
+    #    [9653, 7575, 15000, 9653, 7575, 15000],
+    #    [0, 0, 0.6151067375075144, 0, 0, 0.436074712309811],
+    #    [0, 0, 0, 0, 0,  0],
+    #    [2, 2, 5, 2, 2,  5],
+    #    ['gaussian', 'gaussian', 'flat_top', 'gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005, 0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784, 2006.76],
+       [9653, 7575, 15000],
+       [0, 0, 0.6151067375075144],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005, 0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    
+    post_sweep_pulse: [[3567.128341943364],
+                       [3328], # amplitude 
+                       [ 0.0], # length of flat top
+                       [ 0 ],
+                       [ 2],['gaussian'], 
+                       [ 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+
+AmplitudeRabiGeneralExperiment:
+    start: 100 # qubit gain [dac level]
+    step: 300 # [dac level]
+    expts: 101
+    reps: 100
+    rounds: 10
+    sigma_test: 0.025 # gaussian sigma for pulse length - overrides config [us]
+    pulse_type: 'gauss'
+    pulse_ge: False
+    freq: 3567.831924599617
+    f0g1_cavity: 0 #  name of manipulate cavity, 0 means no pulse
+    checkEF: False
+    qubits: [0]
+    prepulse: False
+    postpulse: False 
+    # pre_sweep_pulse: [[3568.1147522256774],
+    #                    [3311], # amplitude 
+    #                    [0.0], # length of flat top
+    #                    [0],
+    #                    [2],['gaussian'], 
+    #                    [0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 2010.2],
+                       [3311, 2597, 0, 3000], # amplitude 
+                       [0.0,0.0, 0.01, 0.790149607], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+    # pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 1995.55, 3567.800473],
+    #                    [3311, 2597, 0, 3000, 3286], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.737668954, 0.0], # length of flat top
+    #                    [0,0, 0, 0, 0 ],
+    #                    [2,2, 5,5, 2],['gaussian','gaussian', 'flat_top','flat_top', 'gaussian'], 
+    #                    [0.03,0.03, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[3567.800473],
+    #                    [3286], # amplitude 
+    #                    [ 0.0], # length of flat top
+    #                    [ 0 ],
+    #                    [ 2],['gaussian'], 
+    #                    [ 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+
+AmplitudeRabiEFExperiment:
+    start: 100 # [dac level]
+    step: 200 # [dac level]
+    expts: 101 #number steps
+    reps: 100 # number averages per expt
+    rounds: 10 # number repetitions of experiment sweep
+    sigma_test: 0.035 #gaussian sigma for pulse length [us] (default: from pi_ge in config)
+    pulse_ge: True #set to False if doing qubit temperature experiment
+    pulse_type: 'gauss' #'gauss' or 'const'
+    qubit: 0
+    normalize: True
+
+AmplitudeRabiF0g1Experiment:
+    start: 0 # qubit gain [dac level]
+    step: 0 # [dac level]
+    expts: 10
+    reps: 100
+    rounds: 10
+    pulse_ge: False
+    pulse_ef: False
+    pulse_ge_after: False
+    freq: 3567.800473
+    f0g1_cavity: 1 #  name of manipulate cavity, 0 means no  (deprecated)
+    qubits: [0]
+
+DisplacementEnhancedSidebandExperiment:
+    start: 0.0069754464285714285 # us
+    step: 0.01 # us
+    qubits: [0]
+    expts: 51
+    reps: 100
+    rounds: 10
+    hadamard: [True, 180] # [on/off, phase (deg) of second pi/2]
+    wait: [9666, 0] #[qubit gain (DAC unit during waiting pulse ), stark shift correction (Mhz) ]
+    ramp_sigma: 0.005  # us
+    cavity_name: 0 # 0 for man 1 
+    cavity_disp_pulse: [False, 0.2,2 , 0.00011054078943213358, 0] # [on/off , sigma, target alpha, conversion factor (V -> alpha), disp_back_phase(deg)]
+    qubit_ge_prep: False
+
+DisplacementEnhancedSidebandExperimentSweep:
+    sweep_start: 0
+    sweep_step: 0.002
+    sweep_stop: 2
+    start: 0.01 # us
+    step: 0.005 # us
+    qubits: [0]
+    expts: 201
+    reps: 100
+    rounds: 10
+    hadamard: [True, 0] # [on/off, phase (deg) of second pi/2]
+    wait: [9666, 0] #[qubit gain (DAC unit during waiting pulse ), stark shift correction ]
+    ramp_sigma: 0.005  # us
+    cavity_name: 0 # 0 for man 1 
+    cavity_disp_pulse: [True, 0.2,2 , 0.00011054078943213358, 0] # [on/off , sigma, target alpha, conversion factor (V -> alpha), disp_back_phase(deg)]
+    qubit_ge_prep: False
+    
+LengthRabiGeneralF0g1Experiment:
+    start: 0.0069754464285714285 # us
+    step: 0.03 # us
+    qubits: [0]
+    expts: 100
+    reps: 500
+    rounds: 1
+    gain: 15000 # qubit gain [DAC units],
+    ramp_sigma: 0.005  # us
+    freq: 2007.06  #1834.895   # MHz
+    use_arb_waveform: False
+    pi_ge_before: True
+    pi_ef_before: True
+    pi_ef_after: False 
+    normalize: False
+    active_reset: False
+    check_man_reset: [False, 0] # [boolean, man_idx]
+    swap_lossy: False
+    check_man_reset_pi:  [[2006.72],
+       [15000],
+       [0.6168960348389007],
+       [0],
+       [0],
+       ['flat_top'],
+       [0.005]]
+    # check_man_reset_pi:  [[1834.83],
+    #    [15000],
+    #    [1.0988389376322376],
+    #    [0],
+    #    [5],
+    #    ['flat_top'],
+    #    [0.005]]
+
+    prepulse: False  # prepulse is applied first, then preparing qubit to |f> state
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2006.72],
+       [9653, 7575, 15000],
+       [0, 0, 0.6087495795755329],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]] # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+                       
+
+LengthRabiGeneralF0g1ExperimentSweep:
+    freq_start: 2006.98 #1949.6230253558676 #2010.7098618878696
+    freq_stop: 2007.18 # 2007.95 #1951.6230253558676 #2012.7098618878696
+    freq_step: 0.02 #0.01
+    start: 45.0 #0.007 #0.0069754464285714285 # us
+    step: 0.05 # us
+    qubits: [0]
+    expts: 101
+    reps: 200
+    rounds: 1
+    gain: 15000 # qubit gain [DAC units],   4000 gain is too much
+    ramp_sigma: 0.005  # us
+    use_arb_waveform: False
+    pi_ge_before: True
+    pi_ef_before: True
+    pi_ge_after: False
+    #pre_pulse: False
+    normalize: False
+    active_reset: False 
+    check_man_reset: [False, 0] # [boolean, man_idx]
+    check_man_reset_pi:  [[2006.72],
+       [15000],
+       [0.6168960348389007],
+       [0],
+       [0],
+       ['flat_top'],
+       [0.005]]
+
+
+    prepulse: False   # prepulse is applied first, then preparing qubit to |f> state
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666],
+       [10819, 8327],
+       [0, 0],
+       [0, 0],
+       [2, 2],
+       ['gaussian', 'gaussian'],
+       [0.035, 0.035]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+
+
+LengthRabiGeneralExperiment:
+    start: 0.0069754464285714285 # us
+    step: 0.01 # us
+    qubits: [0]
+    expts: 101
+    reps: 500
+    rounds: 1
+    gain: 4000 # qubit gain [DAC units],
+    ramp_sigma: 0.005  # us
+    freq:  3568.1751638611518  #3498.28 # 3425.559887601728   #2010.5265269004717,   # MHz
+    use_arb_waveform: False
+    pi_ge_before: False
+    pi_ef_before: False
+    pi_ge_after: False
+    prepulse: False 
+    pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784, 2006.76],
+       [9653, 7575, 15000],
+       [0, 0, 0.6151067375075144],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+
+LengthRabiGeneralExperiment_backup:
+    start: 0.0069754464285714285 # us
+    step: 0.45 # us
+    qubits: [0]
+    expts: 101
+    reps: 100
+    rounds: 10
+    gain: -20000 # qubit gain [DAC units],
+    ramp_sigma: 0.005  # us
+    freq: 1841.80    #2010.5265269004717,   # MHz
+    pi_ge_before: True
+    pi_ef_before: True
+    pi_ge_after: False
+    pre_pulse: False
+
+LengthRabiGeneralExperimentSweep:
+    freq_start: 3420
+    freq_stop: 3460
+    freq_step: 1.0
+    start: 0.007 # us
+    step: 0.01 # us
+    qubits: [0]
+    expts: 101
+    reps: 200
+    rounds: 1
+    gain: 3000 # qubit gain [DAC units],
+    ramp_sigma: 0.005  # us
+    use_arb_waveform: True
+    pi_ge_before: True
+    pi_ef_before: False
+    pi_ge_after: True
+    pre_pulse: False
+
+LengthRabiGeneralExperimentSweep_man1:
+    freq_start: 2010.4265269004718
+    freq_stop: 2010.6265269004718
+    freq_step: 0.02
+    start: 0.0069754464285714285 # us
+    step: 0.23251488095238095 # us
+    qubits: [0]
+    expts: 101
+    reps: 100
+    rounds: 10
+    gain: 20000 # qubit gain [DAC units],
+    ramp_sigma: 0.005  # us
+    pi_ge_before: True
+    pi_ef_before: True
+    pi_ge_after: False
+    pre_pulse: False
+
+DCFluxSweep: 
+    curr_start: -0.002   # in units of Amp!!! -0.0015, 0.001, 121
+    curr_stop: 0.002
+    curr_expts: 121
+    start: 6035 # Start frequency [MHz]
+    step: 0.006 # in MHz
+    expts: 250 # Number experiments stepping from start
+    reps: 1000 # Number averages per point
+    pulse_e: False # add ge pi pulse prior to measurement
+    pulse_f: False # add ef pi pulse prior to measurement
+    cavity_name: 'storage'  # manipulate or storage
+    drive_gain: 8000
+    qubit: 0
+    RF_modulation: [False, 1055, 5000, 'high']    # [T/F, freq, amplitude, channel name (low/high)] (length=readout length)
+
+GainDisplaceSweep: #Pulse probe spec param
+    gain_start: 0
+    gain_stop: 6000
+    gain_step: 300     # gain should be an int so choose expts accordingly
+    start: 3565.2 # [MHz]
+    step: 0.0075 # min step ~1 MHz
+    expts: 201 # Number of experiments stepping from start
+    reps: 100 # Number of averages per point
+    rounds: 10 # Number of start to finish sweeps to average over
+    length: 6.271105440458137 # Qubit probe constant pulse length [us]
+    gain: 50 # Qubit pulse gain
+    sigma: 0.1  # qubit flat top sigma
+    pulse_type: 'gaussian'
+    wait_qubit: False
+    qubit: 0
+    cavity_drive: True
+    cavity_name: 0 # 0 is manipulate 1
+    cavity_gain: 300  
+    cavity_length: 1   # constant square pulses of cavity [us]
+    cavity_pulse: [False, 0.2 ] # truth value for gaussian cavity pulse, type (pulse assumes gaussian), sigma
+
+
+PulseProbePrePulseSpectroscopyExperiment:
+    start: 1035 # resonator frequency to be mixed up [MHz]
+    step: 0.04 # min step ~1 MHz
+    expts: 1000 # Number of experiments stepping from start
+    reps: 300 # Number of averages per point
+    rounds: 1 # Number of start to finish sweeps to average over
+    length: 3 #6.271105440458137 # Qubit probe constant pulse length [us]
+    gain: 20000 # Qubit pulse gain
+    sigma: 0.005  # qubit flat top sigma
+    pulse_type: 'gaussian'
+    wait_qubit: False
+    qubit: 0
+    cavity_drive: False
+    cavity_name: 0
+    cavity_gain: 300  
+    cavity_length: 2   # constant pulses of cavity [us]
+    prepulse: True
+    pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784],
+       [9653, 7575],
+       [0, 0],
+       [0, 0],
+       [2, 2],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    # pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784, 2006.76],
+    #    [9653, 7575, 15000],
+    #    [0, 0, 0.6151067375075144],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+    ECD_prepulse: False
+    ECD_cavity_freq: 4984.386888915562
+    ECD_qubit_freq: 3568.7902864823795
+
+
+PulseProbeSpectroscopyExperiment:
+    start: 3543 # [MHz]
+    step: 0.06 # min step ~1 MHz
+    expts: 1000 # Number of experiments stepping from start
+    reps: 50000 # Number of averages per point
+    rounds: 1 # Number of start to finish sweeps to average over
+    length: 1  #6.271105440458137 # Qubit probe constant pulse length [us]
+    gain: 30000 # Qubit pulse gain
+    sigma: 0.1  # qubit flat top sigma
+    pulse_type: 'gaussian'
+    wait_qubit: False
+    qubit: 0
+    cavity_drive: False
+    cavity_name: 0   # 0 is man1, 1 is man2
+    cavity_gain: 4000 
+    cavity_length: 1   # constant pulses of cavity [us]
+    cavity_pulse: [False, 0.1 ] # truth value for gaussian cavity pulse, type (pulse assumes gaussian), sigma
+
+PulseProbeF0g1SpectroscopyExperiment:
+    start: 1825 #1995 #1835 # resonator frequency to be mixed up [MHz]
+    step: 0.02 # min step ~1 MHz
+    expts: 1000 # Number of experiments stepping from start
+    reps: 300 # Number of averages per point
+    rounds: 1 # Number of start to finish sweeps to average over
+    length: 3 #0.620740890403745 # ef probe constant pulse length [us]
+    gain: 15000 # f0g1 pulse gain
+    pulse_type: 'gaussian'
+    qubit_f: True
+    qubit: 0
+    prepulse: False
+    # pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 1995.55],
+    #                    [3311, 2597, 0, 3000], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.737668954], # length of flat top
+    #                    [0,0, 0, 0],
+    #                    [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+    #                    [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+
+    # pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 1995.55, 3567.800473, 3424.741516],
+    #                    [3311, 2597, 0, 3000, 3286, 2597], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.737668954, 0.0, 0.0], # length of flat top
+    #                    [0,0, 0, 0, 0,0 ],
+    #                    [2,2, 5,5, 2,2],['gaussian','gaussian', 'flat_top','flat_top', 'gaussian', 'gaussian'], 
+    #                    [0.03,0.03, 0.005, 0.005, 0.03, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+    # pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 2010.2, 3567.831925],
+    #                    [3311, 2597, 0, 3000, 3290], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.790149607, 0.0], # length of flat top
+    #                    [0,0, 0, 0, 0],
+    #                    [2,2, 5,5, 2],['gaussian','gaussian', 'flat_top','flat_top', 'gaussian'], 
+    #                    [0.03,0.03, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+   
+    # pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 2010.2],
+    #                    [3311, 2597, 0, 3000], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.790149607], # length of flat top
+    #                    [0,0, 0, 0],
+    #                    [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+    #                    [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),                   
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666],
+    #    [9653, 7575],
+    #    [0, 0],
+    #    [0, 0],
+    #    [2, 2],
+    #    ['gaussian', 'gaussian'],
+    #    [0.035, 0.035]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+   
+PulseProbeF0g1SpectroscopyFluxSweepExperiment:
+    flux_start: 1.4      # in mA
+    flux_stop: 0.85      # in mA
+    flux_expts: 11      
+    start: 1950 #1835 # resonator frequency to be mixed up [MHz]
+    step: 0.25 # min step ~1 Hz
+    expts: 800 # Number of experiments stepping from start
+    reps: 300 # Number of averages per point
+    rounds: 1 # Number of start to finish sweeps to average over
+    length: 1 # 0.620740890403745 # f0g1 probe constant pulse length [us]
+    gain: 2500 # ef pulse gain
+    pulse_type: 'gaussian'
+    qubit_f: False
+    qubit: 0
+    prepulse: True
+    prepulse_f0g1: True # has to be true if your prepulse ends with a f0g1 pulse which has to be updated
+    f0g1_freq_sample_list: [2012.15, 2011.88, 2010.2, 2008.9, 1995.55, 1976.5]  # used for spline fitting to update f0g1 frequency at differen flux point 
+    flux_sample_list: [0.85,  0.865, 0.95, 1, 1.25, 1.4]         # used for spline fitting to update f0g1 frequency at differen flux point 
+    pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 2010.2],
+                       [3311, 2597, 0, 3000], # amplitude 
+                       [0.0,0.0, 0.01, 0.79], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+   
+
+
+ECDExperiment:
+    start: 3565.5 # [MHz]
+    step: 0.01 # min step ~1 MHz
+    expts: 100 # Number of experiments stepping from start
+    reps: 100 # Number of averages per point
+    rounds: 3 # Number of start to finish sweeps to average over
+    length: 7 # Qubit probe constant pulse length [us]
+    gain: 73 # Qubit pulse gain
+    sigma: 0.1  # qubit flat top sigma
+    pulse_type: 'gaussian'
+    wait_qubit: False
+    qubit: 0
+
+    qubit_ge: False
+    qubit_ef: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    normalize: True
+
+    ECD_pulse: True  # running ECD prepulse or not
+    cavity_name: 0
+    man_delay: 610  #  manipulate pulse should be [us] after qubit pulse
+    pulse_fname: 'E:/Shared drives/multimode/Multimode/experiment/240624/optimal control/file_2400721_ECD1of10_pulse_gauss_param4'
+
+ECDReadSpecExperiment:
+    start:  746 # resonator frequency to be mixed up [MHz]
+    step:  0.025 # min step ~1 Hz
+    expts: 200 # Number experiments stepping from start
+    reps: 1000 # Number averages per point
+    pulse_e: False # add ge pi pulse prior to measurement
+    pulse_f: False # add ef pi pulse prior to measurement
+    pulse_cavity: False  # prepulse on cavity prior to measurement
+    cavity_pulse:  [4984.373226159381, 8000, 2, 0] # [frequency, gain, length, phase]  const pulse
+    qubit: 0
+    cavity_name: 0
+    pulse_fname: './/optimal control//file_240310_pi1'
+
+
+PulseProbeSpectroscopyExperiment_backup:
+    start: 3566 # resonator frequency to be mixed up [MHz]
+    step: 0.01 # min step ~1 MHz
+    expts: 400 # Number of experiments stepping from start
+    reps: 200 # Number of averages per point
+    rounds: 10 # Number of start to finish sweeps to average over
+    length: 10 # Qubit probe constant pulse length [us]
+    gain: 100 # Qubit pulse gain
+    sigma: 0.1  # qubit flat top sigma
+    pulse_type: 'gaussian'
+    wait_qubit: False
+    qubit: 0
+    cavity_drive: True
+    cavity_name: 0
+    cavity_gain: 100  
+    cavity_length: 2   # constant pulses of cavity [us]
+
+PulseProbeEFSpectroscopyExperiment:
+    start: 3423 # resonator frequency to be mixed up [MHz]
+    step: 0.02 # min step ~1 Hz
+    expts: 150 # Number of experiments stepping from start
+    reps: 100 # Number of averages per point
+    rounds: 5 # Number of start to finish sweeps to average over
+    length: 4 # ef probe constant pulse length [us]
+    gain: 50 # ef pulse gain
+    pulse_type: 'gaussian'
+    qubit_f: True
+    qubit: 0
+
+
+
+# FluxSpectroscopyExperiment:
+#     start: 480 # Start RF frequency [MHz]
+#     step: 0.02 # min step ~1 Hz
+#     expts: 1000 # Number experiments stepping from start
+#     reps: 2000 # Number averages per point
+#     cavity_name: manipulate  # manipulate or storage
+#     cavity_freq: 5160.493235989327    # 6039.417341241658  # cavity readout frequency (fixed)
+#     cavity_gain: 3000  # cavity readout gain
+#     drive_gain: 2000   # RF modulation gain,  length is the same as the readout
+#     RF_ch: 'low'   # low or high
+#     qubit: 0
+
+FluxSpectroscopyF0g1Experiment:
+    start: 1760 # Start RF frequency [MHz]
+    step: 0.02 # min step ~1 Hz
+    expts: 2000 # Number experiments stepping from start
+    reps: 300 # Number averages per point
+    qubit: [0]
+    flux_drive: ['high', 400,13500, 2]     # [low/high (ch), freq (will be overwritten), gain, length(us)] RF flux modulation, constant pulse
+    prepulse: True
+    postpulse: True
+    active_reset: False
+
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 1834.83],
+    #    [9653, 7575, 15000],
+    #    [0, 0, 1.0988389376322376],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005]]
+    # post_sweep_pulse: [[1834.83],
+    #    [15000],
+    #    [1.0988389376322376],
+    #    [0],
+    #    [5],
+    #    ['flat_top'],
+    #    [0.005]]
+
+
+    pre_sweep_pulse: [[3568.182183286917, 3425.55044773984, 2006.76],
+       [9653, 7575, 15000],
+       [0, 0, 0.620964539247996],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]] # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.76],
+       [15000],
+       [0.620964539247996],
+       [0],
+       [5],
+       ['flat_top'],
+       [0.005]]
+
+
+
+FluxSpectroscopyF0g1ExperimentSweep:
+    start: 100 # Start RF frequency [MHz]
+    step: 0.25 # min step ~1 Hz
+    expts: 1200 # Number experiments stepping from start
+    reps: 100 # Number averages per point
+    flux_start: -0.45     # in mA
+    flux_stop: -0.2    # in mA
+    flux_expts: 20      
+    f0g1_freq_sample_list: [ 2004.775,1999.925, 1993.35,1982.025, 1976.15] # f0g1_freq_sample_list: [2004.5, 2004.1, 2003.5, 2002.95, 2002.4, 2001.8, 2001.4, 2001.1]    # used for spline fitting to update f0g1 frequency at differen flux point 
+    flux_sample_list: [-0.7,-0.6, -0.5,-0.35, -0.2]     # used for spline fitting to update f0g1 frequency at differen flux point 
+    qubit: [0]
+    flux_drive: ['low', 337.5, 1000, 1]     # [low/high (ch), freq (overwrite), gain, length(us)] RF flux modulation, constant pulse
+    prepulse: False
+    postpulse: False
+    pre_sweep_pulse: [[3567.416494244421, 3424.304542044959,  0, 2004.775],
+                       [3312, 2564, 0, 3000], # amplitude 
+                       [0.0,0.0, 0.01, 0.75303531], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2004.775],
+                       [3000],
+                       [0.741552863],
+                       [0],
+                       [5],['flat_top'], 
+                       [0.005]]
+    # pre_sweep_pulse: [[3566.4230946856283, 3423.5042019608622, 0, 2002.4],
+    #                    [9357, 7599,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.6151826187404069],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[2002.4],
+    #                    [15000],
+    #                    [0.6151826187404069],
+    #                    [0],
+    #                    [5],['flat_top'], 
+    #                    [0.005]]
+
+
+SidebandT1GeneralExperiment:
+    start: 0.007 # 
+    step: 10 # 
+    qubits: [0]
+    expts: 100
+    reps: 500
+    rounds: 1
+    prepulse: True
+    postpulse: True
+    active_reset: False
+    man_reset:  False
+    storage_reset:  False
+    # pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728,  0, 2006.8, 876.0],
+    #                    [13639, 10338, 0, 15000, 7500], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.6169975407472533, 1.541710305141403], # length of flat top
+    #                    [0,0, 0, 0, 0],
+    #                    [2,2, 5,5, 1],['gaussian','gaussian', 'flat_top','flat_top', 'flat_top'], 
+    #                    [0.025,0.025, 0.005, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[876.0, 2006.8],
+    #                    [7500, 15000],
+    #                    [1.541710305141403, 0.6169975407472533],
+    #                    [0, 0],
+    #                    [1, 5],['flat_top', 'flat_top'], 
+    #                    [0.005, 0.005]]
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 349.41],
+       [10682, 8229, 15000, 3000],
+       [0, 0, 0.6152866896346518, 0.993722],
+       [0, 0, 0, 0],
+       [2, 2, 0, 1],
+       ['g', 'g', 'f', 'f'],
+       [0.035, 0.035, 0.005, 0.005]] # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[349.41, 2007.09],
+       [3000, 15000],
+       [0.993722, 0.6152866896346518],
+       [0, 0],
+       [1, 0],
+       ['f', 'f'],
+       [0.005, 0.005]]
+
+
+SidebandGeneralExperiment:
+    start: 0.007 # us
+    step: 0.03  # 1.349900709160525 # us
+    qubits: [0]
+    expts: 100
+    reps: 500
+    rounds: 1
+    flux_drive: ['high', 1423.05, 13500, 0.005]     #  ['low', 349.41, 3000, 0.005] [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    prepulse: True
+    postpulse: True
+    active_reset: True
+    man_reset:  True
+    storage_reset:  True
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06],
+       [10716, 8236, 15000],
+       [0, 0, 0.6098886888512739],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['g', 'g', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    post_sweep_pulse: [[2007.06, 3425.5564066067],
+       [15000, 8236],
+       [0.6098886888512739, 0],
+       [0, 0],
+       [0, 2],
+       ['flat_top', 'g'],
+       [0.005, 0.035]]
+
+
+SidebandGeneralExperimentSweep:
+    start: 45.0 #0.1 # us
+    step: 0.1 # us
+    qubits: [0]
+    expts: 100
+    reps: 300
+    rounds: 1
+    freq_start: 1423.0 # 2093.4 #2491.8 #1661.0
+    freq_stop:  1424 # 2094.4 #1661.5
+    freq_step: 0.01
+    flux_drive: ['high',  500.0, 13500, 0.005]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    prepulse: True
+    postpulse: True
+    active_reset: True
+    man_reset:  True
+    storage_reset:  True
+
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06],
+       [10716, 8236, 15000],
+       [0, 0, 0.651287],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['g', 'g', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    post_sweep_pulse: [[2007.06, 3425.5564066067],
+       [15000, 8236],
+       [0.6098886888512739, 0],
+       [0, 0],
+       [0, 2],
+       ['flat_top', 'g'],
+       [0.005, 0.035]]
+
+
+StorageSidebandExperimentSweep:
+    start: 45 # 0.007 # us
+    step: 0.1 # us
+    qubits: [0]
+    expts: 100
+    reps: 200
+    rounds: 1
+    freq_start: 0 # this does not matter
+    freq_stop: 0 # this does not matter 
+    freq_step: 0.01
+    chevron_freq_span: 0.1 # MHz
+    # mode_freq_list: [348.2, 520.1, 695.3, 1052, 1243.4, 1421.7, 1945.2, 2125, 2313.3, 2491.5] # storage sideband frequencies to be swept
+    gain_list: [5000, 9000, 9000, 7500, 13500, 16500]
+    mode_freq_list: [520.93, 696.66, 875.83, 1053.42, 1245.18, 1423.15] # storage sideband frequencies to be swept
+    flux_drive: ['low', 347, 6000, 0.005]     # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    prepulse: True
+    postpulse: True
+    active_reset: False
+    man_reset:  True
+    storage_reset:  True
+    
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2007.09],
+       [10819, 8327, 15000],
+       [0, 0, 0.615286689634651],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    post_sweep_pulse: [[2007.09],
+       [15000],
+       [0.615286689634651],
+       [0],
+       [0],
+       ['flat_top'],
+       [0.005]]
+
+
+CavitySpectroscopyExperiment:
+    start:  4983 #5159.3 #4983.4   #  5160.493235989327 # Start frequency [MHz]    storage freq list [5321.520996856752]
+    step: 0.001 # in MHz
+    expts: 1000 # Number experiments stepping from start
+    reps: 1000 # Number averages per point
+    pulse_e: False # add ge pi pulse prior to measurement
+    pulse_f: False # add ef pi pulse prior to measurement
+    cavity_name: 'manipulate'  # manipulate or storage
+    drive_gain: 200
+    qubit: 0
+    RF_modulation: [False, 1055, 5000, 'high']    # [T/F, freq, amplitude, channel name (low/high)] (length=readout length)
+
+ResonatorSpectroscopyExperiment:
+    start:  746 # resonator frequency to be mixed up [MHz]
+    step:  0.025 # min step ~1 Hz
+    expts: 200 # Number experiments stepping from start
+    reps: 4000 # Number averages per point
+    pulse_e: False # add ge pi pulse prior to measurement
+    pulse_f: False # add ef pi pulse prior to measurement
+    pulse_cavity: False  # prepulse on cavity prior to measurement
+    cavity_pulse:  [4984.373226159381, 8000, 2, 0] # [frequency, gain, length, phase]  const pulse
+    qubit: 0
+
+Cavity2QubitSweepExperiment:
+    start: -250  # cycles
+    step: 3  # cycles
+    qubits: [0]
+    expts: 351
+    reps: 100
+    rounds: 10
+    qubit_resolved_pi: [3566.4, 4830, 0.035, 0.035]      # [freq, gain,  sigma (us), gap (us)]  qubit fast hpi pulse, two copies, gapped to pick up any possible phases
+    prepulse: True
+    postpulse: False
+    pre_sweep_pulse: [[4983.359907064372],[500],[1.0],[0],[6]]   # [[frequency], [gain], [length (us)], [phases], [drive channel]], drive channel=1 (flux low),3 (flux high),4 (storage),5 (flux storage),6 (manipulate), 
+
+WignerTomography1ModeExperiment:
+    gain2alpha: 0.00014065 # 0.00051563  # 0.000293401      #   0.000379538
+    cavity_name: 0   # displaced cavity name 0/1
+    displace_length: 0.1    # displace length in us, pulse shape is gaussian
+    displacement_path: 'H:\Shared drives\SLab\Multimode\experiment\240911\wigner_disp.npy'    # displacement for wigner tomography file path
+    # displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
+    # I_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
+    # Q_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
+    # I_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ]  
+    # Q_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ] 
+    prepulse: True
+    # pre_sweep_pulse: [[4984.026194477733],
+    #                    [3000],
+    #                    [0.0],
+    #                    [0],
+    #                    [4],['gaussian'], 
+    #                    [0.1]]
+    pre_sweep_pulse: [[4984.026194477733, 349.41, 349.41],
+                       [3000, 3000, 3000],
+                       [0.0, 0.993722, 0.993722],
+                       [0, 0, 180],
+                       [4, 1, 1],['gaussian','flat_top','flat_top'], 
+                       [0.1, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 2003.5],
+    #                    [4830, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.6162580197117158],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+                    #    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 1828.92],
+    #                    [9385, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 1.1203697072457472],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 1828.92],
+    #                    [4830, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 1.1203697072457472],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.187817769269, 3425.557033831784, 0, 2006.76],
+    #                    [4930, 7575,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.621500217304513],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[4984.026194477733, 696.66, 3568.187817769269, 3425.557033831784,
+    #     2006.76, 875.83, 875.83],
+    #    [3750, 9000, 9653, 7575, 15000, 9000, 9000],
+    #    [0, 1.3439102836609265, 0, 0, 0.6151067375075144,
+    #     1.2757836208423374, 1.2757836208423374],
+    #    [0, 0, 0, 0, 0, 0, 0],
+    #    [4, 1, 2, 2, 5, 1, 1],
+    #    ['gaussian', 'flat_top', 'gaussian', 'gaussian', 'flat_top',
+    #     'flat_top', 'flat_top'],
+    #    [0.1, 0.005, 0.035, 0.035, 0.005, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.187817769269, 3425.557033831784,  0, 2006.76, 3567.90056386609, 3425.30098176373, 2006.22, 3567.61563457181, 3425.04494113458, 2005.68, 3567.33142965478, 3424.788901, 2005.14],
+    #                    [9653, 7575, 0, 15000, 9653, 7575, 15000, 9653, 7575, 15000, 9653, 7575, 15000], # amplitude 
+    #                    [0.0,0.0, 0.01, 0.621500217304513, 0.0, 0.0, 0.436074712309811, 0, 0, 0.356878548985584, 0, 0, 0.304518537118842], # length of flat top
+    #                    [0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                    [2,2, 5,5, 2,2, 5, 2, 2, 5, 2, 2, 5],['gaussian','gaussian', 'flat_top','flat_top', 'gaussian', 'gaussian','flat_top', 'gaussian', 'gaussian','flat_top', 'gaussian', 'gaussian','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005, 0.035,0.035, 0.005, 0.035,0.035, 0.005, 0.035,0.035, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),      
+    # pre_sweep_pulse = [[4984.533795427038, 1, 337.4],[2000, 0,  8000],[2.0,3.0, 0.23581121290573867],[0,0,0],[6,6,1],['flat_top','const','flat_top'], [0.01,0, 0.01]],   # pre pulses shapes and sigma length (if used) flat_top, const, gaussian
+                                            # [[frequency], [gain], [length (us)], [phases], [drive channel]], drive channel=1 (flux low), 2 (qubit), 3 (flux high),4 (storage),5 (f0-g1),6 (manipulate),           
+    reps: 5000
+    qubits: [0]
+    optpulse: False
+    opt_freq: [3568.7888873838688, 4984.376405764741]
+    # opt_gain = [int(qubit_gain*Gaussian_pi_gain/np.sqrt(2)), int(cavity_gain/gain2alpha/np.sqrt(2))],
+    opt_gain: [1,1]
+    opt_delay_start: [0, 260]   # in cycles
+    #opt_file_path: [qubit_pulse_filename, cavity_pulse_filename]
+    opt_file_path: ['.//optimal control//20240222_qubit_optimal.npy', 
+                    './/optimal control//20240222_cavity_optimal.npy']
+
+
+WignerTomography1ModeCatExperiment:
+    gain2alpha: 0.0003353989 # 0.00051563  # 0.000293401      #   0.000379538
+    cavity_name: 0   # displaced cavity name 0/1
+    displace_length: 0.5    # displace length in us, pulse shape is gaussian
+    displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\wigner_disp.npy'    # displacement for wigner tomography file path
+    # displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
+    # I_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
+    # Q_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
+    # I_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ]  
+    # Q_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ] 
+    phase_pre: 0   # preparing cat's phase in degree
+    amp_pre: 3000   # preparing cat's amplitude
+    displace_pre_sigma: 0.5  # preparing cat's displace sigma
+    photon_releasing: 4  # in us, photon releasing time
+
+    prepulse: False
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 2003.5],
+    #                    [9385, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.6162580197117158],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 2003.5],
+    #                    [4830, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 0.6162580197117158],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+                    #    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 1828.92],
+    #                    [9385, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 1.1203697072457472],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3566.8, 3422.72, 0, 1828.92],
+    #                    [4830, 7766,  0, 15000],
+    #                    [0.0,0.0, 0.01, 1.1203697072457472],
+    #                    [0,0,0, 0],
+    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
+    #                    [0.035,0.035, 0.005, 0.005]]
+    pre_sweep_pulse: [[3566.8, 3422.72, 0, 2003.5, 3566.51957504422, 3422.4656668246803, 2002.98],
+                       [9385, 7766,  0, 15000, 9032, 7931, 15000],
+                       [0.0,0.0, 0.01, 0.6162580197117158, 0.0, 0.0, 0.43461615322272],
+                       [0,0,0, 0, 0, 0, 0],
+                       [2,2,5, 5, 2, 2, 5],['gaussian','gaussian','flat_top','flat_top', 'gaussian', 'gaussian','flat_top'], 
+                       [0.035,0.035, 0.005, 0.005, 0.035, 0.035, 0.005]]
+    # pre_sweep_pulse = [[4984.533795427038, 1, 337.4],[2000, 0,  8000],[2.0,3.0, 0.23581121290573867],[0,0,0],[6,6,1],['flat_top','const','flat_top'], [0.01,0, 0.01]],   # pre pulses shapes and sigma length (if used) flat_top, const, gaussian
+                                            # [[frequency], [gain], [length (us)], [phases], [drive channel]], drive channel=1 (flux low), 2 (qubit), 3 (flux high),4 (storage),5 (f0-g1),6 (manipulate),           
+    reps: 5000
+    qubits: [0]
+    optpulse: False
+    opt_freq: [3568.7888873838688, 4984.376405764741]
+    # opt_gain = [int(qubit_gain*Gaussian_pi_gain/np.sqrt(2)), int(cavity_gain/gain2alpha/np.sqrt(2))],
+    opt_gain: [1,1]
+    opt_delay_start: [0, 260]   # in cycles
+    #opt_file_path: [qubit_pulse_filename, cavity_pulse_filename]
+    opt_file_path: ['.//optimal control//20240222_qubit_optimal.npy', 
+                    './/optimal control//20240222_cavity_optimal.npy']
+
+
+SingleRB:
+    qubits: [0]
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+    active_reset: False # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -40 # for single shot post selection
+
+    rb_reps: 1000
+    rounds: 1   # always 1
+    variations: 20   # number of different sequences
+    rb_depth: 200   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    qubit_gate_set: False # use defined qubit gate set
+
+    
+    # readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: False
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+
+    # f0g1_pi_pulse: [2007.76, 0, 0.766768711295074, 0.005]  # freq, gain, flat top length, ramp sigma
+
+    # ge_pi_pulse: [3498.28, 15000, 0.312408085296717, 0.005]  # freq, gain, flat top length, ramp sigma
+    # ge_pi2_pulse: [3498.28, 15000, 0.156204042648358, 0.005]  # freq, gain, flat top length, ramp sigma
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 235.991962734341 # offset phase in deg as a result of f0g1 prepulse/postpulse
+
+
+
+    post_sweep_pulse: [ ['qubit', 'ef_new', 'pi',0],
+                    ['man', 'M1' , 'pi',0 ]] 
+    pre_sweep_pulse: [['man', 'M1' , 'pi',180 ],
+                    ['qubit', 'ef_new', 'pi',180] ]
+    
+     # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+MultiRBAM:
+    qubits: [0]
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+
+    rb_reps: 1000
+    rounds: 1   # always 1
+    variations: 30   # number of different sequences
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+
+    
+    # readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_post_select: True
+    postselection_delay: 2 # mus
+    rb_reps: 1000
+    mode_list: [1,2]
+    depth_list: [10,10]
+    parity_meas: False
+    preloaded_pulses: True #True #True # optimize loading of f0g1 pulses
+    use_arb_waveform: False # use arb waveform for flat_top pulse
+    measure_all_modes: False #True  
+    ref_rb: False # Don't do gates on storage (info always stored in man 1) [0'th mode measured in man 1]
+
+    # these will be filled after experiment is run 
+    rb_gate_list: None 
+    phase_list: None 
+
+MultiRBAM_sweep_depth:
+    qubits: [0]
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    
+
+    rb_reps: 1000
+    rounds: 1   # always 1
+    variations: 30   # number of different sequences
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    measure_all_modes: False #True  
+    ref_rb: False # Don't do gates on storage (info always stored in man 1) [0'th mode measured in man 1]
+
+    
+    # readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    rb_post_select: True
+    postselection_delay: 2 # mus
+
+    mode_list: None # If doing full mode list, set to None
+    full_mode_list: [1,2,3,4,5,6,7] # should be 
+    num_modes_sim_rb: 1 # number of modes to be simulated for rb; samples this many rb from the mode_list
+    skip_combos: []
+    random_selection: [False, 1] # [True/False, number of random selections]
+    list_for_depth_list: [  1,   3, 5, 8,  11,  16,  21,  26,  31,  36,  41,  46,  51,  60,
+         70,  80,  90,  100, 120, 140, 160, 180, 200] #[10] #, 20]
+    parity_meas: False
+    preloaded_pulses: True #True #True # optimize loading of f0g1 pulses
+    use_arb_waveform: False # use arb waveform for flat_top pulse
+
+    # these will be filled after experiment is run 
+    rb_gate_list: None 
+    phase_list: None 
+
+
+
+SingleRB_sweep_depth:
+    depth_list: [1, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 150, 200]
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+    reps: 1000
+    rounds: 1
+    variations: 30   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    qubit_gate_set: False # use defined qubit gate set
+
+    rb_active_reset: False
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+
+    # f0g1_pi_pulse: [2007.76, 0, 0.766768711295074, 0.005]  # freq, gain, flat top length, ramp sigma
+
+    # ge_pi_pulse: [3498.28, 15000, 0.312408085296717, 0.005]  # freq, gain, flat top length, ramp sigma
+    # ge_pi2_pulse: [3498.28, 15000, 0.156204042648358, 0.005]  # freq, gain, flat top length, ramp sigma
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 235.991962734341 # offset phase in deg as a result of f0g1 prepulse/postpulse
+
+
+
+    post_sweep_pulse: [ ['qubit', 'ef_new', 'pi',0],
+                    ['man', 'M1' , 'pi',0 ]] 
+    pre_sweep_pulse: [['man', 'M1' , 'pi',180 ],
+                    ['qubit', 'ef_new', 'pi',180] ]
+
+SingleRB_sweep_depth_and_prepulse:
+    depth_start: 1
+    depth_stop: 6
+    depth_step: 1
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 50   # single shot plot span
+    reps: 100
+    rounds: 3
+    variations: 20   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    prepulse: True
+    postpulse: True
+    prepulses_bool: [False, True, True] # prepulse on/off
+    f0g1_offsets: [0, 99, -6] # offset phase in deg as a result of f0g1 prepulse/postpulse
+    f0g1_offset: 0
+    post_sweep_pulse: None 
+    pre_sweep_pulse: None
+    post_sweep_pulses: [None,
+                         [[ 3424.266002753798],
+                       [ 2558], # amplitude 
+                       [0.0], # length of flat top
+                       [0],
+                       [2],['gaussian'], 
+                       [0.03]],   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+                        [[ 3424.266002753798,  0, 2004.725],
+                       [ 2558, 0, 3000], # amplitude 
+                       [0.0, 0.01, 0.733061302], # length of flat top
+                       [0, 0, 0],
+                       [2, 5,5],['gaussian', 'flat_top','flat_top'], 
+                       [0.03, 0.005, 0.005]]
+                       ]
+    pre_sweep_pulses: [None, [[   3424.266002753798],
+                       [ 2558], # amplitude 
+                       [ 0.0], # length of flat top
+                       [ 0],
+                       [ 2],[ 'gaussian' ], 
+                       [ 0.03]],   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),        
+                        [[  2004.725, 0, 3424.266002753798],
+                       [ 3000, 0, 2558], # amplitude 
+                       [0.733061302, 0.01, 0.0], # length of flat top
+                       [0, 0, 0],
+                       [5,5, 2],['flat_top','flat_top', 'gaussian' ], 
+                       [0.005, 0.005, 0.03]] ]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    # pre_sweep_pulse: [[   3424.266002753798],
+    #                    [ 2558], # amplitude 
+    #                    [ 0.0], # length of flat top
+    #                    [ 0],
+    #                    [ 2],[ 'gaussian' ], 
+    #                    [ 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+    # post_sweep_pulse: [[ 3424.266002753798,  0, 2004.725],
+    #                    [ 2558, 0, 3000], # amplitude 
+    #                    [0.0, 0.01, 0.733061302], # length of flat top
+    #                    [0, 0, 0],
+    #                    [2, 5,5],['gaussian', 'flat_top','flat_top'], 
+    #                    [0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    # pre_sweep_pulse: [[  2004.725, 0, 3424.266002753798],
+    #                    [ 3000, 0, 2558], # amplitude 
+    #                    [0.733061302, 0.01, 0.0], # length of flat top
+    #                    [0, 0, 0],
+    #                    [5,5, 2],['flat_top','flat_top', 'gaussian' ], 
+    #                    [0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+SingleRB_sweep_f0g1_phase:
+    phase_start: 80
+    phase_stop: 110
+    phase_step: 2
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 50   # single shot plot span
+    reps: 100
+    rounds: 3
+    variations: 20   # number of different sequences
+    rb_depth: 4    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    post_sweep_pulse: [[ 3424.266002753798],
+                       [ 2558], # amplitude 
+                       [0.0], # length of flat top
+                       [0],
+                       [2],['gaussian'], 
+                       [0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+    pre_sweep_pulse: [[   3424.266002753798],
+                       [ 2558], # amplitude 
+                       [ 0.0], # length of flat top
+                       [ 0],
+                       [ 2],[ 'gaussian' ], 
+                       [ 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+
+SingleRB_sweep_freq:
+    qubit: 0
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 50   # single shot plot span
+    reps: 100
+    rounds: 10
+    variations: 20   # number of different sequences
+    rb_depth: 50    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    freq_start: 3567.620628692002
+    freq_stop: 3568.520628692002
+    freq_step: 0.045
+
+SingleRB_sweep_pi_amp:
+    qubit: 0
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 50   # single shot plot span
+    reps: 100
+    rounds: 10
+    variations: 20   # number of different sequences
+    rb_depth: 200    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, 2 means X
+    amp_start: 9746
+    amp_stop: 9946
+    amp_step: 10
+
+SingleRB_sweep_hpi_amp:
+    qubit: 0
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 50   # single shot plot span
+    reps: 100
+    rounds: 10
+    variations: 20   # number of different sequences
+    rb_depth: 200    # rb sequence depth
+    IRB_gate_no: 5   # IRB gate number, 5 means X/2
+    amp_start: 4804
+    amp_stop: 5004
+    amp_step: 10
+
+SingleBeamSplitterRBPostSelection:
+    qubits: [0]
+    reps: 0 # doesn't matter
+
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    reset_qubit_after_parity: False #True # resetting via second parity str 
+    reset_qubit_via_active_reset_after_first_meas: True # resetting via active reset after first parity str; the other reset should be false
+    parity_meas: True
+
+    rounds: 1   # always set to 1
+    variations: 10   # number of different sequences
+    rb_depth: 100   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+    # [[349.41, 3000, 0.48857142857142855, 0.005],   # previous to 10 /25 optimized paramers
+    #                [520.93, 5000, 0.5650000000000001, 0.005],
+    #                [696.66, 9000, 0.669011691823791, 0.005],
+    #                [875.825, 9000, 0.6271437312608766, 0.005],
+    #                [1053.405, 7500, 0.9865989868431034, 0.005],
+    #                [1245.170, 13500, 0.797654995769661, 0.005],
+    #                [1423.155, 16500, 0.6891793488410187, 0.005]]
+
+    # bs_para: [173.79, 2000, 0.231741, 0.005]
+    # bs_para: [346.84, 5000, 0.4544173318982308, 0.005]
+    # bs_para: [523.22, 5000, 0.780808, 0.005]
+    # bs_para: [702.65, 9000, 0.693382, 0.005]
+    # bs_para: [878.78, 13500, 0.6516862143712965, 0.005]
+    # bs_para: [1070.24, 7500, 1.3967964443840977, 0.005]
+    # bs_para: [1249.70, 12000, 0.8984906903379285, 0.005]
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    # active_reset: True
+    # man_reset:  True
+    # storage_reset:  False
+    # gates_per_wait: 100
+
+    pre_sweep_pulse: [[None]] # Gate based; prep f0g1 is done automatically ; RAM state prep is also automatic 
+    ram_prepulse: [True, 6, [1], 1] # [True/False, number of storage modes to be populated, [idx of modes to be skipped], variations]
+    ram_prepulse_strs: None #  see SingleBeamSplitterRBPostSelection_sweep_depth_and_ram
+
+SingleBeamSplitterRBPostSelection_sweep_depth_and_ram:
+    # sweep params
+    depth_list:  [1, 5, 10, 20, 30, 40,
+               50, 75, 100, 150,
+                 200, 300, 500, 1000]
+    reps_list: [1000, 1000, 1000, 1000, 2000, 2000,
+             3000, 3000, 3000, 3000,
+              5000, 5000, 5000, 10000]
+
+    num_occupied_smodes_list: [1, 2, 3, 4, 5, 6]
+    prepulse_vars_list: [5, 5,5,5,5,1]
+    ram_prepulse: [True, None, [1], None] # [True/False, number of storage modes to be populated, [idx of modes to be skipped], variations]
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    reset_qubit_after_parity: False #True # resetting via second parity str 
+    reset_qubit_via_active_reset_after_first_meas: True # resetting via active reset after first parity str; the other reset should be false
+    parity_meas: True
+
+    rounds: 1   # always set to 1
+    variations: 10   # number of different sequences
+    rb_depth: 100   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+
+    prepulse: True
+
+    pre_sweep_pulse: [[None]] # Gate based; prep f0g1 is done automatically ; RAM state prep is also automatic 
+    
+SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec: # sweep over the single spec mode (more controlled than previous)
+    # sweep params
+    depth_list:  [1, 5, 50, 100]
+    reps_list: [1000,  1000,  2000, 3000]
+    target_mode: 1
+    target_spec_list: [2, 3, 4, 5, 6, 7] # spectator mode idx
+    prepulse_vars_list: [6,6,6,6,6,6]
+    ram_prepulse: [True, None, [1], None] # [True/False, number of storage modes to be populated, [idx of modes to be skipped], variations]
+    ram_prepulse_strs: None # this is automatically loaded by function; this sweeps the prepulses for rb
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    reset_qubit_after_parity: False #True # resetting via second parity str 
+    reset_qubit_via_active_reset_after_first_meas: True # resetting via active reset after first parity str; the other reset should be false
+    parity_meas: True
+
+    rounds: 1   # always set to 1
+    variations: 15   # number of different sequences
+    rb_depth: 100   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+
+    prepulse: True
+
+    pre_sweep_pulse: [[None]] # Gate based; prep f0g1 is done automatically ; RAM state prep is also automatic 
+
+DualRail_sweep_depth_and_single_spec_and_stor: # sweep over the single spec mode (more controlled than previous)
+    # sweep params
+    depth_list:  [1, 5, 10, 20, 30,
+                 50, 75, 100, 150, 200,
+                 300, 500]
+    reps_list: [1000,  1000,  1000, 1000,2000, 
+                2000, 2000, 3000, 3000, 3000,
+                3000, 5000, 5000, 10000]
+    start_pair: [4,1] # actualy starts from [target_mode, spec], initially shouyuld be [1,2]
+    target_mode: None
+
+    target_mode_list: [1, 2, 3, 4, 5, 6, 7] # spectator mode idx
+    bs_para_list: [[349.415, 3000, 0.48857142857142855, 0.005],  # at 96
+                    [520.925, 5000, 0.565451994946885, 0.005],    # at 96%
+                    [696.665, 9000, 0.666955, 0.005] ,            # opt at 95%
+                    [875.845, 9000, 0.6271437312608766, 0.005],   # opt 91 at 100
+                    [1053.395, 7500, 0.9865989868431034, 0.005],  # opt 91 at 100
+                    [1245.160, 13500, 0.797654995769661, 0.005],  # opt 93 at 100
+                    [1423.04, 13500, 0.8425040638970613, 0.005],
+                    [349.21, 4934, 0.289980141832105, 0.005]] 
+    
+    target_spec_list: None # spectator mode idx
+    prepulse_vars_list: [6,6,6,6,6,6]
+    ram_prepulse: [True, None, [1], None] # [True/False, number of storage modes to be populated, [idx of modes to be skipped], variations]
+    ram_prepulse_strs: None # this is automatically loaded by function; this sweeps the prepulses for rb
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    reset_qubit_after_parity: False #True # resetting via second parity str 
+    reset_qubit_via_active_reset_after_first_meas: True # resetting via active reset after first parity str; the other reset should be false
+    parity_meas: True
+
+    rounds: 1   # always set to 1
+    variations: 20   # number of different sequences
+    rb_depth: 100   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+
+    prepulse: True
+
+    pre_sweep_pulse: [[None]] # Gate based; prep f0g1 is done automatically ; RAM state prep is also automatic 
+
+SingleBeamSplitterRB_check_target: 
+    pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
+                      ['qubit', 'ef_new', 'pi', 0], 
+                      ['man', 'M1', 'pi', 0],
+                      ['storage', 'M1-S1', 'pi', 0]]
+    post_sweep_pulse: [['storage', 'M1-S1', 'pi', 0],
+                        ['man', 'M1', 'pi', 0],
+                        ['qubit', 'ef_new', 'pi', 0], 
+                        ['qubit', 'ge', 'hpi', 0]]
+    wait_freq: 0 # in Mhz
+    prepulse: True
+    postpulse: True
+    rb_time: None   # this is filled by analysis 
+    bs_gate_num: None # this is filled by analysis
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 1000   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+    prep_man_photon: True # as a prpulse before rb
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+
+    rounds: 1   # always set to 1
+    variations: 20   # number of different sequences
+    rb_depth: 5  # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+
+SingleBeamSplitterRB_check_target_sweep_depth: 
+    # depth sweep params
+    depth_start: 1
+    depth_stop: 400
+    depth_step: 5
+
+    depth_list: [None]
+    reps_list: [1000] # assume all depths will use the same number of repetitions
+
+    # experiments params
+    pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
+                      ['qubit', 'ef_new', 'pi', 0], 
+                      ['man', 'M1', 'pi', 0],
+                      ['storage', 'M1-S1', 'pi', 0]]
+    post_sweep_pulse: [['storage', 'M1-S1', 'pi', 0],
+                        ['man', 'M1', 'pi', 0],
+                        ['qubit', 'ef_new', 'pi', 0], 
+                        ['qubit', 'ge', 'hpi', 0]]
+    wait_freq: 0.671 # in Mhz
+    prepulse: True
+    postpulse: True
+    rb_time: None   # this is filled by analysis 
+    bs_gate_num: None # this is filled by analysis
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 500   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    prep_man_photon: True # as a prpulse before rb
+
+    rounds: 1   # always set to 1
+    variations: 60   # number of different sequences
+    rb_depth: 5  # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    bs_repeat: 1
+    sync: False
+    setup: False
+    # bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+
+SingleBeamSplitterRB_ramsey: 
+    # depth sweep params
+    start: 1
+    step: 5
+    expts: 50
+
+    depth_list: [None] # assume all depths will use the same number of repetitions
+    running_lists: []
+
+    # experiments params
+    pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
+                      ['qubit', 'ef_new', 'pi', 0], 
+                      ['man', 'M1', 'pi', 0],
+                      ['storage', 'M1-S1', 'pi', 0]]
+    post_sweep_pulse: [['storage', 'M1-S1', 'pi', 0],
+                        ['man', 'M1', 'pi', 0],
+                        ['qubit', 'ef_new', 'pi', 0], 
+                        ['qubit', 'ge', 'hpi', 0]]
+    wait_freq: 0.671 # in Mhz
+    prepulse: True
+    postpulse: True
+    rb_time: None   # this is filled by analysis 
+    bs_gate_num: None # this is filled by analysis
+
+    # basic params
+    qubits: [0]
+    singleshot_reps: 5000   # single shot measurement repetitions
+    span: 500   # single shot plot span
+
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.769721213292996 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    rb_reps: 1000
+    gates_per_wait: 100000
+    prep_man_photon: True # as a prpulse before rb
+
+    rounds: 1   # always set to 1
+    variations: 5   # number of different sequences
+    rb_depth: 5  # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    bs_repeat: 1
+    sync: False
+    setup: False
+    # bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
+    # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
+    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+    
+
+SingleBeamSplitterRBPostSelection_sweep_depth:
+    depth_list: [4500]
+    # depth_list: [1, 5, 10, 20, 40, 80, 120, 160, 200, 250, 300, 400, 700, 1000, 1500, 2000, 3000, 4000]
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.865628512802004 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    reset_qubit_after_parity: True
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    #rb_reps: 10000
+    gates_per_wait: 10000
+    reps_list: [1000, 1000, 1000, 1000, 2000, 2000, 3000, 3000, 3000, 3000, 3000, 5000, 10000, 10000, 10000, 10000, 10000, 10000]
+    # reps_list: [10000]
+    span: 1000   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 30   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    # bs_para: [349.21, 4934, 0.289980141832105, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [349.41, 3000, 0.495739, 0.005]
+    # bs_para: [520.93, 5000, 0.564451994946885, 0.005]
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2006.72],
+       [9653, 7575, 15000],
+       [0, 0, 0.6168960348389007],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2007.06],
+    #    [4000, 3000, 15000],
+    #    [0.139753681228407, 0.149552252503385, 0.6168960348389007],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['flat_top', 'flat_top', 'flat_top'],
+    #    [0.005, 0.005, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+                       [4930, 0, 4930],
+                       [0.0, 1.6094441802865243, 0.0],
+                       [0, 0, 0],
+                       [2, 2, 2],['gaussian', 'const', 'gaussian'], 
+                       [0.035, 0.0, 0.035]]
+    post_selection_pulse: [[349.41, 349.41, 3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+                       [3000, 3000, 4930, 0, 4930],
+                       [0.495739, 0.495739, 0.0, 1.6094441802865243, 0.0],
+                       [0, 0, 0, 0, 0],
+                       [1, 1, 2, 2, 2],['flat_top','flat_top','gaussian', 'const', 'gaussian'], 
+                       [0.005, 0.005, 0.035, 0.0, 0.035]]
+
+
+SingleBeamSplitterRBPostSelection_sweep_depth_storsweep:
+    # depth_list: [1]
+    stor_list: [7]
+    depth_list: [1, 5, 10, 20, 40, 80, 120, 160, 200, 250, 300, 400, 700, 1000, 1500, 2000, 3000, 4000]
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.865628512802004 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    reset_qubit_after_parity: True
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    #rb_reps: 10000
+    gates_per_wait: 10000
+    reps_list: [1000, 1000, 1000, 1000, 2000, 2000, 3000, 3000, 3000, 3000, 5000, 5000, 10000, 10000, 10000, 10000, 10000, 10000]
+    # reps_list: [1]
+    span: 1000   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 30   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    # bs_para: [349.21, 4934, 0.289980141832105, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [349.41, 3000, 0.495739, 0.005]
+    # bs_para: [520.93, 5000, 0.564451994946885, 0.005]
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2007.06],
+       [9653, 7575, 15000],
+       [0, 0, 0.6168960348389007],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2006.72],
+    #    [4000, 3000, 15000],
+    #    [0.139753681228407, 0.149552252503385, 0.6168960348389007],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['flat_top', 'flat_top', 'flat_top'],
+    #    [0.005, 0.005, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+                       [4930, 0, 4930],
+                       [0.0, 1.6094441802865243, 0.0],
+                       [0, 0, 0],
+                       [2, 2, 2],['gaussian', 'const', 'gaussian'], 
+                       [0.035, 0.0, 0.035]]
+    post_selection_pulse: [[349.41, 349.41, 3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+                       [3000, 3000, 4930, 0, 4930],
+                       [0.495739, 0.495739, 0.0, 1.6094441802865243, 0.0],
+                       [0, 0, 0, 0, 0],
+                       [1, 1, 2, 2, 2],['flat_top','flat_top','gaussian', 'const', 'gaussian'], 
+                       [0.005, 0.005, 0.035, 0.0, 0.035]]
+
+
+SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep:
+    # depth_list: [1]
+    stor_list: [1,2,3,4,5,6,7]
+    depth_list: [1, 5, 10, 20, 40, 80, 120, 160, 200, 250,
+     300, 400, 700, 1000 , 1500, 2000, 2500, 3000, 3500, 4000, 4300]
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    active_reset: True # for single shot post selection
+    man_reset:  True # for single shot post selection
+    storage_reset:  True # for single shot post selection
+    threshold: -39.865628512802004 # for single shot post selection
+    readout_per_round: 4 # for single shot post selection
+
+    reset_qubit_after_parity: False #True # resetting via second parity str 
+    reset_qubit_via_active_reset_after_first_meas: True # resetting via active reset after first parity str; the other reset should be false
+    parity_meas: True
+
+    rb_active_reset: True
+    rb_man_reset:  True
+    rb_storage_reset:  True
+    #rb_reps: 10000
+    gates_per_wait: 10000
+    reps_list: [1000, 1000, 1000, 1000, 2000, 2000, 3000, 3000, 3000, 3000,
+     5000, 5000, 10000, 10000, 10000, 10000, 10000, 10000,  10000, 10000, 10000]
+    # reps_list: [1]
+    span: 1000   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 30   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    postselection_delay: 2.0  # in us, gap between two readout pulses
+    bs_repeat: 1
+    sync: False
+    setup: False
+    bs_para_list: [[349.415, 3000, 0.48857142857142855, 0.005],  # at 96
+                    [520.925, 5000, 0.565451994946885, 0.005],    # at 96%
+                    [696.665, 9000, 0.666955, 0.005] ,            # opt at 95%
+                    [875.845, 9000, 0.6271437312608766, 0.005],   # opt 91 at 100
+                    [1053.395, 7500, 0.9865989868431034, 0.005],  # opt 91 at 100
+                    [1245.160, 13500, 0.797654995769661, 0.005],  # opt 93 at 100
+                    [1423.04, 13500, 0.8425040638970613, 0.005],
+                    [349.21, 4934, 0.289980141832105, 0.005]]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [349.41, 3000, 0.495739, 0.005]
+
+    prepulse: True
+    # postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2007.06],
+       [9653, 7575, 15000],
+       [0, 0, 0.656287],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    
+    # pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2007.06],
+    #    [4000, 3000, 15000],
+    #    [0.139753681228407, 0.149552252503385, 0.6168960348389007],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['flat_top', 'flat_top', 'flat_top'],
+    #    [0.005, 0.005, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+    #                    [4930, 0, 4930],
+    #                    [0.0, 1.6094441802865243, 0.0],
+    #                    [0, 0, 0],
+    #                    [2, 2, 2],['gaussian', 'const', 'gaussian'], 
+    #                    [0.035, 0.0, 0.035]]
+    # post_selection_pulse: [[349.41, 349.41, 3568.1904347121535, 3568.1904347121535, 3568.1904347121535],     # pulses applied between two readout e-f, f0g1, swap, f0g1, f-e
+    #                    [3000, 3000, 4930, 0, 4930],
+    #                    [0.495739, 0.495739, 0.0, 1.6094441802865243, 0.0],
+    #                    [0, 0, 0, 0, 0],
+    #                    [1, 1, 2, 2, 2],['flat_top','flat_top','gaussian', 'const', 'gaussian'], 
+    #                    [0.005, 0.005, 0.035, 0.0, 0.035]]
+
+
+SingleBeamSplitterRB:
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    active_reset: False # for single shot 
+    span: 60   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 30  #30   # number of different sequences
+    rb_depth: 18   # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    bs_para:  [1053.42, 7500, 0.978002, 0.005] # [346.86, 1500, 1.547884257099212, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    prepulse: True
+    postpulse: True 
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    # pre_sweep_pulse: [[3568.173050235092],
+    #                    [13275], # amplitude 
+    #                    [0.0], # length of flat top
+    #                    [0],
+    #                    [2],['gaussian'], 
+    #                    [0.025]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[2006.45, 3568.173050235092],
+    #                    [15000, 10144],
+    #                    [0.6124625860870201, 0.0],
+    #                    [0, 0],
+    #                    [5, 2],['flat_top', 'gaussian'], 
+    #                    [0.005,0.025]]
+    # pre_sweep_pulse: [[4984.026194477733, 520.93, 4984.026194477733, 696.66,
+    #     4984.026194477733, 875.83, 4984.026194477733, 1053.42,
+    #     4984.026194477733, 1245.18, 4984.026194477733, 1423.15,
+    #     3568.187817769269, 3425.557033831784, 2006.76],
+    #    [3750, 5000, 3750, 9000, 3750, 9000, 3750, 7500, 3750, 13500,
+    #     3750, 16500, 9653, 7575, 15000],
+    #    [0, 1.1289039898937718, 0, 1.3439102836609265, 0,
+    #     1.2757836208423374, 0, 1.9560044830465644, 0, 1.6059611522981565,
+    #     0, 1.372788176290834, 0, 0, 0.6151067375075144],
+    #    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #    [4, 1, 4, 1, 4, 1, 4, 3, 4, 3, 4, 3, 2, 2, 5],
+    #    ['gaussian', 'flat_top', 'gaussian', 'flat_top', 'gaussian',
+    #     'flat_top', 'gaussian', 'flat_top', 'gaussian', 'flat_top',
+    #     'gaussian', 'flat_top', 'gaussian', 'gaussian', 'flat_top'],
+    #    [0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1,
+    #     0.005, 0.035, 0.035, 0.005]]
+    # pre_sweep_pulse: [[3568.182183286917, 3425.55044773984, 1834.825],
+    #    [9653, 7575, 15000],
+    #    [0, 0, 1.0906106051371698],
+    #    [0, 0, 0],
+    #    [2, 2, 5],
+    #    ['gaussian', 'gaussian', 'flat_top'],
+    #    [0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    # post_sweep_pulse: [[1834.825, 3425.55044773984],
+    #    [15000, 7575],
+    #    [1.0906106051371698, 0],
+    #    [0, 0],
+    #    [5, 2],
+    #    ['flat_top', 'gaussian'],
+    #    [0.005, 0.035]]
+    pre_sweep_pulse: [[3568.1904347121535, 3425.5537944060666, 2006.72],
+       [9653, 7575, 15000],
+       [0, 0, 0.6168960348389007],
+       [0, 0, 0],
+       [2, 2, 5],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]
+    post_sweep_pulse: [[3568.1904347121535, 3568.1904347121535, 3568.1904347121535],
+       [4930, 0, 4930],
+       [0, 1.6094441802865243, 0],
+       [0, 0, 0],
+       [2, 2, 2],
+       ['gaussian', 'const', 'gaussian'],
+       [0.035, 0.0, 0.035]]
+    # post_sweep_pulse: [[2006.72, 3425.5537944060666],
+    #    [15000, 7575],
+    #    [0.6168960348389007, 0],
+    #    [0, 0],
+    #    [5, 2],
+    #    ['flat_top', 'gaussian'],
+    #    [0.005, 0.035]]
+#     post_sweep_pulse: [[2006.76, 3425.55044773984],
+#   [15000, 7575],
+#   [0.621500217304513, 0.0],
+#   [0, 0],
+#   [5, 2],
+#   ['flat_top', 'gaussian'],
+#   [0.005, 0.035]]
+    
+                       
+
+SingleBeamSplitterRB_sweep_depth:
+    depth_list: [1, 5, 10, 20, 40, 80, 120, 160, 200, 250, 300, 400, 600, 800, 1000]
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 60   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 30   # number of different sequences
+    rb_depth: 1    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    # bs_para: [349.4, 3000, 0.496739445101523, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [520.93, 5000, 0.564451994946885, 0.005]
+    # bs_para: [696.66, 9000, 0.6719551418304632, 0.005]
+    # bs_para: [1053.42, 7500, 0.978002, 0.005]
+    bs_para: [349.4, 3000, 0.496739445101523, 0.005] 
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[4984.026194477733, 520.93, 4984.026194477733, 696.66,
+        4984.026194477733, 875.83, 4984.026194477733, 1053.42,
+        4984.026194477733, 1245.18, 4984.026194477733, 1423.15,
+        3568.187817769269, 3425.557033831784, 2006.76],
+       [3750, 5000, 3750, 9000, 3750, 9000, 3750, 7500, 3750, 13500,
+        3750, 16500, 9653, 7575, 15000],
+       [0, 1.1289039898937718, 0, 1.3439102836609265, 0,
+        1.2757836208423374, 0, 1.9560044830465644, 0, 1.6059611522981565,
+        0, 1.372788176290834, 0, 0, 0.6151067375075144],
+       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       [4, 1, 4, 1, 4, 1, 4, 3, 4, 3, 4, 3, 2, 2, 5],
+       ['gaussian', 'flat_top', 'gaussian', 'flat_top', 'gaussian',
+        'flat_top', 'gaussian', 'flat_top', 'gaussian', 'flat_top',
+        'gaussian', 'flat_top', 'gaussian', 'gaussian', 'flat_top'],
+       [0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1, 0.005, 0.1,
+        0.005, 0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.76, 3425.559887601728],
+                       [15000, 7575],
+                       [0.621500217304513, 0.0],
+                       [0, 0],
+                       [5, 2],['flat_top', 'gaussian'], 
+                       [0.005, 0.035]]
+
+
+SingleBeamSplitterRB_sweep_freq:
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 60   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 20   # number of different sequences
+    rb_depth: 50    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    freq_start: 348.87
+    freq_stop: 349.17
+    freq_step: 0.05
+    bs_para: [349.17, 7500, 0.19224660725029497, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[3568.159805939475, 3425.5642769944775,  0, 2006.45],
+                       [13344, 10144, 0, 15000], # amplitude 
+                       [0.0,0.0, 0.01, 0.6168589772656545], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.025,0.025, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.45],
+                       [15000],
+                       [0.6168589772656545],
+                       [0],
+                       [5],['flat_top'], 
+                       [0.005]]
+
+SingleBeamSplitterRB_gain_freq:
+    qubit: 0
+    singleshot_reps: 10000   # single shot measurement repetitions
+    span: 60   # single shot plot span
+    reps: 1000
+    rounds: 1  # always set to 1
+    variations: 20   # number of different sequences
+    rb_depth: 50    # rb sequence depth
+    IRB_gate_no: -1   # IRB gate number, -1 means not using
+    gain_start: 7450
+    gain_stop: 7550
+    gain_step: 10
+    bs_para: [349.17, 7500, 0.19224660725029497, 0.005]  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    prepulse: True
+    postpulse: True
+    f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
+    pre_sweep_pulse: [[3568.159805939475, 3425.5642769944775,  0, 2006.45],
+                       [13344, 10144, 0, 15000], # amplitude 
+                       [0.0,0.0, 0.01, 0.6168589772656545], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.025,0.025, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.45],
+                       [15000],
+                       [0.6168589772656545],
+                       [0],
+                       [5],['flat_top'], 
+                       [0.005]]
+
+
+sideband_fidelity_optimization:
+    sideband_name: 'M1S2'
+    gain2sweep: [1000, 2000, 3000, 4000, 5000, 6000]
+    # gain2sweep: [1000]
+    iterative_rounds: 3
+    freq_guess: 520.9  # 349.17
+    search_bandwidth: 1.6 # initial search bandwidth
+    search_step: 0.2 # initial search step
+
+    start: 0.007 # us  used for frequency searching
+    step: 0.15 # us  used for frequency searching
+    step_fitting: 0.15 # us used for fitting
+    T1_delay: 100 # us used for long time delay fitting
+    qubits: [0]
+    expts: 100
+    reps: 400
+    rounds: 1
+    flux_drive: ['low', 521.1, 5000, 0.005]     # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    prepulse: True
+    postpulse: True
+    
+    pre_sweep_pulse: [[3568.159805939475, 3425.5642769944775,  0, 2006.45],
+                       [13344, 10144, 0, 15000], # amplitude 
+                       [0.0,0.0, 0.01, 0.6168589772656545], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.025,0.025, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.45],
+                       [15000],
+                       [0.6168589772656545],
+                       [0],
+                       [5],['flat_top'], 
+                       [0.005]]
+
+storage_t1_optimization:
+    storage_names: [ 'S5', 'S5']
+    # gain2sweep: [1000]
+    gain_list: [5000, 10000]
+    iterative_rounds: 1
+    freq_guess: [ 1053.42, 1053.42]  # 349.17
+    search_bandwidth: 0.6 # initial search bandwidth
+    search_step: 0.1 # initial search step
+    scaling_factors: [1.5, 8] # next bandwidth would be scaling_factor[0] * search step and next search step will be bandwith/ scaling_factor[1]
+
+    start: 0.007 # us  used for frequency searching
+    step: 0.15 # us  used for frequency searching
+    step_fitting: 0.15 # us used for fitting
+    qubits: [0]
+    expts: 100
+    reps: 400
+    rounds: 1
+    flux_drive: ['low', 521.1, 5000, 0.005]     # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    prepulse: True
+    postpulse: True
+    
+    pre_sweep_pulse: [[3568.187817769269, 3425.557033831784,  0, 2006.76],
+                       [9653, 7575, 0, 15000], # amplitude 
+                       [0.0,0.0, 0.01, 0.621500217304513], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.035,0.035, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2006.76, 3425.559887601728],
+                       [15000, 7575],
+                       [0.621500217304513, 0.0],
+                       [0, 0],
+                       [5, 2],['flat_top', 'gaussian'], 
+                       [0.005, 0.035]]
+                       
+rb_bs_optimization:
+    #storage_names: [ 'S5', 'S5']
+    # gain2sweep: [1000]
+    #gain_list: [5000, 10000]
+    gain: 7500
+    freqs: [ 349.41]  # 349.17
+    length_step: 0.02
+    length_points: 10
+
+rb_bs_dual_rail_optimization: 
+    #storage_names: [ 'S5', 'S5']
+    # gain2sweep: [1000]
+    #gain_list: [5000, 10000]
+    gain: [9000, 9000, 7500, 13500, 16500]
+    freqs: [696.66, 875.825, 1053.405, 1245.17, 1423.155] # 349.17
+    length_step: 0.015 # starting
+    length_points: 8
+    precision: 0.003 # since clock cycle is 2.3 ns
+    skip_length_for_freq_calib: [True, [0.624011691823791,
+                                        0.5864294455465908,
+                                        0.9244561297002464,
+                                        0.7483692814839467,
+                                        0.6398936345553043]] # skips calculating hpi length for a given frequency from sidebandgeneral, [True/False, hpi_length (mus)]
+
+
+
+SingleQubitTomographyExperiment: # tomography sequence: [I, X/2, Y/2]
+    reps: 5000
+    qubit: 0
+    prepulse: True          #  used to prepare the initial state for tomography
+    active_reset: False
+    man_reset: False  
+    qubit_hpi_pulse: [3568.1751638611518, 4000, 0.0698768406142038, 0, 2, 'flat_top', 0.005]   # freq, gain, flatlength, phase, channel, shape, ramp
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 
+        3425.5537944060666, 3425.5537944060666, 
+        3425.5537944060666],
+       [4000, 3000, 3000, 3000, 3000],
+       [0.0698768406142038, 0.148178193519949, 0.148178193519949, 0.148178193519949, 0.148178193519949],
+       [0, 0, 180, 0, 180],
+       [2, 2, 2, 2, 2],
+       ['flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top'],
+       [0.005, 0.005, 0.005, 0.005, 0.005]]
+    vz: 12  # advancing ge phase
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 
+    #     3425.5537944060666, 3568.1751638611518, 3568.1751638611518, 3425.5537944060666, 
+    #     3425.5537944060666],
+    #    [4000, 3000, 3000, 4000, 4000, 3000, 3000],
+    #    [0.0698768406142038, 0.149552252503385, 0.149552252503385,0.0698768406142038, 0.0698768406142038, 0.149552252503385, 0.149552252503385],
+    #    [0, 0, 180, 6, 6, 0, 180],
+    #    [2, 2, 2, 2, 2, 2, 2],
+    #    ['flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top'],
+    #    [0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]]
+
+FastResetExperiment: # prepulse is the experiment 
+    start: 100 # qubit gain [dac level]
+    step: 150 # [dac level]
+    expts: 101
+    reps: 300
+    rounds: 1
+    active_reset: True
+    threshold: -4.8
+    sigma_test: 0.035 # gaussian sigma for pulse length - overrides config [us]
+    pulse_type: 'gauss'
+    pulse_ge: False
+    freq: 3568.182183286917
+    f0g1_cavity: 0 #  name of manipulate cavity, 0 means no pulse
+    checkEF: False
+    qubits: [0]
+    prepulse: False
+    postpulse: False 
+    pre_sweep_pulse: [[3568.1147522256774, 3425.034285340653,  0, 2010.2],
+                       [3311, 2597, 0, 3000], # amplitude 
+                       [0.0,0.0, 0.01, 0.790149607], # length of flat top
+                       [0,0, 0, 0],
+                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
+                       [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+
+HistogramPrepulseDualRailExperiment: # prepulse is the experiment 
+    reps: 10000
+    qubits: [0]
+    prepulse: True    
+    active_reset: True
+    man_reset: True  
+    storage_reset: True  
+    delay_between_measurements: 2.0 # in us, gap between two readout pulses
+
+    # pre_pulse is used for dual rail state preparation 
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 
+        3425.5537944060666, 3425.5537944060666, 
+        3425.5537944060666],
+       [4000, 3000, 3000, 3000, 3000],
+       [0.0698768406142038, 0.148178193519949, 0.148178193519949, 0.148178193519949, 0.148178193519949],
+       [0, 0, 180, 0, 180],
+       [2, 2, 2, 2, 2],
+       ['flat_top', 'flat_top', 'flat_top', 'flat_top', 'flat_top'],
+       [0.005, 0.005, 0.005, 0.005, 0.005]] 
+
+    # measurement_pulse_list length is the number of measurements to do
+    #[[prep_pulse_sec1], 'measure', [prep_pulse_sec2], 'measure', [prep_pulse_sec3]. 'measure', ...]
+    
+    measurement_pulse_list: [[], [], []]
+
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+
+
+SingleDualRailTomographyExperiment: # tomography sequence: [I, X/2, Y/2]
+    reps: 10000
+    qubit: 0
+    prepulse: True    
+    active_reset: True    # active_reset, measurment number+3
+    man_reset: True  
+    storage_reset: True   
+
+    dual_rail_storage_id: [1,2]   # name of the dual rail qubit. # each dual rail qubit needs 4 measurements, total 8 measurements
+    delay_between_measurements: 2.0 # in us, gap between two readout pulses
+    # by default always uses manipulate 1
+
+    gate_based: False
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06, 349.415, 349.415],
+    #                 [10716, 8236, 15000, 3000, 3000],
+    #                 [0, 0, 0.651287, 0.4885714285714285, 0.4885714285714285],
+    #                 [0, 0, 0, 0, 0],
+    #                 [2, 2, 0, 1, 1],
+    #                 ['g', 'g', 'flat_top', 'flat_top', 'flat_top'],
+    #                 [0.035, 0.035, 0.005, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06, 520.925, 520.925],
+    #                     [10716, 8236, 15000, 5000, 5000],
+    #                     [0, 0, 0.651287, 0.565451994946885, 0.565451994946885],
+    #                     [0, 0, 0, 0, 0],
+    #                     [2, 2, 0, 1, 1],
+    #                     ['g', 'g', 'flat_top', 'flat_top', 'flat_top'],
+    #                     [0.035, 0.035, 0.005, 0.005, 0.005]]
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06, 349.415, 520.925, 520.925],
+                        [10716, 8236, 15000, 3000, 5000, 5000],
+                        [0, 0, 0.651287, 0.4885714285714285, 0.565451994946885, 0.565451994946885],
+                        [0, 0, 0, 0, 0, 0],
+                        [2, 2, 0, 1, 1, 1],
+                        ['g', 'g', 'flat_top', 'flat_top', 'flat_top', 'flat_top'],
+                        [0.035, 0.035, 0.005, 0.005, 0.005, 0.005]]
+
+TwoDualRailTomographyExperiment: # tomography sequence: [I, X/2, Y/2] \times 2
+    reps: 10000
+    qubit: 0
+    prepulse: True    
+    active_reset: True    # active_reset, measurment number+3
+    man_reset: True  
+    storage_reset: True   
+
+    dual_rail_storage_id: [[1,2],[3,4]]  # name of the dual rail qubit. # each dual rail qubit needs 4 measurements, total 8 measurements
+    delay_between_measurements: 2.0 # in us, gap between two readout pulses
+    # by default always uses manipulate 1
+
+    gate_based: False
+    preloaded_pulses: False # this is more relevant for rbam, not for histogram
+    use_arb_waveform: False # this is more relevant for rbam, not for histogram
+
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 349.41, 349.41],
+    #                     [10682, 8229, 15000, 3000, 3000],
+    #                     [0, 0, 0.6152866896346518, 0.4555429843642762, 0.4555429843642762],
+    #                     [0, 0, 0, 0, 0],
+    #                     [2, 2, 0, 1, 1],
+    #                     ['g', 'g', 'flat_top', 'flat_top', 'flat_top'],
+    #                     [0.035, 0.035, 0.005, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.09, 520.93, 520.93],
+    #                     [10682, 8229, 15000, 5000, 5000],
+    #                     [0, 0, 0.6152866896346518, 0.5229852879581829, 0.5229852879581829],
+    #                     [0, 0, 0, 0, 0],
+    #                     [2, 2, 0, 1, 1],
+    #                     ['g', 'g', 'flat_top', 'flat_top', 'flat_top'],
+    #                     [0.035, 0.035, 0.005, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1751638611518,
+    #                     3425.5564066067,
+    #                     2007.06,
+    #                     349.415,
+    #                     349.415,
+    #                     3568.1751638611518,
+    #                     3425.5564066067,
+    #                     2007.06,
+    #                     696.665,
+    #                     696.665],
+    #                     [10716, 8236, 15000, 3000, 3000, 10716, 8236, 15000, 9000, 9000],
+    #                     [0,
+    #                     0,
+    #                     0.651287,
+    #                     0.4885714285714285,
+    #                     0.4885714285714285,
+    #                     0,
+    #                     0,
+    #                     0.651287,
+    #                     0.666955,
+    #                     0.666955],
+    #                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                     [2, 2, 0, 1, 1, 2, 2, 0, 1, 1],
+    #                     ['g',
+    #                     'g',
+    #                     'flat_top',
+    #                     'flat_top',
+    #                     'flat_top',
+    #                     'g',
+    #                     'g',
+    #                     'flat_top',
+    #                     'flat_top',
+    #                     'flat_top'],
+    #                     [0.035, 0.035, 0.005, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.005]]
+    # pre_sweep_pulse: [[3568.1751638611518,
+    #                 3425.5564066067,
+    #                 2007.06,
+    #                 349.415,
+    #                 349.415,
+    #                 3568.1751638611518,
+    #                 3425.5564066067,
+    #                 2007.06,
+    #                 875.845,
+    #                 875.845],
+    #                 [10716, 8236, 15000, 3000, 3000, 10716, 8236, 15000, 9000, 9000],
+    #                 [0,
+    #                 0,
+    #                 0.651287,
+    #                 0.4885714285714285,
+    #                 0.4885714285714285,
+    #                 0,
+    #                 0,
+    #                 0.651287,
+    #                 0.6271437312608766,
+    #                 0.6271437312608766],
+    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                 [2, 2, 0, 1, 1, 2, 2, 0, 1, 1],
+    #                 ['g',
+    #                 'g',
+    #                 'flat_top',
+    #                 'flat_top',
+    #                 'flat_top',
+    #                 'g',
+    #                 'g',
+    #                 'flat_top',
+    #                 'flat_top',
+    #                 'flat_top'],
+    #                 [0.035, 0.035, 0.005, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.005]]
+    pre_sweep_pulse: [[3568.1751638611518,
+                    3425.5564066067,
+                    2007.06,
+                    349.415,
+                    520.925,
+                    520.925,
+                    3568.1751638611518,
+                    3425.5564066067,
+                    2007.06,
+                    696.665,
+                    875.845,
+                    875.845],
+                    [10716, 8236, 15000, 3000, 5000, 5000, 10716, 8236, 15000, 9000, 9000, 9000],
+                    [0,
+                    0,
+                    0.651287,
+                    0.4885714285714285,
+                    0.565451994946885,
+                    0.565451994946885,
+                    0,
+                    0,
+                    0.651287,
+                    0.666955,
+                    0.6271437312608766,
+                    0.6271437312608766],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [2, 2, 0, 1, 1, 1, 2, 2, 0, 1, 1, 1],
+                    ['g',
+                    'g',
+                    'flat_top',
+                    'flat_top',
+                    'flat_top',
+                    'flat_top',
+                    'g',
+                    'g',
+                    'flat_top',
+                    'flat_top',
+                    'flat_top',
+                    'flat_top'],
+                    [0.035,
+                    0.035,
+                    0.005,
+                    0.005,
+                    0.005,
+                    0.005,
+                    0.035,
+                    0.035,
+                    0.005,
+                    0.005,
+                    0.005,
+                    0.005]]

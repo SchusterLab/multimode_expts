@@ -1,0 +1,307 @@
+prepulse_qubit:  # Apply sequentially Gaussian pulses
+    freq: [3568.1751638611518]  # MHz
+    length: [0.06]  # us
+    gain: [30]
+    phase: [0]
+    repeat_time: 10  # the whole sequences are repeated
+device:
+    qubit:
+        T1: [127.0] # us
+        f_ge:  [3568.1751638611518] # [3566.3951696922627] # MHz    
+            # (when driving qubit gates) 3566.8   
+            # when man1=|1> (3566.117766849506)  driven (3566.51957504422)
+            # when man2=|1> (3566.1359110698945)  driven (3566.5377192646083)
+        f_ge_resolved: [3568.1751638611518] # MHz fge - chi  (currently not used)
+        f_ge_idle: [3568.1751638611518] # MHz (For Ramsey)
+        f_ef: [3425.5564066067] # MHz  # (when driving qubit gates) 3422.72   
+        # when man1=|1> (3423.200842620319)   (3422.4656668246803)
+        # when man2=|1> (3423.209680676009)   (3422.4745048803707)
+        f_ef_idle: [3425.5564066067] # MHz  # (For Ramsey)
+        ramp_sigma: [0.005]  # [us]  0.01
+        ramp_sigma_num: [3]  # [us]  2
+        pulses:
+            pi_ge:
+                gain: [10716]      # 10819 for 0.035 # 9653 for 0.035
+                # when man1=|1> (9032)
+                # when man2=|1> (9032)
+                sigma: [0.035] # [us]
+                length: [0]
+                type: gauss
+            pi_ge_ftop:  #   Now using flat top Gaussian pulse instead
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.190914187445986]
+                type: flat_top 
+            pi_ge_fast:    # for parity measurment and tomography
+                gain: [10682]
+                sigma: [0.035] # [us]
+                length: [0]
+                type: gauss
+            pi_ge_resolved:   #   Now using flat top Gaussian pulse instead
+                gain: [50]
+                sigma: [0.005]
+                length: [6.553697146578866]
+                type: flat_top
+                repeat_no: 1
+            hpi_ge:
+                gain: [5510]     #5206   5272 for 0.035 # 4930 for 0.035
+                # when man1=|1> (4622)
+                # when man2=|1> (4622)
+                length: [0]
+                sigma: [0.035] # [us]
+                type: gauss
+            hpi_ge_ftop:  #   Now using flat top Gaussian pulse instead
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.09131395179924079]
+                type: flat_top 
+            hpi_ge_fast:   # for parity measurment and tomography
+                gain: [5195]     # 8264 for 0.02 # 4930 for 0.035
+                # when man1=|1> (4622)
+                # when man2=|1> (4622)
+                length: [0]
+                sigma: [0.035] # [us]
+                type: gauss
+            pi_ef_ftop:
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.15377089082752435] #0.14766695721229348]  #0.15377089082752435]
+                type: flat_top
+            pi_ef_new:
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.15377089082752435] #0.14766695721229348]  #0.15377089082752435]
+                type: flat_top
+            hpi_ef_ftop:
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.073291601301268] # 0.06947491909008936] #0.073291601301268]
+                type: flat_top
+            hpi_ef_new:
+                gain: [3000]
+                sigma: [0.005] # [us]
+                length: [0.073291601301268] # 0.06947491909008936] #0.073291601301268]
+                type: flat_top
+            pi_ef:
+                gain: [8236]  #earlier 6260
+                # when man1=|1> (7931)
+                # when man2=|1> (7887)
+                length: [0]
+                sigma: [0.035] # [us]
+                type: gauss
+            hpi_ef:
+                gain: [3863] #4372]
+                # when man1=|1> (4192)
+                # when man2=|1> (4205)
+                sigma: [0.035] # [us]
+                type: gauss
+            f0g1:
+                gain: [20000]
+                length: [0.4209728295970486]  # [us]
+                sigma: [0.005] # [us]
+
+            # for waveform calibration in rbam
+            pi_f0g1:
+                sigma: [0.005] # [us]
+            pi_m1si: 
+                sigma: [0.005] # [us]
+            
+
+            binomial_M1:
+                # |0>, |1>, |2>, |3>, |4>
+                ge_freq: [3568.18781776926, 3567.90056386609, 3567.61563457181, 3568.18781776926, 3568.18781776926]
+                ge_gain: [9653, 9653, 9653, 9653, 9653]
+                ge_sigma: [0.035, 0.035, 0.035, 0.035, 0.035]
+                ef_freq: [3425.55703383178, 3425.30098176373, 3425.55703383178, 3425.55703383178, 3425.55703383178]
+                ef_gain: [7575, 7575, 7575, 7575, 7575]
+                ef_sigma: [0.035, 0.035, 0.035, 0.035, 0.035]
+                f0g1_freq: [2006.76, 2006.22, 2006.76, 2006.76, 2006.76]
+                f0g1_gain: [15000, 15000, 15000, 15000, 15000]
+                f0g1_length: [0.621500217304513, 0.436074712309811, 0.621500217304513, 0.621500217304513, 0.621500217304513]
+                f0g1_sigma: [0.005, 0.005, 0.005, 0.005, 0.005]
+
+        f0g1: 1828.6  # MHz
+        cycles_add_to_R: 400  # additional wait cycles before readout    
+
+    QM:
+        chi_shift_matrix:    
+            # [Q,      man1,      man2]
+            [[-142.92577186624158, -0.28725, -0.27214], # -0.2804249557802905
+            [-0.28725 , -0.006572659352514165, 0.0], 
+            [-0.27214, 0.0, -0.0034172418618254596]]  # MHz   # updated
+        # chi_shift_matrix:    
+        #     # [Q,      man1,      man2]
+        #     [[-142.92577186624158, -0.28584758549050093, -0.2671571951655096], 
+            # [-0.28584758549050093, -0.006572659352514165, 0.0], 
+            # [-0.2671571951655096, 0.0, -0.0034172418618254596]]  # MHz   # updated
+        pulses:  # subscript [i,j] means man1_level=i, man2_level=j, calibrated to |1>
+            qubit_pi_ge:
+                gain: 
+                    [[10682, 10682],
+                     [10682, 10682]]
+                sigma: 
+                    [[0.035, 0.035],
+                     [0.035, 0.035]]
+                type: gauss
+            qubit_pi_ge_resolved:
+                gain: 
+                    [[50, 50],
+                     [50, 50]]
+                sigma: 
+                    [[0.005, 0.005],
+                     [0.005, 0.005]]
+                length: 
+                    [[6.553697146578866, 6.553697146578866],
+                     [6.553697146578866, 6.553697146578866]]
+                type: flat_top
+            
+            qubit_pi_ge_resolved_man:
+                freq: []
+                gain: 
+                    [50, 50] # man1 at 1, man2 at 1
+                sigma: 
+                    [0.005, 0.005]
+                length: 
+                   [6.288721018841144, 0]
+                type: flat_top
+
+            f0g1:  # M1, M2
+                freq: [2007.09, 1834.895]
+                gain: [15000, 15000]
+                length:  [0.615286689634651, 1.060413]  # [us]
+                hpilength: [0.3076433448173255, 0.528845]  # [us]
+                sigma: 0.005
+            # f0g1:  # M1, M2
+            #     freq: [2003.0, 1828.7]
+            #     gain: [20000, 20000]
+            #     length: [0.5728867459085213, 0.9926839843990546]  # [us]
+            #     hpilength: [0.28644337295426064, 0.4963419921995273]  # [us]
+            #     sigma: 0.005
+            f1g2:  # M1, M2
+                freq: [2002.98, 1840.6]
+                gain: [15000, 20000]
+                length: [0.43461615322272, 0.9276287688775608]  # [us]
+                hpilength: [0.21730807661136, 0.4638143844387804]  # [us]
+                sigma: 0.005
+     
+        
+    
+    readout:               
+        trig_offset: 450 # [Clock ticks]  400
+        frequency: [748.8] # [MHz] (748.19) (748.6)
+        gain: [700]  # 800
+        phase: [160.076255242564] # degrees     # 178.3
+        threshold: [-30.865628512802004] # adc units
+        threshold_list: [-30.865628512802004] # adc units
+        man1_drive_list: [0]
+        man2_drive_list: [0]
+        readout_length: [1.0] # [us]   1.0
+        relax_delay: [100] # [us] # Usually 1500
+    
+    manipulate:
+        trig_offset: 450 # [Clock ticks]
+        f_ge: [4984.026194477733,5157.8527963217475]  # [MHz]
+
+        standard_dispalce: [0.05, 0.05]  # sigma in us, 2sigma Gaussian pulse
+        revival_time: [1.6833333333333333, 1.7366205852286094] #[1.6249510805024449, 1.7366205852286094]     # used in the wigner tomography 1.5249510805024449
+        gain_to_alpha: [0.00014281, 0.00020045] #[0.000154203, 0.000379538]  # change gain digit to alpha, for 0.05 mus sigma gaussian
+        # gain_to_alpha: [0.00020403, 0.0]  # change gain digit to alpha, for 0.75 mus sigma pulse
+        # gain_to_alpha: [0.00029585, 0.00045483] after switching firmware, for 0.5 mus sigma pulse, corresponding to 0.000443775 for 0.75 mus sigma pulse
+        freq_to_alpha: [0.495062203431879, 0.0]  # for 0.2 us sigma pulse (Disp/Mhz)
+        gain: [2000, 2000]
+        chi: [1.0, 1.0]
+        readout_length: [8] # [us]
+        phase: [-176.45792887777] # degrees 
+        cycles_add_to_Q: 260 # additional wait cycles before qubit
+        idling_phase: [[0., 0.],
+                        [0., 0.]]
+        idling_freq: [0,0]
+    storage:
+        trig_offset: 450 # [Clock ticks]
+        f_ge: [6229.766612195359, 5300]  # [MHz]
+        gain: [1000, 2000]
+        chi: [1.0, 1.0]
+        readout_length: [8] # [us]
+        phase: [-176.45792887777] # degrees 
+        storage_man_file: "C:/_Lib/python/multimode_expts/man1_storage_swap_dataset.csv"
+        idling_phase: [[-5.26696123e+01, -2.27088024e+01,  4.32404839e+00,
+                     1.74059096e+00,  3.07928552e+00, 131.15854816947694, -90.34878087129891],
+                    [-8.54369900e-01, -1.16043431e+02,  3.45837055e+00,
+         6.08331428e-01, -2.036,  9.45,
+         95.59156092221656],
+                    [ 1.04040701e+00, -3.74923237e+00, -1.17783814e+02,
+         3.56992259e-01, -2.45519509e+00,  6.47967825e-01,
+         1.28401564e+01],
+                    [ 1.66740192e+00, -4.21812224e+00,  3.29786448e+00,
+            -1.54122273e+02, -1.60291285e+00, -1.18402153e+00,
+         5.04431400e+00],
+                    [ 4.82521854e+00,  2.09877344e-01,  5.59148305e+00,
+         7.67963852e+00, -9.11673550e+01,  1.30630108e+00,
+         5.65421906e+00],
+                    [ 3.70780701e+00,  7.68208841e-02,  4.16044796e+00,
+         2.61829414e+00,  3.48690085e+00, -3.73968965e+01,
+         4.05643677e+00],
+                    [ 3.84028579e+00, -4.18792628e-01,  4.05223790e+00,
+         3.24634888e+00,  2.06016015e+00,  3.24251258e+00,
+            -2.24708301e+01]]
+        idling_freq: [-2.5937677197135596,-2.85371864950844,-2.446015004544113 ,-1.8393250164457633,-3.231025833205897,-3.2053137013077597,-2.935087792327744]
+
+    active_reset:
+        qubit_ge: [4000, 0.1422665780546079, 0.005]
+        qubit_ef: [3000, 0.15377089082752435, 0.005] #0.14916521333749289, 0.005]
+        M1_S_freq: [349.41, 520.93, 696.660, 875.825, 1053.405, 1245.170, 1423.155]
+        M1_S_gain: [3000, 5000, 9000, 9000, 7500, 13500, 16500]
+
+        # M1_S_freq: [349.41]
+        # M1_S_gain: [3000]
+        relax_delay: [50]
+        M1_S_length: [0.9771428571428571, 1.13, 1.33802338, 1.25428746, 1.97319797, 1.59530999, 1.3783587]    # all uses flat top
+        M1_S_sigma: 0.005
+        chis: [0, -0.28725, -0.54329]  # chig, chie , chif
+        M_lossy: [[2313.3, 5000, 10, 2, 2], 
+                  [2093.9, 8000, 15, 2, 2]   ]     # [[freq, gain, length for M1, T1 of lossy mode (for waiting), sync all, cutoff_N] , [... for M2]]
+        
+    
+hw:
+    soc:
+        dacs:
+        # dac types: full (full gen - all gens in standard firmware) or int4, mux4 (q3diamond)
+        # For mux4, all 4 readouts are on the same DAC (ch 6). Need to make sure the
+        # 4 muxed readout freqs are not in the same bin, which are fs/16 wide
+            qubit:     # slow qubit drive line
+                ch: 2
+                type: 'full'
+                nyquist: 1
+            readout:
+                ch: 5  # used to be 0
+                type: 'full'
+                nyquist: 1
+            manipulate_in:
+                ch: 4
+                type: 'full'
+                nyquist: 2
+            storage_in:
+                ch: 6 # not used 
+                type: 'full'
+                nyquist: 2
+            flux_low:
+                ch: 1
+                type: 'full'
+                nyquist: 1
+            flux_high:
+                ch: 3
+                type: 'full'
+                nyquist: 1
+            sideband:     # fast f0-g1 drive line
+                ch: 0   #  used to be 5
+                type: 'full'
+                nyquist: 1
+
+        adcs:
+            readout:
+                ch: 0
+            cavity_out:
+                ch: 1
+            
+aliases: # for use in instrument manager
+    soc: Qick101
