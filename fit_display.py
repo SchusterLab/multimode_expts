@@ -1877,7 +1877,8 @@ class MM_DualRail_Analysis:
     
     # ------------- Analyis for Storage state in presence of spectator BS ------------
 
-    def filter_data_for_si_wrt_spec_BS(self, temp_data, attrs): 
+    
+    def filter_data_for_si_wrt_spec_BS(self, temp_data, attrs ): 
         '''
         Filter data (based on active reset preselection) for single rail wrt to spectator BS
         '''
@@ -1933,11 +1934,15 @@ class MM_DualRail_Analysis:
         if wrong_way:
             return wrong_times, wrong_bs_gate_nums, wrong_fids, depth_list
         
+        return self.reorganize_var_data_for_ramsey(var_datas, bs_gate_numss, rb_timess, attrs)
         
+    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 0):
         # Re organize data so that we average over all the data points for a given BS gate number
 
         data = {'bs_gate_nums': bs_gate_numss, 'avg_idata': var_datas, 'rb_times': rb_timess}
         df = pd.DataFrame(data)
+        if return_df: 
+            return df
         bs_nums_range = np.arange(df['bs_gate_nums'].min(), df['bs_gate_nums'].max() + 1, 1)
         bs_nums_for_plot = [] # List to store the BS gate numbers that have a fidelity
         rb_times_for_plot = []
@@ -1945,7 +1950,7 @@ class MM_DualRail_Analysis:
 
         for idx, bs_gate_num in enumerate(bs_nums_range): 
             df_bs_num = df[df['bs_gate_nums'] == bs_gate_num]
-            if len(df_bs_num) > 0:
+            if len(df_bs_num) > len_threshold:
                 # plt.plot(df_bs_num['rb_times'], df_bs_num['avg_idata'], '-o', label='BS gate ' + str(bs_gate_num))
                 print('len of df_bs_num', len(df_bs_num))
                 fids_for_plot.append(np.average(df_bs_num['avg_idata'].values))

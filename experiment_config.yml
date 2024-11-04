@@ -2565,8 +2565,8 @@ SingleBeamSplitterRB_check_target_sweep_depth:
 SingleBeamSplitterRB_ramsey: 
     # depth sweep params
     start: 1
-    step: 5
-    expts: 50
+    step: 7
+    expts: 30
 
     depth_list: [None] # assume all depths will use the same number of repetitions
     running_lists: []
@@ -2583,8 +2583,10 @@ SingleBeamSplitterRB_ramsey:
     wait_freq: 0.671 # in Mhz
     prepulse: True
     postpulse: True
-    rb_time: None   # this is filled by analysis 
-    bs_gate_num: None # this is filled by analysis
+    rb_time: None   # this is filled by analysis (not important)
+    bs_gate_num: None # this is filled by analysis (not important)
+    rb_timess: None # this is filled by analysis (important)
+    bs_gate_numss: None # this is filled by analysis (important)
 
     # basic params
     qubits: [0]
@@ -2600,12 +2602,12 @@ SingleBeamSplitterRB_ramsey:
     rb_active_reset: True
     rb_man_reset:  True
     rb_storage_reset:  True
-    rb_reps: 1000
+    rb_reps: 500
     gates_per_wait: 100000
     prep_man_photon: True # as a prpulse before rb
 
     rounds: 1   # always set to 1
-    variations: 5   # number of different sequences
+    variations: 40   # number of different sequences
     rb_depth: 5  # rb sequence depth
     IRB_gate_no: -1   # IRB gate number, -1 means not using
     bs_repeat: 1

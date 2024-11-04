@@ -47,7 +47,13 @@ class SingleBeamSplitterRB_ramsey_prog(MMDualRailRAveragerProgram):
         # for depth sweep 
         self.depth_start = self.cfg.expt.start
         self.depth_step = self.cfg.expt.step
-        self.depth = self.depth_start
+        #self.depth = self.depth_start
+        self.expts = self.cfg.expt.expts
+        self.depth_idx = 0  
+        self.running_lists = [self.create_variation(depth) for depth in range(self.depth_start, self.depth_start+ (self.expts * self.depth_step), self.depth_step)]
+        # print('length of running lists: ' + str(len(self.running_lists)))
+        # print('length of bs gate nums: ' + str(len(self.cfg.expt.bs_gate_nums)))
+
 
         # -------set up pulse parameters for measurement pulses -------
 
@@ -60,9 +66,9 @@ class SingleBeamSplitterRB_ramsey_prog(MMDualRailRAveragerProgram):
         # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
 
-    def create_variation(self):
+    def create_variation(self, depth):
         '''Create RB sequence for given depth and update phase of pi2 pulse'''
-        running_list =  self.generate_sequence(self.depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+        running_list =  self.generate_sequence(depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
         self.cfg.expt.running_lists.append(running_list)
         # Need to calculate total time taken up by running list and consequently, the phase on the second pi/2 pulse
         
@@ -120,7 +126,8 @@ class SingleBeamSplitterRB_ramsey_prog(MMDualRailRAveragerProgram):
         # store photon in storage 
         # self.play_bs_gate(cfg, phase=0, times = 2, wait=wait_bool)
         # self.cfg.expt.running_list = [4,6]   #[3,5]
-        running_list = self.create_variation()
+        running_list = self.running_lists[self.depth_idx]#self.create_variation()
+        print('running list: ' + str(self.running_lists))
         for idx, ii in enumerate(running_list):
             wait_bool = False
             if idx%self.cfg.expt.gates_per_wait == 0: # only wait after bs pulse every 10 gates
@@ -183,7 +190,7 @@ class SingleBeamSplitterRB_ramsey_prog(MMDualRailRAveragerProgram):
         )
     def update(self): 
         # update RB depth 
-        self.depth += self.depth_step
+        self.depth_idx += 1 #self.depth_step
 
     def collect_shots_rb(self, read_num, expts):
         # collect shots for 2 adcs (0 and 1 indexed) and I and Q channels
@@ -283,11 +290,13 @@ class SingleBeamSplitterRB_ramsey(Experiment):
         dummy = MM_dual_rail_base( cfg=self.cfg)
         # data['running_lists'] = []
 
-        self.cfg.expt.rb_times = [] # for analysis
-        self.cfg.expt.bs_gate_nums = [] # for analysis
+        
+        rb_timess = []
+        bs_gate_numss = []
 
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
-            
+            self.cfg.expt.rb_times = [] # for analysis
+            self.cfg.expt.bs_gate_nums = [] # for analysis
             rb_shot = SingleBeamSplitterRB_ramsey_prog(soccfg=self.soccfg, cfg=self.cfg)
             read_num =1
             if self.cfg.expt.rb_active_reset: read_num = 4
@@ -296,11 +305,16 @@ class SingleBeamSplitterRB_ramsey(Experiment):
                 self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
                         readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
             II, QQ = rb_shot.collect_shots_rb(read_num, self.cfg.expts)
+            rb_timess.append(self.cfg.expt.rb_times)
+            bs_gate_numss.append(self.cfg.expt.bs_gate_nums)
             data['Idata'].append(II)
             data['Qdata'].append(QQ)
             data['x_pts'] = x_pts
         #data['running_lists'] = running_lists   
         #print(self.prog)
+
+        self.cfg.expt.rb_timess = rb_timess
+        self.cfg.expt.bs_gate_numss = bs_gate_numss
             
         self.data = data
 
