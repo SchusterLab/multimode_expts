@@ -1120,13 +1120,15 @@ class MM_dual_rail_seq_exp:
 
     
         self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name],
+                                                    skip_ss = True)
             
     def SingleBeamSplitterRBPostSelection_sweep_depth(self,soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
-                                                    prep_init = False, prep_params = None):
+                                                    prep_init = False, prep_params = None, skip_ss = False):
         '''
         Prep_init: True if the config, experiment names are already initialized in some other parent function that calls this as a child
         prep_params: [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name]
+        skip_ss: Skip the single shot part of the experiment (True/False) (first depth will have it, later depths will not )
         '''
         if prep_init: 
             config_path, loaded, experiment_class, experiment_name, sweep_experiment_name = prep_params
@@ -1158,6 +1160,8 @@ class MM_dual_rail_seq_exp:
         for index, depth in enumerate(loaded[sweep_experiment_name]['depth_list']):
         #for index, depth in enumerate(depth_array):
             print('Index: %s depth. = %s ' %(index, depth))
+            if index != 0 and skip_ss:
+                loaded[experiment_name]['calibrate_single_shot'] = False
             loaded[experiment_name]['rb_depth'] = depth
             loaded[experiment_name]['rb_reps'] = loaded[sweep_experiment_name]['reps_list'][index]
             

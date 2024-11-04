@@ -1878,13 +1878,15 @@ class MM_DualRail_Analysis:
     # ------------- Analyis for Storage state in presence of spectator BS ------------
 
     
-    def filter_data_for_si_wrt_spec_BS(self, temp_data, attrs ): 
+    def filter_data_for_si_wrt_spec_BS(self, temp_data, attrs, threshold=None): 
         '''
         Filter data (based on active reset preselection) for single rail wrt to spectator BS
         '''
+        if threshold == None:
+            threshold = temp_data['thresholds']
         avg_idata = []
         for aa, var in enumerate(temp_data['Idata']):
-            var_data, _ = data_init, data_post_select = self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], None, temp_data['thresholds'],post_selection = False)
+            var_data, _ =  self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], None, threshold,post_selection = False)
             avg_data = np.mean(var_data, axis=0) # average wrt to shots
             avg_idata.append(avg_data)
         
@@ -1910,6 +1912,7 @@ class MM_DualRail_Analysis:
         wrong_bs_gate_nums = []
         wrong_times = []
         depth_list = []
+        threhold = 0
 
         for file_no in file_list: 
             try: 
@@ -1918,7 +1921,10 @@ class MM_DualRail_Analysis:
                 temp_data, attrs = prev_data(expt_path, full_name)
                 # analysis = MM_DualRail_Analysis()
 
-                avg_idata, bs_gate_nums, rb_times = self.filter_data_for_si_wrt_spec_BS(temp_data, attrs)
+                if attrs['config']['expt']['calibrate_single_shot']:
+                    threshold = temp_data['thresholds']
+
+                avg_idata, bs_gate_nums, rb_times = self.filter_data_for_si_wrt_spec_BS(temp_data, attrs, threshold)
                 var_datas+= avg_idata
                 bs_gate_numss += bs_gate_nums
                 rb_timess += rb_times
@@ -1936,7 +1942,7 @@ class MM_DualRail_Analysis:
         
         return self.reorganize_var_data_for_ramsey(var_datas, bs_gate_numss, rb_timess, attrs)
         
-    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 0):
+    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 5):
         # Re organize data so that we average over all the data points for a given BS gate number
 
         data = {'bs_gate_nums': bs_gate_numss, 'avg_idata': var_datas, 'rb_times': rb_timess}

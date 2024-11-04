@@ -2466,7 +2466,7 @@ SingleBeamSplitterRB_check_target:
                         ['man', 'M1', 'pi', 0],
                         ['qubit', 'ef_new', 'pi', 0], 
                         ['qubit', 'ge', 'hpi', 0]]
-    wait_freq: 0 # in Mhz
+    wait_freq: 0.672 # in Mhz
     prepulse: True
     postpulse: True
     rb_time: None   # this is filled by analysis 
@@ -2474,6 +2474,7 @@ SingleBeamSplitterRB_check_target:
 
     # basic params
     qubits: [0]
+    calibrate_single_shot: False
     singleshot_reps: 5000   # single shot measurement repetitions
     span: 1000   # single shot plot span
 
@@ -2487,11 +2488,11 @@ SingleBeamSplitterRB_check_target:
     rb_active_reset: True
     rb_man_reset:  True
     rb_storage_reset:  True
-    rb_reps: 1000
+    rb_reps: 300
     gates_per_wait: 100000
 
     rounds: 1   # always set to 1
-    variations: 20   # number of different sequences
+    variations: 40   # number of different sequences
     rb_depth: 5  # rb sequence depth
     IRB_gate_no: -1   # IRB gate number, -1 means not using
     bs_repeat: 1
@@ -2508,11 +2509,11 @@ SingleBeamSplitterRB_check_target:
 SingleBeamSplitterRB_check_target_sweep_depth: 
     # depth sweep params
     depth_start: 1
-    depth_stop: 400
-    depth_step: 5
+    depth_stop: 200
+    depth_step: 7
 
     depth_list: [None]
-    reps_list: [1000] # assume all depths will use the same number of repetitions
+    reps_list: [300] # assume all depths will use the same number of repetitions
 
     # experiments params
     pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
@@ -2523,7 +2524,7 @@ SingleBeamSplitterRB_check_target_sweep_depth:
                         ['man', 'M1', 'pi', 0],
                         ['qubit', 'ef_new', 'pi', 0], 
                         ['qubit', 'ge', 'hpi', 0]]
-    wait_freq: 0.671 # in Mhz
+    wait_freq: 0.680 # in Mhz
     prepulse: True
     postpulse: True
     rb_time: None   # this is filled by analysis 
@@ -2531,6 +2532,7 @@ SingleBeamSplitterRB_check_target_sweep_depth:
 
     # basic params
     qubits: [0]
+    calibrate_single_shot: True
     singleshot_reps: 5000   # single shot measurement repetitions
     span: 500   # single shot plot span
 
@@ -2548,7 +2550,7 @@ SingleBeamSplitterRB_check_target_sweep_depth:
     prep_man_photon: True # as a prpulse before rb
 
     rounds: 1   # always set to 1
-    variations: 60   # number of different sequences
+    variations: 50   # number of different sequences
     rb_depth: 5  # rb sequence depth
     IRB_gate_no: -1   # IRB gate number, -1 means not using
     bs_repeat: 1

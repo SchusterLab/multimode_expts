@@ -197,46 +197,55 @@ class SingleBeamSplitterRB_check_target(Experiment):
         # ================= #
         # Get single shot calibration for all qubits
         # ================= #
-
-        # g states for q0
-        data=dict()
-        # sscfg = AttrDict(deepcopy(self.cfg))
-        sscfg = self.cfg
-        sscfg.expt.reps = sscfg.expt.singleshot_reps
-        # sscfg.expt.active_reset = 
-        # print active reset inside sscfg 
-        print('sscfg active reset ' + str(sscfg.expt.active_reset))
-        # sscfg.expt.man_reset = kkk
-
-        # Ground state shots
-        # cfg.expt.reps = 10000
-        sscfg.expt.qubit = 0
-        sscfg.expt.rounds = 1
-        sscfg.expt.pulse_e = False
-        sscfg.expt.pulse_f = False
-        # print(sscfg)
-
+        data = dict()
         data['Ig'] = []
         data['Qg'] = []
         data['Ie'] = []
         data['Qe'] = []
-        histpro_g = HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_g.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
-                                       readouts_per_experiment=self.cfg.expt.readout_per_round)
-        data['Ig'], data['Qg'] = histpro_g.collect_shots()
+        if self.cfg.expt.calibrate_single_shot:
 
-        # Excited state shots
-        sscfg.expt.pulse_e = True 
-        sscfg.expt.pulse_f = False
-        histpro_e= HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_e.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
-                                       readouts_per_experiment=self.cfg.expt.readout_per_round)
-        data['Ie'], data['Qe'] = histpro_e.collect_shots()
-        # print(data)
+            # g states for q0
+            #data=dict()
+            # sscfg = AttrDict(deepcopy(self.cfg))
+            sscfg = self.cfg
+            sscfg.expt.reps = sscfg.expt.singleshot_reps
+            # sscfg.expt.active_reset = 
+            # print active reset inside sscfg 
+            print('sscfg active reset ' + str(sscfg.expt.active_reset))
+            # sscfg.expt.man_reset = kkk
 
-        fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
-                                                         active_reset=self.cfg.expt.active_reset, threshold = self.cfg.expt.threshold,
-                                                         readout_per_round=self.cfg.expt.readout_per_round)
+            # Ground state shots
+            # cfg.expt.reps = 10000
+            sscfg.expt.qubit = 0
+            sscfg.expt.rounds = 1
+            sscfg.expt.pulse_e = False
+            sscfg.expt.pulse_f = False
+            # print(sscfg)
+
+           
+            histpro_g = HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
+            avgi, avgq = histpro_g.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                        readouts_per_experiment=self.cfg.expt.readout_per_round)
+            data['Ig'], data['Qg'] = histpro_g.collect_shots()
+
+            # Excited state shots
+            sscfg.expt.pulse_e = True 
+            sscfg.expt.pulse_f = False
+            histpro_e= HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
+            avgi, avgq = histpro_e.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                        readouts_per_experiment=self.cfg.expt.readout_per_round)
+            data['Ie'], data['Qe'] = histpro_e.collect_shots()
+            # print(data)
+
+            fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
+                                                            active_reset=self.cfg.expt.active_reset, threshold = self.cfg.expt.threshold,
+                                                            readout_per_round=self.cfg.expt.readout_per_round)
+        else: 
+            fids = [0]
+            thresholds = [0]
+            angle = [0]
+            confusion_matrix = [0]
+            
         data['fids'] = fids
         data['angle'] = angle
         data['thresholds'] = thresholds
