@@ -1889,6 +1889,7 @@ class MM_DualRail_Analysis:
             var_data, _ =  self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], None, threshold,post_selection = False)
             avg_data = np.mean(var_data, axis=0) # average wrt to shots
             avg_idata.append(avg_data)
+            print(threshold)
         
         bs_gate_nums = attrs['config']['expt']['bs_gate_nums']
         rb_times = attrs['config']['expt']['rb_times']
@@ -1942,7 +1943,7 @@ class MM_DualRail_Analysis:
         
         return self.reorganize_var_data_for_ramsey(var_datas, bs_gate_numss, rb_timess, attrs)
         
-    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 5):
+    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 0):
         # Re organize data so that we average over all the data points for a given BS gate number
 
         data = {'bs_gate_nums': bs_gate_numss, 'avg_idata': var_datas, 'rb_times': rb_timess}
