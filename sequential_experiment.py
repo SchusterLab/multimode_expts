@@ -1082,15 +1082,11 @@ class MM_dual_rail_seq_exp:
             self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
                                                         prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
 
-    def SingleBeamSplitterRB_check_target_sweep_depth(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+    def SingleBeamSplitterRB_stor_ramsey_spec(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
         '''
-            Although this function is uses the daughter function SingleBeamSplitterRBPostSelection, 
-            the post selection part is unimportant. 
-
-            This is gate based ramsey experiment (instead of time based) for target state in presence
-            spectator beamsplitters.
+        Depth sweep over all storage-storage pairs  for ramsey inpresence of beamsplitters
         '''
-    #====================================================================#
+        #====================================================================#
         config_path = config_file
         print('Config will be', config_path)
 
@@ -1101,12 +1097,93 @@ class MM_dual_rail_seq_exp:
         with open(exp_param_file, 'r') as file:
             # Load the YAML content
             loaded = yaml.safe_load(file)
-    #===================================================================# 
-
+        #===================================================================# 
         experiment_class = 'single_qubit.rb_BSgate_check_target'
         experiment_name = 'SingleBeamSplitterRB_check_target'   
-        sweep_experiment_name = 'SingleBeamSplitterRB_check_target_sweep_depth'
+        sweep_experiment_name = 'SingleBeamSplitterRB_stor_ramsey_spec'
 
+        # for keys in loaded[experiment_name].keys():
+        #     try:
+        #         loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        #     except:
+        #         pass
+
+        for idx, stor_no in enumerate(loaded[sweep_experiment_name]['stor_list']):
+            for jdx, spec_no in enumerate(loaded[sweep_experiment_name]['spec_list']):
+                if idx == jdx: # no self -self pair
+                    continue
+                if [stor_no, spec_no] in loaded[sweep_experiment_name]['skip_pairs']:
+                    continue
+                print('-------------------------------------------------')
+                print('Index: %s Storage = %s, Spectator = %s ' %(idx, stor_no, spec_no))
+                # Frequency 
+                loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][idx][jdx]
+
+                # update prepulse/post pulse
+                loaded[sweep_experiment_name]['pre_sweep_pulse'][-1][1] = 'M1-S' + str(stor_no)
+                loaded[sweep_experiment_name]['post_sweep_pulse'][0][1] = 'M1-S' + str(stor_no)
+
+                # update bs_para
+                loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][jdx]
+
+                # print(loaded[sweep_experiment_name])
+
+                _ = self.SingleBeamSplitterRB_check_target_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                                  prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+
+
+
+    def SingleBeamSplitterRB_check_target_sweep_depth(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, prep_init = False, prep_params = None):
+        '''
+            Although this function is uses the daughter function SingleBeamSplitterRBPostSelection, 
+            the post selection part is unimportant. 
+
+            This is gate based ramsey experiment (instead of time based) for target state in presence
+            spectator beamsplitters.
+        '''
+    # #====================================================================#
+    #     config_path = config_file
+    #     print('Config will be', config_path)
+
+    #     with open(config_file, 'r') as cfg_file:
+    #         yaml_cfg = yaml.safe_load(cfg_file)
+    #     yaml_cfg = AttrDict(yaml_cfg)
+
+    #     with open(exp_param_file, 'r') as file:
+    #         # Load the YAML content
+    #         loaded = yaml.safe_load(file)
+    # #===================================================================# 
+
+    #     experiment_class = 'single_qubit.rb_BSgate_check_target'
+    #     experiment_name = 'SingleBeamSplitterRB_check_target'   
+    #     sweep_experiment_name = 'SingleBeamSplitterRB_check_target_sweep_depth'
+
+    #     for keys in loaded[experiment_name].keys():
+    #         try:
+    #             loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+    #         except:
+    #             pass
+        if prep_init: 
+            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name = prep_params
+        else: 
+        #====================================================================#
+            config_path = config_file
+            print('Config will be', config_path)
+
+            with open(config_file, 'r') as cfg_file:
+                yaml_cfg = yaml.safe_load(cfg_file)
+            yaml_cfg = AttrDict(yaml_cfg)
+
+            with open(exp_param_file, 'r') as file:
+                # Load the YAML content
+                loaded = yaml.safe_load(file)
+        #===================================================================# 
+
+            experiment_class = 'single_qubit.rb_BSgate_check_target'
+            experiment_name = 'SingleBeamSplitterRB_check_target'   
+            sweep_experiment_name = 'SingleBeamSplitterRB_check_target_sweep_depth'
+
+        # NOTe the following code is not part of the "prep function"
         for keys in loaded[experiment_name].keys():
             try:
                 loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
@@ -1118,7 +1195,7 @@ class MM_dual_rail_seq_exp:
                                                                 loaded[sweep_experiment_name]['depth_step'])
         loaded[sweep_experiment_name]['reps_list'] = loaded[sweep_experiment_name]['depth_list'] * len(loaded[sweep_experiment_name]['depth_list'])
 
-    
+        # print(loaded[sweep_experiment_name])
         self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
                                                     prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name],
                                                     skip_ss = True)
