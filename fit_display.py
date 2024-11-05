@@ -1943,7 +1943,7 @@ class MM_DualRail_Analysis:
         
         return self.reorganize_var_data_for_ramsey(var_datas, bs_gate_numss, rb_timess, attrs)
         
-    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 0):
+    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 2):
         # Re organize data so that we average over all the data points for a given BS gate number
 
         data = {'bs_gate_nums': bs_gate_numss, 'avg_idata': var_datas, 'rb_times': rb_timess}
