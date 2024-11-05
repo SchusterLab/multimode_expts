@@ -91,7 +91,7 @@ HistogramExperiment:
     qubits: [0]
     reps: 20000
     check_f: False
-    active_reset: False
+    active_reset: True
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -2488,19 +2488,19 @@ SingleBeamSplitterRB_check_target:
     rb_active_reset: True
     rb_man_reset:  True
     rb_storage_reset:  True
-    rb_reps: 300
+    rb_reps: 600
     gates_per_wait: 100000
 
     rounds: 1   # always set to 1
-    variations: 40   # number of different sequences
-    rb_depth: 5  # rb sequence depth
+    variations: 50   # number of different sequences
+    rb_depth: 400  # rb sequence depth
     IRB_gate_no: -1   # IRB gate number, -1 means not using
     bs_repeat: 1
     sync: False
     setup: False
-    bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    # bs_para: [349.415, 3000, 0.48857142857142855, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
     # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
-    # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
+    bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
     # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
     # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
     # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
@@ -2509,22 +2509,23 @@ SingleBeamSplitterRB_check_target:
 SingleBeamSplitterRB_check_target_sweep_depth: 
     # depth sweep params
     depth_start: 1
-    depth_stop: 200
-    depth_step: 5
+    depth_stop: 400
+    depth_step: 3
 
     depth_list: [None]
-    reps_list: [300] # assume all depths will use the same number of repetitions
+    repss: 300 # assume all depths will use the same number of repetitions
+    reps_list: [None] # will be automatically filled by the function
 
     # experiments params
     pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
-                      ['qubit', 'ef_new', 'pi', 0], 
+                      ['qubit', 'ef', 'pi', 0], 
                       ['man', 'M1', 'pi', 0],
-                      ['storage', 'M1-S2', 'pi', 0]]
-    post_sweep_pulse: [['storage', 'M1-S2', 'pi', 0],
+                      ['storage', 'M1-S4', 'pi', 0]]
+    post_sweep_pulse: [['storage', 'M1-S4', 'pi', 0],
                         ['man', 'M1', 'pi', 0],
-                        ['qubit', 'ef_new', 'pi', 0], 
+                        ['qubit', 'ef', 'pi', 0], 
                         ['qubit', 'ge', 'hpi', 0]]
-    wait_freq: 0.76 # in Mhz
+    wait_freq: 1.73 # in Mhz
     prepulse: True
     postpulse: True
     rb_time: None   # this is filled by analysis 
@@ -2547,7 +2548,7 @@ SingleBeamSplitterRB_check_target_sweep_depth:
     rb_storage_reset:  True
     rb_reps: 1000
     gates_per_wait: 100000
-    prep_man_photon: True # as a prpulse before rb
+    prep_man_photon: True #True # as a prpulse before rb
 
     rounds: 1   # always set to 1
     variations: 20   # number of different sequences
@@ -2561,8 +2562,8 @@ SingleBeamSplitterRB_check_target_sweep_depth:
     # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
     # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
     # bs_para: [1053.395, 7500, 0.9865989868431034, 0.005]  # opt 91 at 100
-    # bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
-    bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
+    bs_para: [1245.160, 13500, 0.797654995769661, 0.005] # opt 93 at 100
+    # bs_para: [1423.04, 13500, 0.8425040638970613, 0.005] # p[t to 84]
 
 SingleBeamSplitterRB_stor_ramsey_spec: 
     # stor_sweep_params (will be used to overwrite parameters below)
@@ -2589,12 +2590,12 @@ SingleBeamSplitterRB_stor_ramsey_spec:
 
     # experiments params
     pre_sweep_pulse: [['qubit', 'ge', 'hpi', 0], 
-                      ['qubit', 'ef_new', 'pi', 0], 
+                      ['qubit', 'ef', 'pi', 0], 
                       ['man', 'M1', 'pi', 0],
                       ['storage', 'M1-S2', 'pi', 0]]
     post_sweep_pulse: [['storage', 'M1-S2', 'pi', 0],
                         ['man', 'M1', 'pi', 0],
-                        ['qubit', 'ef_new', 'pi', 0], 
+                        ['qubit', 'ef', 'pi', 0], 
                         ['qubit', 'ge', 'hpi', 0]]
     wait_freq: 0.76 # in Mhz
     prepulse: True

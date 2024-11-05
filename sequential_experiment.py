@@ -1193,7 +1193,8 @@ class MM_dual_rail_seq_exp:
         loaded[sweep_experiment_name]['depth_list'] = np.arange(loaded[sweep_experiment_name]['depth_start'],
                                                                 loaded[sweep_experiment_name]['depth_stop'],
                                                                 loaded[sweep_experiment_name]['depth_step'])
-        loaded[sweep_experiment_name]['reps_list'] = loaded[sweep_experiment_name]['depth_list'] * len(loaded[sweep_experiment_name]['depth_list'])
+        length = len(loaded[sweep_experiment_name]['depth_list'])
+        loaded[sweep_experiment_name]['reps_list'] = [loaded[sweep_experiment_name]['repss'] for _ in range(length)] # * len(loaded[sweep_experiment_name]['depth_list'])
 
         # print(loaded[sweep_experiment_name])
         self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
