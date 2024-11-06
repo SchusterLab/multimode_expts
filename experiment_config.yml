@@ -43,13 +43,13 @@ ParityDelayExperiment:
 
 T1CavityExperiment:
     start: 0 # wait time [us]
-    step: 10
+    step: 7
     expts: 60
-    reps: 100
-    rounds: 10
+    reps: 500
+    rounds: 1
     cavity_prepulse: [False, 300, 1.5]   # Cavity prepulse, [on/off, amplitude, length]
     f0g1_prep: True
-    f0g1_param: [2006.72, 15000, 0.615106737507514]    # f0g1 prepulse, [freq, gain, length]
+    f0g1_param: [1977.7, 15000, 0.5504927277728119]    # f0g1 prepulse, [freq, gain, length]
     # f0g1_param: [1832.75, 3000, 1.4432303930717378]    # f0g1 prepulse, [freq, gain, length]
     resolved_pi: False
     cavity: 1 # 1 for manipulate
@@ -1150,7 +1150,7 @@ LengthRabiGeneralF0g1Experiment:
     rounds: 1
     gain: 15000 # qubit gain [DAC units],
     ramp_sigma: 0.005  # us
-    freq: 2007.06  #1834.895   # MHz
+    freq: 2013 #1834.895   # MHz
     use_arb_waveform: False
     pi_ge_before: True
     pi_ef_before: True
@@ -1186,10 +1186,10 @@ LengthRabiGeneralF0g1Experiment:
                        
 
 LengthRabiGeneralF0g1ExperimentSweep:
-    freq_start: 2006.98 #1949.6230253558676 #2010.7098618878696
-    freq_stop: 2007.18 # 2007.95 #1951.6230253558676 #2012.7098618878696
-    freq_step: 0.02 #0.01
-    start: 45.0 #0.007 #0.0069754464285714285 # us
+    freq_start: 2013 #9360934716117 #1949.6230253558676 #2010.7098618878696
+    freq_stop: 2015 # 2007.95 #1951.6230253558676 #2012.7098618878696
+    freq_step: 0.1 #0.01
+    start: 10 #0.007 #0.0069754464285714285 # us
     step: 0.05 # us
     qubits: [0]
     expts: 101
@@ -1337,7 +1337,7 @@ GainDisplaceSweep: #Pulse probe spec param
 
 PulseProbePrePulseSpectroscopyExperiment:
     start: 1035 # resonator frequency to be mixed up [MHz]
-    step: 0.04 # min step ~1 MHz
+    step: 0.05 # min step ~1 MHz
     expts: 1000 # Number of experiments stepping from start
     reps: 300 # Number of averages per point
     rounds: 1 # Number of start to finish sweeps to average over
@@ -1391,12 +1391,12 @@ PulseProbeSpectroscopyExperiment:
     cavity_pulse: [False, 0.1 ] # truth value for gaussian cavity pulse, type (pulse assumes gaussian), sigma
 
 PulseProbeF0g1SpectroscopyExperiment:
-    start: 1980 #1995 #1835 # resonator frequency to be mixed up [MHz]
-    step: 0.1 # min step ~1 MHz
+    start: 2005 #1995 #1835 # resonator frequency to be mixed up [MHz]
+    step: 0.05 # min step ~1 MHz
     expts: 500 # Number of experiments stepping from start
-    reps: 300 # Number of averages per point
+    reps: 500 # Number of averages per point
     rounds: 1 # Number of start to finish sweeps to average over
-    length: 3 #0.620740890403745 # ef probe constant pulse length [us]
+    length: 2 #0.620740890403745 # ef probe constant pulse length [us]
     gain: 15000 # f0g1 pulse gain
     pulse_type: 'gaussian'
     qubit_f: True

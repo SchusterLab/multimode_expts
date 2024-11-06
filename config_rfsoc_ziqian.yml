@@ -190,13 +190,13 @@ device:
         trig_offset: 450 # [Clock ticks]  400
         frequency: [748.8] # [MHz] (748.19) (748.6)
         gain: [700]  # 800
-        phase: [160.076255242564] # degrees     # 178.3
-        threshold: [-20.865628512802004] # adc units
-        threshold_list: [-20.865628512802004] # adc units
+        phase: [177.076255242564] # degrees     # 178.3
+        threshold: [-43.47477176210509] # adc units
+        threshold_list: [-43.47477176210509] # adc units
         man1_drive_list: [0]
         man2_drive_list: [0]
         readout_length: [1.0] # [us]   1.0
-        relax_delay: [100] # [us] # Usually 1500
+        relax_delay: [1500] # [us] # Usually 1500
     
     manipulate:
         trig_offset: 450 # [Clock ticks]
