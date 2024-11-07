@@ -240,14 +240,17 @@ def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, con
     # Sample data
     x_data = np.array(loaded['FluxSpectroscopyF0g1ExperimentSweep']['flux_sample_list'])
     y_data = np.array(loaded['FluxSpectroscopyF0g1ExperimentSweep']['f0g1_freq_sample_list'])
+    z_data = np.array(loaded['FluxSpectroscopyF0g1ExperimentSweep']['pi_length_sample_list'])
 
     # Sort the data
     sorted_indices = np.argsort(x_data)
     x_data = x_data[sorted_indices]
     y_data = y_data[sorted_indices]
+    z_data = z_data[sorted_indices]
 
     # Fit a spline to the data
-    spline = UnivariateSpline(x_data, y_data)
+    y_spline = UnivariateSpline(x_data, y_data)
+    z_spline = UnivariateSpline(x_data, z_data)
 
 
     for index, current in enumerate(np.linspace(loaded['FluxSpectroscopyF0g1ExperimentSweep']['flux_start'], 
@@ -256,9 +259,14 @@ def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, con
         loaded[experiment_name]['current'] = current
         current_now = current / 1000
         if abs(current_now) > 0.03: break    # for safety
-        freq_update = spline(current)  # new f0g1 frequency
+
+        freq_update = y_spline(current)  # new f0g1 frequency
+        pi_length_update = z_spline(current)  # new pi length
+
         loaded[experiment_name]['pre_sweep_pulse'][0][-1] = freq_update
+        loaded[experiment_name]['pre_sweep_pulse'][2][-1] = pi_length_update
         loaded[experiment_name]['post_sweep_pulse'][0][-1] = freq_update
+        loaded[experiment_name]['post_sweep_pulse'][2][-1] = pi_length_update
 
         print("%d: flux Driving at %.3f mA with F0G1 frequency %.6f" % (index, current_now * 1000, freq_update))
         dcflux.ramp_current(current_now, sweeprate=0.002)
@@ -271,7 +279,7 @@ def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, con
 
         # special updates on device_config file
         # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
-        run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+        run_exp.cfg.device.readout.relax_delay = 200 # Wait time between experiments [us]
         # run_exp.cfg.device.manipulate.readout_length = 5
         # run_exp.cfg.device.storage.readout_length = 5
 
@@ -280,6 +288,72 @@ def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, con
     #After expt is over, set current back to 0.32mA
     dcflux.ramp_current(0.00032, sweeprate=0.002)
 
+def cavity_t1_dc_flux_sweep_new(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, dcflux = None):
+    '''
+    this function is to sweep the dc flux and measure the T1 of the cavity
+    with 3 different step sizes 1, 7, 15
+    '''
+    #====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+    #===================================================================#
+
+    experiment_class = 'single_qubit.t1_cavity'
+    experiment_name = 'T1CavityExperiment'   
+    sweep_name = 'T1CavityExperiment_DC_sweep_new'
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded['T1CavityExperiment_DC_sweep_new'][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    # load YOKO
+    dcflux = YokogawaGS200(address="192.168.137.148")
+    dcflux.set_output(True)
+    dcflux.set_mode('current')
+    sweep_rate_coupler = 0.0005
+    dcflux.ramp_current(0.000, sweeprate=sweep_rate_coupler)
+
+
+    for index, current in enumerate(loaded[sweep_name]['currents_interped']):
+
+        loaded[experiment_name]['current'] = current
+        current_now = current / 1000
+        if abs(current_now) > 0.03: break    # for safety
+        print("%d: flux Driving at %.3f mA" % (index, current_now * 1000))
+        dcflux.ramp_current(current_now, sweeprate=sweep_rate_coupler)
+
+        aa = loaded[sweep_name]['f0g1_freq_interped'][index]
+        bb = loaded[sweep_name]['pi_length_interped'][index]
+
+        loaded[experiment_name]['f0g1_param'] = [aa, 15000, bb]
+        print('f0g1 parameters are ', loaded[experiment_name]['f0g1_param'])
+
+        for idx, step in enumerate(loaded[sweep_name]['step_sizes']):
+            if step == 1 and current<0.55: 
+                continue
+            else:
+                if step == 15: 
+                    loaded[experiment_name]['expts'] = 60
+                else:
+                    loaded[experiment_name]['expts'] = 30
+                loaded[experiment_name]['step'] = step
+                print('config is', loaded[experiment_name])
+                run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+                run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+                run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+    #After expt is over, set current back to 0
+    dcflux.ramp_current(0.000, sweeprate=sweep_rate_coupler)
 
 
 def cavity_t1_dc_flux_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, dcflux = None):

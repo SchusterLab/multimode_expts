@@ -43,13 +43,56 @@ ParityDelayExperiment:
 
 T1CavityExperiment:
     start: 0 # wait time [us]
-    step: 7
+    step: 10
     expts: 60
     reps: 500
     rounds: 1
     cavity_prepulse: [False, 300, 1.5]   # Cavity prepulse, [on/off, amplitude, length]
     f0g1_prep: True
-    f0g1_param: [1977.7, 15000, 0.5504927277728119]    # f0g1 prepulse, [freq, gain, length]
+    f0g1_param: [2012.93, 15000, 0.608686712]    # f0g1 prepulse, [freq, gain, length]
+    # f0g1_param: [1832.75, 3000, 1.4432303930717378]    # f0g1 prepulse, [freq, gain, length]
+    resolved_pi: False
+    cavity: 1 # 1 for manipulate
+    qubit: 0
+    normalize: False
+
+T1CavityExperiment_DC_sweep_new: # new version with specified interpolated currents, f0g1, pis
+    ### sweep parameetrs
+
+    # interepolated beforehand (currents in mA, f0g1 freq in MHz, pi length in us)
+    currents_interped: [-0.2  , -0.17 , -0.14 , -0.12 , -0.09 , -0.06 , -0.03 , -0.01 ,
+        0.02 ,  0.05 ,  0.08 ,  0.1  ,  0.13 ,  0.16 ,  0.19 ,  0.21 ,
+        0.24 ,  0.27 ,  0.3  ,  0.32 ,  0.35 ,  0.38 ,  0.41 ,  0.43 ,
+        0.46 ,  0.49 ,  0.52 ,  0.54 ,  0.55 ,  0.56 ,  0.57 ,  0.575,
+        0.58 ,  0.585,  0.59 ,  0.595,  0.6  ]
+    f0g1_freq_interped: [1977.7    , 1978.63   , 1979.56   , 1980.18   , 1981.466  ,
+       1983.464  , 1985.462  , 1986.794  , 1988.9825 , 1991.26625,
+       1993.55   , 1995.     , 1997.1    , 1999.05   , 2000.84   ,
+       2001.98   , 2003.53   , 2005.     , 2006.2    , 2007.     ,
+       2007.975  , 2008.95   , 2009.837  , 2010.311  , 2011.022  ,
+       2011.733  , 2012.354  , 2012.738  , 2012.93   , 2013.104  ,
+       2013.278  , 2013.365  , 2013.452  , 2013.539  , 2013.626  ,
+       2013.713  , 2013.8    ]
+    pi_length_interped: [0.55045291, 0.55214486, 0.5538368 , 0.55496476, 0.5561103 ,
+       0.55616301, 0.55621572, 0.55625086, 0.55792093, 0.56039967,
+       0.56287841, 0.56807103, 0.57638709, 0.58575741, 0.59221514,
+       0.59554943, 0.60152883, 0.60799722, 0.60601218, 0.60468882,
+       0.60536071, 0.6060326 , 0.60664476, 0.60697321, 0.60746589,
+       0.60795858, 0.60834837, 0.60857393, 0.60868671, 0.60894937,
+       0.60921203, 0.60934336, 0.60947468, 0.60960601, 0.60973734,
+       0.60986867, 0.61      ]
+    
+    step_sizes: [1,7,15] # step in T1CavityExperiment
+
+    # Base paramters
+    start: 0.1 # wait time [us]
+    step: 10
+    expts: 30
+    reps: 500
+    rounds: 1
+    cavity_prepulse: [False, 300, 1.5]   # Cavity prepulse, [on/off, amplitude, length]
+    f0g1_prep: True
+    f0g1_param: []    # f0g1 prepulse, [freq, gain, length]
     # f0g1_param: [1832.75, 3000, 1.4432303930717378]    # f0g1 prepulse, [freq, gain, length]
     resolved_pi: False
     cavity: 1 # 1 for manipulate
@@ -1150,7 +1193,7 @@ LengthRabiGeneralF0g1Experiment:
     rounds: 1
     gain: 15000 # qubit gain [DAC units],
     ramp_sigma: 0.005  # us
-    freq: 2013 #1834.895   # MHz
+    freq: 2009.6 #1834.895   # MHz
     use_arb_waveform: False
     pi_ge_before: True
     pi_ef_before: True
@@ -1186,10 +1229,10 @@ LengthRabiGeneralF0g1Experiment:
                        
 
 LengthRabiGeneralF0g1ExperimentSweep:
-    freq_start: 2013 #9360934716117 #1949.6230253558676 #2010.7098618878696
+    freq_start: 1978.6 #9360934716117 #1949.6230253558676 #2010.7098618878696
     freq_stop: 2015 # 2007.95 #1951.6230253558676 #2012.7098618878696
-    freq_step: 0.1 #0.01
-    start: 10 #0.007 #0.0069754464285714285 # us
+    freq_step: 0.05 #0.01
+    start: 0.007 #0.007 #0.0069754464285714285 # us
     step: 0.05 # us
     qubits: [0]
     expts: 101
@@ -1546,12 +1589,12 @@ PulseProbeEFSpectroscopyExperiment:
 #     qubit: 0
 
 FluxSpectroscopyF0g1Experiment:
-    start: 1760 # Start RF frequency [MHz]
-    step: 0.02 # min step ~1 Hz
-    expts: 2000 # Number experiments stepping from start
-    reps: 300 # Number averages per point
+    start: 345 # Start RF frequency [MHz]
+    step: 0.2 # min step ~1 Hz
+    expts: 2500 # Number experiments stepping from start
+    reps: 100 # Number averages per point
     qubit: [0]
-    flux_drive: ['high', 400,13500, 2]     # [low/high (ch), freq (will be overwritten), gain, length(us)] RF flux modulation, constant pulse
+    flux_drive: ['low', 400,1000, 1]     # [low/high (ch), freq (will be overwritten), gain, length(us)] RF flux modulation, constant pulse
     prepulse: True
     postpulse: True
     active_reset: False
@@ -1572,62 +1615,54 @@ FluxSpectroscopyF0g1Experiment:
     #    [0.005]]
 
 
-    pre_sweep_pulse: [[3568.182183286917, 3425.55044773984, 2006.76],
-       [9653, 7575, 15000],
-       [0, 0, 0.620964539247996],
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06],
+       [10716, 8236, 15000],
+       [0, 0, 0.651287],
        [0, 0, 0],
-       [2, 2, 5],
+       [2, 2, 0],
        ['gaussian', 'gaussian', 'flat_top'],
-       [0.035, 0.035, 0.005]] # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
-    post_sweep_pulse: [[2006.76],
+       [0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2007.06],
        [15000],
-       [0.620964539247996],
+       [0.651287],
        [0],
-       [5],
+       [0],
        ['flat_top'],
        [0.005]]
 
 
 
 FluxSpectroscopyF0g1ExperimentSweep:
-    start: 100 # Start RF frequency [MHz]
-    step: 0.25 # min step ~1 Hz
-    expts: 1200 # Number experiments stepping from start
+    start: 5 # Start RF frequency [MHz]
+    step: 0.2 # min step ~1 Hz
+    expts: 2500 # Number experiments stepping from start
     reps: 100 # Number averages per point
-    flux_start: -0.45     # in mA
-    flux_stop: -0.2    # in mA
-    flux_expts: 20      
-    f0g1_freq_sample_list: [ 2004.775,1999.925, 1993.35,1982.025, 1976.15] # f0g1_freq_sample_list: [2004.5, 2004.1, 2003.5, 2002.95, 2002.4, 2001.8, 2001.4, 2001.1]    # used for spline fitting to update f0g1 frequency at differen flux point 
-    flux_sample_list: [-0.7,-0.6, -0.5,-0.35, -0.2]     # used for spline fitting to update f0g1 frequency at differen flux point 
+    flux_start: -0.2     # in mA
+    flux_stop: 0.65    # in mA
+    flux_expts: 50      
+    f0g1_freq_sample_list: [1977.7, 1980.8, 1987.46, 1993.55, 1996.45, 1999.7, 2002.55, 2005, 2007, 2009.6, 2011.97, 2012.93, 2013.8] # f0g1_freq_sample_list: [2004.5, 2004.1, 2003.5, 2002.95, 2002.4, 2001.8, 2001.4, 2001.1]    # used for spline fitting to update f0g1 frequency at differen flux point 
+    flux_sample_list: [-0.2, -0.1, 0, 0.08, 0.12, 0.17, 0.22, 0.27, 0.32, 0.4, 0.5, 0.55, 0.6]    # used for spline fitting to update f0g1 frequency at differen flux point 
+    pi_length_sample_list: [0.55045291, 0.556092728, 0.556268435, 0.562878407, 0.573263647, 0.588880852, 0.597216575, 0.607997218, 0.604688822, 0.606480529, 0.608122803, 0.608686712, 0.61]
+    
+    active_reset: False
     qubit: [0]
     flux_drive: ['low', 337.5, 1000, 1]     # [low/high (ch), freq (overwrite), gain, length(us)] RF flux modulation, constant pulse
-    prepulse: False
-    postpulse: False
-    pre_sweep_pulse: [[3567.416494244421, 3424.304542044959,  0, 2004.775],
-                       [3312, 2564, 0, 3000], # amplitude 
-                       [0.0,0.0, 0.01, 0.75303531], # length of flat top
-                       [0,0, 0, 0],
-                       [2,2, 5,5],['gaussian','gaussian', 'flat_top','flat_top'], 
-                       [0.03,0.03, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
-    post_sweep_pulse: [[2004.775],
-                       [3000],
-                       [0.741552863],
-                       [0],
-                       [5],['flat_top'], 
-                       [0.005]]
-    # pre_sweep_pulse: [[3566.4230946856283, 3423.5042019608622, 0, 2002.4],
-    #                    [9357, 7599,  0, 15000],
-    #                    [0.0,0.0, 0.01, 0.6151826187404069],
-    #                    [0,0,0, 0],
-    #                    [2,2,5, 5],['gaussian','gaussian','flat_top','flat_top'], 
-    #                    [0.035,0.035, 0.005, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
-    # post_sweep_pulse: [[2002.4],
-    #                    [15000],
-    #                    [0.6151826187404069],
-    #                    [0],
-    #                    [5],['flat_top'], 
-    #                    [0.005]]
-
+    prepulse: True
+    postpulse: True
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.06],
+       [10716, 8236, 15000],
+       [0, 0, 0.651287],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['gaussian', 'gaussian', 'flat_top'],
+       [0.035, 0.035, 0.005]]  # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),           
+    post_sweep_pulse: [[2007.06],
+       [15000],
+       [0.651287],
+       [0],
+       [0],
+       ['flat_top'],
+       [0.005]]
 
 SidebandT1GeneralExperiment:
     start: 0.007 # 
