@@ -249,8 +249,9 @@ def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, con
     z_data = z_data[sorted_indices]
 
     # Fit a spline to the data
-    y_spline = UnivariateSpline(x_data, y_data)
-    z_spline = UnivariateSpline(x_data, z_data)
+    from scipy.interpolate import CubicSpline, interp1d
+    y_spline = CubicSpline(x_data, y_data)
+    z_spline = interp1d(x_data, z_data)
 
 
     for index, current in enumerate(np.linspace(loaded['FluxSpectroscopyF0g1ExperimentSweep']['flux_start'], 
