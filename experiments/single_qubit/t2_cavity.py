@@ -84,6 +84,17 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
             # get register page for that channel 
             self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
+        if self.cfg.expt.coupler_ramsey: 
+            # decide which channel do we flux drive on 
+            pulse_str = self.cfg.expt.custom_coupler_pulse
+            freq = pulse_str[0][0]
+            self.flux_ch = self. flux_low_ch 
+            if freq > 1000: self.flux_ch = self.flux_high_ch
+
+            # get register page for that channel 
+            self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
+        # if self.cfg.expt.custom_coupler_pulse[0]:
+        #     self.ramse
 
         self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
         self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(self.cfg.device.readout.readout_length, self.res_chs)]
@@ -130,7 +141,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
         #     self.r_phase = self.sreg(self.cavity_ch[qTest], "freq")
         #     self.r_phase3 = 5 # for storing the left shifted value
         # else:
-        if self.cfg.expt.storage_ramsey[2]:
+        if self.cfg.expt.storage_ramsey[2] or self.cfg.expt.coupler_ramsey:
             self.phase_update_channel = self.flux_ch
         else:
             self.phase_update_channel = self.cavity_ch
@@ -210,6 +221,11 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.sync_all(self.us2cycles(0.01))
             print(self.creator.pulse)
             print(self.flux_ch)
+        if self.cfg.expt.coupler_ramsey:
+            self.custom_pulse(cfg, cfg.expt.custom_coupler_pulse, prefix='CustomCoupler')
+            self.sync_all(self.us2cycles(0.01))
+            print(cfg.expt.custom_coupler_pulse)
+            print(self.flux_ch)
 
         # wait advanced wait time
         self.sync_all()
@@ -244,9 +260,13 @@ class CavityRamseyProgram(MMRAveragerProgram):
         self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
         self.sync_all(self.us2cycles(0.01))
 
-        if cfg.expt.storage_ramsey[0]:
+
+        if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
             self.pulse(ch=self.flux_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
+        
+        
+
 
         if self.cfg.user_defined_pulse[0]:
             self.pulse(ch=self.cavity_ch[qTest])

@@ -1744,7 +1744,7 @@ def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
 
 
     return Ilist, Qlist
-def t1_display(data, fit=True, active_reset = True, threshold = -4, readouts_per_rep = 4, title="$T_1$", **kwargs):
+def t1_display(data, attrs, fit=True, active_reset = True, threshold = -4, readouts_per_rep = 4, title="$T_1$", **kwargs):
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
         data['avgi'] = Ilist
@@ -1777,6 +1777,8 @@ def t1_display(data, fit=True, active_reset = True, threshold = -4, readouts_per
         plt.xlabel('Time [us]')
         plt.legend()
         print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')
+        plt.show()
+        return p[3], np.sqrt(pCov[3][3])
 
     plt.show()
 def plot_sideband_sweep_long(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, title="Sideband Sweep"):
