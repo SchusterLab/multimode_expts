@@ -696,6 +696,9 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
                     f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][0]}\n',
                     f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][1]}')
             print(f'T2 Ramsey from fit I [us]: {p[3]}')
+            t2 = p[3]
+            t2_err = np.sqrt(pCov[3][3])
+
     axq = plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
     plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
     if fit:
@@ -716,9 +719,13 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
     
     if normalize[0]:
         axi,axq = normalize_data(axi, axq, data, normalize)
+    
+    
         
     plt.tight_layout()
     plt.show()
+    if fit: 
+        return t2, t2_err
 def multiple_Ramsey_display(prev_data, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):

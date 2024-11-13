@@ -63,7 +63,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
         elif cfg.expt.user_defined_pulse[5] == 6:
             self.cavity_ch = self.storage_ch
             self.cavity_ch_types = self.storage_ch_type
-        elif cfg.expt.user_defined_pulse[5] == 5:
+        elif cfg.expt.user_defined_pulse[5] == 0:
             self.cavity_ch = self.f0g1_chs
             self.cavity_ch_types = self.f0g1_ch_types
         elif cfg.expt.user_defined_pulse[5] == 4:
