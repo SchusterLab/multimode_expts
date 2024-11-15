@@ -1923,7 +1923,7 @@ class MM_DualRail_Analysis:
         wrong_bs_gate_nums = []
         wrong_times = []
         depth_list = []
-        threhold = 0
+        threshold = 0
         fnot_found_err_bool  = False
 
         for idx, file_no in enumerate(file_list): 
@@ -2165,7 +2165,7 @@ class MM_DualRail_Analysis:
             reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
         except KeyError:
             reset_bool = attrs['config']['expt']['reset_qubit_after_parity']
-        fid, fid_err, fid_post, fid_post_err = plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
+        fid, fid_err, fid_post, fid_post_err = self.plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
                     gg_list = gg_list, gg_list_err = gg_list_err, ge_list = ge_list, ge_list_err = ge_list_err, 
                     eg_list = eg_list, eg_list_err = eg_list_err, ee_list = ee_list, ee_list_err = ee_list_err,
                     ebars_list=ebars_list, ebars_post_list=ebars_post_list, reset_qubit_after_parity = reset_bool,
@@ -2269,7 +2269,7 @@ class MM_DualRail_Analysis:
 
             #  post selection due to active reset
             if active_reset:
-                data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
+                data_init, data_post_select = self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
             else: 
                 data_init = temp_data['Idata'][aa][0]
                 data_post_select = temp_data['Idata'][aa][1]

@@ -1185,21 +1185,21 @@ class MM_dual_rail_seq_exp:
 
         for idx, stor_no in enumerate(loaded[sweep_experiment_name]['stor_list']):
             for jdx, spec_no in enumerate(loaded[sweep_experiment_name]['spec_list']):
-                if idx == jdx: # no self -self pair
+                if stor_no == spec_no: # no self -self pair
                     continue
                 if [stor_no, spec_no] in loaded[sweep_experiment_name]['skip_pairs']:
                     continue
                 print('-------------------------------------------------')
                 print('Index: %s Storage = %s, Spectator = %s ' %(idx, stor_no, spec_no))
                 # Frequency 
-                loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][idx][jdx]
+                loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][stor_no -1][spec_no -1]
 
                 # update prepulse/post pulse
                 loaded[sweep_experiment_name]['pre_sweep_pulse'][-1][1] = 'M1-S' + str(stor_no)
                 loaded[sweep_experiment_name]['post_sweep_pulse'][0][1] = 'M1-S' + str(stor_no)
 
                 # update bs_para
-                loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][jdx]
+                loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][spec_no -1]
 
                 # print(loaded[sweep_experiment_name])
 
