@@ -2015,6 +2015,7 @@ class MM_DualRail_Analysis:
             #         f'\t{f_pi_test + f_adjust_ramsey_avgi[0]}\n',
             #         f'\t{f_pi_test + f_adjust_ramsey_avgi[1]}')
             print(f'T2 Ramsey from fit I [us]: {p[3]}')
+            return p[3], np.sqrt(pCov[3][3])
     
     # -------------------------------------------------------------------------
 
