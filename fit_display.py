@@ -645,7 +645,7 @@ def plot_ramsey_sideband(data_list, attrs_list, y_list,
     
     
 def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], 
-                   active_reset = False, threshold = 4, readouts_per_rep = 4, title='Ramsey'):
+                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, title='Ramsey'):
 
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
@@ -724,8 +724,11 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         
     plt.tight_layout()
     plt.show()
-    if fit: 
-        return t2, t2_err
+    if fit:
+        if return_idata:
+            return t2, t2_err, data["xpts"][1:-1], data["avgi"][1:-1]
+        else: 
+            return t2, t2_err
 def multiple_Ramsey_display(prev_data, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):

@@ -618,10 +618,10 @@ PhaseSweepExperiment: # RAverger
    
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 0.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 100
-    ramsey_freq: 0.2 # [MHz]
-    reps: 500
+    step: 0.4  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 400
+    ramsey_freq: 0.1 # [MHz]
+    reps: 2000
     rounds: 1
     qubits: [0]
     checkEF: False # 
@@ -632,11 +632,18 @@ RamseyExperiment:
     normalize: False
     active_reset: True #True
     man_reset: True  # True
-    storage_reset: True #True
+    storage_reset: False #True
 
     prepulse: False
     postpulse: False
-    pre_active_reset_pulse: False
+    pre_active_reset_pulse: True
+    pre_active_reset_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.0],
+       [10716, 8236, 15000],
+       [0, 0, 0.6056817916987671],
+       [0, 0, 0],
+       [2, 2, 0],
+       ['g', 'g', 'flat_top'],
+       [0.035, 0.035, 0.005]]
     pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.06, 349.415],
         [10819, 8327, 15000, 3000],
         [0, 0, 0.6552866896346518, 0.973722],
