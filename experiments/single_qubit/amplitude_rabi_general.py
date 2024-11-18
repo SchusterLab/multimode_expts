@@ -7,8 +7,9 @@ from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
+from MM_base import MMRAveragerProgram
 
-class AmplitudeRabiGeneralProgram(RAveragerProgram):
+class AmplitudeRabiGeneralProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -164,62 +165,7 @@ class AmplitudeRabiGeneralProgram(RAveragerProgram):
         # initializations as necessary
         self.sync_all()
         if cfg.expt.prepulse:
-            for ii in range(len(cfg.expt.pre_sweep_pulse[0])):
-                # translate ch id to ch
-                if cfg.expt.pre_sweep_pulse[4][ii] == 1:
-                    self.tempch = self.flux_low_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 2:
-                    self.tempch = self.qubit_chs
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 3:
-                    self.tempch = self.flux_high_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 4:
-                    self.tempch = self.storage_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 5:
-                    self.tempch = self.f0g1_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 6:
-                    self.tempch = self.man_ch
-                # print(self.tempch)
-                # determine the pulse shape
-                if cfg.expt.pre_sweep_pulse[5][ii] == "gaussian":
-                    # print('gaussian')
-                    #print all pulse parameters
-                    print('--------------------------------')
-                    print('pulse sigma:', cfg.expt.pre_sweep_pulse[6][ii])
-                    print('pulse freq:', cfg.expt.pre_sweep_pulse[0][ii])
-                    print('pulse gain:', cfg.expt.pre_sweep_pulse[1][ii])
-                    print('pulse phase:', cfg.expt.pre_sweep_pulse[3][ii])
-
-
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="arb", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     waveform="temp_gaussian")
-                elif cfg.expt.pre_sweep_pulse[5][ii] == "flat_top":
-                    # print('flat_top')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch[0]),
-                                    waveform="temp_gaussian")
-                else:
-                    self.setup_and_pulse(ch=self.tempch[0], style="const", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch[0]))
-                self.sync_all()
+            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_sweep')
 
         if cfg.expt.f0g1_cavity > 0:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge, phase=0, gain=self.pi_gain, waveform="pi_qubit")
@@ -261,62 +207,7 @@ class AmplitudeRabiGeneralProgram(RAveragerProgram):
         
         self.sync_all()
         if cfg.expt.postpulse:
-            for ii in range(len(cfg.expt.post_sweep_pulse[0])):
-                # translate ch id to ch
-                if cfg.expt.post_sweep_pulse[4][ii] == 1:
-                    self.tempch = self.flux_low_ch
-                elif cfg.expt.post_sweep_pulse[4][ii] == 2:
-                    self.tempch = self.qubit_chs
-                elif cfg.expt.post_sweep_pulse[4][ii] == 3:
-                    self.tempch = self.flux_high_ch
-                elif cfg.expt.post_sweep_pulse[4][ii] == 4:
-                    self.tempch = self.storage_ch
-                elif cfg.expt.post_sweep_pulse[4][ii] == 5:
-                    self.tempch = self.f0g1_ch
-                elif cfg.expt.post_sweep_pulse[4][ii] == 6:
-                    self.tempch = self.man_ch
-                # print(self.tempch)
-                # determine the pulse shape
-                if cfg.expt.post_sweep_pulse[5][ii] == "gaussian":
-                    # print('gaussian')
-                    #print all pulse parameters
-                    print('--------------------------------')
-                    print('pulse sigma:', cfg.expt.post_sweep_pulse[6][ii])
-                    print('pulse freq:', cfg.expt.post_sweep_pulse[0][ii])
-                    print('pulse gain:', cfg.expt.post_sweep_pulse[1][ii])
-                    print('pulse phase:', cfg.expt.post_sweep_pulse[3][ii])
-
-
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.post_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="arb", 
-                                     freq=self.freq2reg(cfg.expt.post_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.post_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.post_sweep_pulse[1][ii], 
-                                     waveform="temp_gaussian")
-                elif cfg.expt.post_sweep_pulse[5][ii] == "flat_top":
-                    # print('flat_top')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.post_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
-                                     freq=self.freq2reg(cfg.expt.post_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.post_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.post_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.post_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch[0]),
-                                    waveform="temp_gaussian")
-                else:
-                    self.setup_and_pulse(ch=self.tempch[0], style="const", 
-                                     freq=self.freq2reg(cfg.expt.post_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(cfg.expt.post_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.post_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.post_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch[0]))
-                self.sync_all()
+            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post_sweep')
 
         # align channels and measure
         self.sync_all(self.us2cycles(0.05))
@@ -377,7 +268,7 @@ class AmplitudeRabiGeneralExperiment(Experiment):
         amprabi = AmplitudeRabiGeneralProgram(soccfg=self.soccfg, cfg=self.cfg)
         
         xpts, avgi, avgq = amprabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)
-
+        
         # shots_i = amprabi.di_buf[adc_ch].reshape((self.cfg.expt.expts, self.cfg.expt.reps)) / amprabi.readout_length_adc
         # shots_i = np.average(shots_i, axis=1)
         # print(len(shots_i), self.cfg.expt.expts)

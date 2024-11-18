@@ -7,13 +7,14 @@ from qick.helpers import gauss, flat_top_gauss
 from slab import Experiment, dsfit, AttrDict
 
 import experiments.fitting as fitter
+from MM_base import MMAveragerProgram
 
 """
 Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse. This is a preliminary measurement to prove that we see Rabi oscillations. This measurement is followed up by the Amplitude Rabi experiment.
 """
 
 
-class LengthRabiGeneralProgram(AveragerProgram):
+class LengthRabiGeneralProgram(MMAveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -110,72 +111,72 @@ class LengthRabiGeneralProgram(AveragerProgram):
         #print(f"Readout phase: {cfg.device.readout.phase[qTest]}")
         self.sync_all(self.us2cycles(0.2))
     
-    def custom_pulse(self, cfg, pulse_data): 
-        '''
-        Executes prepulse or postpulse or middling pulse
-        '''
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        # for prepulse 
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
+    # def custom_pulse(self, cfg, pulse_data): 
+    #     '''
+    #     Executes prepulse or postpulse or middling pulse
+    #     '''
+    #     self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
+    #     self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
+    #     # for prepulse 
+    #     self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
+    #     self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
+    #     self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
+    #     self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
+    #     self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
+    #     self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
+    #     self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
+    #     self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
+    #     self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
+    #     self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
-        for jj in range(len(pulse_data[0])):
-                # translate ch id to ch
-                if pulse_data[4][jj] == 1:
-                    self.tempch = self.flux_low_ch
-                elif pulse_data[4][jj] == 2:
-                    self.tempch = self.qubit_ch
-                elif pulse_data[4][jj] == 3:
-                    self.tempch = self.flux_high_ch
-                elif pulse_data[4][jj] == 6:
-                    self.tempch = self.storage_ch
-                elif pulse_data[4][jj] == 0:
-                    self.tempch = self.f0g1_ch
-                elif pulse_data[4][jj] == 4:
-                    self.tempch = self.man_ch
-                # print(self.tempch)
-                # determine the pulse shape
-                if pulse_data[5][jj] == "gaussian":
-                    # print('gaussian')
-                    self.pisigma_resolved = self.us2cycles(
-                        pulse_data[6][jj], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="arb", 
-                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(pulse_data[3][jj]), 
-                                     gain=pulse_data[1][jj], 
-                                     waveform="temp_gaussian" + str(jj))
-                elif pulse_data[5][jj] == "flat_top":
-                    # print('flat_top')
-                    self.pisigma_resolved = self.us2cycles(
-                        pulse_data[6][jj], gen_ch=self.tempch[0])
-                    self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
-                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(pulse_data[3][jj]), 
-                                     gain=pulse_data[1][jj], 
-                                     length=self.us2cycles(pulse_data[2][jj], 
-                                                           gen_ch=self.tempch[0]),
-                                    waveform="temp_gaussian" + str(jj))
-                else:
-                    self.setup_and_pulse(ch=self.tempch[0], style="const", 
-                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-                                     phase=self.deg2reg(pulse_data[3][jj]), 
-                                     gain=pulse_data[1][jj], 
-                                     length=self.us2cycles(pulse_data[2][jj], 
-                                                           gen_ch=self.tempch[0]))
-                self.sync_all()
+    #     for jj in range(len(pulse_data[0])):
+    #             # translate ch id to ch
+    #             if pulse_data[4][jj] == 1:
+    #                 self.tempch = self.flux_low_ch
+    #             elif pulse_data[4][jj] == 2:
+    #                 self.tempch = self.qubit_ch
+    #             elif pulse_data[4][jj] == 3:
+    #                 self.tempch = self.flux_high_ch
+    #             elif pulse_data[4][jj] == 6:
+    #                 self.tempch = self.storage_ch
+    #             elif pulse_data[4][jj] == 0:
+    #                 self.tempch = self.f0g1_ch
+    #             elif pulse_data[4][jj] == 4:
+    #                 self.tempch = self.man_ch
+    #             # print(self.tempch)
+    #             # determine the pulse shape
+    #             if pulse_data[5][jj] == "gaussian":
+    #                 # print('gaussian')
+    #                 self.pisigma_resolved = self.us2cycles(
+    #                     pulse_data[6][jj], gen_ch=self.tempch[0])
+    #                 self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
+    #                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+    #                 self.setup_and_pulse(ch=self.tempch[0], style="arb", 
+    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
+    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
+    #                                  gain=pulse_data[1][jj], 
+    #                                  waveform="temp_gaussian" + str(jj))
+    #             elif pulse_data[5][jj] == "flat_top":
+    #                 # print('flat_top')
+    #                 self.pisigma_resolved = self.us2cycles(
+    #                     pulse_data[6][jj], gen_ch=self.tempch[0])
+    #                 self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
+    #                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+    #                 self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
+    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
+    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
+    #                                  gain=pulse_data[1][jj], 
+    #                                  length=self.us2cycles(pulse_data[2][jj], 
+    #                                                        gen_ch=self.tempch[0]),
+    #                                 waveform="temp_gaussian" + str(jj))
+    #             else:
+    #                 self.setup_and_pulse(ch=self.tempch[0], style="const", 
+    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
+    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
+    #                                  gain=pulse_data[1][jj], 
+    #                                  length=self.us2cycles(pulse_data[2][jj], 
+    #                                                        gen_ch=self.tempch[0]))
+    #             self.sync_all()
 
     def body(self):
         cfg = AttrDict(self.cfg)

@@ -134,7 +134,7 @@ HistogramExperiment:
     qubits: [0]
     reps: 20000
     check_f: False
-    active_reset: True
+    active_reset: False
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -618,9 +618,9 @@ PhaseSweepExperiment: # RAverger
    
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 0.4  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 400
-    ramsey_freq: 0.1 # [MHz]
+    step: 1.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 100
+    ramsey_freq: 0.03 # [MHz]
     reps: 2000
     rounds: 1
     qubits: [0]
@@ -636,7 +636,7 @@ RamseyExperiment:
 
     prepulse: False
     postpulse: False
-    pre_active_reset_pulse: True
+    pre_active_reset_pulse: False
     pre_active_reset_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.0],
        [10716, 8236, 15000],
        [0, 0, 0.6056817916987671],
@@ -1080,6 +1080,7 @@ AmplitudeRabiGeneralExperiment:
     qubits: [0]
     prepulse: False
     postpulse: False 
+
     # pre_sweep_pulse: [[3568.1147522256774],
     #                    [3311], # amplitude 
     #                    [0.0], # length of flat top
@@ -1249,18 +1250,18 @@ LengthRabiGeneralF0g1ExperimentSweep:
 
 LengthRabiGeneralExperiment:
     start: 0.0069754464285714285 # us
-    step: 0.01 # us
+    step: 0.025 # us
     qubits: [0]
-    expts: 101
-    reps: 500
+    expts: 31
+    reps: 5000
     rounds: 1
     gain: 4000 # qubit gain [DAC units],
     ramp_sigma: 0.005  # us
-    freq:  3568.1751638611518  #3498.28 # 3425.559887601728   #2010.5265269004717,   # MHz
+    freq:  3425.5564066067 #3498.28 # 3425.559887601728   #2010.5265269004717,   # MHz
     use_arb_waveform: False
     pi_ge_before: False
     pi_ef_before: False
-    pi_ge_after: False
+    pi_ge_after: True
     prepulse: False 
     pre_sweep_pulse: [[3568.1832921185774, 3425.557033831784, 2006.76],
        [9653, 7575, 15000],

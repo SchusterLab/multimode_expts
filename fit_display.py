@@ -645,7 +645,11 @@ def plot_ramsey_sideband(data_list, attrs_list, y_list,
     
     
 def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], 
-                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, title='Ramsey'):
+                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_all_param = True, title='Ramsey'):
+    '''
+    Returns_all_param = True: returns all the parameters of the fit i 
+
+    '''
 
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
@@ -725,6 +729,8 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
     plt.tight_layout()
     plt.show()
     if fit:
+        if return_all_param: 
+            return p_avgi, pCov_avgi, data["xpts"][1:-1], data["avgi"][1:-1]
         if return_idata:
             return t2, t2_err, data["xpts"][1:-1], data["avgi"][1:-1]
         else: 
@@ -1576,7 +1582,8 @@ def post_select_averager_data(data, threshold, readout_per_round=4):
         Qlist.append(np.mean(Qg))
     return Ilist, Qlist
 def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_data', 'e_data'], vlines = None, title='sideband_rabi',
-                        active_reset=True, readout_per_round=4, threshold=-4.0):
+                        active_reset=True, readout_per_round=4, threshold=-4.0, 
+                        return_fit_params = False):
         
     xlist = data['xpts'][0:-1]
     if active_reset:
@@ -1671,6 +1678,11 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
     plt.tight_layout()
     plt.legend()
     plt.show()
+
+    if return_fit_params: 
+        return p_avgi, pCov_avgi, xlist, Ilist
+
+
     return Ilist
 ## sideband rabi sweep
 def plot_sideband_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, normalize = None, title="Sideband Sweep",

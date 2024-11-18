@@ -7,12 +7,12 @@ prepulse_qubit:  # Apply sequentially Gaussian pulses
 device:
     qubit:
         T1: [127.0] # us
-        f_ge:  [3568.1751638611518] # [3566.3951696922627] # MHz    
+        f_ge:  [3568.1515953227604] # [3566.3951696922627] # MHz    
             # (when driving qubit gates) 3566.8   
             # when man1=|1> (3566.117766849506)  driven (3566.51957504422)
             # when man2=|1> (3566.1359110698945)  driven (3566.5377192646083)
-        f_ge_resolved: [3568.1751638611518] # MHz fge - chi  (currently not used)
-        f_ge_idle: [3568.1751638611518] # MHz (For Ramsey)
+        f_ge_resolved: [3568.1515953227604] # MHz fge - chi  (currently not used)
+        f_ge_idle: [3568.1515953227604] # MHz (For Ramsey)
         f_ef: [3425.5564066067] # MHz  # (when driving qubit gates) 3422.72   
         # when man1=|1> (3423.200842620319)   (3422.4656668246803)
         # when man2=|1> (3423.209680676009)   (3422.4745048803707)
@@ -190,7 +190,7 @@ device:
         trig_offset: 450 # [Clock ticks]  400
         frequency: [748.8] # [MHz] (748.19) (748.6)
         gain: [700]  # 800
-        phase: [2] # degrees     # 178.3
+        phase: [13] # degrees     # 178.3
         threshold: [-20.47477176210509] # adc units
         threshold_list: [-31.47477176210509] # adc units
         man1_drive_list: [0]
