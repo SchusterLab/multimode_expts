@@ -917,7 +917,7 @@ def multiple_Ramsey_display(prev_data, file_list, label_list, color_list,
 #     plt.show()
 
 
-def cross_kerr_display(prev_data, file_list, label_list, color_list,  orig_idx = 0,
+def cross_kerr_display(expt_path, prev_data, file_list, label_list, color_list,  orig_idx = 0,
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):
 
@@ -1014,7 +1014,8 @@ def cross_kerr_display(prev_data, file_list, label_list, color_list,  orig_idx =
     print('----- Difference from original ------')
     for idx, label in enumerate(label_list):
         print(label)
-        print(f'Fit frequency from I [MHz]: {fit_i_list[idx] - fit_i_list[orig_idx]} +/- {fit_i_err_list[idx]}')
+        new_err = np.sqrt(fit_i_err_list[idx]**2 + fit_i_err_list[orig_idx]**2)
+        print(f'Fit frequency from I [MHz]: {fit_i_list[idx] - fit_i_list[orig_idx]} +/- {new_err}')
         
         
     plt.tight_layout()

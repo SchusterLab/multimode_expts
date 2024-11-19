@@ -619,7 +619,7 @@ PhaseSweepExperiment: # RAverger
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
     step: 1.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 100
+    expts: 400
     ramsey_freq: 0.03 # [MHz]
     reps: 2000
     rounds: 1
