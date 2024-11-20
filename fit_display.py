@@ -1584,7 +1584,7 @@ def post_select_averager_data(data, threshold, readout_per_round=4):
     return Ilist, Qlist
 def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_data', 'e_data'], vlines = None, title='sideband_rabi',
                         active_reset=True, readout_per_round=4, threshold=-4.0, 
-                        return_fit_params = False):
+                        return_fit_params = False, fit_sin = False):
         
     xlist = data['xpts'][0:-1]
     if active_reset:
@@ -1597,11 +1597,18 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
         
         Ilist = data["avgi"][0:-1]
         Qlist = data["avgq"][0:-1]
+
+    if fit_sin == True:
+        fit_func = fitter.fitsin
+        func = fitter.sinfunc
+    else:
+        fit_func = fitter.fitdecaysin
+        func = fitter.decaysin
     
 
-    p_avgi, pCov_avgi = fitter.fitdecaysin(
+    p_avgi, pCov_avgi = fit_func(
         xlist, Ilist, fitparams=fitparams)
-    p_avgq, pCov_avgq = fitter.fitdecaysin(
+    p_avgq, pCov_avgq = fit_func(
         xlist, Qlist, fitparams=fitparams)
 
     data['fit_avgi'] = p_avgi
@@ -1620,7 +1627,7 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
     plt.plot(xpts_ns[1:-1], Ilist[1:], 'o-')
     if fit:
         p = data['fit_avgi']
-        plt.plot(xpts_ns[0:-1], fitter.decaysin(xlist, *p))
+        plt.plot(xpts_ns[0:-1], func(xlist, *p))
         if p[2] > 180:
             p[2] = p[2] - 360
         elif p[2] < -180:
@@ -1653,7 +1660,7 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
     plt.plot(xpts_ns[1:-1], Qlist[1:], 'o-')
     if fit:
         p = data['fit_avgq']
-        plt.plot(xpts_ns[0:-1], fitter.decaysin(xlist, *p))
+        plt.plot(xpts_ns[0:-1], func(xlist, *p))
         if p[2] > 180:
             p[2] = p[2] - 360
         elif p[2] < -180:
