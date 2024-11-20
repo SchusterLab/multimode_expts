@@ -650,7 +650,15 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
     Returns_all_param = True: returns all the parameters of the fit i 
 
     '''
-
+    # try: 
+    if attrs['config']['expt']['echoes'][0]: # if there are echoes
+        print('Echoes in the data')
+        print(data['xpts'][:5])
+        data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
+        print(data['xpts'][:5])
+    # except KeyError:
+    #     print('No echoes in the data')
+    #     pass
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
         data['avgi'] = Ilist

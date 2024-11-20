@@ -51,6 +51,12 @@ class MM_dual_rail_base(MM_base):
         # print(f'BS phase register: {self.r_phase}')
         self.safe_regwi(self.page_bs_phase, self.r_bs_phase, 0) 
 
+    # def prep_man_photon(self): 
+    #     ''' prepare a photon in the manipulate mode '''
+    #     qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
+    #     qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]
+    #     man_pulse_str = [['man', 'M1', 'pi', 0]]
+    #     return qubit_pi_pulse_str + qubit_ef_pulse + man_pulse_str
 
     def prep_random_state_mode(self, state_num, mode_no): 
         '''

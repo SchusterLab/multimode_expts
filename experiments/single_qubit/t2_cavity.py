@@ -8,6 +8,7 @@ from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
 from MM_base import *
+from MM_dual_rail_base import MM_dual_rail_base
 
 class CavityRamseyProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -75,8 +76,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
         self.stor_rps = 0 # get register page for storage channel
         if self.cfg.expt.storage_ramsey[0]: 
             # decide which channel do we flux drive on 
-            sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_idx) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi'], 
-                       ]
+            sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_idx) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi', 0], 
+                       ] 
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
             self.flux_ch = self. flux_low_ch 
@@ -95,6 +96,14 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
         # if self.cfg.expt.custom_coupler_pulse[0]:
         #     self.ramse
+
+        if self.cfg.expt.echoes[0]: 
+            mm_base_dummy = MM_dual_rail_base(self.cfg)
+            prep_stor = mm_base_dummy.prep_random_state_mode(3, self.cfg.expt.storage_ramsey[1])  # prepare the storage state + 
+            get_stor = get_stor = prep_stor[::-1] # get the storage state
+            self.echo_pulse_str = get_stor + prep_stor # echo pulse is the sum of the two pulse sequences
+            self.echo_pulse = self.get_prepulse_creator(self.echo_pulse_str).pulse.tolist()
+            print(self.echo_pulse)
 
         self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
         self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(self.cfg.device.readout.readout_length, self.res_chs)]
@@ -229,34 +238,21 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
         # wait advanced wait time
         self.sync_all()
-        # if cfg.expt.storage_ramsey[0]:
-        #     #print('waiting for storage ramsey')
-        #     #self.sync(self.flux_rps, self.r_wait_flux)
-        #     self.sync(self.q_rps[qTest], self.r_wait)
-        #     self.sync_all()
-        # else:
-        #     self.sync(self.q_rps[qTest], self.r_wait)
-        #     self.sync_all()
         self.sync(self.phase_update_page[qTest], self.r_wait)
         self.sync_all()
+
+        # echoes 
+        if cfg.expt.echoes[0]:
+            for i in range(cfg.expt.echoes[1]):
+                if cfg.expt.storage_ramsey[0]:
+                    self.custom_pulse(cfg, self.echo_pulse, prefix='Echo')
+                else:
+                    print('echoes not supported for user defined pulses')
+                self.sync_all()
+                self.sync(self.phase_update_page[qTest], self.r_wait)
+                self.sync_all()
         
-        # self.sync_all(self.r_wait)
-
-        # swap from storage to man 
-        # if cfg.expt.storage_ramsey[0]:
-        #     # sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_idx) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi'], 
-        #     #            ]
-        #     # creator = self.get_prepulse_creator(sweep_pulse)
-        #     self.custom_pulse(self.cfg, self.creator.pulse, prefix='Storage' + str(cfg.expt.storage_ramsey[1]) + 'dump', advance_qubit_phase=self.current_phase)
-        #     self.sync_all(self.us2cycles(0.01))
-
-        # play pi/2 pulse with advanced phase (all regs except phase are already set by previous pulse)
-        # if self.cavity_ch_types[qTest] == 'int4':
-        #     self.bitwi(self.q_rps[qTest], self.r_phase3, self.r_phase2, '<<', 16)
-        #     self.bitwi(self.q_rps[qTest], self.r_phase3, self.r_phase3, '|', self.user_freq)
-        #     self.mathi(self.q_rps[qTest], self.r_phase, self.r_phase3, "+", 0)
-        #     self.sync_all(self.us2cycles(0.01))
-        # else:
+        
         self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
         self.sync_all(self.us2cycles(0.01))
 
