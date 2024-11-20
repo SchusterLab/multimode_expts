@@ -651,6 +651,43 @@ RamseyExperiment:
         [2, 2, 0, 1],
         ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
         [0.035, 0.035, 0.005, 0.005]]
+    reps_middlepulse: 0 # number of times to iterate middling pulse (for debugging )
+    advance_phase: 0 # advance phase of second pi/2 by this much [degrees]
+    middlepulse: False # this is played after first pi/2 (not exact middle of sequence)
+    mid_sweep_pulse: [[ 3424.2965691707564,  0, 2004.775, 2004.775,0, 3424.2965691707564],
+                       [2563, 0, 3000, 3000, 0, 2563], # amplitude 
+                       [0.0, 0.01, 0.740015963968996,0.740015963968996, 0.01, 0.0 ], # length of flat top
+                       [0, 0, 0, 0,0,0],
+                       [2, 5,5,5,5,2],['gaussian', 'flat_top','flat_top', 'flat_top','flat_top','gaussian'], 
+                       [0.03, 0.005, 0.005, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+
+
+cavity_temperature_sweep:
+    targ_list: ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']
+
+    #basic params
+    start: 0.01 # wait time tau [us]
+    step: 1.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 400
+    ramsey_freq: 0.03 # [MHz]
+    reps: 10000
+    rounds: 1
+    qubits: [0]
+    checkEF: False # 
+    user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+    qubit_ge_init: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
+    normalize: False
+    active_reset: False #True
+    man_reset: True  # True
+    storage_reset: False #True
+
+    prepulse: True
+    postpulse: False
+    pre_active_reset_pulse: False
+    pre_active_reset_sweep_pulse: []
+    pre_sweep_pulse: []
     # pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2006.72, 349.41],
     #      [9653, 7575, 15000, 3000],
     #      [0, 0, 0.6087495795755329, 0.9937219465181768],
