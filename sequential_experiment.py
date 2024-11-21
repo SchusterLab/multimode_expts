@@ -1607,7 +1607,7 @@ class sweep_cavity_ramsey_expts:
             loaded[experiment_name]['echoes'] = [False, 0]
             loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['ramsey_freq_list'][mode_idx]
             ramsey_step = np.round(loaded[sweep_experiment_name]['sample_coherence_time'][mode_idx] / loaded[sweep_experiment_name]['expts'], 1)
-            loaded[experiment_name]['step']  = ramsey_step
+            loaded[experiment_name]['step']  = ramsey_step*1.2
             print('Step Size: ', loaded[experiment_name]['step']) 
 
             print('-------------------------------------------------')
@@ -1620,7 +1620,7 @@ class sweep_cavity_ramsey_expts:
             if loaded[sweep_experiment_name]['echo_sweep']: 
                 loaded[experiment_name]['echoes'] = [True, 1]
                 loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['echo_freq']
-                loaded[experiment_name]['step'] = ramsey_step * 0.75
+                loaded[experiment_name]['step'] = ramsey_step 
                 print('-------------------------------------------------')
                 print('Mode Index: %s Mode No. = %s ' %(mode_idx, mode_no))
                 self.run_cavity_ramsey(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
