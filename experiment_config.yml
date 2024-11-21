@@ -776,10 +776,10 @@ RamseyEchoExperiment:
 
 CavityRamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 2 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    step: 4 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
     expts: 101
-    ramsey_freq: 0.017 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 100
+    ramsey_freq: -2.7 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 300
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -800,7 +800,7 @@ CavityRamseyExperiment:
     
     coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
     custom_coupler_pulse: [[1435], [2000], [0.17234146839057687], [0], [3], ['flat_top'], [0.005]]
-    echoes: [True, 1 ] # [on/off, # of echoes] 
+    echoes: [False, 1 ] # [on/off, # of echoes] 
     prepulse: True
     postpulse: True
     pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
@@ -820,14 +820,24 @@ CavityRamseyExperiment:
     # ramsey freq is the frequency by which to advance the phase
     # ramsey_freq (no echoes) gives ~0.02 Mhz osc : [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
     # T2 : [, 600]
-    # ramsey_freq (with echoes) gives ~0.03 Mhz osc : [0.02, 0.02, 0.02
+    # ramsey_freq (with echoes) gives ~0.03 Mhz osc : [0.017
 
-cavity_ramsey_with_spectators: # not really a sequential experiment but will be coded in that notebook (since prepulse is a pain)
+stor_cavity_ramsey_sweep: 
+    #sweep params 
+    sample_coherence_time: [300, 1000, 800,  700, 600, 1000, 600]
+    echo_sweep: True # whether to perform T2 echoes for all modes
+    echo_freq: 0.017
+    spectators_sweep: True # whether to perform T2 with spectators for all modes
+
+    ramsey_freq_list: [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
+
+
+    # basic Ramsey parameters
     start: 0.01 # wait time tau [us]
-    step: 2 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 101
-    ramsey_freq: -2.53 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 100
+    step: 4 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 201
+    ramsey_freq: -2.7 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 500
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -844,7 +854,44 @@ cavity_ramsey_with_spectators: # not really a sequential experiment but will be 
     parity_meas: False
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
-    storage_ramsey: [True, 3, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
+    storage_ramsey: [True, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
+    
+    coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
+    custom_coupler_pulse: [[1435], [2000], [0.17234146839057687], [0], [3], ['flat_top'], [0.005]]
+    echoes: [False, 1 ] # [on/off, # of echoes] 
+    prepulse: True
+    postpulse: True
+    pre_sweep_pulse: []
+    post_sweep_pulse: []
+    # ramsey freq is the frequency by which to advance the phase
+    # ramsey_freq (no echoes) gives ~0.02 Mhz osc : [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
+    # T2 : [, 600]
+    # ramsey_freq (with echoes) gives ~0.03 Mhz osc : [0.02, 0.02, 0.02
+
+
+cavity_ramsey_with_spectators: # not really a sequential experiment but will be coded in that notebook (since prepulse is a pain)
+    start: 0.01 # wait time tau [us]
+    step: 4 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 101
+    ramsey_freq: -2.7 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 300
+    rounds: 1
+    qubits: [0]
+    checkEF: False
+    f0g1_cavity: 0  #  name of manipulate cavity, 0 means no pulse
+    init_gf: False
+
+    active_reset: True #True
+    man_reset: True # True
+    storage_reset: True #True
+    
+
+    # user_defined_pulse: [False, 4984.026194477733, 4500, 0.15, 0, 4] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    user_defined_pulse: [False ,1977.70, 15000,0.005,0.550453, 0] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    parity_meas: False
+    man_idx: 1 # 1/2 for manipulate
+    # manipulate: 1
+    storage_ramsey: [True, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
     
     coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
     custom_coupler_pulse: [[1435], [2000], [0.17234146839057687], [0], [3], ['flat_top'], [0.005]]
@@ -3557,3 +3604,30 @@ TwoDualRailTomographyExperiment: # tomography sequence: [I, X/2, Y/2] \times 2
                     0.005,
                     0.005,
                     0.005]]
+
+
+ParityTempExperiment:
+    start: 0.01 # not used
+    step: 1  # [us] not used
+    expts: 1   # not used, has to be 1
+    parity_number: 25   # number of parity measurements
+    ramsey_freq: 0.0 # [MHz] not used
+    reps: 10000
+    rounds: 1
+    qubits: [0]
+    user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+
+    normalize: False
+    active_reset: False #True
+    man_reset: True  # True
+    storage_reset: True #True
+
+    prepulse: True
+
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.00],
+        [10819, 8327, 15000],
+        [0, 0, 0.6552866896346518],
+        [0, 0, 0],
+        [2, 2, 0],
+        ['gaussian', 'gaussian', 'flat_top'],
+        [0.035, 0.035, 0.005]]

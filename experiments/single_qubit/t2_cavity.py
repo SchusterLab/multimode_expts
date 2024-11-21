@@ -212,6 +212,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
         # pre pulse
         if cfg.expt.prepulse:
+            print('Inside cavity ramsey code')
+            print(cfg.expt.pre_sweep_pulse)
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='Prepulse')
 
         # play pi f0g1 pulse with the freq that we want to calibrate

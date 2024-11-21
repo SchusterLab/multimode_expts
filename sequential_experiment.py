@@ -1538,9 +1538,35 @@ class sweep_cavity_ramsey_expts:
         '''Contains sequential experiments for cavity ramsey based experiments'''
 
     
-    def cavity_ramsey_with_spectators(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+
+    def run_cavity_ramsey(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                           prep_init = False, prep_params = None):
         '''
-        perform cavity ramsey with all spectator storage modes occupied
+        Assumiung prep_init
+        '''
+        if prep_init:
+            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
+        else:
+            print('NOT IMPLEMENTED YET')
+        
+        print(loaded[experiment_name])
+
+        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+
+
+        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+        # special updates on device_config file
+        run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+        print(run_exp.cfg.expt)
+        run_exp.go(analyze=False, display=False, progress=False, save=True)
+    
+
+
+
+    def stor_cavity_ramsey_sweep(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        '''
+        perform cavity ramsey on all storage modes
         '''
     #====================================================================#
         config_path = config_file
@@ -1557,46 +1583,169 @@ class sweep_cavity_ramsey_expts:
 
         experiment_class = 'single_qubit.t2_cavity'
         experiment_name = 'CavityRamseyExperiment'   
-        sweep_experiment_name = 'cavity_ramsey_with_spectators'
+        sweep_experiment_name = 'stor_cavity_ramsey_sweep'
 
         for keys in loaded[experiment_name].keys():
             try:
                 loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
             except:
                 pass
-
         
-
-        # create prepulse , post pulse 
-        mode_list = [1,2,3,4,5,6,7]
-        pre_sweep_pulse = []
         mm_base = MM_dual_rail_base(cfg = yaml_cfg)
-        
-        for mode_idx, mode_no in enumerate(mode_list):
-            if mode_no != loaded[eexperiment_name]['storage_ramsey'][1]: # skip the target mode
-                prep_stor = mm_base_dummy.prep_random_state_mode(3, mode_no)  # prepare the storage state + 
-                pre_sweep_pulse += prep_stor
-        # prep man1 half pi photon 
-        prep_man = mm_base_dummy.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
-        pre_sweep_pulse += prep_man
+        prep_man = mm_base.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
+        pre_sweep_pulse = prep_man
         post_sweep_pulse = prep_man[::-1]
         print('Prepulse: ', pre_sweep_pulse)
         print('Postpulse: ', post_sweep_pulse)
         loaded[experiment_name]['pre_sweep_pulse'] = mm_base.get_prepulse_creator(pre_sweep_pulse).pulse.tolist()
         loaded[experiment_name]['post_sweep_pulse'] = mm_base.get_prepulse_creator(post_sweep_pulse).pulse.tolist()
+
         
-                
-        print(loaded[experiment_name])
+        mode_list = [1,2,3,4,5,6,7]
+        for mode_idx, mode_no in enumerate(mode_list):
+            loaded[experiment_name]['storage_ramsey'] = [True, mode_no, True]
+            loaded[experiment_name]['echoes'] = [False, 0]
+            loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['ramsey_freq_list'][mode_idx]
+            ramsey_step = np.round(loaded[sweep_experiment_name]['sample_coherence_time'][mode_idx] / loaded[sweep_experiment_name]['expts'], 1)
+            loaded[experiment_name]['step']  = ramsey_step
+            print('Step Size: ', loaded[experiment_name]['step']) 
 
-        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+            print('-------------------------------------------------')
+            print('Mode Index: %s Mode No. = %s ' %(mode_idx, mode_no))
 
 
-        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+            self.run_cavity_ramsey(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+            
+            if loaded[sweep_experiment_name]['echo_sweep']: 
+                loaded[experiment_name]['echoes'] = [True, 1]
+                loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['echo_freq']
+                loaded[experiment_name]['step'] = ramsey_step * 0.75
+                print('-------------------------------------------------')
+                print('Mode Index: %s Mode No. = %s ' %(mode_idx, mode_no))
+                self.run_cavity_ramsey(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+            
+            if loaded[sweep_experiment_name]['spectators_sweep']: 
+                loaded[experiment_name]['echoes'] = [False, 0]
+                loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['ramsey_freq_list'][mode_idx]
+                loaded[experiment_name]['step'] = ramsey_step
 
-        # special updates on device_config file
-        run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
-        print(run_exp.cfg.expt)
-        run_exp.go(analyze=False, display=False, progress=False, save=True)
+                self.cavity_ramsey_with_spectators(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+
+                print('-------------------------------------------------')
+
+    
+    # def stor_cavity_ramsey_echo_sweep(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+    #     '''
+    #     perform cavity ramsey on all storage modes
+    #     '''
+    # #====================================================================#
+    #     config_path = config_file
+    #     print('Config will be', config_path)
+
+    #     with open(config_file, 'r') as cfg_file:
+    #         yaml_cfg = yaml.safe_load(cfg_file)
+    #     yaml_cfg = AttrDict(yaml_cfg)
+
+    #     with open(exp_param_file, 'r') as file:
+    #         # Load the YAML content
+    #         loaded = yaml.safe_load(file)
+    # #===================================================================# 
+
+    #     experiment_class = 'single_qubit.t2_cavity'
+    #     experiment_name = 'CavityRamseyExperiment'   
+    #     sweep_experiment_name = 'stor_cavity_ramsey_echo_sweep'
+
+    #     for keys in loaded[experiment_name].keys():
+    #         try:
+    #             loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+    #         except:
+    #             pass
+        
+    #     prep_man = mm_base.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
+    #     pre_sweep_pulse = prep_man
+    #     post_sweep_pulse = prep_man[::-1]
+    #     print('Prepulse: ', pre_sweep_pulse)
+    #     print('Postpulse: ', post_sweep_pulse)
+    #     loaded[experiment_name]['pre_sweep_pulse'] = mm_base.get_prepulse_creator(pre_sweep_pulse).pulse.tolist()
+    #     loaded[experiment_name]['post_sweep_pulse'] = mm_base.get_prepulse_creator(post_sweep_pulse).pulse.tolist()
+
+        
+    #     mode_list = [1,2,3,4,5,6,7]
+    #     for mode_idx, mode_no in enumerate(mode_list):
+    #         loaded[experiment_name]['storage_ramsey'] = [True, mode_no, True]
+    #         loaded[experiment_name]['echoes'] = [True, 1]
+    #         print('-------------------------------------------------')
+    #         print('Mode Index: %s Mode No. = %s ' %(mode_idx, mode_no))
+
+    #         self.run_cavity_ramsey(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+    #                                 prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+                                   
+            
+
+    def cavity_ramsey_with_spectators(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
+                                      prep_init = False, prep_params = None):
+        '''
+        perform cavity ramsey with all spectator storage modes occupied
+        '''
+        if prep_init:
+            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
+        else:
+        #====================================================================#
+            config_path = config_file
+            print('Config will be', config_path)
+
+            with open(config_file, 'r') as cfg_file:
+                yaml_cfg = yaml.safe_load(cfg_file)
+            yaml_cfg = AttrDict(yaml_cfg)
+
+            with open(exp_param_file, 'r') as file:
+                # Load the YAML content
+                loaded = yaml.safe_load(file)
+        #===================================================================# 
+
+            experiment_class = 'single_qubit.t2_cavity'
+            experiment_name = 'CavityRamseyExperiment'   
+            sweep_experiment_name = 'cavity_ramsey_with_spectators'
+
+            for keys in loaded[experiment_name].keys():
+                try:
+                    loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+                except:
+                    pass
+
+        
+
+        # create prepulse , post pulse 
+        mode_list = [1,2,3,4,5,6,7]
+       
+        mm_base = MM_dual_rail_base(cfg = yaml_cfg)
+        state_idxs = [0,1,2,3,4,5]
+        
+        for state_idx in state_idxs:
+            print('-------------------------------------------------')
+            print('State Index: %s ' %(state_idx))
+            pre_sweep_pulse = []
+            for mode_idx, mode_no in enumerate(mode_list):
+                if mode_no != loaded[experiment_name]['storage_ramsey'][1]: # skip the target mode
+                    prep_stor = mm_base.prep_random_state_mode(state_idx, mode_no)  # prepare the storage state + 
+                    pre_sweep_pulse += prep_stor
+            # prep man1 half pi photon 
+            prep_man = mm_base.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
+            pre_sweep_pulse += prep_man
+            post_sweep_pulse = prep_man[::-1]
+            print('Prepulse: ', pre_sweep_pulse)
+            print('Postpulse: ', post_sweep_pulse)
+            loaded[experiment_name]['pre_sweep_pulse'] = mm_base.get_prepulse_creator(pre_sweep_pulse).pulse.tolist()
+            loaded[experiment_name]['post_sweep_pulse'] = mm_base.get_prepulse_creator(post_sweep_pulse).pulse.tolist()
+
+            self.run_cavity_ramsey(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+            
+                    
+            
 
 def cross_kerr_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
     '''

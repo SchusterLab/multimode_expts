@@ -23,7 +23,6 @@ class ParityTempProgram(MMRAveragerProgram):
     def initialize(self):
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
-        self.checkEF = self.cfg.expt.checkEF
 
         self.num_qubits_sample = len(self.cfg.device.qubit.f_ge_idle)
         self.qubits = self.cfg.expt.qubits
@@ -125,29 +124,10 @@ class ParityTempProgram(MMRAveragerProgram):
         self.f_ge_init_reg = self.f_ge_reg
         self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
         # define pi2sigma as the pulse that we are calibrating with ramsey
-        self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[qTest]/2, gen_ch=self.qubit_chs[qTest])
+        self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])
         self.f_pi_test_reg = self.f_ge_reg # freq we are trying to calibrate
         self.gain_pi_test = self.cfg.device.qubit.pulses.pi_ge.gain[qTest] # gain of the pulse we are trying to calibrate
-        if cfg.expt.f0g1_cavity > 0:
-            ii = 0
-            jj = 0
-            if cfg.expt.f0g1_cavity==1: 
-                ii=1
-                jj=0
-            if cfg.expt.f0g1_cavity==2: 
-                ii=0
-                jj=1
-            # systematic way of adding qubit pulse under chi shift
-            self.pif0g1_gain = self.cfg.device.QM.pulses.f0g1.gain[cfg.expt.f0g1_cavity-1]
-            # self.f_pi_test_reg = self.freq2reg(self.cfg.device.QM.chi_shift_matrix[0][cfg.expt.f0g1_cavity]+self.cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest]) # freq we are trying to calibrate
-            # self.gain_pi_test = self.cfg.device.QM.pulses.qubit_pi_ge.gain[ii][jj] # gain of the pulse we are trying to calibrate
-            self.pi2sigma_test = self.cfg.device.QM.pulses.qubit_pi_ge.sigma[ii][jj]
-            # self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test", sigma=self.pi2sigma, length=self.pi2sigma*4)
-            
-            self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.f0g1_cavity-1], gen_ch=self.f0g1_ch[0])
-            self.f0g1_length = self.us2cycles(cfg.device.QM.pulses.f0g1.length[cfg.expt.f0g1_cavity-1], gen_ch=self.f0g1_ch[0])
-            self.add_gauss(ch=self.f0g1_ch[0], name="f0g1",
-                       sigma=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma), length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
+        self.gain_hpi_test = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest] # gain of the pulse we are trying to calibrate
 
         # add qubit pulses to respective channels
         # print(f"Calibrating pi/2 pulse on qubit {qTest} with freq {self.f_pi_test_reg} MHz")
@@ -181,9 +161,6 @@ class ParityTempProgram(MMRAveragerProgram):
         # initializations as necessary
         self.reset_and_sync()
 
-        if cfg.expt.pre_active_reset_pulse:
-            self.custom_pulse(cfg, cfg.expt.pre_active_reset_sweep_pulse, prefix = 'pre_ar_')
-
         if self.cfg.expt.active_reset: 
             self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
         
@@ -203,24 +180,24 @@ class ParityTempProgram(MMRAveragerProgram):
                          syncdelay=self.us2cycles(2.5))  # sync all channels
             # setup and play ge pi/2 probe pulse
             self.set_pulse_registers(
-                ch=self.qubit_ch,
+                ch=self.qubit_chs[qTest],
                 style="arb",
                 freq=self.f_ge_init_reg,
                 phase=self.deg2reg(0),
-                gain=self.gain_pi_test, 
+                gain=self.gain_hpi_test, 
                 waveform="pi2_test_ram")
 
-            self.pulse(ch=self.qubit_ch)
-            self.sync_all(self.us2cycles(self.revival_time))
+            self.pulse(ch=self.qubit_chs[qTest])
+            self.sync_all(self.us2cycles(self.parity_wait))
             self.set_pulse_registers(
-                ch=self.qubit_ch,
+                ch=self.qubit_chs[qTest],
                 style="arb",
                 freq=self.f_ge_init_reg,
                 phase=self.deg2reg(180),
-                gain=self.gain_pi_test,  
+                gain=self.gain_hpi_test,  
                 waveform="pi2_test_ram")
 
-            self.pulse(ch=self.qubit_ch)  # play pi/2 ge pulse
+            self.pulse(ch=self.qubit_chs[qTest])  # play pi/2 ge pulse
 
         
         # align channels and measure

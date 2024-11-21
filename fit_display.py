@@ -3140,3 +3140,73 @@ def get_f0g1_time(cfg):
     # print('stor_input', stor_input)
     # print('stor_output', stor_output)
     return time
+
+def parity_post_select(data, attrs, threshold, readouts_per_rep):
+    '''
+    Post select the data based on the threshold, every readouts_per_rep readouts
+    '''
+    Ilist = []
+    Qlist = []
+
+
+    # assume the 3rd one is post selection data, 4th to readouts_per_rep is actual data
+
+    II = data['idata']
+    IQ = data['qdata']
+    
+    
+    
+    for k in range(len(II) // readouts_per_rep):
+        index_4k_plus_2 = readouts_per_rep * k + 2
+        index_4k_plus_end = readouts_per_rep * k + readouts_per_rep-1
+
+        result_Ig = []
+        result_Ie = []
+        
+        # Ensure the indices are within the list bounds
+        if index_4k_plus_2 < len(II) and index_4k_plus_end < len(II):
+            # Check if the value at 4k+2 exceeds the threshold
+            if II[index_4k_plus_2] < threshold:
+                # Add the value at 4k+3 to the result list
+                for jj in range(index_4k_plus_2+1, index_4k_plus_end+1):
+                    result_Ig.append(II[jj])
+                    result_Ie.append(IQ[jj])
+
+            Ilist.append(result_Ig)
+            Qlist.append(result_Ie)
+    return Ilist, Qlist
+
+def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readouts_per_rep = 4, return_all_param = True, title='Ramsey'):
+    '''
+    Convert each traces into 0/1 digits 
+
+    '''
+    state_string_list = []
+    if active_reset:
+        Ilist, Qlist = parity_post_select(data, attrs, threshold, readouts_per_rep)
+        data['i_selected'] = Ilist
+        data['q_selected'] = Qlist
+    else:
+        Ilist = []
+        Qlist = []
+        for k in range(len(data['idata']) // readouts_per_rep):
+            result_Ig = []
+            result_Ie = []
+            for jj in range(readouts_per_rep):
+                result_Ig.append(data['idata'][k*readouts_per_rep+jj])
+                result_Ie.append(data['qdata'][k*readouts_per_rep+jj])
+            Ilist.append(result_Ig)
+            Qlist.append(result_Ie)
+        data['i_selected'] = Ilist
+        data['q_selected'] = Qlist
+    for i in range(len(data['i_selected'])):
+        result_Ig = []
+        for j in range(len(data['i_selected'][i])):
+            if data['i_selected'][i][j] > threshold:
+                result_Ig.append(1)
+            else:
+                result_Ig.append(0)
+
+        state_string_list.append(result_Ig)
+
+    return data, state_string_list
