@@ -1591,18 +1591,20 @@ class sweep_cavity_ramsey_expts:
             except:
                 pass
         
-        mm_base = MM_dual_rail_base(cfg = yaml_cfg)
-        prep_man = mm_base.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
-        pre_sweep_pulse = prep_man
-        post_sweep_pulse = prep_man[::-1]
-        print('Prepulse: ', pre_sweep_pulse)
-        print('Postpulse: ', post_sweep_pulse)
-        loaded[experiment_name]['pre_sweep_pulse'] = mm_base.get_prepulse_creator(pre_sweep_pulse).pulse.tolist()
-        loaded[experiment_name]['post_sweep_pulse'] = mm_base.get_prepulse_creator(post_sweep_pulse).pulse.tolist()
+        
 
         
         mode_list = [1,2,3,4,5,6,7]
         for mode_idx, mode_no in enumerate(mode_list):
+            mm_base = MM_dual_rail_base(cfg = yaml_cfg)
+            prep_man = mm_base.prep_random_state_mode(3, 1)[:-1] # prepare the man state + 
+            pre_sweep_pulse = prep_man
+            post_sweep_pulse = prep_man[::-1]
+            print('Prepulse: ', pre_sweep_pulse)
+            print('Postpulse: ', post_sweep_pulse)
+            loaded[experiment_name]['pre_sweep_pulse'] = mm_base.get_prepulse_creator(pre_sweep_pulse).pulse.tolist()
+            loaded[experiment_name]['post_sweep_pulse'] = mm_base.get_prepulse_creator(post_sweep_pulse).pulse.tolist()
+
             loaded[experiment_name]['storage_ramsey'] = [True, mode_no, True]
             loaded[experiment_name]['echoes'] = [False, 0]
             loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['ramsey_freq_list'][mode_idx]
@@ -1627,7 +1629,7 @@ class sweep_cavity_ramsey_expts:
                                     prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
             
             if loaded[sweep_experiment_name]['spectators_sweep']: 
-                loaded[experiment_name]['echoes'] = [False, 0]
+                loaded[experiment_name]['echoes'] = [True, 1]
                 loaded[experiment_name]['ramsey_freq'] = loaded[sweep_experiment_name]['ramsey_freq_list'][mode_idx]
                 loaded[experiment_name]['step'] = ramsey_step
 
@@ -1722,7 +1724,7 @@ class sweep_cavity_ramsey_expts:
         mode_list = [1,2,3,4,5,6,7]
        
         mm_base = MM_dual_rail_base(cfg = yaml_cfg)
-        state_idxs = [0,1,2,3,4,5]
+        state_idxs = [2,3,4,5, 6]
         
         for state_idx in state_idxs:
             print('-------------------------------------------------')

@@ -69,6 +69,8 @@ class MM_dual_rail_base(MM_base):
         5: |i>
         6: |-i>
         '''
+        if state_num == 1:  # nothing to do for prepping 0 state
+            return []
         qubit_hpi_pulse_str = [['qubit', 'ge', 'hpi', 0 ]]
         qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
         qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]

@@ -17,13 +17,13 @@ ParityDelayExperiment:
     qubits: [0]
     prepulse: True
     normalize: False
-    active_reset: True
+    active_reset: False
     man_reset: True
     storage_reset: True
 
-    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.060],
+    pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.000],
        [10716, 8236, 15000],
-       [0, 0, 0.609889],
+       [0, 0, 0.659889],
        [0, 0, 0],
        [2, 2, 0],
        ['g', 'g', 'flat_top'],
@@ -134,7 +134,7 @@ HistogramExperiment:
     qubits: [0]
     reps: 20000
     check_f: False
-    active_reset: True
+    active_reset: False
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -618,10 +618,10 @@ PhaseSweepExperiment: # RAverger
    
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 1.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 400
-    ramsey_freq: 0.03 # [MHz]
-    reps: 2000
+    step: 2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 150
+    ramsey_freq: 0.02 # [MHz]
+    reps: 300
     rounds: 1
     qubits: [0]
     checkEF: False # 
@@ -630,11 +630,11 @@ RamseyExperiment:
     qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
     f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
     normalize: False
-    active_reset: True #True
+    active_reset: False #True
     man_reset: True  # True
     storage_reset: False #True
 
-    prepulse: True
+    prepulse: False
     postpulse: False
     pre_active_reset_pulse: False
     pre_active_reset_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.0],
@@ -776,10 +776,10 @@ RamseyEchoExperiment:
 
 CavityRamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 4 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 101
-    ramsey_freq: -2.7 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 300
+    step: 0.012 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 151
+    ramsey_freq: 10 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 2000
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -796,20 +796,26 @@ CavityRamseyExperiment:
     parity_meas: False
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
-    storage_ramsey: [True, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
+    storage_ramsey: [False, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
     
-    coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
-    custom_coupler_pulse: [[1435], [2000], [0.17234146839057687], [0], [3], ['flat_top'], [0.005]]
+    coupler_ramsey: True # whether to do coupler ramsey (storage and user defined must be false)
+    custom_coupler_pulse: [[944.25], [1000], [0.316677658], [0], [1], ['flat_top'], [0.005]]
     echoes: [False, 1 ] # [on/off, # of echoes] 
     prepulse: True
     postpulse: True
-    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
-       [5510, 8236, 15000],
-       [0, 0, 0.6056817916987671],
-       [0, 0, 0],
-       [2, 2, 0],
-       ['g', 'g', 'flat_top'],
-       [0.035, 0.035, 0.005]]
+    pre_sweep_pulse: [[3568.1515953227604,
+                3425.5564066067,
+                2007.0,
+                349.415,
+                3568.1515953227604,
+                3425.5564066067,
+                2007.0],
+                [10716, 8236, 15000, 3000, 5510, 8236, 15000],
+                [0, 0, 0.6056817916987671, 0.9771428571428572, 0, 0, 0.6056817916987671],
+                [0, 0, 0, 0, 0, 0, 0],
+                [2, 2, 0, 1, 2, 2, 0],
+                ['g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top'],
+                [0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005]]
     post_sweep_pulse: [[2007.0, 3425.5564066067, 3568.1515953227604],
        [15000, 8236, 5510],
        [0.6056817916987671, 0, 0],
@@ -825,7 +831,7 @@ CavityRamseyExperiment:
 stor_cavity_ramsey_sweep: 
     #sweep params 
     sample_coherence_time: [300, 1000, 800,  700, 600, 1000, 600]
-    echo_sweep: True # whether to perform T2 echoes for all modes
+    echo_sweep: False # whether to perform T2 echoes for all modes
     echo_freq: 0.017
     spectators_sweep: True # whether to perform T2 with spectators for all modes
 
@@ -1532,13 +1538,13 @@ PulseProbePrePulseSpectroscopyExperiment:
 
 
 PulseProbeSpectroscopyExperiment:
-    start: 3543 # [MHz]
-    step: 0.06 # min step ~1 MHz
+    start: 3535 # [MHz]
+    step: 0.05 # min step ~1 MHz
     expts: 1000 # Number of experiments stepping from start
-    reps: 50000 # Number of averages per point
+    reps: 2000 # Number of averages per point
     rounds: 1 # Number of start to finish sweeps to average over
     length: 1  #6.271105440458137 # Qubit probe constant pulse length [us]
-    gain: 30000 # Qubit pulse gain
+    gain: 5000 # Qubit pulse gain
     sigma: 0.1  # qubit flat top sigma
     pulse_type: 'gaussian'
     wait_qubit: False
@@ -1550,13 +1556,13 @@ PulseProbeSpectroscopyExperiment:
     cavity_pulse: [False, 0.1 ] # truth value for gaussian cavity pulse, type (pulse assumes gaussian), sigma
 
 PulseProbeF0g1SpectroscopyExperiment:
-    start: 2005 #1995 #1835 # resonator frequency to be mixed up [MHz]
-    step: 0.05 # min step ~1 MHz
-    expts: 500 # Number of experiments stepping from start
-    reps: 500 # Number of averages per point
+    start: 1950 #1995 #1835 # resonator frequency to be mixed up [MHz]
+    step: 0.1 # min step ~1 MHz
+    expts: 1500 # Number of experiments stepping from start
+    reps: 10000 # Number of averages per point
     rounds: 1 # Number of start to finish sweeps to average over
     length: 2 #0.620740890403745 # ef probe constant pulse length [us]
-    gain: 15000 # f0g1 pulse gain
+    gain: 30000 # f0g1 pulse gain
     pulse_type: 'gaussian'
     qubit_f: True
     qubit: 0
@@ -3610,9 +3616,9 @@ ParityTempExperiment:
     start: 0.01 # not used
     step: 1  # [us] not used
     expts: 1   # not used, has to be 1
-    parity_number: 25   # number of parity measurements
+    parity_number: 40   # number of parity measurements
     ramsey_freq: 0.0 # [MHz] not used
-    reps: 10000
+    reps: 100000
     rounds: 1
     qubits: [0]
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
@@ -3622,7 +3628,7 @@ ParityTempExperiment:
     man_reset: True  # True
     storage_reset: True #True
 
-    prepulse: True
+    prepulse: False
 
     pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.00],
         [10819, 8327, 15000],

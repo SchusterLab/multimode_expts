@@ -645,26 +645,27 @@ def plot_ramsey_sideband(data_list, attrs_list, y_list,
     
     
 def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], 
-                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_all_param = True, title='Ramsey'):
+                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_all_param = True, title='Ramsey',
+                   end_idx = None, start_idx = None):
     '''
     Returns_all_param = True: returns all the parameters of the fit i 
 
     '''
-    # try: 
-    if attrs['config']['expt']['echoes'][0]: # if there are echoes
-        print('Echoes in the data')
-        print(data['xpts'][:5])
-        data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
-        print(data['xpts'][:5])
-    # except KeyError:
-    #     print('No echoes in the data')
-    #     pass
+    try: 
+        if attrs['config']['expt']['echoes'][0]: # if there are echoes
+            print('Echoes in the data')
+            print(data['xpts'][:5])
+            data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
+            print(data['xpts'][:5])
+    except KeyError:
+        print('No echoes in the data')
+        pass
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
-        data['avgi'] = Ilist
-        data['avgq'] = Qlist
-        data['xpts'] = data['xpts'][:-1]
-        data['amps'] = data['amps'][:-1] # adjust since active reset throws away the last data point
+        data['avgi'] = Ilist[start_idx:end_idx]
+        data['avgq'] = Qlist[start_idx:end_idx]
+        data['xpts'] = data['xpts'][:-1][start_idx:end_idx]
+        data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
     if fit:
         # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
         # Remove the first and last point from fit in case weird edge measurements
