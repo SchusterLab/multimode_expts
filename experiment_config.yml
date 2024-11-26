@@ -2,7 +2,7 @@ T1Experiment:
     start: 0 # start time in us
     step: 15  # step in us
     expts: 100
-    reps: 100
+    reps: 500
     rounds: 1
     qubit: 0
     qubit_ef: False
@@ -619,9 +619,9 @@ PhaseSweepExperiment: # RAverger
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
     step: 2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 150
-    ramsey_freq: 0.02 # [MHz]
-    reps: 300
+    expts: 100
+    ramsey_freq: 0.04 # [MHz]
+    reps: 500
     rounds: 1
     qubits: [0]
     checkEF: False # 
@@ -3628,12 +3628,37 @@ ParityTempExperiment:
     man_reset: True  # True
     storage_reset: True #True
 
-    prepulse: False
 
-    pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.00],
-        [10819, 8327, 15000],
-        [0, 0, 0.6552866896346518],
-        [0, 0, 0],
-        [2, 2, 0],
-        ['gaussian', 'gaussian', 'flat_top'],
-        [0.035, 0.035, 0.005]]
+    prepulse: True
+
+    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
+                        [10716, 8236, 15000],
+                        [0, 0, 0.6056817916987671],
+                        [0, 0, 0],
+                        [2, 2, 0],
+                        ['g', 'g', 'flat_top'],
+                        [0.035, 0.035, 0.005]]
+
+cavity_temperature_sweep_parity:
+    targ_list: ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']
+
+    # basic params
+    start: 0.01 # not used
+    step: 1  # [us] not used
+    expts: 1   # not used, has to be 1
+    parity_number: 40   # number of parity measurements
+    ramsey_freq: 0.0 # [MHz] not used
+    reps: 100000
+    rounds: 1
+    qubits: [0]
+    user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+
+    normalize: False
+    active_reset: False #True
+    man_reset: True  # True
+    storage_reset: True #True
+
+
+    prepulse: True
+
+    pre_sweep_pulse: []

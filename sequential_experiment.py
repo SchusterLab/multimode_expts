@@ -1493,9 +1493,11 @@ def cavity_temperature_sweep(soccfg=None, path=None, prefix=None, config_file=No
         loaded = yaml.safe_load(file)
 #===================================================================# 
 
+
     experiment_class = 'single_qubit.t2_ramsey'
     experiment_name = 'RamseyExperiment'   
     sweep_experiment_name = 'cavity_temperature_sweep'
+
 
     for keys in loaded[experiment_name].keys():
         try:
@@ -1529,6 +1531,65 @@ def cavity_temperature_sweep(soccfg=None, path=None, prefix=None, config_file=No
 
         # special updates on device_config file
         run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+        print(run_exp.cfg.expt)
+        run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+
+def cavity_temperature_sweep_parity(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+    '''
+    Assumiung photon loaded into storage via man  1
+    '''
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================# 
+
+
+    experiment_class = 'single_qubit.parity_measurement_temp'
+    experiment_name = 'ParityTempExperiment'   
+    sweep_experiment_name = 'cavity_temperature_sweep_parity'
+
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    for targ_idx, targ_label in enumerate(loaded[sweep_experiment_name]['targ_list']): 
+
+        
+        # create prepulse , post pulse 
+        mm_base = MM_base(cfg = yaml_cfg)
+        pre_sweep_pulse_str = []
+        if targ_label != 'S0':
+            pre_sweep_pulse_str.append(['storage', 'M1-' + str(targ_label), 'pi', 0])
+            loaded[experiment_name]['prepulse'] = True
+        if targ_label == 'S0':
+            loaded[experiment_name]['prepulse'] = False # no prepulse for S0 which is basically bare man pop 
+        
+        print('Prepulse: ', pre_sweep_pulse_str)
+        creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
+        loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
+
+        
+        print(loaded[experiment_name])
+
+        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+
+
+        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+        # special updates on device_config file
+        run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
         print(run_exp.cfg.expt)
         run_exp.go(analyze=False, display=False, progress=False, save=True)
 

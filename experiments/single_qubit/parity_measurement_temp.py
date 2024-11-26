@@ -170,6 +170,7 @@ class ParityTempProgram(MMRAveragerProgram):
         
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'preetr_')
+        self.sync_all(self.us2cycles(2))
 
         for ii in range(self.cfg.expt.readout_no_placeholder):
             self.sync_all(self.us2cycles(0.05))
