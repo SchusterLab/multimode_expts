@@ -3624,7 +3624,7 @@ ParityTempExperiment:
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
 
     normalize: False
-    active_reset: False #True
+    active_reset: True #True
     man_reset: True  # True
     storage_reset: True #True
 
