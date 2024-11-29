@@ -79,7 +79,8 @@ class ParityTempProgram(MMRAveragerProgram):
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpief_qubit_ram", sigma=self.hpief_sigma, length=self.hpief_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ram", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
 
-        self.parity_wait = cfg.device.manipulate.revival_time[0]
+        self.parity_wait = cfg.device.manipulate.revival_time[self.cfg.expt.man_no - 1]
+        print(f"Parity wait time: {self.parity_wait} us")
 
         gen_chs = []
         
@@ -170,7 +171,7 @@ class ParityTempProgram(MMRAveragerProgram):
         
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'preetr_')
-        self.sync_all(self.us2cycles(2))
+            self.sync_all(self.us2cycles(2)) # wait for pulse to finish 
 
         for ii in range(self.cfg.expt.readout_no_placeholder):
             self.sync_all(self.us2cycles(0.05))

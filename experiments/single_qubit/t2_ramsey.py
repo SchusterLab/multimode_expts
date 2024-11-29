@@ -220,22 +220,27 @@ class RamseyProgram(MMRAveragerProgram):
         # self.wait_all(self.us2cycles(0.01))
         self.sync_all(self.us2cycles(0.01))
 
-        #middlepulse :
-        if cfg.expt.middlepulse:
-            for i in range(cfg.expt.reps_middlepulse):
-                self.custom_pulse(cfg, cfg.expt.mid_sweep_pulse)
-
         # wait advanced wait time
         self.sync_all()
         self.sync(self.q_rps[qTest], self.r_wait)
-        # self.sync_all()
-        # self.sync_all(self.r_wait)
-        
 
+        # play echoes 
+        # echoes 
+        if cfg.expt.echoes[0]:
+            for i in range(cfg.expt.echoes[1]):
+                self.pulse(ch=self.qubit_chs[qTest])
+                self.pulse(ch=self.qubit_chs[qTest])
+                if self.cfg.expt.checkEF:
+                    print('Echo Only implemented for ge qubit')
+                self.sync_all()
+                self.sync(self.q_rps[qTest], self.r_wait)
+                self.sync_all()
 
         # play pi/2 pulse with advanced phase (all regs except phase are already set by previous pulse)
         self.set_pulse_registers(ch=self.qubit_chs[qTest], style="arb", freq=self.f_pi_test_reg, phase=self.deg2reg(cfg.advance_phase),
                                   gain=self.gain_pi_test, waveform="pi2_test_ram")
+        
+        
         # self.wait_all(self.us2cycles(0.01))
         if self.qubit_ch_types[qTest] == 'int4':
             self.bitwi(self.q_rps[qTest], self.r_phase3, self.r_phase2, '<<', 16)

@@ -657,6 +657,8 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             print(data['xpts'][:5])
             data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
             print(data['xpts'][:5])
+        else:
+            print('No echoes in the data')
     except KeyError:
         print('No echoes in the data')
         pass

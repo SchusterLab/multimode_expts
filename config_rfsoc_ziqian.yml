@@ -166,7 +166,7 @@ device:
                 type: flat_top
 
             f0g1:  # M1, M2
-                freq: [2007.09, 1834.895]
+                freq: [2007.09, 1834.84]
                 gain: [15000, 15000]
                 length:  [0.615286689634651, 1.060413]  # [us]
                 hpilength: [0.3076433448173255, 0.528845]  # [us]
@@ -189,14 +189,16 @@ device:
     readout:               
         trig_offset: 450 # [Clock ticks]  400
         frequency: [748.8] # [MHz] (748.19) (748.6)
-        gain: [700]  # 800
-        phase: [128] # degrees     # 178.3
-        threshold: [-64.47477176210509] # adc units
-        threshold_list: [-64.47477176210509] # adc units
+        gain: [500] #700]  # 800
+        phase: [120] # degrees     # 178.3
+        threshold: [-72.07897510623889] # adc units
+        threshold_list: [-72.07897510623889] # adc units
         man1_drive_list: [0]
         man2_drive_list: [0]
         readout_length: [1.0] # [us]   1.0
         relax_delay: [2500] # [us] # Usually 1500
+        confusion_matrix_with_reset: [0.9972196946719237, 0.0027803053280762713, 0.01459223103518406, 0.985407768964816]
+        confusion_matrix_without_reset: [0.9924499999999997, 0.007550000000000279, 0.02219999999999999, 0.9778]
     
     manipulate:
         trig_offset: 450 # [Clock ticks]

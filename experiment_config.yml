@@ -651,16 +651,10 @@ RamseyExperiment:
         [2, 2, 0, 1],
         ['gaussian', 'gaussian', 'flat_top', 'flat_top'],
         [0.035, 0.035, 0.005, 0.005]]
-    reps_middlepulse: 0 # number of times to iterate middling pulse (for debugging )
+   
     advance_phase: 0 # advance phase of second pi/2 by this much [degrees]
-    middlepulse: False # this is played after first pi/2 (not exact middle of sequence)
-    mid_sweep_pulse: [[ 3424.2965691707564,  0, 2004.775, 2004.775,0, 3424.2965691707564],
-                       [2563, 0, 3000, 3000, 0, 2563], # amplitude 
-                       [0.0, 0.01, 0.740015963968996,0.740015963968996, 0.01, 0.0 ], # length of flat top
-                       [0, 0, 0, 0,0,0],
-                       [2, 5,5,5,5,2],['gaussian', 'flat_top','flat_top', 'flat_top','flat_top','gaussian'], 
-                       [0.03, 0.005, 0.005, 0.005, 0.005, 0.03]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
-
+    echoes: [False, 1] # [on/off, number of echoes]
+    
 
 cavity_temperature_sweep:
     targ_list: ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']
@@ -776,10 +770,10 @@ RamseyEchoExperiment:
 
 CavityRamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 0.012 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 151
-    ramsey_freq: 10 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 2000
+    step: 0.5 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 201
+    ramsey_freq: 0.08 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 500
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -797,32 +791,26 @@ CavityRamseyExperiment:
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
     storage_ramsey: [False, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
-    
-    coupler_ramsey: True # whether to do coupler ramsey (storage and user defined must be false)
+    man_ramsey: [True, 1] # whether doing ramsey on manipulate mode, no of manipulate mode (1/2)
+    coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
     custom_coupler_pulse: [[944.25], [1000], [0.316677658], [0], [1], ['flat_top'], [0.005]]
-    echoes: [False, 1 ] # [on/off, # of echoes] 
+    echoes: [True, 1 ] # [on/off, # of echoes] 
     prepulse: True
     postpulse: True
-    pre_sweep_pulse: [[3568.1515953227604,
-                3425.5564066067,
-                2007.0,
-                349.415,
-                3568.1515953227604,
-                3425.5564066067,
-                2007.0],
-                [10716, 8236, 15000, 3000, 5510, 8236, 15000],
-                [0, 0, 0.6056817916987671, 0.9771428571428572, 0, 0, 0.6056817916987671],
-                [0, 0, 0, 0, 0, 0, 0],
-                [2, 2, 0, 1, 2, 2, 0],
-                ['g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top'],
-                [0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005]]
-    post_sweep_pulse: [[2007.0, 3425.5564066067, 3568.1515953227604],
-       [15000, 8236, 5510],
-       [0.6056817916987671, 0, 0],
-       [0, 0, 0],
-       [0, 2, 2],
-       ['flat_top', 'g', 'g'],
-       [0.005, 0.035, 0.035]]
+    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067],
+       [5510, 8236],
+       [0, 0],
+       [0, 0],
+       [2, 2],
+       ['g', 'g'],
+       [0.035, 0.035]]
+    post_sweep_pulse: [[3425.5564066067, 3568.1515953227604],
+       [8236, 5510],
+       [0, 0],
+       [0, 0],
+       [2, 2],
+       ['g', 'g'],
+       [0.035, 0.035]]
     # ramsey freq is the frequency by which to advance the phase
     # ramsey_freq (no echoes) gives ~0.02 Mhz osc : [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
     # T2 : [, 600]
@@ -1308,14 +1296,14 @@ DisplacementEnhancedSidebandExperimentSweep:
     
 LengthRabiGeneralF0g1Experiment:
     start: 0.0069754464285714285 # us
-    step: 0.03 # us
+    step: 0.04 # us
     qubits: [0]
     expts: 100
     reps: 500
     rounds: 1
     gain: 15000 # qubit gain [DAC units],
     ramp_sigma: 0.005  # us
-    freq: 2007 #1834.895   # MHz
+    freq: 1834.84 #1834.895   # MHz
     use_arb_waveform: False
     pi_ge_before: True
     pi_ef_before: True
@@ -1351,11 +1339,11 @@ LengthRabiGeneralF0g1Experiment:
                        
 
 LengthRabiGeneralF0g1ExperimentSweep:
-    freq_start: 2006.96 #9360934716117 #1949.6230253558676 #2010.7098618878696
-    freq_stop: 2008 # 2007.95 #1951.6230253558676 #2012.7098618878696
-    freq_step: 0.025 #0.01
+    freq_start: 1834.795 #9360934716117 #1949.6230253558676 #2010.7098618878696
+    freq_stop: 1835.995 # 2007.95 #1951.6230253558676 #2012.7098618878696
+    freq_step: 0.01 #0.01
     start: 25 #0.007 #0.0069754464285714285 # us
-    step: 0.05 # us
+    step: 0.1 # us
     qubits: [0]
     expts: 101
     reps: 200
@@ -1849,7 +1837,6 @@ SidebandGeneralExperimentSweep:
     man_reset:  True
     storage_reset:  True
 
-
     pre_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2010.88406296],
                 [10716, 8236, 15000],
                 [0, 0, 0.607475],
@@ -1864,6 +1851,8 @@ SidebandGeneralExperimentSweep:
                 [0],
                 ['flat_top'],
                 [0.005]]
+
+
 
 
 
@@ -3624,16 +3613,24 @@ ParityTempExperiment:
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
 
     normalize: False
-    active_reset: True #True
+    active_reset: False #True
     man_reset: True  # True
     storage_reset: True #True
+    man_no : 1 # for selecting parity time (1 is M1 and 2 is M2)
 
 
     prepulse: True
 
-    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
+    # pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
+    #                     [10716, 8236, 15000],
+    #                     [0, 0, 0.6056817916987671],
+    #                     [0, 0, 0],
+    #                     [2, 2, 0],
+    #                     ['g', 'g', 'flat_top'],
+    #                     [0.035, 0.035, 0.005]]
+    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 1834.840],
                         [10716, 8236, 15000],
-                        [0, 0, 0.6056817916987671],
+                        [0, 0, 1.046171],
                         [0, 0, 0],
                         [2, 2, 0],
                         ['g', 'g', 'flat_top'],
@@ -3641,17 +3638,38 @@ ParityTempExperiment:
 
 cavity_temperature_sweep_parity:
     targ_list: ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']
+    calibrate_single_photon: True
 
     # basic params
-    start: 0.01 # not used
-    step: 1  # [us] not used
-    expts: 1   # not used, has to be 1
     parity_number: 40   # number of parity measurements
-    ramsey_freq: 0.0 # [MHz] not used
     reps: 100000
     rounds: 1
     qubits: [0]
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+    man_no : 1
+
+    normalize: False
+    active_reset: False #True
+    man_reset: True  # True
+    storage_reset: True #True
+
+
+    prepulse: True
+
+    pre_sweep_pulse: []
+
+cavity_temperature_sweep_parity_with_without_reset:
+    targ_list: ['M1', 'M1-S1', 'M1-S2', 'M1-S3', 'M1-S4', 'M1-S5', 'M1-S6', 'M1-S7', 'M1-D1', 'M1-C',
+                'M2', 'M2-D2']
+    calibrate_single_photon: True
+
+    # basic params
+    parity_number: 80   # number of parity measurements
+    reps: 300000
+    rounds: 1
+    qubits: [0]
+    user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
+    man_no: 1
 
     normalize: False
     active_reset: False #True

@@ -1535,63 +1535,7 @@ def cavity_temperature_sweep(soccfg=None, path=None, prefix=None, config_file=No
         run_exp.go(analyze=False, display=False, progress=False, save=True)
 
 
-def cavity_temperature_sweep_parity(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-    '''
-    Assumiung photon loaded into storage via man  1
-    '''
-#====================================================================#
-    config_path = config_file
-    print('Config will be', config_path)
 
-    with open(config_file, 'r') as cfg_file:
-        yaml_cfg = yaml.safe_load(cfg_file)
-    yaml_cfg = AttrDict(yaml_cfg)
-
-    with open(exp_param_file, 'r') as file:
-        # Load the YAML content
-        loaded = yaml.safe_load(file)
-#===================================================================# 
-
-
-    experiment_class = 'single_qubit.parity_measurement_temp'
-    experiment_name = 'ParityTempExperiment'   
-    sweep_experiment_name = 'cavity_temperature_sweep_parity'
-
-
-    for keys in loaded[experiment_name].keys():
-        try:
-            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-        except:
-            pass
-
-    for targ_idx, targ_label in enumerate(loaded[sweep_experiment_name]['targ_list']): 
-
-        
-        # create prepulse , post pulse 
-        mm_base = MM_base(cfg = yaml_cfg)
-        pre_sweep_pulse_str = []
-        if targ_label != 'S0':
-            pre_sweep_pulse_str.append(['storage', 'M1-' + str(targ_label), 'pi', 0])
-            loaded[experiment_name]['prepulse'] = True
-        if targ_label == 'S0':
-            loaded[experiment_name]['prepulse'] = False # no prepulse for S0 which is basically bare man pop 
-        
-        print('Prepulse: ', pre_sweep_pulse_str)
-        creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
-        loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
-
-        
-        print(loaded[experiment_name])
-
-        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
-
-
-        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
-
-        # special updates on device_config file
-        run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
-        print(run_exp.cfg.expt)
-        run_exp.go(analyze=False, display=False, progress=False, save=True)
 
 
 class sweep_cavity_ramsey_expts: 
@@ -1600,8 +1544,8 @@ class sweep_cavity_ramsey_expts:
 
     
 
-    def run_cavity_ramsey(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
-                           prep_init = False, prep_params = None):
+    def run_cavity_expt(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                           prep_init = False, prep_params = None, meas_delay = 2500):
         '''
         Assumiung prep_init
         '''
@@ -1618,12 +1562,160 @@ class sweep_cavity_ramsey_expts:
         run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
 
         # special updates on device_config file
-        run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+        if loaded[experiment_name]['active_reset']:
+            meas_delay = 100
+            
+        print(
+            f"Relax delay: {meas_delay} us"
+        )
+        run_exp.cfg.device.readout.relax_delay = meas_delay # Wait time between experiments [us]
         print(run_exp.cfg.expt)
         run_exp.go(analyze=False, display=False, progress=False, save=True)
     
+    
+    def cavity_temperature_sweep_parity_with_without_reset(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        '''
+        Perform akash's dark-matter-like detection experiment on cavity modes
+        sweeping active reset and non active reset
+        '''
+    #====================================================================#
+        config_path = config_file
+        print('Config will be', config_path)
+
+        with open(config_file, 'r') as cfg_file:
+            yaml_cfg = yaml.safe_load(cfg_file)
+        yaml_cfg = AttrDict(yaml_cfg)
+
+        with open(exp_param_file, 'r') as file:
+            # Load the YAML content
+            loaded = yaml.safe_load(file)
+    #===================================================================# 
 
 
+        experiment_class = 'single_qubit.parity_measurement_temp'
+        experiment_name = 'ParityTempExperiment'   
+        sweep_experiment_name = 'cavity_temperature_sweep_parity_with_without_reset'
+
+        for keys in loaded[experiment_name].keys():
+            try:
+                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+            except:
+                pass
+
+        # first do experiment without active reset
+
+        loaded[experiment_name]['active_reset'] = False
+        self.cavity_temperature_sweep_parity(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                        prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+        
+        # now do experiment with active reset
+        print('-------------------------------------------------')
+        print('Active Reset Experiment')
+        print('-------------------------------------------------')
+        loaded[experiment_name]['active_reset'] = True
+        loaded[experiment_name]['man_reset'] = True
+        loaded[experiment_name]['storage_reset'] = True
+        self.cavity_temperature_sweep_parity(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                        prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+
+    
+    def cavity_temperature_sweep_parity(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                                        prep_init = False, prep_params = None):
+        '''
+        Perform akash's dark-matter-like detection experiment on cavity modes
+        '''
+
+        if prep_init:
+            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
+        else:
+             #====================================================================#
+            config_path = config_file
+            print('Config will be', config_path)
+
+            with open(config_file, 'r') as cfg_file:
+                yaml_cfg = yaml.safe_load(cfg_file)
+            yaml_cfg = AttrDict(yaml_cfg)
+
+            with open(exp_param_file, 'r') as file:
+                # Load the YAML content
+                loaded = yaml.safe_load(file)
+             #===================================================================# 
+
+
+            experiment_class = 'single_qubit.parity_measurement_temp'
+            experiment_name = 'ParityTempExperiment'   
+            sweep_experiment_name = 'cavity_temperature_sweep_parity'
+
+
+            for keys in loaded[experiment_name].keys():
+                try:
+                    loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+                except:
+                    pass
+
+        # print sweep experiment name
+        print('-------------------------------------------------')
+        print('Sweep Experiment Name: ', sweep_experiment_name)
+        print('-------------------------------------------------')
+
+        if loaded[sweep_experiment_name]['calibrate_single_photon']: 
+            print('-------------------------------------------------')
+            print('Calibrating Single Photon')
+            print('-------------------------------------------------')
+            mm_base = MM_dual_rail_base(cfg = yaml_cfg)
+            
+            for man_no in [1,2]: 
+                pre_sweep_pulse_str = mm_base.prep_man_photon(man_no)
+                creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
+                loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
+                print('Prepulse: ', pre_sweep_pulse_str)
+
+                # update parity time 
+                # change manipulate index 
+                loaded[experiment_name]['man_no'] =  man_no
+                
+                
+                self.run_cavity_expt(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+                
+
+
+        for targ_idx, targ_label in enumerate(loaded[sweep_experiment_name]['targ_list']): 
+
+            
+            # create prepulse , post pulse 
+            mm_base = MM_base(cfg = yaml_cfg)
+            pre_sweep_pulse_str = []
+            if (targ_label != 'M1') and (targ_label != 'M2'):
+                pre_sweep_pulse_str.append(['storage',  str(targ_label), 'pi', 0])
+                loaded[experiment_name]['prepulse'] = True
+            else:
+                loaded[experiment_name]['prepulse'] = False # Assuming target label is M1 or M2 
+
+            # change manipulate index 
+            if 'M1' in targ_label:
+                loaded[experiment_name]['man_no'] = 1
+            elif 'M2' in targ_label:
+                loaded[experiment_name]['man_no'] = 2
+            
+            print('Prepulse: ', pre_sweep_pulse_str)
+            creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
+            loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
+
+            
+            self.run_cavity_expt(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
+    
+    def run_cavity_ramsey(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                           prep_init = False, prep_params = None, meas_delay = 2500):
+        '''
+        Old function bnot really needed
+        '''
+        self.run_cavity_expt(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, exp_param_file=exp_param_file,
+                           prep_init = prep_init, prep_params = prep_params, meas_delay = meas_delay)
+    
+
+   
 
     def stor_cavity_ramsey_sweep(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
         '''
