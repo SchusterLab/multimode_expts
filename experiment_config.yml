@@ -134,7 +134,7 @@ HistogramExperiment:
     qubits: [0]
     reps: 20000
     check_f: False
-    active_reset: False
+    active_reset: True
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -3665,7 +3665,7 @@ cavity_temperature_sweep_parity_with_without_reset:
 
     # basic params
     parity_number: 80   # number of parity measurements
-    reps: 300000
+    reps: 200000
     rounds: 1
     qubits: [0]
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
