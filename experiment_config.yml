@@ -3605,7 +3605,7 @@ ParityTempExperiment:
     start: 0.01 # not used
     step: 1  # [us] not used
     expts: 1   # not used, has to be 1
-    parity_number: 40   # number of parity measurements
+    parity_number: 80   # number of parity measurements
     ramsey_freq: 0.0 # [MHz] not used
     reps: 100000
     rounds: 1
