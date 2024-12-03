@@ -8,6 +8,8 @@ from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
 import random
 from MM_base import * 
+from experiments.single_qubit.single_shot import  HistogramProgram
+from copy import deepcopy
 
 
 
@@ -17,6 +19,71 @@ class MM_dual_rail_base(MM_base):
         super().__init__( cfg)
         # self.init_gate_length() # creates the dictionary of gate lengths
     
+    def run_single_shot(self, self_expt, data,   progress=True, debug=False):
+        '''
+        self_expt: self method of expt class
+        Runs single shot ; assumes follwing parameters in cfg.expt
+        
+        singleshot_reps: 20000
+        singleshot_active_reset: True
+        singleshot_man_reset: True
+        singleshot_storage_reset: True
+
+        Son't want to place this inside MMbase since then it would be circular import 
+
+        '''
+        # sscfg = AttrDict(deepcopy(self_expt.cfg))
+        sscfg = deepcopy(self_expt.cfg)
+        sscfg.expt.reps = sscfg.expt.singleshot_reps
+        
+        # sscfg.expt.active_reset = 
+        # print active reset inside sscfg 
+        print('sscfg active reset ' + str(sscfg.expt.singleshot_active_reset))
+        sscfg.active_reset = sscfg.expt.singleshot_active_reset
+        sscfg.man_reset = sscfg.expt.singleshot_man_reset
+        sscfg.storage_reset = sscfg.expt.singleshot_storage_reset
+
+        if sscfg.active_reset:
+            readouts_per_experiment = 4
+        else:
+            readouts_per_experiment = 1
+
+        # sscfg.expt.man_reset = kkk
+
+        # Ground state shots
+        # cfg.expt.reps = 10000
+        sscfg.expt.qubit = 0
+        sscfg.expt.rounds = 1
+        sscfg.expt.pulse_e = False
+        sscfg.expt.pulse_f = False
+        # print(sscfg)
+
+        data['Ig'] = []
+        data['Qg'] = []
+        data['Ie'] = []
+        data['Qe'] = []
+        histpro_g = HistogramProgram(soccfg=self_expt.soccfg, cfg=sscfg)
+        avgi, avgq = histpro_g.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                       readouts_per_experiment=readouts_per_experiment)
+        data['Ig'], data['Qg'] = histpro_g.collect_shots()
+
+        # Excited state shots
+        sscfg.expt.pulse_e = True 
+        sscfg.expt.pulse_f = False
+        histpro_e= HistogramProgram(soccfg=self_expt.soccfg, cfg=sscfg)
+        avgi, avgq = histpro_e.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                       readouts_per_experiment=readouts_per_experiment)
+        data['Ie'], data['Qe'] = histpro_e.collect_shots()
+        # print(data)
+
+        fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self_expt.cfg.expt.span, 
+                                                         active_reset=self_expt.cfg.expt.active_reset, threshold = self_expt.cfg.device.readout.threshold[0],
+                                                         readout_per_round=readouts_per_experiment)
+        data['fids'] = fids
+        data['angle'] = angle
+        data['thresholds'] = thresholds
+        data['confusion_matrix'] = confusion_matrix
+        return data
     
     def initialize_beam_splitter_pulse(self):
         ''' initializes the beam splitter pulse

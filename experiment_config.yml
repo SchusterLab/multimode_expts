@@ -630,7 +630,7 @@ RamseyExperiment:
     qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
     f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
     normalize: False
-    active_reset: False #True
+    active_reset: True #True
     man_reset: True  # True
     storage_reset: False #True
 
@@ -987,8 +987,10 @@ CavityRamseyExperiment_old:
 
 CavityRamseySweep:
     gain_start: 250
-    gain_stop: 3000
+    gain_stop: 6000
     gain_step: 75
+
+    ### Basic Ramsey parameters
     start: 0 # wait time tau [us]
     step: 0.125 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
     expts: 151
@@ -1008,31 +1010,28 @@ CavityRamseySweep:
     parity_meas: False
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
-    storage_ramsey: [True, 5, False] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), whether to use storage ch as phase update ch]  
+    storage_ramsey: [True, 7, False] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (whatever is specieifed by user_def )] 
+    man_ramsey: [False, 1] # whether doing ramsey on manipulate mode, no of manipulate mode (1/2)
+    coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
+    custom_coupler_pulse: [[944.25], [1000], [0.316677658], [0], [1], ['flat_top'], [0.005]]
+    echoes: [False, 0 ] # [on/off, # of echoes] 
+
     prepulse: False
     postpulse: True
-    pre_sweep_pulse: [[3568.1782381859975, 3425.559887601728, 0],
-                        [13639, 10338, 0],
+    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 0],
+                        [10716, 8236, 0],
                         [0, 0, 0.01],
                         [0, 0, 0],
-                        [2, 2, 5],
+                        [2, 2, 0],
                         ['gaussian', 'gaussian', 'flat_top'],
                         [0.025, 0.025, 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
-    post_sweep_pulse: [[3568.1782381859975],
+    post_sweep_pulse: [[3568.1515953227604],
        [50],
        [6.504911065860095],
        [0],
        [2],
        ['flat_top'],
        [0.005]]
-    # post_sweep_pulse: [[2004.775],
-    #                    [3000], # amplitude 
-    #                    [  0.740015963968996], # length of flat top
-    #                    [ 0 ],
-    #                    [ 5],['flat_top'], 
-    #                    [ 0.005]]   # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
-  
-
 
 ParityGainExperiment: 
     start: 0 # DAC Units
@@ -1043,9 +1042,18 @@ ParityGainExperiment:
     qubit: 0
     qubits: [0]
     normalize: False
-    active_reset: False
+
     single_shot: True
-    singleshot_reps: 10000
+    singleshot_reps: 20000
+    singleshot_active_reset: False
+    singleshot_man_reset: True
+    singleshot_storage_reset: True
+
+
+
+    active_reset: False
+    man_reset: True
+    storage_reset: True
     span: 1000   # single shot plot span
     prep_e: False # for debugging
     manipulate: 1 # 1/2 for manipulate

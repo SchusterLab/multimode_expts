@@ -192,6 +192,10 @@ class MM_base():
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_sigma, length=self.pief_sigma*6) # this is flat top 
         # self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
 
+        # frequencies
+        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
+        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
+
 
         # --------------------f0g1 pulse parameters 
         self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
@@ -858,6 +862,10 @@ class MM_base():
             plt.show()
 
         return fids, thresholds, theta*180/np.pi, confusion_matrix # fids: ge, gf, ef
+
+    # g states for q0
+
+    
 
 
     

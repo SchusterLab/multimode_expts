@@ -155,6 +155,10 @@ class CavityRamseyProgram(MMRAveragerProgram):
             # self.q_rps = self.flux_rps
         elif self.cfg.expt.man_ramsey[0]:
             self.phase_update_channel = self.cavity_ch
+
+        elif self.cfg.expt.user_defined_pulse[0] and self.cfg.expt.storage_ramsey[0]:
+            print('Running Kerr; will update phase ch')
+            self.phase_update_channel = self.cavity_ch
         print(f'phase update channel: {self.phase_update_channel}')
         self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
         self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")
@@ -210,7 +214,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             print(cfg.expt.pre_sweep_pulse)
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='Prepulse')
 
-        # play pi f0g1 pulse with the freq that we want to calibrate
+        # play the prepulse for kerr experimenty (dispalcement of manipulate)
         if self.cfg.user_defined_pulse[0]:
             if self.user_length == 0: # its a gaussian pulse
                 self.setup_and_pulse(ch=self.cavity_ch[qTest], style="arb", freq=self.user_freq, phase=self.deg2reg(0), gain=self.user_gain,waveform="user_test")

@@ -208,6 +208,7 @@ class HistogramProgram(MMAveragerProgram):
         # self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch[qTest])
         # self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
         # get register page for qubit_chs
+        # print(self.qubit_chs)
         self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
         self.f_ge_reg_ss = [self.freq2reg(
             cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]

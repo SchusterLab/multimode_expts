@@ -10,8 +10,10 @@ from tqdm import tqdm_notebook as tqdm
 from copy import deepcopy # single shot dictionary cfg copy
 
 import experiments.fitting as fitter
+from MM_base import *
+from MM_dual_rail_base import *
 
-class ParityGainProgram(RAveragerProgram):
+class ParityGainProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -23,107 +25,110 @@ class ParityGainProgram(RAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
+        self.MM_base_initialize()
+
+
         cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
+        qTest=0
+        # self.cfg.update(cfg.expt) 
         
-        self.adc_ch = cfg.hw.soc.adcs.readout.ch
-        self.res_ch = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_type = cfg.hw.soc.dacs.readout.type
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
+        # self.adc_ch = cfg.hw.soc.adcs.readout.ch
+        # self.res_ch = cfg.hw.soc.dacs.readout.ch
+        # self.res_ch_type = cfg.hw.soc.dacs.readout.type
+        # self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
+        # self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
+        # self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
+        # self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
+        # self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
+        # self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
+        # self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
+        # self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
+        # self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
+        # self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
+        # self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
+        # self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
-        self.man_chs = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_types = cfg.hw.soc.dacs.manipulate_in.type
+        # self.man_chs = cfg.hw.soc.dacs.manipulate_in.ch
+        # self.man_ch_types = cfg.hw.soc.dacs.manipulate_in.type
 
-        # declare register pages (gain)
-        self.man_rp = self.ch_page(self.man_ch) # get register page for qubit_ch
-        self.r_gain = self.sreg(self.man_ch, "gain") # get gain register for qubit_ch
+        # # declare register pages (gain)
+        self.man_rp = [self.ch_page(self.man_ch[qTest])] # get register page for qubit_ch
+        self.r_gain = self.sreg(self.man_ch[qTest], "gain") # get gain register for qubit_ch
         self.r_gain2 = 4 # dummy register for gain  (since multiple qubit pulses)
-        self.safe_regwi(self.man_rp, self.r_gain2, self.cfg.expt.start) # set dummygain register to start value
+        self.safe_regwi(self.man_rp[qTest], self.r_gain2, self.cfg.expt.start) # set dummygain register to start value
 
-        # declare qubit dacs
-        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
-        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch)
-        self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch)
-        self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch)
-        self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch)
-        self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
+        # # declare qubit dacs
+        
+        # self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch)
+        # self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch)
+        # self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch)
+        # self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
 
         # declare res dacs
-        mask = None
-        mixer_freq = 0 # MHz
-        mux_freqs = None # MHz
-        mux_gains = None
-        ro_ch = self.adc_ch
-        if self.res_ch_type == 'int4':
-            mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-        elif self.res_ch_type == 'mux4':
-            assert self.res_ch == 6
-            mask = [0, 1, 2, 3] # indices of mux_freqs, mux_gains list to play
-            mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-            mux_freqs = [0]*4
-            mux_freqs[cfg.expt.qubit] = cfg.device.readout.frequency
-            mux_gains = [0]*4
-            mux_gains[cfg.expt.qubit] = cfg.device.readout.gain
-        self.declare_gen(ch=self.res_ch, nqz=cfg.hw.soc.dacs.readout.nyquist, mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
+        # mask = None
+        # mixer_freq = 0 # MHz
+        # mux_freqs = None # MHz
+        # mux_gains = None
+        # ro_ch = self.adc_ch
+        # if self.res_ch_type == 'int4':
+        #     mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
+        # elif self.res_ch_type == 'mux4':
+        #     assert self.res_ch == 6
+        #     mask = [0, 1, 2, 3] # indices of mux_freqs, mux_gains list to play
+        #     mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
+        #     mux_freqs = [0]*4
+        #     mux_freqs[cfg.expt.qubit] = cfg.device.readout.frequency
+        #     mux_gains = [0]*4
+        #     mux_gains[cfg.expt.qubit] = cfg.device.readout.gain
+        # self.declare_gen(ch=self.res_ch, nqz=cfg.hw.soc.dacs.readout.nyquist, mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
 
         # cavity pulse param
-        self.f_cavity = self.freq2reg(cfg.device.manipulate.f_ge[cfg.expt.manipulate - 1], gen_ch = self.man_ch)
+        self.f_cavity = self.freq2reg(cfg.device.manipulate.f_ge[cfg.expt.manipulate - 1], gen_ch = self.man_ch[qTest])
         print(self.man_ch)
         print(self.cfg.expt.manipulate)
         if cfg.expt.displace[0]:
-            self.displace_sigma = self.us2cycles(cfg.expt.displace[1], gen_ch=self.man_ch)
-            self.add_gauss(ch=self.man_ch, name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
+            self.displace_sigma = self.us2cycles(cfg.expt.displace[1], gen_ch=self.man_ch[qTest])
+            self.add_gauss(ch=self.man_ch[qTest], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
 
         #f0g1 sideband
-        self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.f0g1_cavity-1], gen_ch=self.qubit_ch)
-        self.f0g1_length = self.us2cycles(cfg.device.QM.pulses.f0g1.length[cfg.expt.f0g1_cavity-1], gen_ch=self.qubit_ch)
+        self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.f0g1_cavity-1], gen_ch=self.qubit_ch[qTest])
+        self.f0g1_length = self.us2cycles(cfg.device.QM.pulses.f0g1.length[cfg.expt.f0g1_cavity-1], gen_ch=self.qubit_ch[qTest])
         self.pif0g1_gain = cfg.device.QM.pulses.f0g1.gain[cfg.expt.f0g1_cavity-1]
         
-        # declare qubit dacs
-        mixer_freq = 0
-        if self.qubit_ch_type == 'int4':
-            mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq
-        self.declare_gen(ch=self.qubit_ch, nqz=cfg.hw.soc.dacs.qubit.nyquist, mixer_freq=mixer_freq)
+        # # declare qubit dacs
+        # mixer_freq = 0
+        # if self.qubit_ch_type == 'int4':
+        #     mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq
+        # self.declare_gen(ch=self.qubit_ch, nqz=cfg.hw.soc.dacs.qubit.nyquist, mixer_freq=mixer_freq)
 
-        # declare adcs
-        self.declare_readout(ch=self.adc_ch, length=self.readout_length_adc, freq=cfg.device.readout.frequency, gen_ch=self.res_ch)
+        # # declare adcs
+        # self.declare_readout(ch=self.adc_ch, length=self.readout_length_adc, freq=cfg.device.readout.frequency, gen_ch=self.res_ch)
 
-        self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch)
-        self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma, gen_ch=self.qubit_ch)
-        self.hpi_sigma_fast = self.us2cycles(cfg.device.qubit.pulses.hpi_ge_fast.sigma, gen_ch=self.qubit_ch)
-        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
+        # self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch)
+        # self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma, gen_ch=self.qubit_ch)
+        # self.hpi_sigma_fast = self.us2cycles(cfg.device.qubit.pulses.hpi_ge_fast.sigma, gen_ch=self.qubit_ch)
+        # self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
 
-        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain
-        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain
+        # self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain
+        # self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain
 
-        # add qubit and readout pulses to respective channels
-        if self.cfg.device.qubit.pulses.pi_ge.type.lower() == 'gauss':
+        # # add qubit and readout pulses to respective channels
+        # if self.cfg.device.qubit.pulses.pi_ge.type.lower() == 'gauss':
             
-            self.add_gauss(ch=self.qubit_ch, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
-            self.add_gauss(ch=self.qubit_ch, name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
-            self.add_gauss(ch=self.qubit_ch, name="hpi_qubit_fast", sigma=self.hpi_sigma_fast, length=self.hpi_sigma_fast*4)
-            self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)
-            self.add_gauss(ch=self.f0g1_ch, name="f0g1",
-                       sigma=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma), length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
-            #self.set_pulse_registers(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
-        else:
-            self.set_pulse_registers(ch=self.qubit_ch, style="const", freq=self.f_ge, phase=0, gain=cfg.expt.start, length=self.pi_sigma)
+        #     self.add_gauss(ch=self.qubit_ch, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
+        #     self.add_gauss(ch=self.qubit_ch, name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
+        #     self.add_gauss(ch=self.qubit_ch, name="hpi_qubit_fast", sigma=self.hpi_sigma_fast, length=self.hpi_sigma_fast*4)
+        #     self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)
+        #     self.add_gauss(ch=self.f0g1_ch, name="f0g1",
+        #                sigma=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma), length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
+        #     #self.set_pulse_registers(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
+        # else:
+        #     self.set_pulse_registers(ch=self.qubit_ch, style="const", freq=self.f_ge, phase=0, gain=cfg.expt.start, length=self.pi_sigma)
 
 
         # if self.res_ch_type == 'mux4':
         #     self.set_pulse_registers(ch=self.res_ch, style="const", length=self.readout_length_dac, mask=mask)
-        self.set_pulse_registers(ch=self.res_ch, style="const", freq=self.f_res_reg, phase=self.deg2reg(cfg.device.readout.phase), gain=cfg.device.readout.gain, length=self.readout_length_dac)
+        # self.set_pulse_registers(ch=self.res_ch, style="const", freq=self.f_res_reg, phase=self.deg2reg(cfg.device.readout.phase), gain=cfg.device.readout.gain, length=self.readout_length_dac)
 
         # load ECD file data
         if cfg.expt.ECD_pulse:
@@ -133,115 +138,26 @@ class ParityGainProgram(RAveragerProgram):
 
         self.sync_all(200)
 
-    def reset_and_sync(self):
-        # Phase reset all channels except readout DACs 
-
-        # self.setup_and_pulse(ch=self.res_chs[0], style='const', freq=self.freq2reg(18, gen_ch=self.res_chs[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.qubit_chs[qTest]s[0], style='const', freq=self.freq2reg(18, gen_ch=self.qubit_chs[qTest]s[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.man_chs[0], style='const', freq=self.freq2reg(18, gen_ch=self.man_chs[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.flux_low_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.flux_low_ch[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.flux_high_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.flux_high_ch[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.f0g1_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.f0g1_ch[0]), phase=0, gain=5, length=10, phrst=1)
-        # self.setup_and_pulse(ch=self.storage_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.storage_ch[0]), phase=0, gain=5, length=10, phrst=1)
-
-
-        #initialize the phase to be 0
-        self.f_q = self.f_ge
-        self.f_cav = self.f_cavity
-
-        self.set_pulse_registers(ch=self.qubit_ch, freq=self.f_q,
-                                 phase=0, gain=0, length=10, style="const", phrst=1)
-        self.pulse(ch=self.qubit_ch)
-        self.set_pulse_registers(ch=self.man_ch, freq=self.f_q,
-                                 phase=0, gain=0, length=10, style="const", phrst=1)
-        self.pulse(ch=self.man_ch)
-        # self.set_pulse_registers(ch=self.storage_ch, freq=self.f_cav,
-        #                          phase=0, gain=0, length=10, style="const", phrst=1)
-        # self.pulse(ch=self.storage_ch)
-        self.set_pulse_registers(ch=self.flux_low_ch, freq=self.f_q,
-                                 phase=0, gain=0, length=10, style="const", phrst=1)
-        self.pulse(ch=self.flux_low_ch)
-        self.set_pulse_registers(ch=self.flux_high_ch, freq=self.f_q,
-                                 phase=0, gain=0, length=10, style="const", phrst=1)
-        self.pulse(ch=self.flux_high_ch)
-        self.set_pulse_registers(ch=self.f0g1_ch, freq=self.f_q,
-                                 phase=0, gain=0, length=10, style="const", phrst=1)
-        self.pulse(ch=self.f0g1_ch)
-
-        self.sync_all(10)
+    
 
     def body(self):
         cfg=AttrDict(self.cfg)
+        qTest=0
 
         # add cavity reset
         self.reset_and_sync()
-        if cfg.expt.prepulse:
-            for ii in range(len(cfg.expt.pre_sweep_pulse[0])):
-                # translate ch id to ch
-                if cfg.expt.pre_sweep_pulse[4][ii] == 1:
-                    self.tempch = self.flux_low_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 2:
-                    self.tempch = self.qubit_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 3:
-                    self.tempch = self.flux_high_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 6:
-                    self.tempch = self.storage_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 0:
-                    self.tempch = self.f0g1_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 4:
-                    self.tempch = self.man_ch
-                # print(self.tempch)
-                # determine the pulse shape
-                if cfg.expt.pre_sweep_pulse[5][ii] == "gaussian":
-                    # print('gaussian')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     waveform="temp_gaussian")
-                elif cfg.expt.pre_sweep_pulse[5][ii] == "flat_top":
-                    # print('flat_top')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch, style="flat_top", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch),
-                                    waveform="temp_gaussian")
-                else:
-                    self.setup_and_pulse(ch=self.tempch, style="const", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch))
-                self.sync_all()
+        # active reset 
+        if self.cfg.expt.active_reset: 
+            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
 
-        if cfg.expt.f0g1_cavity > 0:
-            self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=self.pi_gain, waveform="pi_qubit")
-            self.sync_all() # align channels
-            self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ef, phase=0, gain=self.pief_gain, waveform="pief_qubit")
-            self.sync_all() # align channels
-            self.setup_and_pulse(
-                    ch=self.f0g1_ch,
-                    style="flat_top",
-                    freq=self.f0g1,
-                    length=self.f0g1_length,
-                    phase=0,
-                    gain=self.pif0g1_gain, 
-                    waveform="f0g1")
-            self.sync_all() # align channels
-        if self.cfg.expt.prep_e:
-            self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=self.pi_gain, waveform="pi_qubit")
-            self.sync_all() # align channels
+        # pre pulse
+        if cfg.expt.prepulse:
+            print('Inside parity gain code')
+            print(cfg.expt.pre_sweep_pulse)
+            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='Prepulse')
+
+        
+        
 
         # --------------------------------------------------------------------------------
         # Iterate over ECD pulses
@@ -318,7 +234,7 @@ class ParityGainProgram(RAveragerProgram):
         #  Setup cavity pulse form
         if self.cfg.expt.displace[0]:
             self.set_pulse_registers(
-                    ch=self.man_ch,
+                    ch=self.man_ch[qTest],
                     style="arb",
                     freq=self.f_cavity,
                     phase=self.deg2reg(0), 
@@ -327,42 +243,45 @@ class ParityGainProgram(RAveragerProgram):
             
         
         if self.cfg.expt.const_pulse[0]:
-            self.set_pulse_registers(ch=self.man_ch, 
+            self.set_pulse_registers(ch=self.man_ch[qTest], 
                                  style="const", 
                                  freq=self.f_cavity, 
                                  phase=self.deg2reg(0),
                                 gain=self.cfg.expt.start, # placeholder
                                 length=self.us2cycles(self.cfg.expt.const_pulse[1]))
         # Update gain and pulse  
-        self.mathi(self.man_rp, self.r_gain, self.r_gain2, "+", 0) # update gain register
-        self.pulse(ch = self.man_ch)
+        self.mathi(self.man_rp[qTest], self.r_gain, self.r_gain2, "+", 0) # update gain register
+        self.pulse(ch = self.man_ch[qTest])
         self.sync_all() # align channels
 
         # Parity Measurement
-        self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=self.deg2reg(0), gain=cfg.device.qubit.pulses.hpi_ge.gain, waveform="hpi_qubit")
+        self.setup_and_pulse(ch=self.qubit_ch[qTest], style="arb", freq=self.f_ge, phase=self.deg2reg(0), gain=cfg.device.qubit.pulses.hpi_ge.gain[qTest], waveform="hpi_qubit_ge")
         self.sync_all() # align channels
         # self.sync_all(self.us2cycles(np.abs(1 / self.cfg.device.QM.chi_shift_matrix[0][1] / 2))) # wait for pi/chi (noe chi in config is in MHz)
         # self.sync_all(self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate-1]))) # wait for parity revival time
-        self.setup_and_pulse(ch=self.qubit_ch, style="const", freq=self.f_ge, phase=self.deg2reg(0), gain=0, length=self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate-1])))
+        self.setup_and_pulse(ch=self.qubit_ch[qTest], style="const", freq=self.f_ge, phase=self.deg2reg(0), gain=0, length=self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate-1])))
         self.sync_all() # align channels
-        self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=self.deg2reg(180), gain=cfg.device.qubit.pulses.hpi_ge.gain, waveform="hpi_qubit")
+        self.setup_and_pulse(ch=self.qubit_ch[qTest], style="arb", freq=self.f_ge, phase=self.deg2reg(180), gain=cfg.device.qubit.pulses.hpi_ge.gain[qTest], waveform="hpi_qubit_ge")
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
-        self.measure(pulse_ch=self.res_ch, 
-             adcs=[self.adc_ch],
-             adc_trig_offset=cfg.device.readout.trig_offset,
-             wait=True,
-             syncdelay=self.us2cycles(cfg.device.readout.relax_delay))
+        self.measure(
+            pulse_ch=self.res_chs[qTest],
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+            wait=True,
+            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
+        )
 
     def update(self):
-        self.mathi(self.man_rp, self.r_gain2, self.r_gain2, '+', self.cfg.expt.step) # update gain register
+        qTest=0
+        self.mathi(self.man_rp[qTest], self.r_gain2, self.r_gain2, '+', self.cfg.expt.step) # update gain register
 
-    def collect_shots(self):
-        # collect shots for the relevant adc and I and Q channels
-        # print(np.average(self.di_buf[0]))
-        shots_i0 = self.di_buf[0] / self.readout_length_adc
-        shots_q0 = self.dq_buf[0] / self.readout_length_adc
-        return shots_i0, shots_q0
-        # return shots_i0[:5000], shots_q0[:5000]
+    # def collect_shots(self):
+    #     # collect shots for the relevant adc and I and Q channels
+    #     # print(np.average(self.di_buf[0]))
+    #     shots_i0 = self.di_buf[0] / self.readout_length_adc
+    #     shots_q0 = self.dq_buf[0] / self.readout_length_adc
+    #     return shots_i0, shots_q0
+    #     # return shots_i0[:5000], shots_q0[:5000]
 
 class ParityGainExperiment(Experiment):
     """
@@ -381,73 +300,48 @@ class ParityGainExperiment(Experiment):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        q_ind = self.cfg.expt.qubit
+        q_ind = self.cfg.expt.qubits[0]
+        num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
-            for key, value in subcfg.items() :
-                if isinstance(value, list):
-                    subcfg.update({key: value[q_ind]})
-                elif isinstance(value, dict):
+            for key, value in subcfg.items():
+                if isinstance(value, dict):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
-                            if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})   
+                            if not(isinstance(value3, list)):
+                                value2.update(
+                                    {key3: [value3]*num_qubits_sample})
+                elif not(isinstance(value, list)):
+                    subcfg.update({key: [value]*num_qubits_sample})
                                      
         if not self.cfg.expt.single_shot:
-            t1 = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
-            x_pts, avgi, avgq = t1.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
-
+            read_num = 1
+            if self.cfg.expt.active_reset: read_num = 4
+            
+            prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
+            
+            x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
+                                                readouts_per_experiment=read_num)        
+    
             avgi = avgi[0][0]
             avgq = avgq[0][0]
             amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-            phases = np.angle(avgi+1j*avgq) # Calculating the phase        
+            phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
-            data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases}
-            if self.cfg.expt.normalize:
-                from experiments.single_qubit.normalize import normalize_calib
-                g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-                
-                data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
-                data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
-                data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
+            data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
+            data['idata'], data['qdata'] = prog.collect_shots()
+
             
         else:
-            from experiments.single_qubit.single_shot_old import hist, HistogramProgram_oldold
 
             # ----------------- Single Shot Calibration -----------------
-            data=dict()
-            sscfg = AttrDict(deepcopy(self.cfg))
-            sscfg.expt.reps = sscfg.expt.singleshot_reps
+            data = dict()
+            mm_dr_base = MM_dual_rail_base(cfg=self.cfg)
+            data = mm_dr_base.run_single_shot(self_expt=self, data = data, progress=progress, debug=debug)
 
-            # Ground state shots
-            # cfg.expt.reps = 10000
-            sscfg.expt.qubit = 0
-            sscfg.expt.rounds = 1
-            sscfg.expt.pulse_e = False
-            sscfg.expt.pulse_f = False
-            # print(sscfg)
-
-            data['Ig'] = []
-            data['Qg'] = []
-            data['Ie'] = []
-            data['Qe'] = []
-            histpro = HistogramProgram_oldold(soccfg=self.soccfg, cfg=sscfg)
-            avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug)
-            data['Ig'], data['Qg'] = histpro.collect_shots()
-
-            # Excited state shots
-            sscfg.expt.pulse_e = True 
-            sscfg.expt.pulse_f = False
-            histpro = HistogramProgram_oldold(soccfg=self.soccfg, cfg=sscfg)
-            avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug)
-            data['Ie'], data['Qe'] = histpro.collect_shots()
-            # print(data)
-
-            fids, thresholds, angle, confusion_matrix = hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span)
-            data['fids'] = fids
-            data['angle'] = angle
-            data['thresholds'] = thresholds
-            data['confusion_matrix'] = confusion_matrix
-
+            fids = data['fids']
+            thresholds = data['thresholds']
+            angle = data['angle']
+            confusion_matrix = data['confusion_matrix']
 
             print(f'ge fidelity (%): {100*fids[0]}')
             print(f'rotation angle (deg): {angle}')
@@ -456,6 +350,8 @@ class ParityGainExperiment(Experiment):
 
 
             # ------------------- Experiment -------------------
+            read_num = 1
+            if self.cfg.expt.active_reset: read_num = 4
 
             data['I_data']= []
             data['Q_data']= []
@@ -470,7 +366,8 @@ class ParityGainExperiment(Experiment):
                 rcfg.expt.rounds = 1
 
                 prog = ParityGainProgram(soccfg=self.soccfg, cfg=rcfg)
-                x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)
+                x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
+                                                 readouts_per_experiment=read_num)
                 II, QQ = prog.collect_shots()
                 # save data for each round
                 data['I_data'].append(II)
@@ -478,6 +375,16 @@ class ParityGainExperiment(Experiment):
                 data['avgi'].append(avgi) # for debugging
                 data['avgq'].append(avgq)
                 data['xpts'] = x_pts # same for all rounds
+            
+            fids = data['fids']
+            thresholds = data['thresholds']
+            angle = data['angle']
+            confusion_matrix = data['confusion_matrix']
+
+            print(f'ge fidelity (%): {100*fids[0]}')
+            print(f'rotation angle (deg): {angle}')
+            print(f'threshold ge: {thresholds[0]}')
+            print('Confusion matrix [Pgg, Pge, Peg, Pee]: ',confusion_matrix)
             
         self.data=data
         return data

@@ -502,7 +502,45 @@ def pulseprobe_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, config_fi
     #After expt is over, set current back to 0
     dcflux.ramp_current(0.000, sweeprate=0.002)
 
-def cavity_ramsey_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+def self_kerr_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================#
+    experiment_class = 'single_qubit.t2_cavity'
+    experiment_name = 'CavityRamseyExperiment' 
+    sweep_experiment_name = 'self_kerr_sweep'
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    modes = loaded[sweep_experiment_name]['modes']
+    loaded[experiment_name]['storage_ramsey'][0] = True
+    loaded[experiment_name]['storage_ramsey'][2] = False
+
+    for mode in modes:
+        loaded[experiment_name]['storage_ramsey'][1] = mode
+        
+    
+        
+
+    
+
+
+
+def cavity_ramsey_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                        ):
 #====================================================================#
     config_path = config_file
     print('Config will be', config_path)
@@ -517,17 +555,18 @@ def cavity_ramsey_sweep(soccfg=None, path=None, prefix=None, config_file=None, e
 #===================================================================#
 
     experiment_class = 'single_qubit.t2_cavity'
-    experiment_name = 'CavityRamseyExperiment'   
+    experiment_name = 'CavityRamseyExperiment' 
+    sweep_experiment_name = 'CavityRamseySweep'  
 
     for keys in loaded[experiment_name].keys():
         try:
-            loaded[experiment_name][keys] = loaded['CavityRamseySweep'][keys]   # overwrite the single experiment file with new paramters
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
         except:
             pass
 
-    for index, gain in enumerate(np.arange(loaded['CavityRamseySweep']['gain_start'], 
-                                           loaded['CavityRamseySweep']['gain_stop'], 
-                                           loaded['CavityRamseySweep']['gain_step'])):
+    for index, gain in enumerate(np.arange(loaded[sweep_experiment_name]['gain_start'], 
+                                           loaded[sweep_experiment_name]['gain_stop'], 
+                                           loaded[sweep_experiment_name]['gain_step'])):
 
         print('Index: %s Gain. = %s MHz' %(index, gain))
         loaded[experiment_name]['user_defined_pulse'][2] = gain
