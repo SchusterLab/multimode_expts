@@ -988,13 +988,13 @@ CavityRamseyExperiment_old:
 CavityRamseySweep:
     gain_start: 250
     gain_stop: 6000
-    gain_step: 75
+    gain_step: 75 #200
 
     ### Basic Ramsey parameters
     start: 0 # wait time tau [us]
     step: 0.125 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
     expts: 151
-    ramsey_freq: -0.35 #-0.1 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    ramsey_freq: -0.5 #-0.1 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
     reps: 500
     rounds: 1
     qubits: [0]
