@@ -190,7 +190,7 @@ device:
         trig_offset: 450 # [Clock ticks]  400
         frequency: [748.8] # [MHz] (748.19) (748.6)
         gain: [700]  # 800
-        phase: [32] # degrees     # 178.3
+        phase: [40] # degrees     # 178.3
         threshold: [-61.07897510623889] # adc units
         threshold_list: [-61.07897510623889] # adc units
         man1_drive_list: [0]

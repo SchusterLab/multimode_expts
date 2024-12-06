@@ -619,8 +619,8 @@ PhaseSweepExperiment: # RAverger
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
     step: 2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 100
-    ramsey_freq: 0.04 # [MHz]
+    expts: 200
+    ramsey_freq: 0.08 # [MHz]
     reps: 500
     rounds: 1
     qubits: [0]
@@ -634,16 +634,16 @@ RamseyExperiment:
     man_reset: True  # True
     storage_reset: False #True
 
-    prepulse: False
+    prepulse: True
     postpulse: False
     pre_active_reset_pulse: False
-    pre_active_reset_sweep_pulse: [[3568.1751638611518, 3425.5564066067, 2007.0],
-       [10716, 8236, 15000],
-       [0, 0, 0.6056817916987671],
-       [0, 0, 0],
-       [2, 2, 0],
-       ['g', 'g', 'flat_top'],
-       [0.035, 0.035, 0.005]]
+    pre_active_reset_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0],
+            [10716, 8236, 15000],
+            [0, 0, 0.6056817916987671],
+            [0, 0, 0],
+            [2, 2, 0],
+            ['g', 'g', 'flat_top'],
+            [0.035, 0.035, 0.005]]
     pre_sweep_pulse: [[3568.1751638611518, 3425.5537944060666, 2007.06, 349.415],
         [10819, 8327, 15000, 3000],
         [0, 0, 0.6552866896346518, 0.973722],
@@ -770,10 +770,10 @@ RamseyEchoExperiment:
 
 CavityRamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 0.5 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 201
-    ramsey_freq: 0.08 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 500
+    step: 1 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 401
+    ramsey_freq: -3 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
+    reps: 200
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -790,27 +790,15 @@ CavityRamseyExperiment:
     parity_meas: False
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
-    storage_ramsey: [False, 1, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
-    man_ramsey: [True, 1] # whether doing ramsey on manipulate mode, no of manipulate mode (1/2)
+    storage_ramsey: [True, 2, True] # whether doing ramsey on storage mode [True/False, storage mode no. (1-7), True: use flux ch as phaseupdate; otherwise use cavity_ch (probably f0g1 ch)] 
+    man_ramsey: [False, 1] # whether doing ramsey on manipulate mode, no of manipulate mode (1/2)
     coupler_ramsey: False # whether to do coupler ramsey (storage and user defined must be false)
     custom_coupler_pulse: [[944.25], [1000], [0.316677658], [0], [1], ['flat_top'], [0.005]]
-    echoes: [True, 1 ] # [on/off, # of echoes] 
+    echoes: [False, 0 ] # [on/off, # of echoes] 
     prepulse: True
     postpulse: True
-    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067],
-       [5510, 8236],
-       [0, 0],
-       [0, 0],
-       [2, 2],
-       ['g', 'g'],
-       [0.035, 0.035]]
-    post_sweep_pulse: [[3425.5564066067, 3568.1515953227604],
-       [8236, 5510],
-       [0, 0],
-       [0, 0],
-       [2, 2],
-       ['g', 'g'],
-       [0.035, 0.035]]
+    pre_sweep_pulse: [[3568.1515953227604, 3425.5564066067, 2007.0, 349.415, 3568.1515953227604, 3425.5564066067, 2007.0, 696.665, 3568.1515953227604, 3425.5564066067, 2007.0, 875.845, 3568.1515953227604, 3425.5564066067, 2007.0, 1053.395, 3568.1515953227604, 3425.5564066067, 2007.0, 1245.16, 3568.1515953227604, 3425.5564066067, 2007.0, 1423.04, 3568.1515953227604, 3425.5564066067, 2007.0], [5510, 8236, 15000, 3000, 5510, 8236, 15000, 9000, 5510, 8236, 15000, 9000, 5510, 8236, 15000, 7500, 5510, 8236, 15000, 13500, 5510, 8236, 15000, 13500, 5510, 8236, 15000], [0, 0, 0.6056817916987671, 0.9771428571428572, 0, 0, 0.6056817916987671, 1.33391, 0, 0, 0.6056817916987671, 1.2542874625217533, 0, 0, 0.6056817916987671, 1.9731979736862069, 0, 0, 0.6056817916987671, 1.595309991539322, 0, 0, 0.6056817916987671, 1.685008127794123, 0, 0, 0.6056817916987671], [180, 0, 0, 0, 180, 0, 0, 0, 180, 0, 0, 0, 180, 0, 0, 0, 180, 0, 0, 0, 180, 0, 0, 0, 0, 0, 0], [2, 2, 0, 1, 2, 2, 0, 1, 2, 2, 0, 1, 2, 2, 0, 3, 2, 2, 0, 3, 2, 2, 0, 3, 2, 2, 0], ['g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top', 'flat_top', 'g', 'g', 'flat_top'], [0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005, 0.005, 0.035, 0.035, 0.005]]
+    post_sweep_pulse: [[2007.0, 3425.5564066067, 3568.1515953227604], [15000, 8236, 5510], [0.6056817916987671, 0, 0], [0, 0, 0], [0, 2, 2], ['flat_top', 'g', 'g'], [0.005, 0.035, 0.035]]
     # ramsey freq is the frequency by which to advance the phase
     # ramsey_freq (no echoes) gives ~0.02 Mhz osc : [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
     # T2 : [, 600]

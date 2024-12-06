@@ -407,6 +407,9 @@ class CavityRamseyExperiment(Experiment):
 
         
         ramsey = CavityRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
+        print('inide t2 cavity acquire')
+
+        print(self.cfg.expt.expts)
         
         x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
                                             readouts_per_experiment=read_num)        
