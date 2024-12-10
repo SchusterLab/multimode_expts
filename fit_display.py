@@ -2813,7 +2813,7 @@ def RBAM_extract(temp_data, mode_idxs = [1], active_reset = True, post_select = 
             #counting = 0
             
             if active_reset:
-                if post_select:  # POST SELECT FOR EXPERIMENT, NOT ACTIVE RESET
+                if post_select:  # POST SELECT FOR EXPERIMENT, NOT ACTIVE RESEET
                     raw_data, post_select_data= filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], temp_data['Idata'][mode_idx][i][4], temp_data['thresholds'], post_selection = True)
                 else: 
                     raw_data, _= filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], None, temp_data['thresholds'])
@@ -3144,9 +3144,46 @@ def get_f0g1_time(cfg):
     # print('stor_output', stor_output)
     return time
 
+def parity_post_select_modified(data, attrs, readout_threshold, readouts_per_rep):
+    '''
+    Post select the data based on the threshold, every readouts_per_rep readouts
+
+    (based on preselection measurement pulse during active reset)
+    '''
+    print('calling parity post select modified')
+    Ilist = []
+    Qlist = []
+
+    rounds = attrs['config']['expt']['rounds']
+    reps = attrs['config']['expt']['reps']
+    expts = attrs['config']['expt']['expts']
+
+    I_data = data['idata'] # in shape rounds(1) x expts (1)  x reps   x read_num
+    Q_data = data['qdata'] 
+
+    # assume we have made 80 parity measurements
+    # reshape data into (reps, read_num)
+    read_num = readouts_per_rep 
+    I_data_rs = np.reshape(I_data, (reps, read_num))
+    Q_data_rs = np.reshape(Q_data, (reps, read_num))
+
+    # for every rep, we have a list of [...83 elements ...]
+    # we want to get the first 80 elements of each rep iff the 3rd element is within threshold 
+
+    for idx in range(reps):
+        rep_array = I_data_rs[idx] # has 83 elements
+        if rep_array[2] < readout_threshold:
+            # get the first 80 elements
+            Ilist.append(rep_array[3:])
+            Qlist.append(Q_data_rs[idx][3:])
+    
+    return Ilist, Qlist
+
 def parity_post_select(data, attrs, threshold, readouts_per_rep):
     '''
     Post select the data based on the threshold, every readouts_per_rep readouts
+
+    OLD VERSION: EG couldn't understand here; better code with comments above
     '''
     Ilist = []
     Qlist = []
@@ -3186,22 +3223,39 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
     '''
     state_string_list = []
     if active_reset:
-        Ilist, Qlist = parity_post_select(data, attrs, threshold, readouts_per_rep)
+        Ilist, Qlist = parity_post_select_modified(data, attrs, threshold, readouts_per_rep)
         data['i_selected'] = Ilist
         data['q_selected'] = Qlist
+
     else:
         Ilist = []
         Qlist = []
-        for k in range(len(data['idata']) // readouts_per_rep):
-            result_Ig = []
-            result_Ie = []
-            for jj in range(readouts_per_rep):
-                result_Ig.append(data['idata'][k*readouts_per_rep+jj])
-                result_Ie.append(data['qdata'][k*readouts_per_rep+jj])
-            Ilist.append(result_Ig)
-            Qlist.append(result_Ie)
-        data['i_selected'] = Ilist
-        data['q_selected'] = Qlist
+
+        #rounds = attrs['config']['expt']['rounds']
+        reps = attrs['config']['expt']['reps']
+        #expts = attrs['config']['expt']['expts']
+
+        I_data = data['idata'] # in shape rounds(1) x expts (1)  x reps   x read_num
+        Q_data = data['qdata'] 
+
+        # assume we have made 80 parity measurements
+        # reshape data into (reps, read_num)
+        I_data_rs = np.reshape(I_data, (reps, readouts_per_rep))
+        Q_data_rs = np.reshape(Q_data, (reps, readouts_per_rep))
+        # for k in range(len(data['idata']) // readouts_per_rep):
+        #     result_Ig = []
+        #     result_Ie = []
+        #     for jj in range(readouts_per_rep):
+        #         result_Ig.append(data['idata'][k*readouts_per_rep+jj])
+        #         result_Ie.append(data['qdata'][k*readouts_per_rep+jj])
+        #     Ilist.append(result_Ig)
+        #     Qlist.append(result_Ie)
+
+
+        data['i_selected'] = I_data_rs
+        data['q_selected'] = Q_data_rs
+
+    # now single shot bin shots
     for i in range(len(data['i_selected'])):
         result_Ig = []
         for j in range(len(data['i_selected'][i])):
