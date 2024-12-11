@@ -1704,7 +1704,7 @@ class sweep_cavity_ramsey_expts:
             print('-------------------------------------------------')
             mm_base = MM_dual_rail_base(cfg = yaml_cfg)
             
-            for man_no in [1]: #,2]:  # only calihbrate with M1 man_no time 
+            for man_no in [2]: #,2]:  # only calihbrate with M1 man_no time 
                 pre_sweep_pulse_str = mm_base.prep_man_photon(man_no)
                 creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
                 loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
@@ -1713,7 +1713,7 @@ class sweep_cavity_ramsey_expts:
 
                 # update parity time 
                 # change manipulate index 
-                loaded[experiment_name]['man_no'] =  man_no
+                loaded[experiment_name]['man_no'] =  1 #man_no
                 
                 
                 self.run_cavity_expt(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,

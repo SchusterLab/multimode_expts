@@ -3661,7 +3661,7 @@ cavity_temperature_sweep_parity:
     pre_sweep_pulse: []
 
 cavity_temperature_sweep_parity_with_without_reset:
-    targ_list: ['M1', 'M1-S1', 'M1-S2', 'M1-S3', 'M1-S4', 'M1-S5', 'M1-S6', 'M1-S7', 'M1-D1', 'M1-C','M2', 'M2-D2']
+    targ_list: ['M2'] #['M1', 'M1-S1', 'M1-S2', 'M1-S3', 'M1-S4', 'M1-S5', 'M1-S6', 'M1-S7', 'M1-D1', 'M1-C','M2', 'M2-D2']
     calibrate_single_photon: True
 
     # basic params

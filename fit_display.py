@@ -3179,44 +3179,73 @@ def parity_post_select_modified(data, attrs, readout_threshold, readouts_per_rep
     
     return Ilist, Qlist
 
-def parity_post_select(data, attrs, threshold, readouts_per_rep):
-    '''
-    Post select the data based on the threshold, every readouts_per_rep readouts
+# def parity_post_select(data, attrs, threshold, readouts_per_rep):
+#     '''
+#     Post select the data based on the threshold, every readouts_per_rep readouts
 
-    OLD VERSION: EG couldn't understand here; better code with comments above
-    '''
-    Ilist = []
-    Qlist = []
+#     OLD VERSION: EG couldn't understand here; better code with comments above
+#     '''
+#     Ilist = []
+#     Qlist = []
 
 
-    # assume the 3rd one is post selection data, 4th to readouts_per_rep is actual data
+#     # assume the 3rd one is post selection data, 4th to readouts_per_rep is actual data
 
-    II = data['idata']
-    IQ = data['qdata']
+#     II = data['idata']
+#     IQ = data['qdata']
     
     
     
-    for k in range(len(II) // readouts_per_rep):
-        index_4k_plus_2 = readouts_per_rep * k + 2
-        index_4k_plus_end = readouts_per_rep * k + readouts_per_rep-1
+#     for k in range(len(II) // readouts_per_rep):
+#         index_4k_plus_2 = readouts_per_rep * k + 2
+#         index_4k_plus_end = readouts_per_rep * k + readouts_per_rep-1
 
-        result_Ig = []
-        result_Ie = []
+#         result_Ig = []
+#         result_Ie = []
         
-        # Ensure the indices are within the list bounds
-        if index_4k_plus_2 < len(II) and index_4k_plus_end < len(II):
-            # Check if the value at 4k+2 exceeds the threshold
-            if II[index_4k_plus_2] < threshold:
-                # Add the value at 4k+3 to the result list
-                for jj in range(index_4k_plus_2+1, index_4k_plus_end+1):
-                    result_Ig.append(II[jj])
-                    result_Ie.append(IQ[jj])
+#         # Ensure the indices are within the list bounds
+#         if index_4k_plus_2 < len(II) and index_4k_plus_end < len(II):
+#             # Check if the value at 4k+2 exceeds the threshold
+#             if II[index_4k_plus_2] < threshold:
+#                 # Add the value at 4k+3 to the result list
+#                 for jj in range(index_4k_plus_2+1, index_4k_plus_end+1):
+#                     result_Ig.append(II[jj])
+#                     result_Ie.append(IQ[jj])
 
-            Ilist.append(result_Ig)
-            Qlist.append(result_Ie)
-    return Ilist, Qlist
+#             Ilist.append(result_Ig)
+#             Qlist.append(result_Ie)
+#     return Ilist, Qlist
+def consistency_post_selection(meas_records, cutoff_n = 3): 
+    '''Check if measurement record is consistent with the parity measurement
+        up to cutoff_n measurements
+        
+        cutoff should be >2'''
+    new_records= []
+    for record in meas_records:
+        single_photon = False
+        consistent_check = True
+        if record[0] != record[1]:
+            single_photon = True  # this record contains a single photon
+        
+        current_n = 2
+        while current_n <= cutoff_n:
+            
+            current_idx = current_n - 1
+            if single_photon:  # photon detected, so the record should be flipping
+                if record[current_idx-1] == record[current_idx]:
+                    consistent_check = False
+                    break
+            else: # no photon, so the record should be the same
+                if record[current_idx-1] != record[current_idx]:
+                    consistent_check = False
+                    break
+            current_n += 1
+        if consistent_check:
+            new_records.append(record)
+    return new_records
 
-def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readouts_per_rep = 4, return_all_param = True, title='Ramsey'):
+def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readouts_per_rep = 4, return_all_param = True,
+                        consistent_parity_check_bool = False, consistent_cutoff = 3, title='Ramsey'):
     '''
     Convert each traces into 0/1 digits 
 
@@ -3255,7 +3284,7 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
 
         data['i_selected'] = I_data_rs
         data['q_selected'] = Q_data_rs
-
+    
     # now single shot bin shots
     for i in range(len(data['i_selected'])):
         result_Ig = []
@@ -3266,5 +3295,10 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
                 result_Ig.append(0)
 
         state_string_list.append(result_Ig)
+    
+    if consistent_parity_check_bool:
+        print('len of state string list before consistency check', len(state_string_list))
+        state_string_list = consistency_post_selection(state_string_list, consistent_cutoff)
+        print('len of state string list after consistency check', len(state_string_list))
 
     return data, state_string_list
