@@ -163,7 +163,8 @@ class ParityTempProgram(MMRAveragerProgram):
         self.reset_and_sync()
 
         if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset, 
+                              coupler_reset=False)
         
         #prepulse : 
         # self.wait_all(self.us2cycles(0.1))
@@ -251,7 +252,7 @@ class ParityTempExperiment(Experiment):
                     subcfg.update({key: [value]*num_qubits_sample})
 
         self.cfg.expt.readout_no_placeholder = int(self.cfg.expt["parity_number"])
-        read_num = self.cfg.expt.readout_no_placeholder
+        read_num = self.cfg.expt.readout_no_placeholder + 1
         if self.cfg.expt.active_reset: read_num += 3
         
         ramsey = ParityTempProgram(soccfg=self.soccfg, cfg=self.cfg)

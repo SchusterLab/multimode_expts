@@ -1602,10 +1602,11 @@ class sweep_cavity_ramsey_expts:
 
         # special updates on device_config file
         if loaded[experiment_name]['active_reset']:
-            meas_delay = 100
+            meas_delay = 2500 #100    # This is for parity_temp
+            
             
         print(
-            f"Relax delay: {meas_delay} us"
+            f"Relax delay: {meas_delay} us !!!!!!!"
         )
         run_exp.cfg.device.readout.relax_delay = meas_delay # Wait time between experiments [us]
         print(run_exp.cfg.expt)
@@ -1703,10 +1704,11 @@ class sweep_cavity_ramsey_expts:
             print('-------------------------------------------------')
             mm_base = MM_dual_rail_base(cfg = yaml_cfg)
             
-            for man_no in [1,2]: 
+            for man_no in [1]: #,2]:  # only calihbrate with M1 man_no time 
                 pre_sweep_pulse_str = mm_base.prep_man_photon(man_no)
                 creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
                 loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
+                loaded[experiment_name]['prepulse'] = True
                 print('Prepulse: ', pre_sweep_pulse_str)
 
                 # update parity time 
@@ -1735,7 +1737,7 @@ class sweep_cavity_ramsey_expts:
             if 'M1' in targ_label:
                 loaded[experiment_name]['man_no'] = 1
             elif 'M2' in targ_label:
-                loaded[experiment_name]['man_no'] = 2
+                loaded[experiment_name]['man_no'] = 1#2
             
             print('Prepulse: ', pre_sweep_pulse_str)
             creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)

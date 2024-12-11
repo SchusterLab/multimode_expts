@@ -463,8 +463,22 @@ class MM_base():
         # self.sync_all(self.us2cycles(0.2))
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(stor_idx) + 'dump')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
+    
+    def coup_stor_swap(self, man_idx): 
+        '''
+        Perform Swap between manipulate mode and  storage mode 
+        '''
+        qTest = 0
+        sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'C', 'pi', 0], 
+                       ]
+        creator = self.get_prepulse_creator(sweep_pulse)
+        # print(creator.pulse)
+        # self.sync_all(self.us2cycles(0.2))
+        self.custom_pulse(self.cfg, creator.pulse, prefix='Coupler')
+        self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
 
-    def active_reset(self, man_reset = False, storage_reset = False, ef_reset = True, pre_selection_reset = True, prefix = 'base'):
+    def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
+                      ef_reset = True, pre_selection_reset = True, prefix = 'base'):
         '''
         Performs active reset on g,e,f as well as man/storage modes 
         Includes post selection measurement
@@ -616,6 +630,12 @@ class MM_base():
                 self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
                 self.man_reset(0, chi_dressed = False)
                 self.man_reset(1, chi_dressed = False)
+        
+        if coupler_reset:
+            self.coup_stor_swap(man_idx=1) # M1
+            self.man_reset(0, chi_dressed = False)
+            self.man_reset(1, chi_dressed = False)
+
 
         
         # if man_reset:

@@ -3226,6 +3226,7 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
         Ilist, Qlist = parity_post_select_modified(data, attrs, threshold, readouts_per_rep)
         data['i_selected'] = Ilist
         data['q_selected'] = Qlist
+        print('size of ilist', len(Ilist))
 
     else:
         Ilist = []
