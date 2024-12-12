@@ -2402,7 +2402,7 @@ class MM_DualRail_Analysis:
 
             #  post selection due to active reset
             if active_reset:
-                data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
+                data_init, data_post_select = self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
             else: 
                 data_init = temp_data['Idata'][aa][0]
                 data_post_select = temp_data['Idata'][aa][1]
