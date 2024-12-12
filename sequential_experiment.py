@@ -1245,6 +1245,55 @@ class MM_dual_rail_seq_exp:
                 _ = self.SingleBeamSplitterRB_check_target_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
                                                                   prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
 
+    def SingleBeamSplitterRB_stor_ramsey_spec_for_sp_pairs(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        '''
+        Depth sweep over all storage-storage pairs  for ramsey inpresence of beamsplitters
+        for specific pairs
+        '''
+        #====================================================================#
+        config_path = config_file
+        print('Config will be', config_path)
+
+        with open(config_file, 'r') as cfg_file:
+            yaml_cfg = yaml.safe_load(cfg_file)
+        yaml_cfg = AttrDict(yaml_cfg)
+
+        with open(exp_param_file, 'r') as file:
+            # Load the YAML content
+            loaded = yaml.safe_load(file)
+        #===================================================================# 
+        experiment_class = 'single_qubit.rb_BSgate_check_target'
+        experiment_name = 'SingleBeamSplitterRB_check_target'   
+        sweep_experiment_name = 'SingleBeamSplitterRB_stor_ramsey_spec_for_sp_pairs'
+
+        # for keys in loaded[experiment_name].keys():
+        #     try:
+        #         loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        #     except:
+        #         pass
+
+        for (stor_no, spec_no) in loaded[sweep_experiment_name]['stor_spec_pairs']:
+            if stor_no == spec_no: # no self -self pair
+                continue
+            # if [stor_no, spec_no] in loaded[sweep_experiment_name]['skip_pairs']:
+            #     continue
+            print('-------------------------------------------------')
+            print(' Storage = %s, Spectator = %s ' %( stor_no, spec_no))
+            # Frequency 
+            loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][stor_no -1][spec_no -1]
+
+            # update prepulse/post pulse
+            loaded[sweep_experiment_name]['pre_sweep_pulse'][-1][1] = 'M1-S' + str(stor_no)
+            loaded[sweep_experiment_name]['post_sweep_pulse'][0][1] = 'M1-S' + str(stor_no)
+
+            # update bs_para
+            loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][spec_no -1]
+
+            # print(loaded[sweep_experiment_name])
+
+            _ = self.SingleBeamSplitterRB_check_target_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
+                                                                prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
+
 
 
     def SingleBeamSplitterRB_check_target_sweep_depth(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, prep_init = False, prep_params = None):
