@@ -1,8 +1,8 @@
 T1Experiment: 
     start: 0 # start time in us
-    step: 15  # step in us
+    step: 10  # step in us
     expts: 100
-    reps: 500
+    reps: 200
     rounds: 1
     qubit: 0
     qubit_ef: False
@@ -132,9 +132,9 @@ DemolutionMeasurementExperiment:
 
 HistogramExperiment:
     qubits: [0]
-    reps: 20000
+    reps: 10000
     check_f: False
-    active_reset: True
+    active_reset: False
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -619,9 +619,9 @@ PhaseSweepExperiment: # RAverger
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
     step: 0.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 200
+    expts: 100
     ramsey_freq: 0.2 # [MHz]
-    reps: 500
+    reps: 250
     rounds: 1
     qubits: [0]
     checkEF: False # 
@@ -630,7 +630,7 @@ RamseyExperiment:
     qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
     f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
     normalize: False
-    active_reset: True #True
+    active_reset: False #True
     man_reset: True  # True
     storage_reset: True #True
 
@@ -1148,9 +1148,9 @@ AmplitudeRabiExperiment:
     qubit: 0
     pulse_type: 'gauss'   #'gauss' or 'flat_top' or 'drag' or 'const'
     drag_beta: 0.0
-    pulse_ge: True
+    pulse_ge: False
     checkZZ: False
-    checkEF: True
+    checkEF: False
     qubits: [0]
     flat_length: 0
     normalize: False
@@ -1902,14 +1902,14 @@ StorageSidebandExperimentSweep:
 
 
 CavitySpectroscopyExperiment:
-    start:  4983 #5159.3 #4983.4   #  5160.493235989327 # Start frequency [MHz]    storage freq list [5321.520996856752]
-    step: 0.001 # in MHz
+    start:  4980 #5159.3 #4983.4   #  5160.493235989327 # Start frequency [MHz]    storage freq list [5321.520996856752]
+    step: 0.005 # in MHz
     expts: 1000 # Number experiments stepping from start
-    reps: 1000 # Number averages per point
+    reps: 100 # Number averages per point
     pulse_e: False # add ge pi pulse prior to measurement
     pulse_f: False # add ef pi pulse prior to measurement
     cavity_name: 'manipulate'  # manipulate or storage
-    drive_gain: 200
+    drive_gain: 500
     qubit: 0
     RF_modulation: [False, 1055, 5000, 'high']    # [T/F, freq, amplitude, channel name (low/high)] (length=readout length)
 

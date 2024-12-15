@@ -668,6 +668,11 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         data['avgq'] = Qlist[start_idx:end_idx]
         data['xpts'] = data['xpts'][:-1][start_idx:end_idx]
         data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
+    else:
+        data['avgi'] = data['avgi'][start_idx:end_idx]
+        data['avgq'] = data['avgq'][start_idx:end_idx]
+        data['xpts'] = data['xpts'][start_idx:end_idx]
+        data['amps'] = data['amps'][start_idx:end_idx]
     if fit:
         # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
         # Remove the first and last point from fit in case weird edge measurements
@@ -2805,6 +2810,7 @@ def RBAM_extract(temp_data, mode_idxs = [1], active_reset = True, post_select = 
     '''
     mean_list = []
     err_list = []
+    analysis = MM_DualRail_Analysis()
 
     for mode_idx in mode_idxs: 
         # mode_idx = 0
@@ -2814,9 +2820,9 @@ def RBAM_extract(temp_data, mode_idxs = [1], active_reset = True, post_select = 
             
             if active_reset:
                 if post_select:  # POST SELECT FOR EXPERIMENT, NOT ACTIVE RESEET
-                    raw_data, post_select_data= filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], temp_data['Idata'][mode_idx][i][4], temp_data['thresholds'], post_selection = True)
+                    raw_data, post_select_data= analysis.filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], temp_data['Idata'][mode_idx][i][4], temp_data['thresholds'], post_selection = True)
                 else: 
-                    raw_data, _= filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], None, temp_data['thresholds'])
+                    raw_data, _= analysis.filter_data_BS(temp_data['Idata'][mode_idx][i][2], temp_data['Idata'][mode_idx][i][3], None, temp_data['thresholds'])
             else: 
                 raw_data = temp_data['Idata'][mode_idx][i][0]
             # print(len(raw_data))
