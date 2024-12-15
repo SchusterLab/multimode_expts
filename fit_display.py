@@ -2927,7 +2927,9 @@ def fit_fidelity(xlist, fids_list):
         - fit_params_list (list): List of fit parameters for each mode.
     """
     p_survival_list = []
+    p_survival_err_list = []
     fit_params_list = []
+    fit_pCov_list = []
     for i in range(len(fids_list)):
         ypts = fids_list[i]
         fit, err = fitter.fitexp(xlist, ypts, fitparams=None)
@@ -2938,10 +2940,15 @@ def fit_fidelity(xlist, fids_list):
         # r = 1 - alpha - (1 - alpha) / 3
         # fidelity = 1 - r
 
+        p_survival = np.exp(-1 / fit[3])
+        p_survival_err = np.abs(p_survival * np.sqrt(pCov[3, 3]) / fit[3]**2)
         p_survival_list.append(np.exp(-1/fit[3]))
+        p_survival_err_list.append(p_survival_err)
+        
         fit_params_list.append(fit)
+        fit_pCov_list.append(err)
 
-    return p_survival_list, fit_params_list
+    return p_survival_list, p_survival_err_list, fit_params_list, fit_pCov_list
 
 def fit_fidelity_reference(xlist_ref, fids_list_ref):
     """
@@ -2955,7 +2962,7 @@ def fit_fidelity_reference(xlist_ref, fids_list_ref):
     list: List of fit parameters for the reference data.
     """
     fit_params_ref, err_ref = fitter.fitexp(xlist_ref, fids_list_ref, fitparams=None)
-    return fit_params_ref
+    return fit_params_ref, err_ref
 
 
 import numpy as np
@@ -3030,19 +3037,27 @@ import matplotlib.pyplot as plt
 
 #     return fidelity_list_wrt_ref
 
-def find_gate_fidelity(p_survival, dim, interleaved = False, p_survival_interleaved_upon = 1):
+def find_gate_fidelity(p_survival, p_survival_err, dim, interleaved = False, p_survival_interleaved_upon = 1, p_interleaved_err = 1):
     '''
     Computes gate fidelity according to https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.109.080505 
 
     If interleaved, p_survival_interleaved_upon is the survival probability of the sequence without the interleaved gates
     '''
     p = p_survival
+    p_err = p_survival_err
     if interleaved: 
         p = p_survival/p_survival_interleaved_upon
+        p_err = np.sqrt(p_err**2 + p_interleaved_err**2)
     r = (dim-1)/dim * (1-p)
-    return 1 - r 
+    r_err = (dim-1)/dim * p_err
+    return 1 - r , r_err
 
-def plot_fidelity(xlist, fids_list, ebars_list, p_survival_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
+def plot_fidelity(xlist, fids_list, ebars_list,
+                   p_survival_list, p_survival_err_list, fit_params_list, fit_pCov_list,
+                   xlist_ref, fids_list_ref, ebars_list_ref, 
+                   fit_params_ref, fit_pCov_ref, captionStr_ref, 
+                   mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5,
+                   ):
     """
     Plots the fidelity data and the fitted results, including reference data.
 
@@ -3073,17 +3088,37 @@ def plot_fidelity(xlist, fids_list, ebars_list, p_survival_list, fit_params_list
         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
         fit_x = np.linspace(min(xlist), max(xlist), 100)
         fit_y = fitter.expfunc(fit_x, *fit_params_list[i])
-        axs[0].plot(fit_x, fit_y, color=color_list[i], label=f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f}')
+        # include error bar in label 
+        if fit_pCov_list is not None:
+            fit_str = f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f} +/- {np.sqrt(fit_pCov_list[i][3][3]):.4f}'
+        else:
+            fit_str = f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f}'
+        axs[0].plot(fit_x, fit_y, color=color_list[i], label=fit_str)
 
+    # Plotting reference data
     axs[0].errorbar(xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'{captionStr_ref} Data', color='b')
     fit_x_ref = np.linspace(min(xlist_ref), max(xlist_ref), 100)
     fit_y_ref = fitter.expfunc(fit_x_ref, *fit_params_ref)
     p_survival_ref = np.exp(-1/fit_params_ref[3])
-    fidelity_ref = find_gate_fidelity(p_survival_ref, 3, False)
-    axs[0].plot(fit_x_ref, fit_y_ref, color='b', label=f'{captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
+    ## note whend f = exp(-1/depth) then f_err = f_err * f / (depth^2)
+    p_survival_ref_err = np.sqrt(fit_pCov_ref[3][3]) * p_survival_ref/((fit_params_ref[3])**2)
+    fidelity_ref, fidelity_ref_err = find_gate_fidelity(p_survival_ref, p_survival_ref_err, 3, False)
 
-    fidelity_list_wrt_ref = [np.sqrt(find_gate_fidelity(p_survival_list[i], 3, True, p_survival_ref)) for i in range(len(p_survival_list))] # sqrt because each interleaved gate includes 2 swaps
-                             #[np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
+    # insert error bar in label
+    label_str = f'{captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f} +/- {fidelity_ref_err:.4f}'
+    axs[0].plot(fit_x_ref, fit_y_ref, color='b', label=label_str)
+
+    # now computing fidelity for all modes wrt reference
+    fidelity_list_wrt_ref = []
+    fidelity_list_wrt_ref_err = []
+    for i in range(len(fids_list)):
+        fid_wrt_ref, fid_wrt_ref_err = find_gate_fidelity(p_survival_list[i], p_survival_err_list[i], 3, True, p_survival_ref, p_survival_ref_err)
+        fidelity_list_wrt_ref.append(np.sqrt(fid_wrt_ref)) # sqrt because each interleaved gate includes 2 swaps
+        fidelity_list_wrt_ref_err.append(fid_wrt_ref_err / (2 * np.sqrt(fid_wrt_ref))) # sqrt because each interleaved gate includes 2 swaps
+    # fidelity_list_wrt_ref = [np.sqrt(find_gate_fidelity(p_survival_list[i], 3, True, p_survival_ref)) for i in range(len(p_survival_list))] # sqrt because each interleaved gate includes 2 swaps
+    #                          #[np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
+
+
     axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
     axs[0].set_xlabel('Gates')
     axs[0].legend()
@@ -3113,7 +3148,7 @@ def plot_fidelity(xlist, fids_list, ebars_list, p_survival_list, fit_params_list
     else: 
         plt.show()
 
-    return fidelity_list_wrt_ref
+    return fidelity_list_wrt_ref, fidelity_list_wrt_ref_err
 def get_gate_time_RBAM(target_mode_no, spec_mode_nos, cfg ): 
     '''computes total idling time for the spectator mode pulse sequence'''
     mm_base = MM_rb_base(cfg = cfg)
