@@ -3047,7 +3047,8 @@ def find_gate_fidelity(p_survival, p_survival_err, dim, interleaved = False, p_s
     p_err = p_survival_err
     if interleaved: 
         p = p_survival/p_survival_interleaved_upon
-        p_err = np.sqrt(p_err**2 + p_interleaved_err**2)
+        ## error propagation of f= a/b is f_err = f * sqrt((a_err/a)^2 + (b_err/b)^2)
+        p_err = p* np.sqrt((p_err**2/p_survival**2) + (p_interleaved_err**2/ p_survival_interleaved_upon**2))
     r = (dim-1)/dim * (1-p)
     r_err = (dim-1)/dim * p_err
     return 1 - r , r_err
