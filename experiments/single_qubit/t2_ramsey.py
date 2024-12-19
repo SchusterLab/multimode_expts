@@ -228,10 +228,12 @@ class RamseyProgram(MMRAveragerProgram):
         # echoes 
         if cfg.expt.echoes[0]:
             for i in range(cfg.expt.echoes[1]):
+                # even if ef, we still need just a pi pulse within that space
+                self.pulse(ch=self.qubit_chs[qTest]) # this is ge or ef depedning on last hpi pulse
                 self.pulse(ch=self.qubit_chs[qTest])
-                self.pulse(ch=self.qubit_chs[qTest])
-                if self.cfg.expt.checkEF:
-                    print('Echo Only implemented for ge qubit')
+                
+                    
+                    #print('Echo Only implemented for ge qubit')
                 self.sync_all()
                 self.sync(self.q_rps[qTest], self.r_wait)
                 self.sync_all()

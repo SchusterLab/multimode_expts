@@ -6,6 +6,7 @@ prepulse_qubit:  # Apply sequentially Gaussian pulses
     repeat_time: 10  # the whole sequences are repeated
 device:
     qubit:
+    #anharmonicity = 3426.1920613666457 - 3569.3482778089246 = -143.1562164422799
         T1: [127.0] # us
         f_ge:  [3569.3482778089246] # [3566.3951696922627] # MHz    
             # (when driving qubit gates) 3566.8   
@@ -13,10 +14,10 @@ device:
             # when man2=|1> (3566.1359110698945)  driven (3566.5377192646083)
         f_ge_resolved: [3569.3482778089246] # MHz fge - chi  (currently not used)
         f_ge_idle: [3569.3482778089246] # MHz (For Ramsey)
-        f_ef: [3425.5564066067] # MHz  # (when driving qubit gates) 3422.72   
+        f_ef: [3426.191916730568] # MHz  # (when driving qubit gates) 3422.72   
         # when man1=|1> (3423.200842620319)   (3422.4656668246803)
         # when man2=|1> (3423.209680676009)   (3422.4745048803707)
-        f_ef_idle: [3425.5564066067] # MHz  # (For Ramsey)
+        f_ef_idle: [3426.191916730568] # MHz  # (For Ramsey)
         ramp_sigma: [0.005]  # [us]  0.01
         ramp_sigma_num: [3]  # [us]  2
         pulses:

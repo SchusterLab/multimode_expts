@@ -2913,7 +2913,7 @@ def compute_fidelity_list_RB(prev_data, file_list, name, mode_length, expt_path)
         xlist_reference.append(attrs['config']['expt']['rb_depth'])
     return xlist_reference, fids_list_reference, ebars_list_reference
 
-def fit_fidelity(xlist, fids_list):
+def fit_fidelity(xlist, fids_list, plot = False):
     """
     Fits the fidelity data using an exponential model and computes the fidelity.
 
@@ -2947,6 +2947,13 @@ def fit_fidelity(xlist, fids_list):
         
         fit_params_list.append(fit)
         fit_pCov_list.append(err)
+        if plot:
+            #fitter.plotfit( xlist, ypts, fit, err, fitfunc=fitter.expfunc, xlabel='Gates', ylabel='Fidelity', title='Fidelity vs Gates')
+            plt.plot(xlist, ypts, 'o', label='Data')
+            plt.plot(xlist, fitter.expfunc(xlist, *fit), label='Fit: Depth={:.2f}, p_survival={:.4f}'.format(fit[3], p_survival))
+            plt.xlabel('Gates')
+            plt.ylabel('Fidelity')
+            plt.legend()
 
     return p_survival_list, p_survival_err_list, fit_params_list, fit_pCov_list
 
