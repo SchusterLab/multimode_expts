@@ -3092,7 +3092,7 @@ def plot_fidelity(xlist, fids_list, ebars_list,
     color_list =  ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
 
-    for i in range(len(fids_list)):
+    for i in range(len(fids_list)): # OVER ALL MODES
         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
         fit_x = np.linspace(min(xlist), max(xlist), 100)
         fit_y = fitter.expfunc(fit_x, *fit_params_list[i])
@@ -3103,7 +3103,7 @@ def plot_fidelity(xlist, fids_list, ebars_list,
             fit_str = f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, p_survival={p_survival_list[i]:.4f}'
         axs[0].plot(fit_x, fit_y, color=color_list[i], label=fit_str)
 
-    # Plotting reference data
+    # Plotting reference data ----2 way 
     axs[0].errorbar(xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'{captionStr_ref} Data', color='b')
     fit_x_ref = np.linspace(min(xlist_ref), max(xlist_ref), 100)
     fit_y_ref = fitter.expfunc(fit_x_ref, *fit_params_ref)
@@ -3120,14 +3120,19 @@ def plot_fidelity(xlist, fids_list, ebars_list,
     fidelity_list_wrt_ref = []
     fidelity_list_wrt_ref_err = []
     for i in range(len(fids_list)):
-        fid_wrt_ref, fid_wrt_ref_err = find_gate_fidelity(p_survival_list[i], p_survival_err_list[i], 3, True, p_survival_ref, p_survival_ref_err)
+        #scaling the reference fidelity by 1/7 
+        p_survival_ref_scaled = p_survival_ref**(1/7)
+        p_survival_ref_err_scaled = (1/7) * p_survival_ref_err * p_survival_ref**(-6/7)
+        fid_wrt_ref, fid_wrt_ref_err = find_gate_fidelity(p_survival_list[i], p_survival_err_list[i], 3, True, p_survival_ref_scaled, p_survival_ref_err_scaled)
+        
+        # above was 2 way; now we get 1 way fidelity (read or write)
         fidelity_list_wrt_ref.append(np.sqrt(fid_wrt_ref)) # sqrt because each interleaved gate includes 2 swaps
         fidelity_list_wrt_ref_err.append(fid_wrt_ref_err / (2 * np.sqrt(fid_wrt_ref))) # sqrt because each interleaved gate includes 2 swaps
     # fidelity_list_wrt_ref = [np.sqrt(find_gate_fidelity(p_survival_list[i], 3, True, p_survival_ref)) for i in range(len(p_survival_list))] # sqrt because each interleaved gate includes 2 swaps
     #                          #[np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
 
 
-    axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
+    axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with read/write fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
     axs[0].set_xlabel('Gates')
     axs[0].legend()
 
