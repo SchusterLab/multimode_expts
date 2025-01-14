@@ -134,7 +134,7 @@ HistogramExperiment:
     qubits: [0]
     reps: 10000
     check_f: False
-    active_reset:  True
+    active_reset:  False
     man_reset: True
     storage_reset: True
     qubit: 0
@@ -618,9 +618,9 @@ PhaseSweepExperiment: # RAverger
    
 RamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 4  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    step: 0.2  # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
     expts: 100
-    ramsey_freq: 0.01 # [MHz]
+    ramsey_freq: 0.2 # [MHz]
     reps: 250
     rounds: 1
     qubits: [0]
