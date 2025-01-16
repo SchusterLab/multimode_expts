@@ -624,9 +624,9 @@ RamseyExperiment:
     reps: 250
     rounds: 1
     qubits: [0]
-    checkEF: False # 
+    checkEF: True # 
     user_defined_freq: [False, 3425.30098176373, 7575, 0.035] # [on/off, freq, gain, sigma (mus)]  # if off, use config freq
-    qubit_ge_init: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
+    qubit_ge_init: True # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
     qubit_ge_after: False # NOTE: if want to do ef rabi, this must also be TRUE , along with checkEF
     f0g1_cavity: 0  #  1/2 name of manipulate cavity, 0 means no pulse
     normalize: False
@@ -1148,9 +1148,9 @@ AmplitudeRabiExperiment:
     qubit: 0
     pulse_type: 'gauss'   #'gauss' or 'flat_top' or 'drag' or 'const'
     drag_beta: 0.0
-    pulse_ge: False
+    pulse_ge: True
     checkZZ: False
-    checkEF: False
+    checkEF: True
     qubits: [0]
     flat_length: 0
     normalize: False
