@@ -1335,7 +1335,7 @@ LengthRabiGeneralF0g1Experiment:
                        
 
 LengthRabiGeneralF0g1ExperimentSweep:
-    freq_start: 1834.795 #9360934716117 #1949.6230253558676 #2010.7098618878696
+    freq_start: 2006.5 #9360934716117 #1949.6230253558676 #2010.7098618878696
     freq_stop: 1835.995 # 2007.95 #1951.6230253558676 #2012.7098618878696
     freq_step: 0.01 #0.01
     start: 25 #0.007 #0.0069754464285714285 # us
@@ -1540,13 +1540,13 @@ PulseProbeSpectroscopyExperiment:
     cavity_pulse: [False, 0.1 ] # truth value for gaussian cavity pulse, type (pulse assumes gaussian), sigma
 
 PulseProbeF0g1SpectroscopyExperiment:
-    start: 1950 #1995 #1835 # resonator frequency to be mixed up [MHz]
-    step: 0.1 # min step ~1 MHz
-    expts: 1500 # Number of experiments stepping from start
-    reps: 10000 # Number of averages per point
+    start: 2003 #1995 #1835 # resonator frequency to be mixed up [MHz]
+    step: 0.01 # min step ~1 MHz
+    expts:  600 # Number of experiments stepping from start
+    reps: 1000 # Number of averages per point
     rounds: 1 # Number of start to finish sweeps to average over
     length: 2 #0.620740890403745 # ef probe constant pulse length [us]
-    gain: 30000 # f0g1 pulse gain
+    gain: 20000 # f0g1 pulse gain
     pulse_type: 'gaussian'
     qubit_f: True
     qubit: 0
