@@ -1599,7 +1599,7 @@ def post_select_averager_data(data, threshold, readout_per_round=4):
         Qlist.append(np.mean(Qg))
     return Ilist, Qlist
 def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_data', 'e_data'], vlines = None, title='sideband_rabi',
-                        active_reset=True, readout_per_round=4, threshold=-4.0, 
+                        active_reset=False, readout_per_round=4, threshold=-4.0, 
                         return_fit_params = False, fit_sin = False):
         
     xlist = data['xpts'][0:-1]
@@ -1790,7 +1790,7 @@ def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
 
 
     return Ilist, Qlist
-def t1_display(data, attrs, fit=True, active_reset = True, threshold = -4, readouts_per_rep = 4, title="$T_1$", **kwargs):
+def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, readouts_per_rep = 4, title="$T_1$", **kwargs):
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
         data['avgi'] = Ilist
