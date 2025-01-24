@@ -10,11 +10,12 @@ from tqdm import tqdm_notebook as tqdm
 from copy import deepcopy # single shot dictionary cfg copy
 
 import experiments.fitting as fitter
+from MM_base import MMAveragerProgram
 '''
 Sweeps frequency of prepulse 
 '''
 
-class ParityFreqProgram(AveragerProgram):
+class ParityFreqProgram(MMAveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -167,55 +168,58 @@ class ParityFreqProgram(AveragerProgram):
 
     def body(self):
         cfg=AttrDict(self.cfg)
+        # if cfg.expt.prepulse:
+        #     for ii in range(len(cfg.expt.pre_sweep_pulse[0])):
+        #         # translate ch id to ch
+        #         if cfg.expt.pre_sweep_pulse[4][ii] == 1:
+        #             self.tempch = self.flux_low_ch
+        #         elif cfg.expt.pre_sweep_pulse[4][ii] == 2:
+        #             self.tempch = self.qubit_ch
+        #         elif cfg.expt.pre_sweep_pulse[4][ii] == 3:
+        #             self.tempch = self.flux_high_ch
+        #         elif cfg.expt.pre_sweep_pulse[4][ii] == 4:
+        #             self.tempch = self.storage_ch
+        #         elif cfg.expt.pre_sweep_pulse[4][ii] == 5:
+        #             self.tempch = self.f0g1_ch
+        #         elif cfg.expt.pre_sweep_pulse[4][ii] == 6:
+        #             self.tempch = self.man_ch
+        #         # print(self.tempch)
+        #         # determine the pulse shape
+        #         if cfg.expt.pre_sweep_pulse[5][ii] == "gaussian":
+        #             # print('gaussian')
+        #             self.pisigma_resolved = self.us2cycles(
+        #                 cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
+        #             self.add_gauss(ch=self.tempch, name="temp_gaussian",
+        #                sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+        #             self.setup_and_pulse(ch=self.tempch, style="arb", 
+        #                              freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
+        #                              phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
+        #                              gain=cfg.expt.pre_sweep_pulse[1][ii], 
+        #                              waveform="temp_gaussian")
+        #         elif cfg.expt.pre_sweep_pulse[5][ii] == "flat_top":
+        #             # print('flat_top')
+        #             self.pisigma_resolved = self.us2cycles(
+        #                 cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
+        #             self.add_gauss(ch=self.tempch, name="temp_gaussian",
+        #                sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+        #             self.setup_and_pulse(ch=self.tempch, style="flat_top", 
+        #                              freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
+        #                              phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
+        #                              gain=cfg.expt.pre_sweep_pulse[1][ii], 
+        #                              length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
+        #                                                    gen_ch=self.tempch),
+        #                             waveform="temp_gaussian")
+        #         else:
+        #             self.setup_and_pulse(ch=self.tempch, style="const", 
+        #                              freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
+        #                              phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
+        #                              gain=cfg.expt.pre_sweep_pulse[1][ii], 
+        #                              length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
+        #                                                    gen_ch=self.tempch))
+        #         self.sync_all()
+
         if cfg.expt.prepulse:
-            for ii in range(len(cfg.expt.pre_sweep_pulse[0])):
-                # translate ch id to ch
-                if cfg.expt.pre_sweep_pulse[4][ii] == 1:
-                    self.tempch = self.flux_low_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 2:
-                    self.tempch = self.qubit_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 3:
-                    self.tempch = self.flux_high_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 4:
-                    self.tempch = self.storage_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 5:
-                    self.tempch = self.f0g1_ch
-                elif cfg.expt.pre_sweep_pulse[4][ii] == 6:
-                    self.tempch = self.man_ch
-                # print(self.tempch)
-                # determine the pulse shape
-                if cfg.expt.pre_sweep_pulse[5][ii] == "gaussian":
-                    # print('gaussian')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     waveform="temp_gaussian")
-                elif cfg.expt.pre_sweep_pulse[5][ii] == "flat_top":
-                    # print('flat_top')
-                    self.pisigma_resolved = self.us2cycles(
-                        cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch)
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian",
-                       sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-                    self.setup_and_pulse(ch=self.tempch, style="flat_top", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch),
-                                    waveform="temp_gaussian")
-                else:
-                    self.setup_and_pulse(ch=self.tempch, style="const", 
-                                     freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch), 
-                                     phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-                                     gain=cfg.expt.pre_sweep_pulse[1][ii], 
-                                     length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-                                                           gen_ch=self.tempch))
-                self.sync_all()
+            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
 
         if cfg.expt.f0g1_cavity > 0:
             self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=self.pi_gain, waveform="pi_qubit")
@@ -265,8 +269,8 @@ class ParityFreqProgram(AveragerProgram):
         self.sync_all() # align channels
         chi = 0.289 # MHz
         # self.sync_all(self.us2cycles(np.abs(1 / chi / 2))) # wait for pi/chi (noe chi in config is in MHz)
-        self.sync_all(self.us2cycles(1.6266287081192767)) # align channels and wait 50ns
-        # self.sync_all(self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate-1]))) # wait for parity revival time
+        # self.sync_all(self.us2cycles(self.cfg.device.manipulate.revival_time)) # align channels and wait 50ns
+        self.sync_all(self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate-1]))) # wait for parity revival time
         self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=self.deg2reg(180), gain=cfg.device.qubit.pulses.hpi_ge.gain, waveform="hpi_qubit")
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
         self.measure(pulse_ch=self.res_ch, 

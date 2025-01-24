@@ -159,6 +159,11 @@ class CavityRamseyProgram(MMRAveragerProgram):
         elif self.cfg.expt.user_defined_pulse[0] and self.cfg.expt.storage_ramsey[0]:
             print('Running Kerr; will update phase ch')
             self.phase_update_channel = self.cavity_ch
+            # if 
+        elif self.cfg.expt.user_defined_pulse[0] :
+            print('Running f0g1 ramsey')
+            self.phase_update_channel = self.cavity_ch
+            # if 
         print(f'phase update channel: {self.phase_update_channel}')
         self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
         self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")

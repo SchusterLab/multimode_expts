@@ -751,10 +751,10 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             return t2, t2_err, data["xpts"][1:-1], data["avgi"][1:-1]
         else: 
             return t2, t2_err
-def multiple_Ramsey_display(prev_data, file_list, label_list, color_list, 
+def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):
-
+    '''Changed file naming for cross kerr experiments for 250124 data'''
     ### figure plot
     plt.figure(figsize=(10,9))
     axi = plt.subplot(211, 
@@ -764,9 +764,9 @@ def multiple_Ramsey_display(prev_data, file_list, label_list, color_list,
     fit_i_list = []
     fit_i_err_list = []
     
-    for idx, file_name in enumerate(file_list):
-        #full_name = str(file_no).zfill(5)+'_CavityRamseyExperiment.h5'
-        data, attrs = prev_data(expt_path, file_name)
+    for idx, file_no in enumerate(file_list):
+        full_name = str(file_no).zfill(5)+'_CavityRamseyExperiment.h5'
+        data, attrs = prev_data(expt_path, full_name)
         label = label_list[idx]
         color = color_list[idx]
 
@@ -1133,6 +1133,48 @@ def spectroscopy_display(data, fit=True, signs=[1,1,1], hlines=None, vlines=None
         # plt.axvline(3593.2, c='k', ls='--')
         print(f'Found peak in Q at [MHz] {data["fit_avgq"][2]}, HWHM {data["fit_avgq"][3]}')
 
+    plt.tight_layout()
+    plt.show()
+
+def multiple_specs(datas, labels, fit=True, signs=[1,1,1], hlines=None, vlines=None,  title='SPectroscopy'):
+    plt.figure(figsize=(9, 11))
+    for idx, data in enumerate(datas): 
+        xdata = data['xpts'][1:-1]
+        data['fit_amps'], data['fit_err_amps'] = fitter.fitlor(xdata, signs[0]*data['amps'][1:-1])
+        data['fit_avgi'], data['fit_err_avgi'] = fitter.fitlor(xdata, signs[1]*data['avgi'][1:-1])
+        data['fit_avgq'], data['fit_err_avgq'] = fitter.fitlor(xdata, signs[2]*data['avgq'][1:-1])
+
+        xpts = data['xpts'][1:-1]
+
+        
+        plt.subplot(311, title=title, ylabel="Amplitude [ADC units]")
+        plt.plot(xpts, data["amps"][1:-1],'o-')
+        # if vlines is not None:
+        #     for vline in vlines:
+        #         plt.axvline(vline, color='r', ls='--', label=labels[idx])
+        # if hlines is not None:
+        #     for hline in hlines:
+        #         plt.axhline(hline, color='r', ls='--', label = labels[idx]) 
+        if fit:
+            plt.plot(xpts, signs[0]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_amps"]), label = labels[idx])
+            print(f'Found peak in amps at [MHz] {data["fit_amps"][2]}, HWHM {data["fit_amps"][3]}')
+
+        plt.subplot(312, ylabel="I [ADC units]")
+        plt.plot(xpts, data["avgi"][1:-1],'o-', label = labels[idx])
+        if fit:
+            plt.plot(xpts, signs[1]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgi"]), label = labels[idx])
+            print(f'Found peak in I at [MHz] {data["fit_avgi"][2]}, HWHM {data["fit_avgi"][3]}')
+        plt.subplot(313, xlabel="Pulse Frequency (MHz)", ylabel="Q [ADC units]")
+        plt.plot(xpts, data["avgq"][1:-1],'o-', label = labels[idx])
+        # plt.axvline(3476, c='k', ls='--')
+        # plt.axvline(3376+50, c='k', ls='--')
+        # plt.axvline(3376, c='k', ls='--')
+        if fit:
+            plt.plot(xpts, signs[2]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgq"]), label = labels[idx])
+            # plt.axvline(3593.2, c='k', ls='--')
+            print(f'Found peak in Q at [MHz] {data["fit_avgq"][2]}, HWHM {data["fit_avgq"][3]}')
+
+    plt.legend()
     plt.tight_layout()
     plt.show()
     
@@ -3297,6 +3339,73 @@ def consistency_post_selection(meas_records, cutoff_n = 3):
         if consistent_check:
             new_records.append(record)
     return new_records
+
+def parity_mapping_display(data, fit=True, fitparams=None, title='sideband_rabi'):
+        
+    # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
+    # Remove the first and last point from fit in case weird edge measurements
+    # fitparams = [None, 1/max(data['xpts']), None, None]
+    # fitparams = None
+    p_avgi, pCov_avgi = fitter.fitdecaysin(
+        data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
+    p_avgq, pCov_avgq = fitter.fitdecaysin(
+        data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
+    p_amps, pCov_amps = fitter.fitdecaysin(
+        data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+    data['fit_avgi'] = p_avgi
+    data['fit_avgq'] = p_avgq
+    data['fit_amps'] = p_amps
+    data['fit_err_avgi'] = pCov_avgi
+    data['fit_err_avgq'] = pCov_avgq
+    data['fit_err_amps'] = pCov_amps
+
+    xpts_ns = data['xpts']*1e3
+
+    plt.figure(figsize=(10, 8))
+
+    plt.subplot(
+        211, title=title, ylabel="I [adc level]")
+    plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
+    if fit:
+        p = data['fit_avgi']
+        plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+        if p[2] > 180:
+            p[2] = p[2] - 360
+        elif p[2] < -180:
+            p[2] = p[2] + 360
+        if p[2] < 0:
+            pi_length = (1/2 - p[2]/180)/2/p[1]
+        else:
+            pi_length = (3/2 - p[2]/180)/2/p[1]
+        pi2_length = pi_length/2
+        print('Decay from avgi [us]', p[3])
+        print(f'Pi length from avgi data [us]: {pi_length}')
+        print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
+        plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+
+    print()
+    plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
+    plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
+    if fit:
+        p = data['fit_avgq']
+        plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+        if p[2] > 180:
+            p[2] = p[2] - 360
+        elif p[2] < -180:
+            p[2] = p[2] + 360
+        if p[2] < 0:
+            pi_length = (1/2 - p[2]/180)/2/p[1]
+        else:
+            pi_length = (3/2 - p[2]/180)/2/p[1]
+        pi2_length = pi_length/2
+        print('Decay from avgq [us]', p[3])
+        print(f'Pi length from avgq data [us]: {pi_length}')
+        print(f'Pi/2 length from avgq data [us]: {pi2_length}')
+        plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
+        plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
+    plt.tight_layout()
+    plt.show()
 
 def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readouts_per_rep = 4, return_all_param = True,
                         consistent_parity_check_bool = False, consistent_cutoff = 3, title='Ramsey'):
