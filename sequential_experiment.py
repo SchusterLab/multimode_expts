@@ -633,51 +633,177 @@ def ramsey_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_para
 
         run_exp.go(analyze=False, display=False, progress=False, save=True)
 
+class sequential_base_class():
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        self.soccfg = soccfg
+        self.path = path
+        self.prefix = prefix
+        self.config_file = config_file
+        self.exp_param_file = exp_param_file
 
-def sideband_general_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-#====================================================================#
-    config_path = config_file
-    print('Config will be', config_path)
+        #load parameter files
+        self.load_config()
+        self.load_exp_param()
 
-    with open(config_file, 'r') as cfg_file:
-        yaml_cfg = yaml.safe_load(cfg_file)
-    yaml_cfg = AttrDict(yaml_cfg)
+        pass
 
-    with open(exp_param_file, 'r') as file:
-        # Load the YAML content
-        loaded = yaml.safe_load(file)
-#===================================================================#
+    def load_config(self):
+        '''Load config file '''
+        with open(self.config_file, 'r') as cfg_file:
+            yaml_cfg = yaml.safe_load(cfg_file)
+        self.yaml_cfg = AttrDict(yaml_cfg)
+        return None
 
-    experiment_class = 'single_qubit.sideband_general'
-    experiment_name = 'SidebandGeneralExperiment'   
+    def load_exp_param(self):
+        '''Load experiment parameter file '''
+        with open(self.exp_param_file, 'r') as file:
+            # Load the YAML content
+            self.loaded = yaml.safe_load(file)
+        return None
+    
+    def map_sequential_cfg_to_experiment(self): 
+        '''Map the sequential config to the experiment config'''
+        for keys in self.loaded[self.experiment_name].keys():
+            try:
+                self.loaded[self.experiment_name][keys] = self.loaded[self.sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+            except:
+                pass
+        return None
+    
 
-    for keys in loaded[experiment_name].keys():
-        try:
-            loaded[experiment_name][keys] = loaded['SidebandGeneralExperimentSweep'][keys]   # overwrite the single experiment file with new paramters
-        except:
-            pass
+class sidebands_class(sequential_base_class):
+    '''Class for sideband experiments; using sideband general experiment'''
 
-    for index, freq in enumerate(np.arange(loaded['SidebandGeneralExperimentSweep']['freq_start'], 
-                                           loaded['SidebandGeneralExperimentSweep']['freq_stop'], 
-                                           loaded['SidebandGeneralExperimentSweep']['freq_step'])):
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+        self.experiment_class = 'single_qubit.sideband_general'
+        self.experiment_name = 'SidebandGeneralExperiment'
 
-        print('Index: %s Freq. = %s MHz' %(index, freq))
-        loaded[experiment_name]['flux_drive'][1] = freq
+    # sweep code for sideband experiments
+    
+    def sideband_freq_sweep(self):
+        '''Frequency sweep'''
 
-        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+        for index, freq in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['freq_start'], 
+                                           self.loaded[self.sweep_experiment_name]['freq_stop'], 
+                                           self.loaded[self.sweep_experiment_name]['freq_step'])):
+
+            print('Index: %s Freq. = %s MHz' %(index, freq))
+            self.loaded[self.experiment_name]['flux_drive'][1] = freq
+
+            run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
 
 
-        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+            run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
-        # special updates on device_config file
-        # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
-        # run_exp.cfg.device.readout.relax_delay = 300 # Wait time between experiments [us]
-        # run_exp.cfg.device.manipulate.readout_length = 5
-        # run_exp.cfg.device.storage.readout_length = 5
-        if run_exp.cfg.expt.active_reset: 
-            run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+            # special updates on device_config file
+            # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
+            # run_exp.cfg.device.readout.relax_delay = 300 # Wait time between experiments [us]
+            # run_exp.cfg.device.manipulate.readout_length = 5
+            # run_exp.cfg.device.storage.readout_length = 5
+            if run_exp.cfg.expt.active_reset: 
+                run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
 
-        run_exp.go(analyze=False, display=False, progress=False, save=True)
+            run_exp.go(analyze=False, display=False, progress=False, save=True)
+    
+    def sideband_gain_freq_sweep(self):
+        '''Gain and frequency sweep'''
+
+        for index, gain in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['gain_start'],
+                                           self.loaded[self.sweep_experiment_name]['gain_stop'],
+                                             self.loaded[self.sweep_experiment_name]['gain_step'])):
+            print('Index: %s Gain. = %s MHz' %(index, gain))
+            self.loaded[self.experiment_name]['flux_drive'][2] = gain
+
+            #prep_params = (self.config_path, self.loaded, self.experiment_class, self.experiment_name, self.sweep_experiment_name, self.yaml_cfg)
+
+            return_args = self.sideband_freq_sweep()
+        
+        return None
+    
+    def sideband_cross_kerr_cancellation(self): 
+        '''Run two experiments; one with prepulse 1 (no occupied storage) and one with prepulse 2 (occupied storage)'''
+        # prepulse 1
+        self.loaded[self.experiment_name]['pre_sweep_pulse'] = self.loaded[self.sweep_experiment_name]['pre_sweep_pulse1']
+        self.sideband_gain_freq_sweep()
+
+        # prepulse 2
+        self.loaded[self.experiment_name]['pre_sweep_pulse'] = self.loaded[self.sweep_experiment_name]['pre_sweep_pulse2']
+        self.sideband_gain_freq_sweep()
+
+        return None
+        
+    
+    # run the experiment
+    def run_sweep(self, sweep_experiment_name):
+        '''Run the sweep'''
+        self.sweep_experiment_name = sweep_experiment_name
+        self.map_sequential_cfg_to_experiment()
+
+        if sweep_experiment_name == 'sideband_general_sweep':
+            self.sideband_freq_sweep()
+
+        elif sweep_experiment_name == 'sideband_gain_freq_sweep':
+            self.sideband_gain_freq_sweep()
+        
+        elif sweep_experiment_name == 'sideband_cross_kerr_cancellation':
+            self.sideband_cross_kerr_cancellation()
+        
+
+
+
+# def sideband_general_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
+#                            prep_init = False, prep_params = None):
+#     '''Sweeps frequency for sideband general experiment'''
+    
+#     if prep_init: 
+#             config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
+#             # target_mode = loaded[sexperiment_name]['target_mode']
+#     else: 
+#         #====================================================================#
+#         config_path = config_file
+#         print('Config will be', config_path)
+
+#         with open(config_file, 'r') as cfg_file:
+#             yaml_cfg = yaml.safe_load(cfg_file)
+#         yaml_cfg = AttrDict(yaml_cfg)
+
+#         with open(exp_param_file, 'r') as file:
+#             # Load the YAML content
+#             loaded = yaml.safe_load(file)
+#         #===================================================================# 
+
+#         experiment_class = 'single_qubit.sideband_general'
+#         experiment_name = 'SidebandGeneralExperiment'   
+#         sweep_experiment_name = 'SidebandGeneralExperimentSweep'
+
+#         for keys in loaded[experiment_name].keys():
+#             try:
+#                 loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+#             except:
+#                 pass
+
+#     for index, freq in enumerate(np.arange(loaded[sweep_experiment_name]['freq_start'], 
+#                                            loaded[sweep_experiment_name]['freq_stop'], 
+#                                            loaded[sweep_experiment_name]['freq_step'])):
+
+#         print('Index: %s Freq. = %s MHz' %(index, freq))
+#         loaded[experiment_name]['flux_drive'][1] = freq
+
+#         run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+
+
+#         run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+#         # special updates on device_config file
+#         # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
+#         # run_exp.cfg.device.readout.relax_delay = 300 # Wait time between experiments [us]
+#         # run_exp.cfg.device.manipulate.readout_length = 5
+#         # run_exp.cfg.device.storage.readout_length = 5
+#         if run_exp.cfg.expt.active_reset: 
+#             run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+
+#         run_exp.go(analyze=False, display=False, progress=False, save=True)
 
 def storage_sideband_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
 #====================================================================#

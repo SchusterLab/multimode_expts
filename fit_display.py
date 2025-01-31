@@ -645,7 +645,7 @@ def plot_ramsey_sideband(data_list, attrs_list, y_list,
     
     
 def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], 
-                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_all_param = True, title='Ramsey',
+                   active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_ifreq = False, return_all_param = False, title='Ramsey',
                    end_idx = None, start_idx = None):
     '''
     Returns_all_param = True: returns all the parameters of the fit i 
@@ -667,12 +667,12 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         data['avgi'] = Ilist[start_idx:end_idx]
         data['avgq'] = Qlist[start_idx:end_idx]
         data['xpts'] = data['xpts'][:-1][start_idx:end_idx]
-        data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
+        #data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
     else:
         data['avgi'] = data['avgi'][start_idx:end_idx]
         data['avgq'] = data['avgq'][start_idx:end_idx]
         data['xpts'] = data['xpts'][start_idx:end_idx]
-        data['amps'] = data['amps'][start_idx:end_idx]
+        #data['amps'] = data['amps'][start_idx:end_idx]
     if fit:
         # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
         # Remove the first and last point from fit in case weird edge measurements
@@ -680,17 +680,17 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         # fitparams=[8, 0.5, 0, 20, None, None]
         p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][1:-1], data["avgi"][1:-1], fitparams=fitparams)
         p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][1:-1], data["avgq"][1:-1], fitparams=fitparams)
-        p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][1:-1], data["amps"][1:-1], fitparams=fitparams)
+        #p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][1:-1], data["amps"][1:-1], fitparams=fitparams)
         data['fit_avgi'] = p_avgi   
         data['fit_avgq'] = p_avgq
-        data['fit_amps'] = p_amps
+        #data['fit_amps'] = p_amps
         data['fit_err_avgi'] = pCov_avgi   
         data['fit_err_avgq'] = pCov_avgq
-        data['fit_err_amps'] = pCov_amps
+        #data['fit_err_amps'] = pCov_amps
 
         if isinstance(p_avgi, (list, np.ndarray)): data['f_adjust_ramsey_avgi'] = sorted((ramsey_freq - p_avgi[1], ramsey_freq + p_avgi[1]), key=abs)
         if isinstance(p_avgq, (list, np.ndarray)): data['f_adjust_ramsey_avgq'] = sorted((ramsey_freq - p_avgq[1], ramsey_freq + p_avgq[1]), key=abs)
-        if isinstance(p_amps, (list, np.ndarray)): data['f_adjust_ramsey_amps'] = sorted((ramsey_freq - p_amps[1], ramsey_freq + p_amps[1]), key=abs)
+        #if isinstance(p_amps, (list, np.ndarray)): data['f_adjust_ramsey_amps'] = sorted((ramsey_freq - p_amps[1], ramsey_freq + p_amps[1]), key=abs)
 
     f_pi_test = initial_freq
     title = title
@@ -711,6 +711,8 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             plt.legend()
             print(f'Current pi pulse frequency: {f_pi_test}')
             print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
+            p_idata = p.copy()
+            pCov_idata = pCov.copy()
             if p[1] > 2*ramsey_freq: print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
             print('Suggested new pi pulse frequency from fit I [MHz]:\n',
                     f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][0]}\n',
@@ -747,13 +749,16 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
     if fit:
         if return_all_param: 
             return p_avgi, pCov_avgi, data["xpts"][1:-1], data["avgi"][1:-1]
-        if return_idata:
+        elif return_idata:
             return t2, t2_err, data["xpts"][1:-1], data["avgi"][1:-1]
+        elif return_ifreq: 
+            return p_idata[1], np.sqrt(pCov[1][1]), t2, t2_err
         else: 
             return t2, t2_err
 def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
-                             ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey'):
+                             ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey',
+                             name= '_CavityRamseyExperiment.h5'):
     '''Changed file naming for cross kerr experiments for 250124 data'''
     ### figure plot
     plt.figure(figsize=(10,9))
@@ -765,7 +770,7 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
     fit_i_err_list = []
     
     for idx, file_no in enumerate(file_list):
-        full_name = str(file_no).zfill(5)+'_CavityRamseyExperiment.h5'
+        full_name = str(file_no).zfill(5)+name
         data, attrs = prev_data(expt_path, full_name)
         label = label_list[idx]
         color = color_list[idx]
@@ -775,7 +780,7 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
             data['avgi'] = Ilist
             data['avgq'] = Qlist
             data['xpts'] = data['xpts'][:-1]
-            data['amps'] = data['amps'][:-1] # adjust since active reset throws away the last data point
+           # data['amps'] = data['amps'][:-1] # adjust since active reset throws away the last data point
         
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
@@ -784,17 +789,17 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
             # fitparams=[8, 0.5, 0, 20, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            #p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
             data['fit_avgi'] = p_avgi   
             data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
+            #data['fit_amps'] = p_amps
             data['fit_err_avgi'] = pCov_avgi   
             data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+            #data['fit_err_amps'] = pCov_amps
 
             if isinstance(p_avgi, (list, np.ndarray)): data['f_adjust_ramsey_avgi'] = sorted((ramsey_freq - p_avgi[1], ramsey_freq + p_avgi[1]), key=abs)
             if isinstance(p_avgq, (list, np.ndarray)): data['f_adjust_ramsey_avgq'] = sorted((ramsey_freq - p_avgq[1], ramsey_freq + p_avgq[1]), key=abs)
-            if isinstance(p_amps, (list, np.ndarray)): data['f_adjust_ramsey_amps'] = sorted((ramsey_freq - p_amps[1], ramsey_freq + p_amps[1]), key=abs)
+            #if isinstance(p_amps, (list, np.ndarray)): data['f_adjust_ramsey_amps'] = sorted((ramsey_freq - p_amps[1], ramsey_freq + p_amps[1]), key=abs)
 
         f_pi_test = initial_freq
 

@@ -181,6 +181,7 @@ class SidebandGeneralProgram(MMAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
 
         # RF flux modulation
+        self.wait_all(self.us2cycles(cfg.expt.length_placeholder))
 
         if self.cfg.expt.length_placeholder>0:
 
@@ -266,6 +267,14 @@ class SidebandGeneralExperiment(Experiment):
         if self.cfg.expt.active_reset: read_num = 4
 
         for length in tqdm(lengths, disable=not progress):
+            #### update phase of post pulse (only for cavity ramsey in presence of coupler drive)
+            if self.cfg.expt.update_post_pulse_phase[0]:
+                wait_freq = self.cfg.expt.update_post_pulse_phase[1]
+                wait_phase = length * wait_freq  * 360
+                self.cfg.expt.post_sweep_pulse[3][-1] = wait_phase
+                # print(f'Updated post pulse phase to {wait_phase} deg')
+                # print(self.cfg.expt.post_sweep_pulse)
+
             self.cfg.expt.length_placeholder = float(length)
             lengthrabi = SidebandGeneralProgram(
                 soccfg=self.soccfg, cfg=self.cfg)
