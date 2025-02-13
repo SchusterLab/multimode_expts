@@ -51,6 +51,31 @@ from scipy.optimize import curve_fit
 import experiments.fitting as fitter
 from numpy.linalg import inv
 
+# ---------fitting -----------------
+
+
+        # ypts = fids_post_list
+        # fit_post, err_post = fitter.fitexp(xpts, ypts, fitparams=[None, None, None, None])
+
+        # p = fit
+        # pCov = err
+        # rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
+        # abs_err = rel_err * np.exp(-1 / fit[3])
+        # fid = np.exp(-1 / fit[3])
+        # fid_err = abs_err
+        # captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
+
+        # p_post = fit_post
+        # pCov_post = err_post
+        # rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
+        # abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
+        # fid_post = np.exp(-1 / fit_post[3])
+        # fid_err_post = abs_err_post
+        # captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
+
+        # ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
+        # ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])
+
 ## Normalize Data 
 
 def normalize_data(axi, axq, data, normalize): 
@@ -3100,7 +3125,7 @@ def find_gate_fidelity(p_survival, p_survival_err, dim, interleaved = False, p_s
     p = p_survival
     p_err = p_survival_err
     if interleaved: 
-        p = p_survival/p_survival_interleaved_upon
+        p = p_survival/p_survival_interleaved_upon  # p = (p_s/p_b)^1/7
         ## error propagation of f= a/b is f_err = f * sqrt((a_err/a)^2 + (b_err/b)^2)
         p_err = p* np.sqrt((p_err**2/p_survival**2) + (p_interleaved_err**2/ p_survival_interleaved_upon**2))
     r = (dim-1)/dim * (1-p)
@@ -3168,8 +3193,9 @@ def plot_fidelity(xlist, fids_list, ebars_list,
     fidelity_list_wrt_ref_err = []
     for i in range(len(fids_list)):
         #scaling the reference fidelity by 1/7 
-        p_survival_ref_scaled = p_survival_ref**(1/7)
-        p_survival_ref_err_scaled = (1/7) * p_survival_ref_err * p_survival_ref**(-6/7)
+        p_survival_ref_scaled = p_survival_ref**(1/len(mode_list))
+        p_survival_ref_err_scaled = (1/len(mode_list)) * p_survival_ref_err * p_survival_ref**(-6/7)
+        
         fid_wrt_ref, fid_wrt_ref_err = find_gate_fidelity(p_survival_list[i], p_survival_err_list[i], 3, True, p_survival_ref_scaled, p_survival_ref_err_scaled)
         
         # above was 2 way; now we get 1 way fidelity (read or write)
