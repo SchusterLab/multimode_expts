@@ -181,7 +181,7 @@ class SidebandGeneralProgram(MMAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
 
         # RF flux modulation
-        self.wait_all(self.us2cycles(cfg.expt.length_placeholder))
+        # self.wait_all(self.us2cycles(cfg.expt.length_placeholder))
 
         if self.cfg.expt.length_placeholder>0:
 
