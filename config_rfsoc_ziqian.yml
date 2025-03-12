@@ -8,16 +8,16 @@ device:
     qubit:
     #anharmonicity = 3426.1920613666457 - 3569.3482778089246 = -143.1562164422799
         T1: [127.0] # us
-        f_ge:  [3568.5303717011543] # [3566.3951696922627] # MHz    
+        f_ge:  [3568.6633051114345] # [3566.3951696922627] # MHz    
             # (when driving qubit gates) 3566.8   
             # when man1=|1> (3566.117766849506)  driven (3566.51957504422)
             # when man2=|1> (3566.1359110698945)  driven (3566.5377192646083)
-        f_ge_resolved: [3568.5303717011543] # MHz fge - chi  (currently not used)
-        f_ge_idle: [3568.5303717011543] # MHz (For Ramsey)
-        f_ef: [3425.328569191211] # MHz  # (when driving qubit gates) 3422.72   
+        f_ge_resolved: [3568.6633051114345] # MHz fge - chi  (currently not used)
+        f_ge_idle: [3568.6633051114345] # MHz (For Ramsey)
+        f_ef: [3425.406304983311] # MHz  # (when driving qubit gates) 3422.72   
         # when man1=|1> (3423.200842620319)   (3422.4656668246803)
         # when man2=|1> (3423.209680676009)   (3422.4745048803707)
-        f_ef_idle: [3425.328569191211] # MHz  # (For Ramsey)
+        f_ef_idle: [3425.406304983311] # MHz  # (For Ramsey)
         ramp_sigma: [0.005]  # [us]  0.01
         ramp_sigma_num: [3]  # [us]  2
         pulses:
@@ -191,13 +191,13 @@ device:
         trig_offset: 450 # [Clock ticks]  400
         frequency: [748.8] # [MHz] (748.19) (748.6)
         gain: [700]  # 800
-        phase: [-305] # degrees     # 178.3
-        threshold: [-111.51358024894762] # adc units
-        threshold_list: [-111.51358024894762] # adc units
+        phase: [2] # degrees     # 178.3
+        threshold: [ 55] # adc units
+        threshold_list: [55] # adc units
         man1_drive_list: [0]
         man2_drive_list: [0]
-        readout_length: [1] # [us]   1.0
-        relax_delay: [2500] # [us] # Usually 1500
+        readout_length: [2] # [us]   1.0
+        relax_delay: [2000] # [us] # Usually 1500
         confusion_matrix_with_reset: [0.9964530022802125, 0.0035469977197875036, 0.013768302080657598, 0.9862316979193424] # [0.9980303030303033, 0.0019696969696967326, 0.01665124884366328, 0.9833487511563367] # [0.9967571949736522, 0.0032428050263477726, 0.016634449079255258, 0.9833655509207447] #[0.9972196946719237, 0.0027803053280762713, 0.01459223103518406, 0.985407768964816]
         confusion_matrix_without_reset:  [0.9911499999999999, 0.008850000000000136, 0.023799999999999998, 0.9762]
     
