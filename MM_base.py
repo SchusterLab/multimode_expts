@@ -1298,7 +1298,7 @@ class prepulse_creator2:
         
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
         ''' pulse name comes from yaml file '''
-        # print(pulse_param)
+        print(pulse_param)
         transition_name, pulse_name, phase = pulse_param
         # frequency 
         if transition_name[:2] == 'ge': 

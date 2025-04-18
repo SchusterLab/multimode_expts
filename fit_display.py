@@ -1885,6 +1885,8 @@ def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, read
         plt.xlabel('Time [us]')
         plt.legend()
         print(f'Fit T1 avgi [us]: {data["fit_avgi"][3]}')
+        t1_i = data["fit_avgi"][3]
+        t1_i_err = np.sqrt(pCov[3][3])
     plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC units]")
     plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
     if fit:
@@ -1896,7 +1898,11 @@ def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, read
         plt.legend()
         print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')
         plt.show()
-        return p[3], np.sqrt(pCov[3][3])
+        t1_q = data["fit_avgq"][3]
+        t1_q_err = np.sqrt(pCov[3][3])
+
+    if fit: 
+        return t1_i, t1_i_err
 
     plt.show()
 def plot_sideband_sweep_long(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, title="Sideband Sweep"):

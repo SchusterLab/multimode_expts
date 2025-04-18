@@ -1728,23 +1728,13 @@ FluxSpectroscopyF0g1Experiment:
     postpulse: True
     active_reset: False
 
-    pre_sweep_pulse: [[3568.6633051114345, 3425.406304983311, 2006.8],
+    pre_sweep_pulse: [[3568.655054337803, 3425.3983357264633, 2006.8],
        [11105, 9530, 15000],
        [0, 0, 0.6077792185114786],
        [0, 0, 0],
        [2, 2, 0],
        ['g', 'g', 'flat_top'],
        [0.035, 0.035, 0.005]]
-    
-#     [[3568.5231306126566, 3425.328569191211, 2007.54],
-#  [10973, 9530, 15000],
-#  [0, 0, 0.6164057205175526],
-#  [0, 0, 0],
-#  [2, 2, 0],
-#  ['g', 'g', 'flat_top'],
-#  [0.035, 0.035, 0.005]]
-    
-    
     post_sweep_pulse: [[2006.8],
        [15000],
        [0.6077792185114786],
@@ -1810,7 +1800,7 @@ SidebandT1GeneralExperiment:
     start: 0.007 # 
     step: 20 # 
     qubits: [0]
-    expts: 250
+    expts: 100
     reps: 400
     rounds: 1
     prepulse: True
@@ -1818,17 +1808,48 @@ SidebandT1GeneralExperiment:
     active_reset: False
     man_reset:  False
     storage_reset:  False
-    pre_sweep_pulse: [[3568.6633051114345, 3425.406304983311, 2006.8, 348.85],
-       [11105, 9530, 15000, 3000],
-       [0, 0, 0.6077792185114786, 0.7842591523264502],
+    pre_sweep_pulse: [[3568.655054337803, 3425.3983357264633, 2006.8, 520.32],
+       [11105, 9530, 15000, 5000],
+       [0, 0, 0.6077792185114786, 0.9408112344723606],
        [0, 0, 0, 0],
        [2, 2, 0, 1],
        ['g', 'g', 'flat_top', 'flat_top'],
        [0.035, 0.035, 0.005, 0.005]]
     
-    post_sweep_pulse: [[348.85, 2006.8],
-       [3000, 15000],
-       [0.7842591523264502, 0.6077792185114786],
+    post_sweep_pulse: [[520.32, 2006.8],
+       [5000, 15000],
+       [0.9408112344723606, 0.6077792185114786],
+       [0, 0],
+       [1, 0],
+       ['flat_top', 'flat_top'],
+       [0.005, 0.005]]
+
+storage_t1_sweep:
+    # sweep_params 
+    storage_list: [2]
+    # the other params coems from sideband t1 general experiment (will overwrite its params)
+    start: 0.007 # 
+    step: 60 # 
+    qubits: [0]
+    expts: 100 # 250
+    reps: 200
+    rounds: 1
+    prepulse: True
+    postpulse: True
+    active_reset: False
+    man_reset:  False
+    storage_reset:  False
+    pre_sweep_pulse: [[3568.655054337803, 3425.3983357264633, 2006.8, 520.32],
+       [11105, 9530, 15000, 5000],
+       [0, 0, 0.6077792185114786, 0.9408112344723606],
+       [0, 0, 0, 0],
+       [2, 2, 0, 1],
+       ['g', 'g', 'flat_top', 'flat_top'],
+       [0.035, 0.035, 0.005, 0.005]]
+    
+    post_sweep_pulse: [[520.32, 2006.8],
+       [5000, 15000],
+       [0.9408112344723606, 0.6077792185114786],
        [0, 0],
        [1, 0],
        ['flat_top', 'flat_top'],
@@ -1836,12 +1857,12 @@ SidebandT1GeneralExperiment:
 
 SidebandGeneralExperiment:
     start: 0.007 # us
-    step: 0.1  # 1.349900709160525 # us
+    step: 0.05  # 1.349900709160525 # us
     qubits: [0]
-    expts: 100
-    reps: 100
+    expts: 300
+    reps: 400
     rounds: 1
-    flux_drive: ['high', 1422, 10000, 0.05] # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    flux_drive: ['low', 520.32, 5000, 0.05] # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
     prepulse: True
     postpulse: True
     active_reset: False
@@ -1862,7 +1883,7 @@ SidebandGeneralExperiment:
     #    ['flat_top'],
     #    [0.005]]
     update_post_pulse_phase: [False, 1.07] # updates phase of last pulse of post pulse depending on pulse length [True/False, freq]  
-    pre_sweep_pulse: [[3568.6633051114345, 3425.406304983311, 2006.8],
+    pre_sweep_pulse: [[3568.655054337803, 3425.3983357264633, 2006.8],
        [11105, 9530, 15000],
        [0, 0, 0.6077792185114786],
        [0, 0, 0],
@@ -1883,13 +1904,13 @@ sideband_general_sweep:
     start: 0.007 #0.007  #0.1 # us
     step: 0.1 # us
     qubits: [0]
-    expts: 100
-    reps: 250
+    expts: 50 
+    reps: 300
     rounds: 1
-    freq_start: 1422.2 # 2093.4 #2491.8 #1661.0
-    freq_stop:  1422.4 # 2094.4 #1661.5
+    freq_start: 519.5 # 2093.4 #2491.8 #1661.0
+    freq_stop:  521 # 2094.4 #1661.5
     freq_step: 0.05
-    flux_drive: ['high',  500.0,  10000, 0.05]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    flux_drive: ['low',  500.0,  5000, 0.05]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
     prepulse: True
     postpulse: True
     active_reset: False
@@ -1897,7 +1918,7 @@ sideband_general_sweep:
     storage_reset:  True
     
     update_post_pulse_phase: [False, 1.07] # updates phase of last pulse of post pulse depending on pulse length [True/False, freq]  
-    pre_sweep_pulse: [[3568.6633051114345, 3425.406304983311, 2006.8],
+    pre_sweep_pulse: [[3568.655054337803, 3425.3983357264633, 2006.8],
        [11105, 9530, 15000],
        [0, 0, 0.6077792185114786],
        [0, 0, 0],

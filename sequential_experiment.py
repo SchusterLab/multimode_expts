@@ -663,6 +663,7 @@ class sequential_base_class():
     
     def map_sequential_cfg_to_experiment(self): 
         '''Map the sequential config to the experiment config'''
+        print(self.experiment_name)
         for keys in self.loaded[self.experiment_name].keys():
             try:
                 self.loaded[self.experiment_name][keys] = self.loaded[self.sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
@@ -706,6 +707,13 @@ class sidebands_class(sequential_base_class):
 
             run_exp.go(analyze=False, display=False, progress=False, save=True)
     
+    def storage_t1_sweep(self):
+        '''Sweep T1s'''
+        self.experiment_class = 'single_qubit.sideband_t1_general'
+        self.experiment_name = 'SidebandT1GeneralExperiment'
+        
+
+    
     def sideband_gain_freq_sweep(self):
         '''Gain and frequency sweep'''
 
@@ -742,6 +750,9 @@ class sidebands_class(sequential_base_class):
 
         if sweep_experiment_name == 'sideband_general_sweep':
             self.sideband_freq_sweep()
+        
+        if sweep_experiment_name == 'storage_t1_sweep':
+            self.sideband_freq_sweep()
 
         elif sweep_experiment_name == 'sideband_gain_freq_sweep':
             self.sideband_gain_freq_sweep()
@@ -750,8 +761,56 @@ class sidebands_class(sequential_base_class):
             self.sideband_cross_kerr_cancellation()
         
 
+class storage_sweep_class(sequential_base_class): 
+    '''Base class for storage sweeping experiments '''
+
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+        self.experiment_class = None
+        self.experiment_name = None
+        # create prepulse , postpulse, post selection pulse 
+        self.mm_base = MM_base(cfg = self.yaml_cfg)
+
+    def storage_t1_sweep(self):
+        '''Sweep T1s'''
+        self.experiment_class = 'single_qubit.sideband_t1_general'
+        self.experiment_name = 'SidebandT1GeneralExperiment'
+        self.sweep_experiment_name = 'storage_t1_sweep'
+        self.map_sequential_cfg_to_experiment()
+        print('Loaded: ', self.loaded[self.experiment_name])
+
+        for stor_idx, stor_no in enumerate(self.loaded[self.sweep_experiment_name]['storage_list']):
+            print('Storage number: ', stor_no)
+            pre_sweep_pulse_str = [['qubit', 'ge', 'pi',0],
+                            ['qubit', 'ef', 'pi',0],
+                                ['man', 'M1' , 'pi',0],
+                                ['storage', 'M1-S' + str(stor_no), 'pi',0]]
+            post_sweep_pulse_str = pre_sweep_pulse_str[:1:-1]
+            # print(pre_sweep_pulse_str)
+            self.loaded[self.experiment_name]['pre_sweep_pulse'] = self.mm_base.get_prepulse_creator(pre_sweep_pulse_str).pulse.tolist()
+            self.loaded[self.experiment_name]['post_sweep_pulse'] = self.mm_base.get_prepulse_creator(post_sweep_pulse_str).pulse.tolist()
+
+            
+
+            run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
+            run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
+
+            # special updates on device_config file
+            run_exp.cfg.device.readout.relax_delay = 5000 # Wait time between experiments [us]
+            print('Config is: ', run_exp.cfg.expt)
+            run_exp.go(analyze=False, display=False, progress=True, save=True)
+        
+    # run the experiment
+    def run_sweep(self, sweep_experiment_name):
+        '''Run the sweep'''
+        # self.sweep_experiment_name = sweep_experiment_name
+        # self.map_sequential_cfg_to_experiment()
 
 
+        if sweep_experiment_name == 'storage_t1_sweep':
+            self.storage_t1_sweep()
+
+    
 # def sideband_general_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
 #                            prep_init = False, prep_params = None):
 #     '''Sweeps frequency for sideband general experiment'''
