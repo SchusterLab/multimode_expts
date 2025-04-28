@@ -93,7 +93,7 @@ class MM_base():
         self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
         # get register page for qubit_chs
-        # self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
+        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
         # self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
 
         self.f_ge_reg = [self.freq2reg(
@@ -182,13 +182,17 @@ class MM_base():
         # --------------------qubit pulse parameters 
         self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_sigma_g = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
+
+        # ----------------------qubit pulse parameters   (gain )
+        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
+        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
 
         # define all 2 different pulses
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pi_sigma, length=self.pi_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pief_sigma_g, length=self.pief_sigma_g*4)
+        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pief_sigma, length=self.pief_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_sigma, length=self.pief_sigma*6) # this is flat top 
         # self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
 
