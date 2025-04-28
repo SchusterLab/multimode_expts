@@ -207,6 +207,63 @@ def manipulate_dc_flux_sweep(soccfg=None, path=None, prefix=None, config_file=No
     #After expt is over, set current back to 0.32mA
     dcflux.ramp_current(0.00032, sweeprate=0.002)
 
+def manipulate_spectroscopy_dc_flux_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, dcflux = None):
+#====================================================================#
+    config_path = config_file
+    print('Config will be', config_path)
+
+    with open(config_file, 'r') as cfg_file:
+        yaml_cfg = yaml.safe_load(cfg_file)
+    yaml_cfg = AttrDict(yaml_cfg)
+
+    with open(exp_param_file, 'r') as file:
+        # Load the YAML content
+        loaded = yaml.safe_load(file)
+#===================================================================#
+
+    experiment_class = 'single_qubit.pulse_probe_f0g1_spectroscopy'
+    experiment_name = 'PulseProbeF0g1SpectroscopyExperiment'   
+    sweep_experiment_name = 'manipulate_spectroscopy_dc_flux_sweep'
+
+    for keys in loaded[experiment_name].keys():
+        try:
+            loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
+        except:
+            pass
+
+    # load YOKO
+    dcflux = YokogawaGS200(address="192.168.137.148")
+    dcflux.set_output(True)
+    dcflux.set_mode('current')
+    dcflux.ramp_current(0.000, sweeprate=0.002)
+
+
+    for index, current in enumerate(np.linspace(loaded[sweep_experiment_name]['flux_start'], 
+                                           loaded[sweep_experiment_name]['flux_stop'], 
+                                           loaded[sweep_experiment_name]['flux_expts'])):
+        loaded[experiment_name]['current'] = current
+        current_now = current / 1000
+        if abs(current_now) > 0.03: break    # for safety
+
+
+        print("%d: flux Driving at %.3f mA " % (index, current_now * 1000))
+        dcflux.ramp_current(current_now, sweeprate=0.002)
+
+
+        run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+
+
+        run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+
+        # special updates on device_config file
+        run_exp.cfg.device.readout.relax_delay = 1000 # Wait time between experiments [us]
+        
+
+        run_exp.go(analyze=False, display=False, progress=False, save=True)
+
+    #After expt is over, set current back to 0.32mA
+    dcflux.ramp_current(0.00032, sweeprate=0.002)
+
 
 def fluxspectroscopy_f0g1_dc_flux_sweep(soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, dcflux = None):
 #====================================================================#

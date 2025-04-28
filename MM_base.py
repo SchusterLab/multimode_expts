@@ -183,7 +183,7 @@ class MM_base():
         self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pief_ftop_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
 
         # ----------------------qubit pulse parameters   (gain )
         self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
@@ -193,7 +193,7 @@ class MM_base():
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pi_sigma, length=self.pi_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pief_sigma, length=self.pief_sigma*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_sigma, length=self.pief_sigma*6) # this is flat top 
+        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
         # self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
 
         # frequencies

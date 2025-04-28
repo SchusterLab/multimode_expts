@@ -28,16 +28,6 @@ class RamseyProgram(MMRAveragerProgram):
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge_idle)
        
         qTest = self.qubits[0]
-
-
-
-        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])
-        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])
-        
-        
-        
-        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
         
 
        
