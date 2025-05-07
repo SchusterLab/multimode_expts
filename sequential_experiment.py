@@ -761,6 +761,7 @@ class sidebands_class(sequential_base_class):
             # run_exp.cfg.device.storage.readout_length = 5
             if run_exp.cfg.expt.active_reset: 
                 run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
+            print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
 
             run_exp.go(analyze=False, display=False, progress=False, save=True)
     
@@ -2604,7 +2605,7 @@ def length_rabi_f0g1_sweep(soccfg=None, path=None, prefix=None, config_file=None
         # run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
         if loaded[experiment_name]['active_reset']:
             print('doesnt make sense to active reset in this exp')
-        run_exp.cfg.device.readout.relax_delay = 1500 # Wait time between experiments [us]
+        run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
         # run_exp.cfg.device.manipulate.readout_length = 5
         # run_exp.cfg.device.storage.readout_length = 5
 

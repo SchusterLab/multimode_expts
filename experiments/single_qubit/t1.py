@@ -104,6 +104,9 @@ class T1Program(RAveragerProgram):
         self.sync_all() # align channels
         self.sync(self.q_rp, self.r_wait) # wait for the time stored in the wait variable register
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
+        if self.cfg.expt.qubit_ef:
+            self.set_pulse_registers(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
+            self.pulse(ch=self.qubit_ch)
         self.measure(pulse_ch=self.res_ch, 
              adcs=[self.adc_ch],
              adc_trig_offset=cfg.device.readout.trig_offset,

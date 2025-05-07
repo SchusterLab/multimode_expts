@@ -152,7 +152,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
         # -------set up pulse parameters for measurement pulses -------
 
-        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
+        # self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
         
         self.f0g1_for_custom_pulse = self.get_prepulse_creator([['man', 'M1' , 'pi',0 ]]).pulse.tolist()
         self.ef_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ef', 'pi', 0]]).pulse.tolist()
@@ -268,10 +268,13 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
            
         self.sync_all()
- 
-        if cfg.expt.parity_meas: 
+
+        # ------------------Measurement------------------
+        if cfg.expt.parity_meas:
+            print('Doing parity meas') 
             self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
         else: 
+            print('Doing f0g1 and ef meas')
             self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1')
             self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1')
 
@@ -279,7 +282,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
         
         if cfg.expt.reset_qubit_via_active_reset_after_first_meas:
-            self.active_reset(man_reset= False, storage_reset= False, ef_reset = False, pre_selection_reset = False, prefix = 'post_meas')
+            self.active_reset(man_reset= False, storage_reset= False, ef_reset = False, pre_selection_reset = False, prefix = 'post_meas') #????
         else: 
             self.measure(
                 pulse_ch=self.res_chs[qTest],

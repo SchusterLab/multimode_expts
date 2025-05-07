@@ -77,7 +77,14 @@ from numpy.linalg import inv
         # ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])
 
 ## Normalize Data 
+# def add_qubit_states(axi, axq, attrs):
+#     '''Add g and e corresponding i,q values to the plot'''
+#     yg = attrs['config']['device']['readout']['Ig']
+#     ye = attrs['config']['device']['readout']['Ie']
+#     axi.hline(yg, 'o', color = 'tab:green', label='g')
+#     axi.hline(ye, 'o' color = 'tab:orange', label='e')
 
+    
 def normalize_data(axi, axq, data, normalize): 
     '''
     Display avgi and avgq data with the g,e,f corresponding i,q values
@@ -241,6 +248,12 @@ def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_pe
         print(f'Ie {xe} +/- {np.std(Ie)} \t Qe {ye} +/- {np.std(Qe)} \t Amp e {np.abs(xe+1j*ye)}')
         if plot_f: print(f'If {xf} +/- {np.std(If)} \t Qf {yf} +/- {np.std(Qf)} \t Amp f {np.abs(xf+1j*yf)}')
 
+        print('updating temp data')
+        data['Ig_rot'] = Ig_new
+        data['Qg_rot'] = Qg_new
+        data['Ie_rot'] = Ie_new
+        data['Qe_rot'] = Qe_new
+
 
     if span is None:
         span = (np.max(np.concatenate((Ie_new, Ig_new))) - np.min(np.concatenate((Ie_new, Ig_new))))/2
@@ -345,9 +358,15 @@ def hist_display(data, span=None, verbose=True, plot_e=True, plot_f=False, activ
     # print(f'set angle to (deg): {-angle}')
     print(f'threshold ge: {thresholds_new[0]}')
     print('Confusion matrix [Pgg, Pge, Peg, Pee]: ',confusion_matrix)
+    # yo copilotm, add threshold rotation angle into data 
+    data['angle'] = angle
+    data['thresholds'] = thresholds_new
+    data['confusion_matrix'] = confusion_matrix
+    data['fids'] = fids
     if plot_f:
         print(f'threshold gf: {thresholds_new[1]}')
         print(f'threshold ef: {thresholds_new[2]}')
+    
 
 def hist_display_sweep(data, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs):
     
@@ -668,10 +687,10 @@ def plot_ramsey_sideband(data_list, attrs_list, y_list,
     plt.tight_layout()
     return x_list, y_list, z_list
     
-    
+
 def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], 
                    active_reset = False, threshold = 4, readouts_per_rep = 4, return_idata = False, return_ifreq = False, return_all_param = False, title='Ramsey',
-                   end_idx = None, start_idx = None):
+                   end_idx = None, start_idx = None, show_qubit_states = False):
     '''
     Returns_all_param = True: returns all the parameters of the fit i 
 
@@ -746,6 +765,7 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             t2 = p[3]
             t2_err = np.sqrt(pCov[3][3])
 
+
     axq = plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
     plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
     if fit:
@@ -767,7 +787,11 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
     if normalize[0]:
         axi,axq = normalize_data(axi, axq, data, normalize)
     
-    
+    if show_qubit_states:
+        yg = attrs['config']['device']['readout']['Ig']
+        ye = attrs['config']['device']['readout']['Ie']
+        axi.axhline(yg, color='tab:green', linestyle='--', label='g')  # Fixed hline
+        axi.axhline(ye, color='tab:orange', linestyle='--', label='e')  # Fixed hline
         
     plt.tight_layout()
     plt.show()
@@ -2437,6 +2461,10 @@ class MM_DualRail_Analysis:
                 elif not attrs['config']['expt']['parity_meas']: 
                     # print('not parity_meas')
                     fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
+                    print('ge', ge) 
+                    print('eg', eg)
+                    print('ee', ee)
+                    print('gg', gg)
                     fid_post_list.append(eg/(ge+eg))
                 elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
                     # print('reset_qubit_via_active_reset_after_first_meas')
