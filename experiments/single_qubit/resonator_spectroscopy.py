@@ -169,7 +169,7 @@ class ResonatorSpectroscopyExperiment(Experiment):
 
         return data
 
-    def analyze(self, data=None, fit=False, findpeaks=False, verbose=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=True, findpeaks=False, verbose=True, fitparams=None, **kwargs):
         if data is None:
             data=self.data
             
