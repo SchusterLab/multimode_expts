@@ -1,5 +1,5 @@
-# 3D Random Access Quantum Memory experiment code 
+# Multimode Experiment Code 
 
-Contributors: ZiqianLi, EeshG
+### Dependencies 
+slab - On branch Keysight
 
-Thanks Paul Varosy.
