@@ -27,7 +27,8 @@ class AmplitudeRabiProgram(MMRAveragerProgram):
         self.cfg.update(cfg.expt)
         self.checkZZ = self.cfg.expt.checkZZ
         self.checkEF = self.cfg.expt.checkEF
-        self.pulse_ge = self.cfg.expt.pulse_ge
+        self.pulse_ge_init = self.cfg.expt.pulse_ge_init
+        self.pulse_ge_after = self.cfg.expt.pulse_ge_after
         if self.checkEF:
             if 'pulse_ge' not in self.cfg.expt: self.pulse_ge = True
             else: self.pulse_ge = self.cfg.expt.pulse_ge
@@ -167,62 +168,14 @@ class AmplitudeRabiProgram(MMRAveragerProgram):
         else: qTest = self.qubits[0]
 
         # initializations as necessary
-        if self.pulse_ge:
+        if self.pulse_ge_init:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
             self.sync_all(0.05)
             
         # pre pulse
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.pre_sweep_pulse, prefix ='pre')
-            # for ii in range(len(cfg.expt.pre_sweep_pulse[0])):
-            #     # translate ch id to ch
-            #     if cfg.expt.pre_sweep_pulse[4][ii] == 1:
-            #         self.tempch = self.flux_low_ch
-            #     elif cfg.expt.pre_sweep_pulse[4][ii] == 2:
-            #         self.tempch = self.qubit_chs
-            #     elif cfg.expt.pre_sweep_pulse[4][ii] == 3:
-            #         self.tempch = self.flux_high_ch
-            #     elif cfg.expt.pre_sweep_pulse[4][ii] == 6:
-            #         self.tempch = self.storage_ch
-            #     elif cfg.expt.pre_sweep_pulse[4][ii] == 5:
-            #         self.tempch = self.f0g1_ch
-            #     elif cfg.expt.pre_sweep_pulse[4][ii] == 4:
-            #         self.tempch = self.man_ch
-            #     # print(self.tempch)
-            #     # determine the pulse shape
-            #     if cfg.expt.pre_sweep_pulse[5][ii] == "gaussian":
-            #         # print('gaussian')
-            #         self.pisigma_resolved = self.us2cycles(
-            #             cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-            #         self.add_gauss(ch=self.tempch[0], name="temp_gaussian"+str(ii),
-            #            sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-            #         self.setup_and_pulse(ch=self.tempch[0], style="arb", 
-            #                          freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-            #                          phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-            #                          gain=cfg.expt.pre_sweep_pulse[1][ii], 
-            #                          waveform="temp_gaussian"+str(ii))
-            #     elif cfg.expt.pre_sweep_pulse[5][ii] == "flat_top":
-            #         # print('flat_top')
-            #         self.pisigma_resolved = self.us2cycles(
-            #             cfg.expt.pre_sweep_pulse[6][ii], gen_ch=self.tempch[0])
-            #         self.add_gauss(ch=self.tempch[0], name="temp_gaussian"+str(ii),
-            #            sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-            #         self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
-            #                          freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-            #                          phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-            #                          gain=cfg.expt.pre_sweep_pulse[1][ii], 
-            #                          length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-            #                                                gen_ch=self.tempch[0]),
-            #                         waveform="temp_gaussian"+str(ii))
-            #     else:
-            #         self.setup_and_pulse(ch=self.tempch[0], style="const", 
-            #                          freq=self.freq2reg(cfg.expt.pre_sweep_pulse[0][ii], gen_ch=self.tempch[0]), 
-            #                          phase=self.deg2reg(cfg.expt.pre_sweep_pulse[3][ii]), 
-            #                          gain=cfg.expt.pre_sweep_pulse[1][ii], 
-            #                          length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
-            #                                                gen_ch=self.tempch[0]))
-            #     self.sync_all()
-
+          
         if self.pi_test_sigma > 0:
             if cfg.expt.pulse_type.lower() == "gauss":
                 self.set_pulse_registers(
@@ -317,6 +270,9 @@ class AmplitudeRabiProgram(MMRAveragerProgram):
                                      length=self.us2cycles(cfg.expt.post_sweep_pulse[2][ii], 
                                                            gen_ch=self.tempch[0]))
                 self.sync_all()
+        if self.pulse_ge_after:
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
+            self.sync_all(0.05)
         # align channels and measure
         self.sync_all(self.us2cycles(0.05))
         self.measure(

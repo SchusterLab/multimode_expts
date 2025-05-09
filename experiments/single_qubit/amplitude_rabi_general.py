@@ -177,7 +177,7 @@ class AmplitudeRabiGeneralProgram(MMRAveragerProgram):
 
         
 
-        if self.pulse_ge:
+        if self.pulse_ge_init:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
             self.sync_all(0.05)
 
@@ -202,8 +202,8 @@ class AmplitudeRabiGeneralProgram(MMRAveragerProgram):
         self.pulse(ch=self.qubit_chs[qTest])
         # self.sync_all()
 
-        # if self.checkEF: # map excited back to qubit ground state for measurement
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
+        if self.pulse_ge_after: # map excited back to qubit ground state for measurement
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
         
         self.sync_all()
         if cfg.expt.postpulse:
@@ -291,6 +291,8 @@ class AmplitudeRabiGeneralExperiment(Experiment):
         
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
+            if fitparams is None:
+                fitparams = [np.max(data['amps']), 0.1, 0, 0.1, 0, 0] # guess 
             # Remove the first and last point from fit in case weird edge measurements
             xdata = data['xpts']
 
