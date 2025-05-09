@@ -653,6 +653,7 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             return p_idata[1], np.sqrt(pCov[1][1]), t2, t2_err
         else: 
             return t2, t2_err
+
 def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey',
