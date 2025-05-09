@@ -276,7 +276,8 @@ class RamseyExperiment(Experiment):
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             # Remove the first and last point from fit in case weird edge measurements
             # fitparams = None
-            # fitparams=[8, 0.5, 0, 20, None, None]
+            if fitparams is None:
+                fitparams=[200,  0.2, 0, 200, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
             p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
@@ -317,26 +318,6 @@ class RamseyExperiment(Experiment):
 
         title = ('EF' if self.checkEF else '') + 'Ramsey' 
 
-        # plt.figure(figsize=(10, 6))
-        # plt.subplot(111,title=f"{title} (Ramsey Freq: {self.cfg.expt.ramsey_freq} MHz)",
-        #             xlabel="Wait Time [us]", ylabel="Amplitude [ADC level]")
-        # plt.plot(data["xpts"][:-1], data["amps"][:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     if isinstance(p, (list, np.ndarray)): 
-        #         pCov = data['fit_err_amps']
-        #         captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-        #         plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-        #         plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
-        #         plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
-        #         plt.legend()
-        #         print(f'Current pi pulse frequency: {f_pi_test}')
-        #         print(f"Fit frequency from amps [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}")
-        #         if p[1] > 2*self.cfg.expt.ramsey_freq: print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
-        #         print(f'Suggested new pi pulse frequencies from fit amps [MHz]:\n',
-        #               f'\t{f_pi_test + data["f_adjust_ramsey_amps"][0]}\n',
-        #               f'\t{f_pi_test + data["f_adjust_ramsey_amps"][1]}')
-        #         print(f'T2 Ramsey from fit amps [us]: {p[3]}')
 
         plt.figure(figsize=(10,9))
         plt.subplot(211, 
@@ -347,7 +328,10 @@ class RamseyExperiment(Experiment):
             p = data['fit_avgi']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgi']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                try:
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                except ValueError:
+                    print('Fit Failed ; aborting')
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -365,7 +349,11 @@ class RamseyExperiment(Experiment):
             p = data['fit_avgq']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgq']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                try:
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                except ValueError:
+                    print('Fit Failed ; aborting')
+                
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')

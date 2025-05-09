@@ -2,89 +2,25 @@
 # %reload_ext autoreload
 # %autoreload 2
 
+import random
+import itertools
 import numpy as np
+from numpy import abs
+from numpy.linalg import inv
 import matplotlib.pyplot as plt
-
-from qick import *
-from qick.helpers import gauss
-from tqdm import tqdm_notebook as tqdm
-
-import time
-import os
+plt.rcParams['figure.figsize'] = [10,6]
+plt.rcParams.update({'font.size': 14})
 import sys
 sys.path.append('/home/xilinx/jupyter_notebooks/')
 sys.path.append('C:\\_Lib\\python\\rfsoc\\rfsoc_multimode\\example_expts')
-import scipy as sp
-import json
-from scipy.fft import fft, fftfreq
 
+from qick import *
 from slab.instruments import *
-from slab.experiment import Experiment
-from slab.datamanagement import SlabFile
-from slab import get_next_filename, AttrDict
 from slab import Experiment, dsfit, AttrDict
-
-# Figure params
-plt.rcParams['figure.figsize'] = [10,6]
-plt.rcParams.update({'font.size': 14})
-
 from slab.dsfit import *
-import os
-from scipy.interpolate import griddata
-from numpy import mgrid, array, zeros,abs,pi,cos,transpose, linspace
-from matplotlib.ticker import MultipleLocator, FormatStrFormatter
-from tempfile import TemporaryFile
-font = {'family' : 'DejaVu Sans',
-        'weight' : 'normal',
-        'size'   : 15}
-import json
-from h5py import File
-from datetime import datetime
-import time
-from slab.datamanagement import SlabFile
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import json
-from slab.dsfit import *
-from scipy.optimize import curve_fit
 import experiments.fitting as fitter
-from numpy.linalg import inv
-
-# ---------fitting -----------------
 
 
-        # ypts = fids_post_list
-        # fit_post, err_post = fitter.fitexp(xpts, ypts, fitparams=[None, None, None, None])
-
-        # p = fit
-        # pCov = err
-        # rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
-        # abs_err = rel_err * np.exp(-1 / fit[3])
-        # fid = np.exp(-1 / fit[3])
-        # fid_err = abs_err
-        # captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
-
-        # p_post = fit_post
-        # pCov_post = err_post
-        # rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
-        # abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
-        # fid_post = np.exp(-1 / fit_post[3])
-        # fid_err_post = abs_err_post
-        # captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
-
-        # ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
-        # ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])
-
-## Normalize Data 
-# def add_qubit_states(axi, axq, attrs):
-#     '''Add g and e corresponding i,q values to the plot'''
-#     yg = attrs['config']['device']['readout']['Ig']
-#     ye = attrs['config']['device']['readout']['Ie']
-#     axi.hline(yg, 'o', color = 'tab:green', label='g')
-#     axi.hline(ye, 'o' color = 'tab:orange', label='e')
-
-    
 def normalize_data(axi, axq, data, normalize): 
     '''
     Display avgi and avgq data with the g,e,f corresponding i,q values
@@ -115,6 +51,7 @@ def normalize_data(axi, axq, data, normalize):
         ax.set_yticks(ax.get_yticks().tolist()) # need to set this first 
         ax.set_yticklabels(new_labels)
     return axi, axq
+
 def filter_data(II, threshold, readout_per_experiment=2):
     # assume the last one is experiment data, the last but one is for post selection
     result = []
@@ -152,22 +89,12 @@ def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
                 result_Ie.append(IQ[index_4k_plus_3])
     
     return np.array(result_Ig), np.array(result_Ie)
+
 ## histgram
 def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4):
     """
     span: histogram limit is the mean +/- span
     """
-    # if active_reset:
-    #     Ig = data['Ig'][readout_per_round-1::readout_per_round]
-    #     Qg = data['Qg'][readout_per_round-1::readout_per_round]
-    #     Ie = data['Ie'][readout_per_round-1::readout_per_round]
-    #     Qe = data['Qe'][readout_per_round-1::readout_per_round]
-    #     plot_f = False 
-    #     if 'If' in data.keys():
-    #         plot_f = True
-    #         If = data['If'][readout_per_round-1::readout_per_round]
-    #         Qf = data['Qf'][readout_per_round-1::readout_per_round]
-
     if active_reset:
         Ig, Qg = filter_data_IQ(data['Ig'], data['Qg'], threshold, readout_per_experiment=readout_per_round)
         # Qg = filter_data(data['Qg'], threshold, readout_per_experiment=readout_per_round)
@@ -182,7 +109,6 @@ def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_pe
             # Qf = filter_data(data['Qf'], threshold, readout_per_experiment=readout_per_round)
             print(len(If))
     else:
-
         Ig = data['Ig']
         Qg = data['Qg']
         Ie = data['Ie']
@@ -366,6 +292,8 @@ def hist_display(data, span=None, verbose=True, plot_e=True, plot_f=False, activ
     if plot_f:
         print(f'threshold gf: {thresholds_new[1]}')
         print(f'threshold ef: {thresholds_new[2]}')
+
+    return fids, thresholds_new, angle, confusion_matrix
     
 
 def hist_display_sweep(data, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs):
@@ -385,6 +313,7 @@ def hist_display_sweep(data, span=None, verbose=True, plot_e=True, plot_f=False,
         # print(f'threshold gf: {thresholds[1]}')
         # print(f'threshold ef: {thresholds[2]}')
     return fids, thresholds, angle, confusion_matrix
+
 def hist_new(data, threshold1=0, plot=True, span=None, verbose=True,active_reset=True, readout_per_round=2, threshold=-4):
     """
     span: histogram limit is the mean +/- span
@@ -432,38 +361,7 @@ def hist_new_display(data, threshold1, span=None, verbose=True, plot_e=True, plo
             counts_neg += 1
     print(counts_neg)
     print(f'|e> population (%): {100*counts/total_counts}')
-    
-        
-## t1
 
-# def t1_display(data, fit=True, title="$T_1$", **kwargs):
-#     data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
-#     data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
-#     data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
-    
-#     plt.figure(figsize=(10,10))
-#     plt.subplot(211, title=title, ylabel="I [ADC units]")
-#     plt.plot(data["xpts"][:-1], data["avgi"][:-1],'o-')
-#     if fit:
-#         p = data['fit_avgi']
-#         pCov = data['fit_err_avgi']
-#         captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-#         plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
-#         plt.xlabel('Time [us]')
-#         plt.legend()
-#         print(f'Fit T1 avgi [us]: {data["fit_avgi"][3]}')
-#     plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC units]")
-#     plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
-#     if fit:
-#         p = data['fit_avgq']
-#         pCov = data['fit_err_avgq']
-#         captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-#         plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgq"]), label=captionStr)
-#         plt.xlabel('Time [us]')
-#         plt.legend()
-#         print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')
-
-#     plt.show()
 ## Phase Sweep 
 def phase_sweep_display(temp_data, attrs, normalize=[False, 'g_data', 'e_data'], fit = True, fitparams=None):
         # make 3 subplots with first one showing amps, second one showing avgi, and third one showing avgq
@@ -533,6 +431,7 @@ def phase_sweep_display(temp_data, attrs, normalize=[False, 'g_data', 'e_data'],
 
     # Display the plots
     plt.show()
+
 ## Ramsey
 def filter_data(II, threshold, readout_per_experiment=2):
     # assume the last one is experiment data, the last but one is for post selection
@@ -571,6 +470,7 @@ def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
                 result_Ie.append(IQ[index_4k_plus_3])
     
     return np.array(result_Ig), np.array(result_Ie)
+
 def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
     read_num = readouts_per_rep
     rounds = attrs['config']['expt']['rounds']
@@ -599,64 +499,14 @@ def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
         Ilist.append(np.mean(Ig))
         Qlist.append(np.mean(Qg))
 
-
     return Ilist, Qlist
-# def plot_sideband_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, normalize = None, title="Sideband Sweep",
-#                         active_reset=False, readout_per_round=4, threshold=-4.0, xlabel='Time (us)', ylabel='Alpha '):
-#     plt.figure(figsize = (15,6))
-#     plt.subplot(111,xlabel='Time (us)',ylabel='Drive freq (MHz)')
-#     plt.title(title)
-
-#     if active_reset:
-#         # for each time, post select the single shot data
-#         znew = []
-        
-#         for jj in range(len(z_datalist)):
-#             Ilist = []
-#             for ii in range(len(z_datalist[jj])):
-#                 Ig, Qg = filter_data_IQ(z_datalist[jj][ii], z_datalist[jj][ii], threshold, readout_per_experiment=readout_per_round)
-#                 Ilist.append(np.mean(Ig))
-#             print(len(Ig))
-#             znew.append(Ilist)
-#         znew = np.array(znew)
-        
-#     else:
-        
-#         znew = np.array(z_datalist)
 
 
-#     cax = plt.pcolormesh(x_timelist,y_freqlist[:znew.shape[0]],znew)
-#     cbar = plt.colorbar()
-    
-    
-#     # if normalize: 
-#     #     # New normalization limits
-#     #     new_min, new_max = 0, 1
-
-#     #     # Apply new normalization
-#     #     norm = Normalize(vmin=new_min, vmax=new_max)
-#     #     cax.set_norm(norm)
-#     #     # Update colorbar to reflect new normalization
-#     #     cbar.set_ticks([0.0, 1.0])  # Set ticks at min and max of Z
-#     #     cbar.set_ticklabels([r'$g$', r'$f$'])  # Custom labels
-
-
-#     if vlines is not None:
-#         for vline in vlines:
-#             plt.axvline(vline, color='r', ls='--', label = str(vline))
-#     if hlines is not None:
-#         for hline in hlines:
-#             plt.axhline(hline, color='r', ls='--', label = str(hline))
-#     plt.xlabel(xlabel)
-#     plt.ylabel(ylabel)
-#     plt.legend()
-#     plt.tight_layout()
 def plot_ramsey_sideband(data_list, attrs_list, y_list,
                    active_reset = False, threshold = 4, readouts_per_rep = 4, title='Ramsey', xlabel='Time (us)', ylabel='Alpha', hlines=None, vlines=None):
     '''
     Plots chevron for kerr measurement with ylist as alpha, x list as time, and z as I value 
     '''
-
     Ilist_full = []
     
     for idx, data in enumerate(data_list): 
@@ -693,7 +543,6 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
                    end_idx = None, start_idx = None, show_qubit_states = False):
     '''
     Returns_all_param = True: returns all the parameters of the fit i 
-
     '''
     try: 
         if attrs['config']['expt']['echoes'][0]: # if there are echoes
@@ -804,6 +653,7 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
             return p_idata[1], np.sqrt(pCov[1][1]), t2, t2_err
         else: 
             return t2, t2_err
+
 def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_list, 
                              active_reset = False, threshold = 4, readouts_per_rep = 4,
                              ramsey_freq=0.02, initial_freq=3500, fit=True, fitparams = None, normalize= [False, 'g_data', 'e_data'], title='Ramsey',
@@ -908,83 +758,6 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
     plt.show()
 
     return np.array(fit_i_list) - fit_i_list[0], np.array(fit_i_err_list)
-
-# def parity_mapping_display(data, fit=True, fitparams=None,
-#                             title='sideband_rabi', active_reset = False, threshold = 4, readouts_per_rep = 4):
-        
-#     # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-#     # Remove the first and last point from fit in case weird edge measurements
-#     # fitparams = [None, 1/max(data['xpts']), None, None]
-#     # fitparams = None
-
-#     if active_reset:
-#         Ilist, Qlist = post_select_averager_data(data['idata'], threshold, readouts_per_rep)
-        
-#     else:
-        
-#         Ilist = data["avgi"][0:-1]
-#         Qlist = data["avgq"][0:-1]
-
-#     p_avgi, pCov_avgi = fitter.fitdecaysin(
-#         data['xpts'], Ilist, fitparams=fitparams)
-#     p_avgq, pCov_avgq = fitter.fitdecaysin(
-#         data['xpts'], Qlist, fitparams=fitparams)
-#     # p_amps, pCov_amps = fitter.fitdecaysin(
-#     #     data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-#     data['fit_avgi'] = p_avgi
-#     data['fit_avgq'] = p_avgq
-#     # data['fit_amps'] = p_amps
-#     data['fit_err_avgi'] = pCov_avgi
-#     data['fit_err_avgq'] = pCov_avgq
-#     # data['fit_err_amps'] = pCov_amps
-
-#     xpts_ns = data['xpts']*1e3
-
-#     plt.figure(figsize=(10, 8))
-
-#     plt.subplot(
-#         211, title=title, ylabel="I [adc level]")
-#     plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
-#     if fit:
-#         p = data['fit_avgi']
-#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-#         if p[2] > 180:
-#             p[2] = p[2] - 360
-#         elif p[2] < -180:
-#             p[2] = p[2] + 360
-#         if p[2] < 0:
-#             pi_length = (1/2 - p[2]/180)/2/p[1]
-#         else:
-#             pi_length = (3/2 - p[2]/180)/2/p[1]
-#         pi2_length = pi_length/2
-#         print('Decay from avgi [us]', p[3])
-#         print(f'Pi length from avgi data [us]: {pi_length}')
-#         print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
-#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-
-#     print()
-#     plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
-#     plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
-#     if fit:
-#         p = data['fit_avgq']
-#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-#         if p[2] > 180:
-#             p[2] = p[2] - 360
-#         elif p[2] < -180:
-#             p[2] = p[2] + 360
-#         if p[2] < 0:
-#             pi_length = (1/2 - p[2]/180)/2/p[1]
-#         else:
-#             pi_length = (3/2 - p[2]/180)/2/p[1]
-#         pi2_length = pi_length/2
-#         print('Decay from avgq [us]', p[3])
-#         print(f'Pi length from avgq data [us]: {pi_length}')
-#         print(f'Pi/2 length from avgq data [us]: {pi2_length}')
-#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-#     plt.tight_layout()
-#     plt.show()
 
 
 def cross_kerr_display(expt_path, prev_data, file_list, label_list, color_list,  orig_idx = 0,
@@ -1092,6 +865,7 @@ def cross_kerr_display(expt_path, prev_data, file_list, label_list, color_list, 
     plt.show()
 
     return np.array(fit_i_list) - fit_i_list[orig_idx], np.array(fit_i_err_list)
+
 ## Amplitude Rabi
 def amp_display(data, sigma = 0.04, fit=True, fitparams=None, vline = None, normalize = [False, 'g_data', 'e_data'], **kwargs):
     if fit:
@@ -1150,6 +924,7 @@ def amp_display(data, sigma = 0.04, fit=True, fitparams=None, vline = None, norm
         axi,axq = normalize_data(axi, axq, data, normalize)
 
     plt.show()
+
 ## Cavity spectroscopy
 def spectroscopy_display(data, fit=True, signs=[1,1,1], hlines=None, vlines=None,  title='SPectroscopy'):
     xdata = data['xpts'][1:-1]
@@ -1279,6 +1054,7 @@ def cavity_spec_display(data, findpeaks=False, verbose=True, fitparams=None, fit
     plt.subplot(313, xlabel="Cavity Frequency [MHz]", ylabel="Phases [ADC units]")
     plt.plot(xpts, data["phases"][1:-1],'o-')
     plt.show()
+
 ## Qubit spectroscopy
 def qubit_spectroscopy_display(data, fit=True, signs=[1,1,1], hlines=None, vlines=None,  title='Qubit SPectroscopy'):
     xdata = data['xpts'][1:-1]
@@ -1350,6 +1126,7 @@ def plot_spectroscopy1(xdata_g, g_data, xdata_e, e_data, fitparams=None, title="
     plt.plot(xdata_e, e_data,'.',label='Qubit |e>', color='b')
     plt.plot(xdata_e, fitter.hangerS21func_sloped(xdata_e, *data2_e1["fit"]), '--', color='b', label='Fit |e>')
     plt.legend()
+
 ## cavity DC sweep
 def plot_cavity_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, title="Sideband Sweep"):
     plt.figure(figsize = (15,6))
@@ -1363,6 +1140,7 @@ def plot_cavity_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=No
     if hlines is not None:
         for hline in hlines:
             plt.axhline(hline, color='r', ls='--')
+
 ## ECD pulse spectroscopy
 def ECD_pulse_spectroscopy( data=None, fit=True, signs=[1,1,1], fitparams = None,normalize= [False, 'g_data', 'e_data'], **kwargs):
     #if data is None:
@@ -1409,76 +1187,7 @@ def ECD_pulse_spectroscopy( data=None, fit=True, signs=[1,1,1], fitparams = None
 
     plt.tight_layout()
     plt.show()
-## length rabi
-# def length_rabi_display(data, fit=True, fitparams=None, title='sideband_rabi', vlines = []):
-        
-#     # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-#     # Remove the first and last point from fit in case weird edge measurements
-#     # fitparams = [None, 1/max(data['xpts']), None, None]
-#     # fitparams = None
-#     p_avgi, pCov_avgi = fitter.fitdecaysin(
-#         data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-#     p_avgq, pCov_avgq = fitter.fitdecaysin(
-#         data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-#     p_amps, pCov_amps = fitter.fitdecaysin(
-#         data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-#     data['fit_avgi'] = p_avgi
-#     data['fit_avgq'] = p_avgq
-#     data['fit_amps'] = p_amps
-#     data['fit_err_avgi'] = pCov_avgi
-#     data['fit_err_avgq'] = pCov_avgq
-#     data['fit_err_amps'] = pCov_amps
 
-#     xpts_ns = data['xpts']*1e3
-
-#     plt.figure(figsize=(10, 8))
-
-#     plt.subplot(
-#         211, title=title, ylabel="I [adc level]")
-#     plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
-#     if fit:
-#         p = data['fit_avgi']
-#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-#         if p[2] > 180:
-#             p[2] = p[2] - 360
-#         elif p[2] < -180:
-#             p[2] = p[2] + 360
-#         if p[2] < 0:
-#             pi_length = (1/2 - p[2]/180)/2/p[1]
-#         else:
-#             pi_length = (3/2 - p[2]/180)/2/p[1]
-#         period = 1/p[1]
-#         pi2_length = pi_length - period/4 #fitter.decaysin(, *p)#pi_length/2
-#         print('Decay from avgi [us]', p[3])
-#         print(f'Pi length from avgi data [us]: {pi_length}')
-#         print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
-#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-#         for vline in vlines:
-#             plt.axvline(vline, color='0.2', linestyle='--')
-
-#     print()
-#     plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
-#     plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
-#     if fit:
-#         p = data['fit_avgq']
-#         plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-#         if p[2] > 180:
-#             p[2] = p[2] - 360
-#         elif p[2] < -180:
-#             p[2] = p[2] + 360
-#         if p[2] < 0:
-#             pi_length = (1/2 - p[2]/180)/2/p[1]
-#         else:
-#             pi_length = (3/2 - p[2]/180)/2/p[1]
-#         pi2_length = pi_length/2
-#         print('Decay from avgq [us]', p[3])
-#         print(f'Pi length from avgq data [us]: {pi_length}')
-#         print(f'Pi/2 length from avgq data [us]: {pi2_length}')
-#         plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-#         plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-#     plt.tight_layout()
-#     plt.show()
 def phase_calibration(xpts, ypts, fitparams=None, vlines=None, hlines=None, min_pi = False,
                        title='Phase Calibration', xlabel='Phase (deg)', ylabel='|g> population'):
     '''
@@ -1537,6 +1246,7 @@ def phase_calibration(xpts, ypts, fitparams=None, vlines=None, hlines=None, min_
     plt.axvline(pi_length, color='0.2', linestyle='--')
     # plt.close()
     return pi_length
+
 ## RB
 def RB_extract(temp_data, conf=False):
     temp_data['confusion_matrix'] = [0.9922999999999998, 0.007700000000000151, 0.024050000000000002, 0.97595]
@@ -1592,23 +1302,6 @@ def plot_lengthrabi_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vline
             plt.axhline(hline, color='r', ls='--', label = str(hline))
     plt.legend()
     plt.tight_layout()
-# def plot_sideband_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, normalize = None, title="Sideband Sweep", xlabel = None, ylabel = None):
-#     plt.figure(figsize = (15,6))
-#     plt.subplot(111,xlabel=xlabel,ylabel=ylabel)
-#     plt.title(title)
-#     cax = plt.pcolormesh(x_timelist,y_freqlist[:z_datalist.shape[0]],z_datalist)
-#     cbar = plt.colorbar()
-
-
-
-#     if vlines is not None:
-#         for vline in vlines:
-#             plt.axvline(vline, color='r', ls='--', label = str(vline))
-#     if hlines is not None:
-#         for hline in hlines:
-#             plt.axhline(hline, color='r', ls='--', label = str(hline))
-#     plt.legend()
-#     plt.tight_layout()
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1646,6 +1339,7 @@ def normalize_data(axi, axq, data, normalize):
         ax.set_yticks(ax.get_yticks().tolist()) # need to set this first 
         ax.set_yticklabels(new_labels)
     return axi, axq
+
 def filter_data(II, threshold, readout_per_experiment=2):
     # assume the last one is experiment data, the last but one is for post selection
     result = []
@@ -1683,6 +1377,7 @@ def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
                 result_Ie.append(IQ[index_4k_plus_3])
     
     return np.array(result_Ig), np.array(result_Ie)
+
 def post_select_averager_data(data, threshold, readout_per_round=4):
     '''
     Post select the data based on the threshold 
@@ -1804,6 +1499,7 @@ def length_rabi_display(data, fit=True, fitparams=None,  normalize= [False, 'g_d
 
 
     return Ilist
+
 ## sideband rabi sweep
 def plot_sideband_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, normalize = None, title="Sideband Sweep",
                         active_reset=False, readout_per_round=4, threshold=-4.0, factor=1.0):
@@ -1856,6 +1552,7 @@ def plot_sideband_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=
     
 def normalize_data1(data, min_val, max_val): 
     return (data - min_val) / (max_val - min_val)
+
 def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
     read_num = readouts_per_rep
     rounds = attrs['config']['expt']['rounds']
@@ -1886,6 +1583,8 @@ def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
 
 
     return Ilist, Qlist
+
+
 def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, readouts_per_rep = 4, title="$T_1$", **kwargs):
     if active_reset:
         Ilist, Qlist = post_select_raverager_data(data, attrs, threshold, readouts_per_rep)
@@ -1929,6 +1628,7 @@ def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, read
         return t1_i, t1_i_err
 
     plt.show()
+
 def plot_sideband_sweep_long(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, title="Sideband Sweep"):
     plt.figure(figsize = (15,8))
     plt.subplot(111,ylabel='Time (us)',xlabel='Drive freq (MHz)')
@@ -1954,6 +1654,7 @@ def plot_f0g1_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None
     if hlines is not None:
         for hline in hlines:
             plt.axhline(hline, color='r', ls='--')
+
 ## Spectroscopy
 def qubit_spectroscopy_display(data, fit=True, signs=[1,1,1], title='Qubit SPectroscopy', vlines=None):
     xdata = data['xpts'][1:-1]
@@ -2016,9 +1717,9 @@ def plot_spectroscopy1(xdata_g, g_data, xdata_e, e_data, fitparams=None, title="
             plt.axvline(vline, c='k', ls='--')
     plt.legend()
     plt.show()
+
+
 ## Randomized Benchamarking BeamSplitter Check
-import numpy as np
-import matplotlib.pyplot as plt
 
 class MM_DualRail_Analysis: 
 
@@ -2636,8 +2337,6 @@ class MM_DualRail_Analysis:
         return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
 
 
-import random
-import numpy as np
 
 # Calculate inverse rotation
 matrix_ref = {}
@@ -2765,6 +2464,7 @@ def generate_sequence(rb_depth, iRB_gate_no=-1, debug=False, matrix_ref=matrix_r
         print(gate_list)
         print(max_index)
     return gate_list, final_matrix
+
 ## Automatic calibration code
 def find_on_resonant_frequency(y_list, time_points, frequency_points, fitparams=None):
     """
@@ -2860,7 +2560,6 @@ def cross_storage_phase_analysis(attrs, gate_length, from_fitting, target_mode_n
         cross_phase_overhead = (from_fitting-gate_length*idling_frequency*180*2 -self_overhead*2 ) % -360
     return cross_phase_overhead
 
-import itertools
 
 def generate_mode_combinations(mode_list, num_modes_sim_rb, skip_combos):
     """
@@ -3078,78 +2777,6 @@ def fit_fidelity_reference(xlist_ref, fids_list_ref):
     return fit_params_ref, err_ref
 
 
-import numpy as np
-import matplotlib.pyplot as plt
-
-# def plot_fidelity(xlist, fids_list, ebars_list, fidelity_list, fit_params_list, xlist_ref, fids_list_ref, ebars_list_ref, fit_params_ref, captionStr_ref, mode_list, close_plt=False, scale_factor=1, scale_factor_ref=1.5):
-#     """
-#     Plots the fidelity data and the fitted results, including reference data.
-
-#     Parameters:
-#     xlist (list): List of depth values.
-#     fids_list (list of lists): List of fidelity values for each mode.
-#     ebars_list (list of lists): List of error bars for each mode.
-#     fidelity_list (list): List of computed fidelities for each mode.
-#     fit_params_list (list): List of fit parameters for each mode.
-#     xlist_ref (list): List of depth values for the reference data.
-#     fids_list_ref (list): List of fidelity values for the reference data.
-#     ebars_list_ref (list): List of error bars for the reference data.
-#     fit_params_ref (list): List of fit parameters for the reference data.
-#     captionStr_ref (str): Caption for the reference data.
-#     mode_list (list): List of modes.
-#     close_plt (bool): Whether to close the plot after showing.
-#     scale_factor (float): Scale factor for xlist.
-#     scale_factor_ref (float): Scale factor for xlist_ref.
-#     """
-#     fig, axs = plt.subplots(1, 2, figsize=(20, 5))
-
-#     # Unscaled plot
-#     axs[0].set_ylabel("Fidelity")
-#     color_list = ['r', 'g']
-
-#     for i in range(len(fids_list)):
-#         axs[0].errorbar(xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Mode {i+1} Data', color=color_list[i])
-#         fit_x = np.linspace(min(xlist), max(xlist), 100)
-#         fit_y = fitter.expfunc(fit_x, *fit_params_list[i])
-#         axs[0].plot(fit_x, fit_y, color=color_list[i], label=f'Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
-
-#     axs[0].errorbar(xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'{captionStr_ref} Data', color='b')
-#     fit_x_ref = np.linspace(min(xlist_ref), max(xlist_ref), 100)
-#     fit_y_ref = fitter.expfunc(fit_x_ref, *fit_params_ref)
-#     fidelity_ref = 1 - ((1 - np.exp(-1 / fit_params_ref[3])) - (1 - np.exp(-1 / fit_params_ref[3])) / 3)
-#     axs[0].plot(fit_x_ref, fit_y_ref, color='b', label=f'{captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
-
-#     fidelity_list_wrt_ref = [np.sqrt(fidelity / fidelity_ref) for fidelity in fidelity_list]
-#     axs[0].set_title('Sim RB on storage modes ' + str(mode_list) + ' with fidelities wrt ref ' + str(np.round(fidelity_list_wrt_ref, 4)))
-#     axs[0].set_xlabel('Gates')
-#     axs[0].legend()
-
-#     # Scaled plot
-#     scaled_xlist = [x * scale_factor for x in xlist]
-#     scaled_xlist_ref = [x * scale_factor_ref for x in xlist_ref]
-
-#     for i in range(len(fids_list)):
-#         axs[1].errorbar(scaled_xlist, fids_list[i], yerr=ebars_list[i], fmt='o', capsize=5, label=f'Scaled Mode {i+1} Data', color=color_list[i])
-#         fit_x = np.linspace(min(scaled_xlist), max(scaled_xlist), 100)
-#         fit_y = fitter.expfunc(fit_x / scale_factor, *fit_params_list[i])
-#         axs[1].plot(fit_x, fit_y, color=color_list[i], label=f'Scaled Mode {i+1} Fit: Depth={fit_params_list[i][3]:.2f}, Fidelity={fidelity_list[i]:.4f}')
-
-#     axs[1].errorbar(scaled_xlist_ref, fids_list_ref, yerr=ebars_list_ref, fmt='o', capsize=5, label=f'Scaled {captionStr_ref} Data', color='b')
-#     fit_x_ref = np.linspace(min(scaled_xlist_ref), max(scaled_xlist_ref), 100)
-#     fit_y_ref = fitter.expfunc(fit_x_ref / scale_factor_ref, *fit_params_ref)
-#     axs[1].plot(fit_x_ref, fit_y_ref, color='b', label=f'Scaled {captionStr_ref} Fit: Depth={fit_params_ref[3]:.2f}, Fidelity={fidelity_ref:.4f}')
-
-#     axs[1].set_title('Scaled Sim RB on storage modes ' + str(mode_list))
-#     axs[1].set_xlabel('Time')
-#     axs[1].legend()
-
-#     if close_plt: 
-#         plt.close()
-#     else: 
-#         plt.show()
-
-#     return fidelity_list_wrt_ref
-
 def find_gate_fidelity(p_survival, p_survival_err, dim, interleaved = False, p_survival_interleaved_upon = 1, p_interleaved_err = 1):
     '''
     Computes gate fidelity according to https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.109.080505 
@@ -3269,6 +2896,7 @@ def plot_fidelity(xlist, fids_list, ebars_list,
         plt.show()
 
     return fidelity_list_wrt_ref, fidelity_list_wrt_ref_err
+
 def get_gate_time_RBAM(target_mode_no, spec_mode_nos, cfg ): 
     '''computes total idling time for the spectator mode pulse sequence'''
     mm_base = MM_rb_base(cfg = cfg)
@@ -3340,42 +2968,6 @@ def parity_post_select_modified(data, attrs, readout_threshold, readouts_per_rep
     
     return Ilist, Qlist
 
-# def parity_post_select(data, attrs, threshold, readouts_per_rep):
-#     '''
-#     Post select the data based on the threshold, every readouts_per_rep readouts
-
-#     OLD VERSION: EG couldn't understand here; better code with comments above
-#     '''
-#     Ilist = []
-#     Qlist = []
-
-
-#     # assume the 3rd one is post selection data, 4th to readouts_per_rep is actual data
-
-#     II = data['idata']
-#     IQ = data['qdata']
-    
-    
-    
-#     for k in range(len(II) // readouts_per_rep):
-#         index_4k_plus_2 = readouts_per_rep * k + 2
-#         index_4k_plus_end = readouts_per_rep * k + readouts_per_rep-1
-
-#         result_Ig = []
-#         result_Ie = []
-        
-#         # Ensure the indices are within the list bounds
-#         if index_4k_plus_2 < len(II) and index_4k_plus_end < len(II):
-#             # Check if the value at 4k+2 exceeds the threshold
-#             if II[index_4k_plus_2] < threshold:
-#                 # Add the value at 4k+3 to the result list
-#                 for jj in range(index_4k_plus_2+1, index_4k_plus_end+1):
-#                     result_Ig.append(II[jj])
-#                     result_Ie.append(IQ[jj])
-
-#             Ilist.append(result_Ig)
-#             Qlist.append(result_Ie)
-#     return Ilist, Qlist
 def consistency_post_selection(meas_records, cutoff_n = 3): 
     '''Check if measurement record is consistent with the parity measurement
         up to cutoff_n measurements
@@ -3476,7 +3068,6 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
                         consistent_parity_check_bool = False, consistent_cutoff = 3, title='Ramsey'):
     '''
     Convert each traces into 0/1 digits 
-
     '''
     state_string_list = []
     if active_reset:
@@ -3530,3 +3121,4 @@ def parity_temp_display(data, attrs, active_reset = False, threshold = 4, readou
         print('len of state string list after consistency check', len(state_string_list))
 
     return data, state_string_list
+

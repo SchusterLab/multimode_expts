@@ -1,15 +1,11 @@
-
 from qick import *
 import numpy as np
-from qick.helpers import gauss
-import time
 from slab import AttrDict
 from dataset import * 
 from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
-import random
 
-        
+
 class MM_base(): 
     def __init__(self, cfg):
         '''
@@ -55,13 +51,6 @@ class MM_base():
                 prepulse_str[idx][-1] = 180
         return prepulse_str 
     
-    # for f0g1 randomized benchmarking 
-
-    # def convert_rb_sequence_to_gates(self, rb_sequences): 
-    #     '''
-    #     rb_sequences: []
-    #     '''
-
     
     def MM_base_initialize(self): 
         '''
@@ -691,7 +680,8 @@ class MM_base():
     # def post_select_histogram(self):
 
     # ----------------------------------------------------- #Single shot analysis code # ----------------------------------------------------- #    
-    def filter_data_IQ(self, II, IQ, threshold, readout_per_experiment=2):
+    @staticmethod
+    def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
         # assume the last one is experiment data, the last but one is for post selection
         result_Ig = []
         result_Ie = []
@@ -889,386 +879,17 @@ class MM_base():
 
     # g states for q0
 
-    
 
-
-    
-
-# class MM_rb_base(MM_base): 
-#     def __init__(self, cfg):
-#         ''' rb base is base class of f0g1 rb for storage modes '''
-#         super().__init__( cfg)
-#         self.init_gate_length() # creates the dictionary of gate lengths
-    
-#     def init_gate_length(self): 
-#         ''' Creates a dictionary of the form 
-#         gate_t_length = {
-#         'pi_ge_length': 60,
-#         'hpi_ge_length': 60,
-#         'pi_ef_length': 60,
-#         'f0g1_length': 270,
-#         'M1S1_length': 400,
-#         'M1S2_length': 400,
-#         'M1S3_length': 400,
-#         'M1S4_length': 400,
-#         'M1S5_length': 400,
-#         'M1S6_length': 400,
-#         'M1S7_length': 400,}
-
-#         Note gate time already includes the sync time  
-#         '''
-#         self.gate_t_length = {}
-#         self.gate_t_length['pi_ge_length'] = self.get_total_time([['qubit', 'ge', 'pi', 0]], gate_based=True, cycles=True)
-#         self.gate_t_length['hpi_ge_length'] = self.get_total_time([['qubit', 'ge', 'hpi', 0]], gate_based=True, cycles=True)
-#         self.gate_t_length['pi_ef_length'] = self.get_total_time([['qubit', 'ef', 'pi', 0]], gate_based=True, cycles=True)
-#         self.gate_t_length['f0g1_length'] = self.get_total_time([['man', 'M1', 'pi', 0]], gate_based=True, cycles=True)
-#         for storage_no in range(1, 8):
-#             self.gate_t_length[f'M1S{storage_no}_length'] = self.get_total_time([['storage', 'M1-S' + str(storage_no), 'pi', 0]], gate_based=True, cycles=True)
-#         # print(self.gate_t_length)
-#         return None
-
-
-
-      
-
-    
-#     """
-#     Single qubit RB sequence generator
-#     Gate set = {I, +-X/2, +-Y/2, +-Z/2, X, Y, Z}
-#     """
-#     ## generate sequences of random pulses
-#     ## 1:Z,   2:X, 3:Y
-#     ## 4:Z/2, 5:X/2, 6:Y/2
-#     ## 7:-Z/2, 8:-X/2, 9:-Y/2
-#     ## 0:I
-#     ## Calculate inverse rotation
-#     matrix_ref = {}
-#     # Z, X, Y, -Z, -X, -Y
-#     matrix_ref['0'] = np.matrix([[1, 0, 0, 0, 0, 0],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 1, 0, 0, 0],
-#                                     [0, 0, 0, 1, 0, 0],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [0, 0, 0, 0, 0, 1]])
-#     matrix_ref['1'] = np.matrix([[0, 0, 0, 1, 0, 0],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 0, 0, 0, 1],
-#                                     [1, 0, 0, 0, 0, 0],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [0, 0, 1, 0, 0, 0]])
-#     matrix_ref['2'] = np.matrix([[0, 0, 0, 1, 0, 0],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [0, 0, 1, 0, 0, 0],
-#                                     [1, 0, 0, 0, 0, 0],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 0, 0, 0, 1]])
-#     matrix_ref['3'] = np.matrix([[0, 0, 1, 0, 0, 0],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 0, 1, 0, 0],
-#                                     [0, 0, 0, 0, 0, 1],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [1, 0, 0, 0, 0, 0]])
-#     matrix_ref['4'] = np.matrix([[0, 0, 0, 0, 1, 0],
-#                                     [1, 0, 0, 0, 0, 0],
-#                                     [0, 0, 1, 0, 0, 0],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 0, 1, 0, 0],
-#                                     [0, 0, 0, 0, 0, 1]])
-#     matrix_ref['5'] = np.matrix([[0, 0, 0, 0, 0, 1],
-#                                     [0, 1, 0, 0, 0, 0],
-#                                     [1, 0, 0, 0, 0, 0],
-#                                     [0, 0, 1, 0, 0, 0],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [0, 0, 0, 1, 0, 0]])
-#     matrix_ref['6'] = np.matrix([[0, 1, 0, 0, 0, 0],
-#                                     [0, 0, 0, 1, 0, 0],
-#                                     [0, 0, 1, 0, 0, 0],
-#                                     [0, 0, 0, 0, 1, 0],
-#                                     [1, 0, 0, 0, 0, 0],
-#                                     [0, 0, 0, 0, 0, 1]])
-
-#     def no2gate(self, no):
-#         g = 'I'
-#         if no==1:
-#             g = 'X'
-#         elif no==2:
-#             g = 'Y'
-#         elif no==3:
-#             g = 'X/2'
-#         elif no==4:
-#             g = 'Y/2'
-#         elif no==5:
-#             g = '-X/2'
-#         elif no==6:
-#             g = '-Y/2'  
-
-#         return g
-
-#     def gate2no(self, g):
-#         no = 0
-#         if g=='X':
-#             no = 1
-#         elif g=='Y':
-#             no = 2
-#         elif g=='X/2':
-#             no = 3
-#         elif g=='Y/2':
-#             no = 4
-#         elif g=='-X/2':
-#             no = 5
-#         elif g=='-Y/2':
-#             no = 6
-
-#         return no
-
-#     def generate_sequence(self, rb_depth, iRB_gate_no=-1, debug=False, matrix_ref=matrix_ref):
-#         gate_list = []
-#         for ii in range(rb_depth):
-#             gate_list.append(random.randint(1, 6))   # from 1 to 6
-#             if iRB_gate_no > -1:   # performing iRB
-#                 gate_list.append(iRB_gate_no)
-
-#         a0 = np.matrix([[1], [0], [0], [0], [0], [0]]) # initial state
-#         anow = a0
-#         for i in gate_list:
-#             anow = np.dot(matrix_ref[str(i)], anow)
-#         anow1 = np.matrix.tolist(anow.T)[0]
-#         max_index = anow1.index(max(anow1))
-#         # inverse of the rotation
-#         inverse_gate_symbol = ['-Y/2', 'X/2', 'X', 'Y/2', '-X/2']
-#         if max_index == 0:
-#             pass
-#         else:
-#             gate_list.append(self.gate2no(inverse_gate_symbol[max_index-1]))
-#         if debug:
-#             print(gate_list)
-#             print(max_index)
-#         return gate_list
-
-#     def random_pick_from_lists(self, a):
-#         # Initialize index pointers for each sublist
-#         indices = [0] * len(a)
-#         # Total number of elements to pick
-#         total_elements = sum(len(sublist) for sublist in a)
-#         # Output list
-#         b = []
-#         # List to track which sublist each element was picked from
-#         origins = []
-
-#         # Continue until all elements are picked
-#         while len(b) < total_elements:
-#             # Find all sublists that have elements left to pick
-#             available = [i for i in range(len(a)) if indices[i] < len(a[i])]
-#             # Randomly select one of the available sublists
-#             chosen_list = random.choice(available)
-#             # Pick the element from the chosen sublist and append to b
-#             b.append(a[chosen_list][indices[chosen_list]])
-#             # Record the origin of the picked element
-#             origins.append(chosen_list)
-#             # Update the index pointer for the chosen sublist
-#             indices[chosen_list] += 1
-
-#         return b, origins
-
-#     def find_unique_elements_and_positions(self, lst):
-#         unique_elements = []
-#         first_positions = {}
-#         last_positions = {}
-
-#         # Iterate over the list to find the first and last occurrence of each element
-#         for idx, elem in enumerate(lst):
-#             # Update the last position for every occurrence
-#             last_positions[elem] = idx
-#             # If the element is encountered for the first time, record its first position
-#             if elem not in first_positions:
-#                 unique_elements.append(elem)
-#                 first_positions[elem] = idx
-
-#         # Create lists of the positions in the order of unique elements
-#         first_pos_list = [first_positions[elem] for elem in unique_elements]
-#         last_pos_list = [last_positions[elem] for elem in unique_elements]
-
-#         return unique_elements, first_pos_list, last_pos_list
-
-#     def gate2time(self, t0, gate_name, gate_t_length):
-
-#         # for each middle/final gate: M1-Si-->sync(10ns)-->f0g1-->sync(10ns)-->ef pi pulse-->sync(10ns)-->qubit rb gate-->sync(10ns)-->ef pi pulse-->sync(10ns)-->f0g1-->sync(10ns)-->M1-Si-->sync(10ns)
-#         # for each first gate: qubit rb gate-->sync(10ns)-->ef pi pulse-->sync(10ns)-->f0g1-->sync(10ns)-->M1-Si-->sync(10ns)
-#         # t0: 1*7 list keeps tracking the last completed gate on each storage mode
-
-#         # return 
-#         # tfinal: final time spot, it is a 1*7 list corresponding to previous last operation time (the end time) on Si
-
-#         sync_t = 0 #4   # 4 cycles of sync between pulses
-#         tfinal = []
-#         for i in t0:
-#             tfinal.append(i)
-
-#         if gate_name[1] == 'M' or gate_name[1] == 'L':
-
-#             sync_total = sync_t*7  # total time for sync
-#             f0g1_total = gate_t_length['f0g1_length']*2
-#             ef_total = gate_t_length['pi_ef_length']*2
-#             if int(gate_name[0]) in [1,2]:
-#                 ge_total = gate_t_length['pi_ge_length']
-#             else:
-#                 ge_total = gate_t_length['hpi_ge_length']
-
-#             m1si_name = 'M1S'+gate_name[-1]+'_length'
-#             M1Si_total = gate_t_length[m1si_name]*2
-
-#             tfinal[int(gate_name[2])-1] = sync_total+f0g1_total+ef_total+ge_total+M1Si_total + max(t0)
-#             gatelength = sync_total+f0g1_total+ef_total+ge_total+M1Si_total
-#         else:  # first pulse is different
-
-#             sync_total = sync_t*4  # total time for sync
-#             f0g1_total = gate_t_length['f0g1_length']*1
-#             ef_total = gate_t_length['pi_ef_length']*1
-#             if int(gate_name[0]) in [1,2]:
-#                 ge_total = gate_t_length['pi_ge_length']
-#             else:
-#                 ge_total = gate_t_length['hpi_ge_length']
-
-#             m1si_name = 'M1S'+gate_name[-1]+'_length'
-#             M1Si_total = gate_t_length[m1si_name]*1
-
-#             tfinal[int(gate_name[2])-1] = sync_total+f0g1_total+ef_total+ge_total+M1Si_total + max(t0)
-#             gatelength = sync_total+f0g1_total+ef_total+ge_total+M1Si_total
-
-#         return tfinal, gatelength
-
-#     def RAM_rb(self, storage_id, depth_list, cycles2us = 0.0023251488095238095):
-
-#         """
-#         Multimode RAM RB generator with VZ speicified
-#         Gate set = {+-X/2, +-Y/2, X, Y}
-#         storage_id: a list specifying the operation on storage i, eg [1,3,5] means operation on S1, S3,S5
-#         depth_list: a list specifying the individual rb depth on corresponding storage specified in storage_id list
-
-#         depth_list and storage_id should have the same length
-
-#         phase_overhead: a 7*7 matrix showing f0g1+[M1S1, ..., M1S7] pi swap's phase overhead to [S1, ..., S7] (time independent part). 
-#         phase_overhead[i][j] is M1-S(j+1) swap's+f0g1 phase overhead on M1-S(i+1) (only half of it, a V gate is 2*phase_overhead)
-
-#         phase_freq: a 1*7 list showing [M1S1, ..., M1S7]'s time-dependent phase accumulation rate during idle sessions.
-#         gate_t_length: a dictionary ,all in cycles
-#             'pi_ge_length': in cycles
-#             'hpi_ge_length': in cycles
-#             'pi_ef_length': in cycles
-#             'f0g1_length': in cycles
-#             'M1S1_length': in cycles
-#             'M1S2_length': in cycles
-#             'M1S3_length': in cycles
-#             'M1S4_length': in cycles
-#             'M1S5_length': in cycles
-#             'M1S6_length': in cycles
-#             'M1S7_length': in cycles
-
-#         Each storage operation has two parts:
-#         if it is not the initial gate, extract information, gates on qubit, then store information
-#         The initial gate only perform gate on qubit, then store information
-#         The last gate only extract information, gate on qubit and check |g> population
-
-#         gate_list: a list of strings, each string is gate_id+'F/L/M'+storage_id. 'F': first gate on the storage, 'L': last gate on the storage, 'M': any other gate between F and L
-#         vz_phase_list: virtual z phase (in degree)
-
-#         """
-#         phase_overhead = self.cfg.device.storage.idling_phase
-#         phase_freq = self.cfg.device.storage.idling_freq
-#         gate_t_length = self.gate_t_length
-
-#         # generate random gate_list for individual storage 
-#         individual_storage_gate = []
-#         for ii in range(len(depth_list)):
-#             individual_storage_gate.append(self.generate_sequence(depth_list[ii]))
-#         stacked_gate, origins = self.random_pick_from_lists(individual_storage_gate)
-#         for ii in range(len(origins)):
-#             # convert origins to storage mode id
-#             origins[ii] = storage_id[origins[ii]]
-
-#         # check first or last element position
-#         unique_elements, first_pos_list, last_pos_list = self.find_unique_elements_and_positions(origins)
-
-
-#         # convert origins+stacked gate to gate_list form
-
-#         #cycles2us = self.cycles2us(1)   # coefficient
-#         # print('cycles2us ', cycles2us)
-
-#         gate_list = []
-#         vz_phase_list = []  # all in deg, length = gate_list
-#         vz_phase_current = [0]*7  # all in deg, position maps to different 7 storages
-#         t0_current = [0]*7  # initialize the time clock, each storage mode has its own clock
-#         for ii in range(len(stacked_gate)):
-#             gate_name = str(stacked_gate[ii])
-#             gate_symbol = 'M'
-#             vz = 0
-            
-#             if ii in first_pos_list: 
-#                 gate_symbol = 'F'
-#             if ii in last_pos_list: gate_symbol = 'L'
-
-#             gate_name = gate_name+gate_symbol+str(origins[ii])
-#             # calculate gate time (to be updated properly with experiment.cfg)
-#             t0_after, gate_length = self.gate2time(t0_current, gate_name, gate_t_length)
-
-#             gate_list.append(gate_name)
-            
-
-            
-
-#             # calculate vz_phase correction using t0_current and t0_after
-#             # operation is int(gate_name[-1])
-#             # overhead phase is overhead[0,1,2,3,4,5,6][int(gate_name[-1])-1]
-#             tophase = [0]*7
-#             if ii in first_pos_list:  # first gate 1 overhead
-#                 # update 1* overhead
-#                 # time independent phase 
-#                 for i in range(7):
-#                     tophase[i] = phase_overhead[i][int(gate_name[-1])-1]   # in deg
-#                 # to others that already applied, no need for self-correction, set self phase to 0
-#                 tophase[int(gate_name[-1])-1] = 0
-#                 vz_phase_current[int(gate_name[-1])-1] = 0
-#                 # print(tophase)
-#             else:  # other case 2 overheads
-#                 # time independent phase
-#                 for i in range(7):
-#                     tophase[i] = phase_overhead[i][int(gate_name[-1])-1]*2   # in deg
-#                 # time dependent phase
-#                 tophase[int(gate_name[-1])-1] += phase_freq[int(gate_name[-1])-1]*(50*0+t0_after[int(gate_name[-1])-1]-t0_current[int(gate_name[-1])-1]-gate_length)*cycles2us/np.pi*180*2*np.pi   # in deg
-#                 # print(t0_after[int(gate_name[-1])-1])
-#                 # print(t0_current[int(gate_name[-1])-1])
-
-#             for i in range(7):
-#                 vz_phase_current[i] += tophase[i]
-
-#             vz_phase_list.append(vz_phase_current[int(gate_name[-1])-1])
-
-#             # update the clock
-#             t0_current = t0_after
-#             # print(t0_current)
-
-#         vz_phase_list = np.array(vz_phase_list) % 360
-        
-#         return gate_list, list(vz_phase_list), origins
-        
-        
 class MMAveragerProgram(AveragerProgram, MM_base):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
-# class MMRBAveragerProgram(AveragerProgram, MM_rb_base):
-#     def __init__(self, soccfg, cfg):
-#         super().__init__(soccfg, cfg)
 
-    
-        
-    
 class MMRAveragerProgram(RAveragerProgram, MM_base): 
-
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
         #self.mm_base = MM_base()
+
 
 class prepulse_creator2: 
     def __init__(self, cfg, storage_man_file):
@@ -1395,5 +1016,4 @@ class prepulse_creator2:
         
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
-    
-    
+

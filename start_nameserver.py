@@ -17,3 +17,4 @@ def start_nameserver(ns_port=8888):
     Pyro4.naming.startNSloop(host='0.0.0.0', port=ns_port)
 
 start_nameserver(ns_port=9090)
+

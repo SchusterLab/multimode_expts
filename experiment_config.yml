@@ -1174,7 +1174,8 @@ AmplitudeRabiExperiment:
     qubit: 0
     pulse_type: 'gauss'   #'gauss' or 'flat_top' or 'drag' or 'const'
     drag_beta: 0.0
-    pulse_ge: True #True
+    pulse_ge_init: True #True
+    pulse_ge_after: True #True
     checkZZ: False
     checkEF: True #True
     qubits: [0]
@@ -1224,7 +1225,8 @@ AmplitudeRabiGeneralExperiment:
     rounds: 10
     sigma_test: 0.025 # gaussian sigma for pulse length - overrides config [us]
     pulse_type: 'gauss'
-    pulse_ge: False
+    pulse_ge_init: False
+    pulse_ge_after: False
     freq: 3567.831924599617
     f0g1_cavity: 0 #  name of manipulate cavity, 0 means no pulse
     checkEF: False

@@ -101,3 +101,15 @@ class storage_man_swap_dataset:
         last_update_object= datetime.strptime(last_update, date_format)
         time_diff = (datetime.now() - last_update_object).total_seconds()
         return time_diff < max_time_diff
+    def create_copy(self, new_filename=None):
+        expts_path = ''
+        # print(f"expts_path: {expts_path}")
+        
+        if new_filename is None:
+            name, ext = os.path.splitext(os.path.basename(self.filename))
+            new_filename = os.path.join(expts_path, f"{name}_test{ext}")
+        else:
+            new_filename = os.path.join(expts_path, new_filename)
+        self.df.to_csv(new_filename, index=False)
+        return new_filename
+    
