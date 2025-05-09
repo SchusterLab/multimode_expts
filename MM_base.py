@@ -691,7 +691,8 @@ class MM_base():
     # def post_select_histogram(self):
 
     # ----------------------------------------------------- #Single shot analysis code # ----------------------------------------------------- #    
-    def filter_data_IQ(self, II, IQ, threshold, readout_per_experiment=2):
+    @staticmethod
+    def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
         # assume the last one is experiment data, the last but one is for post selection
         result_Ig = []
         result_Ie = []

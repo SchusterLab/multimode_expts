@@ -698,16 +698,16 @@ def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_pe
     #         Qf = data['Qf'][readout_per_round-1::readout_per_round]
 
     if active_reset:
-        Ig, Qg = filter_data_IQ(data['Ig'], data['Qg'], threshold, readout_per_experiment=readout_per_round)
+        Ig, Qg = MM_base.filter_data_IQ(data['Ig'], data['Qg'], threshold, readout_per_experiment=readout_per_round)
         # Qg = filter_data(data['Qg'], threshold, readout_per_experiment=readout_per_round)
-        Ie, Qe = filter_data_IQ(data['Ie'], data['Qe'], threshold, readout_per_experiment=readout_per_round)
+        Ie, Qe = MM_base.filter_data_IQ(data['Ie'], data['Qe'], threshold, readout_per_experiment=readout_per_round)
         # Qe = filter_data(data['Qe'], threshold, readout_per_experiment=readout_per_round)
         print(len(Ig))
         print(len(Ie))
         plot_f = False 
         if 'If' in data.keys():
             plot_f = True
-            If, Qf = filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
+            If, Qf = MM_base.filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
             # Qf = filter_data(data['Qf'], threshold, readout_per_experiment=readout_per_round)
             print(len(If))
     else:

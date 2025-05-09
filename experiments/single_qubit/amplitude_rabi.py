@@ -536,6 +536,19 @@ class AmplitudeRabiExperiment(Experiment):
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
         if data is None:
             data=self.data
+
+        def get_pi_hpi_gain_from_fit(p):
+            if p[2] > 180:
+                p[2] = p[2] - 360
+            elif p[2] < -180:
+                p[2] = p[2] + 360
+            if np.abs(p[2]-90) > np.abs(p[2]+90): # y intercept is the min
+                pi_gain = (1/4 - p[2]/360)/p[1]
+                hpi_gain = (0 - p[2]/360)/p[1]
+            else: # y intercept is the max
+                pi_gain= (3/4 - p[2]/360)/p[1]
+                hpi_gain= (1/2 - p[2]/360)/p[1]
+            return int(pi_gain), int(hpi_gain)
         
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
@@ -551,6 +564,9 @@ class AmplitudeRabiExperiment(Experiment):
             data['fit_err_avgi'] = pCov_avgi   
             data['fit_err_avgq'] = pCov_avgq
             data['fit_err_amps'] = pCov_amps
+
+            data['pi_gain_avgi'], data['hpi_gain_avgi']  = get_pi_hpi_gain_from_fit(p_avgi)
+            data['pi_gain_avgq'], data['hpi_gain_avgq']  = get_pi_hpi_gain_from_fit(p_avgq)
         return data
 
     def display(self, data=None, fit=True, fitparams=None, vline = None, **kwargs):
@@ -579,16 +595,12 @@ class AmplitudeRabiExperiment(Experiment):
         if fit:
             p = data['fit_avgi']
             plt.plot(data["xpts"][0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-            if p[2] > 180: p[2] = p[2] - 360
-            elif p[2] < -180: p[2] = p[2] + 360
-            if p[2] < 0: pi_gain = (1/2 - p[2]/180)/2/p[1]
-            else: pi_gain= (3/2 - p[2]/180)/2/p[1]
-            pi2_gain = pi_gain/2
-            print(f'Pi gain from avgi data [dac units]: {int(pi_gain)}')
-            # print(f'\tPi/2 gain from avgi data [dac units]: {int(pi2_gain)}')
-            print(f'\tPi/2 gain from avgi data [dac units]: {int(1/4/p[1])}')
+            pi_gain = data['pi_gain_avgi']
+            hpi_gain = data['hpi_gain_avgi']
+            print(f'Pi gain from avgi data [dac units]: {pi_gain}')
+            print(f'\tPi/2 gain from avgi data [dac units]: {hpi_gain}')
             plt.axvline(pi_gain, color='0.2', linestyle='--')
-            plt.axvline(pi2_gain, color='0.2', linestyle='--')
+            plt.axvline(hpi_gain, color='0.2', linestyle='--')
             if not(vline==None):
                 plt.axvline(vline, color='0.2', linestyle='--')
         plt.subplot(212, xlabel="Gain [DAC units]", ylabel="Q [ADC units]")
@@ -596,16 +608,12 @@ class AmplitudeRabiExperiment(Experiment):
         if fit:
             p = data['fit_avgq']
             plt.plot(data["xpts"][0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-            if p[2] > 180: p[2] = p[2] - 360
-            elif p[2] < -180: p[2] = p[2] + 360
-            if p[2] < 0: pi_gain = (1/2 - p[2]/180)/2/p[1]
-            else: pi_gain= (3/2 - p[2]/180)/2/p[1]
-            pi2_gain = pi_gain/2
-            print(f'Pi gain from avgq data [dac units]: {int(pi_gain)}')
-            # print(f'\tPi/2 gain from avgq data [dac units]: {int(pi2_gain)}')
-            print(f'\tPi/2 gain from avgq data [dac units]: {int(1/4/p[1])}')
+            pi_gain = data['pi_gain_avgq']
+            hpi_gain = data['hpi_gain_avgq']
+            print(f'Pi gain from avgq data [dac units]: {pi_gain}')
+            print(f'\tPi/2 gain from avgq data [dac units]: {hpi_gain}')
             plt.axvline(pi_gain, color='0.2', linestyle='--')
-            plt.axvline(pi2_gain, color='0.2', linestyle='--')
+            plt.axvline(hpi_gain, color='0.2', linestyle='--')
 
         plt.show()
 
