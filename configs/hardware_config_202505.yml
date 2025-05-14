@@ -452,37 +452,37 @@ hw:
     soc:
         dacs:
             qubit:
-                ch: 2.0
+                ch: 2
                 type: full
-                nyquist: 1.0
+                nyquist: 1
             readout:
-                ch: 5.0
+                ch: 5
                 type: full
-                nyquist: 1.0
+                nyquist: 1
             manipulate_in:
-                ch: 4.0
+                ch: 4
                 type: full
-                nyquist: 2.0
+                nyquist: 2
             storage_in:
-                ch: 6.0
+                ch: 6
                 type: full
-                nyquist: 2.0
+                nyquist: 2
             flux_low:
-                ch: 1.0
+                ch: 1
                 type: full
-                nyquist: 1.0
+                nyquist: 1
             flux_high:
-                ch: 3.0
+                ch: 3
                 type: full
-                nyquist: 1.0
+                nyquist: 1
             sideband:
-                ch: 0.0
+                ch: 0
                 type: full
-                nyquist: 1.0
+                nyquist: 1
         adcs:
             readout:
-                ch: 0.0
+                ch: 0
             cavity_out:
-                ch: 1.0
+                ch: 1
 aliases:
     soc: Qick101
