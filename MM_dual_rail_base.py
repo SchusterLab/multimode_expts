@@ -8,7 +8,7 @@ from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
 import random
 from MM_base import * 
-from experiments.single_qubit.single_shot import  HistogramProgram
+# from multimode_expts.experiments.single_qubit.single_shot import  HistogramProgram
 from copy import deepcopy
 
 

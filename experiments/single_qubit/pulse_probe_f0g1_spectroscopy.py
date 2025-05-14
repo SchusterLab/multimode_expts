@@ -121,7 +121,7 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
         self.data=data
         return data
 
-    def analyze(self, data=None, fit=True, signs=[1,1], **kwargs):
+    def analyze(self, data=None, fit=True, signs=[1,1,1], **kwargs):
         if data is None:
             data=self.data
         if fit:
@@ -131,7 +131,7 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
             data['fit_avgq'], data['fit_err_avgq'] = fitter.fitlor(xdata, signs[2]*data['avgq'][1:-1])
         return data
 
-    def display(self, data=None, fit=True, signs=[1,1], **kwargs):
+    def display(self, data=None, fit=True, signs=[1,1, 1], **kwargs):
         if data is None:
             data=self.data 
 
@@ -141,7 +141,7 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
             xpts = data['xpts'][1:-1]
 
         plt.figure(figsize=(9, 11))
-        plt.subplot(311, title=f"Qubit {self.cfg.expt.qubit} EF Spectroscopy (Gain {self.cfg.expt.gain})", ylabel="Amplitude [ADC units]")
+        plt.subplot(311, title=f" Spectroscopy (Gain {self.cfg.expt.gain})", ylabel="Amplitude [ADC units]")
         plt.plot(xpts, data["amps"][1:-1],'o-')
         if fit:
             plt.plot(xpts, signs[0]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_amps"]))

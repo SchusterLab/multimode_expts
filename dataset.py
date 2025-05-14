@@ -112,4 +112,62 @@ class storage_man_swap_dataset:
             new_filename = os.path.join(expts_path, new_filename)
         self.df.to_csv(new_filename, index=False)
         return new_filename
+    def compare_with(self, other_dataset):
+        """
+        Compare the current dataset with another dataset and identify differences.
+
+        This method iterates through the rows of the current dataset (`self.df`) and compares
+        each row with the corresponding row in the `other_dataset` based on the `stor_name` column.
+        It identifies differences in column values between the two datasets and returns a list
+        of discrepancies.
+
+        Args:
+            other_dataset: An instance of the same dataset class containing a DataFrame (`df`)
+                   to compare against.
+
+        Returns:
+            list: A list of dictionaries, where each dictionary represents a difference. Each
+              dictionary contains the following keys:
+              - 'stor_name': The identifier of the row being compared.
+              - 'column': The column where the difference was found, or 'all' if the row
+                      exists in `self` but is missing in `other_dataset`.
+              - 'self_value': The value in the current dataset.
+              - 'other_value': The value in the other dataset, or 'missing' if the row
+                       does not exist in `other_dataset`.
+
+        Example:
+            differences = dataset1.compare_with(dataset2)
+            for diff in differences:
+            print(diff)
+        """
+        differences = []
+        for _, row in self.df.iterrows():
+            stor_name = row['stor_name']
+            if stor_name in other_dataset.df['stor_name'].values:
+                other_row = other_dataset.df[other_dataset.df['stor_name'] == stor_name].iloc[0]
+                for column in self.df.columns:
+                    if row[column] != other_row[column]:
+                        differences.append({
+                            'stor_name': stor_name,
+                            'column': column,
+                            'self_value': row[column],
+                            'other_value': other_row[column]
+                        })
+            else:
+                differences.append({
+                    'stor_name': stor_name,
+                    'column': 'all',
+                    'self_value': 'exists',
+                    'other_value': 'missing'
+                })
+        return differences
     
+    def save_to_file(self, filepath):
+        """
+        Save the current dataset to a specified file.
+
+        Args:
+            filepath (str): The path to the file where the dataset should be saved.
+        """
+        self.df.to_csv(filepath, index=False)
+        

@@ -510,6 +510,10 @@ class AmplitudeRabiExperiment(Experiment):
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             # Remove the first and last point from fit in case weird edge measurements
             xdata = data['xpts']
+            # if fitparams is None:
+            #     fitparams = [None]*6
+            #     fitparams[0] = np.max(data["avgi"][1:-1])
+            #     fitparams[1] = 2/(xdata[-1]-xdata[0])
 
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
@@ -529,21 +533,7 @@ class AmplitudeRabiExperiment(Experiment):
         if data is None:
             data=self.data 
 
-        # plt.figure(figsize=(10, 6))
-        # plt.subplot(111, title=f"Amplitude Rabi (Pulse Length {self.cfg.expt.sigma_test})", xlabel="Gain [DAC units]", ylabel="Amplitude [ADC units]")
-        # plt.plot(data["xpts"][1:-1], data["amps"][1:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     plt.plot(data["xpts"][1:-1], fitter.decaysin(data["xpts"][1:-1], *p))
-        #     if p[2] > 180: p[2] = p[2] - 360
-        #     elif p[2] < -180: p[2] = p[2] + 360
-        #     if p[2] < 0: pi_gain = (1/2 - p[2]/180)/2/p[1]
-        #     else: pi_gain= (3/2 - p[2]/180)/2/p[1]
-        #     pi2_gain = pi_gain/2
-        #     print(f'Pi gain from amps data [dac units]: {int(pi_gain)}')
-        #     print(f'\tPi/2 gain from amps data [dac units]: {int(pi2_gain)}')
-        #     plt.axvline(pi_gain, color='0.2', linestyle='--')
-        #     plt.axvline(pi2_gain, color='0.2', linestyle='--')
+
 
         plt.figure(figsize=(10,10))
         plt.subplot(211, title=f"Amplitude Rabi (Pulse Length {self.cfg.expt.sigma_test})", ylabel="I [ADC units]")
