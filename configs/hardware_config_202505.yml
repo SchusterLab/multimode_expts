@@ -14,7 +14,7 @@ device:
         pulses:
             pi_ge:
                 gain:
-                - 11161.0
+                - 11161
                 sigma:
                 - 0.035
                 length:
@@ -22,7 +22,7 @@ device:
                 type: gauss
             pi_ge_ftop:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -30,7 +30,7 @@ device:
                 type: flat_top
             pi_ge_fast:
                 gain:
-                - 10682.0
+                - 10682
                 sigma:
                 - 0.035
                 length:
@@ -38,7 +38,7 @@ device:
                 type: gauss
             pi_ge_resolved:
                 gain:
-                - 50.0
+                - 50
                 sigma:
                 - 0.005
                 length:
@@ -47,7 +47,7 @@ device:
                 repeat_no: 1.0
             hpi_ge:
                 gain:
-                - 5414.0
+                - 5414
                 length:
                 - 0.0
                 sigma:
@@ -55,7 +55,7 @@ device:
                 type: gauss
             hpi_ge_ftop:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -63,7 +63,7 @@ device:
                 type: flat_top
             hpi_ge_fast:
                 gain:
-                - 5195.0
+                - 5195
                 length:
                 - 0.0
                 sigma:
@@ -71,7 +71,7 @@ device:
                 type: gauss
             pi_ef_ftop:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -79,7 +79,7 @@ device:
                 type: flat_top
             pi_ef_new:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -87,7 +87,7 @@ device:
                 type: flat_top
             hpi_ef_ftop:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -95,7 +95,7 @@ device:
                 type: flat_top
             hpi_ef_new:
                 gain:
-                - 3000.0
+                - 3000
                 sigma:
                 - 0.005
                 length:
@@ -103,7 +103,7 @@ device:
                 type: flat_top
             pi_ef:
                 gain:
-                - 8483.0
+                - 8483
                 length:
                 - 0.0
                 sigma:
@@ -111,13 +111,13 @@ device:
                 type: gauss
             hpi_ef:
                 gain:
-                - 3951.0
+                - 3951
                 sigma:
                 - 0.035
                 type: gauss
             f0g1:
                 gain:
-                - 20000.0
+                - 20000
                 length:
                 - 0.4209728295970486
                 sigma:
@@ -136,11 +136,11 @@ device:
                 - 3568.18781776926
                 - 3568.18781776926
                 ge_gain:
-                - 9653.0
-                - 9653.0
-                - 9653.0
-                - 9653.0
-                - 9653.0
+                - 9653
+                - 9653
+                - 9653
+                - 9653
+                - 9653
                 ge_sigma:
                 - 0.035
                 - 0.035
@@ -154,11 +154,11 @@ device:
                 - 3425.55703383178
                 - 3425.55703383178
                 ef_gain:
-                - 7575.0
-                - 7575.0
-                - 7575.0
-                - 7575.0
-                - 7575.0
+                - 7575
+                - 7575
+                - 7575
+                - 7575
+                - 7575
                 ef_sigma:
                 - 0.035
                 - 0.035
@@ -172,11 +172,11 @@ device:
                 - 2006.76
                 - 2006.76
                 f0g1_gain:
-                - 15000.0
-                - 15000.0
-                - 15000.0
-                - 15000.0
-                - 15000.0
+                - 15000
+                - 15000
+                - 15000
+                - 15000
+                - 15000
                 f0g1_length:
                 - 0.621500217304513
                 - 0.436074712309811
@@ -207,10 +207,10 @@ device:
         pulses:
             qubit_pi_ge:
                 gain:
-                -   - 10682.0
-                    - 10682.0
-                -   - 10682.0
-                    - 10682.0
+                -   - 10682
+                    - 10682
+                -   - 10682
+                    - 10682
                 sigma:
                 -   - 0.035
                     - 0.035
@@ -219,10 +219,10 @@ device:
                 type: gauss
             qubit_pi_ge_resolved:
                 gain:
-                -   - 50.0
-                    - 50.0
-                -   - 50.0
-                    - 50.0
+                -   - 50
+                    - 50
+                -   - 50
+                    - 50
                 sigma:
                 -   - 0.005
                     - 0.005
@@ -237,8 +237,8 @@ device:
             qubit_pi_ge_resolved_man:
                 freq: []
                 gain:
-                - 50.0
-                - 50.0
+                - 50
+                - 50
                 sigma:
                 - 0.005
                 - 0.005
@@ -251,8 +251,8 @@ device:
                 - 2007.09
                 - 1834.84
                 gain:
-                - 15000.0
-                - 15000.0
+                - 15000
+                - 15000
                 length:
                 - 0.615286689634651
                 - 1.060413
@@ -265,8 +265,8 @@ device:
                 - 2002.98
                 - 1840.6
                 gain:
-                - 15000.0
-                - 20000.0
+                - 15000
+                - 20000
                 length:
                 - 0.43461615322272
                 - 0.9276287688775608
@@ -275,11 +275,11 @@ device:
                 - 0.4638143844387804
                 sigma: 0.005
     readout:
-        trig_offset: 450.0
+        trig_offset: 450
         frequency:
         - 748.8
         gain:
-        - 800.0
+        - 800
         phase:
         - 241.1442163178197
         threshold:
@@ -291,7 +291,7 @@ device:
         man2_drive_list:
         - 0.0
         readout_length:
-        - 1.0
+        - 1
         relax_delay:
         - 2500.0
         confusion_matrix_with_reset:
@@ -307,7 +307,7 @@ device:
         Ie: 9.082529002614933
         Ig: -293.323581878126
     manipulate:
-        trig_offset: 450.0
+        trig_offset: 450
         f_ge:
         - 4984.026194477733
         - 5157.8527963217475
@@ -324,13 +324,13 @@ device:
         - 0.495062203431879
         - 0.0
         gain:
-        - 2000.0
-        - 2000.0
+        - 2000
+        - 2000
         chi:
         - 1.0
         - 1.0
         readout_length:
-        - 8.0
+        - 8
         phase:
         - -176.45792887777
         cycles_add_to_Q: 260.0
@@ -346,18 +346,18 @@ device:
         - 2007.09
         - 1834.84
     storage:
-        trig_offset: 450.0
+        trig_offset: 450
         f_ge:
         - 6229.766612195359
         - 5300.0
         gain:
-        - 1000.0
-        - 2000.0
+        - 1000
+        - 2000
         chi:
         - 1.0
         - 1.0
         readout_length:
-        - 8.0
+        - 8
         phase:
         - -176.45792887777
         storage_man_file: C:/_Lib/python/multimode_expts/man1_storage_swap_dataset.csv
