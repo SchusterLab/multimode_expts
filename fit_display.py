@@ -1695,28 +1695,7 @@ def qubit_spectroscopy_display(data, fit=True, signs=[1,1,1], title='Qubit SPect
     plt.tight_layout()
     plt.show()
 
-def plot_spectroscopy1(xdata_g, g_data, xdata_e, e_data, fitparams=None, title="Readout", vlines=None):
-    fitparams=fitparams
-    data1 = {}
-    data1['fit'], data1['fit_err'] = fitter.fithanger(xdata_g, g_data, fitparams=fitparams)
-    f0, Qi, Qe, phi, scale, a0, slope = data1['fit']
-    print('f0 at |g>:', f0)
-    ## separate |e> data into two parts, individually fit peaks
-    data2_e1 = {}
-    data2_e1['fit'], data2_e1['fit_err'] = fitter.fithanger(xdata_e, e_data, fitparams=fitparams)
-    f0, Qi, Qe, phi, scale, a0, slope = data2_e1['fit']
-    print('f0 at |e>:', f0)
-    plt.figure(figsize=(10,4))
-    plt.subplot(111, title=title,  ylabel="Amps [ADC units]")
-    plt.plot(xdata_g, g_data,'.',label='Qubit |g>', color='r')
-    plt.plot(xdata_g, fitter.hangerS21func_sloped(xdata_g, *data1["fit"]), '--', color='r', label='Fit |g>')
-    plt.plot(xdata_e, e_data,'.',label='Qubit |e>', color='b')
-    plt.plot(xdata_e, fitter.hangerS21func_sloped(xdata_e, *data2_e1["fit"]), '--', color='b', label='Fit |e>')
-    if vlines:
-        for vline in vlines:
-            plt.axvline(vline, c='k', ls='--')
-    plt.legend()
-    plt.show()
+
 
 
 ## Randomized Benchamarking BeamSplitter Check
