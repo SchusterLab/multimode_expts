@@ -460,9 +460,9 @@ class MM_base():
                        sigma=self.qge_ramp, length=self.qge_ramp*6)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_ef_ramp",
                        sigma=self.qef_ramp, length=self.qef_ramp*6)
-        
+
         self.sync_all(self.us2cycles(0.25))
-        
+
         # First Reset Manipulate Modes 
         # =====================================
         if man_reset:
@@ -476,7 +476,7 @@ class MM_base():
                     adcs=[self.adc_chs[qTest]],
                     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
                      t='auto', wait=True, syncdelay=self.us2cycles(2.0))#self.cfg["relax_delay"])  # self.us2cycles(1))
-        
+
         self.wait_all(self.us2cycles(0.2))  # to allow the read to be complete might be reduced
 
         self.read(0, 0, "lower", self.r_read_q)  # read data from I buffer, QA, and store
@@ -516,9 +516,9 @@ class MM_base():
                         adcs=[self.adc_chs[qTest]],
                         adc_trig_offset=cfg.device.readout.trig_offset[qTest],
                         t='auto', wait=True, syncdelay=self.us2cycles(2))  # self.us2cycles(1))
-            
+
             self.wait_all(self.us2cycles(0.2))  # to allow the read to be complete might be reduced
-            
+
             self.read(0, 0, "lower", self.r_read_q_ef)  # read data from I buffer, QA, and store
             # self.wait_all(self.us2cycles(0.05))  # to allow the read to be complete might be reduced
             self.sync_all(self.us2cycles(0.05))
@@ -552,8 +552,6 @@ class MM_base():
 
         if storage_reset: 
             for ii in range(7):
-            #      #7
-            #ii = 0
                 man_idx = 0 
                 stor_idx = ii
                 self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
@@ -568,10 +566,6 @@ class MM_base():
         # if man_reset:
         #     self.man_reset(0, chi_dressed = False)
         #     self.man_reset(1, chi_dressed = False)
-        
-        #self.man_reset(0, chi_dressed = False)
-
-            #self.man_reset(0)
         # post selection
 
         # ======================================================
@@ -629,24 +623,13 @@ class MM_base():
                     # Add the value at 4k+3 to the result list
                     result_Ig.append(II[index_4k_plus_3])
                     result_Ie.append(IQ[index_4k_plus_3])
-        
+
         return np.array(result_Ig), np.array(result_Ie)
 
     def hist(self, data, plot=False, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4.3):
         """
         span: histogram limit is the mean +/- span
         """
-        # if active_reset:
-        #     Ig = data['Ig'][readout_per_round-1::readout_per_round]
-        #     Qg = data['Qg'][readout_per_round-1::readout_per_round]
-        #     Ie = data['Ie'][readout_per_round-1::readout_per_round]
-        #     Qe = data['Qe'][readout_per_round-1::readout_per_round]
-        #     plot_f = False 
-        #     if 'If' in data.keys():
-        #         plot_f = True
-        #         If = data['If'][readout_per_round-1::readout_per_round]
-        #         Qf = data['Qf'][readout_per_round-1::readout_per_round]
-
         if active_reset:
             Ig, Qg = self.filter_data_IQ(data['Ig'], data['Qg'], threshold, readout_per_experiment=readout_per_round)
             # Qg = filter_data(data['Qg'], threshold, readout_per_experiment=readout_per_round)
@@ -687,10 +670,10 @@ class MM_base():
         if plot:
             fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(16, 10))
             fig.tight_layout()
-            
+
             axs[0,0].scatter(Ie, Qe, label='e', color='r', marker='.', s=1)
             axs[0,0].scatter(Ig, Qg, label='g', color='b', marker='.', s=1)
-            
+
             if plot_f: axs[0,0].scatter(If, Qf, label='f', color='g', marker='.', s=1)
             axs[0,0].scatter(xg, yg, color='k', marker='o')
             axs[0,0].scatter(xe, ye, color='k', marker='o')
@@ -839,21 +822,20 @@ class prepulse_creator2:
 
         # man storage swap data 
         self.dataset = storage_man_swap_dataset(storage_man_file)
-        
+
         # initialize pulse 
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)
-    
+
     def flush(self):
         '''re initializes to empty array'''
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)
-    
+
     def append(self, pulse):
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
         return None
-        
+ 
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
         ''' pulse name comes from yaml file '''
-        # print(pulse_param)
         transition_name, pulse_name, phase = pulse_param
         # frequency 
         if transition_name[:2] == 'ge': 
@@ -864,8 +846,6 @@ class prepulse_creator2:
         if pulse_name[:6] != 'parity':
             pulse_full_name = pulse_name + '_' + transition_name # like pi_ge or pi_ef or pi_ge_new or pi_ef_new
 
-            # print(self.cfg.device.qubit.pulses[pulse_full_name])
-            
             qubit_pulse = np.array([[freq], 
                     [self.cfg.device.qubit.pulses[pulse_full_name]['gain'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['length'][0]],
@@ -873,7 +853,6 @@ class prepulse_creator2:
                     [2],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['type'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['sigma'][0]]], dtype = object)
-            
 
         else: # parity   string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
@@ -897,7 +876,7 @@ class prepulse_creator2:
             length = self.dataset.get_pi(cav_name)
         else:
             length = self.dataset.get_h_pi(cav_name)
-        
+
         f0g1  = np.array([[self.dataset.get_freq(cav_name)],
                 [ self.dataset.get_gain(cav_name)],
                 [length],
@@ -905,7 +884,7 @@ class prepulse_creator2:
                 [0], # f0g1 pulse 
                 ['flat_top'],
                 [0.005]], dtype = object)
-        
+
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)
         return None
 
@@ -928,16 +907,12 @@ class prepulse_creator2:
         stor_name, pulse_name, phase = pulse_param
 
         if pulse_name == 'pi': 
-            # print(stor_name)
             length = self.dataset.get_pi(stor_name)
         else:
             length = self.dataset.get_h_pi(stor_name)
         freq = self.dataset.get_freq(stor_name)
-        if freq<1000: 
-            ch = 1
-        else:
-            ch = 3
-        
+        ch = 1 if freq<1000 else 3
+
         storage_pulse = np.array([[self.dataset.get_freq(stor_name)],
                 [ self.dataset.get_gain(stor_name)],
                 [length],
