@@ -10,7 +10,7 @@ class storage_man_swap_dataset:
         else: 
             # create a new dataframe
             self.create_new_df()
-    
+
     def create_new_df(self):
         column_names = ['stor_name', 'freq (MHz)', 'precision (MHz)', 'pi (mus)', 'h_pi (mus)', 'gain (DAC units)', 'last_update']
         self.df = pd.DataFrame(columns=column_names)
@@ -27,7 +27,7 @@ class storage_man_swap_dataset:
         
         self.df = pd.concat([self.df, pd.DataFrame(rows)], ignore_index=True)
         self.df.to_csv(self.filename, index=False)
-    
+
     # fetch the data from the csv file
     def get_freq(self, stor_name):
         return self.df[self.df['stor_name'] == stor_name]['freq (MHz)'].values[0]
@@ -83,7 +83,7 @@ class storage_man_swap_dataset:
         new_row = {'stor_name': stor_name, 'freq (MHz)': freq, 'precision (MHz)': precision, 'pi (mus)': pi, 'h_pi (mus)': h_pi, 'gain (DAC units)': gain, 'last_update': datetime.now()}
         self.df = self.df.append(new_row, ignore_index=True)
         self.df.to_csv(self.filename, index=False)
-    
+
     # check whether the data is up-to-date
     def is_up_to_date(self, stor, max_time_diff = 7200):
         last_update = self.get_last_update(stor)
@@ -93,17 +93,19 @@ class storage_man_swap_dataset:
         last_update_object= datetime.strptime(last_update, date_format)
         time_diff = (datetime.now() - last_update_object).total_seconds()
         return time_diff < max_time_diff
+
     def create_copy(self, new_filename=None):
         expts_path = ''
         # print(f"expts_path: {expts_path}")
         
         if new_filename is None:
             name, ext = os.path.splitext(os.path.basename(self.filename))
-            new_filename = os.path.join(expts_path, f"{name}_test{ext}")
+            new_filename = os.path.join(expts_path, f"{name}_copy{ext}")
         else:
             new_filename = os.path.join(expts_path, new_filename)
         self.df.to_csv(new_filename, index=False)
         return new_filename
+
     def compare_with(self, other_dataset):
         """
         Compare the current dataset with another dataset and identify differences.
@@ -153,7 +155,7 @@ class storage_man_swap_dataset:
                     'other_value': 'missing'
                 })
         return differences
-    
+
     def save_to_file(self, filepath):
         """
         Save the current dataset to a specified file.
