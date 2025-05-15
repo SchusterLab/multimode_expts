@@ -12,14 +12,14 @@ class MM_base():
         Contains functions that are useful for both averager and raverager programs
         '''
         self.cfg=AttrDict(cfg)
-        
+
     def initialize_idling_dataset(self): 
         '''
         Create a dictionary that will keep a record of idling times
 
         dict= {'key = transition' : value = []} 
         '''
-    
+
     def get_prepulse_creator(self,  sweep_pulse = None):
         '''returns an instance  of  prepulse creator class '''
         #config_file = self.cfg
@@ -33,7 +33,7 @@ class MM_base():
                 eval(f"creator.{sweep_pulse[pulse_idx][0]}({pulse_param})")
 
         return creator
-    
+
     def compound_storage_gate(self, input = True, storage_no = 1, man_no = 1): 
         '''
         input: if True, then the storage gate is on, else output to storage mode
@@ -50,8 +50,8 @@ class MM_base():
             for idx in range(len(prepulse_str)): 
                 prepulse_str[idx][-1] = 180
         return prepulse_str 
-    
-    
+
+
     def MM_base_initialize(self): 
         '''
         Shared Initialize method
@@ -133,14 +133,13 @@ class MM_base():
         # self.add_gauss(ch=self.qubit_chs[qTest], name="ramp_up_ef", sigma=self.pief_sigma_ramp, length=self.pief_sigma_ramp*4)
         # self.add_gauss(ch=self.qubit_chs[qTest], name="ramp_up_hge", sigma=self.hpi_sigma_ramp, length=self.hpi_sigma_ramp*4)
 
-
         # ---------- readout pulse parameters -----------
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
         # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
-        
+ 
     def get_total_time(self, test_pulse, gate_based = False, cycles = False, cycles2us = 0.0023251488095238095):
         '''
         Takes in pulse str of form 
@@ -189,7 +188,6 @@ class MM_base():
         self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
 
-
         # --------------------f0g1 pulse parameters 
         self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
         self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
@@ -200,54 +198,6 @@ class MM_base():
 
         self.pi_m1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_high_ch[qTest])
         self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma, length=self.pi_m1_sigma*6)
-        
-        # # specify all f0g1 and M1-S1 sideband lengths for arb flat_top
-        # pulse_str = [['man', 'M1', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
-        # self.add_flat_top_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1_arb", sigma=self.pi_f0g1_sigma, 
-        #                         length=self.us2cycles(pulse[2][0], gen_ch=self.f0g1_ch[qTest]))
-        # print('f0g1 loaded')
-
-        # self.pi_m1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_low_ch[qTest])
-        # pulse_str = [['storage', 'M1-S1', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_low_ch[qTest], name="pi_m1s1_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_low_ch[qTest]))
-        # print('M1S1 loaded')
-        # pulse_str = [['storage', 'M1-S2', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_low_ch[qTest], name="pi_m1s2_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_low_ch[qTest]))
-        # print('M1S2 loaded')
-        # pulse_str = [['storage', 'M1-S3', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_low_ch[qTest], name="pi_m1s3_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_low_ch[qTest]))
-        # print('M1S3 loaded')
-        # pulse_str = [['storage', 'M1-S4', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_low_ch[qTest], name="pi_m1s4_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_low_ch[qTest]))
-        # print('M1S4 loaded')
-        
-        # self.pi_m1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_high_ch[qTest])
-        # pulse_str = [['storage', 'M1-S5', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_high_ch[qTest], name="pi_m1s5_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_high_ch[qTest]))
-        # print('M1S5 loaded')
-        # pulse_str = [['storage', 'M1-S6', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_high_ch[qTest], name="pi_m1s6_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_high_ch[qTest]))
-        # print('M1S6 loaded')
-        # pulse_str = [['storage', 'M1-S7', 'pi', 0]]
-        # pulse = self.get_prepulse_creator(pulse_str).pulse.tolist()
-        # self.add_flat_top_gauss(ch=self.flux_high_ch[qTest], name="pi_m1s7_arb", sigma=self.pi_m1_sigma, 
-        #                length=self.us2cycles(pulse[2][0], gen_ch=self.flux_high_ch[qTest]))
-        # print('M1S7 loaded')
-    
 
     def reset_and_sync(self):
         # Phase reset all channels except readout DACs 
@@ -311,7 +261,7 @@ class MM_base():
         #  drive channel=1 (flux low), 
         # 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
         '''
-        
+
         # print('------------------Beginning Custom Pulse----------------------------')
         # print(pulse_data)
         if pulse_data is None:
@@ -330,13 +280,8 @@ class MM_base():
         self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
         self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
-        
-
         if advance_qubit_phase is not None:
-            # print('here!')
             pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
-
-        # print(pulse_data)
 
         for jj in range(len(pulse_data[0])):
                 # translate ch id to ch
@@ -352,12 +297,10 @@ class MM_base():
                     self.tempch = self.f0g1_ch
                 elif pulse_data[4][jj] == 4:
                     self.tempch = self.man_ch
-                # print(self.tempch)
                 if type(self.tempch) == list:
                     self.tempch = self.tempch[0]
                 # determine the pulse shape
                 if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g":
-                    # print('gaussian') 
                     self.pisigma_resolved = self.us2cycles(
                         pulse_data[6][jj], gen_ch=self.tempch)
                     self.add_gauss(ch=self.tempch, name="temp_gaussian"+str(jj)+prefix,
@@ -370,8 +313,6 @@ class MM_base():
                                      gain=pulse_data[1][jj], 
                                      waveform="temp_gaussian"+str(jj)+prefix)
                 elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
-                    # print('flat')
-                    
                     self.pisigma_resolved = self.us2cycles(
                         pulse_data[6][jj], gen_ch=self.tempch)
                     if self.tempch==0 or self.tempch == 1 or self.tempch == 3: # f0r f0g1
@@ -389,7 +330,6 @@ class MM_base():
                                                         gen_ch=self.tempch),
                                     waveform="temp_gaussian"+str(jj)+prefix)
                 else:
-                    # print('constant')
                     if sync_zero_const and pulse_data[1][jj] ==0: 
                         self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
                                                            #gen_ch=self.tempch))
@@ -418,7 +358,6 @@ class MM_base():
         if chi_dressed: 
             chis = cfg.device.active_reset.chis
             N = M_curr_lossy[4] 
-        #print(M_curr_lossy)
         ### prepare waveform 
         sideband_sigma_high = self.sideband_sigma_high = self.us2cycles(
             cfg.device.active_reset.M1_S_sigma, gen_ch=self.flux_high_ch[qTest]) 
@@ -442,7 +381,6 @@ class MM_base():
                 self.sync_all(self.us2cycles(0.025))
         # self.wait_all(self.us2cycles(0.25))
         self.sync_all(self.us2cycles(M_curr_lossy[3]))
-    
 
     def man_stor_swap(self, man_idx, stor_idx): 
         '''
@@ -456,7 +394,7 @@ class MM_base():
         # self.sync_all(self.us2cycles(0.2))
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(stor_idx) + 'dump')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
-    
+ 
     def coup_stor_swap(self, man_idx): 
         '''
         Perform Swap between manipulate mode and  storage mode 
@@ -478,7 +416,6 @@ class MM_base():
         '''
         cfg = self.cfg
         qTest = 0
-        # print('I am here')
 
         # Prepare Active Reset 
         ## ALL ACTIVE RESET REQUIREMENTS
@@ -613,7 +550,6 @@ class MM_base():
         # Dump storage population to manipulate, then to lossy mode
         # for ii in range(len(cfg.device.active_reset.M1_S_freq)):
 
-
         if storage_reset: 
             for ii in range(7):
             #      #7
@@ -623,21 +559,17 @@ class MM_base():
                 self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
                 self.man_reset(0, chi_dressed = False)
                 self.man_reset(1, chi_dressed = False)
-        
+
         if coupler_reset:
             self.coup_stor_swap(man_idx=1) # M1
             self.man_reset(0, chi_dressed = False)
             self.man_reset(1, chi_dressed = False)
 
-
-        
         # if man_reset:
         #     self.man_reset(0, chi_dressed = False)
         #     self.man_reset(1, chi_dressed = False)
         
         #self.man_reset(0, chi_dressed = False)
-            
-          
 
             #self.man_reset(0)
         # post selection
@@ -676,7 +608,7 @@ class MM_base():
         shots_i0 = self.di_buf[0] / self.readout_lengths_adc[qTest]
         shots_q0 = self.dq_buf[0] / self.readout_lengths_adc[qTest]
         return shots_i0, shots_q0
-    
+
     # def post_select_histogram(self):
 
     # ----------------------------------------------------- #Single shot analysis code # ----------------------------------------------------- #    
@@ -685,12 +617,11 @@ class MM_base():
         # assume the last one is experiment data, the last but one is for post selection
         result_Ig = []
         result_Ie = []
-        
-        
+
         for k in range(len(II) // readout_per_experiment):
             index_4k_plus_2 = readout_per_experiment * k + readout_per_experiment-2
             index_4k_plus_3 = readout_per_experiment * k + readout_per_experiment-1
-            
+
             # Ensure the indices are within the list bounds
             if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
                 # Check if the value at 4k+2 exceeds the threshold
@@ -795,7 +726,6 @@ class MM_base():
             print(f'Ig {xg} +/- {np.std(Ig)} \t Qg {yg} +/- {np.std(Qg)} \t Amp g {np.abs(xg+1j*yg)}')
             print(f'Ie {xe} +/- {np.std(Ie)} \t Qe {ye} +/- {np.std(Qe)} \t Amp e {np.abs(xe+1j*ye)}')
             if plot_f: print(f'If {xf} +/- {np.std(If)} \t Qf {yf} +/- {np.std(Qf)} \t Amp f {np.abs(xf+1j*yf)}')
-
 
         if span is None:
             span = (np.max(np.concatenate((Ie_new, Ig_new))) - np.min(np.concatenate((Ie_new, Ig_new))))/2
@@ -956,6 +886,7 @@ class prepulse_creator2:
                     [0.0]], dtype = object)
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
+
     def man(self, pulse_param):
         '''name can be pi or hpi
         man_idx is not irrelvant
@@ -977,6 +908,7 @@ class prepulse_creator2:
         
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)
         return None
+
     def buffer(self, pulse_param): 
         '''here the last parameter is time '''
         buffer = np.array([[0],
