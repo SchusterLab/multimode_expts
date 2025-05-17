@@ -9,17 +9,11 @@ from slab.experiment import Experiment
 import experiments as meas
 from slab.instruments import *
 import yaml
-from scipy.interpolate import UnivariateSpline
 from slab import get_next_filename, get_current_filename
 
 from slab.dsfit import *
-from scipy.optimize import curve_fit
-import experiments.fitting as fitter
-from scipy.fft import fft, fftfreq
 from multimode_expts.MM_base import MM_base
 from multimode_expts.MM_rb_base import MM_rb_base
-from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import * # for generate combos in MultiRBAM
 
 from dataset import storage_man_swap_dataset
 
@@ -50,8 +44,7 @@ class qsim_base_class():
             # Load the YAML content
             self.loaded = yaml.safe_load(file)
         return None
-    
-    
+
 
 class floquet_swap_class(qsim_base_class): 
     '''Base class for floquet swapping experiments '''
@@ -71,10 +64,10 @@ class floquet_swap_class(qsim_base_class):
         self.sweep_experiment_name = 'storage_sweep'
         # self.map_sequential_cfg_to_experiment()
 
-        for floquet_cycles in range(1,501,5):
+        for floquet_cycles in range(1,51,5):
             self.loaded[self.experiment_name]['floquet_cycles'] = floquet_cycles
             print('Loaded: ', self.loaded[self.experiment_name])
-            
+
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
             run_exp.cfg.expt = self.loaded[self.experiment_name]
 
@@ -82,7 +75,6 @@ class floquet_swap_class(qsim_base_class):
             run_exp.cfg.device.readout.relax_delay = 5000 # Wait time between experiments [us]
             print('Config is: ', run_exp.cfg.expt)
             run_exp.go(analyze=False, display=False, progress=True, save=True)
-        
 
     def run_sweep(self, sweep_experiment_name):
         '''Run the sweep'''
@@ -92,4 +84,3 @@ class floquet_swap_class(qsim_base_class):
         if sweep_experiment_name == 'storage_sweep':
             self.storage_sweep()
 
-    

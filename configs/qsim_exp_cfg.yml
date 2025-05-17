@@ -14,7 +14,6 @@ storage_sweep:
     man_reset:  False
     storage_reset:  False
 
-
 FloquetGeneralExperiment:
     init_storage: 4
     start: 0.007 # 
@@ -30,3 +29,4 @@ FloquetGeneralExperiment:
     man_reset:  False
     storage_reset:  False
     update_post_pulse_phase: [False, 1.07]
+

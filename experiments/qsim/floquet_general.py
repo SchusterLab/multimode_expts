@@ -47,6 +47,7 @@ class FloquetGeneralProgram(MMAveragerProgram):
 
         qTest = self.qubits[0]
 
+        # why are we doing this instead of using MM_base?
         self.adc_chs = cfg.hw.soc.adcs.readout.ch
         self.res_chs = cfg.hw.soc.dacs.readout.ch
         self.res_ch_types = cfg.hw.soc.dacs.readout.type
@@ -154,7 +155,7 @@ class FloquetGeneralProgram(MMAveragerProgram):
         cfg = AttrDict(self.cfg)
         qTest = self.qubits[0]
 
-        # actiev reset 
+        # active reset 
         if self.cfg.expt.active_reset:
             self.active_reset(man_reset=self.cfg.expt.man_reset, storage_reset=self.cfg.expt.storage_reset)
 
