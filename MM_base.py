@@ -98,13 +98,11 @@ class MM_base(QickProgram):
 
     def get_prepulse_creator(self,  sweep_pulse = None):
         '''returns an instance  of  prepulse creator class '''
-        #config_file = self.cfg
         creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file)
 
         if sweep_pulse is not None:
             for pulse_idx in range(len(sweep_pulse)):
                 # for each pulse 
-                #print(sweep_pulse)
                 pulse_param = list(sweep_pulse[pulse_idx][1:])
                 eval(f"creator.{sweep_pulse[pulse_idx][0]}({pulse_param})")
 
@@ -247,7 +245,6 @@ class MM_base(QickProgram):
         self.pulse(ch=self.f0g1_ch[0])
         self.sync_all(10)
 
-
     def custom_pulse(self, 
                      cfg, # not used but in order not to break old API
                      pulse_data: Optional[List[List[float]] | np.ndarray]=None,
@@ -328,6 +325,7 @@ class MM_base(QickProgram):
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
 
+
     def man_reset(self, man_idx, chi_dressed = True ): 
         '''
         Reset manipulate mode by swapping it to lossy mode 
@@ -366,28 +364,23 @@ class MM_base(QickProgram):
         # self.wait_all(self.us2cycles(0.25))
         self.sync_all(self.us2cycles(M_curr_lossy[3]))
 
-    def man_stor_swap(self, man_idx, stor_idx): 
+    def man_stor_swap(self, man_idx: int, stor_idx: int): 
         '''
-        Perform Swap between manipulate mode and  storage mode 
+        Perform Swap (pi pulse only) between manipulate mode and storage mode 
         '''
-        qTest = 0
-        sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(stor_idx), 'pi', 0], 
-                       ]
+        sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(stor_idx), 'pi', 0], ]
         creator = self.get_prepulse_creator(sweep_pulse)
-        # print(creator.pulse)
         # self.sync_all(self.us2cycles(0.2))
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(stor_idx) + 'dump')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
- 
-    def coup_stor_swap(self, man_idx): 
+
+    def coup_stor_swap(self, man_idx):
         '''
         Perform Swap between manipulate mode and  storage mode 
         '''
-        qTest = 0
         sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'C', 'pi', 0], 
                        ]
         creator = self.get_prepulse_creator(sweep_pulse)
-        # print(creator.pulse)
         # self.sync_all(self.us2cycles(0.2))
         self.custom_pulse(self.cfg, creator.pulse, prefix='Coupler')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
@@ -589,7 +582,8 @@ class MM_base(QickProgram):
 
     # def post_select_histogram(self):
 
-    # ----------------------------------------------------- #Single shot analysis code # ----------------------------------------------------- #    
+    # --------------------------------- Single shot analysis code  ---------------------------------
+    # hmm do these really belong here or in a separate single shot file?
     @staticmethod
     def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
         # assume the last one is experiment data, the last but one is for post selection
@@ -624,11 +618,10 @@ class MM_base(QickProgram):
             plot_f = False 
             if 'If' in data.keys():
                 plot_f = True
-                If, Qf = filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
+                If, Qf = self.filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
                 # Qf = filter_data(data['Qf'], threshold, readout_per_experiment=readout_per_round)
                 print(len(If))
         else:
-
             Ig = data['Ig']
             Qg = data['Qg']
             Ie = data['Ie']
@@ -719,10 +712,10 @@ class MM_base(QickProgram):
             if plot_f:
                 nf, binsf, pf = axs[1,0].hist(If_new, bins=numbins, range = xlims, color='g', label='f', alpha=0.5, density=True)
             axs[1,0].set_ylabel('Counts')
-            axs[1,0].set_xlabel('I [ADC levels]')       
+            axs[1,0].set_xlabel('I [ADC levels]')
             axs[1,0].legend(loc='upper right')
 
-        else:        
+        else:
             ng, binsg = np.histogram(Ig_new, bins=numbins, range=xlims, density=True)
             ne, binse = np.histogram(Ie_new, bins=numbins, range=xlims, density=True)
             if plot_f:
@@ -750,7 +743,7 @@ class MM_base(QickProgram):
             tind=contrast.argmax()
             thresholds.append(binsg[tind])
             fids.append(contrast[tind])
-            
+
         if plot: 
             axs[1,0].set_title(f'Histogram (Fidelity g-e: {100*fids[0]:.3}%)')
             axs[1,0].axvline(thresholds[0], color='0.2', linestyle='--')
@@ -768,7 +761,7 @@ class MM_base(QickProgram):
                 axs[1,1].axvline(thresholds[2], color='0.2', linestyle='--')
             axs[1,1].legend()
             axs[1,1].set_xlabel('I [ADC levels]')
-            
+
             plt.subplots_adjust(hspace=0.25, wspace=0.15)        
             plt.show()
 
@@ -826,7 +819,7 @@ class prepulse_creator2:
             freq = self.cfg.device.qubit.f_ge[0]
         else: 
             freq = self.cfg.device.qubit.f_ef[0]
-        
+
         if pulse_name[:6] != 'parity':
             pulse_full_name = pulse_name + '_' + transition_name # like pi_ge or pi_ef or pi_ge_new or pi_ef_new
 
@@ -838,7 +831,7 @@ class prepulse_creator2:
                     [self.cfg.device.qubit.pulses[pulse_full_name]['type'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['sigma'][0]]], dtype = object)
 
-        else: # parity   string is 'parity_M1' or 'parity_M2'
+        else: # parity string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
             qubit_pulse = np.array([[freq], 
                     [0],
@@ -904,7 +897,7 @@ class prepulse_creator2:
                 [ch],
                 ['flat_top'],
                 [0.005]], dtype = object)
-        
+
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
 
