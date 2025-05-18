@@ -1,12 +1,19 @@
-from qick import *
+from qick import QickProgram, AveragerProgram, RAveragerProgram
 import numpy as np
 from slab import AttrDict
-from dataset import * 
 from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
+from typing import List, Optional
 
 
-class MM_base(): 
+class MM_base(QickProgram):
+    """
+    Methods and handy properties that are useful for both averager and raverager programs
+    Prepares the commonly used pulses in multimode experiments 
+    such as qubit ge, ef, f0g1, M1-Sx pi and pi/2 pulses,
+    such that child classes can directly use the waveforms (gaussians) added here.
+    Also provides a more generic way to create custom pulses and many convenience functions.
+    """
     def __init__(self, cfg):
         '''
         Contains functions that are useful for both averager and raverager programs
