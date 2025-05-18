@@ -10,7 +10,7 @@ class MM_base(QickProgram):
     """
     Methods and handy properties that are useful for both averager and raverager programs
     Prepares the commonly used pulses in multimode experiments 
-    such as qubit ge, ef, f0g1, M1-Sx pi and pi/2 pulses,
+    such as qubit ge, ef, f0g1, M1-Sx π and π/2 pulses,
     such that child classes can directly use the waveforms (gaussians) added here.
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
@@ -51,11 +51,13 @@ class MM_base(QickProgram):
         self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
         # self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
 
-        # --------------frequencies----------
+        # --------------frequencies (register values)----------
         self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
 
-        # -----------freqeuncies: register values-----------
+        #TODO: cleanup these name references. Should be easy with the help of LSP!
+
+        # -----------freqeuncies: (same as above but diff name and as lists...)-----------
         self.f_ge_reg = [self.freq2reg(
             cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
         self.f_ef_reg = [self.freq2reg(
@@ -221,11 +223,10 @@ class MM_base(QickProgram):
 
         # some dummy variables 
         qTest = 0
-        self.f_q = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])
         self.f_cav = self.freq2reg(5000, gen_ch=self.man_ch[0])
 
         #initialize the phase to be 0
-        self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_q,
+        self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_ge_reg,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.qubit_ch[0])
         self.set_pulse_registers(ch=self.man_ch[0], freq=self.f_cav,
@@ -240,7 +241,7 @@ class MM_base(QickProgram):
         self.set_pulse_registers(ch=self.flux_high_ch[0], freq=self.f_cav,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.flux_high_ch[0])
-        self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_q,
+        self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_ge_reg,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.f0g1_ch[0])
         self.sync_all(10)
