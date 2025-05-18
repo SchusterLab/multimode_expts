@@ -248,36 +248,25 @@ class MM_base(QickProgram):
         self.sync_all(10)
 
 
-    def custom_pulse(self, cfg, pulse_data, advance_qubit_phase = None, sync_zero_const = False, prefix='pre'): 
+    def custom_pulse(self, 
+                     cfg, # not used but in order not to break old API
+                     pulse_data: Optional[List[List[float]] | np.ndarray]=None,
+                     advance_qubit_phase: float=0,
+                     sync_zero_const: bool=False,
+                     prefix: str='pre'):
         '''
         Executes prepulse or postpulse
-
-        # [[frequency], [gain], [length (us)], [phases], [drive channel],
-        #  [shape], [ramp sigma]],
-        #  drive channel=1 (flux low), 
-        # 2 (qubit),3 (flux high),4 (storage),5 (f0g1),6 (manipulate),
+        pulse data:
+            [[frequency], [gain], [length (us)], [phases],
+            [drive channel], [shape], [ramp sigma]]
+        where drive channel=
+            1 (flux low), 2 (qubit), 3 (flux high),
+            4 (storage),  5 (f0g1),  6 (manipulate)
         '''
-
-        # print('------------------Beginning Custom Pulse----------------------------')
-        # print(pulse_data)
         if pulse_data is None:
             return None
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        # for prepulse 
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
-        if advance_qubit_phase is not None:
-            pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
+        pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
 
         for jj in range(len(pulse_data[0])):
                 # translate ch id to ch
@@ -338,7 +327,6 @@ class MM_base(QickProgram):
                                                            gen_ch=self.tempch))
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
-        # print('------------------End Custom Pulse----------------------------')
 
     def man_reset(self, man_idx, chi_dressed = True ): 
         '''
