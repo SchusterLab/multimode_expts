@@ -16,9 +16,78 @@ class MM_base(QickProgram):
     """
     def __init__(self, cfg):
         '''
-        Contains functions that are useful for both averager and raverager programs
+        "Software" initialization: parses the cfg and stores parameters in self for easy access
+        such as channel info, frequency, gain for various pulses.
+        Run self.MM_base_initialize() to actually add gaussians to rfsoc etc
         '''
         self.cfg=AttrDict(cfg)
+        self.cfg.update(cfg.expt) # is this actually used? still see self.cfg.expt everywhere
+
+        # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
+        self.qubits = self.cfg.expt.qubits
+
+        qTest = self.qubits[0]
+
+        # -----------channel info-----------
+        self.adc_chs = cfg.hw.soc.adcs.readout.ch
+        self.res_chs = cfg.hw.soc.dacs.readout.ch
+        self.res_ch_types = cfg.hw.soc.dacs.readout.type
+        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
+        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
+        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
+        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
+        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
+        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
+        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
+        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
+        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
+        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
+        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
+        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
+        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
+        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
+
+        # ----------register page for qubit chs----------
+        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
+        # self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
+
+        # --------------frequencies----------
+        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
+        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
+
+        # -----------freqeuncies: register values-----------
+        self.f_ge_reg = [self.freq2reg(
+            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
+        self.f_ef_reg = [self.freq2reg(
+            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
+        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
+            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
+        # self.f_rf_reg = [self.freq2reg(self.cfg.expt.flux_drive[1], gen_ch=self.rf_ch[0])]
+        # self.f_ge_resolved_reg = [self.freq2reg(
+        #     self.cfg.expt.qubit_resolved_pi[0], gen_ch=self.qubit_chs[qTest])]
+
+        # --------------readout lengths---------
+        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
+            self.cfg.device.readout.readout_length, self.res_chs)]
+        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
+            self.cfg.device.readout.readout_length, self.adc_chs)]
+
+        # --------------qubit pulse parameters: sigma----------
+        self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pief_ftop_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
+
+        # --------------qubit pulse parameters: gain----------
+        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest] # naming doesn't seem consistent here?
+        self.hpi_ge_gain = cfg.device.qubit.pulses.hpi_ge.gain[qTest]
+        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
+
+        # -------------f0g1 and M1-S sigmas-------
+        self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
+        self.pi_m1_sigma_low = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_low_ch[qTest])
+        self.pi_m1_sigma_high = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_high_ch[qTest])
+
 
     def initialize_idling_dataset(self): 
         '''
@@ -61,58 +130,13 @@ class MM_base(QickProgram):
 
     def MM_base_initialize(self): 
         '''
-        Shared Initialize method
+        "Hardware" initialization: prepares the rfsoc by decalring gen/ro channels and adding waveforms
         '''
         cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-        # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.qubits = self.cfg.expt.qubits
-
         qTest = self.qubits[0]
 
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        # get register page for qubit_chs
-        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        # self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
-
-        self.f_ge_reg = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-        
-        self.hpi_ge_gain = cfg.device.qubit.pulses.hpi_ge.gain[qTest]
-
-        # self.f_ge_resolved_reg = [self.freq2reg(
-        #     self.cfg.expt.qubit_resolved_pi[0], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        # self.f_rf_reg = [self.freq2reg(self.cfg.expt.flux_drive[1], gen_ch=self.rf_ch[0])]
-
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-        
+        # ------ declare res dacs -------
         gen_chs = []
-         # declare res dacs
         mask = None
         mixer_freq = 0  # MHz
         mux_freqs = None  # MHz
@@ -123,7 +147,7 @@ class MM_base(QickProgram):
         self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
                              freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
 
-        # declare qubit dacs
+        # --------declare qubit dacs-------
         for q in self.qubits:
             mixer_freq = 0
             if self.qubit_ch_types[q] == 'int4':
@@ -133,6 +157,7 @@ class MM_base(QickProgram):
                     ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
                 gen_chs.append(self.qubit_chs[q])
 
+        # -------add gaussian envelopes------
         self.initialize_waveforms()
 
         # define ramp pulses
@@ -147,6 +172,7 @@ class MM_base(QickProgram):
         # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
  
+
     def get_total_time(self, test_pulse, gate_based = False, cycles = False, cycles2us = 0.0023251488095238095):
         '''
         Takes in pulse str of form 
@@ -154,7 +180,6 @@ class MM_base(QickProgram):
         '''
         if gate_based: 
             test_pulse = self.get_prepulse_creator(test_pulse).pulse
-            # print(test_pulse)
         t = 0 
         for i in range(len(test_pulse[0])):
             if test_pulse[5][i] == 'g' or test_pulse[5][i] == 'gauss' or test_pulse[5][i] == 'gaussian':
@@ -171,40 +196,18 @@ class MM_base(QickProgram):
         '''
         Initialize waveforms for ge, ef_new, f0g1 and sidebands
         '''
-        cfg = self.cfg 
-        qTest = 0 
+        qTest = 0
 
-        # --------------------qubit pulse parameters 
-        self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_ftop_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
-
-        # ----------------------qubit pulse parameters   (gain )
-        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
-
-        # define all 2 different pulses
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pi_sigma, length=self.pi_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pief_sigma, length=self.pief_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
 
-        # frequencies
-        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
-        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
-
-        # --------------------f0g1 pulse parameters 
-        self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
         self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
-        # -------------------- M1-Si sideband parameter 
-        self.pi_m1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_low_ch[qTest])
-        self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma, length=self.pi_m1_sigma*6)
+        self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
+        self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
 
-        self.pi_m1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_high_ch[qTest])
-        self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma, length=self.pi_m1_sigma*6)
 
     def reset_and_sync(self):
         # Phase reset all channels except readout DACs 
@@ -217,19 +220,6 @@ class MM_base(QickProgram):
         # self.setup_and_pulse(ch=self.f0g1_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.f0g1_ch[0]), phase=0, gain=5, length=10, phrst=1)
         # self.setup_and_pulse(ch=self.storage_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.storage_ch[0]), phase=0, gain=5, length=10, phrst=1)
         cfg = self.cfg
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        # for prepulse 
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
         # some dummy variables 
         qTest = 0
@@ -255,7 +245,6 @@ class MM_base(QickProgram):
         self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_q,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.f0g1_ch[0])
-        # self.wait_all(10)   
         self.sync_all(10)
 
 
