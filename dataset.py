@@ -17,14 +17,24 @@ class storage_man_swap_dataset:
         rows = []
         for idx in range(1, 13, 1): 
             row = {'stor_name': 'M1-S' + str(idx),
-                   'freq (MHz)': -1, 'precision (MHz)': -1, 'pi (mus)': -1, 'h_pi (mus)': -1, 'gain (DAC units)': -1, 'last_update': datetime.now()}
+                   'freq (MHz)': -1,
+                   'precision (MHz)': -1,
+                   'pi (mus)': -1,
+                   'h_pi (mus)': -1,
+                   'gain (DAC units)': -1,
+                   'last_update': datetime.now()}
             rows.append(row)
-        
+
         # also add for the manipulate 
         row = {'stor_name': 'M1',
-               'freq (MHz)': -1, 'precision (MHz)': -1, 'pi (mus)': -1, 'h_pi (mus)': -1, 'gain (DAC units)': -1, 'last_update': datetime.now()}
+               'freq (MHz)': -1,
+               'precision (MHz)': -1,
+               'pi (mus)': -1,
+               'h_pi (mus)': -1,
+               'gain (DAC units)': -1,
+               'last_update': datetime.now()}
         rows.append(row)
-        
+
         self.df = pd.concat([self.df, pd.DataFrame(rows)], ignore_index=True)
         self.df.to_csv(self.filename, index=False)
 
@@ -43,7 +53,7 @@ class storage_man_swap_dataset:
         return self.df[self.df['stor_name'] == stor_name]['last_update'].values[0]
     def get_all(self, stor_name):
         return self.df[self.df['stor_name'] == stor_name].values[0]
-        
+
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
         self.df.loc[self.df['stor_name'] == stor_name, 'freq (MHz)'] = freq
@@ -80,7 +90,14 @@ class storage_man_swap_dataset:
 
     # add a new row to the csv file
     def append_dataset(self, stor_name, freq, precision, pi, h_pi, gain):
-        new_row = {'stor_name': stor_name, 'freq (MHz)': freq, 'precision (MHz)': precision, 'pi (mus)': pi, 'h_pi (mus)': h_pi, 'gain (DAC units)': gain, 'last_update': datetime.now()}
+        new_row = {
+            'stor_name': stor_name,
+            'freq (MHz)': freq,
+            'precision (MHz)': precision,
+            'pi (mus)': pi,
+            'h_pi (mus)': h_pi,
+            'gain (DAC units)': gain,
+            'last_update': datetime.now()}
         self.df = self.df.append(new_row, ignore_index=True)
         self.df.to_csv(self.filename, index=False)
 
@@ -97,7 +114,7 @@ class storage_man_swap_dataset:
     def create_copy(self, new_filename=None):
         expts_path = ''
         # print(f"expts_path: {expts_path}")
-        
+
         if new_filename is None:
             name, ext = os.path.splitext(os.path.basename(self.filename))
             new_filename = os.path.join(expts_path, f"{name}_copy{ext}")
@@ -164,4 +181,4 @@ class storage_man_swap_dataset:
             filepath (str): The path to the file where the dataset should be saved.
         """
         self.df.to_csv(filepath, index=False)
-        
+
