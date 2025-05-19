@@ -3,7 +3,7 @@ import numpy as np
 from slab import AttrDict
 from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 class MM_base(QickProgram):
@@ -105,7 +105,7 @@ class MM_base(QickProgram):
         dict= {'key = transition' : value = []} 
         '''
 
-    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[str|int]]] = None):
+    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None):
         '''
         sweep_pulse: 
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
