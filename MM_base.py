@@ -56,6 +56,13 @@ class MM_base(QickProgram):
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
 
         #TODO: cleanup these name references. Should be easy with the help of LSP!
+        # It can show you the references to this variable in the entire project.
+        # E.g. f0g1 info has multiple sources of truth:
+        #   is it cfg.device.QM.pulses.f0g1.[freq/gain/length/hpilength/sigma]?
+        #   or cfg.device.qubit.pulses.f0g1.[gain/length/sigma]
+        #   or cfg.device.qubit.pulses.pi_f0g1.sigma?
+        #   or perhaps not in cfg at all but in the CSV?
+        # All of the above are used in various places!
 
         # -----------freqeuncies: (same as above but diff name and as lists...)-----------
         self.f_ge_reg = [self.freq2reg(
@@ -98,8 +105,15 @@ class MM_base(QickProgram):
         dict= {'key = transition' : value = []} 
         '''
 
-    def get_prepulse_creator(self,  sweep_pulse = None):
-        '''returns an instance  of  prepulse creator class '''
+    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[str|int]]] = None):
+        '''
+        sweep_pulse: 
+            [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
+            name of pulse like pi, hpi, or parity_M1 or parity_M2,
+            phase  (int form )]
+        Returns:
+            an instance of prepulse creator class
+        '''
         creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file)
 
         if sweep_pulse is not None:
@@ -786,12 +800,16 @@ class prepulse_creator2:
     def __init__(self, cfg, storage_man_file):
         '''
         Takes pulse param of form 
-        [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
-        name of pulse like pi, hpi, or parity_M1 or parity_M2,
-        phase  (int form )]
+            [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
+            name of pulse like pi, hpi, or parity_M1 or parity_M2,
+            phase  (int form )]
 
         Creates pulses of the form 
-        # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]], drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate),           
+            [[frequency], [gain], [length (us)], [phases],
+            [drive channel], [shape], [ramp sigma]]
+        where drive channel=
+            1 (flux low), 2 (qubit), 3 (flux high),
+            4 (storage),  5 (f0g1),  6 (manipulate)
         '''
         # config 
         # with open(config_file, 'r') as cfg_file:
