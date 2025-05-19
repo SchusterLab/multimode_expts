@@ -262,7 +262,7 @@ class MM_base(QickProgram):
 
     def custom_pulse(self, 
                      cfg, # not used but in order not to break old API
-                     pulse_data: Optional[List[List[float]] | np.ndarray]=None,
+                     pulse_data: Optional[Union[List[List[float]], np.ndarray]]=None,
                      advance_qubit_phase: float=0,
                      sync_zero_const: bool=False,
                      prefix: str='pre'):
