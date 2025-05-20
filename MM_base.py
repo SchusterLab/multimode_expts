@@ -15,13 +15,17 @@ class MM_base:
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
     def __init__(self, cfg: AttrDict):
-        assert False, "Don't instantiate this directly but inherit together with a QickProgram (see below)"
+        raise NotImplementedError("""
+        Don't instantiate this directly.
+        Inherit together with a QickProgram.
+        See eg MMAveragerProgram or RAveragerProgram for usage.
+        """)
 
-    def soft_init(self):
+    def parse_config(self):
         '''
         "Software" initialization: parses the cfg and stores parameters in self for easy access
         such as channel info, frequency, gain for various pulses.
-        Run self.MM_base_initialize() to actually add gaussians to rfsoc etc
+        This is called by self.MM_base_initialize() during intialization 
         '''
         cfg = self.cfg
         # self.cfg = cfg
@@ -152,9 +156,10 @@ class MM_base:
         as when inherited after eg RAveragerProgram,
         the __init__ of this class never gets called due to MRO 
         where as the initialize() of the child classes does.
-        "Hardware" initialization: prepares the rfsoc by decalring gen/ro channels and adding waveforms
+        First calls parse_config() to get the parameters
+        Then does "hardware" initialization: declares gen/ro channels and adds waveforms
         '''
-        self.soft_init()  # call soft_init to get the parameters
+        self.parse_config()  # parse the cfg to get the parameters
         cfg = self.cfg
         qTest = self.qubits[0]
 
@@ -801,11 +806,7 @@ class MMAveragerProgram(AveragerProgram, MM_base):
 
 class MMRAveragerProgram(RAveragerProgram, MM_base): 
     def __init__(self, soccfg, cfg):
-        cfg.update(cfg.expt)
-        print(cfg.keys())
         RAveragerProgram.__init__(self, soccfg, cfg)
-        # MM_base.__init__(self, cfg)
-        #self.mm_base = MM_base()
 
 
 class prepulse_creator2: 

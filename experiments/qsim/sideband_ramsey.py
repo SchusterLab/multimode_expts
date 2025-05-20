@@ -19,18 +19,8 @@ class SidebandRamseyProgram(MMRAveragerProgram):
     Then do a Ramsey experiment on M1-Sx swap 
     """
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
-        # self.cfg = cfg
-        # self.cfg.update(self.cfg.expt) # are we using this??
-        for line in self.__class__.mro():
-            print(line)
         super().__init__(soccfg, cfg)
-
-        # copy over parameters for the acquire method
-        # self.cfg.reps = cfg.expt.reps
-        # self.cfg.rounds = cfg.expt.rounds
-
         self.swap_ds = storage_man_swap_dataset()
-        print(self.swap_ds.df)
 
 
     def initialize(self):
