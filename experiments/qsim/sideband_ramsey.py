@@ -323,3 +323,55 @@ class SidebandRamseyExperiment(Experiment):
         super().save_data(data=data)
         return self.fname
 
+
+class SidebandChevronExperiment(SidebandRamseyExperiment):
+    def acquire(self, progress=False, debug=False):
+        ensure_list_in_cfg(self.cfg)
+
+        read_num = 4 if self.cfg.expt.active_reset else 1
+
+        y_pts = np.linspace(-1,1,51)
+
+        data = {'avgi': [], 'avgq': [], 'amps': [], 'phases': [], 'idata': [], 'qdata': []}
+
+        for detune in tqdm(y_pts):
+            self.cfg.expt.detune = detune
+            ramsey = SidebandRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
+            self.qick_program = ramsey
+
+            x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
+                                            threshold=None,
+                                            load_pulses=True,
+                                            progress=False,
+                                            debug=debug,
+                                            readouts_per_experiment=read_num)
+    
+            avgi = avgi[0][0]
+            avgq = avgq[0][0]
+            amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
+            phases = np.angle(avgi+1j*avgq) # Calculating the phase
+
+            data['avgi'].append(avgi)
+            data['avgq'].append(avgq)
+            data['amps'].append(amps)
+            data['phases'].append(phases)
+            idata, qdata = ramsey.collect_shots()
+            data['idata'].append(idata)
+            data['qdata'].append(qdata)
+
+        data['xpts'] = x_pts
+        data['ypts'] = y_pts + self.m1s_freq_MHz
+        for key in ['avgi', 'avgq', 'amps', 'phases', 'idata', 'qdata']:
+            data[key] = np.array(data[key])
+
+        if self.cfg.expt.normalize:
+            from experiments.single_qubit.normalize import normalize_calib
+            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
+
+            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
+            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
+            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
+
+        self.data=data
+        return data
+
