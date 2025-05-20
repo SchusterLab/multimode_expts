@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from typing import List, Optional, Union
 
 
-class MM_base(QickProgram):
+class MM_base:
     """
     Methods and handy properties that are useful for both averager and raverager programs
     Prepares the commonly used pulses in multimode experiments 
@@ -15,13 +15,17 @@ class MM_base(QickProgram):
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
     def __init__(self, cfg: AttrDict):
+        assert False, "Don't instantiate this directly but inherit together with a QickProgram (see below)"
+
+    def soft_init(self):
         '''
         "Software" initialization: parses the cfg and stores parameters in self for easy access
         such as channel info, frequency, gain for various pulses.
         Run self.MM_base_initialize() to actually add gaussians to rfsoc etc
         '''
-        self.cfg = cfg
-        # self.cfg.update(cfg.expt) # is this actually used? still see self.cfg.expt everywhere
+        cfg = self.cfg
+        # self.cfg = cfg
+        self.cfg.update(cfg.expt) # this is to make things like reps, expts available
 
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.qubits = self.cfg.expt.qubits
@@ -144,9 +148,14 @@ class MM_base(QickProgram):
 
     def MM_base_initialize(self): 
         '''
+        This is effectively the actual initialization function of this class,
+        as when inherited after eg RAveragerProgram,
+        the __init__ of this class never gets called due to MRO 
+        where as the initialize() of the child classes does.
         "Hardware" initialization: prepares the rfsoc by decalring gen/ro channels and adding waveforms
         '''
-        cfg = AttrDict(self.cfg)
+        self.soft_init()  # call soft_init to get the parameters
+        cfg = self.cfg
         qTest = self.qubits[0]
 
         # ------ declare res dacs -------
@@ -790,13 +799,12 @@ class MMAveragerProgram(AveragerProgram, MM_base):
         super().__init__(soccfg, cfg)
 
 
-class MMRAveragerProgram(MM_base, RAveragerProgram): 
+class MMRAveragerProgram(RAveragerProgram, MM_base): 
     def __init__(self, soccfg, cfg):
-        self.soccfg = soccfg
-        MM_base.__init__(self, cfg)
-        self.cfg.update(self.cfg.expt)
-        print(self.cfg.keys())
+        cfg.update(cfg.expt)
+        print(cfg.keys())
         RAveragerProgram.__init__(self, soccfg, cfg)
+        # MM_base.__init__(self, cfg)
         #self.mm_base = MM_base()
 
 
