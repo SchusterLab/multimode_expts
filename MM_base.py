@@ -14,14 +14,14 @@ class MM_base(QickProgram):
     such that child classes can directly use the waveforms (gaussians) added here.
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
-    def __init__(self, cfg):
+    def __init__(self, cfg: AttrDict):
         '''
         "Software" initialization: parses the cfg and stores parameters in self for easy access
         such as channel info, frequency, gain for various pulses.
         Run self.MM_base_initialize() to actually add gaussians to rfsoc etc
         '''
-        self.cfg=AttrDict(cfg)
-        self.cfg.update(cfg.expt) # is this actually used? still see self.cfg.expt everywhere
+        self.cfg = cfg
+        # self.cfg.update(cfg.expt) # is this actually used? still see self.cfg.expt everywhere
 
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.qubits = self.cfg.expt.qubits
@@ -240,7 +240,7 @@ class MM_base(QickProgram):
         self.f_cav = self.freq2reg(5000, gen_ch=self.man_ch[0])
 
         #initialize the phase to be 0
-        self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_ge_reg,
+        self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_ge,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.qubit_ch[0])
         self.set_pulse_registers(ch=self.man_ch[0], freq=self.f_cav,
@@ -255,7 +255,7 @@ class MM_base(QickProgram):
         self.set_pulse_registers(ch=self.flux_high_ch[0], freq=self.f_cav,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.flux_high_ch[0])
-        self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_ge_reg,
+        self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_ge,
                                  phase=0, gain=0, length=10, style="const", phrst=1)
         self.pulse(ch=self.f0g1_ch[0])
         self.sync_all(10)
@@ -790,9 +790,13 @@ class MMAveragerProgram(AveragerProgram, MM_base):
         super().__init__(soccfg, cfg)
 
 
-class MMRAveragerProgram(RAveragerProgram, MM_base): 
+class MMRAveragerProgram(MM_base, RAveragerProgram): 
     def __init__(self, soccfg, cfg):
-        super().__init__(soccfg, cfg)
+        self.soccfg = soccfg
+        MM_base.__init__(self, cfg)
+        self.cfg.update(self.cfg.expt)
+        print(self.cfg.keys())
+        RAveragerProgram.__init__(self, soccfg, cfg)
         #self.mm_base = MM_base()
 
 

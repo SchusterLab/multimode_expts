@@ -19,14 +19,15 @@ class SidebandRamseyProgram(MMRAveragerProgram):
     Then do a Ramsey experiment on M1-Sx swap 
     """
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
-        # self.cfg = AttrDict(cfg)
+        # self.cfg = cfg
         # self.cfg.update(self.cfg.expt) # are we using this??
+        for line in self.__class__.mro():
+            print(line)
+        super().__init__(soccfg, cfg)
 
         # copy over parameters for the acquire method
-        self.cfg.reps = cfg.expt.reps
-        self.cfg.rounds = cfg.expt.rounds
-
-        super().__init__(soccfg, self.cfg)
+        # self.cfg.reps = cfg.expt.reps
+        # self.cfg.rounds = cfg.expt.rounds
 
         self.swap_ds = storage_man_swap_dataset()
         print(self.swap_ds.df)
@@ -59,12 +60,12 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         # gain of the pulse we are trying to calibrate 
         self.gain_test = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest] 
 
-        # if cfg.expt.f0g1_cavity==1: 
-        #     ii, jj = 1, 0
-        # elif cfg.expt.f0g1_cavity==2: 
-        #     ii, jj = 0, 1
-        # else:
-        #     raise ValueError("f0g1_cavity must be 1 or 2")
+        if cfg.expt.f0g1_cavity==1: 
+            ii, jj = 1, 0
+        elif cfg.expt.f0g1_cavity==2: 
+            ii, jj = 0, 1
+        else:
+            raise ValueError("f0g1_cavity must be 1 or 2")
         # systematic way of adding qubit pulse under chi shift
         # self.pif0g1_gain = self.cfg.device.QM.pulses.f0g1.gain[cfg.expt.f0g1_cavity-1]
         # self.f_pi_test_reg = self.freq2reg(self.cfg.device.QM.chi_shift_matrix[0][cfg.expt.f0g1_cavity]+self.cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest]) # freq we are trying to calibrate
@@ -81,6 +82,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         #                 length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
 
         # add qubit pulses to respective channels
+        self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # -------------<--
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test_ram", sigma=self.pi2sigma, length=self.pi2sigma*4)
 
         # add readout pulses to respective channels
@@ -233,32 +235,33 @@ class SidebandRamseyExperiment(Experiment):
         read_num = 4 if self.cfg.expt.active_reset else 1
 
         ramsey = SidebandRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
+        self.ramsey = ramsey
 
-        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
-                                           threshold=None,
-                                           load_pulses=True,
-                                           progress=progress,
-                                           debug=debug,
-                                           readouts_per_experiment=read_num)
+        # x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
+        #                                    threshold=None,
+        #                                    load_pulses=True,
+        #                                    progress=progress,
+        #                                    debug=debug,
+        #                                    readouts_per_experiment=read_num)
  
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
-        amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-        phases = np.angle(avgi+1j*avgq) # Calculating the phase
-
-        data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
-        data['idata'], data['qdata'] = ramsey.collect_shots()      
-
-        if self.cfg.expt.normalize:
-            from experiments.single_qubit.normalize import normalize_calib
-            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-
-            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
-            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
-            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-
-        self.data=data
-        return data
+        # avgi = avgi[0][0]
+        # avgq = avgq[0][0]
+        # amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
+        # phases = np.angle(avgi+1j*avgq) # Calculating the phase
+        #
+        # data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
+        # data['idata'], data['qdata'] = ramsey.collect_shots()      
+        #
+        # if self.cfg.expt.normalize:
+        #     from experiments.single_qubit.normalize import normalize_calib
+        #     g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
+        #
+        #     data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
+        #     data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
+        #     data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
+        #
+        # self.data=data
+        # return data
 
 
     def analyze(self, data=None, fit=True, fitparams = None, **kwargs):
