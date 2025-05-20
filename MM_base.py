@@ -15,11 +15,12 @@ class MM_base:
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
     def __init__(self, cfg: AttrDict):
-        raise NotImplementedError("""
-        Don't instantiate this directly.
-        Inherit together with a QickProgram.
-        See eg MMAveragerProgram or RAveragerProgram for usage.
-        """)
+        self.cfg = cfg
+    #     raise NotImplementedError("""
+    #     Don't instantiate this directly.
+    #     Inherit together with a QickProgram.
+    #     See eg MMAveragerProgram or MMRAveragerProgram for usage.
+    #     """)
 
     def parse_config(self):
         '''
@@ -287,7 +288,7 @@ class MM_base:
             [drive channel], [shape], [ramp sigma]]
         where drive channel=
             1 (flux low), 2 (qubit), 3 (flux high),
-            4 (storage),  5 (f0g1),  6 (manipulate)
+            4 (storage),  0 (f0g1),  6 (manipulate)
         '''
         if pulse_data is None:
             return None
@@ -801,7 +802,7 @@ class MM_base:
 
 class MMAveragerProgram(AveragerProgram, MM_base):
     def __init__(self, soccfg, cfg):
-        super().__init__(soccfg, cfg)
+        AveragerProgram.__init__(self, soccfg, cfg)
 
 
 class MMRAveragerProgram(RAveragerProgram, MM_base): 
@@ -822,7 +823,7 @@ class prepulse_creator2:
             [drive channel], [shape], [ramp sigma]]
         where drive channel=
             1 (flux low), 2 (qubit), 3 (flux high),
-            4 (storage),  5 (f0g1),  6 (manipulate)
+            4 (storage),  0 (f0g1),  6 (manipulate)
         '''
         # config 
         # with open(config_file, 'r') as cfg_file:

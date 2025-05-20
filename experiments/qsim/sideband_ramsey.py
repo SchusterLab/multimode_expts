@@ -20,7 +20,6 @@ class SidebandRamseyProgram(MMRAveragerProgram):
     """
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
         super().__init__(soccfg, cfg)
-        self.swap_ds = storage_man_swap_dataset()
 
 
     def initialize(self):
@@ -34,33 +33,45 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         cfg = self.cfg # should be AttrDict already if experiment class init was run properly
+        stor_no = cfg.stor_no
+        stor_name = f'M1-S{stor_no}'
+        self.swap_ds = storage_man_swap_dataset()
 
         qTest = self.qubits[0]
+
+        # retrieve pulse parameters for the M1-Sx swap
+        m1s_freq_MHz = self.swap_ds.get_freq(stor_name)
+        self.m1s_freq = self.freq2reg(m1s_freq_MHz)
+        self.m1s_length = self.us2cycles(self.swap_ds.get_h_pi(stor_name))
+        self.m1s_gain = self.swap_ds.get_gain(stor_name)
+        self.m1s_is_low_freq = True if m1s_freq_MHz < 1000 else False
+        self.m1s_ch = self.flux_low_ch[0] if self.m1s_is_low_freq else self.flux_high_ch[0]
+        # this entry looks like just an int in the yaml file but ensure_list_in_cfg actually makes it into a list...
 
         # declare registers for phase incrementing
         self.r_wait = 3
         self.r_phase2 = 4
-        self.r_phase = self.sreg(self.qubit_chs[qTest], "phase")
+        self.r_phase = self.sreg(self.m1s_ch, "phase")
 
         # pi2sigma this is the sigma of the pi/2 M1-Sx swap pulses 
-        self.pi2sigma_M1Sx = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest],
-                                       gen_ch=self.qubit_chs[qTest]) 
+        # self.pi2sigma_M1Sx = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest],
+        #                                gen_ch=self.qubit_chs[qTest]) 
         # freq we are trying to calibrate
-        self.f_test_reg = self.f_ge_reg[0] 
+        # self.f_test_reg = self.f_ge_reg[0] 
         # gain of the pulse we are trying to calibrate 
-        self.gain_test = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest] 
+        # self.gain_test = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest] 
 
-        if cfg.expt.f0g1_cavity==1: 
-            ii, jj = 1, 0
-        elif cfg.expt.f0g1_cavity==2: 
-            ii, jj = 0, 1
-        else:
-            raise ValueError("f0g1_cavity must be 1 or 2")
+        # if cfg.expt.f0g1_cavity==1: 
+        #     ii, jj = 1, 0
+        # elif cfg.expt.f0g1_cavity==2: 
+        #     ii, jj = 0, 1
+        # else:
+        #     raise ValueError("f0g1_cavity must be 1 or 2")
         # systematic way of adding qubit pulse under chi shift
         # self.pif0g1_gain = self.cfg.device.QM.pulses.f0g1.gain[cfg.expt.f0g1_cavity-1]
         # self.f_pi_test_reg = self.freq2reg(self.cfg.device.QM.chi_shift_matrix[0][cfg.expt.f0g1_cavity]+self.cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest]) # freq we are trying to calibrate
         # self.gain_pi_test = self.cfg.device.QM.pulses.qubit_pi_ge.gain[ii][jj] # gain of the pulse we are trying to calibrate
-        self.pi2sigma_test = self.cfg.device.QM.pulses.qubit_pi_ge.sigma[ii][jj]
+        # self.pi2sigma_test = self.cfg.device.QM.pulses.qubit_pi_ge.sigma[ii][jj]
         # self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test", sigma=self.pi2sigma, length=self.pi2sigma*4)
 
         # self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.f0g1_cavity-1],
@@ -72,15 +83,16 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         #                 length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
 
         # add qubit pulses to respective channels
-        self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # -------------<--
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test_ram", sigma=self.pi2sigma, length=self.pi2sigma*4)
+        # self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # -------------<--
+        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test_ram", sigma=self.pi2sigma, length=self.pi2sigma*4)
 
         # add readout pulses to respective channels
         # self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
         # initialize wait registers
-        self.safe_regwi(self.q_rps[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
-        self.safe_regwi(self.q_rps[qTest], self.r_phase2, 0) 
+        self.m1s_ch_page = self.ch_page(self.m1s_ch)
+        self.safe_regwi(self.m1s_ch_page, self.r_wait, self.us2cycles(cfg.expt.start))
+        self.safe_regwi(self.m1s_ch_page, self.r_phase2, 0) 
 
         self.sync_all(200)
 
@@ -106,33 +118,24 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         ]
         pulse_creator = self.get_prepulse_creator(prepules_cfg)
         self.sync_all(self.us2cycles(0.1))
+        print(pulse_creator.pulse)
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
-        self.sync_all(self.us2cycles(0.2))
-
-        # if cfg.expt.prepulse:
-        #     self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'preetr_')
-        # if self.cfg.expt.qubit_ge_init:
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest],
-        #                          style="arb", 
-        #                          freq=self.f_ge_reg[0], 
-        #                          phase=0, 
-        #                          gain=self.pi_gain, 
-        #                          waveform="pi_qubit_ge")
-        #     self.sync_all(self.us2cycles(0.01))
+        self.sync_all(self.us2cycles(0.1))
 
 
         # first pi/2 pulse 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], 
-                             style="arb", 
-                             freq=self.f_test_reg, 
+        self.setup_and_pulse(ch=self.m1s_ch, 
+                             style="flat_top", 
+                             freq=self.m1s_freq, 
                              phase=0, 
-                             gain=self.gain_test, 
-                             waveform="pi2_test_ram")
+                             gain=self.m1s_gain,
+                             length=self.m1s_length,
+                             waveform="pi_m1si_low" if self.m1s_is_low_freq else "pi_m1si_high")
         self.sync_all(self.us2cycles(0.01))
 
         # wait advanced wait time
         self.sync_all()
-        self.sync(self.q_rps[qTest], self.r_wait)
+        self.sync(self.m1s_ch_page, self.r_wait)
 
         # play echoes 
         # if cfg.expt.echoes[0]:
@@ -146,15 +149,16 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         #         self.sync_all()
 
         # play second pi/2 pulse with advanced phase (all regs except phase are already set by previous pulse)
-        self.set_pulse_registers(ch=self.qubit_chs[qTest],
-                                 style="arb",
-                                 freq=self.f_test_reg,
+        self.set_pulse_registers(ch=self.m1s_ch, 
+                                 style="flat_top", 
+                                 freq=self.m1s_freq, 
                                  phase=self.deg2reg(cfg.advance_phase),
-                                 gain=self.gain_test,
-                                 waveform="pi2_test_ram")
-        self.mathi(self.q_rps[qTest], self.r_phase, self.r_phase2, "+", 0)
+                                 gain=self.m1s_gain,
+                                 length=self.m1s_length,
+                                 waveform="pi_m1si_low" if self.m1s_is_low_freq else "pi_m1si_high")
+        self.mathi(self.m1s_ch_page, self.r_phase, self.r_phase2, "+", 0)
         self.sync_all(self.us2cycles(0.01))
-        self.pulse(ch=self.qubit_chs[qTest])
+        self.pulse(ch=self.m1s_ch)
 
         # postpulse
         postpules_cfg = [
@@ -163,7 +167,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         pulse_creator = self.get_prepulse_creator(postpules_cfg)
         self.sync_all(self.us2cycles(0.1))
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
-        self.sync_all(self.us2cycles(0.2))
+        self.sync_all(self.us2cycles(0.1))
         # self.sync_all()
         # if cfg.expt.postpulse:
         #     self.custom_pulse(cfg, cfg.expt.post_sweep_pulse)
@@ -184,18 +188,16 @@ class SidebandRamseyProgram(MMRAveragerProgram):
 
 
     def update(self):
-        qTest = self.qubits[0]
-
         # phase step [deg] = 360 * f_Ramsey [MHz] * tau_step [us]
         phase_step = self.deg2reg(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step,
-                                  gen_ch=self.qubit_chs[qTest]) 
+                                  gen_ch=self.m1s_ch) 
 
         # update the time between two π/2 pulses
-        self.mathi(self.q_rps[qTest], self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg.expt.step))
+        self.mathi(self.m1s_ch_page, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg.expt.step))
         self.sync_all(self.us2cycles(0.01))
 
         # update the phase for the second π/2 pulse
-        self.mathi(self.q_rps[qTest], self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse
+        self.mathi(self.m1s_ch_page, self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse
         self.sync_all(self.us2cycles(0.01))
 
 
@@ -225,33 +227,33 @@ class SidebandRamseyExperiment(Experiment):
         read_num = 4 if self.cfg.expt.active_reset else 1
 
         ramsey = SidebandRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
-        self.ramsey = ramsey
+        self.qick_program = ramsey
 
-        # x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
-        #                                    threshold=None,
-        #                                    load_pulses=True,
-        #                                    progress=progress,
-        #                                    debug=debug,
-        #                                    readouts_per_experiment=read_num)
+        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
+                                           threshold=None,
+                                           load_pulses=True,
+                                           progress=progress,
+                                           debug=debug,
+                                           readouts_per_experiment=read_num)
  
-        # avgi = avgi[0][0]
-        # avgq = avgq[0][0]
-        # amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-        # phases = np.angle(avgi+1j*avgq) # Calculating the phase
-        #
-        # data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
-        # data['idata'], data['qdata'] = ramsey.collect_shots()      
-        #
-        # if self.cfg.expt.normalize:
-        #     from experiments.single_qubit.normalize import normalize_calib
-        #     g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-        #
-        #     data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
-        #     data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
-        #     data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-        #
-        # self.data=data
-        # return data
+        avgi = avgi[0][0]
+        avgq = avgq[0][0]
+        amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
+        phases = np.angle(avgi+1j*avgq) # Calculating the phase
+
+        data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
+        data['idata'], data['qdata'] = ramsey.collect_shots()      
+
+        if self.cfg.expt.normalize:
+            from experiments.single_qubit.normalize import normalize_calib
+            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
+
+            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
+            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
+            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
+
+        self.data=data
+        return data
 
 
     def analyze(self, data=None, fit=True, fitparams = None, **kwargs):
