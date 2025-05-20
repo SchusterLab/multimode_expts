@@ -28,6 +28,8 @@ class SidebandGeneralProgram(MMAveragerProgram):
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
 
+        self.MM_base_initialize()
+
         self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.qubits = self.cfg.expt.qubits
 

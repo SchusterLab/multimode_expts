@@ -250,6 +250,12 @@ class MM_base:
         # self.setup_and_pulse(ch=self.storage_ch[0], style='const', freq=self.freq2reg(18, gen_ch=self.storage_ch[0]), phase=0, gain=5, length=10, phrst=1)
         cfg = self.cfg
 
+        # dirty patch to cope with old code that doesn't run MM_base_initialize() in the initialize method...
+        try:
+            self.qubit_ch
+        except AttributeError:
+            self.parse_config()
+
         # some dummy variables 
         qTest = 0
         self.f_cav = self.freq2reg(5000, gen_ch=self.man_ch[0])
