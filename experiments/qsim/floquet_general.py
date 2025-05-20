@@ -38,6 +38,7 @@ class FloquetGeneralProgram(MMAveragerProgram):
 
 
     def initialize(self):
+        self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
         self.dataset = storage_man_swap_dataset(self.cfg.device.storage.storage_man_file)

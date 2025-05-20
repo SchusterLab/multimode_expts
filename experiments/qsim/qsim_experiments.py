@@ -64,7 +64,7 @@ class floquet_swap_class(qsim_base_class):
         self.sweep_experiment_name = 'storage_sweep'
         # self.map_sequential_cfg_to_experiment()
 
-        for floquet_cycles in range(1,51,5):
+        for floquet_cycles in range(1,5,5):
             self.loaded[self.experiment_name]['floquet_cycles'] = floquet_cycles
             print('Loaded: ', self.loaded[self.experiment_name])
 
