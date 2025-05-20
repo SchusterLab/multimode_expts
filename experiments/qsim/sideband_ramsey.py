@@ -360,7 +360,7 @@ class SidebandChevronExperiment(SidebandRamseyExperiment):
             data['qdata'].append(qdata)
 
         data['xpts'] = x_pts
-        data['ypts'] = y_pts + self.m1s_freq_MHz
+        data['ypts'] = y_pts + ramsey.m1s_freq_MHz
         for key in ['avgi', 'avgq', 'amps', 'phases', 'idata', 'qdata']:
             data[key] = np.array(data[key])
 
