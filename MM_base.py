@@ -237,6 +237,34 @@ class MM_base:
         self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
         self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
 
+    def measure_wrapper(self): 
+        """
+        Aligns channels and performs a measurement on the first qubit specified in the experiment configuration.
+        This method synchronizes all channels, then triggers a measurement pulse on the readout channel
+        associated with the first qubit (`qTest`). The measurement is performed with the specified ADC channel,
+        trigger offset, and a synchronization delay based on the configured relaxation delay.
+        Steps:
+            1. Selects the first qubit from the experiment configuration.
+            2. Synchronizes all channels with a fixed delay. (This may not correct definition of sync)
+            3. Initiates a measurement pulse with parameters:
+                - Readout pulse channel for the selected qubit.
+                - ADC channel for the selected qubit.
+                - ADC trigger offset from device configuration.
+                - Waits for measurement completion.
+                - Synchronization delay based on relaxation delay.
+        Returns:
+            None
+        """
+        # align channels and measure
+        qTest = self.cfg.expt.qubits[0]
+        self.sync_all(10)
+        self.measure(
+            pulse_ch=self.res_chs[qTest], 
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=self.cfg.device.readout.trig_offset[qTest],
+            wait=True,
+            syncdelay=self.us2cycles(self.cfg.device.readout.relax_delay[qTest])
+        )
 
     def reset_and_sync(self):
         # Phase reset all channels except readout DACs 

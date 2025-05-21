@@ -2582,7 +2582,7 @@ SingleBeamSplitterRBPostSelection:
     active_reset: False # for single shot post selection
     man_reset:  True # for single shot post selection
     storage_reset:  True # for single shot post selection
-    threshold: -39.769721213292996 # for single shot post selection
+    threshold: None # for single shot post selection
     readout_per_round: 4 # for single shot post selection
 
     rb_active_reset: False
@@ -2590,20 +2590,21 @@ SingleBeamSplitterRBPostSelection:
     rb_storage_reset:  True
     rb_reps: 1000
     gates_per_wait: 100000 #????
-    parity_meas: False # If parity measurement is used, set to True; if False the reset argumnents below should be false as well
+    parity_meas: True # If parity measurement is used, set to True; if False the reset argumnents below should be false as well
     reset_qubit_after_parity: False #True # resetting via second parity str 
     reset_qubit_via_active_reset_after_first_meas: False # resetting via active reset after first parity str; the other reset should be false
     
 
     rounds: 1   # always set to 1
     variations: 5   # number of different sequences
-    rb_depth: 10   # rb sequence depth
+    rb_depth: 40   # rb sequence depth
     IRB_gate_no: -1   # IRB gate number, -1 means not using
     postselection_delay: 2.0  # in us, gap between two readout pulses
     bs_repeat: 1
     sync: False
     setup: False
-    bs_para: [349.125, 3000, 0.3582051024719934, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+
+    bs_para: [349.1, 3000,0.339944268790246, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
     # bs_para: [520.925, 5000, 0.565451994946885, 0.005] # at 96%   # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
     # bs_para: [696.665, 9000, 0.666955, 0.005] # opt at 95% 
     # bs_para: [875.845, 9000, 0.6271437312608766, 0.005] # opt 91 at 100
@@ -2628,10 +2629,7 @@ SingleBeamSplitterRBPostSelection:
     prepulse: False
     postpulse: False
     f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
-    # active_reset: True
-    # man_reset:  True
-    # storage_reset:  False
-    # gates_per_wait: 100
+
 
     pre_sweep_pulse: [[None]] # Gate based; prep f0g1 is done automatically ; RAM state prep is also automatic 
     ram_prepulse: [False, 6, [1], 1] # [True/False, number of storage modes to be populated, [idx of modes to be skipped], variations]
