@@ -232,7 +232,8 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
             wait_bool = False
             if idx%self.cfg.expt.gates_per_wait == 0: # only wait after bs pulse every 10 gates
                 wait_bool = True
-        
+
+            print(ii)
             # add gate
             if ii == 0:
                 pass
@@ -270,17 +271,9 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
         self.sync_all()
 
         # ------------------Measurement------------------
-        if cfg.expt.parity_meas:
-            print('Doing parity meas') 
-            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas1')
-        else: 
-            print('Doing f0g1 and ef meas')
-            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1')
-            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1')
-
+        # Alice's meas
+        self.measure_parity_or_f0g1(common_prefix = 'alice_meas', measure_wrapper_bool = False)
         self.sync_all(self.us2cycles(0.05))
-
-        
         if cfg.expt.reset_qubit_via_active_reset_after_first_meas:
             self.active_reset(man_reset= False, storage_reset= False, ef_reset = False, pre_selection_reset = False, prefix = 'post_meas') #????
         else: 
@@ -291,37 +284,43 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
                 wait=True,
                 syncdelay=self.us2cycles(self.cfg.expt.postselection_delay)
             )
-
-        # self.wait_all(self.us2cycles(0.05))
         self.sync_all()
+
+
         # parity meas to reset qubit 
         if self.cfg.expt.reset_qubit_after_parity: 
             parity_str = self.parity_pulse_for_custom_pulse
             self.custom_pulse(cfg, parity_str, prefix='parity_post_meas1')
-            # self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_post_meas1')
-        # Swap gate between two modes
 
-        # self.custom_pulse(cfg, cfg.expt.post_selection_pulse, prefix='selection11')
+        # Post Selection measurement (Bob's meas)
         
+        if not cfg.expt.parity_meas: 
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_for_prepping_bob')
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_for_prepping_bob')
+        self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
+        self.measure_parity_or_f0g1(common_prefix = 'bob_meas')
+    
+    def measure_parity_or_f0g1(self, common_prefix = 'bob', measure_wrapper_bool = True):
+        print(f'measure parity or f0g1 with prefix {common_prefix}')
+        cfg = self.cfg
         if cfg.expt.parity_meas: 
-            self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
-            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_meas2')
+            self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='parity_' + common_prefix)
         else: 
-            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas1_post')
-            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas1_post')
-            self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
-            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_meas2')
-            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_meas2')
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1'+ common_prefix)
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef'+ common_prefix)
+        if measure_wrapper_bool:
+            self.measure_wrapper()
 
-        self.sync_all(self.us2cycles(0.05))
-        # self.wait_all(self.us2cycles(0.05))
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+    def prep_bob_meas(self, common_prefix = 'first'): 
+        """
+        Prepare the measurement for Bob mode
+        """
+        cfg = self.cfg
+        if not cfg.expt.parity_meas: 
+            self.custom_pulse(cfg, self.ef_for_custom_pulse, prefix='ef_'+ common_prefix)
+            self.custom_pulse(cfg, self.f0g1_for_custom_pulse, prefix='f0g1_'+ common_prefix)
+        self.play_bs_gate(cfg, phase=0, times = 2, wait=True)
+        self.measure_wrapper()
 
     def collect_shots_rb(self, read_num):
         # collect shots for 2 adcs (0 and 1 indexed) and I and Q channels
@@ -337,7 +336,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 # play the pulse
 class SingleBeamSplitterRBPostSelection(Experiment):
     def __init__(self, soccfg=None, path='', prefix='SingleBeamSplitterRBPostSelection', config_file=None, progress=None):
-            super().__init__(path=path, soccfg=soccfg, prefix=prefix, config_file=config_file, progress=progress)
+        super().__init__(path=path, soccfg=soccfg, prefix=prefix, config_file=config_file, progress=progress)
     
     def acquire(self, progress=False, debug=False):
         q_ind = self.cfg.expt.qubits[0]
@@ -353,7 +352,6 @@ class SingleBeamSplitterRBPostSelection(Experiment):
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
 
-        adc_chs = self.cfg.hw.soc.adcs.readout.ch
         
         # ================= #
         # Get single shot calibration for all qubits
@@ -361,52 +359,51 @@ class SingleBeamSplitterRBPostSelection(Experiment):
 
         # g states for q0
         data=dict()
-        # sscfg = AttrDict(deepcopy(self.cfg))
-        sscfg = self.cfg
-        sscfg.expt.reps = sscfg.expt.singleshot_reps
-        # sscfg.expt.active_reset = 
-        # print active reset inside sscfg 
-        print('sscfg active reset ' + str(sscfg.expt.active_reset))
-        # sscfg.expt.man_reset = kkk
+        
+        if self.cfg.expt.single_shot_bef_expt: 
+            sscfg = self.cfg
+            sscfg.expt.reps = sscfg.expt.singleshot_reps
+            print('sscfg active reset ' + str(sscfg.expt.active_reset))
+        
 
-        # Ground state shots
-        # cfg.expt.reps = 10000
-        sscfg.expt.qubit = 0
-        sscfg.expt.rounds = 1
-        sscfg.expt.pulse_e = False
-        sscfg.expt.pulse_f = False
-        # print(sscfg)
+            # Ground state shots
+            # cfg.expt.reps = 10000
+            sscfg.expt.qubit = 0
+            sscfg.expt.rounds = 1
+            sscfg.expt.pulse_e = False
+            sscfg.expt.pulse_f = False
+            # print(sscfg)
 
-        data['Ig'] = []
-        data['Qg'] = []
-        data['Ie'] = []
-        data['Qe'] = []
-        histpro_g = HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_g.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
-                                       readouts_per_experiment=self.cfg.expt.readout_per_round)
-        data['Ig'], data['Qg'] = histpro_g.collect_shots()
+            data['Ig'] = []
+            data['Qg'] = []
+            data['Ie'] = []
+            data['Qe'] = []
+            histpro_g = HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
+            avgi, avgq = histpro_g.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                        readouts_per_experiment=self.cfg.expt.readout_per_round)
+            data['Ig'], data['Qg'] = histpro_g.collect_shots()
 
-        # Excited state shots
-        sscfg.expt.pulse_e = True 
-        sscfg.expt.pulse_f = False
-        histpro_e= HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_e.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
-                                       readouts_per_experiment=self.cfg.expt.readout_per_round)
-        data['Ie'], data['Qe'] = histpro_e.collect_shots()
-        # print(data)
+            # Excited state shots
+            sscfg.expt.pulse_e = True 
+            sscfg.expt.pulse_f = False
+            histpro_e= HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
+            avgi, avgq = histpro_e.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+                                        readouts_per_experiment=self.cfg.expt.readout_per_round)
+            data['Ie'], data['Qe'] = histpro_e.collect_shots()
+            # print(data)
 
-        fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
-                                                         active_reset=self.cfg.expt.active_reset, threshold = self.cfg.expt.threshold,
-                                                         readout_per_round=self.cfg.expt.readout_per_round)
-        data['fids'] = fids
-        data['angle'] = angle
-        data['thresholds'] = thresholds
-        data['confusion_matrix'] = confusion_matrix
+            fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
+                                                            active_reset=self.cfg.expt.active_reset, threshold = self.cfg.expt.threshold,
+                                                            readout_per_round=self.cfg.expt.readout_per_round)
+            data['fids'] = fids
+            data['angle'] = angle
+            data['thresholds'] = thresholds
+            data['confusion_matrix'] = confusion_matrix
 
 
-        print(f'ge fidelity (%): {100*fids[0]}')
-        print(f'rotation angle (deg): {angle}')
-        print(f'threshold ge: {thresholds[0]}')
+            print(f'ge fidelity (%): {100*fids[0]}')
+            print(f'rotation angle (deg): {angle}')
+            print(f'threshold ge: {thresholds[0]}')
 
         data['Idata'] = []
         data['Qdata'] = []
@@ -416,8 +413,10 @@ class SingleBeamSplitterRBPostSelection(Experiment):
         self.cfg.expt.reps = self.cfg.expt.rb_reps
         # data['running_lists'] = []
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
+            print(f'Running variation {var+1} of {self.cfg.expt.variations}')
             #rb sequence
-            self.cfg.expt.running_list =  generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+            # print(generate_sequence(5, iRB_gate_no=self.cfg.expt.IRB_gate_no))
+            self.cfg.expt.running_list =  np.array([1,1,1,1])#generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
             
             #for ram prepulse 
             if self.cfg.expt.ram_prepulse_strs is None: 
@@ -431,11 +430,14 @@ class SingleBeamSplitterRBPostSelection(Experiment):
                 else: 
                     self.cfg.expt.prepulse = False
                     prepulse_strs = [[None]]
+                    
             else: 
                 prepulse_strs = self.cfg.expt.ram_prepulse_strs
 
+            print(prepulse_strs)
             for prepulse_str in prepulse_strs:
-        
+            # print reps, rounds, etc
+                #print(f'reps: {self.cfg.expt.reps}, rounds: {self.cfg.expt.rounds}, pulse_e: {self.cfg.expt.pulse_e}, pulse_f: {self.cfg.expt.pulse_f}')
                 self.cfg.expt.pre_sweep_pulse = prepulse_str
                 rb_shot = SingleBeamSplitterRBPostselectionrun(soccfg=self.soccfg, cfg=self.cfg)
                 read_num =2 

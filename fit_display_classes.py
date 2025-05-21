@@ -912,6 +912,12 @@ class MM_DualRail:
         fid_raw_list = []
         fid_post_list = []
 
+        threshold = 0 # for g, e assignment 
+        if 'thresholds' in temp_data.keys():
+            threshold = temp_data['thresholds'][0]
+        else:
+            threshold = attrs['config']['device']['readout']['threshold'][0]
+
 
         for aa in range(len(temp_data['Idata'])):
             gg = 0
@@ -932,13 +938,13 @@ class MM_DualRail:
             # beamsplitter post selection 
             for j in range(len(data_init)):
                 #  check if the counts are the same as initial counts
-                if data_init[j]>temp_data['thresholds'][0]: # classified as e
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                if data_init[j]>threshold: # classified as e
+                    if data_post_select[j]>threshold:  # second e
                         ee += 1
                     else:
                         eg +=1
                 else:  # classified as g
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
+                    if data_post_select[j]>threshold:  # second e
                         ge +=1
                     else:
                         gg += 1
@@ -957,10 +963,10 @@ class MM_DualRail:
             eg_list.append(eg/(eg+ge+gg+ee))
             ee_list.append(ee/(eg+ge+gg+ee))
 
-            # print('gg_list', gg_list)
-            # print('ge_list', ge_list)
-            # print('eg_list', eg_list)
-            # print('ee_list', ee_list)
+            print('gg_list', gg_list)
+            print('ge_list', ge_list)
+            print('eg_list', eg_list)
+            print('ee_list', ee_list)
 
             try:
                 if attrs['config']['expt']['reset_qubit_after_parity']:

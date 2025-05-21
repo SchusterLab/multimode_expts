@@ -91,15 +91,16 @@ class MM_base:
             self.cfg.device.readout.readout_length, self.adc_chs)]
 
         # --------------qubit pulse parameters: sigma----------
-        self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.pief_ftop_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef_ftop.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.hpi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.pi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.hpi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
 
         # --------------qubit pulse parameters: gain----------
-        self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest] # naming doesn't seem consistent here?
+        self.pi_ge_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest] 
         self.hpi_ge_gain = cfg.device.qubit.pulses.hpi_ge.gain[qTest]
-        self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
+        self.pi_ef_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
+        self.hpi_ef_gain = cfg.device.qubit.pulses.hpi_ef.gain[qTest]
 
         # -------------f0g1 and M1-S sigmas-------
         self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])

@@ -169,205 +169,10 @@ class HistogramProgram(MMAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
-        cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-        #qTest = 0
-        self.qubits = self.cfg.expt.qubits
-        #self.drive_freq = self.cfg.expt.freq
+        self.MM_base_initialize()
+        # cfg = AttrDict(self.cfg)
 
-        qTest = self.qubits[0]
-        
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.f0g1_chs = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_types = cfg.hw.soc.dacs.sideband.type
-
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        self.man_chs = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_types = cfg.hw.soc.dacs.manipulate_in.type
-        
-        # self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch[qTest])
-        # self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch[qTest])
-        # self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch[qTest])
-        # self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-        # get register page for qubit_chs
-        # print(self.qubit_chs)
-        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        self.f_ge_reg_ss = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg_ss = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-
-        
-        gen_chs = []
-
-        # declare res dacs
-        mask = None
-        mixer_freq = 0  # MHz
-        mux_freqs = None  # MHz
-        mux_gains = None
-        ro_ch = None
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest],
-                         mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
-                             freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-        
-
-        # declare qubit dacs
-        
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(
-                    ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
-
-        # define pi_test_ramp as the pulse that we are calibrating with ramsey, update in outer loop over averager program
-        # self.pi_test_ramp = self.us2cycles(
-        #     cfg.device.qubit.ramp_sigma[qTest], gen_ch=self.qubit_chs[qTest])
-        # self.f_pi_test_reg = self.freq2reg(self.drive_freq)  # freq we are trying to calibrate
-        # self.gain_pi_test = self.cfg.expt.gain  # gain we are trying to play
-
-        # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
-        self.pisigma_ge_ss = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ge value
-        self.pisigma_ef_ss = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ef value
-        self.f_ge_init_reg_ss = self.f_ge_reg_ss[qTest]
-        self.f_ef_init_reg_ss = self.f_ef_reg_ss[qTest]
-        self.gain_ge_init_ss = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.gain_ef_init_ss = self.cfg.device.qubit.pulses.pi_ef.gain[qTest]
-
-        # add qubit pulses to respective channels
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test_ramp", sigma=self.pi_test_ramp,
-        #                length=self.pi_test_ramp*2*cfg.device.qubit.ramp_sigma_num[qTest])
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge_ss",
-                       sigma=self.pisigma_ge_ss, length=self.pisigma_ge_ss*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ss",
-                       sigma=self.pisigma_ef_ss, length=self.pisigma_ef_ss*4)
-        # self.add_gauss(ch=self.f0g1_chs[qTest], name="pi_test",
-        #                sigma=self.us2cycles(self.cfg.expt.ramp_sigma), length=self.us2cycles(self.cfg.expt.ramp_sigma)*4)
-
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
-            cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-
-        
-        #  ## ALL ACTIVE RESET REQUIREMENTS
-        # # read val definition
-        # self.r_read_q = 3   # ge active reset register
-        # self.r_read_q_ef = 4   # ef active reset register
-        # self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
-        # self.safe_regwi(0, self.r_read_q_ef, 0)  # init read val to be 0
-
-        # # threshold definition
-        # self.r_thresh_q = 5  # Define a location to store the threshold info
-
-        # # # multiplication bc the readout is summed, so need common thing to compare to
-        # self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
-
-        # # Define a location to store a counter for how frequently the condj is triggered
-        # self.r_counter = 7
-        # self.safe_regwi(0, self.r_counter, 0)  # init counter val to 0
-        # self.wait_all(self.us2cycles(0.2))
-        # self.sync_all(200)
-    
-    def active_reset1(self, man_reset=False, storage_reset=False):
-
-        # Reset ge level
-        # ======================================================
-        print("this codes active reset")
-        qTest = 0
-        cfg=AttrDict(self.cfg)
-        self.measure(pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                     t='auto', wait=True, syncdelay=self.us2cycles(2.0))#self.cfg["relax_delay"])#self.cfg["relax_delay"])  # self.us2cycles(1))
-        
-        self.wait_all(self.us2cycles(0.1))  # to allow the read to be complete might be reduced
-
-        self.read(0, 0, "lower", self.r_read_q)  # read data from I buffer, QA, and store
-        self.wait_all()  # to allow the read to be complete might be reduced
-        self.sync_all()
-
-        # perform Qubit active reset comparison, jump if condition is true to the label1 location
-        self.condj(0, self.r_read_q, "<", self.r_thresh_q,
-                   "LABEL_1")  # compare the value recorded above to the value stored in threshold.
-
-        #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
-        self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge_ss")
-        self.pulse(ch=self.qubit_chs[qTest])
-        self.label("LABEL_1")  # location to be jumped to
-        self.wait_all() 
-        self.sync_all()
-        # ======================================================
-
-        # Reset ef level
-        # ======================================================
-        self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge_ss")
-        self.pulse(ch=self.qubit_ch)
-        self.sync_all(self.us2cycles(0.05))
-        self.measure(pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                     t='auto', wait=True, syncdelay=self.us2cycles(2.0))  # self.us2cycles(1))
-        
-        self.wait_all(self.us2cycles(0.1))  # to allow the read to be complete might be reduced
-        
-        self.read(0, 0, "lower", self.r_read_q_ef)  # read data from I buffer, QA, and store
-        self.wait_all()  # to allow the read to be complete might be reduced
-        self.sync_all()
-
-        # perform Qubit active reset comparison, jump if condition is true to the label1 location
-        self.condj(0, self.r_read_q_ef, "<", self.r_thresh_q,
-                   "LABEL_2")  # compare the value recorded above to the value stored in threshold.
-
-        #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
-        self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge_ss")
-        self.pulse(ch=self.qubit_chs[qTest])
-        self.label("LABEL_2")  # location to be jumped to
-        self.wait_all() 
-        self.sync_all()
-
-        # ======================================================
-
-        # post selection
-
-        # ======================================================
-        self.measure(pulse_ch=self.res_chs[qTest],
-                    adcs=[self.adc_chs[qTest]],
-                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                     t='auto', wait=True, syncdelay=self.us2cycles(2.0))  # self.us2cycles(1))
-        self.wait_all() 
-        self.sync_all()
-
-        # ======================================================
-
-
-        self.sync_all(self.us2cycles(0.05))  # not sure if this is needed
+        self.sync_all(200)  # not sure if this is needed
         
     
     def body(self):
@@ -384,38 +189,20 @@ class HistogramProgram(MMAveragerProgram):
 
 
         if self.cfg.expt.pulse_e or self.cfg.expt.pulse_f:
-            if cfg.device.qubit.pulses.pi_ge.type[qTest] == 'gauss':
-                self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_init_reg_ss, phase=0, gain=self.gain_ge_init_ss, waveform="pi_qubit_ge_ss")
-            else: # const pulse
-                self.setup_and_pulse(ch=self.qubit_chs[0], style="const", freq=self.f_ge_init_reg_ss, phase=0, gain=self.gain_ge_init_ss, length=self.pisigma_ge_ss)
+            self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_init_reg_ss, phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
+                
         self.sync_all()
         self.wait_all(self.us2cycles(0.01))
 
         if self.cfg.expt.pulse_f:
-            if cfg.device.qubit.pulses.pi_ef.type[qTest] == 'gauss':
-                self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_init_reg_ss, phase=0, gain=self.gain_ef_init_ss, waveform="pi_qubit_ef_ss")
-            else: # const pulse
-                self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ef_init_reg_ss, phase=0, gain=self.gain_ef_init_ss, length=self.pisigma_ef_ss)
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_init_reg_ss, phase=0, gain=self.pi_ef_gain, waveform="pi_qubit_ef")
         self.sync_all()
         self.wait_all(self.us2cycles(0.01))
 
 
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
 
-    # def collect_shots(self):
-    #     # collect shots for the relevant adc and I and Q channels
-    #     cfg=AttrDict(self.cfg)
-    #     # print(np.average(self.di_buf[0]))
-    #     shots_i0 = self.di_buf[0] / self.readout_length_adc
-    #     shots_q0 = self.dq_buf[0] / self.readout_length_adc
-    #     return shots_i0, shots_q0
-    #     # return shots_i0[:5000], shots_q0[:5000]
+
 
 
 class HistogramExperiment(Experiment):
