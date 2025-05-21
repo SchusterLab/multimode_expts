@@ -21,123 +21,16 @@ class ParityDelayProgram(MMAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-        #qTest = 0
-        self.qubits = self.cfg.expt.qubits
-        #self.drive_freq = self.cfg.expt.freq
 
-        qTest = self.qubits[0]
-        
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.f0g1_chs = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_types = cfg.hw.soc.dacs.sideband.type
-
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        self.man_chs = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_types = cfg.hw.soc.dacs.manipulate_in.type
-        
-        # self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch[qTest])
-        # self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch[qTest])
-        # self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch[qTest])
-        # self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-        # get register page for qubit_chs
-        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        self.f_ge_reg_ss = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg_ss = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-
-        
-        gen_chs = []
-
-        # declare res dacs
-        mask = None
-        mixer_freq = 0  # MHz
-        mux_freqs = None  # MHz
-        mux_gains = None
-        ro_ch = None
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest],
-                         mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
-                             freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-        
-
-        # declare qubit dacs
-        
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(
-                    ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
-
-        # define pi_test_ramp as the pulse that we are calibrating with ramsey, update in outer loop over averager program
-        # self.pi_test_ramp = self.us2cycles(
-        #     cfg.device.qubit.ramp_sigma[qTest], gen_ch=self.qubit_chs[qTest])
-        # self.f_pi_test_reg = self.freq2reg(self.drive_freq)  # freq we are trying to calibrate
-        # self.gain_pi_test = self.cfg.expt.gain  # gain we are trying to play
-
-        # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
-        self.pisigma_ge_ss = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ge value
-        self.pisigma_ef_ss = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ef value
-        self.f_ge_init_reg_ss = self.f_ge_reg_ss[qTest]
-        self.f_ef_init_reg_ss = self.f_ef_reg_ss[qTest]
-        self.gain_ge_init_ss = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.gain_ef_init_ss = self.cfg.device.qubit.pulses.pi_ef.gain[qTest]
-        self.gain_hpi_ge_ss = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest]
-        self.hpisigma_ge_ss = self.us2cycles(
-            cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])
-
-        # add qubit pulses to respective channels
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test_ramp", sigma=self.pi_test_ramp,
-        #                length=self.pi_test_ramp*2*cfg.device.qubit.ramp_sigma_num[qTest])
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge_ss",
-                       sigma=self.pisigma_ge_ss, length=self.pisigma_ge_ss*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ss",
-                       sigma=self.pisigma_ef_ss, length=self.pisigma_ef_ss*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge_ss",
-                       sigma=self.hpisigma_ge_ss, length=self.hpisigma_ge_ss*4)
-        # self.add_gauss(ch=self.f0g1_chs[qTest], name="pi_test",
-        #                sigma=self.us2cycles(self.cfg.expt.ramp_sigma), length=self.us2cycles(self.cfg.expt.ramp_sigma)*4)
-
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
-            cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-        
         self.sync_all(200)
 
     
 
     def body(self):
         cfg=AttrDict(self.cfg)
-        qTest = 0 
+        qTest = self.qubits[0] 
 
         # phase reset
         self.reset_and_sync()
@@ -153,26 +46,14 @@ class ParityDelayProgram(MMAveragerProgram):
 
         
 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg_ss, phase=self.deg2reg(0), gain=self.gain_hpi_ge_ss, waveform="hpi_qubit_ge_ss")
-        # self.sync_all() # align channels
-        # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
-        # self.sync_all(self.us2cycles(0.01))
-        # self.sync(self.q_rp, self.r_wait) # wait for the time stored in the wait variable register
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_init_reg_ss, phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder))
-        # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
-        # self.sync_all(self.us2cycles(0.01))
+        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
+        
+        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder))
 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg_ss, phase=self.deg2reg(180), gain=self.gain_hpi_ge_ss, waveform="hpi_qubit_ge_ss")
-        # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
-        self.sync_all(self.us2cycles(0.01)) # align channels and wait 10ns
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
 
+        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
+        # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
+        self.measure_wrapper()
 
 
 class ParityDelayExperiment(Experiment):

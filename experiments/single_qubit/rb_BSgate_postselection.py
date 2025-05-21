@@ -152,7 +152,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
 
         # -------set up pulse parameters for measurement pulses -------
 
-        # self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
+        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
         
         self.f0g1_for_custom_pulse = self.get_prepulse_creator([['man', 'M1' , 'pi',0 ]]).pulse.tolist()
         self.ef_for_custom_pulse = self.get_prepulse_creator([['qubit', 'ef', 'pi', 0]]).pulse.tolist()

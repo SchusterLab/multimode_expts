@@ -182,14 +182,7 @@ class RamseyProgram(MMRAveragerProgram):
             self.sync_all(self.us2cycles(0.01))
         
         # align channels and measure
-        self.sync_all(5)
-        self.measure(
-            pulse_ch=self.res_chs[qTest], 
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
 
     def update(self):
         qTest = self.qubits[0]
