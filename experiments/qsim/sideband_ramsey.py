@@ -1,16 +1,16 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import QickConfig
-from qick.helpers import gauss
-
-from slab import Experiment, dsfit, AttrDict
+from slab import AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from MM_base import MMRAveragerProgram
-from experiments.qsim.utils import ensure_list_in_cfg
-
 from dataset import storage_man_swap_dataset
+from experiments.qsim.dualmode_experiment import ReadWriteExperiment
+from experiments.qsim.utils import ensure_list_in_cfg
+from MM_base import MMRAveragerProgram
 
 
 class SidebandRamseyProgram(MMRAveragerProgram):
@@ -150,7 +150,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
 
-class SidebandRamseyExperiment(Experiment):
+class SidebandRamseyExperiment(ReadWriteExperiment):
     """
     Ramsey experiment
     Experimental Config:
@@ -164,11 +164,6 @@ class SidebandRamseyExperiment(Experiment):
         qubits: this is just 0 for the purpose of the currrent multimode sample
     )
     """
-    def __init__(self, soccfg=None, path='', prefix='SidebandRamsey',
-                 config_file=None, expt_params=None, progress=None):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
-        self.cfg.expt = AttrDict(expt_params)
-
 
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
@@ -317,12 +312,6 @@ class SidebandRamseyExperiment(Experiment):
         plt.show()
 
 
-    def save_data(self, data=None):
-        # do we really need to ovrride this?
-        print(f'Saving {self.fname}')
-        super().save_data(data=data)
-        return self.fname
-
 
 class SidebandChevronExperiment(SidebandRamseyExperiment):
     def acquire(self, progress=False, debug=False):
@@ -374,4 +363,17 @@ class SidebandChevronExperiment(SidebandRamseyExperiment):
 
         self.data=data
         return data
+
+    def display(self, data=None, fit=True, **kwargs):
+        if data is None:
+            data=self.data
+        fig, axs = plt.subplots(figsize=(10,10), ncols=1, nrows=2)
+        for ax, label in zip(axs, ['avgi', 'avgq']):
+            zdata = self.data[label]
+            mesh = ax.pcolormesh(self.data['xpts'], self.data['ypts'], zdata, cmap='viridis')
+            fig.colorbar(mesh, label=label)
+            ax.set_xlabel('wait time (us)')
+            ax.set_ylabel('drive freq (MHz)')
+        fig.suptitle(self.fname.split(os.path.sep)[-1])
+
 
