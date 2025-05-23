@@ -103,9 +103,7 @@ class MM_base:
         self.hpi_ef_gain = cfg.device.qubit.pulses.hpi_ef.gain[qTest]
 
         # -------------f0g1 and M1-S sigmas-------
-        self.pi_f0g1_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_f0g1.sigma[0], gen_ch=self.f0g1_ch[qTest])
-        self.pi_m1_sigma_low = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_low_ch[qTest])
-        self.pi_m1_sigma_high = self.us2cycles(cfg.device.qubit.pulses.pi_m1si.sigma[0], gen_ch=self.flux_high_ch[qTest])
+        #TODO: Get from dataset
 
 
     def initialize_idling_dataset(self): 
@@ -234,10 +232,10 @@ class MM_base:
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ef", sigma=self.hpi_ef_sigma, length=self.hpi_ef_sigma*4)
         # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
 
-        self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
+        # self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
-        self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
-        self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
+        # self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
+        # self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
 
     def measure_wrapper(self): 
         """
@@ -1066,20 +1064,20 @@ class prepulse_creator2:
                 [phase],
                 [0], # f0g1 pulse 
                 ['flat_top'],
-                [0.005]], dtype = object)
+                [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)
         return None
 
     def buffer(self, pulse_param): 
-        '''here the last parameter is time '''
+        '''here the last parameter is time  (NOT THE MODE; this is just empty pulse; buffer tyime between gates )'''
         buffer = np.array([[0],
                 [0],
                 [pulse_param[-1]],
                 [0],
                 [1],
                 ['const'],
-                [0.005]], dtype = object)
+                [self.cfg.device.storage.ramp_sigma]], dtype = object)
         self.pulse = np.concatenate((self.pulse, buffer), axis=1)
         return None
 
@@ -1102,7 +1100,7 @@ class prepulse_creator2:
                 [phase],
                 [ch],
                 ['flat_top'],
-                [0.005]], dtype = object)
+                [self.cfg.device.storage.ramp_sigma]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None

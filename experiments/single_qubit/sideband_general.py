@@ -25,151 +25,19 @@ class SidebandGeneralProgram(MMAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
-        cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-
+        qTest = self.cfg.expt.qubits[0]
         self.MM_base_initialize()
 
-        self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.qubits = self.cfg.expt.qubits
+        self.rf_ch = self.flux_low_ch if self.cfg.expt.flux_drive[0] == 'low' else self.flux_high_ch
 
-        qTest = self.qubits[0]
+        self.test_pulse_str =  [[self.cfg.expt.flux_drive[1]], [self.cfg.expt.flux_drive[2]], [self.cfg.expt.length_placeholder], [0],
+                      [self.rf_ch[qTest]], ["flat_top"], [self.cfg.device.storage.ramp_sigma]]    # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
 
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        if self.cfg.expt.flux_drive[0] == 'low':
-            self.rf_ch = cfg.hw.soc.dacs.flux_low.ch
-            self.rf_ch_types = cfg.hw.soc.dacs.flux_low.type
-        else:
-            self.rf_ch = cfg.hw.soc.dacs.flux_high.ch
-            self.rf_ch_types = cfg.hw.soc.dacs.flux_high.type
-
-        # get register page for qubit_chs
-        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        self.rf_rps = [self.ch_page(ch) for ch in self.rf_ch]
-
-        self.f_ge_reg = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-
-        # self.f_ge_resolved_reg = [self.freq2reg(
-        #     self.cfg.expt.qubit_resolved_pi[0], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        self.f_rf_reg = [self.freq2reg(self.cfg.expt.flux_drive[1], gen_ch=self.rf_ch[0])]
-
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-
-        gen_chs = []
-
-        # declare res dacs
-        mask = None
-        mixer_freq = 0  # MHz
-        mux_freqs = None  # MHz
-        mux_gains = None
-        ro_ch = None
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest],
-                         mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
-                             freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-
-        # declare qubit dacs
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(
-                    ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
-
-        # define pi_test_ramp as the pulse that we are calibrating with ramsey, update in outer loop over averager program
-        self.pi_test_ramp = self.us2cycles(
-            cfg.device.qubit.ramp_sigma[qTest], gen_ch=self.qubit_chs[qTest])
-        self.rf_gain_test = self.cfg.expt.flux_drive[2]  # gain we are trying to play
-
-        # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
-        self.pisigma_ge = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ge value
-        self.pisigma_ef = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ef value
-        
-        self.sideband_sigma_low = self.us2cycles(
-            cfg.device.active_reset.M1_S_sigma, gen_ch=self.flux_low_ch[qTest]) 
-        self.sideband_sigma_high = self.us2cycles(
-            cfg.device.active_reset.M1_S_sigma, gen_ch=self.flux_high_ch[qTest])  
-
-
-        self.f_ge_init_reg = self.f_ge_reg[qTest]
-        self.f_ef_init_reg = self.f_ef_reg[qTest]
-        # self.f_ge_resolved_int_reg = self.f_ge_resolved_reg[qTest]
-        self.rf_freq_reg = self.f_rf_reg[qTest]
-
-        self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.gain_ef_init = self.cfg.device.qubit.pulses.pi_ef.gain[qTest]
-
-        # add qubit pulses to respective channels
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test_ramp", sigma=self.pi_test_ramp,
-                       length=self.pi_test_ramp*2*cfg.device.qubit.ramp_sigma_num[qTest])
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge",
-                       sigma=self.pisigma_ge, length=self.pisigma_ge*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef",
-                       sigma=self.pisigma_ef, length=self.pisigma_ef*4)
-        self.add_gauss(ch=self.flux_low_ch[qTest], name="ramp_low",
-                       sigma=self.sideband_sigma_low, length=self.sideband_sigma_low*4)
-        self.add_gauss(ch=self.flux_high_ch[qTest], name="ramp_high",
-                       sigma=self.sideband_sigma_high, length=self.sideband_sigma_high*4)
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_resolved",
-        #                sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-        self.add_gauss(ch=self.rf_ch[0], name="rf_test",
-                       sigma=self.us2cycles(self.cfg.expt.flux_drive[3]), length=self.us2cycles(self.cfg.expt.flux_drive[3])*6)
-
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
-            cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-
-        ## ALL ACTIVE RESET REQUIREMENTS
-        # read val definition
-        self.r_read_q = 3   # ge active reset register
-        self.r_read_q_ef = 4   # ef active reset register
-        self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
-        self.safe_regwi(0, self.r_read_q_ef, 0)  # init read val to be 0
-
-        # threshold definition
-        self.r_thresh_q = 5  # Define a location to store the threshold info
-
-        # # multiplication bc the readout is summed, so need common thing to compare to
-        self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
-
-        # Define a location to store a counter for how frequently the condj is triggered
-        self.r_counter = 7
-        self.safe_regwi(0, self.r_counter, 0)  # init counter val to 0
-        
-        
-        self.sync_all(self.us2cycles(0.2))
-
+    
 
     def body(self):
         cfg = AttrDict(self.cfg)
-        qTest = self.qubits[0]
+        qTest = self.cfg.expt.qubits[0]
 
         # phase reset
         self.reset_and_sync()
@@ -187,15 +55,7 @@ class SidebandGeneralProgram(MMAveragerProgram):
 
         if self.cfg.expt.length_placeholder>0:
 
-            self.setup_and_pulse(
-                    ch=self.rf_ch[0],
-                    style="flat_top",
-                    freq=self.rf_freq_reg,
-                    length=self.us2cycles(self.cfg.expt.length_placeholder),
-                    phase=0,
-                    gain=self.rf_gain_test, 
-                    waveform="rf_test")
-            self.sync_all(self.us2cycles(0.01))
+            self.custom_pulse(cfg, self.test_pulse_str, prefix='flux')
 
         self.sync_all()  # align channels
 
@@ -207,22 +67,8 @@ class SidebandGeneralProgram(MMAveragerProgram):
         # align channels and wait 50ns and measure
         self.sync_all(self.us2cycles(0.05))
 
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
 
-    # def collect_shots(self):
-    #     # collect shots for the relevant adc and I and Q channels
-    #     qTest = 0
-    #     cfg=AttrDict(self.cfg)
-    #     # print(np.average(self.di_buf[0]))
-    #     shots_i0 = self.di_buf[0] / self.readout_lengths_adc[qTest]
-    #     shots_q0 = self.dq_buf[0] / self.readout_lengths_adc[qTest]
-    #     return shots_i0, shots_q0
 
 
 class SidebandGeneralExperiment(Experiment):

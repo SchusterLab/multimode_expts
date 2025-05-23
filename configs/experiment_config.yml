@@ -144,18 +144,15 @@ HistogramExperiment:
     cavity_length: 2
 
     prepulse: True 
-    pre_sweep_pulse: [[3569.4198176358545,
-                3426.2975766655427,
-                2008.975,
-                3426.2975766655427,
-                3569.4198176358545],
-                [11165, 8627, 15000, 8627, 11165],
-                [0.0, 0.0, 1.3599433864809195, 0.0, 0.0],
-                [0, 0, 0, 0, 0],
-                [2, 2, 0, 2, 2],
-                ['g', 'g', 'flat_top', 'g', 'g'],
-                [0.035, 0.035, 0.005, 0.035, 0.035]]
-    gate_based: False
+    pre_sweep_pulse: [['qubit', 'ge', 'pi', 0],
+                    ['qubit', 'ef', 'pi', 0],
+                    ['man', 'M1', 'pi', 0],
+                    ['storage', 'M1-S1', 'pi', 0],
+                    ['storage', 'M1-S1', 'pi', 0],
+                    ['man', 'M1', 'pi', 0],
+                    ['qubit', 'ef', 'pi', 0],
+                    ['qubit', 'ge', 'pi', 0]]
+    gate_based: True
 
 HistogramExperiment_oldold:
     qubits: [0]
@@ -1254,7 +1251,6 @@ LengthRabiGeneralF0g1Experiment:
     reps: 100
     rounds: 1
     gain: 15000 # qubit gain [DAC units],
-    ramp_sigma: 0.005  # us
     freq: 2009.01 #1834.895   # MHz
     use_arb_waveform: False
     pi_ge_before: True
@@ -1802,7 +1798,7 @@ SidebandGeneralExperiment:
     expts: 100
     reps: 200
     rounds: 1
-    flux_drive: ['low', 349.125, 3000, 0.05] # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    flux_drive: ['low', 349.125, 3000] # [low/high (ch), freq, gain, ramp_sigma(us)] # sigma no longer, always set to 0.005
     prepulse: True
     postpulse: True
     active_reset: False
@@ -1844,7 +1840,7 @@ sideband_general_sweep:
     freq_start: 348.8 # 2093.4 #2491.8 #1661.0
     freq_stop:  352 # 2094.4 #1661.5
     freq_step: 0.05
-    flux_drive: ['low',  500.0,  3000, 0.05]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    flux_drive: ['low',  500.0,  3000]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
     prepulse: True
     postpulse: True
     active_reset: False
@@ -1878,7 +1874,7 @@ sideband_gain_freq_sweep:
     freq_start: 2350 # 2093.4 #2491.8 #1661.0
     freq_stop:  2360 # 2094.4 #1661.5
     freq_step: 0.5
-    flux_drive: ['high',  500.0,  1000, 0.005]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+    flux_drive: ['high',  500.0,  1000]    # [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
     prepulse: True
     postpulse: True
     active_reset: False
