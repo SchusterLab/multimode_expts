@@ -4,9 +4,9 @@ device:
         T1:
         - 370.2930190133963
         f_ge:
-        - 3569.462965491148
+        - 3569.4198176358545
         f_ef:
-        - 3426.2579958470365
+        - 3426.2975766655427
         ramp_sigma:
         - 0.005
         ramp_sigma_num:
@@ -14,7 +14,7 @@ device:
         pulses:
             pi_ge:
                 gain:
-                - 11161
+                - 11165
                 sigma:
                 - 0.035
                 length:
@@ -47,7 +47,7 @@ device:
                 repeat_no: 1.0
             hpi_ge:
                 gain:
-                - 5414
+                - 5289
                 length:
                 - 0.0
                 sigma:
@@ -103,7 +103,7 @@ device:
                 type: flat_top
             pi_ef:
                 gain:
-                - 8483
+                - 8627
                 length:
                 - 0.0
                 sigma:
@@ -111,7 +111,7 @@ device:
                 type: gauss
             hpi_ef:
                 gain:
-                - 3951
+                - 4136
                 sigma:
                 - 0.035
                 type: gauss
@@ -271,11 +271,11 @@ device:
         gain:
         - 800
         phase:
-        - -1.11373285287479
+        - 2.4274492529170075
         threshold:
-        - -154.34897781143536
+        - -149.10751946389018
         threshold_list:
-        -   - -154.34897781143536
+        -   - -149.10751946389018
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -290,12 +290,12 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9846000000000003
-        - 0.015399999999999747
-        - 0.021200000000000004
-        - 0.9788
-        Ie: 11.901281341632224
-        Ig: -290.34897781143525
+        - 0.9851999999999997
+        - 0.014800000000000257
+        - 0.03
+        - 0.97
+        Ie: 11.781374298820523
+        Ig: -293.1075194638903
     manipulate:
         trig_offset: 450
         f_ge:
@@ -476,3 +476,5 @@ hw:
                 ch: 1
 aliases:
     soc: Qick101
+data_management:
+    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs

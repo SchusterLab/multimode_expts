@@ -150,7 +150,7 @@ class sidebands_class(sequential_base_class):
 
             if run_exp.cfg.expt.active_reset:
                 run_exp.cfg.device.readout.relax_delay = 100  # Wait time between experiments [us]
-            run_exp.cfg.device.readout.relax_delay = 5000
+            run_exp.cfg.device.readout.relax_delay = 8000
             print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
 
             run_exp.go(analyze=False, display=False, progress=False, save=False)

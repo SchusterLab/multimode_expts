@@ -10,9 +10,11 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 import os
 import experiments.fitting as fitter
+import datetime
 
 class GeneralFitting:
-    def __init__(self, data, readout_per_round=2, threshold=-4.0):
+    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None):
+        self.cfg = config
         self.data = data
         self.readout_per_round = readout_per_round
         self.threshold = threshold
@@ -50,24 +52,314 @@ class GeneralFitting:
             Ilist.append(np.mean(Ig))
             Qlist.append(np.mean(Qg))
 
-        return Ilist, Qlist
+        Ilist, Qlist
+    
+    def save_plot(self, fig, filename="plot.png"):
+        
+        """
+        Save a matplotlib figure to the specified folder.
+        Optionally append the image path to a markdown file for viewing.
+
+        Parameters:
+        - fig: matplotlib.figure.Figure object to save.
+        - folder_path: Path to the folder where the plot will be saved.
+        - filename: Name of the file (default: "plot.png").
+        - markdown_path: Path to a markdown file to append the image (optional).
+        """ 
+        plots_folder_path = "plots"
+        markdown_path = None
+
+        # Extract markdown folder from config if available
+        if self.cfg and hasattr(self.cfg, "data_management"):
+            
+            markdown_folder = getattr(self.cfg.data_management, "plot_and_logs_folder")
+            plots_folder_path = markdown_folder + "/plots"
+            if markdown_folder:
+                os.makedirs(markdown_folder, exist_ok=True)
+                today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                markdown_path = os.path.join(markdown_folder, f"{today_str}.md")
+                if not os.path.exists(markdown_path):
+                    with open(markdown_path, "w") as f:
+                        f.write(f"# Plots for {today_str}\n\n")
+
+        now = datetime.datetime.now()
+        date_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+        print("supertitle is ", fig._suptitle)
+        if fig._suptitle is not None:
+            fig._suptitle.set_text(fig._suptitle.get_text() + f" | {date_str} - {filename}")
+        else:
+            fig.suptitle(f"{date_str} - {filename}", fontsize=16)
+        #get tight layout
+        fig.tight_layout()
+        filename = f"{date_str}_{filename}"
+        os.makedirs(plots_folder_path, exist_ok=True)
+        filepath = os.path.join(plots_folder_path, filename)
+        fig.savefig(filepath)
+        print(f"Plot saved to {filepath}")
+
+        if markdown_path is not None:
+            # Use relative path if markdown file is in the same folder or subfolder
+            rel_path = os.path.relpath(filepath, os.path.dirname(markdown_path))
+            md_line = f"![Plot]({rel_path})\n"
+            with open(markdown_path, "a") as md_file:
+                md_file.write(md_line)
+            print(f"Plot path appended to {markdown_path}")
 
 
 
 
+           
+class RamseyFitting(GeneralFitting):
+    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, fitparams=None):
+        super().__init__(data, readout_per_round, threshold, config)
+        self.fitparams = fitparams
+        self.results = {}
+
+    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+        if data is None:
+            data = self.data
+
+        if fit:
+            if fitparams is None:
+                fitparams = [200, 0.2, 0, 200, None, None]
+            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
+            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
+            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            data['fit_avgi'] = p_avgi
+            data['fit_avgq'] = p_avgq
+            data['fit_amps'] = p_amps
+            data['fit_err_avgi'] = pCov_avgi
+            data['fit_err_avgq'] = pCov_avgq
+            data['fit_err_amps'] = pCov_amps
+
+            if isinstance(p_avgi, (list, np.ndarray)):
+                data['f_adjust_ramsey_avgi'] = sorted(
+                    (self.cfg.expt.ramsey_freq - p_avgi[1], self.cfg.expt.ramsey_freq + p_avgi[1]), key=abs)
+            if isinstance(p_avgq, (list, np.ndarray)):
+                data['f_adjust_ramsey_avgq'] = sorted(
+                    (self.cfg.expt.ramsey_freq - p_avgq[1], self.cfg.expt.ramsey_freq + p_avgq[1]), key=abs)
+            if isinstance(p_amps, (list, np.ndarray)):
+                data['f_adjust_ramsey_amps'] = sorted(
+                    (self.cfg.expt.ramsey_freq - p_amps[1], self.cfg.expt.ramsey_freq + p_amps[1]), key=abs)
+
+            self.results = {
+                'fit_avgi': p_avgi,
+                'fit_avgq': p_avgq,
+                'fit_amps': p_amps,
+                'fit_err_avgi': pCov_avgi,
+                'fit_err_avgq': pCov_avgq,
+                'fit_err_amps': pCov_amps
+            }
+        return data
+
+    def display(self, data=None, fit=True, title_str = 'Ramsey', **kwargs):
+        if data is None:
+            data = self.data
+
+        qubits = self.cfg.expt.qubits
+        checkEF = self.cfg.expt.checkEF
+        q = qubits[0]
+
+        f_pi_test = self.cfg.device.qubit.f_ge[q]
+        if checkEF:
+            f_pi_test = self.cfg.device.qubit.f_ef[q]
+        if getattr(self.cfg.expt, "f0g1_cavity", 0) > 0:
+            ii = 0
+            jj = 0
+            if self.cfg.expt.f0g1_cavity == 1:
+                ii = 1
+                jj = 0
+            if self.cfg.expt.f0g1_cavity == 2:
+                ii = 0
+                jj = 1
+            f_pi_test = self.cfg.device.QM.chi_shift_matrix[0][self.cfg.expt.f0g1_cavity] + self.cfg.device.qubit.f_ge[0]
+
+        title = ('EF' if checkEF else '') + 'Ramsey'
+
+        fig = plt.figure(figsize=(10, 9))
+        plt.subplot(211,
+                    title=f"{title} (Ramsey Freq: {self.cfg.expt.ramsey_freq} MHz)",
+                    ylabel="I [ADC level]")
+        plt.plot(data["xpts"][:-1], data["avgi"][:-1], 'o-')
+        if fit:
+            p = data['fit_avgi']
+            if isinstance(p, (list, np.ndarray)):
+                pCov = data['fit_err_avgi']
+                try:
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                except Exception:
+                    print('Fit Failed ; aborting')
+                    captionStr = None
+                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
+                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
+                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
+                plt.legend()
+                print(f'Current pi pulse frequency: {f_pi_test}')
+                print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
+                if p[1] > 2 * self.cfg.expt.ramsey_freq:
+                    print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
+                print('Suggested new pi pulse frequency from fit I [MHz]:\n',
+                        f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][0]}\n',
+                        f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][1]}')
+                print(f'T2 Ramsey from fit I [us]: {p[3]}')
+        plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
+        plt.plot(data["xpts"][:-1], data["avgq"][:-1], 'o-')
+        if fit:
+            p = data['fit_avgq']
+            if isinstance(p, (list, np.ndarray)):
+                pCov = data['fit_err_avgq']
+                try:
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                except Exception:
+                    print('Fit Failed ; aborting')
+                    captionStr = None
+                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
+                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
+                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
+                plt.legend()
+                print(f'Fit frequency from Q [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
+                if p[1] > 2 * self.cfg.expt.ramsey_freq:
+                    print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
+                print('Suggested new pi pulse frequencies from fit Q [MHz]:\n',
+                        f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][0]}\n',
+                        f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][1]}')
+                print(f'T2 Ramsey from fit Q [us]: {p[3]}')
+
+        plt.tight_layout()
+        plt.show()
+
+
+        #make filename same as titlestr
+        filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+        self.save_plot(fig, filename=filename)
+
+class AmplitudeRabiFitting(GeneralFitting):
+    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, fitparams=None):
+        super().__init__(data, readout_per_round, threshold, config)
+        self.fitparams = fitparams
+        self.results = {}
+
+    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+        """
+            Analyze the provided data by fitting decaying sine functions and extracting gain parameters.
+
+            Parameters
+            ----------
+            data : dict, optional
+                The data dictionary containing keys 'xpts', 'avgi', 'avgq', and 'amps'. If None, uses self.data.
+            fit : bool, default True
+                Whether to perform fitting on the data.
+            fitparams : list or None, optional
+                List of initial guess parameters for the fit. Should be of the form:
+                [amplitude, frequency, phase, decay_time, offset, decay_offset]
+                If None, uses default values.
+            **kwargs
+                Additional keyword arguments (currently unused).
+
+            Returns
+            -------
+            data : dict
+                The input data dictionary, updated with fit results and gain parameters.
+
+            Notes
+            -----
+            - Fits decaying sine functions to 'avgi', 'avgq', and 'amps' using `fitter.fitdecaysin`.
+            - Stores fit parameters and their covariance in the data dictionary.
+            - Calculates and stores π and π/2 gain values for 'avgi' and 'avgq' using the fit results.
+            - Updates `self.results` with all fit and gain results if fitting is performed.
+            """
+
+        if data is None:
+            data = self.data
+
+        def get_pi_hpi_gain_from_fit(p):
+            if p[2] > 180:
+                p[2] = p[2] - 360
+            elif p[2] < -180:
+                p[2] = p[2] + 360
+            if np.abs(p[2] - 90) > np.abs(p[2] + 90):
+                pi_gain = (1 / 4 - p[2] / 360) / p[1]
+                hpi_gain = (0 - p[2] / 360) / p[1]
+            else:
+                pi_gain = (3 / 4 - p[2] / 360) / p[1]
+                hpi_gain = (1 / 2 - p[2] / 360) / p[1]
+            return int(pi_gain), int(hpi_gain)
+
+        if fit:
+            xdata = data['xpts']
+            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
+            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
+            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            data['fit_avgi'] = p_avgi
+            data['fit_avgq'] = p_avgq
+            data['fit_amps'] = p_amps
+            data['fit_err_avgi'] = pCov_avgi
+            data['fit_err_avgq'] = pCov_avgq
+            data['fit_err_amps'] = pCov_amps
+
+            data['pi_gain_avgi'], data['hpi_gain_avgi'] = get_pi_hpi_gain_from_fit(p_avgi)
+            data['pi_gain_avgq'], data['hpi_gain_avgq'] = get_pi_hpi_gain_from_fit(p_avgq)
+
+            self.results = {
+                'fit_avgi': p_avgi,
+                'fit_avgq': p_avgq,
+                'fit_amps': p_amps,
+                'fit_err_avgi': pCov_avgi,
+                'fit_err_avgq': pCov_avgq,
+                'fit_err_amps': pCov_amps,
+                'pi_gain_avgi': data['pi_gain_avgi'],
+                'hpi_gain_avgi': data['hpi_gain_avgi'],
+                'pi_gain_avgq': data['pi_gain_avgq'],
+                'hpi_gain_avgq': data['hpi_gain_avgq'],
+            }
+        return data
+
+    def display(self, data=None, fit=True, fitparams=None, vline=None, save_fig = False, title_str = 'AmpRabi', **kwargs):
+        if data is None:
+            data = self.data
+
+        fig = plt.figure(figsize=(10, 10))
+        plt.subplot(211, title=f"Amplitude Rabi (Pulse Length {self.cfg.expt.sigma_test})", ylabel="I [ADC units]")
+        plt.plot(data["xpts"][1:-1], data["avgi"][1:-1], 'o-')
+        if fit:
+            p = data['fit_avgi']
+            plt.plot(data["xpts"][0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+            pi_gain = data['pi_gain_avgi']
+            hpi_gain = data['hpi_gain_avgi']
+            print(f'Pi gain from avgi data [dac units]: {pi_gain}')
+            print(f'\tPi/2 gain from avgi data [dac units]: {hpi_gain}')
+            plt.axvline(pi_gain, color='0.2', linestyle='--')
+            plt.axvline(hpi_gain, color='0.2', linestyle='--')
+            if vline is not None:
+                plt.axvline(vline, color='0.2', linestyle='--')
+        plt.subplot(212, xlabel="Gain [DAC units]", ylabel="Q [ADC units]")
+        plt.plot(data["xpts"][1:-1], data["avgq"][1:-1], 'o-')
+        if fit:
+            p = data['fit_avgq']
+            plt.plot(data["xpts"][0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
+            pi_gain = data['pi_gain_avgq']
+            hpi_gain = data['hpi_gain_avgq']
+            print(f'Pi gain from avgq data [dac units]: {pi_gain}')
+            print(f'\tPi/2 gain from avgq data [dac units]: {hpi_gain}')
+            plt.axvline(pi_gain, color='0.2', linestyle='--')
+            plt.axvline(hpi_gain, color='0.2', linestyle='--')
+
+        plt.tight_layout()
+        plt.show()
+
+        if save_fig:
+            filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+            self.save_plot(fig, filename=filename)
+
+            
 class Histogram(GeneralFitting):
-    def __init__(self, data, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4.0):
-        # Corrected to match the parent class's __init__ signature
-        # pass
-        super().__init__(data, readout_per_round, threshold)
+    def __init__(self, data, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4.0, config=None):
+        super().__init__(data, readout_per_round, threshold, config)
         print(self.data)
-        # self.data = data
         self.span = span
         self.verbose = verbose
         self.active_reset = active_reset
         self.results = {}
-        # self.readout_per_round = readout_per_round
-        # self.threshold = threshold
 
     def analyze(self, plot=True):
         if self.active_reset:
@@ -232,11 +524,17 @@ class Histogram(GeneralFitting):
 
             plt.subplots_adjust(hspace=0.25, wspace=0.15)
             plt.show()
+            # save into a file ;
+            self.save_plot(fig, filename="histogram.png")
+            
+
+            
 
 class Spectroscopy(GeneralFitting):
-    def __init__(self, data, signs=[1, 1, 1]):
-        super().__init__(data, readout_per_round=2, threshold=-4.0)
+    def __init__(self, data, signs=[1, 1, 1], config=None):
+        super().__init__(data, readout_per_round=2, threshold=-4.0, config=config)
         self.signs = signs
+
 
     def analyze(self, fit=True):
         xdata = self.data['xpts'][1:-1]
@@ -281,8 +579,8 @@ class Spectroscopy(GeneralFitting):
 
 class LengthRabiFitting(GeneralFitting):
     def __init__(self, data, fit=True, fitparams=None, normalize=[False, 'g_data', 'e_data'], vlines=None, title='length_rabi',
-                 active_reset=False, readout_per_round=4, threshold=-4.0, fit_sin=False):
-        super().__init__(data, readout_per_round, threshold)
+                    active_reset=False, readout_per_round=4, threshold=-4.0, fit_sin=False, config=None):
+        super().__init__(data, readout_per_round, threshold, config)
         self.fit = fit
         self.fitparams = fitparams
         self.normalize = normalize
@@ -321,7 +619,7 @@ class LengthRabiFitting(GeneralFitting):
             'fit_err_avgq': pCov_avgq
         }
 
-    def display(self, return_fit_params=False):
+    def display(self, return_fit_params=False, title_str='Length Rabi', **kwargs):
         xlist = self.data['xpts'][0:-1]
         xpts_ns = self.data['xpts'] * 1e3
         Ilist = self.data["avgi"][0:-1]
@@ -329,7 +627,7 @@ class LengthRabiFitting(GeneralFitting):
 
         func = fitter.sinfunc if self.fit_sin else fitter.decaysin
 
-        plt.figure(figsize=(10, 8))
+        fig = plt.figure(figsize=(10, 8))
 
         axi = plt.subplot(211, title=self.title, ylabel="I [adc level]")
         plt.plot(xpts_ns[1:-1], Ilist[1:], 'o-')
@@ -367,6 +665,9 @@ class LengthRabiFitting(GeneralFitting):
 
         if return_fit_params:
             return self.results['fit_avgi'], self.results['fit_err_avgi'], xlist, Ilist
+        # save figure 
+        filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+        self.save_plot(fig, filename=filename)
 
     #@staticmethod
     def _calculate_pi_lengths(self, p):
@@ -388,8 +689,8 @@ class LengthRabiFitting(GeneralFitting):
 
 
 class ChevronFitting(GeneralFitting):
-    def __init__(self, frequencies, time, response_matrix):
-        super().__init__(data=None,     readout_per_round=2, threshold=-4.0)
+    def __init__(self, frequencies, time, response_matrix, config=None):
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
         self.frequencies = frequencies
         self.time = time
         self.response_matrix = response_matrix
@@ -474,7 +775,7 @@ class ChevronFitting(GeneralFitting):
                 'best_fit_params_contrast': None,
                 'best_fit_params_period': None
             }
-    def display_results(self, save_fig=False, directory=None, title="chevron_plot.png"):
+    def display_results(self, save_fig=False, directory=None, title="chevron_plot.png", vlines=None, hlines=None):
         """
         Display the results of the analysis, including plots. Optionally save the figure.
 
@@ -482,6 +783,8 @@ class ChevronFitting(GeneralFitting):
         - save_fig (bool): Whether to save the figure. Default is False.
         - directory (str): The directory where the figure will be saved (if save_fig is True).
         - title (str): The filename for the saved figure. Default is "chevron_plot.png".
+        - vlines (list or None): List of time values to draw vertical lines on the 2D plot.
+        - hlines (list or None): List of frequency values to draw horizontal lines on the 2D plot.
         """
         best_frequency_contrast = self.results.get('best_frequency_contrast')
         best_frequency_period = self.results.get('best_frequency_period')
@@ -494,6 +797,12 @@ class ChevronFitting(GeneralFitting):
             plt.axhline(best_frequency_contrast, color='red', linestyle='--', label=f'Best Contrast: {best_frequency_contrast:.2f} Hz')
         if best_frequency_period is not None:
             plt.axhline(best_frequency_period, color='blue', linestyle='--', label=f'Longest Period: {best_frequency_period:.2f} Hz')
+        if hlines is not None:
+            for h in hlines:
+                plt.axhline(h, color='orange', linestyle=':', label=f'hline: {h}')
+        if vlines is not None:
+            for v in vlines:
+                plt.axvline(v, color='magenta', linestyle=':', label=f'vline: {v}')
         plt.title('2D Color Plot with Chosen Frequencies')
         plt.xlabel('Time (s)')
         plt.ylabel('Frequency (Hz)')

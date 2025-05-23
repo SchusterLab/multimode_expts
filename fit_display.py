@@ -91,7 +91,7 @@ def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
     return np.array(result_Ig), np.array(result_Ie)
 
 ## histgram
-def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4):
+def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4, plot_e=True):
     """
     span: histogram limit is the mean +/- span
     """
@@ -135,12 +135,12 @@ def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_pe
         fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(16, 10))
         fig.tight_layout()
         
-        axs[0,0].scatter(Ie, Qe, label='e', color='r', marker='.', s=1)
+        if plot_e: axs[0,0].scatter(Ie, Qe, label='e', color='r', marker='.', s=1)
         axs[0,0].scatter(Ig, Qg, label='g', color='b', marker='.', s=1)
         
         if plot_f: axs[0,0].scatter(If, Qf, label='f', color='g', marker='.', s=1)
         axs[0,0].scatter(xg, yg, color='k', marker='o')
-        axs[0,0].scatter(xe, ye, color='k', marker='o')
+        if plot_e: axs[0,0].scatter(xe, ye, color='k', marker='o')
         if plot_f: axs[0,0].scatter(xf, yf, color='k', marker='o')
 
         axs[0,0].set_xlabel('I [ADC levels]')
@@ -273,7 +273,8 @@ def hist_analyze(data, span=None, verbose=True, **kwargs):
 
 def hist_display(data, span=None, verbose=True, plot_e=True, plot_f=False, active_reset=True, readout_per_round=2, thresholds=-4, **kwargs):
     
-    fids, thresholds_new, angle, confusion_matrix = hist(data=data, plot=True, active_reset=active_reset, threshold=thresholds, readout_per_round=readout_per_round, verbose=verbose, span=span)
+    fids, thresholds_new, angle, confusion_matrix = hist(data=data, plot=True, active_reset=active_reset, threshold=thresholds, readout_per_round=readout_per_round, verbose=verbose, span=span,
+                                                         plot_e=plot_e)
         
     print(f'ge fidelity (%): {100*fids[0]}')
 

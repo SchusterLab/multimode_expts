@@ -143,6 +143,20 @@ HistogramExperiment:
     cavity_gain: 1000 # this is not needed since no prepulse
     cavity_length: 2
 
+    prepulse: True 
+    pre_sweep_pulse: [[3569.4198176358545,
+                3426.2975766655427,
+                2008.975,
+                3426.2975766655427,
+                3569.4198176358545],
+                [11165, 8627, 15000, 8627, 11165],
+                [0.0, 0.0, 1.3599433864809195, 0.0, 0.0],
+                [0, 0, 0, 0, 0],
+                [2, 2, 0, 2, 2],
+                ['g', 'g', 'flat_top', 'g', 'g'],
+                [0.035, 0.035, 0.005, 0.035, 0.035]]
+    gate_based: False
+
 HistogramExperiment_oldold:
     qubits: [0]
     reps: 20000
@@ -204,11 +218,12 @@ DragCalibrationExperiment:
 HistogramPrepulseExperiment: # prepulse is the experiment 
     reps: 10000
     qubits: [0]
-    prepulse: False   
+     
     active_reset: True
     man_reset: True  
-    storage_reset: True    
-    
+    storage_reset: True  
+
+    prepulse: False  
     pre_sweep_pulse: [['qubit', 'ge', 'pi', 0],
                     ['qubit', 'ef', 'pi', 0],
                     ['man', 'M1', 'pi', 0],
@@ -690,10 +705,10 @@ RamseyEchoExperiment:
 
 CavityRamseyExperiment:
     start: 0.01 # wait time tau [us]
-    step: 0.25 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
-    expts: 100
+    step: 0.15 #0.3 # [us] 1 cycle is 0.0023251488095238095 [us], 2.7901785714285716 # [us]=1200 cycles
+    expts: 200
     ramsey_freq: 2.7 #1.8 #-0.245 # [MHz]     # remember Ramsey_freq*step % 1 < 0.5 !!!!!!
-    reps: 50
+    reps: 200
     rounds: 1
     qubits: [0]
     checkEF: False
@@ -704,9 +719,7 @@ CavityRamseyExperiment:
     man_reset: True # True
     storage_reset: True #True
     
-
-    # user_defined_pulse: [False, 4984.026194477733, 4500, 0.15, 0, 4] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
-    user_defined_pulse: [True ,2009.1, 15000,0.005,0.6375590828274424, 0] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
+    user_defined_pulse: [True ,2009.03, 15000,0.005,0.627532920181474, 0] #[True,5157.8527963217475, 1000 ,0.15, 0, 4] # [on/off, freq, gain, sigma (mus), flat top length (mus), drive channel=1 (flux low), 2 (qubit),3 (flux high),6 (storage),5 (f0g1),4 (manipulate)]  # if off, use config freq
     parity_meas: False
     man_idx: 1 # 1/2 for manipulate
     # manipulate: 1
@@ -717,31 +730,23 @@ CavityRamseyExperiment:
     echoes: [False, 0 ] # [on/off, # of echoes] 
     prepulse: True
     postpulse: True
-    pre_sweep_pulse:  [[3569.4934313126464, 3426.2961712804477],
+    pre_sweep_pulse: [[3569.462965491148, 3426.2579958470365],
                     [5414, 8483],
-                    [0, 0],
-                    [0, 0],
-                    [2, 2],
-                    ['g', 'g'],
-                    [0.035, 0.035]]
-    
-    # [[3568.5139269754336, 3425.3230942891637, 2007.54, 349.66,
-    #     3568.5139269754336, 3425.3230942891637],
-    #    [10973, 9530, 15000, 3000, 5304, 9530],
-    #    [0, 0, 0.6164057205175526, 0.9429255037608784, 0, 0],
-    #    [0, 0, 0, 0, 0, 0],
-    #    [2, 2, 0, 1, 2, 2],
-    #    ['g', 'g', 'flat_top', 'flat_top', 'g', 'g'],
-    #    [0.035, 0.035, 0.005, 0.005, 0.035, 0.035]]
-    
-    
-    post_sweep_pulse: [[3426.2961712804477, 3569.4934313126464],
-                    [8483, 5414],
-                    [0, 0],
+                    [0.0, 0.0],
                     [0, 0],
                     [2, 2],
                     ['g', 'g'],
                     [0.035, 0.035]]
+    post_sweep_pulse: [[3426.2579958470365, 3569.462965491148],
+                        [8483, 5414],
+                        [0.0, 0.0],
+                        [0, 0],
+                        [2, 2],
+                        ['g', 'g'],
+                        [0.035, 0.035]]
+    # gate_based: True,
+    # pre_sweep_pulse: [['qubit', 'ge', 'hpi'], ['qubit', 'ef', 'pi']]
+    # post_sweep_pulse: [['qubit', 'ef', 'pi'], ['qubit', 'ge', 'hpi']]
     # ramsey freq is the frequency by which to advance the phase
     # ramsey_freq (no echoes) gives ~0.02 Mhz osc : [-2.7, -2.93 , -2.53, -1.92, -3.28, -3.25, -2.91]
     # T2 : [, 600]
@@ -2529,7 +2534,7 @@ SingleBeamSplitterRBPostSelection:
     sync: False
     setup: False
 
-    bs_para: [349.1, 3000,0.35279671701528637, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [349.1, 3000,0.3686429924850567, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
     prepulse: False
     postpulse: False
     f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse
