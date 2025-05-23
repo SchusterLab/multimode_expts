@@ -1,5 +1,10 @@
-from slab import AttrDict
-from typing import Optional
+import json
+import os
+from typing import Optional, Tuple
+
+import numpy as np
+from slab import AttrDict, SlabFile
+
 
 def ensure_list_in_cfg(cfg: Optional[AttrDict]):
     """
@@ -18,4 +23,21 @@ def ensure_list_in_cfg(cfg: Optional[AttrDict]):
                             value2.update({key3: [value3]*num_qubits_sample})                                
             elif not(isinstance(value, list)):
                 subcfg.update({key: [value]*num_qubits_sample})
+
+
+def read_hdf5_data(path: str, filename: str) -> Tuple[dict, AttrDict]:
+    """
+    Extracts data and attrs from hdf5
+    Returns:
+        data: dict of numpy arrays
+        attrs: dict of parsed json
+    """
+    with SlabFile(os.path.join(path, filename)) as f:
+        attrs = {}
+        for key, value in f.attrs.items():
+            attrs.update({key: json.loads(value)})
+        data = {}
+        for key, value in f.items():
+            data.update({key: np.array(value)})
+    return data, AttrDict(attrs)
 
