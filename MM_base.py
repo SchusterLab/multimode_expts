@@ -94,7 +94,7 @@ class MM_base:
         self.pi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.hpi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.pi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
-        self.hpi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.hpi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
 
         # --------------qubit pulse parameters: gain----------
         self.pi_ge_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest] 
@@ -228,10 +228,11 @@ class MM_base:
         '''
         qTest = 0
 
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pi_sigma, length=self.pi_sigma*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pief_sigma, length=self.pief_sigma*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
+        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pi_ge_sigma, length=self.pi_ge_sigma*4)
+        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_ge_sigma, length=self.hpi_ge_sigma*4)
+        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pi_ef_sigma, length=self.pi_ef_sigma*4)
+        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ef", sigma=self.hpi_ef_sigma, length=self.hpi_ef_sigma*4)
+        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
 
         self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
@@ -390,6 +391,143 @@ class MM_base:
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
 
+    def custom_pulse_with_preloaded_wfm(self, cfg, pulse_data, advance_qubit_phase = None, sync_zero_const = False, prefix='pre',
+                                        same_storage = False, same_qubit_pulse = False, storage_no=1): 
+        '''
+        Executes prepulse or postpulse
+
+        # [[frequency], [gain], [length (us)], [phases], [drive channel],
+        #  [shape], [ramp sigma]],
+        #  drive channel=1 (flux low), 
+        # 2 (qubit),3 (flux high),4 (storage),0 (f0g1),6 (manipulate),
+
+        same_storage: if True, then the storage mode is not changed, we can reuse already prgrammed pulse
+        '''
+        # print('------------------------------')
+        # print(pulse_data)
+        if pulse_data is None:
+            return None
+        
+        for jj in range(len(pulse_data[0])):
+            # translate ch id to ch
+            if pulse_data[4][jj] == 1:
+                self.tempch = self.flux_low_ch
+            elif pulse_data[4][jj] == 2:
+                self.tempch = self.qubit_ch
+            elif pulse_data[4][jj] == 3:
+                self.tempch = self.flux_high_ch
+            elif pulse_data[4][jj] == 6:
+                self.tempch = self.storage_ch
+            elif pulse_data[4][jj] == 0:   # used to be 5
+                self.tempch = self.f0g1_ch
+            elif pulse_data[4][jj] == 4:
+                self.tempch = self.man_ch
+            # print(self.tempch)
+            if type(self.tempch) == list:
+                self.tempch = self.tempch[0]
+            # determine the pulse shape
+
+            waveform_name = None 
+
+            if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g": 
+                # likely a qubit pulse on ge space with 35 ns sigma 
+                waveform_name = "pi_qubit_ge"
+                # self.sync_all(self.us2cycles(0.01))
+                # if self.cfg.expt.preloaded_pulses and self.tempch == 2:
+                #     self.safe_regwi(self.page_qubit_phase, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                #     self.pulse(ch=self.tempch) 
+                # self.setup_and_pulse(ch=self.tempch, style="arb", 
+                #                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                #                     phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                #                     gain=pulse_data[1][jj], 
+                #                     waveform=waveform_name)
+                if self.cfg.expt.preloaded_pulses and self.tempch == 2 and same_qubit_pulse: 
+                    self.pulse(ch=self.tempch)
+                #     # else:
+                #         # print('reusing qubit')
+                #         # print('Setting phase to ', pulse_data[3][jj])
+                #         # print('Setting freq to ', self.f_ge_reg[0])
+                #         # print('Setting gain to ', pulse_data[1][jj])
+
+                #         # self.safe_regwi(self.page_qubit, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                #         # self.safe_regwi(self.page_qubit, self.r_qubit_freq, self.f_ge_reg[0])
+                #         # self.safe_regwi(self.page_qubit, self.r_qubit_gain, pulse_data[1][jj])
+                #         # # self.sync_all(self.us2cycles(0.02))
+                #         # self.pulse(ch=self.tempch)
+                else: 
+                    self.setup_and_pulse(ch=self.tempch, style="arb", 
+                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                                gain=pulse_data[1][jj], 
+                                waveform=waveform_name)
+                
+            elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
+                if self.tempch == 0 : 
+                    waveform_name = "pi_f0g1"
+                elif self.tempch == 1:
+                    waveform_name = "pi_m1si_low"
+                elif self.tempch == 3:
+                    waveform_name = "pi_m1si_high"
+                # elif self.tempch == 2: 
+                #     waveform_name = "pi_qubit_ef_ftop"
+
+                # self.sync_all(self.us2cycles(0.01))
+                if self.cfg.expt.preloaded_pulses and self.tempch == 0: # f0g1 resuse
+                    self.safe_regwi(self.page_f0g1_phase, self.r_f0g1_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                    self.pulse(ch=self.tempch) 
+
+                elif self.cfg.expt.preloaded_pulses and self.tempch == (1 or 3) and same_storage: # storage reuse
+                    # print(self.tempch)
+                    if self.tempch == 1: 
+                        self.safe_regwi(self.page_flux_low_phase, self.r_flux_low_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                    else: 
+                        self.safe_regwi(self.page_flux_high_phase, self.r_flux_high_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                    self.pulse(ch=self.tempch)
+                
+                # elif self.cfg.expt.preloaded_pulses and self.tempch == 2: # qubit reuse
+                #     self.safe_regwi(self.page_qubit_phase, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
+                #     self.pulse(ch=self.tempch)
+                else: 
+                    # using arb waveform for flat top pulse
+                    
+                    if self.cfg.expt.use_arb_waveform:
+                        print('printing arb waveform')
+                        if self.tempch == 0:  # f0g1
+                            self.setup_and_pulse(ch=self.tempch, style="arb", 
+                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                                            gain=pulse_data[1][jj],
+                                        waveform="pi_f0g1_arb")
+                        else:  # M1-Si, need to specify storage number
+                            self.setup_and_pulse(ch=self.tempch, style="arb", 
+                                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                                                gain=pulse_data[1][jj],
+                                            waveform="pi_m1s" + str(storage_no) + "_arb")
+                    else:                    
+                        # using standard flat top pulse
+                        # print('printing flat_top waveform')
+                        self.setup_and_pulse(ch=self.tempch, style="flat_top", 
+                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                                            gain=pulse_data[1][jj], 
+                                            length=self.us2cycles(pulse_data[2][jj], 
+                                                                gen_ch=self.tempch),
+                                        waveform=waveform_name)
+            else:
+                if sync_zero_const and pulse_data[1][jj] ==0: 
+                    self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
+                                                        #gen_ch=self.tempch))
+                else:
+                    self.setup_and_pulse(ch=self.tempch, style="const", 
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                                    gain=pulse_data[1][jj], 
+                                    length=self.us2cycles(pulse_data[2][jj], 
+                                                        gen_ch=self.tempch))
+            # self.wait_all(self.us2cycles(0.01))
+            self.sync_all(self.us2cycles(0.01))
+            # print(waveform_name)
 
     def man_reset(self, man_idx, chi_dressed = True ): 
         '''

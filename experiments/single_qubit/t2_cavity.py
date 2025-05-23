@@ -553,4 +553,3 @@ class CavityRamseyExperiment(Experiment):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
-    

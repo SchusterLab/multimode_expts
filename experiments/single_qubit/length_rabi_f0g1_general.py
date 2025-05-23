@@ -161,34 +161,36 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
                                  phase=0, gain=self.gain_ef_init, waveform="pi_qubit_ef")
             self.sync_all()
 
-        if self.cfg.expt.use_arb_waveform:
-            self.add_flat_top_gauss(ch=self.f0g1_chs[qTest], name="pi_test_ramp11", sigma=self.us2cycles(self.cfg.expt.ramp_sigma),
-                       length=self.us2cycles(self.cfg.expt.length_placeholder))
-            self.setup_and_pulse(
-                    ch=self.f0g1_chs[qTest],
-                    style="arb",
-                    freq=self.f_pi_test_reg,
-                    phase=0,
-                    gain=self.gain_pi_test, 
-                    waveform="pi_test_ramp11")
-        else:
 
-            if self.cfg.expt.length_placeholder>0:
-
+        for i in range(2*self.cfg.expt.err_amp_reps+1):
+            if self.cfg.expt.use_arb_waveform:
+                self.add_flat_top_gauss(ch=self.f0g1_chs[qTest], name="pi_test_ramp11", sigma=self.us2cycles(self.cfg.expt.ramp_sigma),
+                        length=self.us2cycles(self.cfg.expt.length_placeholder))
                 self.setup_and_pulse(
                         ch=self.f0g1_chs[qTest],
-                        style="flat_top",
+                        style="arb",
                         freq=self.f_pi_test_reg,
-                        length=self.us2cycles(self.cfg.expt.length_placeholder),
                         phase=0,
                         gain=self.gain_pi_test, 
-                        waveform="pi_test")
-                # self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", length=
-                #     self.us2cycles(self.cfg.expt.length_placeholder), freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test)
-                self.sync_all()  # align channels
-                # self.setup_and_pulse(ch=self.qubit_chs[qTest], style="flat_top", length=
-                #     self.us2cycles(self.cfg.expt.length_placeholder), freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test, waveform="pi_test_ramp")
-                # self.sync_all()  # align channels
+                        waveform="pi_test_ramp11")
+            else:
+
+                if self.cfg.expt.length_placeholder>0:
+
+                    self.setup_and_pulse(
+                            ch=self.f0g1_chs[qTest],
+                            style="flat_top",
+                            freq=self.f_pi_test_reg,
+                            length=self.us2cycles(self.cfg.expt.length_placeholder),
+                            phase=0,
+                            gain=self.gain_pi_test, 
+                            waveform="pi_test")
+                    # self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", length=
+                    #     self.us2cycles(self.cfg.expt.length_placeholder), freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test)
+                    self.sync_all()  # align channels
+                    # self.setup_and_pulse(ch=self.qubit_chs[qTest], style="flat_top", length=
+                    #     self.us2cycles(self.cfg.expt.length_placeholder), freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test, waveform="pi_test_ramp")
+                    # self.sync_all()  # align channels
             
 
         if self.pi_ef_after:  # post-rotation

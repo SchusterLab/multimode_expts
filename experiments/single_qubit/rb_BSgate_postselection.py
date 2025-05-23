@@ -416,7 +416,7 @@ class SingleBeamSplitterRBPostSelection(Experiment):
             print(f'Running variation {var+1} of {self.cfg.expt.variations}')
             #rb sequence
             # print(generate_sequence(5, iRB_gate_no=self.cfg.expt.IRB_gate_no))
-            self.cfg.expt.running_list =  np.array([1,1,1,1])#generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+            self.cfg.expt.running_list =  np.array([1,1])#generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
             
             #for ram prepulse 
             if self.cfg.expt.ram_prepulse_strs is None: 

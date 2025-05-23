@@ -124,7 +124,7 @@ class RamseyProgram(MMRAveragerProgram):
         
         
         if self.cfg.expt.qubit_ge_init:
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_gain, waveform="pi_qubit_ge")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
         
@@ -177,7 +177,7 @@ class RamseyProgram(MMRAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.post_sweep_pulse)
 
         if self.cfg.expt.qubit_ge_after: # map excited back to qubit ground state for measurement
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_gain, waveform="pi_qubit_ge")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
         

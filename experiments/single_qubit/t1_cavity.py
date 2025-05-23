@@ -86,7 +86,7 @@ class T1CavityProgram(RAveragerProgram):
             self.flat_length = self.us2cycles(cfg.device.QM.pulses.qubit_pi_ge_resolved.length[ii][jj], gen_ch=self.qubit_ch)
             self.pi_gain_resolved = self.cfg.device.QM.pulses.qubit_pi_ge_resolved.gain[ii][jj]
             
-            self.f_ge_resolved = self.freq2reg(self.cfg.device.QM.chi_shift_matrix[0][cfg.expt.cavity]+self.cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
+            self.f_ge_resolved = self.freq2reg(self.cfg.device.manipulate.chi[cfg.expt.cavity -1 ]+self.cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
 
             # self.set_pulse_registers(ch=self.man_ch, style="const", freq=self.f_man, phase=0, gain=self.man_gain, length=self.man_length)
 
