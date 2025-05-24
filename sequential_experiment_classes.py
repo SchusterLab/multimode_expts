@@ -114,6 +114,77 @@ class sequential_base_class():
             print(f"Chevron analysis failed: {e}")
             return None
     
+    def initialize_expt_sweep(self, keys=None, create_directory=False):
+        """
+        Initialize the experiment sweep data structure with specified keys.
+
+        Parameters:
+            keys (list of str, optional): List of keys to initialize in the experiment sweep data structure.
+                If None, defaults to an empty dictionary.
+            create_directory (bool, optional): If True, creates a new directory for storing sweep data files.
+                This option is different from usual way of saving all data ins single file. Can be useful if 
+                data is inhomogenous.              Thi
+
+        Side Effects:
+            - Initializes self.expt_sweep as an Experiment instance.
+            - Sets self.expt_sweep.data to a dictionary with the specified keys, each mapped to an empty list.
+            - If create_directory is True, creates a directory (named after the experiment file, without .h5 extension)
+              for storing sweep data files.
+        """
+        self.expt_sweep = Experiment(
+            path=self.path,
+            prefix=self.sweep_experiment_name,
+            config_file=self.config_file,
+        )
+        if keys is None:
+            self.expt_sweep.data = {}
+        else:
+            self.expt_sweep.data = {key: [] for key in keys}
+        if create_directory:
+            directory = self.expt_sweep.fname
+            if directory.lower().endswith('.h5'):
+                directory = directory[:-3]
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+                print(f"Created directory: {directory}")
+            self.expt_sweep_dir_name = directory
+
+    def save_sweep_data(self, sweep_key, sweep_value, run_exp, skip_keys=None):
+        """
+        Save sweep data and experimental results to the experiment file.
+
+        Parameters:
+            sweep_key (str): The key identifying the sweep parameter.
+            sweep_value (Any): The value of the sweep parameter for the current run.
+            run_exp (object): An object containing experimental data in its `data` attribute.
+            skip_keys (list, optional): List of data keys to skip when saving. Defaults to None.
+
+        Side Effects:
+            - Appends the sweep value to the corresponding list in `self.expt_sweep.data`.
+            - For each key in `run_exp.data`, appends its value to the corresponding list in `self.expt_sweep.data`, unless in skip_keys.
+            - Initializes new lists in `self.expt_sweep.data` for any new data keys.
+            - Persists the updated data by calling `self.expt_sweep.save_data()`.
+        """
+        if skip_keys is None:
+            skip_keys = []
+        self.expt_sweep.data[sweep_key].append(sweep_value)
+        for data_key in run_exp.data.keys():
+            if data_key in skip_keys:
+                print(f'Skipping key: {data_key}')
+                continue
+            if data_key not in self.expt_sweep.data.keys():
+                self.expt_sweep.data[data_key] = []
+            self.expt_sweep.data[data_key].append(run_exp.data[data_key])
+        # do same for run_exp.cfg.expt
+
+        self.expt_sweep.cfg = AttrDict(run_exp.cfg)
+
+        # print(self.expt_sweep.data['sequences'])
+        self.expt_sweep.save_data()
+
+   
+    
+    
 
 class sidebands_class(sequential_base_class):
     '''Class for sideband experiments; using sideband general experiment'''
@@ -123,18 +194,11 @@ class sidebands_class(sequential_base_class):
         self.experiment_class = 'single_qubit.sideband_general'
         self.experiment_name = 'SidebandGeneralExperiment'
 
-    def initialize_expt_sweep(self):
-        '''Initialize the experiment sweep data structure'''
-        self.expt_sweep = Experiment(
-            path=self.path,
-            prefix=self.sweep_experiment_name,
-            config_file=self.config_file,
-        )
-        self.expt_sweep.data = dict(freq_sweep=[], gain_sweep=[])
+    
 
     def sideband_freq_sweep(self):
         '''Frequency sweep for sideband experiments'''
-        self.initialize_expt_sweep()
+        self.initialize_expt_sweep(keys = ['freq_sweep'])
         chevron = None
 
         for index, freq in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['freq_start'], 
@@ -200,14 +264,7 @@ class sidebands_class(sequential_base_class):
             self.sideband_cross_kerr_cancellation()
     
 
-    def save_sweep_data(self, sweep_key, sweep_value, run_exp):
-        '''Save sweep data to the experiment file'''
-        self.expt_sweep.data[sweep_key].append(sweep_value)
-        for data_key in run_exp.data.keys():
-            if data_key not in self.expt_sweep.data.keys():
-                self.expt_sweep.data[data_key] = []
-            self.expt_sweep.data[data_key].append(run_exp.data[data_key])
-        self.expt_sweep.save_data()
+    
 
     
 
@@ -273,523 +330,154 @@ class man_f0g1_class(sequential_base_class):
             return self.freq_sweep()
 
 
-class MM_dual_rail_seq_exp:
-    def __init__(self):
-        '''Contains sequential experiments for dual rail based sequential experiments'''
 
-    def DualRail_sweep_depth_and_single_spec_and_stor(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-        '''
-        This performs dual rail rb for a given target mode in presence of a single spectator. 
-        This function sweeps the single spectator modes and also internally sweeps all the cardinal states 
-        that the spectator mode can be in . 
-        This function will also sweep the target modes
-        '''
-    #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-    #===================================================================# 
-
-        experiment_class = 'single_qubit.rb_BSgate_postselection'
-        experiment_name = 'SingleBeamSplitterRBPostSelection'   
-        sweep_experiment_name = 'DualRail_sweep_depth_and_single_spec_and_stor'
-
-        for keys in loaded[experiment_name].keys():
-            try:
-                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-            except:
-                pass
-        
-        start_pair = loaded[sweep_experiment_name]['start_pair']
-        target_start, spec_start = start_pair
-        
-        for kdx, target_mode in enumerate(loaded[sweep_experiment_name]['target_mode_list']):
-            if target_mode < target_start: continue
-
-            print('----------------------############---------------------------')
-            print('Kndex: %s target mode. = %s ' %(kdx, target_mode))
-            loaded[sweep_experiment_name]['target_mode'] = target_mode
-            mode_list = [1,2,3,4,5,6,7]
-            mode_list.remove(target_mode)
-            new_mode_list = mode_list.copy()
-            for spec in mode_list: 
-                if target_mode == target_start and spec < spec_start: 
-                    new_mode_list.remove(spec)
-            loaded[sweep_experiment_name]['target_spec_list'] = new_mode_list
-            # print(new_mode_list)
-
-            loaded[experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][kdx]
-            print(loaded[experiment_name]['bs_para'])
-
-            self.SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                        prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg])
-            
-
-
-
-
-
-    def SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
-                                                                    prep_init = False, prep_params = None):
-        '''
-        This performs dual rail rb for a given target mode in presence of a single spectator. 
-        This function sweeps the single spectator modes and also internally sweeps all the cardinal states 
-        that the spectator mode can be in . 
-        '''
-        if prep_init: 
-            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name, yaml_cfg = prep_params
-            # target_mode = loaded[sexperiment_name]['target_mode']
-        else: 
-            #====================================================================#
-            config_path = config_file
-            print('Config will be', config_path)
-
-            with open(config_file, 'r') as cfg_file:
-                yaml_cfg = yaml.safe_load(cfg_file)
-            yaml_cfg = AttrDict(yaml_cfg)
-
-            with open(exp_param_file, 'r') as file:
-                # Load the YAML content
-                loaded = yaml.safe_load(file)
-            #===================================================================# 
-
-            experiment_class = 'single_qubit.rb_BSgate_postselection'
-            experiment_name = 'SingleBeamSplitterRBPostSelection'   
-            sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth_and_single_spec'
-
-
-            for keys in loaded[experiment_name].keys():
-                try:
-                    loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-                except:
-                    pass
-            
-        
-        target_mode = loaded[sweep_experiment_name]['target_mode']
-
-        #depth_array = np.array([1,2,3,4,5,10,20])
-        for jdx, target_spec in enumerate(loaded[sweep_experiment_name]['target_spec_list']):
-        #for index, depth in enumerate(depth_array):
-            print('-------------------------------------------------')
-            print('Jndex: %s target spec. = %s ' %(jdx, target_spec))
-            # loaded[experiment_name]['ram_prepulse'][1] = #num_occupied_smodes
-            # loaded[experiment_name]['ram_prepulse'][3] = loaded[sweep_experiment_name]['prepulse_vars_list'][jdx] 
-
-            dummy = MM_dual_rail_base(cfg = yaml_cfg)
-            prepulse_strs = [dummy.prepulse_str_for_random_ram_state(1, [target_mode], target_spec, i) for i in range(1, 7)]
-            print(prepulse_strs)
-            loaded[experiment_name]['ram_prepulse_strs'] = prepulse_strs
-            self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                        prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
-            
-
-
-    def SingleBeamSplitterRBPostSelection_sweep_depth_and_ram(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-    #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-    #===================================================================# 
-
-        experiment_class = 'single_qubit.rb_BSgate_postselection'
-        experiment_name = 'SingleBeamSplitterRBPostSelection'   
-        sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth_and_ram'
-
-        for keys in loaded[experiment_name].keys():
-            try:
-                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-            except:
-                pass
-
-        #depth_array = np.array([1,2,3,4,5,10,20])
-        for jdx, num_occupied_smodes in enumerate(loaded[sweep_experiment_name]['num_occupied_smodes_list']):
-        #for index, depth in enumerate(depth_array):
-            print('-------------------------------------------------')
-            print('Jndex: %s depth. = %s ' %(jdx, num_occupied_smodes))
-            loaded[experiment_name]['ram_prepulse'][1] = num_occupied_smodes
-            loaded[experiment_name]['ram_prepulse'][3] = loaded[sweep_experiment_name]['prepulse_vars_list'][jdx] 
-
-            self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                        prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
-
-    def SingleBeamSplitterRB_stor_ramsey_spec(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-        '''
-        Depth sweep over all storage-storage pairs  for ramsey inpresence of beamsplitters
-        '''
-        #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-        #===================================================================# 
-        experiment_class = 'single_qubit.rb_BSgate_check_target'
-        experiment_name = 'SingleBeamSplitterRB_check_target'   
-        sweep_experiment_name = 'SingleBeamSplitterRB_stor_ramsey_spec'
-
-        # for keys in loaded[experiment_name].keys():
-        #     try:
-        #         loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-        #     except:
-        #         pass
-
-        for idx, stor_no in enumerate(loaded[sweep_experiment_name]['stor_list']):
-            for jdx, spec_no in enumerate(loaded[sweep_experiment_name]['spec_list']):
-                if stor_no == spec_no: # no self -self pair
-                    continue
-                if [stor_no, spec_no] in loaded[sweep_experiment_name]['skip_pairs']:
-                    continue
-                print('-------------------------------------------------')
-                print('Index: %s Storage = %s, Spectator = %s ' %(idx, stor_no, spec_no))
-                # Frequency 
-                loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][stor_no -1][spec_no -1]
-
-                # update prepulse/post pulse
-                loaded[sweep_experiment_name]['pre_sweep_pulse'][-1][1] = 'M1-S' + str(stor_no)
-                loaded[sweep_experiment_name]['post_sweep_pulse'][0][1] = 'M1-S' + str(stor_no)
-
-                # update bs_para
-                loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][spec_no -1]
-
-                # print(loaded[sweep_experiment_name])
-
-                _ = self.SingleBeamSplitterRB_check_target_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                                  prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
-
-    def SingleBeamSplitterRB_stor_ramsey_spec_for_sp_pairs(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-        '''
-        Depth sweep over all storage-storage pairs  for ramsey inpresence of beamsplitters
-        for specific pairs
-        '''
-        #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-        #===================================================================# 
-        experiment_class = 'single_qubit.rb_BSgate_check_target'
-        experiment_name = 'SingleBeamSplitterRB_check_target'   
-        sweep_experiment_name = 'SingleBeamSplitterRB_stor_ramsey_spec_for_sp_pairs'
-
-        # for keys in loaded[experiment_name].keys():
-        #     try:
-        #         loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-        #     except:
-        #         pass
-
-        for (stor_no, spec_no) in loaded[sweep_experiment_name]['stor_spec_pairs']:
-            if stor_no == spec_no: # no self -self pair
-                continue
-            # if [stor_no, spec_no] in loaded[sweep_experiment_name]['skip_pairs']:
-            #     continue
-            print('-------------------------------------------------')
-            print(' Storage = %s, Spectator = %s ' %( stor_no, spec_no))
-            # Frequency 
-            loaded[sweep_experiment_name]['wait_freq'] = loaded[sweep_experiment_name]['wait_freq_list'][stor_no -1][spec_no -1]
-
-            # update prepulse/post pulse
-            loaded[sweep_experiment_name]['pre_sweep_pulse'][-1][1] = 'M1-S' + str(stor_no)
-            loaded[sweep_experiment_name]['post_sweep_pulse'][0][1] = 'M1-S' + str(stor_no)
-
-            # update bs_para
-            loaded[sweep_experiment_name]['bs_para'] = loaded[sweep_experiment_name]['bs_para_list'][spec_no -1]
-
-            # print(loaded[sweep_experiment_name])
-
-            _ = self.SingleBeamSplitterRB_check_target_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                                prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name])
-
-
-
-    def SingleBeamSplitterRB_check_target_sweep_depth(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, prep_init = False, prep_params = None):
-        '''
-            Although this function is uses the daughter function SingleBeamSplitterRBPostSelection, 
-            the post selection part is unimportant. 
-
-            This is gate based ramsey experiment (instead of time based) for target state in presence
-            spectator beamsplitters.
-        '''
-    # #====================================================================#
-    #     config_path = config_file
-    #     print('Config will be', config_path)
-
-    #     with open(config_file, 'r') as cfg_file:
-    #         yaml_cfg = yaml.safe_load(cfg_file)
-    #     yaml_cfg = AttrDict(yaml_cfg)
-
-    #     with open(exp_param_file, 'r') as file:
-    #         # Load the YAML content
-    #         loaded = yaml.safe_load(file)
-    # #===================================================================# 
-
-    #     experiment_class = 'single_qubit.rb_BSgate_check_target'
-    #     experiment_name = 'SingleBeamSplitterRB_check_target'   
-    #     sweep_experiment_name = 'SingleBeamSplitterRB_check_target_sweep_depth'
-
-    #     for keys in loaded[experiment_name].keys():
-    #         try:
-    #             loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-    #         except:
-    #             pass
-        if prep_init: 
-            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name = prep_params
-        else: 
-        #====================================================================#
-            config_path = config_file
-            print('Config will be', config_path)
-
-            with open(config_file, 'r') as cfg_file:
-                yaml_cfg = yaml.safe_load(cfg_file)
-            yaml_cfg = AttrDict(yaml_cfg)
-
-            with open(exp_param_file, 'r') as file:
-                # Load the YAML content
-                loaded = yaml.safe_load(file)
-        #===================================================================# 
-
-            experiment_class = 'single_qubit.rb_BSgate_check_target'
-            experiment_name = 'SingleBeamSplitterRB_check_target'   
-            sweep_experiment_name = 'SingleBeamSplitterRB_check_target_sweep_depth'
-
-        # NOTe the following code is not part of the "prep function"
-        for keys in loaded[experiment_name].keys():
-            try:
-                loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-            except:
-                pass
-        
-        loaded[sweep_experiment_name]['depth_list'] = np.arange(loaded[sweep_experiment_name]['depth_start'],
-                                                                loaded[sweep_experiment_name]['depth_stop'],
-                                                                loaded[sweep_experiment_name]['depth_step'])
-        length = len(loaded[sweep_experiment_name]['depth_list'])
-        loaded[sweep_experiment_name]['reps_list'] = [loaded[sweep_experiment_name]['repss'] for _ in range(length)] # * len(loaded[sweep_experiment_name]['depth_list'])
-
-        # print(loaded[sweep_experiment_name])
-        self.SingleBeamSplitterRBPostSelection_sweep_depth(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path, exp_param_file=exp_param_file,
-                                                    prep_init = True, prep_params = [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name],
-                                                    skip_ss = True)
-            
-    def SingleBeamSplitterRBPostSelection_sweep_depth(self,soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
-                                                    prep_init = False, prep_params = None, skip_ss = False):
-        '''
-        Prep_init: True if the config, experiment names are already initialized in some other parent function that calls this as a child
-        prep_params: [config_path, loaded, experiment_class, experiment_name, sweep_experiment_name]
-        skip_ss: Skip the single shot part of the experiment (True/False) (first depth will have it, later depths will not )
-        '''
-        if prep_init: 
-            config_path, loaded, experiment_class, experiment_name, sweep_experiment_name = prep_params
-        else: 
-        #====================================================================#
-            config_path = config_file
-            print('Config will be', config_path)
-
-            with open(config_file, 'r') as cfg_file:
-                yaml_cfg = yaml.safe_load(cfg_file)
-            yaml_cfg = AttrDict(yaml_cfg)
-
-            with open(exp_param_file, 'r') as file:
-                # Load the YAML content
-                loaded = yaml.safe_load(file)
-        #===================================================================# 
-
-            experiment_class = 'single_qubit.rb_BSgate_postselection'
-            experiment_name = 'SingleBeamSplitterRBPostSelection'  
-            sweep_experiment_name = 'SingleBeamSplitterRBPostSelection_sweep_depth' 
-
-            for keys in loaded[experiment_name].keys():
-                try:
-                    loaded[experiment_name][keys] = loaded[sweep_experiment_name][keys]   # overwrite the single experiment file with new paramters
-                except:
-                    pass
-
-        #depth_array = np.array([1,2,3,4,5,10,20])
-        for index, depth in enumerate(loaded[sweep_experiment_name]['depth_list']):
-        #for index, depth in enumerate(depth_array):
-            print('Index: %s depth. = %s ' %(index, depth))
+class MM_DualRailRB(sequential_base_class):
+    '''Class for dual rail based sequential experiments (RB)'''
+
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
+                 prev_data = None, title = None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+        self.experiment_class = 'single_qubit.rb_BSgate_postselection'
+        self.experiment_name = 'SingleBeamSplitterRBPostSelection'
+        self.prev_data = prev_data
+        self.title = title if title is not None else 'Dual Rail RB Post Selection'
+
+
+    def SingleBeamSplitterRBPostSelection_sweep_depth(self, skip_ss=False):
+        '''Sweep over RB depths for dual rail experiment'''
+        # all_keys = [
+        #     'depth_sweep', 'reps_sweep', 'Idata', 'Qdata', 'Ig', 'Qg', 'Ie', 'Qe',
+        #     'fids', 'thresholds', 'angle', 'confusion_matrix', 'sequences',
+        # ]
+        all_keys = ['depth_sweep']
+        self.initialize_expt_sweep(keys=all_keys, create_directory = True)
+        sequences_list = []
+        # will save all files inside the expt_sweep directory
+        path_for_expt = self.expt_sweep_dir_name
+
+        for index, depth in enumerate(self.loaded[self.sweep_experiment_name]['depth_list']):
+            print('Index: %s depth. = %s ' % (index, depth))
             if index != 0 and skip_ss:
-                loaded[experiment_name]['calibrate_single_shot'] = False
-            loaded[experiment_name]['rb_depth'] = depth
-            loaded[experiment_name]['rb_reps'] = loaded[sweep_experiment_name]['reps_list'][index]
-            
+                self.loaded[self.experiment_name]['calibrate_single_shot'] = False
+            self.loaded[self.experiment_name]['rb_depth'] = depth
+            self.loaded[self.experiment_name]['rb_reps'] = self.loaded[self.sweep_experiment_name]['reps_list'][index]
 
-            run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
-
-
-            run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
-
+            run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=path_for_expt, prefix=self.prefix, config_file=self.config_file)")
+            run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
+            # self.expt_sweep.cfg = run_exp.cfg  # Copy the config to the sweep experiment
+            #TODO: add expt config to sweep experiment data saving
             print(run_exp.cfg.expt)
             run_exp.go(analyze=False, display=False, progress=False, save=True)
 
-    def SingleBeamSplitterRBPostSelection_sweep_depth_storsweep(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-    #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-    #===================================================================# 
-
-        experiment_class = 'single_qubit.rb_BSgate_postselection'
-        experiment_name = 'SingleBeamSplitterRBPostSelection'   
-
-        for keys in loaded[experiment_name].keys():
-            try:
-                loaded[experiment_name][keys] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_storsweep'][keys]   # overwrite the single experiment file with new paramters
-            except:
-                pass
-
+            
+            # The following is just for making code saving easier!
+            run_exp.cfg.expt.running_list = []
+            # sequences_list.append(run_exp.data['sequences'])
+            # sequences_list = self.pad_sequences_to_homogeneous(sequences_list)
+            # print('Padded sequences:', sequences_list)
+            #run_exp.data['sequences'] = sequences_list[-1]
+            self.expt_sweep.data['sequences'] = sequences_list 
+            
+            self.save_sweep_data('depth_sweep', depth, run_exp, skip_keys=['sequences'])
+            self.perform_RB_analysis(prefix = "SingleBeamSplitterRBPostSelection_sweep_depth")
+    
+    def perform_RB_analysis(self, prefix = None):
+        """
+        Perform RB analysis and live plotting.
+        This method performs a Randomized Benchmarking (RB) analysis on the experimental data 
+        and displays the results in a live plot. It assumes that the `self.expt_sweep` attribute 
+        is present and contains the necessary data for the analysis. Specifically, `self.expt_sweep.data` 
+        must include:
+            - 'depth_sweep': Depths used in the sweep.
+            - 'sequences': Sequences of operations for each depth.
+            - Other relevant RB data.
+        The method initializes a `RBAnalysis` object with the provided data, performs the analysis, 
+        and displays the results. It also clears any previous plots to ensure the display is updated 
+        with the latest results.
+        Note:
+            - This method requires the `multimode_expts.fit_display_classes` module for the `RBAnalysis` class.
+            - The `IPython.display.clear_output` function is used to clear the output for live plotting.
+            - If any exception occurs during the process, it will print an error message indicating the failure.
+        Raises:
+            Exception: If any error occurs during the RB analysis or plotting process.
+        """
         
-        for stor_idx, stor_no in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_storsweep']['stor_list']): 
+        try:
+            from multimode_expts.fit_display_classes import MM_DualRailRBFitting
 
-            print('-------------------------------------------------')
-            print('Storage Index: %s Storage No. = %s ' %(stor_idx, stor_no))
-            man_idx = 2   # 1 or 2
+            # Initialize RB analysis
+            rb_analysis = MM_DualRailRBFitting(filename = None, file_prefix = prefix, 
+                                   config=self.yaml_cfg, expt_path=self.path, title=self.title, 
+                                   prev_data= self.prev_data)
 
-            # create prepulse , postpulse, post selection pulse 
-            mm_base = MM_base(cfg = yaml_cfg)
-            pre_sweep_pulse_str = [['qubit', 'ge', 'pi'],
-                            ['qubit', 'ef', 'pi'],
-                                ['man', 'M' + str(man_idx) , 'pi']]
-            post_sweeep_pulse_str = [['qubit', 'ge', 'hpi'], # Starting parity meas
-                        ['qubit', 'ge', 'parity_M' + str(man_idx)], 
-                        ['qubit', 'ge', 'hpi']]
-            post_selection_pulse_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no), 'hpi'], 
-                                ['storage', 'M'+ str(man_idx) + '-S' + str(stor_no), 'hpi'],
-                            ['qubit', 'ge', 'hpi'], # Starting parity meas
-                            ['qubit', 'ge', 'parity_M' + str(man_idx)], 
-                            ['qubit', 'ge', 'hpi']]
-            bs_para_str = [['storage', 'M'+ str(man_idx) + '-S' + str(stor_no), 'hpi']]
             
-            creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
-            loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
-            creator = mm_base.get_prepulse_creator(post_sweeep_pulse_str)
-            loaded[experiment_name]['post_sweep_pulse'] = creator.pulse.tolist()
-            creator = mm_base.get_prepulse_creator(post_selection_pulse_str)
-            loaded[experiment_name]['post_selection_pulse'] = creator.pulse.tolist()
-            creator = mm_base.get_prepulse_creator(bs_para_str)
-            bs_para_pulse = creator.pulse.tolist()
-            loaded[experiment_name]['bs_para'] = [bs_para_pulse[0][0], bs_para_pulse[1][0], bs_para_pulse[2][0],  bs_para_pulse[6][0]]
 
-            print('Prepulse: ', loaded[experiment_name]['pre_sweep_pulse'])
-            print('Postpulse: ', loaded[experiment_name]['post_sweep_pulse'])
-            print('Post Selection Pulse: ', loaded[experiment_name]['post_selection_pulse'])
-            print('BS Para: ', loaded[experiment_name]['bs_para'])
-            
-            
-            
-            #depth_array = np.array([1,2,3,4,5,10,20])
-            for index, depth in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_storsweep']['depth_list']):
-            #for index, depth in enumerate(depth_array):
-                print('Index: %s depth. = %s ' %(index, depth))
-                loaded[experiment_name]['rb_depth'] = depth
+            # Close previous plots and display the new one
+            from IPython.display import clear_output
+            clear_output(wait=True)
+            plt.close('all')  # Close all existing figures
+            args = rb_analysis.show_rb()
+            return None
 
-                loaded[experiment_name]['rb_reps'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_storsweep']['reps_list'][index]
-                
+        except Exception as e:
+            print(f"RB analysis failed: {e}")
+            return None
+    def run_sweep(self, sweep_experiment_name, skip_ss=False):
+        '''Run the sweep'''
+        self.sweep_experiment_name = sweep_experiment_name
+        self.map_sequential_cfg_to_experiment()
 
-                run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
+        if sweep_experiment_name == 'SingleBeamSplitterRBPostSelection_sweep_depth':
+            self.SingleBeamSplitterRBPostSelection_sweep_depth(skip_ss=skip_ss)
 
+    def pad_sequences_to_homogeneous(self, sequences):
+        """
+        Pads a list of list of arrays so that the last dimension of each array matches the maximum length
+        at each index position across all sequences, and returns a list of lists of lists (no arrays).
 
-                run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
+        Example:
+            Input: [[[0], [0], [0]], [[1,1], [1,1], [1,1]]]
+            Output: [
+                [[0, np.nan], [0, np.nan], [0, np.nan]],
+                [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
+            ]
+        """
+        if not sequences:
+            return []
 
-                # special updates on device_config file
-                #run_exp.cfg.device.qubit.pulses.hpi_ge.gain = [amp]
-                # run_exp.cfg.device.readout.relax_delay = 2500 # Wait time between experiments [us]
-                # run_exp.cfg.device.readout.relax_delay = 300 # Wait time between experiments [us]
-                # run_exp.cfg.device.manipulate.readout_length = 5
-                # run_exp.cfg.device.storage.readout_length = 5
-                run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
-                print(run_exp.cfg.expt)
-                run_exp.go(analyze=False, display=False, progress=False, save=True)
+        num_arrays = max(len(seq) for seq in sequences)
+        max_lengths = []
+        for arr_idx in range(num_arrays):
+            max_len = 0
+            for seq in sequences:
+                if arr_idx < len(seq):
+                    arr = np.asarray(seq[arr_idx])
+                    arr_len = arr.shape[-1]
+                    if arr_len > max_len:
+                        max_len = arr_len
+            max_lengths.append(max_len)
 
-
-
-
-    def SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-    #====================================================================#
-        config_path = config_file
-        print('Config will be', config_path)
-
-        with open(config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        yaml_cfg = AttrDict(yaml_cfg)
-
-        with open(exp_param_file, 'r') as file:
-            # Load the YAML content
-            loaded = yaml.safe_load(file)
-    #===================================================================# 
-
-        experiment_class = 'single_qubit.rb_BSgate_postselection'
-        experiment_name = 'SingleBeamSplitterRBPostSelection'   
-
-        for keys in loaded[experiment_name].keys():
-            try:
-                loaded[experiment_name][keys] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep'][keys]   # overwrite the single experiment file with new paramters
-            except:
-                pass
-
+        padded_sequences = []
+        for seq in sequences:
+            padded_seq = []
+            for arr_idx in range(num_arrays):
+                if arr_idx < len(seq):
+                    arr = np.asarray(seq[arr_idx], dtype=float)
+                    pad_width = max_lengths[arr_idx] - arr.shape[-1]
+                    if pad_width > 0:
+                        arr_padded = np.pad(arr, [(0, 0)] * (arr.ndim - 1) + [(0, pad_width)], mode='constant', constant_values=np.nan)
+                    else:
+                        arr_padded = arr
+                    # Convert to list
+                    arr_list = arr_padded.tolist()
+                else:
+                    # If this sequence is missing this array, fill with nan list
+                    shape = list(np.asarray(seq[0]).shape) if seq else [1]
+                    shape[-1] = max_lengths[arr_idx]
+                    arr_list = np.full(shape, np.nan).tolist()
+                padded_seq.append(arr_list)
+            padded_sequences.append(padded_seq)
+        return padded_sequences
+    
         
-        for stor_idx, stor_no in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['stor_list']): 
-
-            print('-------------------------------------------------')
-            print('Storage Index: %s Storage No. = %s ' %(stor_idx, stor_no))
-            man_idx = 1   # 1 or 2
-
-            # create prepulse , postpulse, post selection pulse 
-            mm_base = MM_base(cfg = yaml_cfg)
-            pre_sweep_pulse_str = [['qubit', 'ge', 'pi', 0],
-                            ['qubit', 'ef', 'pi', 0],
-                                ['man', 'M' + str(man_idx) , 'pi', 0]]
-            
-            creator = mm_base.get_prepulse_creator(pre_sweep_pulse_str)
-            loaded[experiment_name]['pre_sweep_pulse'] = creator.pulse.tolist()
-            loaded[experiment_name]['bs_para'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['bs_para_list'][stor_no-1]
-
-            print('Prepulse: ', loaded[experiment_name]['pre_sweep_pulse'])
-            print('BS Para: ', loaded[experiment_name]['bs_para'])
-
-            for index, depth in enumerate(loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['depth_list']):
-                print('Index: %s depth. = %s ' %(index, depth))
-                loaded[experiment_name]['rb_depth'] = depth
-
-                loaded[experiment_name]['rb_reps'] = loaded['SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep']['reps_list'][index]
-                
-
-                run_exp = eval(f"meas.{experiment_class}.{experiment_name}(soccfg=soccfg, path=path, prefix=prefix, config_file=config_path)")
-
-
-                run_exp.cfg.expt = eval(f"loaded['{experiment_name}']")
-
-                # special updates on device_config file
-                run_exp.cfg.device.readout.relax_delay = 100 # Wait time between experiments [us]
-                print(run_exp.cfg.expt)
-                run_exp.go(analyze=False, display=False, progress=False, save=True)
+   

@@ -359,6 +359,15 @@ class SingleBeamSplitterRBPostSelection(Experiment):
 
         # g states for q0
         data=dict()
+        data['Ig'] = []
+        data['Qg'] = []
+        data['Ie'] = []
+        data['Qe'] = []
+        data['fids'] = []
+        data['angle'] = []
+        data['thresholds'] = []
+        data['confusion_matrix'] = []
+        
         
         if self.cfg.expt.single_shot_bef_expt: 
             sscfg = self.cfg
@@ -374,10 +383,7 @@ class SingleBeamSplitterRBPostSelection(Experiment):
             sscfg.expt.pulse_f = False
             # print(sscfg)
 
-            data['Ig'] = []
-            data['Qg'] = []
-            data['Ie'] = []
-            data['Qe'] = []
+            
             histpro_g = HistogramProgram(soccfg=self.soccfg, cfg=sscfg)
             avgi, avgq = histpro_g.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
                                         readouts_per_experiment=self.cfg.expt.readout_per_round)
@@ -408,15 +414,13 @@ class SingleBeamSplitterRBPostSelection(Experiment):
         data['Idata'] = []
         data['Qdata'] = []
 
-        #sequences = np.array([[0], [1]])#[1,1,1,1], [2,2,2,2],  [1,2,1,1], [1,2,2,2], [1,1,2,1]])
-        #for var in sequences:
+        
         self.cfg.expt.reps = self.cfg.expt.rb_reps
-        # data['running_lists'] = []
+        sequences = []
         for var in tqdm(range(self.cfg.expt.variations)):   # repeat each depth by variations
             print(f'Running variation {var+1} of {self.cfg.expt.variations}')
-            #rb sequence
-            # print(generate_sequence(5, iRB_gate_no=self.cfg.expt.IRB_gate_no))
-            self.cfg.expt.running_list =  np.array([1,1])#generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+            self.cfg.expt.running_list =  generate_sequence(self.cfg.expt.rb_depth, iRB_gate_no=self.cfg.expt.IRB_gate_no)
+            sequences.append(self.cfg.expt.running_list)
             
             #for ram prepulse 
             if self.cfg.expt.ram_prepulse_strs is None: 
@@ -424,20 +428,20 @@ class SingleBeamSplitterRBPostSelection(Experiment):
                     self.cfg.expt.prepulse = True
                     dummy = MM_dual_rail_base( cfg=self.cfg)
                     prepulse_strs = [dummy.prepulse_str_for_random_ram_state(num_occupied_smodes=self.cfg.expt.ram_prepulse[1],
-                                                                            skip_modes=self.cfg.expt.ram_prepulse[2])
-                                                                            for _ in range(self.cfg.expt.ram_prepulse[3])] 
-                                    #  for _ in range(self.cfg.expt.ram_prepulse[3])]
+                                                skip_modes=self.cfg.expt.ram_prepulse[2])
+                                                for _ in range(self.cfg.expt.ram_prepulse[3])] 
+                            #  for _ in range(self.cfg.expt.ram_prepulse[3])]
                 else: 
                     self.cfg.expt.prepulse = False
                     prepulse_strs = [[None]]
-                    
+                
             else: 
                 prepulse_strs = self.cfg.expt.ram_prepulse_strs
 
             print(prepulse_strs)
             for prepulse_str in prepulse_strs:
             # print reps, rounds, etc
-                #print(f'reps: {self.cfg.expt.reps}, rounds: {self.cfg.expt.rounds}, pulse_e: {self.cfg.expt.pulse_e}, pulse_f: {self.cfg.expt.pulse_f}')
+            #print(f'reps: {self.cfg.expt.reps}, rounds: {self.cfg.expt.rounds}, pulse_e: {self.cfg.expt.pulse_e}, pulse_f: {self.cfg.expt.pulse_f}')
                 self.cfg.expt.pre_sweep_pulse = prepulse_str
                 rb_shot = SingleBeamSplitterRBPostselectionrun(soccfg=self.soccfg, cfg=self.cfg)
                 read_num =2 
@@ -445,13 +449,12 @@ class SingleBeamSplitterRBPostSelection(Experiment):
                 self.prog = rb_shot
                 avgi, avgq = rb_shot.acquire(
                     self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
-                            readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
+                        readouts_per_experiment=read_num) #,save_experiments=np.arange(0,5,1))
                 II, QQ = rb_shot.collect_shots_rb(read_num)
                 data['Idata'].append(II)
                 data['Qdata'].append(QQ)
-        #data['running_lists'] = running_lists   
-        #print(self.prog)
-            
+        data['sequences'] = sequences   
+        # data['expt_cfg'] = deepcopy(self.cfg.expt)
         self.data = data
 
         return data

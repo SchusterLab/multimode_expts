@@ -2530,7 +2530,7 @@ SingleBeamSplitterRBPostSelection:
     sync: False
     setup: False
 
-    bs_para: [349.1, 3000,0.3686429924850567, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
+    bs_para: [349.11, 3000,0.4878422372647258, 0.005] # at 96  # beam splitter parameters [[frequency], [gain], [length (us)], [sigma]]
     prepulse: False
     postpulse: False
     f0g1_offset: 0 # offset phase in deg as a result of f0g1 prepulse/postpulse

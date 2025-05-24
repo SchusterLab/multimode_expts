@@ -19,6 +19,30 @@ class GeneralFitting:
         self.readout_per_round = readout_per_round
         self.threshold = threshold
 
+    
+    
+    def filter_data_BS(self, a1, a2, a3, threshold, post_selection = False):
+        # assume the last one  is experiment data, the last but one is for post selection
+        '''
+        This is for active reset post selection 
+
+        the post selection parameter DOES not refer to active reset post selection
+        a1: from active reset pre selection 
+        a2: from actual experiment
+        a3: from actual experiment post selection
+        '''
+        result_1 = []
+        result_2 = []
+        
+        for k in range(len(a1)):
+
+            if a1[k] < threshold:
+
+                result_1.append(a2[k])
+                if post_selection:
+                    result_2.append(a3[k])
+        
+        return np.array(result_1), np.array(result_2)
     def filter_data_IQ(self, II, IQ, threshold):
         result_Ig = []
         result_Ie = []
@@ -880,150 +904,57 @@ class ChevronFitting(GeneralFitting):
             plt.show()
     
 
-class MM_DualRail: 
+class MM_DualRailRBFitting(GeneralFitting): 
 
-    def __init__(self): 
+    def __init__(self, filename = None , file_prefix = None, data=None, readout_per_round=2, threshold=-4.0, config=None,
+                 prev_data = None, expt_path = None,  title = 'RB'): 
         '''Analysis for dual rail experiments '''
+        super().__init__(data, readout_per_round, threshold, config)
+        self.filename = filename
+        self.expt_path = expt_path
+        self.prev_data = prev_data
+        self.title = title
+        self.file_prefix = file_prefix
     
-    # ------------- Analyis for Storage state in presence of spectator BS ------------
-
-    
-    def filter_data_for_si_wrt_spec_BS(self, temp_data, attrs, threshold=None): 
-        '''
-        Filter data (based on active reset preselection) for single rail wrt to spectator BS
-        '''
-        if threshold == None:
-            threshold = temp_data['thresholds']
-        avg_idata = []
-        for aa, var in enumerate(temp_data['Idata']):
-            var_data, _ =  self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], None, threshold,post_selection = False)
-            avg_data = np.mean(var_data, axis=0) # average wrt to shots
-            # print(len(var_data))
-            avg_idata.append(avg_data)
-            # print(threshold)
-        
-        bs_gate_nums = attrs['config']['expt']['bs_gate_nums']
-        rb_times = attrs['config']['expt']['rb_times']
-        
-        return avg_idata, bs_gate_nums, rb_times # the second average is over variations
-    
-    def extract_ramsey_seq_check_target(self, prev_data, expt_path, file_list, name, 
-                                        wrong_way=False):
-        '''
-        Extract the data for the ramsey sequence as a function of gates 
-
-        wrong_way: averaging over a single depth; ignoring that within a given depth, multiple times are covered
-        '''
-
-        var_datas = []
-        # depth_list = []
-        bs_gate_numss = []
-        rb_timess = []
-
-        wrong_fids = []
-        wrong_bs_gate_nums = []
-        wrong_times = []
-        depth_list = []
-        threshold = 0
-        fnot_found_err_bool  = False
-
-        for idx, file_no in enumerate(file_list): 
-            try: 
-                full_name = str(file_no).zfill(5)+name
-                # print(full_name)
-                temp_data, attrs = prev_data(expt_path, full_name)
-                # analysis = MM_DualRail_Analysis()
-
-                if attrs['config']['expt']['calibrate_single_shot']:
-                    threshold = temp_data['thresholds']
-
-                avg_idata, bs_gate_nums, rb_times = self.filter_data_for_si_wrt_spec_BS(temp_data, attrs, threshold)
-                var_datas+= avg_idata
-                bs_gate_numss += bs_gate_nums
-                rb_timess += rb_times
-
-                wrong_fids.append(np.average(avg_idata))
-                wrong_bs_gate_nums.append(np.average(bs_gate_nums))
-                wrong_times.append(np.average(rb_times))
-                depth_list.append(attrs['config']['expt']['rb_depth'])
-
-            except FileNotFoundError:
-                print('FileNotFoundError')
-                continue
-        if wrong_way:
-            return wrong_times, wrong_bs_gate_nums, wrong_fids, depth_list
-        
-        return self.reorganize_var_data_for_ramsey(var_datas, bs_gate_numss, rb_timess, attrs)
-        
-    def reorganize_var_data_for_ramsey(self, var_datas, bs_gate_numss, rb_timess, attrs, return_df=False, len_threshold = 0):
-        # Re organize data so that we average over all the data points for a given BS gate number
-
-        data = {'bs_gate_nums': bs_gate_numss, 'avg_idata': var_datas, 'rb_times': rb_timess}
-        df = pd.DataFrame(data)
-        if return_df: 
-            return df
-        bs_nums_range = np.arange(df['bs_gate_nums'].min(), df['bs_gate_nums'].max() + 1, 1)
-        bs_nums_for_plot = [] # List to store the BS gate numbers that have a fidelity
-        rb_times_for_plot = []
-        fids_for_plot = []
-
-        for idx, bs_gate_num in enumerate(bs_nums_range): 
-            df_bs_num = df[df['bs_gate_nums'] == bs_gate_num]
-            if len(df_bs_num) > len_threshold:
-                # plt.plot(df_bs_num['rb_times'], df_bs_num['avg_idata'], '-o', label='BS gate ' + str(bs_gate_num))
-                print('len of df_bs_num', len(df_bs_num))
-                fids_for_plot.append(np.average(df_bs_num['avg_idata'].values))
-                bs_nums_for_plot.append(bs_gate_num)
-                rb_times_for_plot.append(np.average(df_bs_num['rb_times'].values))
-            # print(f'Average idata for BS gate {bs_gate_num} is {avg_idata[idx]}')
-        return bs_nums_for_plot, fids_for_plot, rb_times_for_plot, attrs['config']['expt']['wait_freq']
-    def Ramsey_display(self, xdata, ydata, ramsey_freq=0.02, fit=True, fitparams = None, 
-                       title='Ramsey'):
-
-        xdata = np.array(xdata)
-        ydata = np.array(ydata)
-        if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            # Remove the first and last point from fit in case weird edge measurements
-            # fitparams = None
-            # fitparams=[8, 0.5, 0, 20, None, None]
-            p, pCov = fitter.fitdecaysin(xdata, ydata, fitparams=fitparams)
-            
-            if isinstance(p, (list, np.ndarray)): f_adjust_ramsey_avgi = sorted((ramsey_freq - p[1], ramsey_freq + p[1]), key=abs)
-
-  
-
-        title = title
-        plt.figure(figsize=(10,5))
-        axi = plt.subplot(111, 
-            title=f"{title} (Ramsey Freq: {ramsey_freq} MHz)",
-            ylabel="I [ADC level]")
-        plt.plot(xdata, ydata,'o-')
-        if fit:
-            #p = data['fit_avgi']
-            # print(p)
-            # if isinstance(p, (list, np.ndarray)): 
-                # pCov = data['fit_err_avgi']
-            captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-            plt.plot(xdata, fitter.decaysin(xdata, *p), label=captionStr)
-            plt.plot(xdata, fitter.expfunc(xdata, p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
-            plt.plot(xdata, fitter.expfunc(xdata, p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
-            plt.legend()
-            # print(f'Current pi pulse frequency: {f_pi_test}')
-            print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-            if p[1] > 2*ramsey_freq: print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
-            # print('Suggested new pi pulse frequency from fit I [MHz]:\n',
-            #         f'\t{f_pi_test + f_adjust_ramsey_avgi[0]}\n',
-            #         f'\t{f_pi_test + f_adjust_ramsey_avgi[1]}')
-            print(f'T2 Ramsey from fit I [us]: {p[3]}')
-            return p[3], np.sqrt(pCov[3][3])
-    
-    # -------------------------------------------------------------------------
-
+   
     def plot_rb(self, fids_list , fids_post_list , xlist, 
                 gg_list , gg_list_err , ge_list, ge_list_err , 
-                eg_list, eg_list_err , ee_list , ee_list_err , ebars_list, ebars_post_list,reset_qubit_after_parity = False, parity_meas = True, 
-                title='M1-S4 RB Post selection'):
+                eg_list, eg_list_err , ee_list , ee_list_err , ebars_list, ebars_post_list,reset_qubit_after_parity = False, parity_meas = True, title = 'M1-S4 RB Post selection'):
+        """
+        Plot randomized benchmarking (RB) results with and without post-selection, along with population ratios for different states.
+
+        Parameters
+        ----------
+        fids_list : list
+            List of raw RB fidelities.
+        fids_post_list : list
+            List of RB fidelities after post-selection.
+        xlist : list
+            List of RB depths (x-axis values).
+        gg_list, ge_list, eg_list, ee_list : list
+            Lists of population ratios for |gg>, |ge>, |eg>, |ee> states.
+        gg_list_err, ge_list_err, eg_list_err, ee_list_err : list
+            Lists of errors for the corresponding population ratios.
+        ebars_list, ebars_post_list : list
+            Error bars for raw and post-selected fidelities.
+        reset_qubit_after_parity : bool, optional
+            Whether to reset qubit after parity measurement (default: False).
+        parity_meas : bool, optional
+            Whether parity measurement is used (default: True).
+        title : str, optional
+            Title for the plot (default: 'M1-S4 RB Post selection').
+
+        Returns
+        -------
+        fid : float or None
+            Extracted fidelity per gate (raw), or None if not enough data for fitting.
+        fid_err : float or None
+            Error in extracted fidelity per gate (raw), or None if not enough data for fitting.
+        fid_post : float or None
+            Extracted fidelity per gate (post-selected), or None if not enough data for fitting.
+        fid_err_post : float or None
+            Error in extracted fidelity per gate (post-selected), or None if not enough data for fitting.
+        """
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
         colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red']
 
@@ -1031,67 +962,68 @@ class MM_DualRail:
         ax1.errorbar(xlist, fids_list, yerr=ebars_list, fmt='o', label='raw', capsize=5, color=colors[0])
         ax1.errorbar(xlist, fids_post_list, yerr=ebars_post_list, fmt='o', label='post selection', capsize=5, color=colors[1])
 
-        # Fitting
-        xpts = xlist
-        ypts = fids_list
-        fit, err = fitter.fitexp(xpts, ypts, fitparams=None)
+        fid = fid_err = fid_post = fid_err_post = None
 
-        ypts = fids_post_list
-        fit_post, err_post = fitter.fitexp(xpts, ypts, fitparams=[None, None, None, None])
+        # Only fit if enough data points
+        if len(fids_list) > 6:
+            xpts = xlist
+            ypts = fids_list
+            fit, err = fitter.fitexp(xpts, ypts, fitparams=None)
 
-        p = fit
-        pCov = err
-        rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
-        abs_err = rel_err * np.exp(-1 / fit[3])
-        fid = np.exp(-1 / fit[3])
-        fid_err = abs_err
-        captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
+            ypts = fids_post_list
+            fit_post, err_post = fitter.fitexp(xpts, ypts, fitparams=[None, None, None, None])
 
-        p_post = fit_post
-        pCov_post = err_post
-        rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
-        abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
-        fid_post = np.exp(-1 / fit_post[3])
-        fid_err_post = abs_err_post
-        captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
+            p = fit
+            pCov = err
+            rel_err = 1 / p[3] / p[3] * np.sqrt(pCov[3][3])
+            abs_err = rel_err * np.exp(-1 / fit[3])
+            fid = np.exp(-1 / fit[3])
+            fid_err = abs_err
+            captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
 
-        ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
-        ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])
+            p_post = fit_post
+            pCov_post = err_post
+            rel_err_post = 1 / p_post[3] / p_post[3] * np.sqrt(pCov_post[3][3])
+            abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
+            fid_post = np.exp(-1 / fit_post[3])
+            fid_err_post = abs_err_post
+            captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
+
+            ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
+            ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color=colors[1])
+        else:
+            ax1.set_title('Exponential Fit (not enough points for fitting)')
+            captionStr = captionStr_post = None
+
         ax1.set_xlabel('Time [us]')
         ax1.set_ylabel('Man1 |1> population')
-        #ax1.set_yscale('log')
         ax1.legend()
         ax1.set_title('Exponential Fit')
         ax1.set_xlabel('RB depth')
         ax1.set_ylabel('Man1 |1> population')
 
         # Shots subplot
-        gg_label = '|11>'
+        gg_label = '|11>' # assuming parity 
         ge_label = '|10>'
         eg_label = '|00>'
         ee_label = '|01>'
 
-        if reset_qubit_after_parity:
+        if reset_qubit_after_parity: #edited on 2025-05-23
             gg_label  = '|11>'
             ge_label = '|10>'
             eg_label = '|01>'
-            ee_label = '|00>'
+            ee_label = '|00'
         elif not parity_meas: 
             gg_label  = '|00>'
             ge_label = '|01>'
             eg_label = '|10>'
             ee_label = '|11>'
+            #TODO: does not include case for not parity no reset
 
         ax2.errorbar(xlist, gg_list, yerr=gg_list_err, fmt='-o', label=gg_label, capsize=5)
         ax2.errorbar(xlist, ge_list, yerr=ge_list_err, fmt='-o', label=ge_label, capsize=5)
         ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label=eg_label, capsize=5)
         ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label=ee_label, capsize=5)
-
-        # print number of 10 and 01 counts
-        # print(str(gg_label) + ' counts:', gg_list)
-        # print(str(ge_label) + ' counts:', ge_list)
-        # print(str(eg_label) + ' counts:', eg_list)
-        # print(str(ee_label) + ' counts:', ee_list)
 
         ax2.set_yscale('log')
         ax2.legend()
@@ -1103,29 +1035,18 @@ class MM_DualRail:
         fig.suptitle(title)
         plt.tight_layout()
         plt.show()
-        return fid, fid_err, fid_post, fid_err_post
+        return fid, fid_err, fid_post, fid_err_post 
+        
     
-    def show_rb(self, prev_data, expt_path, file_list, name = '_SingleBeamSplitterRBPostSelection_sweep_depth_defined_storsweep.h5', title = 'RB', 
-                dual_rail_spec = False, skip_spec_state_idx = None):
+    def show_rb(self, 
+                dual_rail_spec = False, skip_spec_state_idx = None, active_reset = False):
         '''show the rb result for a list of files
         
         Args: dual_rail_spec: if True, then we use that rb data extract function 
         skip_spec_state_idx: if dual_rail_spec is True, then we skip the state index in the list
         '''
-        from numpy.linalg import inv
-
-        Pgg = 0.997573060976843
-        Pge = 0.0024269390231570487
-        Peg = 0.012984367839503025
-        Pee = 0.9870156321604969
-
-        print('Doing incorrect SIngle shot corretcion')
-
-
-        P_matrix = np.matrix([[Pgg, Peg],[Pge, Pee]])
-        conf_matrix = inv(P_matrix)
-
-        tensor_product_matrix = np.kron(conf_matrix, conf_matrix)
+        title = self.title
+        
 
         fids_list = []
         fids_post_list = []
@@ -1141,15 +1062,24 @@ class MM_DualRail:
         depth_list = []
         ebars_list = []
         ebars_post_list = []
+        # print('file_list', file_list)
 
-        for file_no in file_list:
-            # extract data from file 
-            full_name = str(file_no).zfill(5)+name
-            temp_data, attrs = prev_data(expt_path, full_name)  
+        if self.file_prefix is not None:
+            temp_data, attrs, _ = self.prev_data(self.expt_path, prefix=self.file_prefix, filename=None)
+        else: 
+            temp_data, attrs, _ = self.prev_data(self.expt_path, self.filename)
+        # print('temp_data', temp_data)
+        num_entries = len(temp_data['depth_sweep'])
+        # print(f"Number of entries in 'depth_list': {num_entries}")
+        #for each entry make a mini dictionary with the i'th element of each key 
+        for i in range(num_entries):
+            mini_temp_data = {key: temp_data[key][i] for key in temp_data.keys()}
+          
             if not dual_rail_spec: # if not a photon in a spectator mode
-                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix)#, start_idx = start_idx)
+                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited(mini_temp_data,attrs, active_reset=active_reset)#, start_idx = start_idx)
             else: 
-                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited_dual_rail_spec(temp_data,attrs, active_reset=True, conf_matrix=tensor_product_matrix, skip_spec_states_idx = skip_spec_state_idx)
+                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited_dual_rail_spec(mini_temp_data,attrs, active_reset=active_reset,
+                                                                                                                     skip_spec_states_idx = skip_spec_state_idx)
             # print(gg[0]+ge[0]+eg[0]+ee[0])
             # print number of gg shots
             
@@ -1159,7 +1089,7 @@ class MM_DualRail:
             ee_list.append(np.average(ee))
             fids_list.append(np.average(avg_readout))
             ebars_list.append(np.std(avg_readout)/np.sqrt(len(avg_readout)))
-            gg_list_err.append(np.std(ge)/np.sqrt(len(ge)))
+            gg_list_err.append(np.std(gg)/np.sqrt(len(gg)))
             ge_list_err.append(np.std(ge)/np.sqrt(len(ge)))
             eg_list_err.append(np.std(eg)/np.sqrt(len(eg)))
             ee_list_err.append(np.std(ee)/np.sqrt(len(ee)))
@@ -1167,8 +1097,11 @@ class MM_DualRail:
 
             fids_post_list.append(np.average(avg_readout_post))
             ebars_post_list.append(np.std(avg_readout_post)/np.sqrt(len(avg_readout_post)))
-            xlist.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
-            depth_list.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
+            depth = mini_temp_data['depth_sweep']
+            xlist.append(depth)
+            depth_list.append(depth)
+            # xlist.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
+            # depth_list.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
 
         try: 
             reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
@@ -1181,84 +1114,9 @@ class MM_DualRail:
                     parity_meas=attrs['config']['expt']['parity_meas'],
                     title=title)
         return fids_list, fids_post_list, gg_list, ge_list, eg_list, ee_list, gg_list_err, ge_list_err, eg_list_err, ee_list_err, xlist, depth_list, ebars_list, ebars_post_list, fid, fid_err, fid_post, fid_post_err
-    def RB_extract_excited(self, temp_data):
-        avg_readout = []
-        for i in range(len(temp_data['Idata'])):
-            counting = 0
-            for j in temp_data['Idata'][i]:
-                if j>temp_data['thresholds']:
-                    counting += 1
-            avg_readout.append(counting/len(temp_data['Idata'][i]))
-        return avg_readout
-
-    def RB_extract_ground(self, temp_data):
-        avg_readout = []
-        for i in range(len(temp_data['Idata'])):
-            counting = 0
-            for j in temp_data['Idata'][i]:
-                if j<temp_data['thresholds']:
-                    counting += 1
-            avg_readout.append(counting/len(temp_data['Idata'][i]))
-        return avg_readout
-
+    
 
     
-    def RB_extract_postselction_excited_old(self, temp_data):
-        # remember the parity mapping rule:
-        # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg
-        gg_list = []
-        ge_list = []
-        eg_list = []
-        ee_list = []
-        fid_raw_list = []
-        fid_post_list = []
-        for aa in range(len(temp_data['Idata'])):
-            gg = 0
-            ge = 0
-            eg = 0
-            ee = 0
-            for j in range(len(temp_data['Idata'][aa][0])):
-                #  check if the counts are the same as initial counts
-                if temp_data['Idata'][aa][0][j]>temp_data['thresholds'][0]: # classified as e
-                    if temp_data['Idata'][aa][1][j]>temp_data['thresholds'][0]:  # second e
-                        ee += 1
-                    else:
-                        eg +=1
-                else:  # classified as g
-                    if temp_data['Idata'][aa][1][j]>temp_data['thresholds'][0]:  # second e
-                        ge +=1
-                    else:
-                        gg += 1
-            gg_list.append(gg/(eg+ge+gg+ee))
-            ge_list.append(ge/(eg+ge+gg+ee))
-            eg_list.append(eg/(eg+ge+gg+ee))
-            ee_list.append(ee/(eg+ge+gg+ee))
-            fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-            fid_post_list.append(ge/(ge+ee))
-        return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
-    def filter_data_BS(self, a1, a2, a3, threshold, post_selection = False):
-        # assume the last one  is experiment data, the last but one is for post selection
-        '''
-        This is for active reset post selection 
-
-        the post selection parameter DOES not refer to active reset post selection
-        a1: from active reset pre selection 
-        a2: from actual experiment
-        a3: from actual experiment post selection
-        '''
-        result_1 = []
-        result_2 = []
-        
-        
-        for k in range(len(a1)):
-
-            if a1[k] < threshold:
-
-                result_1.append(a2[k])
-                if post_selection:
-                    result_2.append(a3[k])
-        
-        return np.array(result_1), np.array(result_2)
     def RB_extract_postselction_excited(self, temp_data, attrs, active_reset = False, conf_matrix = None):
         # remember the parity mapping rule:
         # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg # NOT active-reset-after-first-meas case (should have some thing to indicate this)
@@ -1271,7 +1129,7 @@ class MM_DualRail:
         fid_post_list = []
 
         threshold = 0 # for g, e assignment 
-        if 'thresholds' in temp_data.keys():
+        if 'thresholds' in temp_data.keys() and len(temp_data['thresholds']) > 0:
             threshold = temp_data['thresholds'][0]
         else:
             threshold = attrs['config']['device']['readout']['threshold'][0]
@@ -1306,11 +1164,7 @@ class MM_DualRail:
                         ge +=1
                     else:
                         gg += 1
-            # print('gg', gg)
-            # print('ge', ge)
-            # print('eg', eg)
-            # print('ee', ee)
-            # print('total', eg + ge + gg + ee)
+
             if conf_matrix is not None: ## correct counts from histogram
                 gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
                 ge = gg * conf_matrix[1,0] + ge * conf_matrix[1,1] + eg * conf_matrix[1,2] + ee * conf_matrix[1,3]
@@ -1321,10 +1175,10 @@ class MM_DualRail:
             eg_list.append(eg/(eg+ge+gg+ee))
             ee_list.append(ee/(eg+ge+gg+ee))
 
-            print('gg_list', gg_list)
-            print('ge_list', ge_list)
-            print('eg_list', eg_list)
-            print('ee_list', ee_list)
+            # print('gg_list', gg_list)
+            # print('ge_list', ge_list)
+            # print('eg_list', eg_list)
+            # print('ee_list', ee_list)
 
             try:
                 if attrs['config']['expt']['reset_qubit_after_parity']:
@@ -1350,8 +1204,6 @@ class MM_DualRail:
                     fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                     fid_post_list.append(ge/(ge+eg))
                 else:
-                    # print('using old method to calculate post selection fidelity ')
-                    # print('old method')
                     fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
                     fid_post_list.append(ge/(ge+ee))
             except KeyError:
@@ -1361,151 +1213,4 @@ class MM_DualRail:
         print(eg + ge + gg + ee)
         return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
 
-    def RB_extract_postselction_excited_dual_rail_spec(self, temp_data, attrs, active_reset = False, conf_matrix = None,
-                                        skip_spec_states_idx = None):
-        '''
-        This is specially for dual rail spectator analysis where we skip over 0 and 1 population of the spectator mode
-        '''
-        # remember the parity mapping rule:
-        # 00 -> eg, 01 -> ee, 10 -> ge, 11 -> gg
-        gg_list = []
-        ge_list = []
-        eg_list = []
-        ee_list = []
-        fid_raw_list = []
-        fid_post_list = []
-
-        
-        for aa in range(len(temp_data['Idata'])):
-            if aa%6 in skip_spec_states_idx:
-                continue
-
-            gg = 0
-            ge = 0
-            eg = 0
-            ee = 0
-
-            #  post selection due to active reset
-            if active_reset:
-                data_init, data_post_select = self.filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
-            else: 
-                data_init = temp_data['Idata'][aa][0]
-                data_post_select = temp_data['Idata'][aa][1]
-            
-            # print('len data_init', len(data_init))
-            # print('len data_post_select', len(data_post_select))
-            
-            # beamsplitter post selection 
-            for j in range(len(data_init)):
-                #  check if the counts are the same as initial counts
-                if data_init[j]>temp_data['thresholds'][0]: # classified as e
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
-                        ee += 1
-                    else:
-                        eg +=1
-                else:  # classified as g
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
-                        ge +=1
-                    else:
-                        gg += 1
-            # print('gg', gg)
-            # print('ge', ge)
-            # print('eg', eg)
-            # print('ee', ee)
-            # print('total', eg + ge + gg + ee)
-            if conf_matrix is not None: ## correct counts from histogram
-                gg = gg * conf_matrix[0,0] + ge * conf_matrix[0,1] + eg * conf_matrix[0,2] + ee * conf_matrix[0,3]
-                ge = gg * conf_matrix[1,0] + ge * conf_matrix[1,1] + eg * conf_matrix[1,2] + ee * conf_matrix[1,3]
-                eg = gg * conf_matrix[2,0] + ge * conf_matrix[2,1] + eg * conf_matrix[2,2] + ee * conf_matrix[2,3]
-                ee = gg * conf_matrix[3,0] + ge * conf_matrix[3,1] + eg * conf_matrix[3,2] + ee * conf_matrix[3,3]
-            gg_list.append(gg/(eg+ge+gg+ee))
-            ge_list.append(ge/(eg+ge+gg+ee))
-            eg_list.append(eg/(eg+ge+gg+ee))
-            ee_list.append(ee/(eg+ge+gg+ee))
-
-            # print('gg_list', gg_list)
-            # print('ge_list', ge_list)
-            # print('eg_list', eg_list)
-            # print('ee_list', ee_list)
-
-            try:
-                if attrs['config']['expt']['reset_qubit_after_parity']:
-                    # print('reset_qubit_after_parity')
-                    # print('using new method to calculate post selection fidelity ')
-                    fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-                    fid_post_list.append(ge/(ge+eg))
-                elif not attrs['config']['expt']['parity_meas']: 
-                    # print('not parity_meas')
-                    fid_raw_list.append((ee+eg)/(eg+ge+gg+ee))
-                    fid_post_list.append(eg/(ge+eg))
-                elif attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas']:
-                    # print('reset_qubit_via_active_reset_after_first_meas')
-                    
-                                            # gg_label = '|11>'
-                                                # ge_label = '|10>'
-                                                # eg_label = '|01>'
-                                                # ee_label = '|00>'
-                    fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-                    fid_post_list.append(ge/(ge+eg))
-                else:
-                    # print('using old method to calculate post selection fidelity ')
-                    # print('old method')
-                    fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-                    fid_post_list.append(ge/(ge+ee))
-            except KeyError:
-                print('using old method to calculate post selection fidelity ')
-                fid_raw_list.append((ge+gg)/(eg+ge+gg+ee))
-                fid_post_list.append(ge/(ge+ee))
-        print(eg + ge + gg + ee)
-        return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
-
-    def RB_extract_postselction_parity_fixed_excited(self, temp_data, active_reset = False):
-        # remember the parity mapping rule:
-        # 00 -> ee, 01 -> eg, 10 -> ge, 11 -> gg # with active-reset-after-first-meas case
-        gg_list = []
-        ge_list = []
-        eg_list = []
-        ee_list = []
-        fid_raw_list = []
-        fid_post_list = []
-
-
-        for aa in range(len(temp_data['Idata'])):
-            gg = 0
-            ge = 0
-            eg = 0
-            ee = 0
-
-            #  post selection due to active reset
-            if active_reset:
-                data_init, data_post_select = filter_data_BS(temp_data['Idata'][aa][2], temp_data['Idata'][aa][3], temp_data['Idata'][aa][4], temp_data['thresholds'],post_selection = True)
-            else: 
-                data_init = temp_data['Idata'][aa][0]
-                data_post_select = temp_data['Idata'][aa][1]
-
-            # print(data_init)
-            # print(data_post_select)
-            
-            # beamsplitter post selection 
-            for j in range(len(data_init)):
-                #  check if the counts are the same as initial counts
-                if data_init[j]>temp_data['thresholds'][0]: # classified as e
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
-                        ee += 1
-                    else:
-                        eg +=1
-                else:  # classified as g
-                    if data_post_select[j]>temp_data['thresholds'][0]:  # second e
-                        ge +=1
-                    else:
-                        gg += 1
-            gg_list.append(gg/(eg+ge+gg+ee))
-            ge_list.append(ge/(eg+ge+gg+ee))
-            eg_list.append(eg/(eg+ge+gg+ee))
-            ee_list.append(ee/(eg+ge+gg+ee))
-            
-            fid_raw_list.append((gg+ge)/(eg+ge+gg+ee))
-            fid_post_list.append(ge/(ge+eg))
-        print(eg + ge + gg + ee)
-        return fid_raw_list, fid_post_list, gg_list, ge_list, eg_list, ee_list
-
+   
