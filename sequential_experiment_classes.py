@@ -149,7 +149,8 @@ class sequential_base_class():
                 print(f"Created directory: {directory}")
             self.expt_sweep_dir_name = directory
 
-    def save_sweep_data(self, sweep_key, sweep_value, run_exp, skip_keys=None):
+    def save_sweep_data(self, sweep_key, sweep_value, run_exp, skip_keys=None, 
+                        save_data=True):
         """
         Save sweep data and experimental results to the experiment file.
 
@@ -168,18 +169,16 @@ class sequential_base_class():
         if skip_keys is None:
             skip_keys = []
         self.expt_sweep.data[sweep_key].append(sweep_value)
-        for data_key in run_exp.data.keys():
-            if data_key in skip_keys:
-                print(f'Skipping key: {data_key}')
-                continue
-            if data_key not in self.expt_sweep.data.keys():
-                self.expt_sweep.data[data_key] = []
-            self.expt_sweep.data[data_key].append(run_exp.data[data_key])
-        # do same for run_exp.cfg.expt
-
-        self.expt_sweep.cfg = AttrDict(run_exp.cfg)
-
-        # print(self.expt_sweep.data['sequences'])
+        
+        if save_data:
+            for data_key in run_exp.data.keys():
+                if data_key in skip_keys:
+                    print(f'Skipping key: {data_key}')
+                    continue
+                if data_key not in self.expt_sweep.data.keys():
+                    self.expt_sweep.data[data_key] = []
+                self.expt_sweep.data[data_key].append(run_exp.data[data_key])
+        print(self.expt_sweep)
         self.expt_sweep.save_data()
 
    
@@ -343,24 +342,33 @@ class MM_DualRailRB(sequential_base_class):
         self.title = title if title is not None else 'Dual Rail RB Post Selection'
 
 
+    def get_reps(self, depth):
+        """
+        Rough estimation, need to check with paper and fix this"""
+        if depth <250: 
+            return 2500
+        elif depth < 500:
+            return 5000
+        else:
+            return 10000
+
     def SingleBeamSplitterRBPostSelection_sweep_depth(self, skip_ss=False):
         '''Sweep over RB depths for dual rail experiment'''
         # all_keys = [
         #     'depth_sweep', 'reps_sweep', 'Idata', 'Qdata', 'Ig', 'Qg', 'Ie', 'Qe',
         #     'fids', 'thresholds', 'angle', 'confusion_matrix', 'sequences',
         # ]
-        all_keys = ['depth_sweep']
+        all_keys = ['filenames']
         self.initialize_expt_sweep(keys=all_keys, create_directory = True)
-        sequences_list = []
-        # will save all files inside the expt_sweep directory
         path_for_expt = self.expt_sweep_dir_name
+        
 
         for index, depth in enumerate(self.loaded[self.sweep_experiment_name]['depth_list']):
             print('Index: %s depth. = %s ' % (index, depth))
             if index != 0 and skip_ss:
                 self.loaded[self.experiment_name]['calibrate_single_shot'] = False
             self.loaded[self.experiment_name]['rb_depth'] = depth
-            self.loaded[self.experiment_name]['rb_reps'] = self.loaded[self.sweep_experiment_name]['reps_list'][index]
+            self.loaded[self.experiment_name]['rb_reps'] = self.get_reps(depth)
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=path_for_expt, prefix=self.prefix, config_file=self.config_file)")
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
@@ -372,16 +380,15 @@ class MM_DualRailRB(sequential_base_class):
             
             # The following is just for making code saving easier!
             run_exp.cfg.expt.running_list = []
-            # sequences_list.append(run_exp.data['sequences'])
-            # sequences_list = self.pad_sequences_to_homogeneous(sequences_list)
-            # print('Padded sequences:', sequences_list)
-            #run_exp.data['sequences'] = sequences_list[-1]
-            self.expt_sweep.data['sequences'] = sequences_list 
+            filename = run_exp.fname
             
-            self.save_sweep_data('depth_sweep', depth, run_exp, skip_keys=['sequences'])
-            self.perform_RB_analysis(prefix = "SingleBeamSplitterRBPostSelection_sweep_depth")
+            # print('run_exp.fname', os.path.basename(run_exp.fname)) # h5py can't store strings 
+            # self.save_sweep_data('filenames', os.path.basename(run_exp.fname), run_exp, save_data = False)
+            self.perform_RB_analysis(prefix = self.sweep_experiment_name, dir_path = path_for_expt)
+        
+        return self.sweep_experiment_name, dir_path
     
-    def perform_RB_analysis(self, prefix = None):
+    def perform_RB_analysis(self, prefix = None, dir_path = None):
         """
         Perform RB analysis and live plotting.
         This method performs a Randomized Benchmarking (RB) analysis on the experimental data 
@@ -398,6 +405,10 @@ class MM_DualRailRB(sequential_base_class):
             - This method requires the `multimode_expts.fit_display_classes` module for the `RBAnalysis` class.
             - The `IPython.display.clear_output` function is used to clear the output for live plotting.
             - If any exception occurs during the process, it will print an error message indicating the failure.
+        
+        Parameters:
+            prefix (str, optional): Prefix for the RB expt_sweep file. If None, defaults to "RBAnalysis".
+            dir_path (str, optional): Directory path where the data files are stored. If None, uses the current directory.
         Raises:
             Exception: If any error occurs during the RB analysis or plotting process.
         """
@@ -408,7 +419,7 @@ class MM_DualRailRB(sequential_base_class):
             # Initialize RB analysis
             rb_analysis = MM_DualRailRBFitting(filename = None, file_prefix = prefix, 
                                    config=self.yaml_cfg, expt_path=self.path, title=self.title, 
-                                   prev_data= self.prev_data)
+                                   prev_data= self.prev_data, dir_path=dir_path)
 
             
 
@@ -430,54 +441,7 @@ class MM_DualRailRB(sequential_base_class):
         if sweep_experiment_name == 'SingleBeamSplitterRBPostSelection_sweep_depth':
             self.SingleBeamSplitterRBPostSelection_sweep_depth(skip_ss=skip_ss)
 
-    def pad_sequences_to_homogeneous(self, sequences):
-        """
-        Pads a list of list of arrays so that the last dimension of each array matches the maximum length
-        at each index position across all sequences, and returns a list of lists of lists (no arrays).
-
-        Example:
-            Input: [[[0], [0], [0]], [[1,1], [1,1], [1,1]]]
-            Output: [
-                [[0, np.nan], [0, np.nan], [0, np.nan]],
-                [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
-            ]
-        """
-        if not sequences:
-            return []
-
-        num_arrays = max(len(seq) for seq in sequences)
-        max_lengths = []
-        for arr_idx in range(num_arrays):
-            max_len = 0
-            for seq in sequences:
-                if arr_idx < len(seq):
-                    arr = np.asarray(seq[arr_idx])
-                    arr_len = arr.shape[-1]
-                    if arr_len > max_len:
-                        max_len = arr_len
-            max_lengths.append(max_len)
-
-        padded_sequences = []
-        for seq in sequences:
-            padded_seq = []
-            for arr_idx in range(num_arrays):
-                if arr_idx < len(seq):
-                    arr = np.asarray(seq[arr_idx], dtype=float)
-                    pad_width = max_lengths[arr_idx] - arr.shape[-1]
-                    if pad_width > 0:
-                        arr_padded = np.pad(arr, [(0, 0)] * (arr.ndim - 1) + [(0, pad_width)], mode='constant', constant_values=np.nan)
-                    else:
-                        arr_padded = arr
-                    # Convert to list
-                    arr_list = arr_padded.tolist()
-                else:
-                    # If this sequence is missing this array, fill with nan list
-                    shape = list(np.asarray(seq[0]).shape) if seq else [1]
-                    shape[-1] = max_lengths[arr_idx]
-                    arr_list = np.full(shape, np.nan).tolist()
-                padded_seq.append(arr_list)
-            padded_sequences.append(padded_seq)
-        return padded_sequences
+    
     
         
    

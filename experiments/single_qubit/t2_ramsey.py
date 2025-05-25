@@ -88,7 +88,7 @@ class RamseyProgram(MMRAveragerProgram):
         # self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
         # initialize wait registers
-        self.safe_regwi(self.q_rps[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
+        self.safe_regwi(self.q_rps[qTest], self.r_wait, self.us2cycles(cfg.expt.start, gen_ch=self.qubit_chs[qTest])) # wait time register
         self.safe_regwi(self.q_rps[qTest], self.r_phase2, 0) 
 
         ## print pule parameters 
@@ -154,7 +154,7 @@ class RamseyProgram(MMRAveragerProgram):
                 self.sync_all()
 
         # play pi/2 pulse with advanced phase (all regs except phase are already set by previous pulse)
-        self.set_pulse_registers(ch=self.qubit_chs[qTest], style="arb", freq=self.f_test_reg, phase=self.deg2reg(cfg.advance_phase),
+        self.set_pulse_registers(ch=self.qubit_chs[qTest], style="arb", freq=self.f_test_reg, phase=self.deg2reg(cfg.advance_phase, gen_ch=self.qubit_chs[qTest]),
                                   gain=self.gain_test, waveform="pi2_test_ram")
         
         
@@ -190,7 +190,7 @@ class RamseyProgram(MMRAveragerProgram):
         phase_step = self.deg2reg(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step, gen_ch=self.qubit_chs[qTest]) # phase step [deg] = 360 * f_Ramsey [MHz] * tau_step [us]
         # print(phase_step)
         # print(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step)
-        self.mathi(self.q_rps[qTest], self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg.expt.step)) # update the time between two π/2 pulses
+        self.mathi(self.q_rps[qTest], self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg.expt.step, gen_ch = self.qubit_chs[qTest])) # update the time between two π/2 pulses
         # self.wait_all(self.us2cycles(0.01)) 
         self.sync_all(self.us2cycles(0.01))
         self.mathi(self.q_rps[qTest], self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse

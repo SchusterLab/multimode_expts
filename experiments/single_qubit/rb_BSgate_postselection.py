@@ -453,11 +453,38 @@ class SingleBeamSplitterRBPostSelection(Experiment):
                 II, QQ = rb_shot.collect_shots_rb(read_num)
                 data['Idata'].append(II)
                 data['Qdata'].append(QQ)
-        data['sequences'] = sequences   
+        # seuqence = [[0,1], [1]]
+        data['sequences'] = self.pad_sequences_to_homogeneous(sequences )  
         # data['expt_cfg'] = deepcopy(self.cfg.expt)
         self.data = data
 
         return data
+    
+    def pad_sequences_to_homogeneous(self, sequences):
+        """
+        Pads a list of 1D sequences (lists or arrays) so that all sequences have the same length,
+        using np.nan for padding. Returns a list of lists.
+
+        Example:
+            Input: [[0,1], [1], [2]]
+            Output: [
+                [0, 1],
+                [1, np.nan],
+                [2, np.nan]
+            ]
+        """
+        if not sequences:
+            return []
+
+        max_len = max(len(seq) for seq in sequences)
+        padded_sequences = []
+        for seq in sequences:
+            seq = list(seq)
+            pad_width = max_len - len(seq)
+            if pad_width > 0:
+                seq = seq + [np.nan] * pad_width
+            padded_sequences.append(seq)
+        return padded_sequences
     
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

@@ -146,10 +146,10 @@ HistogramExperiment:
     prepulse: True 
     pre_sweep_pulse: [['qubit', 'ge', 'pi', 0],
                     ['qubit', 'ef', 'pi', 0],
-                    ['man', 'M1', 'pi', 0],
-                    ['storage', 'M1-S1', 'pi', 0],
-                    ['storage', 'M1-S1', 'pi', 0],
-                    ['man', 'M1', 'pi', 0],
+                    # ['man', 'M1', 'pi', 0],
+                    # ['storage', 'M1-S1', 'pi', 0],
+                    # ['storage', 'M1-S1', 'pi', 0],
+                    # ['man', 'M1', 'pi', 0],
                     ['qubit', 'ef', 'pi', 0],
                     ['qubit', 'ge', 'pi', 0]]
     gate_based: True

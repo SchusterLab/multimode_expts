@@ -907,7 +907,7 @@ class ChevronFitting(GeneralFitting):
 class MM_DualRailRBFitting(GeneralFitting): 
 
     def __init__(self, filename = None , file_prefix = None, data=None, readout_per_round=2, threshold=-4.0, config=None,
-                 prev_data = None, expt_path = None,  title = 'RB'): 
+                 prev_data = None, expt_path = None,  title = 'RB', dir_path = None): 
         '''Analysis for dual rail experiments '''
         super().__init__(data, readout_per_round, threshold, config)
         self.filename = filename
@@ -915,11 +915,30 @@ class MM_DualRailRBFitting(GeneralFitting):
         self.prev_data = prev_data
         self.title = title
         self.file_prefix = file_prefix
+        self.dir_path = dir_path
+    
+    def get_sweep_files(self): 
+        """
+        Retrieves the list of sweep file names from the experiment data.
+
+        This method loads previous experiment data using the specified experiment path and file prefix,
+        then extracts and returns the list of filenames associated with the sweep.
+
+        Returns:
+            list: A list of filenames corresponding to the experiment sweeps.
+        """
+        # expt_sweep
+        # temp_data, attrs, _ = self.prev_data(self.expt_path, filename = os.path.basename(self.dir_path) + '.h5')
+        from slab import get_all_filenames
+        fnames = get_all_filenames(self.dir_path, prefix='SingleBeamSplitterRBPostSelection_sweep_depth')
+        print('filenames:', fnames)
+        return fnames
     
    
-    def plot_rb(self, fids_list , fids_post_list , xlist, 
-                gg_list , gg_list_err , ge_list, ge_list_err , 
-                eg_list, eg_list_err , ee_list , ee_list_err , ebars_list, ebars_post_list,reset_qubit_after_parity = False, parity_meas = True, title = 'M1-S4 RB Post selection'):
+    def plot_rb(self, fids_list, fids_post_list, xlist,
+                    pop_dict, pop_err_dict, ebars_list, ebars_post_list,
+                    reset_qubit_after_parity=False, parity_meas=True,
+                    title='M1-S4 RB Post selection', save_fig=False):
         """
         Plot randomized benchmarking (RB) results with and without post-selection, along with population ratios for different states.
 
@@ -931,10 +950,10 @@ class MM_DualRailRBFitting(GeneralFitting):
             List of RB fidelities after post-selection.
         xlist : list
             List of RB depths (x-axis values).
-        gg_list, ge_list, eg_list, ee_list : list
-            Lists of population ratios for |gg>, |ge>, |eg>, |ee> states.
-        gg_list_err, ge_list_err, eg_list_err, ee_list_err : list
-            Lists of errors for the corresponding population ratios.
+        pop_dict : dict
+            Dictionary of population ratios for each state, e.g. {'gg': [...], 'ge': [...], 'eg': [...], 'ee': [...]}
+        pop_err_dict : dict
+            Dictionary of errors for the corresponding population ratios.
         ebars_list, ebars_post_list : list
             Error bars for raw and post-selected fidelities.
         reset_qubit_after_parity : bool, optional
@@ -943,6 +962,8 @@ class MM_DualRailRBFitting(GeneralFitting):
             Whether parity measurement is used (default: True).
         title : str, optional
             Title for the plot (default: 'M1-S4 RB Post selection').
+        save_fig : bool, optional
+            Whether to save the figure using GeneralFitting.save_plot (default: False).
 
         Returns
         -------
@@ -1003,6 +1024,7 @@ class MM_DualRailRBFitting(GeneralFitting):
         ax1.set_ylabel('Man1 |1> population')
 
         # Shots subplot
+        # State labels
         gg_label = '|11>' # assuming parity 
         ge_label = '|10>'
         eg_label = '|00>'
@@ -1012,18 +1034,16 @@ class MM_DualRailRBFitting(GeneralFitting):
             gg_label  = '|11>'
             ge_label = '|10>'
             eg_label = '|01>'
-            ee_label = '|00'
+            ee_label = '|00>'
         elif not parity_meas: 
             gg_label  = '|00>'
             ge_label = '|01>'
             eg_label = '|10>'
             ee_label = '|11>'
-            #TODO: does not include case for not parity no reset
 
-        ax2.errorbar(xlist, gg_list, yerr=gg_list_err, fmt='-o', label=gg_label, capsize=5)
-        ax2.errorbar(xlist, ge_list, yerr=ge_list_err, fmt='-o', label=ge_label, capsize=5)
-        ax2.errorbar(xlist, eg_list, yerr=eg_list_err, fmt='-o', label=eg_label, capsize=5)
-        ax2.errorbar(xlist, ee_list, yerr=ee_list_err, fmt='-o', label=ee_label, capsize=5)
+        state_labels = {'gg': gg_label, 'ge': ge_label, 'eg': eg_label, 'ee': ee_label}
+        for idx, state in enumerate(['gg', 'ge', 'eg', 'ee']):
+            ax2.errorbar(xlist, pop_dict[state], yerr=pop_err_dict[state], fmt='-o', label=state_labels[state], capsize=5, color=colors[idx])
 
         ax2.set_yscale('log')
         ax2.legend()
@@ -1035,85 +1055,105 @@ class MM_DualRailRBFitting(GeneralFitting):
         fig.suptitle(title)
         plt.tight_layout()
         plt.show()
+
+        if save_fig:
+            filename = title.replace(' ', '_').replace(':', '') + '.png'
+            self.save_plot(fig, filename=filename)
+
         return fid, fid_err, fid_post, fid_err_post 
         
     
     def show_rb(self, 
-                dual_rail_spec = False, skip_spec_state_idx = None, active_reset = False):
-        '''show the rb result for a list of files
-        
-        Args: dual_rail_spec: if True, then we use that rb data extract function 
-        skip_spec_state_idx: if dual_rail_spec is True, then we skip the state index in the list
-        '''
-        title = self.title
-        
+                    dual_rail_spec=False, skip_spec_state_idx=None, active_reset=False, save_fig=False):
+            """
+            Show the RB result for a list of files.
 
-        fids_list = []
-        fids_post_list = []
-        gg_list = []
-        ge_list = []
-        eg_list = []
-        ee_list = []
-        gg_list_err = []
-        ge_list_err = []
-        eg_list_err = []
-        ee_list_err = []
-        xlist = []
-        depth_list = []
-        ebars_list = []
-        ebars_post_list = []
-        # print('file_list', file_list)
+            Args:
+                dual_rail_spec (bool): If True, use dual rail RB data extract function.
+                skip_spec_state_idx: If dual_rail_spec is True, skip the state index in the list.
+                active_reset (bool): Whether to use active reset.
+                save_fig (bool): Whether to save the figure in plot_rb.
 
-        if self.file_prefix is not None:
-            temp_data, attrs, _ = self.prev_data(self.expt_path, prefix=self.file_prefix, filename=None)
-        else: 
-            temp_data, attrs, _ = self.prev_data(self.expt_path, self.filename)
-        # print('temp_data', temp_data)
-        num_entries = len(temp_data['depth_sweep'])
-        # print(f"Number of entries in 'depth_list': {num_entries}")
-        #for each entry make a mini dictionary with the i'th element of each key 
-        for i in range(num_entries):
-            mini_temp_data = {key: temp_data[key][i] for key in temp_data.keys()}
-          
-            if not dual_rail_spec: # if not a photon in a spectator mode
-                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited(mini_temp_data,attrs, active_reset=active_reset)#, start_idx = start_idx)
-            else: 
-                avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited_dual_rail_spec(mini_temp_data,attrs, active_reset=active_reset,
-                                                                                                                     skip_spec_states_idx = skip_spec_state_idx)
-            # print(gg[0]+ge[0]+eg[0]+ee[0])
-            # print number of gg shots
-            
-            gg_list.append(np.average(gg))
-            ge_list.append(np.average(ge))
-            eg_list.append(np.average(eg))
-            ee_list.append(np.average(ee))
-            fids_list.append(np.average(avg_readout))
-            ebars_list.append(np.std(avg_readout)/np.sqrt(len(avg_readout)))
-            gg_list_err.append(np.std(gg)/np.sqrt(len(gg)))
-            ge_list_err.append(np.std(ge)/np.sqrt(len(ge)))
-            eg_list_err.append(np.std(eg)/np.sqrt(len(eg)))
-            ee_list_err.append(np.std(ee)/np.sqrt(len(ee)))
+            Returns:
+                dict: Dictionary containing all RB results and statistics.
+            """
+            title = self.title
 
+            # Use dicts for state populations and errors
+            pop_dict = {'gg': [], 'ge': [], 'eg': [], 'ee': []}
+            pop_err_dict = {'gg': [], 'ge': [], 'eg': [], 'ee': []}
+            fids_list = []
+            fids_post_list = []
+            xlist = []
+            depth_list = []
+            ebars_list = []
+            ebars_post_list = []
 
-            fids_post_list.append(np.average(avg_readout_post))
-            ebars_post_list.append(np.std(avg_readout_post)/np.sqrt(len(avg_readout_post)))
-            depth = mini_temp_data['depth_sweep']
-            xlist.append(depth)
-            depth_list.append(depth)
-            # xlist.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
-            # depth_list.append(attrs['config']['expt']['rb_depth']*attrs['config']['expt']['bs_repeat'])
+            filenames = self.get_sweep_files()
 
-        try: 
-            reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
-        except KeyError:
-            reset_bool = attrs['config']['expt']['reset_qubit_after_parity']
-        fid, fid_err, fid_post, fid_post_err = self.plot_rb(fids_list = fids_list, fids_post_list = fids_post_list, xlist=depth_list, 
-                    gg_list = gg_list, gg_list_err = gg_list_err, ge_list = ge_list, ge_list_err = ge_list_err, 
-                    eg_list = eg_list, eg_list_err = eg_list_err, ee_list = ee_list, ee_list_err = ee_list_err,
-                    ebars_list=ebars_list, ebars_post_list=ebars_post_list, reset_qubit_after_parity = reset_bool,
-                    parity_meas=attrs['config']['expt']['parity_meas'],
-                    title=title)
-        return fids_list, fids_post_list, gg_list, ge_list, eg_list, ee_list, gg_list_err, ge_list_err, eg_list_err, ee_list_err, xlist, depth_list, ebars_list, ebars_post_list, fid, fid_err, fid_post, fid_post_err
+            for i in range(len(filenames)):
+                mini_temp_data, attrs, _ = self.prev_data(self.dir_path, filename=filenames[i])
+
+                if not dual_rail_spec:
+                    avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited(
+                        mini_temp_data, attrs, active_reset=active_reset)
+                else:
+                    avg_readout, avg_readout_post, gg, ge, eg, ee = self.RB_extract_postselction_excited_dual_rail_spec(
+                        mini_temp_data, attrs, active_reset=active_reset, skip_spec_states_idx=skip_spec_state_idx)
+
+                # Store as dict entries
+                pop_dict['gg'].append(np.average(gg))
+                pop_dict['ge'].append(np.average(ge))
+                pop_dict['eg'].append(np.average(eg))
+                pop_dict['ee'].append(np.average(ee))
+                fids_list.append(np.average(avg_readout))
+                ebars_list.append(np.std(avg_readout) / np.sqrt(len(avg_readout)))
+                pop_err_dict['gg'].append(np.std(gg) / np.sqrt(len(gg)))
+                pop_err_dict['ge'].append(np.std(ge) / np.sqrt(len(ge)))
+                pop_err_dict['eg'].append(np.std(eg) / np.sqrt(len(eg)))
+                pop_err_dict['ee'].append(np.std(ee) / np.sqrt(len(ee)))
+
+                fids_post_list.append(np.average(avg_readout_post))
+                ebars_post_list.append(np.std(avg_readout_post) / np.sqrt(len(avg_readout_post)))
+                depth = attrs['config']['expt']['rb_depth']
+                xlist.append(depth)
+                depth_list.append(depth)
+
+            try:
+                reset_bool = (attrs['config']['expt']['reset_qubit_after_parity'] or
+                              attrs['config']['expt']['reset_qubit_via_active_reset_after_first_meas'])
+            except KeyError:
+                reset_bool = attrs['config']['expt']['reset_qubit_after_parity']
+
+            fid, fid_err, fid_post, fid_post_err = self.plot_rb(
+                fids_list=fids_list,
+                fids_post_list=fids_post_list,
+                xlist=depth_list,
+                pop_dict=pop_dict,
+                pop_err_dict=pop_err_dict,
+                ebars_list=ebars_list,
+                ebars_post_list=ebars_post_list,
+                reset_qubit_after_parity=reset_bool,
+                parity_meas=attrs['config']['expt']['parity_meas'],
+                title=title,
+                save_fig=save_fig
+            )
+
+            # Return all results in a dict
+            return {
+                'fids_list': fids_list,
+                'fids_post_list': fids_post_list,
+                'pop_dict': pop_dict,
+                'pop_err_dict': pop_err_dict,
+                'xlist': xlist,
+                'depth_list': depth_list,
+                'ebars_list': ebars_list,
+                'ebars_post_list': ebars_post_list,
+                'fid': fid,
+                'fid_err': fid_err,
+                'fid_post': fid_post,
+                'fid_post_err': fid_post_err
+            }
     
 
     
