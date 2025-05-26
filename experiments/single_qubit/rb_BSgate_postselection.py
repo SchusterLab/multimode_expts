@@ -233,7 +233,7 @@ class SingleBeamSplitterRBPostselectionrun(MMDualRailAveragerProgram):
             if idx%self.cfg.expt.gates_per_wait == 0: # only wait after bs pulse every 10 gates
                 wait_bool = True
 
-            print(ii)
+            # print(ii)
             # add gate
             if ii == 0:
                 pass

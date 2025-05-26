@@ -347,7 +347,7 @@ class MM_DualRailRB(sequential_base_class):
         Rough estimation, need to check with paper and fix this"""
         if depth <250: 
             return 2500
-        elif depth < 500:
+        elif depth < 400:
             return 5000
         else:
             return 10000
@@ -384,9 +384,10 @@ class MM_DualRailRB(sequential_base_class):
             
             # print('run_exp.fname', os.path.basename(run_exp.fname)) # h5py can't store strings 
             # self.save_sweep_data('filenames', os.path.basename(run_exp.fname), run_exp, save_data = False)
+            path_for_expt = path_for_expt
             self.perform_RB_analysis(prefix = self.sweep_experiment_name, dir_path = path_for_expt)
         
-        return self.sweep_experiment_name, dir_path
+        return self.sweep_experiment_name, path_for_expt
     
     def perform_RB_analysis(self, prefix = None, dir_path = None):
         """
@@ -417,16 +418,26 @@ class MM_DualRailRB(sequential_base_class):
             from multimode_expts.fit_display_classes import MM_DualRailRBFitting
 
             # Initialize RB analysis
+            # print all args to rb analysis 
+            # Close previous plots and display the new one
+            from IPython.display import clear_output
+            clear_output(wait=True)
+            plt.close('all')  # Close all existing figures
+            print("RBAnalysis args:")
+            print(f"  filename: None")
+            print(f"  file_prefix: {prefix}")
+            print(f"  config: {self.yaml_cfg}")
+            print(f"  expt_path: {self.path}")
+            print(f"  title: {self.title}")
+            print(f"  prev_data: {self.prev_data}")
+            print(f"  dir_path: {dir_path}")
             rb_analysis = MM_DualRailRBFitting(filename = None, file_prefix = prefix, 
                                    config=self.yaml_cfg, expt_path=self.path, title=self.title, 
                                    prev_data= self.prev_data, dir_path=dir_path)
 
             
 
-            # Close previous plots and display the new one
-            from IPython.display import clear_output
-            clear_output(wait=True)
-            plt.close('all')  # Close all existing figures
+            
             args = rb_analysis.show_rb()
             return None
 
@@ -439,7 +450,7 @@ class MM_DualRailRB(sequential_base_class):
         self.map_sequential_cfg_to_experiment()
 
         if sweep_experiment_name == 'SingleBeamSplitterRBPostSelection_sweep_depth':
-            self.SingleBeamSplitterRBPostSelection_sweep_depth(skip_ss=skip_ss)
+            return self.SingleBeamSplitterRBPostSelection_sweep_depth(skip_ss=skip_ss)
 
     
     
