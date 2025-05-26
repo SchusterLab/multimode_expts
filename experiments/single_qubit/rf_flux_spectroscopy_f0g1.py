@@ -32,21 +32,23 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         qTest = self.qubits[0]
 
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
+        self.MM_base_initialize()
+
+        # self.adc_chs = cfg.hw.soc.adcs.readout.ch
+        # self.res_chs = cfg.hw.soc.dacs.readout.ch
+        # self.res_ch_types = cfg.hw.soc.dacs.readout.type
+        # self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
+        # self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
+        # self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
+        # self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
+        # self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
+        # self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
+        # self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
+        # self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
+        # self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
+        # self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
+        # self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
+        # self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
         if self.cfg.expt.flux_drive[0] == 'low':
             self.rf_ch = cfg.hw.soc.dacs.flux_low.ch

@@ -33,7 +33,10 @@ class MM_base:
         self.cfg.update(cfg.expt) # this is to make things like reps, expts available
 
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.qubits = self.cfg.expt.qubits
+        try:
+            self.qubits = self.cfg.expt.qubits
+        except AttributeError:
+            self.qubits = self.cfg.expt.qubit 
 
         qTest = self.qubits[0]
 
