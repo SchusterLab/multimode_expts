@@ -160,11 +160,11 @@ device:
         ramp_sigma: 0.005
     active_reset:
         qubit_ge:
-        - 4000.0
+        - 4000
         - 0.1422665780546079
         - 0.005
         qubit_ef:
-        - 3000.0
+        - 3000
         - 0.15377089082752435
         - 0.005
         relax_delay:

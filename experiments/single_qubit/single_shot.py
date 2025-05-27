@@ -44,7 +44,6 @@ class HistogramProgram(MMAveragerProgram):
         if cfg.expt.active_reset:
             self.active_reset(man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
 
-
         if self.cfg.expt.pulse_e or self.cfg.expt.pulse_f:
             self.setup_and_pulse(ch=self.qubit_chs[0], style="arb", freq=self.f_ge_reg[qTest], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
                 
@@ -55,7 +54,6 @@ class HistogramProgram(MMAveragerProgram):
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_reg[qTest], phase=0, gain=self.pi_ef_gain, waveform="pi_qubit_ef")
         self.sync_all()
         self.wait_all(self.us2cycles(0.01))
-
 
         self.measure_wrapper()
 
