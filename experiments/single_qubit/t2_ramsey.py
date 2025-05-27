@@ -17,7 +17,7 @@ class RamseyProgram(MMRAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -26,11 +26,8 @@ class RamseyProgram(MMRAveragerProgram):
         self.checkEF = self.cfg.expt.checkEF
 
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge_idle)
-       
         qTest = self.qubits[0]
-        
 
-       
         # declare registers for phase incrementing
         self.r_wait = 3
         self.r_phase2 = 4
@@ -61,12 +58,11 @@ class RamseyProgram(MMRAveragerProgram):
             # self.gain_pi_test = self.cfg.device.QM.pulses.qubit_pi_ge.gain[ii][jj] # gain of the pulse we are trying to calibrate
             self.pi2sigma_test = self.cfg.device.QM.pulses.qubit_pi_ge.sigma[ii][jj]
             # self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test", sigma=self.pi2sigma, length=self.pi2sigma*4)
-            
+
             self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.f0g1_cavity-1], gen_ch=self.f0g1_ch[0])
             self.f0g1_length = self.us2cycles(cfg.device.QM.pulses.f0g1.length[cfg.expt.f0g1_cavity-1], gen_ch=self.f0g1_ch[0])
             self.add_gauss(ch=self.f0g1_ch[0], name="f0g1",
                        sigma=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma), length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
-
 
         if self.checkEF:
             self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])
@@ -97,7 +93,7 @@ class RamseyProgram(MMRAveragerProgram):
 
         self.sync_all(200)
 
-    
+
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = self.qubits[0] 
@@ -110,28 +106,21 @@ class RamseyProgram(MMRAveragerProgram):
 
         if self.cfg.expt.active_reset: 
             self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
-        
+
         #prepulse : 
-        # self.wait_all(self.us2cycles(0.1))
         self.sync_all(self.us2cycles(0.1))
-        
+
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'preetr_')
 
-        # # initializations as necessary
-        # if self.cfg.expt.active_reset: 
-        #     self.active_reset( man_reset= self.cfg.expt.man_reset)
-        
-        
         if self.cfg.expt.qubit_ge_init:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
-        
 
         # play pi/2 pulse with the freq that we want to calibrate
         self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_test_reg, phase=0, gain=self.gain_test, waveform="pi2_test_ram")
-        
+
         # self.wait_all(self.us2cycles(0.01))
         self.sync_all(self.us2cycles(0.01))
 
@@ -146,8 +135,7 @@ class RamseyProgram(MMRAveragerProgram):
                 # even if ef, we still need just a pi pulse within that space
                 self.pulse(ch=self.qubit_chs[qTest]) # this is ge or ef depedning on last hpi pulse
                 self.pulse(ch=self.qubit_chs[qTest])
-                
-                    
+
                     #print('Echo Only implemented for ge qubit')
                 self.sync_all()
                 self.sync(self.q_rps[qTest], self.r_wait)
@@ -156,19 +144,16 @@ class RamseyProgram(MMRAveragerProgram):
         # play pi/2 pulse with advanced phase (all regs except phase are already set by previous pulse)
         self.set_pulse_registers(ch=self.qubit_chs[qTest], style="arb", freq=self.f_test_reg, phase=self.deg2reg(cfg.advance_phase, gen_ch=self.qubit_chs[qTest]),
                                   gain=self.gain_test, waveform="pi2_test_ram")
-        
-        
+
         # self.wait_all(self.us2cycles(0.01))
         if self.qubit_ch_types[qTest] == 'int4':
             self.bitwi(self.q_rps[qTest], self.r_phase3, self.r_phase2, '<<', 16)
             self.bitwi(self.q_rps[qTest], self.r_phase3, self.r_phase3, '|', self.f_test_reg)
             self.mathi(self.q_rps[qTest], self.r_phase, self.r_phase3, "+", 0)
-            # self.wait_all(self.us2cycles(0.01)) 
             self.sync_all(self.us2cycles(0.01))
         else: 
             self.mathi(self.q_rps[qTest], self.r_phase, self.r_phase2, "+", 0)
-            # self.wait_all(self.us2cycles(0.01)) # need this wait for mathi instruction to finish before firing next pulse
-            self.sync_all(self.us2cycles(0.01))
+            self.sync_all(self.us2cycles(0.01)) # need this for mathi to finish before next pulse
         self.pulse(ch=self.qubit_chs[qTest])
 
         #postpulse :
@@ -180,7 +165,7 @@ class RamseyProgram(MMRAveragerProgram):
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
-        
+
         # align channels and measure
         self.measure_wrapper()
 
@@ -188,14 +173,11 @@ class RamseyProgram(MMRAveragerProgram):
         qTest = self.qubits[0]
 
         phase_step = self.deg2reg(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step, gen_ch=self.qubit_chs[qTest]) # phase step [deg] = 360 * f_Ramsey [MHz] * tau_step [us]
-        # print(phase_step)
-        # print(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step)
         self.mathi(self.q_rps[qTest], self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg.expt.step, gen_ch = self.qubit_chs[qTest])) # update the time between two π/2 pulses
-        # self.wait_all(self.us2cycles(0.01)) 
         self.sync_all(self.us2cycles(0.01))
         self.mathi(self.q_rps[qTest], self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse
-        # self.wait_all(self.us2cycles(0.01)) 
         self.sync_all(self.us2cycles(0.01))
+
 
 class RamseyExperiment(Experiment):
     """
@@ -232,9 +214,9 @@ class RamseyExperiment(Experiment):
                     subcfg.update({key: [value]*num_qubits_sample})
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
-        
+
         ramsey = RamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
-        
+
         x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
                                             readouts_per_experiment=read_num)        
  
@@ -245,19 +227,15 @@ class RamseyExperiment(Experiment):
 
         data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
         data['idata'], data['qdata'] = ramsey.collect_shots()      
-        #print(ramsey) 
-        
+
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
             g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-            
+
             data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
             data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
             data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-        
-        
-        
-        
+
         self.data=data
         return data
 
@@ -311,7 +289,6 @@ class RamseyExperiment(Experiment):
 
         title = ('EF' if self.checkEF else '') + 'Ramsey' 
 
-
         plt.figure(figsize=(10,9))
         plt.subplot(211, 
             title=f"{title} (Ramsey Freq: {self.cfg.expt.ramsey_freq} MHz)",
@@ -346,7 +323,7 @@ class RamseyExperiment(Experiment):
                     captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 except ValueError:
                     print('Fit Failed ; aborting')
-                
+
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -365,70 +342,4 @@ class RamseyExperiment(Experiment):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
-    
-    # def custom_pulse(self, cfg, pulse_data): 
-    #     '''
-    #     Executes prepulse or postpulse or middling pulse
-    #     '''
-    #     self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-    #     self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-    #     # for prepulse 
-    #     self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-    #     self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-    #     self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-    #     self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-    #     self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-    #     self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-    #     self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-    #     self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-    #     self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-    #     self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
-    #     for jj in range(len(pulse_data[0])):
-    #             # translate ch id to ch
-    #             if pulse_data[4][jj] == 1:
-    #                 self.tempch = self.flux_low_ch
-    #             elif pulse_data[4][jj] == 2:
-    #                 self.tempch = self.qubit_ch
-    #             elif pulse_data[4][jj] == 3:
-    #                 self.tempch = self.flux_high_ch
-    #             elif pulse_data[4][jj] == 6:
-    #                 self.tempch = self.storage_ch
-    #             elif pulse_data[4][jj] == 5:
-    #                 self.tempch = self.f0g1_ch
-    #             elif pulse_data[4][jj] == 4:
-    #                 self.tempch = self.man_ch
-    #             # print(self.tempch)
-    #             # determine the pulse shape
-    #             if pulse_data[5][jj] == "gaussian":
-    #                 # print('gaussian')
-    #                 self.pisigma_resolved = self.us2cycles(
-    #                     pulse_data[6][jj], gen_ch=self.tempch[0])
-    #                 self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
-    #                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-    #                 self.setup_and_pulse(ch=self.tempch[0], style="arb", 
-    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
-    #                                  gain=pulse_data[1][jj], 
-    #                                  waveform="temp_gaussian" + str(jj))
-    #             elif pulse_data[5][jj] == "flat_top":
-    #                 # print('flat_top')
-    #                 self.pisigma_resolved = self.us2cycles(
-    #                     pulse_data[6][jj], gen_ch=self.tempch[0])
-    #                 self.add_gauss(ch=self.tempch[0], name="temp_gaussian" + str(jj),
-    #                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-    #                 self.setup_and_pulse(ch=self.tempch[0], style="flat_top", 
-    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
-    #                                  gain=pulse_data[1][jj], 
-    #                                  length=self.us2cycles(pulse_data[2][jj], 
-    #                                                        gen_ch=self.tempch[0]),
-    #                                 waveform="temp_gaussian" + str(jj))
-    #             else:
-    #                 self.setup_and_pulse(ch=self.tempch[0], style="const", 
-    #                                  freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch[0]), 
-    #                                  phase=self.deg2reg(pulse_data[3][jj]), 
-    #                                  gain=pulse_data[1][jj], 
-    #                                  length=self.us2cycles(pulse_data[2][jj], 
-    #                                                        gen_ch=self.tempch[0]))
-    #             self.sync_all()
