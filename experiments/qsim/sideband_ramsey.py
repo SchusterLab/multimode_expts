@@ -251,9 +251,9 @@ class SidebandRamseyExperiment(Experiment):
         q = self.qubits[0]
 
         f_pi_test = self.cfg.device.qubit.f_ge[q]
-        if self.cfg.expt.f0g1_cavity > 0:
-            f_pi_test = self.cfg.device.QM.chi_shift_matrix[0][self.cfg.expt.f0g1_cavity] \
-                + self.cfg.device.qubit.f_ge[0] # freq we are trying to calibrate
+        # if self.cfg.expt.f0g1_cavity > 0:
+        #     f_pi_test = self.cfg.device.QM.chi_shift_matrix[0][self.cfg.expt.f0g1_cavity] \
+        #         + self.cfg.device.qubit.f_ge[0] # freq we are trying to calibrate
 
         title = 'Sideband Ramsey' 
 

@@ -107,6 +107,9 @@ class MM_base:
 
         # -------------f0g1 and M1-S sigmas-------
         #TODO: Get from dataset
+        self.dataset = storage_man_swap_dataset(cfg.device.storage.storage_man_file)
+        self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
+        self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
 
     def initialize_idling_dataset(self): 
@@ -237,8 +240,9 @@ class MM_base:
 
         # self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
-        # self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
-        # self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
+        self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
+        self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
+
 
     def measure_wrapper(self): 
         """
