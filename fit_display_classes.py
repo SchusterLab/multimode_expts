@@ -13,9 +13,13 @@ import experiments.fitting as fitter
 import datetime
 
 class GeneralFitting:
-    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None):
+    def __init__(self, data, readout_per_round=None, threshold=None, config=None):
         self.cfg = config
         self.data = data
+        if readout_per_round is None:
+            readout_per_round = 4
+        if threshold is None:
+            threshold = self.cfg.device.readout.threshold[0]
         self.readout_per_round = readout_per_round
         self.threshold = threshold
 
@@ -45,6 +49,9 @@ class GeneralFitting:
     def filter_data_IQ(self, II, IQ, threshold):
         result_Ig = []
         result_Ie = []
+        # print('filter_dataIIQ is called')
+        # print('read_num is ', self.readout_per_round)
+        # print('threshold is ', threshold)
 
         for k in range(len(II) // self.readout_per_round):
             index_4k_plus_2 = self.readout_per_round * k + self.readout_per_round - 2
@@ -58,11 +65,13 @@ class GeneralFitting:
         return np.array(result_Ig), np.array(result_Ie)
 
 
-    def post_select_raverager_data(self, temp_data, attrs):
+    def post_select_raverager_data(self, temp_data):
         read_num = self.readout_per_round
-        rounds = attrs['config']['expt']['rounds']
-        reps = attrs['config']['expt']['reps']
-        expts = attrs['config']['expt']['expts']
+
+        # Use self.cfg instead of attrs for config values
+        rounds = self.cfg.expt.rounds
+        reps = self.cfg.expt.reps
+        expts = self.cfg.expt.expts
         I_data = np.array(temp_data['idata'])
         Q_data = np.array(temp_data['qdata'])
 
@@ -76,7 +85,8 @@ class GeneralFitting:
             Ilist.append(np.mean(Ig))
             Qlist.append(np.mean(Qg))
 
-        Ilist, Qlist
+        return Ilist, Qlist
+       
 
 
     def save_plot(self, fig, filename="plot.png"):
@@ -132,7 +142,7 @@ class GeneralFitting:
 
 
 class RamseyFitting(GeneralFitting):
-    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, fitparams=None):
+    def __init__(self, data, readout_per_round=None, threshold=None, config=None, fitparams=None):
         super().__init__(data, readout_per_round, threshold, config)
         self.fitparams = fitparams
         self.results = {}
@@ -140,19 +150,43 @@ class RamseyFitting(GeneralFitting):
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
         if data is None:
             data = self.data
+        try: 
+            if self.cfg.expt.echoes[0]: # if there are echoes
+                print('Echoes in the data')
+                print(data['xpts'][:5])
+                data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
+                print(data['xpts'][:5])
+            else:
+                print('No echoes in the data')
+        except KeyError:
+            print('No echoes in the data')
+            pass
+
+        start_idx = None
+        end_idx = None
+        if self.cfg.expt.active_reset:
+            Ilist, Qlist = self.post_select_raverager_data(data)
+            data['avgi'] = Ilist[start_idx:end_idx]
+            data['avgq'] = Qlist[start_idx:end_idx]
+            data['xpts'] = data['xpts'][:-1][start_idx:end_idx]
+            #data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
+        else:
+            data['avgi'] = data['avgi'][start_idx:end_idx]
+            data['avgq'] = data['avgq'][start_idx:end_idx]
+            data['xpts'] = data['xpts'][start_idx:end_idx]
 
         if fit:
             if fitparams is None:
                 fitparams = [200, 0.2, 0, 200, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            # p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
             data['fit_avgi'] = p_avgi
             data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
+            # data['fit_amps'] = p_amps
             data['fit_err_avgi'] = pCov_avgi
             data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+            # data['fit_err_amps'] = pCov_amps
 
             if isinstance(p_avgi, (list, np.ndarray)):
                 data['f_adjust_ramsey_avgi'] = sorted(
@@ -160,17 +194,17 @@ class RamseyFitting(GeneralFitting):
             if isinstance(p_avgq, (list, np.ndarray)):
                 data['f_adjust_ramsey_avgq'] = sorted(
                     (self.cfg.expt.ramsey_freq - p_avgq[1], self.cfg.expt.ramsey_freq + p_avgq[1]), key=abs)
-            if isinstance(p_amps, (list, np.ndarray)):
-                data['f_adjust_ramsey_amps'] = sorted(
-                    (self.cfg.expt.ramsey_freq - p_amps[1], self.cfg.expt.ramsey_freq + p_amps[1]), key=abs)
+            # if isinstance(p_amps, (list, np.ndarray)):
+            #     data['f_adjust_ramsey_amps'] = sorted(
+            #         (self.cfg.expt.ramsey_freq - p_amps[1], self.cfg.expt.ramsey_freq + p_amps[1]), key=abs)
 
             self.results = {
                 'fit_avgi': p_avgi,
                 'fit_avgq': p_avgq,
-                'fit_amps': p_amps,
+                # 'fit_amps': p_amps,
                 'fit_err_avgi': pCov_avgi,
                 'fit_err_avgq': pCov_avgq,
-                'fit_err_amps': pCov_amps
+                # 'fit_err_amps': pCov_amps
             }
         return data
 
@@ -375,16 +409,18 @@ class AmplitudeRabiFitting(GeneralFitting):
 
 
 class Histogram(GeneralFitting):
-    def __init__(self, data, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4.0, config=None):
+    def __init__(self, data, span=None, verbose=True, active_reset=False, readout_per_round=None, threshold=None, config=None):
         super().__init__(data, readout_per_round, threshold, config)
         # print(self.data)
         self.span = span
         self.verbose = verbose
-        self.active_reset = active_reset
+        print(self.cfg)
+        self.active_reset = self.cfg.expt.active_reset 
         self.results = {}
 
     def analyze(self, plot=True):
         if self.active_reset:
+            print('Active reset is enabled')
             Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.threshold)
             Ie, Qe = self.filter_data_IQ(self.data['Ie'], self.data['Qe'], self.threshold)
             plot_f = 'If' in self.data.keys()

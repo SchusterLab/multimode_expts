@@ -624,27 +624,7 @@ class MM_base:
         # self.wait_all(self.us2cycles(0.2))
 
         ## Requirements for pi pulse 
-        self.f_ge_init_reg = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])
-        self.f_ef_init_reg = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])
-        self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.gain_ef_init = self.cfg.device.qubit.pulses.pi_ef.gain[qTest]
-        self.qge_ramp = self.us2cycles(
-            cfg.device.active_reset.qubit_ge[2], gen_ch=self.qubit_chs[qTest])  # default ramp value
-        self.qef_ramp = self.us2cycles(
-            cfg.device.active_reset.qubit_ef[2], gen_ch=self.qubit_chs[qTest])  # default ramp value
-        self.pisigma_ge = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ge value
-        self.pisigma_ef = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ef value
 
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge_active_reset",
-                       sigma=self.pisigma_ge, length=self.pisigma_ge*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_active_reset",
-                       sigma=self.pisigma_ef, length=self.pisigma_ef*4)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_ge_ramp",
-                       sigma=self.qge_ramp, length=self.qge_ramp*6)
-        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_ef_ramp",
-                       sigma=self.qef_ramp, length=self.qef_ramp*6)
 
         self.sync_all(self.us2cycles(0.25))
 
@@ -700,13 +680,7 @@ class MM_base:
 
         # Reset ef level
         if  ef_reset:    
-            # ======================================================
-            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="arb",
-            #                          phase=self.deg2reg(0),
-            #                          gain=self.gain_ef_init, waveform='pi_qubit_ef_active_reset')
-            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="flat_top",
-            #                         phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ef[1]),
-            #                         gain=cfg.device.active_reset.qubit_ef[0], waveform='pi_ef_ramp')
+            # Map f level to e level
             self.set_pulse_registers(ch=self.qubit_chs[qTest],
                                     freq=self.f_ef_reg[qTest],
                                     style="arb",

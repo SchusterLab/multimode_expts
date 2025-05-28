@@ -44,11 +44,12 @@ class PulseProbeF0g1SpectroscopyProgram(MMRAveragerProgram):
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_ar_')
 
-        # init to qubit excited state
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_gain, waveform="pi_qubit_ge")
+        
         if self.cfg.expt['qubit_f']:
+            # init to qubit excited state
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             # None
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_reg[0], phase=0, gain=self.pief_gain, waveform="pi_qubit_ef")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_reg[0], phase=0, gain=self.pi_ef_gain, waveform="pi_qubit_ef")
         # print(self.pief_gain)
         # setup and play ef probe pulse
         self.set_pulse_registers(
