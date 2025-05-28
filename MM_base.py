@@ -673,12 +673,25 @@ class MM_base:
                    prefix + "LABEL_1")  # compare the value recorded above to the value stored in threshold.
 
         #play pi pulse if condition is false (ie, if qubit is in excited state), to pulse back to ground.
-        # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="arb",
+        # self.set_pulse_registers(ch=self.qubit_chs[qTest],
+        #                          freq=self.f_ge_init_reg,
+        #                          style="arb",
         #                          phase=self.deg2reg(0),
-        #                          gain=self.gain_ge_init, waveform='pi_qubit_ge_active_reset')
-        self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="flat_top",
-                                 phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
-                                 gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
+        #                          gain=self.gain_ge_init,
+        #                          waveform='pi_qubit_ge_active_reset')
+        # self.set_pulse_registers(ch=self.qubit_chs[qTest],
+        #                          freq=self.f_ge_init_reg,
+        #                          style="flat_top",
+        #                          phase=self.deg2reg(0),
+        #                          length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
+        #                          gain=cfg.device.active_reset.qubit_ge[0],
+        #                          waveform='pi_ge_ramp')
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=self.f_ge_reg[qTest],
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=self.pi_ge_gain,
+                                 waveform='pi_qubit_ge')
         self.pulse(ch=self.qubit_chs[qTest])
         self.label(prefix + "LABEL_1")  # location to be jumped to
         # self.wait_all(self.us2cycles(0.05)) 
@@ -686,14 +699,20 @@ class MM_base:
         # ======================================================
 
         # Reset ef level
-        if ef_reset:    
+        if  ef_reset:    
             # ======================================================
             # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="arb",
             #                          phase=self.deg2reg(0),
             #                          gain=self.gain_ef_init, waveform='pi_qubit_ef_active_reset')
-            self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="flat_top",
-                                    phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ef[1]),
-                                    gain=cfg.device.active_reset.qubit_ef[0], waveform='pi_ef_ramp')
+            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ef_init_reg, style="flat_top",
+            #                         phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ef[1]),
+            #                         gain=cfg.device.active_reset.qubit_ef[0], waveform='pi_ef_ramp')
+            self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                    freq=self.f_ef_reg[qTest],
+                                    style="arb",
+                                    phase=self.deg2reg(0),
+                                    gain=self.pi_ef_gain,
+                                    waveform='pi_qubit_ef')
             self.pulse(ch=self.qubit_chs[qTest])
             # self.wait_all(self.us2cycles(0.05))
             self.sync_all(self.us2cycles(0.05))
@@ -716,9 +735,15 @@ class MM_base:
             # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="arb",
             #                          phase=self.deg2reg(0),
             #                          gain=self.gain_ge_init, waveform='pi_qubit_ge_active_reset')
-            self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="flat_top",
-                                    phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
-                                    gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
+            # self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_init_reg, style="flat_top",
+            #                         phase=self.deg2reg(0), length=self.us2cycles(cfg.device.active_reset.qubit_ge[1]),
+            #                         gain=cfg.device.active_reset.qubit_ge[0], waveform='pi_ge_ramp')
+            self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                    freq=self.f_ge_reg[qTest],
+                                    style="arb",
+                                    phase=self.deg2reg(0),
+                                    gain=self.pi_ge_gain,
+                                    waveform='pi_qubit_ge')
             self.pulse(ch=self.qubit_chs[qTest])
             self.label(prefix + "LABEL_2")  # location to be jumped to
             # self.wait_all(self.us2cycles(0.05)) 

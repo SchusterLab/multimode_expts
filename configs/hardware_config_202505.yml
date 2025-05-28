@@ -51,7 +51,7 @@ device:
         gain:
         - 800
         phase:
-        - 0.8473846167680859
+        - 179
         threshold:
         - -148.02027429647023
         threshold_list:

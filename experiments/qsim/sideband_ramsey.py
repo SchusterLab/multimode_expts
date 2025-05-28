@@ -64,8 +64,8 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.reset_and_sync()
 
         if self.cfg.expt.active_reset: 
-            print('active reset not written/tested yet')
-        #     self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+            # print('active reset not written/tested yet')
+            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
 
         # prepulse: ge -> ef -> f0g1
         prepules_cfg = [

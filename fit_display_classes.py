@@ -19,8 +19,7 @@ class GeneralFitting:
         self.readout_per_round = readout_per_round
         self.threshold = threshold
 
-    
-    
+
     def filter_data_BS(self, a1, a2, a3, threshold, post_selection = False):
         # assume the last one  is experiment data, the last but one is for post selection
         '''
@@ -33,16 +32,16 @@ class GeneralFitting:
         '''
         result_1 = []
         result_2 = []
-        
+
         for k in range(len(a1)):
-
             if a1[k] < threshold:
-
                 result_1.append(a2[k])
                 if post_selection:
                     result_2.append(a3[k])
-        
+
         return np.array(result_1), np.array(result_2)
+
+
     def filter_data_IQ(self, II, IQ, threshold):
         result_Ig = []
         result_Ie = []
@@ -57,6 +56,7 @@ class GeneralFitting:
                     result_Ie.append(IQ[index_4k_plus_3])
 
         return np.array(result_Ig), np.array(result_Ie)
+
 
     def post_select_raverager_data(self, temp_data, attrs):
         read_num = self.readout_per_round
@@ -77,9 +77,9 @@ class GeneralFitting:
             Qlist.append(np.mean(Qg))
 
         Ilist, Qlist
-    
+
+
     def save_plot(self, fig, filename="plot.png"):
-        
         """
         Save a matplotlib figure to the specified folder.
         Optionally append the image path to a markdown file for viewing.
@@ -95,7 +95,6 @@ class GeneralFitting:
 
         # Extract markdown folder from config if available
         if self.cfg and hasattr(self.cfg, "data_management"):
-            
             markdown_folder = getattr(self.cfg.data_management, "plot_and_logs_folder")
             plots_folder_path = markdown_folder + "/plots"
             if markdown_folder:
@@ -132,7 +131,6 @@ class GeneralFitting:
 
 
 
-           
 class RamseyFitting(GeneralFitting):
     def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, fitparams=None):
         super().__init__(data, readout_per_round, threshold, config)
@@ -375,11 +373,11 @@ class AmplitudeRabiFitting(GeneralFitting):
             filename = title_str.replace(' ', '_').replace(':', '') + '.png'
             self.save_plot(fig, filename=filename)
 
-            
+
 class Histogram(GeneralFitting):
     def __init__(self, data, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4.0, config=None):
         super().__init__(data, readout_per_round, threshold, config)
-        print(self.data)
+        # print(self.data)
         self.span = span
         self.verbose = verbose
         self.active_reset = active_reset
@@ -387,11 +385,11 @@ class Histogram(GeneralFitting):
 
     def analyze(self, plot=True):
         if self.active_reset:
-            Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.thresholds)
-            Ie, Qe = self.filter_data_IQ(self.data['Ie'], self.data['Qe'], self.thresholds)
+            Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.threshold)
+            Ie, Qe = self.filter_data_IQ(self.data['Ie'], self.data['Qe'], self.threshold)
             plot_f = 'If' in self.data.keys()
             if plot_f:
-                If, Qf = self.filter_data_IQ(self.data['If'], self.data['Qf'], self.thresholds)
+                If, Qf = self.filter_data_IQ(self.data['If'], self.data['Qf'], self.threshold)
         else:
             Ig, Qg = self.data['Ig'], self.data['Qg']
             Ie, Qe = self.data['Ie'], self.data['Qe']

@@ -212,16 +212,20 @@ class RamseyExperiment(Experiment):
                                 value2.update({key3: [value3]*num_qubits_sample})                                
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
-        read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+
+        read_num = 4 if self.cfg.expt.active_reset else 1
 
         ramsey = RamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
 
-        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
-                                            readouts_per_experiment=read_num)        
+        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc],
+                                           threshold=None,
+                                           load_pulses=True,
+                                           progress=progress,
+                                           debug=debug,
+                                           readouts_per_experiment=read_num)
  
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+        avgi = avgi[0][-1] # when using active reset, second index selects which out of the 4 readouts per exp
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
