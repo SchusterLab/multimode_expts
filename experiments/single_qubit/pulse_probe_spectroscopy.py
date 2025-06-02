@@ -74,7 +74,7 @@ class PulseProbeSpectroscopyProgram(RAveragerProgram):
         self.f_step = self.freq2reg(cfg.expt.step, gen_ch=self.qubit_ch)
         self.pisigma_ge = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch) # default pi_ge value
         self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
-        self.ramp = self.us2cycles(cfg.expt.sigma, gen_ch=self.qubit_ch)
+        self.ramp = self.us2cycles(0.005, gen_ch=self.qubit_ch)
         
         self.add_gauss(ch=self.qubit_ch, name="pi_qubit_ge", sigma=self.pisigma_ge, length=self.pisigma_ge*4)
         self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)

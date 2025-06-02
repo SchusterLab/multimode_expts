@@ -16,7 +16,7 @@ class PulseProbeEFSpectroscopyProgram(RAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -72,12 +72,14 @@ class PulseProbeEFSpectroscopyProgram(RAveragerProgram):
 
         self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch)
         self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
+        self.ramp = self.us2cycles(0.005, gen_ch=self.qubit_ch)
 
         self.safe_regwi(self.q_rp, self.r_freq2, self.f_start) # send start frequency to r_freq2
 
         # add pre-defined qubit and readout pulses to respective channels
         self.add_gauss(ch=self.qubit_ch, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
         self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)
+        self.add_gauss(ch=self.qubit_ch, name="ramp", sigma=self.ramp, length=self.ramp*4)
 
         if self.res_ch_type == 'mux4':
             self.set_pulse_registers(ch=self.res_ch, style="const", length=self.readout_length_dac, mask=mask)
@@ -89,23 +91,39 @@ class PulseProbeEFSpectroscopyProgram(RAveragerProgram):
         cfg=AttrDict(self.cfg)
 
         # init to qubit excited state
-        self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge_reg, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
+        self.setup_and_pulse(ch=self.qubit_ch,
+                             style="arb",
+                             freq=self.f_ge_reg,
+                             phase=0,
+                             gain=cfg.device.qubit.pulses.pi_ge.gain,
+                             waveform="pi_qubit")
         if self.cfg.expt['qubit_f']:
-            self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ef_reg, phase=0, gain=cfg.device.qubit.pulses.pi_ef.gain, waveform="pief_qubit")
+            self.setup_and_pulse(ch=self.qubit_ch,
+                                 style="arb",
+                                 freq=self.f_ef_reg,
+                                 phase=0,
+                                 gain=cfg.device.qubit.pulses.pi_ef.gain,
+                                 waveform="pief_qubit")
 
         # setup and play ef probe pulse
         self.set_pulse_registers(
             ch=self.qubit_ch,
-            style="const",
+            style="flat_top",
             freq=0, # freq set by update
             phase=0,
             gain=cfg.expt.gain,
+            waveform="ramp",
             length=self.us2cycles(cfg.expt.length, gen_ch=self.qubit_ch))
         self.mathi(self.q_rp, self.r_freq, self.r_freq2, "+", 0)
         self.pulse(ch=self.qubit_ch)
 
         # go back to ground state if in e to distinguish between e and f
-        self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge_reg, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
+        self.setup_and_pulse(ch=self.qubit_ch,
+                             style="arb",
+                             freq=self.f_ge_reg,
+                             phase=0,
+                             gain=cfg.device.qubit.pulses.pi_ge.gain,
+                             waveform="pi_qubit")
 
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
         self.measure(pulse_ch=self.res_ch, 
@@ -113,10 +131,10 @@ class PulseProbeEFSpectroscopyProgram(RAveragerProgram):
              adc_trig_offset=cfg.device.readout.trig_offset,
              wait=True,
              syncdelay=self.us2cycles(cfg.device.readout.relax_delay))
-    
+
     def update(self):
         self.mathi(self.q_rp, self.r_freq2, self.r_freq2, '+', self.f_step) # update frequency list index
-        
+
 
 class PulseProbeEFSpectroscopyExperiment(Experiment):
     """
