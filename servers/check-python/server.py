@@ -1,17 +1,6 @@
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent, ImageContent, BlobResourceContents
-import logging
-import os
-
-# Set up logging (this just prints messages to your terminal for debugging)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Create the MCP server object
-mcp = FastMCP()
+import matplotlib
+from copy import deepcopy
+from slab import AttrDict
 
 def setup_paths():
     """
@@ -101,11 +90,83 @@ def initialize_server():
         "meas": meas
     }
 
+class run_exp():
+    def __init__(self, initialization_dict):
+        self.sys = initialization_dict['sys']
+        self.plt = initialization_dict['plt']
+        self.expt_path = initialization_dict['expt_path']
+        self.config_file = initialization_dict['config_file']
+        self.exp_param_file = initialization_dict['exp_param_file']
+        self.yaml_cfg = initialization_dict['yaml_cfg']
+        self.im = initialization_dict['im']
+        self.soc = initialization_dict['soc']
+        self.meas = initialization_dict['meas']
+        print('run_exp initialized with the following parameters:')
+    
+    def do_single_shot(self, config_thisrun = None, expt_path=None, config_path=None):
+        """Run the single shot experiment."""
+        if config_thisrun is None:
+            config_thisrun = self.yaml_cfg
+        if expt_path is None:
+            expt_path = self.expt_path
+        if config_path is None:
+            config_path = self.config_file
+
+        hstgrm = self.meas.single_qubit.single_shot.HistogramExperiment(
+            soccfg=self.soc, path=expt_path, prefix='HistogramExperiment', config_file=config_path
+        )
+        print('Running single shot experiment with the following parameters:')
+
+        hstgrm.cfg = AttrDict(deepcopy(config_thisrun))
+
+        hstgrm.cfg.expt = {
+            'qubits': [0],
+            'reps': 5000,
+            'check_f': False,
+            'active_reset': False,
+            'man_reset': False,
+            'storage_reset': False,
+            'qubit': 0,
+            'pulse_manipulate': False,
+            'cavity_freq': 4984.373226159381,
+            'cavity_gain': 800,
+            'cavity_length': 2,
+            'prepulse': False,
+            'pre_sweep_pulse': [
+            ['qubit', 'ge', 'pi', 0],
+            ['qubit', 'ge', 'pi', 0]
+            ],
+            'gate_based': True,
+        }
+
+        hstgrm.cfg.device.readout.relax_delay = [2500]  # Wait time between experiments [us]
+        try:
+            hstgrm.go(analyze=False, display=False, progress=True, save=True)
+        except Exception as e:
+            print(f"An error occurred during hstgrm.go: {e}")
+            return None
+        
+
+        threshold = config_thisrun.device.readout.threshold[0]
+        hist_analysis = Histogram(
+            hstgrm.data, verbose=True, active_reset=False, 
+            readout_per_round=4, span=800, threshold=threshold, config=config_thisrun,
+        )
+        print('Done Histogram')
+        hist_analysis.analyze(plot = True)
+        return hist_analysis
+        
+    
+
+
 
 # If you want to run initialization on import:
 if __name__ == "__main__":
-    os.system("conda activate slab")
-    print('Activated slab conda environment')
+    print('Welcome to the Server')
     return_args = initialize_server()
+    print('expt path is ', return_args['expt_path'])
+    run_exp_instance = run_exp(return_args)
+    run_exp_instance.do_single_shot()
+
     
 
