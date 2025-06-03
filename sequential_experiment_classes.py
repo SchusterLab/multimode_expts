@@ -24,18 +24,40 @@ from multimode_expts.fit_display import * # for generate combos in MultiRBAM
 from IPython.display import clear_output
 
 class sequential_base_class():
-    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, config_thisrun=None
+                 ):
         self.soccfg = soccfg
         self.path = path
         self.prefix = prefix
         self.config_file = config_file
         self.exp_param_file = exp_param_file
+        self.config_thisrun = config_thisrun # asnytime you run the expt, copy over this config file!!!
 
         #load parameter files
         self.load_config()
         self.load_exp_param()
 
         pass
+
+    def run_with_configthisrun(self, run_expt):
+        """
+        Run the experiment with a specific configuration for this run.
+        
+        Parameters:
+            config_thisrun (dict): Configuration parameters for this run.
+        run_expt (object): The experiment object to run.
+        
+        Returns:
+            None
+        """
+        
+        if self.config_thisrun is not None:
+            run_expt.cfg = self.config_thisrun
+            print(f"Running experiment with config: configthisrun")
+        else:
+            print("yoohoo, no config_thisrun provided, using default config")
+        return run_expt
+
 
     def load_config(self):
         '''Load config file '''
@@ -188,8 +210,8 @@ class sequential_base_class():
 class sidebands_class(sequential_base_class):
     '''Class for sideband experiments; using sideband general experiment'''
 
-    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, config_thisrun = None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file, config_thisrun=config_thisrun)
         self.experiment_class = 'single_qubit.sideband_general'
         self.experiment_name = 'SidebandGeneralExperiment'
 
@@ -208,7 +230,8 @@ class sidebands_class(sequential_base_class):
             self.loaded[self.experiment_name]['flux_drive'][1] = freq
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
-
+            run_exp = self.run_with_configthisrun(run_exp)  # Use the config_thisrun if provided
+            
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
             if run_exp.cfg.expt.active_reset:
@@ -271,21 +294,17 @@ class sidebands_class(sequential_base_class):
 class man_f0g1_class(sequential_base_class):
     '''Class for length Rabi f0g1 sweep experiments'''
 
-    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
-        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, 
+                 config_thisrun=None):
+        
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file, config_thisrun=config_thisrun)
         self.experiment_class = 'single_qubit.length_rabi_f0g1_general'
         self.experiment_name = 'LengthRabiGeneralF0g1Experiment'
 
     def freq_sweep(self):
         '''Frequency sweep for length Rabi f0g1'''
-        self.expt_sweep = Experiment(
-            path=self.path,
-            prefix=self.sweep_experiment_name,
-            config_file=self.config_file,
-        )
+        self.initialize_expt_sweep(keys = ['freq_sweep'])
         chevron = None
-
-        self.expt_sweep.data = dict(freq_sweep=[])
 
         for index, freq in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['freq_start'], 
                                                 self.loaded[self.sweep_experiment_name]['freq_stop'], 
@@ -295,24 +314,20 @@ class man_f0g1_class(sequential_base_class):
             self.loaded[self.experiment_name]['freq'] = freq
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
-
+            run_exp = self.run_with_configthisrun(run_exp)  # Use the config_thisrun if provided
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
             if self.loaded[self.experiment_name]['active_reset']:
                 print('Doesn’t make sense to active reset in this experiment')
             run_exp.cfg.device.readout.relax_delay = 2500  # Wait time between experiments [us]
+            print(run_exp.cfg.expt)
 
             run_exp.go(analyze=False, display=False, progress=False, save=False)
+            # return run_exp
 
             # Add entry to sweep file
-            self.expt_sweep.data['freq_sweep'].append(freq)
-            for data_key in run_exp.data.keys():
-                if data_key not in self.expt_sweep.data.keys():
-                    self.expt_sweep.data[data_key] = []
-                self.expt_sweep.data[data_key].append(run_exp.data[data_key])
+            self.save_sweep_data('freq_sweep', freq, run_exp)
 
-            # Save the data
-            self.expt_sweep.save_data()
 
             # Perform Chevron analysis and live plotting
             chevron = self.perform_chevron_analysis()
@@ -334,8 +349,8 @@ class MM_DualRailRB(sequential_base_class):
     '''Class for dual rail based sequential experiments (RB)'''
 
     def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None,
-                 prev_data = None, title = None):
-        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+                 prev_data = None, title = None, config_thisrun=None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file, config_thisrun=config_thisrun)
         self.experiment_class = 'single_qubit.rb_BSgate_postselection'
         self.experiment_name = 'SingleBeamSplitterRBPostSelection'
         self.prev_data = prev_data
@@ -371,10 +386,12 @@ class MM_DualRailRB(sequential_base_class):
             self.loaded[self.experiment_name]['rb_reps'] = self.get_reps(depth)
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=path_for_expt, prefix=self.prefix, config_file=self.config_file)")
+            run_exp = self.run_with_configthisrun(run_exp)
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
             # self.expt_sweep.cfg = run_exp.cfg  # Copy the config to the sweep experiment
             #TODO: add expt config to sweep experiment data saving
             print(run_exp.cfg.expt)
+    
             run_exp.go(analyze=False, display=False, progress=False, save=True)
 
             
@@ -421,6 +438,7 @@ class MM_DualRailRB(sequential_base_class):
             # print all args to rb analysis 
             # Close previous plots and display the new one
             from IPython.display import clear_output
+
             clear_output(wait=True)
             plt.close('all')  # Close all existing figures
             print("RBAnalysis args:")
