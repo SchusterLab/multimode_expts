@@ -269,7 +269,6 @@ HistogramPrepulseExperimentTimeSweep:
     time_start: 0.01
     time_step: 0.01
     time_stop: 1.5
-
     active_reset: True
     man_reset: True  
     storage_reset: True
@@ -1255,7 +1254,8 @@ LengthRabiGeneralF0g1Experiment:
     use_arb_waveform: False
     pi_ge_before: True
     pi_ef_before: True
-    pi_ef_after: True
+    pi_ge_after: False
+    pi_ef_after: False
     normalize: False
     active_reset: False
     check_man_reset: [False, 0] # [boolean, man_idx]
@@ -1283,13 +1283,14 @@ LengthRabiGeneralF0g1Experiment:
        [2, 2, 0, 1],
        ['g', 'g', 'flat_top', 'flat_top'],
        [0.035, 0.035, 0.005, 0.005]]
+    err_amp_reps: 0
                        
 
 LengthRabiGeneralF0g1ExperimentSweep:
     freq_start: 2008.95 #9360934716117 #1949.6230253558676 #2010.7098618878696
     freq_stop: 2009.6 # 2007.95 #1951.6230253558676 #2012.7098618878696
     freq_step: 0.02 #0.01
-    start: 20 #0.007 #0.0069754464285714285 # us
+    start: 0.007 #0.0069754464285714285 # us
     step: 0.05 # us
     qubits: [0]
     expts: 101

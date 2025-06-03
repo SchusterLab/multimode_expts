@@ -10,7 +10,9 @@ import experiments.fitting as fitter
 from MM_base import *
 
 """
-Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse. This is a preliminary measurement to prove that we see Rabi oscillations. This measurement is followed up by the Amplitude Rabi experiment.
+Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse.
+This is a preliminary measurement to prove that we see Rabi oscillations.
+This measurement is followed up by the Amplitude Rabi experiment.
 """
 
 
@@ -25,11 +27,13 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
-        qTest = self.qubits[0]
+        qTest = self.cfg.expt.qubits[0]
         self.MM_base_initialize()
+        self.drive_freq = self.cfg.expt.freq
+        # print(f"Using drive frequency {self.drive_freq} MHz for qubit {qTest}")
         self.test_pulse_str =  [[self.drive_freq], [self.cfg.expt.gain], [self.cfg.expt.length_placeholder], [0],
-                      [self.f0g1_ch[qTest]], ["flat_top"], [self.cfg.device.storage.manipulate.ramp_sigma]]    # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
-
+                      [self.f0g1_ch[qTest]], ["flat_top"], [self.cfg.device.manipulate.ramp_sigma]]    # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
+        # print(self.test_pulse_str)
 
     def body(self):
         cfg = AttrDict(self.cfg)
@@ -43,13 +47,11 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
         if cfg.expt.active_reset:
             self.active_reset(man_reset = True, storage_reset = True)
 
-        
         #  prepulse
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='prepulse')
-        
+
         self.sync_all()  # align channels
-                
 
         # pre-rotation
         if self.cfg.expt.pi_ge_before:
@@ -64,37 +66,27 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
 
 
         for i in range(2*self.cfg.expt.err_amp_reps+1):
-            
-
             if self.cfg.expt.length_placeholder>0:
-
                 self.custom_pulse(cfg, self.test_pulse_str, prefix='pi_test_ramp')
-                
                 self.sync_all()  # align channels
-                    
-            
 
         if self.cfg.expt.pi_ge_after:  
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_reg[qTest],
-                                 phase=0, gain=self.pi_ef_gain, waveform="pi_qubit_ef")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest],
+                                 style="arb",
+                                 freq=self.f_ef_reg[qTest],
+                                 phase=0,
+                                 gain=self.pi_ef_gain,
+                                 waveform="pi_qubit_ef")
             self.sync_all()
-        
 
         if self.cfg.expt.swap_lossy:
-
             self.man_reset(man_idx = self.cfg.expt.check_man_reset[1])
             self.sync_all()
         # self.custom_pulse(cfg, cfg.expt.check_man_reset_pi, prefix='pi3')
 
         # align channels and wait 50ns and measure
         self.sync_all(self.us2cycles(0.05))
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
 
     def collect_shots(self):
         # collect shots for the relevant adc and I and Q channels
@@ -178,11 +170,11 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
             g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-            
+
             data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
             data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
             data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-        
+
         self.data = data
         return data
 
