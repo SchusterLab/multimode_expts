@@ -794,6 +794,156 @@ class LengthRabiFitting(GeneralFitting):
         return pi_length, pi2_length
 
 
+class LinePlotting(GeneralFitting):
+    """
+    LinePlotting: support multiple ylists (each as a separate subplot)
+    ylabels can be a list of labels for each subplot, or a single string for all.
+    """
+    def __init__(self, xlist, ylist, config=None, xlabel="X", ylabels="Y"):
+        """
+        xlist: 1D array of x values (e.g., time)
+        ylist: 1D array or list of 1D arrays of y values (e.g., frequency or multiple traces)
+        config: optional configuration object
+        xlabel: label for x axis
+        ylabels: label(s) for y axis; can be a string or a list of strings
+        """
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
+        self.xlist = np.array(xlist)
+        # Accept a single ylist or a list of ylists
+        if isinstance(ylist, (list, tuple)) and hasattr(ylist[0], "__len__"):
+            self.ylist = [np.array(y) for y in ylist]
+        else:
+            self.ylist = [np.array(ylist)]
+        self.xlabel = xlabel
+        # ylabels can be a string or a list of strings
+        if isinstance(ylabels, (list, tuple)):
+            self.ylabels = list(ylabels)
+        else:
+            self.ylabels = [ylabels] * len(self.ylist)
+        self.maxima = []
+
+    def analyze(self):
+        """
+        Find the maximum y value and corresponding x for each ylist.
+        Stores results in self.maxima as a list of dicts.
+        """
+        self.maxima = []
+        for y in self.ylist:
+            idx = np.argmax(y)
+            max_y = y[idx]
+            max_x = self.xlist[idx]
+            self.maxima.append({'max_y': max_y, 'max_x': max_x, 'index': idx})
+
+    def display(self, titles=None, mark_max=True):
+        """
+        Display a line plot for each ylist in a separate subplot.
+        Optionally mark the maximum point.
+        """
+        nplots = len(self.ylist)
+        fig, axs = plt.subplots(nplots, 1, figsize=(10, 4 * nplots), squeeze=False)
+        for i, y in enumerate(self.ylist):
+            ax = axs[i, 0]
+            ax.plot(self.xlist, y, marker='o')
+            ax.set_xlabel(self.xlabel)
+            # Use the corresponding ylabel if available, else fallback to the first
+            ylabel = self.ylabels[i] if i < len(self.ylabels) else self.ylabels[0]
+            ax.set_ylabel(ylabel)
+            if titles and i < len(titles):
+                ax.set_title(titles[i])
+            else:
+                ax.set_title(f'Line Plot {i+1}')
+            ax.grid()
+            if mark_max and self.maxima and i < len(self.maxima):
+                max_x = self.maxima[i]['max_x']
+                max_y = self.maxima[i]['max_y']
+                ax.plot(max_x, max_y, 'ro', label='Max')
+                ax.legend()
+        plt.tight_layout()
+        plt.show()
+        
+       
+class ColorPlot2D(GeneralFitting):
+    """
+    Class for producing 2D color plots from x, y, and multiple z lists.
+    The analyze function finds the maximum response time (x value) for each 2D color plot.
+    """
+    def __init__(self, xlist, ylist, zlists, config=None, xlabel="X", ylabel="Y", zlabels=None):
+        """
+        xlist: 1D array of x values (e.g., time)
+        ylist: 1D array of y values (e.g., frequency)
+        zlists: list of 2D arrays, each shape (len(ylist), len(xlist)), representing response matrices
+        config: optional configuration object
+        xlabel: label for x axis
+        ylabel: label for y axis
+        zlabels: list of labels for each z plot (optional)
+        """
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
+        self.xlist = np.array(xlist)
+        self.ylist = np.array(ylist)
+        self.zlists = [np.array(z) for z in zlists]
+        self.xlabel = xlabel
+        self.ylabel = ylabel
+        self.zlabels = zlabels if zlabels is not None else [None] * len(self.zlists)
+        self.results = []
+
+    def analyze(self):
+        """
+        For each zlist (2D response matrix), find the x (time) value where the maximum response occurs.
+        Stores a list of dicts with max value and corresponding x, y indices.
+        """
+        self.results = []
+        for idx, z in enumerate(self.zlists):
+            max_idx = np.unravel_index(np.argmax(z), z.shape)
+            y_idx, x_idx = max_idx
+            max_val = z[y_idx, x_idx]
+            max_x = self.xlist[x_idx]
+            max_y = self.ylist[y_idx]
+            self.results.append({
+                'z_index': idx,
+                'max_value': max_val,
+                'max_x': max_x,
+                'max_y': max_y,
+                'x_idx': x_idx,
+                'y_idx': y_idx
+            })
+
+    def display(self, titles=None, vlines=None, hlines=None, save_fig=False, directory=None):
+        """
+        Display all 2D color plots with optional vertical/horizontal lines.
+        Parameters:
+            titles: list of titles for each subplot (optional)
+            vlines: list of x values to draw vertical lines (optional)
+            hlines: list of y values to draw horizontal lines (optional)
+            save_fig: if True, saves the figure(s)
+            directory: directory to save figures if save_fig is True
+        """
+        for idx, z in enumerate(self.zlists):
+            plt.figure(figsize=(10, 6))
+            plt.pcolormesh(self.xlist, self.ylist, z, shading='auto', cmap='viridis')
+            zlabel = self.zlabels[idx] if self.zlabels and idx < len(self.zlabels) else "Response"
+            plt.colorbar(label=zlabel)
+            title = titles[idx] if titles and idx < len(titles) else f'2D Color Plot {idx+1}'
+            plt.title(title)
+            plt.xlabel(self.xlabel)
+            plt.ylabel(self.ylabel)
+            if vlines is not None:
+                for v in vlines:
+                    plt.axvline(v, color='red', linestyle='--')
+            if hlines is not None:
+                for h in hlines:
+                    plt.axhline(h, color='blue', linestyle='--')
+            # Mark the maximum point if analysis was run
+            if self.results and idx < len(self.results):
+                res = self.results[idx]
+                plt.plot(res['max_x'], res['max_y'], 'ko', label='Max Response')
+                plt.legend()
+            plt.tight_layout()
+            if save_fig:
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
+                    fname = f"colorplot2d_{idx+1}.png"
+                    plt.savefig(os.path.join(directory, fname))
+            plt.show()
 
 class ChevronFitting(GeneralFitting):
     def __init__(self, frequencies, time, response_matrix, config=None):
@@ -888,7 +1038,7 @@ class ChevronFitting(GeneralFitting):
 
         Parameters:
         - save_fig (bool): Whether to save the figure. Default is False.
-        - directory (str): The directory where the figure will be saved (if save_fig is True).
+        - directory (str): The directory where the figure will be saved (if save_fig is True). Deperecated
         - title (str): The filename for the saved figure. Default is "chevron_plot.png".
         - vlines (list or None): List of time values to draw vertical lines on the 2D plot.
         - hlines (list or None): List of frequency values to draw horizontal lines on the 2D plot.
@@ -897,7 +1047,7 @@ class ChevronFitting(GeneralFitting):
         best_frequency_period = self.results.get('best_frequency_period')
         best_fit_params_contrast = self.results.get('best_fit_params_contrast')
 
-        plt.figure(figsize=(10, 6))
+        fig = plt.figure(figsize=(10, 6))
         plt.pcolormesh(self.time, self.frequencies, self.response_matrix, shading='auto', cmap='viridis')
         plt.colorbar(label='Response')
         if best_frequency_contrast is not None:
@@ -915,11 +1065,15 @@ class ChevronFitting(GeneralFitting):
         plt.ylabel('Frequency (Hz)')
         plt.legend()
 
-        if save_fig and directory:
-            os.makedirs(directory, exist_ok=True)
-            filepath = os.path.join(directory, title)
-            plt.savefig(filepath)
-            print(f"Figure saved to {filepath}")
+        # if save_fig and directory:
+        #     os.makedirs(directory, exist_ok=True)
+        #     filepath = os.path.join(directory, title)
+        #     plt.savefig(filepath)
+        #     print(f"Figure saved to {filepath}")
+
+        if save_fig:
+            filename = title.replace(' ', '_').replace(':', '') + '.png'
+            self.save_plot(fig, filename=filename)
 
         plt.show()
 
