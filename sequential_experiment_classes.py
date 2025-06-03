@@ -136,6 +136,57 @@ class sequential_base_class():
             print(f"Chevron analysis failed: {e}")
             return None
     
+    def set_jpa_current(self, jpa_current):
+        """
+        Set the JPA current using the YokogawaGS200 instrument.
+
+        Parameters:
+            jpa_current (float): Desired current in mA. Must be between -10 mA and 10 mA.
+
+        Raises:
+            ValueError: If jpa_current is outside the allowed range.
+        """
+        if not (-10.0 <= jpa_current <= 10.0):
+            raise ValueError("jpa_current must be between -10 mA and 10 mA.")
+        from slab.instruments import YokogawaGS200
+        dcflux = YokogawaGS200(address="192.168.137.149")
+        dcflux.set_output(True)
+        dcflux.set_mode('current')
+        current = jpa_current * 1e-3  # Convert from mA to A
+        dcflux.set_current(current)
+    
+    
+    def set_jpa_gain(self, jpa_gain):
+        """
+        Sets the gain of the JPA (Josephson Parametric Amplifier) by configuring the SignalCore device.
+
+        Parameters:
+            jpa_gain (float): Desired JPA gain value. Must be between -15 and -5 dBm.
+
+        Raises:
+            ValueError: If jpa_gain is not within the allowed range (-15 to -5 dBm).
+
+        Notes:
+            - The function connects to the SignalCore device at address "10001E48".
+            - The output state is enabled and the power is set to a fixed value of -11.67 dBm.
+            - The device is closed after configuration.
+        """
+        if not (-15.0 <= jpa_gain <= -5.0):
+            raise ValueError("jpa_gain must be between -15 and -5 dBm.")
+        sc = SignalCore(name="SignalCore_JPA", address="10001E48")
+        sc.open_device()
+        sc.set_output_state(True)
+        sc.set_power(jpa_gain)
+        sc.close_device()
+    
+    def close_prev_plots(self): 
+        from IPython.display import clear_output
+        # from multimode_expts.fit_display_classes import SidebandFitting
+        clear_output(wait=True)
+        plt.close('all')  # Close all existing figures
+        
+        
+
     def initialize_expt_sweep(self, keys=None, create_directory=False):
         """
         Initialize the experiment sweep data structure with specified keys.
