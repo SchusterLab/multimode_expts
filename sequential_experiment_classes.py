@@ -256,7 +256,135 @@ class sequential_base_class():
 
    
     
+class histogram_sweep_class(sequential_base_class):
+    '''Class for histogram sweep experiments; similar structure to sidebands_class'''
+
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None):
+        super().__init__(soccfg, path, prefix, config_file, exp_param_file)
+        self.experiment_class = 'single_qubit.single_shot'
+        self.experiment_name = 'HistogramExperiment'
+
+    def histogram_jpa_current_sweep(self):
+        '''Sweep JPA current for histogram experiments'''
+        self.initialize_expt_sweep(keys=['jpa_current_sweep'])
+        analysis_result = None
+
+        for index, jpa_current in enumerate(np.arange(
+                self.loaded[self.sweep_experiment_name]['jpa_current_start'],
+                self.loaded[self.sweep_experiment_name]['jpa_current_stop'],
+                self.loaded[self.sweep_experiment_name]['jpa_current_step'])):
+
+            print('Index: %s JPA Current = %s mA' % (index, jpa_current))
+
+            # Set the JPA current in the experiment config
+            self.loaded[self.experiment_name]['jpa_current'] = jpa_current
+            # Now set it in the instruments 
+            self.set_jpa_current(jpa_current)
+            
+
+            run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
+            run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
+
+            # if hasattr(run_exp.cfg.expt, 'active_reset') and run_exp.cfg.expt.active_reset:
+            #     run_exp.cfg.device.readout.relax_delay = 100
+            # run_exp.cfg.device.readout.relax_delay = 8000
+            print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
+
+            run_exp.go(analyze=False, display=False, progress=False, save=False)
+            run_exp.data['jpa_current'] = jpa_current  # Add JPA current to the data
+
+            # Perform Histogram analysis 
+            analysis_result = self.perform_historgam_analysis(run_exp)
+
+            # Save sweep data
+            self.save_sweep_data('jpa_current_sweep', jpa_current, run_exp)
+            self.perform_lineplotting() # Perform color plotting after each sweep
+
+            # Optionally perform analysis and live plotting
+            # analysis_result = self.perform_histogram_analysis()  # Implement if needed
+        self.perform_lineplotting()  # Final color plotting after all sweeps
+
+        return analysis_result
+
+    def perform_historgam_analysis(self, hstgrm):
+        from multimode_expts.fit_display_classes import Histogram
+        hist_analysis = Histogram(
+            hstgrm.data, verbose=True,
+             span=800, threshold=None, config=hstgrm.cfg,
+        )
+        hist_analysis.analyze(plot = True)
+       
+        fids = hist_analysis.results['fids']
+        confusion_matrix = hist_analysis.results['confusion_matrix']
+        thresholds_new = hist_analysis.results['thresholds']
+        angle = hist_analysis.results['angle']
+
+        hstgrm.data['fids'] = fids[0]
+        hstgrm.data['confusion_matrix'] = confusion_matrix
+        hstgrm.data['thresholds'] = thresholds_new
+        hstgrm.data['angle'] = angle
+        # also save the difference between Ig and Ie 
+        hstgrm.data['contrast']  = np.median(hstgrm.data['Ie_rot']) -  np.median(hstgrm.data['Ig_rot'])
     
+    def perform_lineplotting(self):
+        from multimode_expts.fit_display_classes import LinePlotting
+        xlist = self.expt_sweep.data['jpa_current']
+        ylist1 = self.expt_sweep.data['fids']
+        ylist2 = self.expt_sweep.data['contrast']
+        line_plot = LinePlotting(xlist=xlist, ylist=[ylist1, ylist2],
+                                xlabel='JPA Current [mA]', 
+                                ylabels=['Fidelity', 'Contrast'], config = self.yaml_cfg)
+        line_plot.analyze()
+        self.close_prev_plots()  # Close previous plots before displaying new ones
+        line_plot.display()
+
+    def perform_colorplotting(self):
+        
+        raise NotImplementedError("This method is not implemented yet.")
+
+        xlist = self.expt_sweep.data['jpa_current']
+        ylist = self.expt_sweep.data['jpa_gain']
+        zlist1 = self.expt_sweep.data['fids']
+        zlist2 = self.expt_sweep.data['contrast']
+
+        from multimode_expts.fit_display_classes import ColorPlotting2D
+        color_plot = ColorPlotting2D(xlist = xlist, ylist = ylist, zlists = [zlist1, zlist2],
+                                        xlabel='JPA Current [mA]', ylabel='JPA Gain [dB]',
+                                        zlabels=['Fidelity', 'Contrast'])
+        
+        from IPython.display import clear_output
+        # from multimode_expts.fit_display_classes import SidebandFitting
+        clear_output(wait=True)
+        plt.close('all')  # Close all existing figures
+        
+        color_plot.analyze()
+        color_plot.display_results(save_fig = False)
+
+
+    def histogram_jpa_gain_current_sweep(self):
+        '''Gain and frequency sweep for histogram experiments'''
+        raise NotImplementedError("This method is not implemented yet.")
+        self.initialize_expt_sweep()
+    
+        for index, gain in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['gain_start'],
+                                               self.loaded[self.sweep_experiment_name]['gain_stop'],
+                                               self.loaded[self.sweep_experiment_name]['gain_step'])):
+            print('Index: %s Gain. = %s' % (index, gain))
+            self.loaded[self.experiment_name]['jpa_gain'] = gain
+        
+
+            self.histogram_jpa_current_sweep()
+
+    def run_sweep(self, sweep_experiment_name):
+        '''Run the sweep'''
+        self.sweep_experiment_name = sweep_experiment_name
+        self.map_sequential_cfg_to_experiment()
+
+        if sweep_experiment_name == 'histogram_jpa_current_sweep':
+            return self.histogram_jpa_current_sweep()
+
+        elif sweep_experiment_name == 'histogram_gain_freq_sweep':
+            self.histogram_gain_freq_sweep()
 
 class sidebands_class(sequential_base_class):
     '''Class for sideband experiments; using sideband general experiment'''
