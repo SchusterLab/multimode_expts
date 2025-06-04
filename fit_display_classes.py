@@ -8,9 +8,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from scipy.optimize import curve_fit
+from scipy.fft import rfft, rfftfreq
 import os
 import experiments.fitting as fitter
 import datetime
+import lmfit
+from copy import deepcopy
 
 class GeneralFitting:
     def __init__(self, data, readout_per_round=None, threshold=None, config=None):
@@ -972,66 +975,84 @@ class ChevronFitting(GeneralFitting):
         Fit a decaying sine curve to a single frequency slice.
         time: array of time values
         response: array of response values
-        Returns the fitted parameters and the contrast (max - min of the fitted curve).
+        used to Return the fitted parameters and the contrast (max - min of the fitted curve).
+        now Returns the lmfit result object
         """
-        initial_guess = [np.ptp(response) / 2, 2 * np.pi / (time[-1] - time[0]), 0, (time[-1] - time[0]) / 2, np.mean(response)]
-        try:
-            popt, _ = curve_fit(ChevronFitting.decaying_sine, time, response, p0=initial_guess)
-            fitted_curve = ChevronFitting.decaying_sine(time, *popt)
-            contrast = np.max(fitted_curve) - np.min(fitted_curve)
-            return popt, contrast
-        except RuntimeError:
-            return None, 0
+
+        def guess_freq(x, y):
+            # note: could also guess phase but need zero-padding
+            # just guessing freq seems good enough to escape from local minima in most cases
+            yf = rfft(y - np.mean(y))
+            xf = rfftfreq(len(x), x[1] - x[0])
+            peak_idx = np.argmax(np.abs(yf[1:])) + 1
+            return np.abs(xf[peak_idx])
+
+        freq_guess = guess_freq(time, response)
+        model = lmfit.Model(ChevronFitting.decaying_sine)
+        params = model.make_params(
+                A=np.ptp(response) / 2,
+                omega=2*np.pi*freq_guess,
+                phi=0,
+                tau=(time[-1] - time[0]) * 100,
+                C=np.mean(response))
+        # params['A'].set(min=0) 
+        # params['omega'].set(min=freq_guess/2, max=freq_guess*2) 
+        # params['phi'].set(min=-np.pi, max=np.pi)
+
+        result = model.fit(response, params, t=time)
+                           # max_nfev=200, nan_policy='propagate')
+        uctt=np.mean(result.eval_uncertainty())
+        if uctt<1e-6 or uctt>np.std(result.best_fit)*0.5:
+            for key in result.best_values.keys():
+                result.best_values[key] = np.NaN
+            result.best_fit = [np.NaN] * len(time)
+            print('uncertainty smells off, marking this line as invalid')
+        return result
 
     def analyze(self):
         """
         Process the 2D data to find the frequency with the largest contrast,
         and then refine the search around it to find the frequency with the longest period.
         """
-        max_contrast = 0
-        best_frequency_contrast = None
-        best_fit_params_contrast = None
+        def smoothened_argmax(a):
+            a = deepcopy(a)
+            mediandiff = np.median(np.abs(np.diff(a)))
+            for i in range(1,len(a)-1):
+                if np.abs(a[i+1]-a[i])>mediandiff*8 and np.abs(a[i]-a[i-1])>mediandiff*8:
+                    a[i] = (a[i-1] + a[i+1]) / 2
+                    print('replaced an outlier with the mean of its neighbors')
+            try:
+                return np.nanargmax(a)
+            except ValueError:
+                # this means a is an all NaN array
+                print("seems every line in this dataset failed to fit?")
+                return 0
 
-        for i, freq in enumerate(self.frequencies):
-            response = self.response_matrix[i, :]
-            fit_params, contrast = self.fit_slice(self.time, response)
-            if fit_params is not None and contrast > max_contrast:
-                max_contrast = contrast
-                best_frequency_contrast = freq
-                best_fit_params_contrast = fit_params
+        self.lmfit_results = []
+        self.invalid_lines = []
+        for idx, response in enumerate(self.response_matrix):
+            result = ChevronFitting.fit_slice(self.time, response)
+            self.lmfit_results.append(result)
+            if np.NaN in result.best_fit:
+                self.invalid_lines.append(idx)
 
-        if best_frequency_contrast is not None:
-            index = np.where(self.frequencies == best_frequency_contrast)[0][0]
-            start = max(0, index - 2)
-            end = min(len(self.frequencies), index + 3)
+        self.best_values = [res.best_values for res in self.lmfit_results]
+        self.best_fits = [res.best_fit for res in self.lmfit_results]
 
-            longest_period = 0
-            best_frequency_period = None
-            best_fit_params_period = None
+        self.contrasts = np.ptp(self.best_fits, axis=1)
+        self.best_contrast_arg = smoothened_argmax(np.abs(self.contrasts))
 
-            for i in range(start, end):
-                response = self.response_matrix[i, :]
-                fit_params, _ = self.fit_slice(self.time, response)
-                if fit_params is not None:
-                    period = 2 * np.pi / fit_params[1]
-                    if period > longest_period:
-                        longest_period = period
-                        best_frequency_period = self.frequencies[i]
-                        best_fit_params_period = fit_params
+        self.omegas = [values['omega'] for values in self.best_values]
+        self.best_freq_arg = smoothened_argmax(-np.abs(self.omegas))
 
-            self.results = {
-                'best_frequency_contrast': best_frequency_contrast,
-                'best_frequency_period': best_frequency_period,
-                'best_fit_params_contrast': best_fit_params_contrast,
-                'best_fit_params_period': best_fit_params_period
-            }
-        else:
-            self.results = {
-                'best_frequency_contrast': None,
-                'best_frequency_period': None,
-                'best_fit_params_contrast': None,
-                'best_fit_params_period': None
-            }
+        self.results = {
+            'best_frequency_contrast': self.frequencies[self.best_contrast_arg],
+            'best_frequency_period': self.frequencies[self.best_freq_arg],
+            'best_fit_params_contrast': self.best_values[self.best_contrast_arg],
+            'best_fit_params_period': self.best_values[self.best_freq_arg]
+        }
+
+
     def display_results(self, save_fig=False, directory=None, title="chevron_plot.png", vlines=None, hlines=None):
         """
         Display the results of the analysis, including plots. Optionally save the figure.
@@ -1060,6 +1081,9 @@ class ChevronFitting(GeneralFitting):
         if vlines is not None:
             for v in vlines:
                 plt.axvline(v, color='magenta', linestyle=':', label=f'vline: {v}')
+
+        for line in self.invalid_lines:
+            plt.axhline(self.frequencies[line], color='k', ls=':')
         plt.title('2D Color Plot with Chosen Frequencies')
         plt.xlabel('Time (s)')
         plt.ylabel('Frequency (Hz)')
@@ -1080,7 +1104,7 @@ class ChevronFitting(GeneralFitting):
         if best_fit_params_contrast is not None:
             best_index_contrast = np.argmin(np.abs(self.frequencies - best_frequency_contrast))
             best_response_contrast = self.response_matrix[best_index_contrast, :]
-            fitted_curve_contrast = self.decaying_sine(self.time, *best_fit_params_contrast)
+            fitted_curve_contrast = self.best_fits[self.best_contrast_arg]
 
             plt.figure(figsize=(10, 6))
             plt.plot(self.time, best_response_contrast, 'b-', label="Original Data (Contrast)")
