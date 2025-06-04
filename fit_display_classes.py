@@ -1015,6 +1015,9 @@ class ChevronFitting(GeneralFitting):
         and then refine the search around it to find the frequency with the longest period.
         """
         def smoothened_argmax(a):
+            # this can probably be improved by changing into a quadratic fit 
+            # and double checking if the argmax overlaps with the peak max
+            # so that we're less sensitive to noise
             a = deepcopy(a)
             mediandiff = np.median(np.abs(np.diff(a)))
             for i in range(1,len(a)-1):
@@ -1072,9 +1075,9 @@ class ChevronFitting(GeneralFitting):
         plt.pcolormesh(self.time, self.frequencies, self.response_matrix, shading='auto', cmap='viridis')
         plt.colorbar(label='Response')
         if best_frequency_contrast is not None:
-            plt.axhline(best_frequency_contrast, color='red', linestyle='--', label=f'Best Contrast: {best_frequency_contrast:.2f} Hz')
+            plt.axhline(best_frequency_contrast, color='red', linestyle='--', label=f'Best Contrast: {best_frequency_contrast:.4f} MHz')
         if best_frequency_period is not None:
-            plt.axhline(best_frequency_period, color='blue', linestyle='--', label=f'Longest Period: {best_frequency_period:.2f} Hz')
+            plt.axhline(best_frequency_period, color='blue', linestyle='--', label=f'Longest Period: {best_frequency_period:.4f} MHz')
         if hlines is not None:
             for h in hlines:
                 plt.axhline(h, color='orange', linestyle=':', label=f'hline: {h}')
