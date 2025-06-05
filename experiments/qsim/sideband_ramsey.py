@@ -8,7 +8,7 @@ from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
 from MM_base import MMRAveragerProgram
-from experiments.qsim.utils import ensure_list_in_cfg
+from experiments.qsim.utils import ensure_list_in_cfg, post_select_raverager_data
 
 from dataset import storage_man_swap_dataset
 
@@ -126,14 +126,15 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.sync_all(self.us2cycles(0.1))
 
         # align channels and measure
-        self.sync_all(5)
-        self.measure(
-            pulse_ch=self.res_chs[qTest], 
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
+        # self.sync_all(5)
+        # self.measure(
+        #     pulse_ch=self.res_chs[qTest], 
+        #     adcs=[self.adc_chs[qTest]],
+        #     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+        #     wait=True,
+        #     syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
+        # )
 
 
     def update(self):
@@ -185,8 +186,8 @@ class SidebandRamseyExperiment(Experiment):
                                            debug=debug,
                                            readouts_per_experiment=read_num)
  
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+        avgi = avgi[0][-1]
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
@@ -210,13 +211,15 @@ class SidebandRamseyExperiment(Experiment):
         if data is None:
             data=self.data
 
+        if self.cfg.expt.active_reset:
+            data['avgi'], data['avgq'] = post_select_raverager_data(data, self.cfg)
+
         if fit:
-            # Remove the first and last point from fit in case weird edge measurements
             if fitparams is None:
                 fitparams=[200,  0.2, 0, 200, None, None]
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'], data["avgi"], fitparams=fitparams)
+            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'], data["avgq"], fitparams=fitparams)
+            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'], data["amps"], fitparams=fitparams)
             data['fit_avgi'] = p_avgi   
             data['fit_avgq'] = p_avgq
             data['fit_amps'] = p_amps
