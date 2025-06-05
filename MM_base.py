@@ -542,35 +542,37 @@ class MM_base:
         '''
         qTest = 0
         cfg=AttrDict(self.cfg)
-        M_curr_lossy = cfg.device.active_reset.M_lossy[man_idx]
-        chis = [0] # cfg.device.active_reset.chis
-        N = 0
-        if chi_dressed: 
-            chis = cfg.device.active_reset.chis
-            N = M_curr_lossy[4] 
-        ### prepare waveform 
-        sideband_sigma_high = self.sideband_sigma_high = self.us2cycles(
-            cfg.device.active_reset.M1_S_sigma, gen_ch=self.flux_high_ch[qTest]) 
-        self.add_gauss(ch=self.flux_high_ch[qTest], name="ramp_high",# + str(man_idx),
-                       sigma=self.sideband_sigma_high, length=self.sideband_sigma_high*4)
+
+        assert man_idx==1, "only supports resetting man1 now"
+
+        M1D1_freq = self.dataset.get_freq('M1-D1')
+        M1D1_gain = self.dataset.get_gain('M1-D1')
+        N = 2 if chi_dressed else 0
+        chi_ge = cfg.device.manipulate.chi_ge[qTest]
+        chi_ef = cfg.device.manipulate.chi_ef[qTest]
+
+        self.sideband_sigma_high = self.us2cycles(0.005, gen_ch=self.flux_high_ch[qTest])
+        self.add_gauss(ch=self.flux_high_ch[qTest],
+                       name="ramp_high",# + str(man_idx),
+                       sigma=self.sideband_sigma_high,
+                       length=self.sideband_sigma_high*4)
         # self.wait_all(self.us2cycles(0.1))
-        ### pulse 
         self.sync_all(self.us2cycles(0.1))
 
-        for n in range(0, N + 1): 
-            for chi in chis: 
-                freq_chi_shifted = M_curr_lossy[0] - (n * chi) 
+        for n in range(0, N + 1): # what does n=2 do?
+            for chi in [chi_ge, chi_ge+chi_ef]: # this reproduces old cfg behavior?
+                freq_chi_shifted = M1D1_freq - (n * chi) # minus sign correct?
                 self.set_pulse_registers(ch=self.flux_high_ch[qTest], 
                                         freq=self.freq2reg(freq_chi_shifted,gen_ch=self.flux_high_ch[qTest]), 
                                         style="flat_top",
                                         phase=self.deg2reg(0),
-                                        length=self.us2cycles(M_curr_lossy[2]),
-                                        gain=M_curr_lossy[1], waveform="ramp_high" )
+                                        length=self.us2cycles(10, gen_ch=self.flux_high_ch[qTest]),
+                                        gain=M1D1_gain,
+                                        waveform="ramp_high" )
                 self.pulse(ch=self.flux_high_ch[qTest])
-                # self.wait_all(self.us2cycles(0.025))
                 self.sync_all(self.us2cycles(0.025))
         # self.wait_all(self.us2cycles(0.25))
-        self.sync_all(self.us2cycles(M_curr_lossy[3]))
+        self.sync_all(self.us2cycles(2))
 
     def man_stor_swap(self, man_idx: int, stor_idx: int): 
         '''
@@ -631,7 +633,7 @@ class MM_base:
         # First Reset Manipulate Modes 
         # =====================================
         if man_reset:
-            self.man_reset(0)
+            # self.man_reset(0)
             self.man_reset(1)
 
         # Reset ge level
@@ -739,7 +741,7 @@ class MM_base:
                 man_idx = 0 
                 stor_idx = ii
                 self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
-                self.man_reset(0, chi_dressed = False)
+                # self.man_reset(0, chi_dressed = False)
                 self.man_reset(1, chi_dressed = False)
 
         if coupler_reset:
