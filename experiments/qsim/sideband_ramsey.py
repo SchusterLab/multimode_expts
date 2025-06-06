@@ -2,15 +2,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import QickConfig
 from qick.helpers import gauss
-
-from slab import Experiment, dsfit, AttrDict
+from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from MM_base import MMRAveragerProgram
-from experiments.qsim.utils import ensure_list_in_cfg, post_select_raverager_data
-
 from dataset import storage_man_swap_dataset
+from experiments.qsim.utils import (
+    ensure_list_in_cfg,
+    guess_freq,
+    post_select_raverager_data,
+)
+from MM_base import MMRAveragerProgram
 
 
 class SidebandRamseyProgram(MMRAveragerProgram):
@@ -215,8 +217,8 @@ class SidebandRamseyExperiment(Experiment):
             data['avgi'], data['avgq'] = post_select_raverager_data(data, self.cfg)
 
         if fit:
-            if fitparams is None:
-                fitparams=[200,  0.2, 0, 200, None, None]
+            # if fitparams is None:
+            #     fitparams=[200,  0.2, 0, 200, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'], data["avgi"], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'], data["avgq"], fitparams=fitparams)
             p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'], data["amps"], fitparams=fitparams)
