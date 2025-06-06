@@ -102,7 +102,11 @@ class RamseyProgram(MMRAveragerProgram):
         self.reset_and_sync()
 
         if cfg.expt.pre_active_reset_pulse:
-            self.custom_pulse(cfg, cfg.expt.pre_active_reset_sweep_pulse, prefix = 'pre_ar_')
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.pre_active_reset_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_ar_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.pre_active_reset_sweep_pulse, prefix = 'pre_ar_')
 
         if self.cfg.expt.active_reset: 
             self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
@@ -111,7 +115,11 @@ class RamseyProgram(MMRAveragerProgram):
         self.sync_all(self.us2cycles(0.1))
 
         if cfg.expt.prepulse:
-            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'preetr_')
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
         if self.cfg.expt.qubit_ge_init:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
@@ -159,7 +167,11 @@ class RamseyProgram(MMRAveragerProgram):
         #postpulse :
         self.sync_all()
         if cfg.expt.postpulse:
-            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse)
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.post_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'post_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post_')
 
         if self.cfg.expt.qubit_ge_after: # map excited back to qubit ground state for measurement
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
@@ -202,7 +214,7 @@ class RamseyExperiment(Experiment):
     def acquire(self, progress=False, debug=False):
         # expand entries in config that are length 1 to fill all qubits
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-    
+
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
             for key, value in subcfg.items() :
                 if isinstance(value, dict):
