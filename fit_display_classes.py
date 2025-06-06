@@ -86,7 +86,6 @@ class GeneralFitting:
             Qlist.append(np.mean(Qg))
 
         return Ilist, Qlist
-       
 
 
     def save_plot(self, fig, filename="plot.png"):
@@ -137,7 +136,6 @@ class GeneralFitting:
             with open(markdown_path, "a") as md_file:
                 md_file.write(md_line)
             print(f"Plot path appended to {markdown_path}")
-
 
 
 

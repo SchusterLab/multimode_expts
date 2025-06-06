@@ -24,6 +24,22 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         super().__init__(soccfg, cfg)
 
 
+    def retrieve_swap_parameters(self):
+        """
+        retrieve pulse parameters for the M1-Sx swap
+        """
+        qTest = self.qubits[0]
+        stor_no = self.cfg.stor_no
+        stor_name = f'M1-S{stor_no}'
+        self.m1s_freq_MHz = self.swap_ds.get_freq(stor_name) + self.cfg.expt.detune
+        self.m1s_is_low_freq = True if self.m1s_freq_MHz < 1000 else False
+        self.m1s_ch = self.flux_low_ch[qTest] if self.m1s_is_low_freq else self.flux_high_ch[qTest]
+        self.m1s_freq = self.freq2reg(self.m1s_freq_MHz, gen_ch=self.m1s_ch)
+        self.m1s_length = self.us2cycles(self.swap_ds.get_h_pi(stor_name), gen_ch=self.m1s_ch)
+        self.m1s_gain = self.swap_ds.get_gain(stor_name)
+        self.m1s_wf_name = "pi_m1si_low" if self.m1s_is_low_freq else "pi_m1si_high"
+
+
     def initialize(self):
         """
         Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulse and
@@ -31,19 +47,8 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         cfg = self.cfg # should be AttrDict already if experiment class init was run properly
-        stor_no = cfg.stor_no
-        stor_name = f'M1-S{stor_no}'
         self.swap_ds = storage_man_swap_dataset()
-
-        qTest = self.qubits[0]
-
-        # retrieve pulse parameters for the M1-Sx swap
-        self.m1s_freq_MHz = self.swap_ds.get_freq(stor_name) + cfg.expt.detune
-        self.m1s_freq = self.freq2reg(self.m1s_freq_MHz)
-        self.m1s_length = self.us2cycles(self.swap_ds.get_h_pi(stor_name))
-        self.m1s_gain = self.swap_ds.get_gain(stor_name)
-        self.m1s_is_low_freq = True if self.m1s_freq_MHz < 1000 else False
-        self.m1s_ch = self.flux_low_ch[qTest] if self.m1s_is_low_freq else self.flux_high_ch[qTest]
+        self.retrieve_swap_parameters()
 
         # declare registers for waiting time and phase incrementing
         self.r_wait = 3
@@ -66,8 +71,9 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.reset_and_sync()
 
         if self.cfg.expt.active_reset: 
-            # print('active reset not written/tested yet')
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+            self.active_reset(
+                man_reset=self.cfg.expt.man_reset,
+                storage_reset= self.cfg.expt.storage_reset)
 
         # prepulse: ge -> ef -> f0g1
         prepules_cfg = [
@@ -87,7 +93,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
                              phase=0, 
                              gain=self.m1s_gain,
                              length=self.m1s_length,
-                             waveform="pi_m1si_low" if self.m1s_is_low_freq else "pi_m1si_high")
+                             waveform=self.m1s_wf_name)
         self.sync_all(self.us2cycles(0.01))
 
         # wait advanced wait time
@@ -113,7 +119,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
                                  phase=self.deg2reg(cfg.advance_phase),
                                  gain=self.m1s_gain,
                                  length=self.m1s_length,
-                                 waveform="pi_m1si_low" if self.m1s_is_low_freq else "pi_m1si_high")
+                                 waveform=self.m1s_wf_name)
         self.mathi(self.m1s_ch_page, self.r_phase, self.r_phase2, "+", 0)
         self.sync_all(self.us2cycles(0.01))
         self.pulse(ch=self.m1s_ch)
@@ -127,16 +133,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
         self.sync_all(self.us2cycles(0.1))
 
-        # align channels and measure
         self.measure_wrapper()
-        # self.sync_all(5)
-        # self.measure(
-        #     pulse_ch=self.res_chs[qTest], 
-        #     adcs=[self.adc_chs[qTest]],
-        #     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-        #     wait=True,
-        #     syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        # )
 
 
     def update(self):
