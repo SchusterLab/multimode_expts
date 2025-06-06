@@ -52,9 +52,6 @@ class GeneralFitting:
     def filter_data_IQ(self, II, IQ, threshold):
         result_Ig = []
         result_Ie = []
-        # print('filter_dataIIQ is called')
-        # print('read_num is ', self.readout_per_round)
-        # print('threshold is ', threshold)
 
         for k in range(len(II) // self.readout_per_round):
             index_4k_plus_2 = self.readout_per_round * k + self.readout_per_round - 2
@@ -179,8 +176,8 @@ class RamseyFitting(GeneralFitting):
             data['xpts'] = data['xpts'][start_idx:end_idx]
 
         if fit:
-            if fitparams is None:
-                fitparams = [200, 0.2, 0, 200, None, None]
+            # if fitparams is None:
+            #     fitparams = [200, 0.2, 0, 200, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
             # p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
@@ -654,10 +651,7 @@ class LengthRabiFitting(GeneralFitting):
     def analyze(self):
         xlist = self.data['xpts'][0:-1]
         if self.active_reset:
-            try:
-                Ilist, Qlist = self.post_select_averager_data(self.data['Idata'][:-1], self.threshold, self.readout_per_round)
-            except KeyError:
-                Ilist, Qlist = self.post_select_averager_data(self.data['idata'][:-1], self.threshold, self.readout_per_round)
+            Ilist, Qlist = self.post_select_raverager_data(self.data)
         else:
             Ilist = self.data["avgi"][0:-1]
             Qlist = self.data["avgq"][0:-1]

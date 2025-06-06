@@ -394,7 +394,6 @@ class sidebands_class(sequential_base_class):
         self.experiment_class = 'single_qubit.sideband_general'
         self.experiment_name = 'SidebandGeneralExperiment'
 
-    
 
     def sideband_freq_sweep(self):
         '''Frequency sweep for sideband experiments'''
@@ -410,12 +409,12 @@ class sidebands_class(sequential_base_class):
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
             run_exp = self.run_with_configthisrun(run_exp)  # Use the config_thisrun if provided
-            
+
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
-            if run_exp.cfg.expt.active_reset:
-                run_exp.cfg.device.readout.relax_delay = 100  # Wait time between experiments [us]
-            run_exp.cfg.device.readout.relax_delay = 8000
+            # run_exp.cfg.device.readout.relax_delay = 8000
+            # if run_exp.cfg.expt.active_reset:
+            #     run_exp.cfg.device.readout.relax_delay = 100  # Wait time between experiments [us]
             print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
 
             run_exp.go(analyze=False, display=False, progress=False, save=False)

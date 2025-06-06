@@ -150,8 +150,8 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
             self.prog = lengthrabi
             avgi, avgq = lengthrabi.acquire(
                 self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug, readouts_per_experiment=read_num)
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            avgi = avgi[0][-1]
+            avgq = avgq[0][-1]
             idata, qdata = lengthrabi.collect_shots()
             # amp = np.abs(avgi+1j*avgq)  # Calculating the magnitude
             # phase = np.angle(avgi+1j*avgq)  # Calculating the phase
