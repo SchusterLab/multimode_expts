@@ -228,8 +228,6 @@ class SidebandScrambleExperiment(Experiment):
 
         q = self.qubits[0]
 
-        f_pi_test = self.cfg.device.qubit.f_ge[q]
-
         title = self.fname.split(os.path.sep)[-1]
 
         plt.figure(figsize=(10,9))
@@ -237,49 +235,8 @@ class SidebandScrambleExperiment(Experiment):
             title=f"{title}",
             ylabel="I [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgi"][:-1],'o-')
-        # if fit:
-        #     p = data['fit_avgi']
-        #     if isinstance(p, (list, np.ndarray)): 
-        #         pCov = data['fit_err_avgi']
-        #         try:
-        #             captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-        #         except ValueError:
-        #             print('Fit Failed ; aborting')
-        #         plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-        #         plt.plot(data["xpts"][:-1], 
-        #                  fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]),
-        #                  color='0.2', linestyle='--')
-        #         plt.plot(data["xpts"][:-1],
-        #                  fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]),
-        #                  color='0.2', linestyle='--')
-        #         plt.legend()
-        #         print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
         plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
-        # if fit:
-        #     p = data['fit_avgq']
-        #     if isinstance(p, (list, np.ndarray)): 
-        #         pCov = data['fit_err_avgq']
-        #         try:
-        #             captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-        #         except ValueError:
-        #             print('Fit Failed ; aborting')
-        #
-        #         plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-        #         plt.plot(data["xpts"][:-1],
-        #                  fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]),
-        #                  color='0.2', linestyle='--')
-        #         plt.plot(data["xpts"][:-1],
-        #                  fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]),
-        #                  color='0.2', linestyle='--')
-        #         plt.legend()
-        #         print(f'Fit frequency from Q [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-        #         if p[1] > 2*self.cfg.expt.ramsey_freq: 
-        #             print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
-        #         print('Suggested new pi pulse frequencies from fit Q [MHz]:\n',
-        #               f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][0]}\n',
-        #               f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][1]}')
-        #         print(f'T2 Ramsey from fit Q [us]: {p[3]}')
 
         plt.tight_layout()
         plt.show()

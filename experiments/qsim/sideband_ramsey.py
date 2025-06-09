@@ -65,7 +65,6 @@ class SidebandRamseyProgram(MMRAveragerProgram):
 
     def body(self):
         cfg=AttrDict(self.cfg)
-        qTest = self.qubits[0] 
 
         # initializations as necessary
         self.reset_and_sync()

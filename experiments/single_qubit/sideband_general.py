@@ -10,9 +10,10 @@ import experiments.fitting as fitter
 from MM_base import *
 
 """
-Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse. This is a preliminary measurement to prove that we see Rabi oscillations. This measurement is followed up by the Amplitude Rabi experiment.
+Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse.
+This is a preliminary measurement to prove that we see Rabi oscillations.
+This measurement is followed up by the Amplitude Rabi experiment.
 """
-
 
 class SidebandGeneralProgram(MMAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -30,10 +31,16 @@ class SidebandGeneralProgram(MMAveragerProgram):
 
         self.rf_ch = self.flux_low_ch if self.cfg.expt.flux_drive[0] == 'low' else self.flux_high_ch
 
-        self.test_pulse_str =  [[self.cfg.expt.flux_drive[1]], [self.cfg.expt.flux_drive[2]], [self.cfg.expt.length_placeholder], [0],
-                      [self.rf_ch[qTest]], ["flat_top"], [self.cfg.device.storage.ramp_sigma]]    # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)] RF flux modulation, gaussian flat top pulse
-
-    
+        self.test_pulse_str = [
+            [self.cfg.expt.flux_drive[1]],
+            [self.cfg.expt.flux_drive[2]],
+            [self.cfg.expt.length_placeholder],
+            [0],
+            [self.rf_ch[qTest]],
+            ["flat_top"],
+            [self.cfg.device.storage.ramp_sigma]]
+        # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)]
+        # RF flux modulation, gaussian flat top pulse
 
     def body(self):
         cfg = AttrDict(self.cfg)
