@@ -19,7 +19,9 @@ from MM_base import MMAveragerProgram
 class QsimBaseProgram(MMAveragerProgram):
     """
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
-    Then do a Ramsey experiment on M1-Sx swap 
+    Then (optionally) swap into init_stor
+    Then do whatever in the core_pulses() that you override
+    Finally swap ro_stor back into man and then man into qb and readout
     """
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
         super().__init__(soccfg, cfg)
@@ -43,8 +45,8 @@ class QsimBaseProgram(MMAveragerProgram):
 
     def initialize(self):
         """
-        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulse and
-        sets the waiting time and phase advance registers for the tau sweep
+        MM_base_init to pull basic info 
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         self.swap_ds = storage_man_swap_dataset()
@@ -88,12 +90,15 @@ class QsimBaseProgram(MMAveragerProgram):
         ro_stor = self.cfg.expt.ro_stor
 
         # prepulse: ge -> ef -> f0g1
+        # TODO: make this overridable from cfg
         prepules_cfg = [
             ['qubit', 'ge', 'pi', 0,],
             ['qubit', 'ef', 'pi', 0,],
             ['man', 'M1', 'pi', 0,],
-            ['storage', f'M1-S{init_stor}', 'pi', 0,],
         ]
+        if init_stor > 0:
+            prepules_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
+
         pulse_creator = self.get_prepulse_creator(prepules_cfg)
         self.sync_all(self.us2cycles(0.1))
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
@@ -103,15 +108,8 @@ class QsimBaseProgram(MMAveragerProgram):
         self.core_pulses()
 
         # postpulse
-        if ro_stor > 0:
-            postpules_cfg = [
-                ['storage', f'M1-S{ro_stor}', 'pi', 0,],
-                ['man', 'M1', 'pi', 0,],
-            ]
-        else:
-            postpules_cfg = [
-                ['man', 'M1', 'pi', 0,],
-            ]
+        postpules_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
+        postpules_cfg.append(['man', 'M1', 'pi', 0,],)
         pulse_creator = self.get_prepulse_creator(postpules_cfg)
         self.sync_all(self.us2cycles(0.1))
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
@@ -122,23 +120,36 @@ class QsimBaseProgram(MMAveragerProgram):
 
 class QsimBaseExperiment(Experiment):
     """
-    Sweep amplitude vs detuning
+    Sweep 1 or 2 parameters in cfg.expt
     Experimental Config:
     expt = dict(
         expts: number experiments should be 1 here as we do soft loops
         reps: number averages per experiment
         rounds: number rounds to repeat experiment sweep
         qubits: this is just 0 for the purpose of the currrent multimode sample
-        init_stor: storage to initialize the photon into (1-7)
-        ro_stor: storage to readout the photon from (1-7)
+        init_stor: storage to initialize the photon into (0-7)
+        ro_stor: storage to readout the photon from (0-7)
+        active_reset, man_reset, storage_reset: bool
+        swept_params: list of parameters to sweep, e.g. ['detune', 'gain']
     )
+    In principle this overlaps with qick.NDAveragerProgram, but this allows you to
+    skip writing new expeirment classes or at least acquire() while doing 
+    more general sweeps than just a qick register, incl nonlinear steps.
+    Consider doing NDAverager or RAverager if there's speed advantage.
+    See notebook for usage.
     """
     def __init__(self, soccfg=None, path='', prefix=None,
-                 config_file=None, expt_params=None, progress=None):
+                 config_file=None, expt_params=None,
+                 program=None, progress=None):
+        """
+        program is the qick program class (the class you imported, not the str name)
+        """
         if not prefix:
             prefix = self.__class__.__name__
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
         self.cfg.expt = AttrDict(expt_params)
+        self.ProgramClass = program or QsimBaseProgram
+        self.cfg.expt.QickProgramName = self.ProgramClass.__name__
 
 
     def acquire(self, progress=False, debug=False):
@@ -146,32 +157,53 @@ class QsimBaseExperiment(Experiment):
 
         read_num = 4 if self.cfg.expt.active_reset else 1
 
+        assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
+        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+
+        outer_param = self.cfg.expt.swept_params[0]
+        outer_params = self.cfg.expt[outer_param+'s']
+        if sweep_dim == 2:
+            inner_param = self.cfg.expt.swept_params[1]
+            inner_params = self.cfg.expt[inner_param+'s']
+        else:
+            inner_param = 'dummy'
+            inner_params = [None]  # Dummy value for single parameter sweep
+        self.outer_param, self.inner_param = outer_param, inner_param
+
         data = {
-            'xpts': self.cfg.expt.floquet_cycles,
-            'avgi': [],
-            'avgq': [],
-            'amps': [],
-            'phases': [],
-            'idata': [],
-            'qdata': [],
+            'avgi': [], 'avgq': [],
+            'amps': [], 'phases': [],
+            'idata': [], 'qdata': [],
         }
-        for self.cfg.expt.floquet_cycle in tqdm(self.cfg.expt.floquet_cycles, disable=not progress):
-            self.prog = QsimBaseProgram(soccfg=self.soccfg, cfg=self.cfg)
+        if sweep_dim == 2:
+            data['xpts'] = inner_params
+            data['ypts'] = outer_params
+        else:
+            data['xpts'] = outer_params
 
-            avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
-                                            threshold=None,
-                                            load_pulses=True,
-                                            progress=False,
-                                            debug=debug,
-                                            readouts_per_experiment=read_num)
-            data['avgi'].append(avgi[0][-1])
-            data['avgq'].append(avgq[0][-1])
-            data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
-            data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
+        for self.cfg.expt[outer_param] in tqdm(outer_params, disable=not progress):
+            for self.cfg.expt[inner_param] in inner_params:
+                self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
 
-            idata, qdata = self.prog.collect_shots()      
-            data['idata'].append(idata)
-            data['qdata'].append(qdata)
+                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
+                                                threshold=None,
+                                                load_pulses=True,
+                                                progress=False,
+                                                debug=debug,
+                                                readouts_per_experiment=read_num)
+                avgi, avgq = avgi[0][-1], avgq[0][-1]
+                data['avgi'].append(avgi)
+                data['avgq'].append(avgq)
+                data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
+                data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
+
+                idata, qdata = self.prog.collect_shots()
+                data['idata'].append(idata)
+                data['qdata'].append(qdata)
+        for key in 'avgi avgq amps phases'.split():
+            data[key] = np.array(data[key])
+            if sweep_dim == 2:
+                data[key] = np.reshape(data[key], (len(outer_params), len(inner_params)))
 
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
@@ -200,15 +232,18 @@ class QsimBaseExperiment(Experiment):
             mesh = axs[0].pcolormesh(data['xpts'], data['ypts'], data['avgi'])
             fig.colorbar(mesh, ax=axs[0], label='I [ADC level]')
             mesh = axs[1].pcolormesh(data['xpts'], data['ypts'], data['avgq'])
-            fig.colorbar(mesh, ax=axs[0], label='Q [ADC level]')
+            fig.colorbar(mesh, ax=axs[1], label='Q [ADC level]')
+            for ax in axs:
+                ax.set_xlabel(self.inner_param)
+                ax.set_ylabel(self.outer_param)
         else:
             plt.figure(figsize=(10,9))
             plt.subplot(211, 
                 title=f"{title}",
                 ylabel="I [ADC level]")
-            plt.plot(data["xpts"][:-1], data["avgi"][:-1],'o-')
-            plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
-            plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
+            plt.plot(data["xpts"], data["avgi"],'o-')
+            plt.subplot(212, xlabel=self.outer_param, ylabel="Q [ADC level]")
+            plt.plot(data["xpts"], data["avgq"],'o-')
             plt.tight_layout()
             plt.show()
 
