@@ -137,7 +137,8 @@ class SidebandRamseyProgram(MMRAveragerProgram):
 
     def update(self):
         # phase step [deg] = 360 * f_Ramsey [MHz] * tau_step [us]
-        phase_step = self.deg2reg(360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step,
+        virtual_freq = self.cfg.expt.ramsey_freq - self.cfg.ac_stark
+        phase_step = self.deg2reg(360 * abs(virtual_freq) * self.cfg.expt.step,
                                   gen_ch=self.m1s_ch) 
 
         # update the time between two π/2 pulses
@@ -145,7 +146,10 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         # update the phase for the second π/2 pulse
-        self.mathi(self.m1s_ch_page, self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse
+        if virtual_freq > 0:
+            self.mathi(self.m1s_ch_page, self.r_phase2, self.r_phase2, '+', phase_step) # advance the phase of the LO for the second π/2 pulse
+        else:
+            self.mathi(self.m1s_ch_page, self.r_phase2, self.r_phase2, '-', phase_step) # advance the phase of the LO for the second π/2 pulse
         self.sync_all(self.us2cycles(0.01))
 
 

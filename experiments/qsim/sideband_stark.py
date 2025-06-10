@@ -37,3 +37,6 @@ class SidebandStarkProgram(QsimBaseProgram):
 
         self.sync_all(self.us2cycles(0.1))
 
+
+#TODO: add back experiment class to include fitting code
+
