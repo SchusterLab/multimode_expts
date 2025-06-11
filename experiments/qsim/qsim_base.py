@@ -140,13 +140,13 @@ class QsimBaseExperiment(Experiment):
     """
     def __init__(self, soccfg=None, path='', prefix=None,
                  config_file=None, expt_params=None,
-                 program=None, progress=None):
+                 program=None, progress=None, **kwargs):
         """
         program is the qick program class (the class you imported, not the str name)
         """
         if not prefix:
             prefix = self.__class__.__name__
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
+        super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress, **kwargs)
         self.cfg.expt = AttrDict(expt_params)
         self.ProgramClass = program or QsimBaseProgram
         self.cfg.expt.QickProgramName = self.ProgramClass.__name__
@@ -229,23 +229,39 @@ class QsimBaseExperiment(Experiment):
 
         if 'ypts' in data.keys(): # guess if this is 2D or 1D
             fig, axs = plt.subplots(2, 1, figsize=(10, 9))
+            axs[0].set_title(title)
             mesh = axs[0].pcolormesh(data['xpts'], data['ypts'], data['avgi'])
             fig.colorbar(mesh, ax=axs[0], label='I [ADC level]')
             mesh = axs[1].pcolormesh(data['xpts'], data['ypts'], data['avgq'])
             fig.colorbar(mesh, ax=axs[1], label='Q [ADC level]')
+            try:
+                xlabel, ylabel = self.inner_param, self.outer_param
+            except AttributeError:
+                try:
+                    ylabel, xlabel = self.cfg.expt.swept_params
+                except Exception as e:
+                    print("Couldn't get x and y labels automatially:", e)
+                    xlabel, ylabel = None, None
             for ax in axs:
-                ax.set_xlabel(self.inner_param)
-                ax.set_ylabel(self.outer_param)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel(ylabel)
         else:
-            plt.figure(figsize=(10,9))
-            plt.subplot(211, 
-                title=f"{title}",
-                ylabel="I [ADC level]")
-            plt.plot(data["xpts"], data["avgi"],'o-')
-            plt.subplot(212, xlabel=self.outer_param, ylabel="Q [ADC level]")
-            plt.plot(data["xpts"], data["avgq"],'o-')
-            plt.tight_layout()
-            plt.show()
+            try:
+                xlabel = self.outer_param
+            except AttributeError:
+                xlabel = self.cfg.expt.swept_params[0]
+            except Exception as e:
+                print("Couldn't get x label automatially", e)
+            fig, axs = plt.subplots(2, 1, figsize=(10, 9))
+            ax = axs[0]
+            ax.set_title(title)
+            ax.set_ylabel("I [ADC level]")
+            ax.plot(data["xpts"], data["avgi"],'o-')
+            ax = axs[1]
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Q [ADC level]")
+            ax.plot(data["xpts"], data["avgq"],'o-')
+        return fig, axs
 
 
     def save_data(self, data=None):
