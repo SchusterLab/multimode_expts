@@ -215,15 +215,7 @@ class RamseyExperiment(Experiment):
         # expand entries in config that are length 1 to fill all qubits
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
 
-        for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
-            for key, value in subcfg.items() :
-                if isinstance(value, dict):
-                    for key2, value2 in value.items():
-                        for key3, value3 in value2.items():
-                            if not(isinstance(value3, list)):
-                                value2.update({key3: [value3]*num_qubits_sample})                                
-                elif not(isinstance(value, list)):
-                    subcfg.update({key: [value]*num_qubits_sample})
+        self.format_config_before_experiment(self, num_qubits_sample)
 
         read_num = 4 if self.cfg.expt.active_reset else 1
 

@@ -8,6 +8,7 @@ from qick.helpers import gauss
 from slab import Experiment, dsfit, AttrDict
 
 import experiments.fitting as fitter
+from MM_base import MMAveragerProgram
 
 """
 Measures the cavity frequency when the qubit is in its ground state: sweep readout pulse frequency and look for the frequency with the maximum measured amplitude.
@@ -29,6 +30,7 @@ class CavitySpectroscopyProgram(AveragerProgram):
     def initialize(self):
         cfg = AttrDict(self.cfg)
         self.cfg.update(self.cfg.expt)
+        # print('Using the readout length of ', 5*cfg.device.readout.readout_length, 'us')
 
         if self.cfg.expt.cavity_name == 'manipulate':
             
@@ -36,19 +38,19 @@ class CavitySpectroscopyProgram(AveragerProgram):
             self.res_ch = cfg.hw.soc.dacs.manipulate_in.ch
             self.res_ch_type = cfg.hw.soc.dacs.manipulate_in.type
             self.res_gain = cfg.expt.drive_gain
-            self.readout_length_dac = self.us2cycles(cfg.device.manipulate.readout_length, gen_ch=self.res_ch)
-            self.readout_length_adc = self.us2cycles(cfg.device.manipulate.readout_length, ro_ch=self.adc_ch)
+            self.readout_length_dac = self.us2cycles(5*cfg.device.readout.readout_length[0], gen_ch=self.res_ch)
+            self.readout_length_adc = self.us2cycles(5*cfg.device.readout.readout_length[0], ro_ch=self.adc_ch)
             self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-            self.adc_trig_offset=cfg.device.manipulate.trig_offset
+            self.adc_trig_offset=cfg.device.readout.trig_offset
         else:
             self.adc_ch = cfg.hw.soc.adcs.cavity_out.ch
             self.res_ch = cfg.hw.soc.dacs.storage_in.ch
             self.res_ch_type = cfg.hw.soc.dacs.storage_in.type
             self.res_gain = cfg.expt.drive_gain
-            self.readout_length_dac = self.us2cycles(cfg.device.storage.readout_length, gen_ch=self.res_ch)
-            self.readout_length_adc = self.us2cycles(cfg.device.storage.readout_length, ro_ch=self.adc_ch)
+            self.readout_length_dac = self.us2cycles(5*cfg.device.readout.readout_length[0], gen_ch=self.res_ch)
+            self.readout_length_adc = self.us2cycles(5*cfg.device.readout.readout_length[0], ro_ch=self.adc_ch)
             self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-            self.adc_trig_offset=cfg.device.storage.trig_offset
+            self.adc_trig_offset=cfg.device.readout.trig_offset
 
         self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
         self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type

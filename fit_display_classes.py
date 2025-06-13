@@ -646,7 +646,9 @@ class LengthRabiFitting(GeneralFitting):
         self.fit_sin = fit_sin
         self.results = {}
 
-    def analyze(self):
+    def analyze(self, fitparams = None):
+        if fitparams is None:
+            fitparams = self.fitparams
         xlist = self.data['xpts'][0:-1]
         if self.active_reset:
             Ilist, Qlist = self.post_select_raverager_data(self.data)
@@ -657,8 +659,8 @@ class LengthRabiFitting(GeneralFitting):
         fit_func = fitter.fitsin if self.fit_sin else fitter.fitdecaysin
         func = fitter.sinfunc if self.fit_sin else fitter.decaysin
 
-        p_avgi, pCov_avgi = fit_func(xlist, Ilist, fitparams=self.fitparams)
-        p_avgq, pCov_avgq = fit_func(xlist, Qlist, fitparams=self.fitparams)
+        p_avgi, pCov_avgi = fit_func(xlist, Ilist, fitparams=fitparams)
+        p_avgq, pCov_avgq = fit_func(xlist, Qlist, fitparams=fitparams)
 
         self.data['fit_avgi'] = p_avgi
         self.data['fit_avgq'] = p_avgq
@@ -697,8 +699,8 @@ class LengthRabiFitting(GeneralFitting):
             - The plot is saved using `self.save_plot`.
         """
         
-        xlist = self.data['xpts'][0:-1]
-        xpts_ns = self.data['xpts'] * 1e3
+        xlist = np.array(self.data['xpts'][0:-1])
+        xpts_ns = np.array(self.data['xpts']) * 1e3
         Ilist = self.data["avgi"][0:-1]
         Qlist = self.data["avgq"][0:-1]
 

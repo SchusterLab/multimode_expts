@@ -42,16 +42,18 @@ class ParityDelayProgram(MMAveragerProgram):
         self.sync_all(self.us2cycles(0.2))
 
         if cfg.expt.prepulse:
-            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
+            creator = self.get_prepulse_creator(cfg.expt.pre_gate_sweep_pulse)
+            self.custom_pulse(cfg, creator.pulse.tolist(), prefix = '')
+            # self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
 
         
 
         self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
         
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder))
+        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
 
 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
+        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180, self.qubit_chs[qTest]), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
         # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
         self.measure_wrapper()
 
