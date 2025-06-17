@@ -1030,7 +1030,7 @@ class ChevronFitting(GeneralFitting):
         for idx, response in enumerate(self.response_matrix):
             result = ChevronFitting.fit_slice(self.time, response)
             self.lmfit_results.append(result)
-            if np.NaN in result.best_fit:
+            if np.nan in result.best_fit:
                 self.invalid_lines.append(idx)
 
         self.best_values = [res.best_values for res in self.lmfit_results]
