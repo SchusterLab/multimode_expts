@@ -27,7 +27,7 @@ def guess_freq(x, y):
     yf = rfft(y - np.mean(y))
     xf = rfftfreq(len(x), x[1] - x[0])
     peak_idx = np.argmax(np.abs(yf[1:])) + 1
-    return np.abs(xf[peak_idx])
+    return np.abs(xf[peak_idx]), np.angle(yf[peak_idx])
 
 def filter_data_IQ(II, IQ, threshold):
     """
