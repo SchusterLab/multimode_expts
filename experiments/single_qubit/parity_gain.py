@@ -1,3 +1,11 @@
+'''
+Check version history for ECD running via this file 
+Eesh 06/13/2025
+
+
+'''
+
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpl_patches
 import numpy as np
@@ -46,8 +54,9 @@ class ParityGainProgram(MMRAveragerProgram):
             self.displace_sigma = self.us2cycles(cfg.expt.displace[1], gen_ch=self.man_ch[qTest])
             self.add_gauss(ch=self.man_ch[qTest], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
 
-        self.parity_pulse = self.get_parity_str(man_mode_no=1, return_pulse=True, second_phase=180)
-
+        self.parity_pulse = self.get_parity_str(man_mode_no=1, return_pulse=True, second_phase=180, fast = True)
+        
+    
         self.sync_all(200)
 
     
@@ -97,9 +106,6 @@ class ParityGainProgram(MMRAveragerProgram):
 
         # Parity Measurement
         self.custom_pulse(cfg, self.parity_pulse, prefix='Parity')
-        
-        
-
         self.measure_wrapper()
 
     def update(self):
@@ -125,123 +131,39 @@ class ParityGainExperiment(Experiment):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        q_ind = self.cfg.expt.qubits[0]
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
-            for key, value in subcfg.items():
-                if isinstance(value, dict):
-                    for key2, value2 in value.items():
-                        for key3, value3 in value2.items():
-                            if not(isinstance(value3, list)):
-                                value2.update(
-                                    {key3: [value3]*num_qubits_sample})
-                elif not(isinstance(value, list)):
-                    subcfg.update({key: [value]*num_qubits_sample})
+        self.format_config_before_experiment( num_qubits_sample)  
+        data = {}
                                      
-        if not self.cfg.expt.single_shot:
-            read_num = 1
-            if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.single_shot:
+            from MM_dual_rail_base import MM_dual_rail_base
+            mm_dr_base = MM_dual_rail_base(self.cfg)
+            data = mm_dr_base.run_single_shot(self, data, True)
             
-            prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
-            
-            x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
-                                                readouts_per_experiment=read_num)        
-    
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
-            amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-            phases = np.angle(avgi+1j*avgq) # Calculating the phase
+        read_num = 1
+        if self.cfg.expt.active_reset: read_num = 4
+        
+        prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
+        
+        x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
+                                            readouts_per_experiment=read_num)        
 
-            data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
-            data['idata'], data['qdata'] = prog.collect_shots()
+        avgi = avgi[0][0]
+        avgq = avgq[0][0]
+        amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
+        phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
-            
-        else:
-
-            # ----------------- Single Shot Calibration -----------------
-            data = dict()
-            mm_dr_base = MM_dual_rail_base(cfg=self.cfg)
-            data = mm_dr_base.run_single_shot(self_expt=self, data = data, progress=progress, debug=debug)
-
-            fids = data['fids']
-            thresholds = data['thresholds']
-            angle = data['angle']
-            confusion_matrix = data['confusion_matrix']
-
-            print(f'ge fidelity (%): {100*fids[0]}')
-            print(f'rotation angle (deg): {angle}')
-            print(f'threshold ge: {thresholds[0]}')
-            print('Confusion matrix [Pgg, Pge, Peg, Pee]: ',confusion_matrix)
-
-
-            # ------------------- Experiment -------------------
-            read_num = 1
-            if self.cfg.expt.active_reset: read_num = 4
-
-            data['I_data']= []
-            data['Q_data']= []
-            data['avgi'] = [] # for debugging
-            data['avgq'] = []
-            # Do single round experiments since collecting shots for all rounds is not supported
-            rounds = self.cfg.expt.rounds
-
-            for round in range(rounds): 
-                print(f'Round {round}')
-                rcfg = AttrDict(deepcopy(self.cfg))
-                rcfg.expt.rounds = 1
-
-                prog = ParityGainProgram(soccfg=self.soccfg, cfg=rcfg)
-                x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
-                                                 readouts_per_experiment=read_num)
-                II, QQ = prog.collect_shots()
-                # save data for each round
-                data['I_data'].append(II)
-                data['Q_data'].append(QQ)
-                data['avgi'].append(avgi) # for debugging
-                data['avgq'].append(avgq)
-                data['xpts'] = x_pts # same for all rounds
-            
-            fids = data['fids']
-            thresholds = data['thresholds']
-            angle = data['angle']
-            confusion_matrix = data['confusion_matrix']
-
-            print(f'ge fidelity (%): {100*fids[0]}')
-            print(f'rotation angle (deg): {angle}')
-            print(f'threshold ge: {thresholds[0]}')
-            print('Confusion matrix [Pgg, Pge, Peg, Pee]: ',confusion_matrix)
-            
+        data['xpts'] = x_pts
+        data['avgi'] = avgi
+        data['avgq'] = avgq
+        data['amps'] = amps
+        data['phases'] = phases
+        data['idata'], data['qdata'] = prog.collect_shots()
+        
         self.data=data
         return data
 
-    def single_shot_analysis(self, data=None, **kwargs):
-        '''
-        Bin shots in g and e state s
-        '''
-        threshold = self.cfg.device.readout.threshold # for i data
-        theta = self.cfg.device.readout.phase * np.pi / 180 # degrees to rad
-        I = data['I']
-        Q = data['Q']
-
-        # """Rotate the IQ data"""
-        # I_new = I*np.cos(theta) - Q*np.sin(theta)
-        # Q_new = I*np.sin(theta) + Q*np.cos(theta) 
-        I_new = I
-        Q_new = Q
-
-        # """Threshold the data"""
-        shots = np.zeros(len(I_new))
-        #shots[I_new < threshold] = 0 # ground state
-        shots[I_new > threshold] = 1 # excited state
-
-        # Reshape data into 2D array: expts x reps 
-        shots = shots.reshape(self.cfg.expt.expts, self.cfg.expt.reps)
-
-        # Average over reps
-        probs_ge = np.mean(shots, axis=1)
-
-        data['probs_ge'] = probs_ge
-        return data
+    
 
 
 

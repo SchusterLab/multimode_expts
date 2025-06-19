@@ -215,7 +215,7 @@ class RamseyExperiment(Experiment):
         # expand entries in config that are length 1 to fill all qubits
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
 
-        self.format_config_before_experiment(self, num_qubits_sample)
+        self.format_config_before_experiment( num_qubits_sample)
 
         read_num = 4 if self.cfg.expt.active_reset else 1
 

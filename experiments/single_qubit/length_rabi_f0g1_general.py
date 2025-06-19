@@ -54,12 +54,12 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
         self.sync_all()  # align channels
 
         # pre-rotation
-        if self.cfg.expt.pi_ge_before:
+        if self.cfg.expt.pi_ge_before: # g0 to e0
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest],
                                  phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
             self.sync_all()
 
-        if self.cfg.expt.pi_ef_before:
+        if self.cfg.expt.pi_ef_before: # g1 - e1
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ef_reg[qTest],
                                  phase=0, gain=self.pi_ef_gain, waveform="pi_qubit_ef")
             self.sync_all()
@@ -83,6 +83,8 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
             self.man_reset(man_idx = self.cfg.expt.check_man_reset[1])
             self.sync_all()
         # self.custom_pulse(cfg, cfg.expt.check_man_reset_pi, prefix='pi3')
+        if self.cfg.expt.postpulse: 
+            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='postpulse')
 
         # align channels and wait 50ns and measure
         self.sync_all(self.us2cycles(0.05))

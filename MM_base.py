@@ -21,6 +21,11 @@ class MM_base:
     #     Inherit together with a QickProgram.
     #     See eg MMAveragerProgram or MMRAveragerProgram for usage.
     #     """)
+        # ------------ Multiphoton COnfig ----------
+        f_path = self.cfg.device.multiphoton_config.file
+        import yaml
+        with open(f_path, 'r') as f:
+            self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
 
     def parse_config(self):
         '''
@@ -111,6 +116,14 @@ class MM_base:
         self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
         self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
+        # ------------ Multiphoton COnfig ---------- Redundant but needed for some exopts
+        f_path = self.cfg.device.multiphoton_config.file
+        import yaml
+        with open(f_path, 'r') as f:
+            self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
+
+        
+
 
     def initialize_idling_dataset(self): 
         '''
@@ -122,19 +135,25 @@ class MM_base:
     def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None):
         '''
         sweep_pulse: 
-            [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
+            [name of channel (qubit, multiphoton, man, storage),
+            name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
             name of pulse like pi, hpi, or parity_M1 or parity_M2,
             phase  (int form )]
         Returns:
             an instance of prepulse creator class
+
+
+            *** MULTIPHOTON in not a channel but  redirects to qubit and f0 g1
+            **** Man is not refferring to man channel but f0g1 channel
         '''
-        creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file)
+        creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, self.multiphoton_cfg)
 
         if sweep_pulse is not None:
             for pulse_idx in range(len(sweep_pulse)):
                 # for each pulse 
                 pulse_param = list(sweep_pulse[pulse_idx][1:])
-                eval(f"creator.{sweep_pulse[pulse_idx][0]}({pulse_param})")
+                channel_name = sweep_pulse[pulse_idx][0]
+                eval(f"creator.{channel_name}({pulse_param})")
 
         return creator
 
@@ -202,6 +221,9 @@ class MM_base:
         # ---------- readout pulse parameters -----------
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
+        
+        # Useful pulse sequences
+        self.parity_pulse = self.get_parity_str(1, return_pulse=True, second_phase=180)
 
         # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
@@ -242,6 +264,8 @@ class MM_base:
 
         self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
         self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
+
+        
 
 
     def measure_wrapper(self): 
@@ -734,13 +758,17 @@ class MM_base:
             self.sync_all(self.us2cycles(0.2))
 
 
-    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0): 
+    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0, fast = False): 
         '''
         Create parity pulse 
         '''
         parity_str = [['qubit', 'ge', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
                     ['qubit', 'ge', 'hpi', second_phase]]
+        if fast: 
+            parity_str = [['multiphoton', 'g0-e0', 'hpi', 0],
+                    ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
+                    ['multiphoton', 'g0-e0', 'hpi', 180]]
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
             creator = self.get_prepulse_creator(parity_str)
@@ -959,7 +987,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 
 
 class prepulse_creator2: 
-    def __init__(self, cfg, storage_man_file):
+    def __init__(self, cfg, storage_man_file, multiphoton_cfg=None):
         '''
         Takes pulse param of form 
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
@@ -978,6 +1006,8 @@ class prepulse_creator2:
         #     yaml_cfg = yaml.safe_load(cfg_file)
         self.cfg = cfg#AttrDict(yaml_cfg)
 
+        self.multiphoton_cfg = multiphoton_cfg
+
         # man storage swap data 
         self.dataset = storage_man_swap_dataset(storage_man_file)
 
@@ -991,6 +1021,42 @@ class prepulse_creator2:
     def append(self, pulse):
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
         return None
+
+    def channel_assign(self, transition_name):
+        ''' if transition name contains g,e then use qubit channel self.cfg hw.soc.dacs.qubit.ch
+        if transition name contains f,g use sideband channel hw.soc.dacs.sideband.ch '''
+        if ("g" in transition_name and "e" in transition_name) or ("e" in transition_name and "f" in transition_name):
+            ch = self.cfg.hw.soc.dacs.qubit.ch
+            if type(ch) is list :
+                ch = ch[0]  # use the first qubit channel if multiple are defined
+            return int(ch)
+            
+        elif "f" in transition_name and "g" in transition_name:
+            ch =  self.cfg.hw.soc.dacs.sideband.ch
+            if type(ch) is list:
+                ch = ch[0]  # use the first qubit channel if multiple are defined
+            return int(ch)
+        else:
+            raise ValueError(f"Unknown transition name: {transition_name}")
+
+    
+    def multiphoton(self, pulse_param):
+        ''' pulse name comes from yaml file '''
+        transition_name, pulse_name, phase = pulse_param
+        # frequency
+        pulse_full_name = pulse_name + '_' + transition_name
+        cfg = self.multiphoton_cfg
+
+        qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']], 
+                    [cfg.pulses[pulse_full_name]['gain']],
+                    [cfg.pulses[pulse_full_name]['length']],
+                    [phase],
+                    [self.channel_assign(transition_name)],
+                    [cfg.pulses[pulse_full_name]['type']],
+                    [cfg.pulses[pulse_full_name]['sigma']]], dtype = object)
+        self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+        return None
+
  
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
         ''' pulse name comes from yaml file '''

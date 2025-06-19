@@ -8,8 +8,9 @@ from tqdm import tqdm_notebook as tqdm
 import time
 
 import experiments.fitting as fitter
+from MM_base import MMRAveragerProgram
 
-class PulseProbeSpectroscopyProgram(RAveragerProgram):
+class PulseProbeSpectroscopyProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -21,126 +22,55 @@ class PulseProbeSpectroscopyProgram(RAveragerProgram):
 
     def initialize(self):
         cfg=AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
+        self.MM_base_initialize()
+        qTest = 0
 
-        self.adc_ch = cfg.hw.soc.adcs.readout.ch
-        self.res_ch = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_type = cfg.hw.soc.dacs.readout.type
-        self.qubit_ch = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_type = cfg.hw.soc.dacs.qubit.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
+       
+        ## Initialize the register and page
+        self.q_rp=self.ch_page(self.qubit_chs[qTest]) # get register page for qubit_ch
+        self.r_freq=self.sreg(gen_ch=self.qubit_chs[qTest], name = "freq") # get frequency register for qubit_ch  
+        print(f"qubit register page: {self.q_rp}, frequency register: {self.r_freq}")
+        self.f_start = self.freq2reg(cfg.expt.start, gen_ch=self.qubit_chs[qTest]) # get start/step frequencies
+        self.f_step = self.freq2reg(cfg.expt.step, gen_ch=self.qubit_chs[qTest])
 
-        self.q_rp=self.ch_page(self.qubit_ch) # get register page for qubit_ch
-        self.r_freq=self.sreg(self.qubit_ch, "freq") # get frequency register for qubit_ch    
-        self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch)
-
-        self.f_ge_reg = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
-        self.f_ef_reg = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch)
-        
-        self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch)
-        self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch)
-        self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-
-        # declare res dacs
-        mask = None
-        mixer_freq = 0 # MHz
-        mux_freqs = None # MHz
-        mux_gains = None
-        ro_ch = None
-        if self.res_ch_type == 'int4':
-            mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-        elif self.res_ch_type == 'mux4':
-            assert self.res_ch == 6
-            mask = [0, 1, 2, 3] # indices of mux_freqs, mux_gains list to play
-            mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-            mux_freqs = [0]*4
-            mux_freqs[cfg.expt.qubit] = cfg.device.readout.frequency
-            mux_gains = [0]*4
-            mux_gains[cfg.expt.qubit] = cfg.device.readout.gain
-            ro_ch=self.adc_ch
-        self.declare_gen(ch=self.res_ch, nqz=cfg.hw.soc.dacs.readout.nyquist, mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-
-        # declare qubit dacs
-        mixer_freq = 0
-        if self.qubit_ch_type == 'int4':
-            mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq
-        self.declare_gen(ch=self.qubit_ch, nqz=cfg.hw.soc.dacs.qubit.nyquist, mixer_freq=mixer_freq)
-
-        # declare adcs
-        self.declare_readout(ch=self.adc_ch, length=self.readout_length_adc, freq=cfg.device.readout.frequency, gen_ch=self.res_ch)
-
-        self.f_start = self.freq2reg(cfg.expt.start, gen_ch=self.qubit_ch) # get start/step frequencies
-        self.f_step = self.freq2reg(cfg.expt.step, gen_ch=self.qubit_ch)
-        self.pisigma_ge = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch) # default pi_ge value
-        self.pief_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
-        self.ramp = self.us2cycles(0.005, gen_ch=self.qubit_ch)
-        
-        self.add_gauss(ch=self.qubit_ch, name="pi_qubit_ge", sigma=self.pisigma_ge, length=self.pisigma_ge*4)
-        self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)
-        self.add_gauss(ch=self.qubit_ch, name="ramp", sigma=self.ramp, length=self.ramp*4)
-
-        self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain
-        self.gain_ef_init = self.cfg.device.qubit.pulses.pi_ef.gain
-
-        # add qubit and readout pulses to respective channels
-        # self.set_pulse_registers(ch=self.qubit_ch, style="const", freq=self.f_start, phase=0, gain=cfg.expt.gain, length=self.us2cycles(cfg.expt.length, gen_ch=self.qubit_ch))
-        ## cavity 
-        if cfg.expt.cavity_drive:
-            if cfg.expt.cavity_pulse[0]:
-                self.man_sigma = self.us2cycles(cfg.expt.cavity_pulse[1], gen_ch=self.man_ch) 
-                self.add_gauss(ch=self.man_ch, name="gauss_cav", sigma=self.man_sigma, length=self.man_sigma*4)
-        
         ## qubit 
-        self.set_pulse_registers(ch=self.qubit_ch, style="flat_top", freq=self.f_start, phase=0, gain=cfg.expt.gain, 
-                            length=self.us2cycles(cfg.expt.length, gen_ch=self.qubit_ch), waveform="ramp")
+        self.ramp = self.us2cycles(cfg.expt.sigma, gen_ch=self.qubit_chs[qTest]) # get length of qubit pulse
+        self.add_gauss(ch=self.qubit_chs[qTest], name="ramp", sigma=self.ramp, length=self.ramp*4)
 
-        
-        ## readout 
-        if self.res_ch_type == 'mux4':
-            self.set_pulse_registers(ch=self.res_ch, style="const", length=self.readout_length_dac, mask=mask)
-        else: self.set_pulse_registers(ch=self.res_ch, style="const", freq=self.f_res_reg, phase=self.deg2reg(cfg.device.readout.phase), gain=cfg.device.readout.gain, length=self.readout_length_dac)
+        self.r_freq2 = 4 # dummy register for freq  (since multiple qubit pulses)
+        self.safe_regwi(self.q_rp, self.r_freq2, self.f_start) # set dummygain register to start value
 
+       
         self.synci(200) # give processor some time to configure pulses
     
     def body(self):
         cfg=AttrDict(self.cfg)
+        qTest = 0
 
-        # if cfg.expt.qubit_ge:
-        #     self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
-        #     self.sync_all()
-
-        # if cfg.expt.qubit_ef:
-        #     self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ef_reg, phase=0, gain=self.gain_ef_init, waveform="pief_qubit")
-        #     self.sync_all()
-
-        if cfg.expt.cavity_drive:
-            if cfg.expt.cavity_pulse[0]:
-                self.setup_and_pulse(ch=self.man_ch, style="arb", 
-                                    freq=self.freq2reg(cfg.device.manipulate.f_ge[cfg.expt.cavity_name], gen_ch=self.man_ch),
-                                    phase=0, gain=cfg.expt.cavity_gain,
-                                    waveform="gauss_cav")
-            else:
-                self.setup_and_pulse(ch=self.man_ch, style="const", freq=self.freq2reg(cfg.device.manipulate.f_ge[cfg.expt.cavity_name], gen_ch=self.man_ch), phase=0, gain=cfg.expt.cavity_gain, length=self.us2cycles(cfg.expt.cavity_length, gen_ch=self.man_ch))
-            # self.setup_and_pulse(ch=self.man_ch, style="const", freq=cfg.device.manipulate.f_ge[cfg.expt.cavity_name], phase=0, gain=cfg.expt.cavity_gain, length=self.us2cycles(cfg.expt.cavity_length))
-        self.sync_all()    
+        if cfg.expt.prepulse:
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
+       
         
         # add qubit and readout pulses to respective channels
         # self.set_pulse_registers(ch=self.qubit_ch, style="const", freq=self.f_start, phase=0, gain=cfg.expt.gain, length=self.us2cycles(cfg.expt.length, gen_ch=self.qubit_ch))
-
-        self.pulse(ch=self.qubit_ch) # play probe pulse
-        if cfg.expt.wait_qubit:
-            self.sync_all(cfg.device.qubit.cycles_add_to_R) # align channels and wait designated time
-        else:
-            self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
-        self.measure(pulse_ch=self.res_ch, 
-             adcs=[self.adc_ch],
-             adc_trig_offset=cfg.device.readout.trig_offset,
-             wait=True,
-             syncdelay=self.us2cycles(cfg.device.readout.relax_delay))
+        self.set_pulse_registers(ch=self.qubit_chs[qTest], style="flat_top", 
+                                 freq=self.f_start, # dummy 
+                                  phase=0, gain=cfg.expt.gain, 
+                            length=self.us2cycles(cfg.expt.length, gen_ch=self.qubit_chs[qTest]), waveform="ramp")
+        self.mathi(self.q_rp,  self.r_freq, self.r_freq2, '+', 0 ) # update gain register
+        
+        
+        self.pulse(ch=self.qubit_chs[qTest]) # play probe pulse
+        
+        self.measure_wrapper()
     
     def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step) # update frequency list index
+        self.mathi(self.q_rp, self.r_freq2, self.r_freq2, '+', self.f_step) # update frequency list index
+        # self.mathi(self.qubit_chs[qTest],  self.r_freq, self.r_freq2, '+', 0 ) # update gain register
  
 # ====================================================== #
 
@@ -161,18 +91,11 @@ class PulseProbeSpectroscopyExperiment(Experiment):
         super().__init__(path=path, soccfg=soccfg, prefix=prefix, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        q_ind = self.cfg.expt.qubit
-        for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
-            for key, value in subcfg.items() :
-                if isinstance(value, list):
-                    subcfg.update({key: value[q_ind]})
-                elif isinstance(value, dict):
-                    for key2, value2 in value.items():
-                        for key3, value3 in value2.items():
-                            if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})                                
+        num_qubits_sample = len(self.cfg.device.qubit.f_ge)
+        self.format_config_before_experiment( num_qubits_sample)                          
 
         qspec = PulseProbeSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
+        self.prog = qspec
         xpts, avgi, avgq = qspec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
         avgi = avgi[0][0]
         avgq = avgq[0][0]

@@ -10,6 +10,7 @@ import random
 from MM_base import * 
 # from multimode_expts.experiments.single_qubit.single_shot import  HistogramProgram
 from copy import deepcopy
+from experiments.single_qubit.single_shot import HistogramProgram
 
 
 

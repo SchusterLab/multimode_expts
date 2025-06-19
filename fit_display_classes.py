@@ -25,6 +25,112 @@ class GeneralFitting:
             threshold = self.cfg.device.readout.threshold[0]
         self.readout_per_round = readout_per_round
         self.threshold = threshold
+    
+
+    def bin_ss_data(self, conf=True):
+        '''
+        This function takes config saved single shot parameters, applies the angle correction and threshold to the main data of the experiment
+        bins it into counts_g and counts_e
+        '''
+        temp_data = self.data
+        rounds = self.cfg['expt']['rounds']
+        reps = self.cfg['expt']['reps']
+        expts = self.cfg['expt']['expts']
+        threshold = self.cfg.device.readout.threshold[0]
+        conf_mat_wn_reset = self.cfg.device.readout.confusion_matrix_without_reset
+
+        try:
+            I_data = temp_data['I_data']
+            Q_data = temp_data['Q_data']
+        except KeyError:
+            try:
+                I_data = temp_data['idata']
+                Q_data = temp_data['qdata']
+            except KeyError:
+                I_data = temp_data['i0']
+                Q_data = temp_data['q0']
+            
+
+        # reshape data into (rounds * reps x expts)
+        '''
+        Averager returns data in (rounds, reps) and if you do for looping 
+        returns in (expts, rounds, reps)
+        Here I assume you have done looping !
+        '''
+        I_data = np.reshape(np.transpose(np.reshape(I_data, ( expts,rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
+        Q_data = np.reshape(np.transpose(np.reshape(Q_data, ( expts,rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
+
+       
+        # threshold data
+        shots = np.zeros((rounds*reps, expts))
+        print(shots.shape)
+        shots[I_data > threshold] = 1
+
+        # average over rounds and reps
+        shots_avg = np.mean(shots, axis=0)
+        np.shape(shots_avg)
+
+        # fix using confusion matrix 
+        ydata = shots_avg
+        if conf: 
+            P_matrix = np.matrix([[conf_mat_wn_reset[0], conf_mat_wn_reset[2]],[conf_mat_wn_reset[1], conf_mat_wn_reset[3]]])
+            for i in range(len(ydata)):
+                #ydata_old.append(ydata[i])
+                from numpy.linalg import inv
+                counts_new = inv(P_matrix)*np.matrix([[1-ydata[i]],[ydata[i]]])
+                ydata[i] = counts_new[1,0]
+        return ydata
+
+        
+    def bin_ss_data_given_ss(self, conf = True):
+        '''
+        Assumes that experiment perfroms its own single shot 
+
+        This function takes the single shot data, applies the angle correction and threshold to the main data of the experiment
+        '''
+        temp_data = self.data
+        rounds = self.cfg['expt']['rounds']
+        reps = self.cfg['expt']['reps']
+        expts = self.cfg['expt']['expts']
+
+        try:
+            I_data = temp_data['I_data']
+            Q_data = temp_data['Q_data']
+        except KeyError:
+            I_data = temp_data['idata']
+            Q_data = temp_data['qdata']
+
+        # reshape data into (rounds * reps x expts)
+        I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps)), (0, 2, 1)), (rounds*reps, expts))
+        Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps)), (0, 2, 1)), (rounds*reps, expts))
+
+        
+        # rotate I,Q based on the angle calibration
+        theta = (-1*(float(temp_data['angle'])) - self.cfg['device']['readout']['phase'][0]) * np.pi/180 # to radians
+        print(f'Rotating data by {theta} radians')
+        I_data_rot = I_data*np.cos(theta) - Q_data*np.sin(theta)
+        Q_data_rot = I_data*np.sin(theta) + Q_data*np.cos(theta)
+
+        # threshold data
+        shots = np.zeros((rounds*reps, expts))
+        print(shots.shape)
+        shots[I_data_rot > temp_data['thresholds']] = 1
+
+        # average over rounds and reps
+        shots_avg = np.mean(shots, axis=0)
+        np.shape(shots_avg)
+
+        # fix using confusion matrix 
+        ydata = shots_avg
+        if conf: 
+            P_matrix = np.matrix([[temp_data['confusion_matrix'][0], temp_data['confusion_matrix'][2]],[temp_data['confusion_matrix'][1], temp_data['confusion_matrix'][3]]])
+            for i in range(len(ydata)):
+                #ydata_old.append(ydata[i])
+                from numpy.linalg import inv
+                counts_new = inv(P_matrix)*np.matrix([[1-ydata[i]],[ydata[i]]])
+                ydata[i] = counts_new[1,0]
+        
+        return ydata
 
 
     def filter_data_BS(self, a1, a2, a3, threshold, post_selection = False):
@@ -146,6 +252,9 @@ class RamseyFitting(GeneralFitting):
         self.results = {}
 
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+        '''
+        yscale, freq, phase_deg, decay, y0, x0 
+        '''
         if data is None:
             data = self.data
         try: 
@@ -217,6 +326,9 @@ class RamseyFitting(GeneralFitting):
         f_pi_test = self.cfg.device.qubit.f_ge[q]
         if checkEF:
             f_pi_test = self.cfg.device.qubit.f_ef[q]
+        if self.cfg.expt.user_defined_freq[0]:
+            f_pi_test = self.cfg.expt.user_defined_freq[1]
+            print(f'Using user defined frequency: {f_pi_test} MHz')
         if getattr(self.cfg.expt, "f0g1_cavity", 0) > 0:
             ii = 0
             jj = 0
@@ -489,10 +601,17 @@ class Histogram(GeneralFitting):
         thresholds = [binsg[tind]]
         fids = [contrast[tind]]
 
-        confusion_matrix = [np.cumsum(ng)[tind] / ng.sum(),
-                            1 - np.cumsum(ng)[tind] / ng.sum(),
-                            np.cumsum(ne)[tind] / ne.sum(),
-                            1 - np.cumsum(ne)[tind] / ne.sum()]
+        confusion_matrix = [np.cumsum(ng)[tind] / ng.sum(), # g counts counted as g
+                            1 - np.cumsum(ng)[tind] / ng.sum(),  #  g counts counted as e
+                            np.cumsum(ne)[tind] / ne.sum(),#  e counts counted as g
+                            1 - np.cumsum(ne)[tind] / ne.sum()] # e counts counted as e
+        
+        '''
+        If this matrix is [Pgg, Pge, Peg, Pee], then:
+        [P_g_after, P_e_after] = [Pgg, Peg; Pge, Pee] * [P_g_before, P_e_before]
+        Note the order of matrix elements Peg and Pge    
+        
+        '''
 
         if plot_f:
             contrast = np.abs(((np.cumsum(ng) - np.cumsum(nf)) / (0.5 * ng.sum() + 0.5 * nf.sum())))

@@ -35,7 +35,8 @@ from multimode_expts.dataset import *
 class expts_run_base:
     def __init__(self, data_path=None, config_name='hardware_config_202505.yml', exp_param_name='experiment_config.yml', qubit_i=0):
         self.path = data_path or r'H:\Shared drives\SLab\Multimode\experiment\250505_craqm'
-        self.expt_path = os.path.join(self.path, 'data')
+        self.expt_path = os.path.join(self.path, 'data')  # Bad labveling here ; this is the data 
+        self.data_path = self.expt_path  # This is the data path
         self.mm_expts_path = 'C:\\_Lib\\python\\multimode_expts'
         self.config_file = os.path.join(self.mm_expts_path, 'configs', config_name)
         self.exp_param_file = os.path.join(self.mm_expts_path, 'configs', exp_param_name)
@@ -53,6 +54,14 @@ class expts_run_base:
         # Config for this instance (deepcopy of yaml_cfg)
         self.config_thisrun = AttrDict(deepcopy(self.yaml_cfg))
 
+        # load the multiphoton config
+        with open(self.config_thisrun.device.multiphoton_config.file, 'r') as f:
+            self.multimode_cfg = yaml.safe_load(f)
+
+        # Initailize the dataset
+        ds, ds_thisrun, ds_thisrun_file_path = self.load_storage_man_swap_dataset()
+        self.ds_thisrun = ds_thisrun
+
         # Path for autocalibration plots
         self.autocalib_path = self.create_autocalib_path()
 
@@ -68,6 +77,7 @@ class expts_run_base:
     def _load_yaml_config(self, config_file):
         with open(config_file, 'r') as cfg_file:
             yaml_cfg = yaml.safe_load(cfg_file)
+        
         return AttrDict(yaml_cfg)
 
     def _init_instrument_manager(self):
