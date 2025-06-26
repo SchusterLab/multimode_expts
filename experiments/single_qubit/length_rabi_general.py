@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm_notebook as tqdm
 
 from qick import *
-from qick.helpers import gauss, flat_top_gauss
+# from qick.helpers import gauss, flat_top_gauss
 from slab import Experiment, dsfit, AttrDict
 
 import experiments.fitting as fitter

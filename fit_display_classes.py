@@ -207,10 +207,12 @@ class GeneralFitting:
         """ 
         plots_folder_path = "plots"
         markdown_path = None
+        # print('entering save_plot') 
 
         # Extract markdown folder from config if available
         if self.cfg and hasattr(self.cfg, "data_management"):
             markdown_folder = getattr(self.cfg.data_management, "plot_and_logs_folder")
+            # print(f"Markdown folder path: {markdown_folder}")
             plots_folder_path = markdown_folder + "/plots"
             if markdown_folder:
                 os.makedirs(markdown_folder, exist_ok=True)
@@ -315,20 +317,23 @@ class RamseyFitting(GeneralFitting):
             }
         return data
 
-    def display(self, data=None, fit=True, title_str = 'Ramsey', **kwargs):
+    def display(self, data=None, fit=True, f_test= None, title_str = 'Ramsey', **kwargs):
         if data is None:
             data = self.data
 
         qubits = self.cfg.expt.qubits
         checkEF = self.cfg.expt.checkEF
         q = qubits[0]
+        f_pi_test = f_test
+        if f_pi_test is None:
 
-        f_pi_test = self.cfg.device.qubit.f_ge[q]
-        if checkEF:
-            f_pi_test = self.cfg.device.qubit.f_ef[q]
-        if self.cfg.expt.user_defined_freq[0]:
-            f_pi_test = self.cfg.expt.user_defined_freq[1]
-            print(f'Using user defined frequency: {f_pi_test} MHz')
+            f_pi_test = self.cfg.device.qubit.f_ge[q]
+            if checkEF:
+                f_pi_test = self.cfg.device.qubit.f_ef[q] 
+            if self.cfg.expt.user_defined_freq[0]:
+                f_pi_test = self.cfg.expt.user_defined_freq[1]
+                print(f'Using user defined frequency: {f_pi_test} MHz')
+        
         if getattr(self.cfg.expt, "f0g1_cavity", 0) > 0:
             ii = 0
             jj = 0
@@ -439,14 +444,15 @@ class AmplitudeRabiFitting(GeneralFitting):
             data = self.data
 
         def get_pi_hpi_gain_from_fit(p):
+            #yscale, freq, phase_deg, decay, y0, x0 = p
             if p[2] > 180:
                 p[2] = p[2] - 360
             elif p[2] < -180:
                 p[2] = p[2] + 360
-            if np.abs(p[2] - 90) > np.abs(p[2] + 90):
+            if np.abs(p[2] - 90) > np.abs(p[2] + 90):# y intercept is the min
                 pi_gain = (1 / 4 - p[2] / 360) / p[1]
                 hpi_gain = (0 - p[2] / 360) / p[1]
-            else:
+            else: # y intercept is the max
                 pi_gain = (3 / 4 - p[2] / 360) / p[1]
                 hpi_gain = (1 / 2 - p[2] / 360) / p[1]
             return int(pi_gain), int(hpi_gain)
@@ -1169,7 +1175,7 @@ class ChevronFitting(GeneralFitting):
         }
 
 
-    def display_results(self, save_fig=False, directory=None, title="chevron_plot.png", vlines=None, hlines=None):
+    def display_results(self, save_fig=False,  title="chevron_plot", vlines=None, hlines=None):
         """
         Display the results of the analysis, including plots. Optionally save the figure.
 

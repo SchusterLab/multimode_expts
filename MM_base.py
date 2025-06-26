@@ -5,6 +5,12 @@ from dataset import storage_man_swap_dataset
 import matplotlib.pyplot as plt
 from typing import List, Optional, Union
 
+def print_debug(): 
+    import inspect
+    print(inspect.getfile(QickProgram))
+    print(inspect.getfile(AveragerProgram))
+    print(inspect.getfile(RAveragerProgram))
+
 
 class MM_base:
     """
@@ -191,7 +197,7 @@ class MM_base:
         # ------ declare res dacs -------
         gen_chs = []
         mask = None
-        mixer_freq = 0  # MHz
+        mixer_freq = None  # MHz
         mux_freqs = None  # MHz
         mux_gains = None
         ro_ch = None
@@ -202,7 +208,7 @@ class MM_base:
 
         # --------declare qubit dacs-------
         for q in self.qubits:
-            mixer_freq = 0
+            mixer_freq = None
             if self.qubit_ch_types[q] == 'int4':
                 mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
             if self.qubit_chs[q] not in gen_chs:
@@ -287,6 +293,7 @@ class MM_base:
             None
         """
         # align channels and measure
+        # print(f"mesuring channels {self.res_chs} with ADCs {self.adc_chs}")
         qTest = self.cfg.expt.qubits[0]
         self.sync_all(10)
         self.measure(
@@ -407,7 +414,7 @@ class MM_base:
                                     length=self.us2cycles(pulse_data[2][jj], 
                                                         gen_ch=self.tempch),
                                     waveform="temp_gaussian"+str(jj)+prefix)
-                else:
+                else: # this is for parity measurement wait time, either wait or do constant pulse of 0 amplitude
                     if sync_zero_const and pulse_data[1][jj] ==0: 
                         self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
                                                            #gen_ch=self.tempch))
@@ -768,7 +775,8 @@ class MM_base:
         if fast: 
             parity_str = [['multiphoton', 'g0-e0', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
-                    ['multiphoton', 'g0-e0', 'hpi', 180]]
+                    ['multiphoton', 'g0-e0', 'hpi', second_phase]]
+            # print('Doing fast parity pulse; hope you calibratied multiphoton hpi-g0-e0')
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
             creator = self.get_prepulse_creator(parity_str)
@@ -786,6 +794,8 @@ class MM_base:
         return shots_i0, shots_q0
 
     # def post_select_histogram(self):
+
+    
 
     # --------------------------------- Single shot analysis code  ---------------------------------
     # hmm do these really belong here or in a separate single shot file?
@@ -979,11 +989,31 @@ class MM_base:
 class MMAveragerProgram(AveragerProgram, MM_base):
     def __init__(self, soccfg, cfg):
         AveragerProgram.__init__(self, soccfg, cfg)
+    
+    def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
+        """
+        Acquire data from the device, applying the necessary pulses and post-processing.
+
+        note the soc object is proxy soc not QIckConfig soc
+        """
+        return super().acquire(soc=soc, threshold=threshold, load_pulses=load_pulses, progress=progress, 
+                       readouts_per_experiment=readouts_per_experiment)
 
 
 class MMRAveragerProgram(RAveragerProgram, MM_base): 
     def __init__(self, soccfg, cfg):
         RAveragerProgram.__init__(self, soccfg, cfg)
+    
+    def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
+        """
+        Acquire data from the device, applying the necessary pulses and post-processing.
+
+        note the soc object is proxy soc not QIckConfig soc
+        """
+        return super().acquire(soc=soc, threshold=threshold,load_pulses=load_pulses,
+                               progress=progress, readouts_per_experiment=readouts_per_experiment)
+                                                       
+
 
 
 class prepulse_creator2: 

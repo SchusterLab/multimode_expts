@@ -3,7 +3,7 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from qick import *
 import json
-from qick.helpers import gauss, gauss_ecd_specific, DRAG
+# from qick.helpers import gauss, gauss_ecd_specific, DRAG
 
 from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm

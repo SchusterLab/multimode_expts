@@ -123,7 +123,9 @@ class ParityFreqExperiment(Experiment):
                 self.cfg.expt.cav_freq = float(freq)
                 program = ParityFreqProgram(soccfg=self.soccfg, cfg=self.cfg)
                 self.prog = program
-                avgi, avgq = program.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)        
+                avgi, avgq = program.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, 
+                                            #  debug=debug
+                                             )        
                 avgi = avgi[0][0]
                 avgq = avgq[0][0]
                 amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
@@ -194,7 +196,9 @@ class ParityFreqExperiment(Experiment):
                 rcfg.expt.rounds = 1
 
                 prog = ParityGainProgram(soccfg=self.soccfg, cfg=rcfg)
-                x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)
+                x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
+                                                #   debug=debug
+                                                  )
                 II, QQ = prog.collect_shots()
                 # save data for each round
                 data['I_data'].append(II)

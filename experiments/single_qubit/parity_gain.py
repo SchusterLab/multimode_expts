@@ -145,7 +145,8 @@ class ParityGainExperiment(Experiment):
         
         prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
         
-        x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
+        x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
+                                        #   debug=debug,
                                             readouts_per_experiment=read_num)        
 
         avgi = avgi[0][0]

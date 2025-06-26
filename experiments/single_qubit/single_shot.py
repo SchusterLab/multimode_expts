@@ -97,7 +97,7 @@ class HistogramExperiment(Experiment):
         histpro = HistogramProgram(soccfg=self.soccfg, cfg=cfg)
         #i = histpro.acquire_decimated(self.im[self.cfg.aliases.soc])
         #print(i.to_list())
-        avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, readouts_per_experiment=read_num)
+        avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, readouts_per_experiment=read_num)
         data['Ig'], data['Qg'] = histpro.collect_shots()
 
         # Excited state shots
@@ -109,9 +109,10 @@ class HistogramExperiment(Experiment):
             cfg.expt.pulse_e = True 
             cfg.expt.pulse_f = False
             histpro = HistogramProgram(soccfg=self.soccfg, cfg=cfg)
-            avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, readouts_per_experiment=read_num)
+            avgi, avgq = histpro.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress,  readouts_per_experiment=read_num)
             data['Ie'], data['Qe'] = histpro.collect_shots()
             # print(histpro)
+        self.prog = histpro
 
         # Excited state shots
         self.check_f = self.cfg.expt.check_f

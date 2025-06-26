@@ -77,6 +77,18 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                 
 
         # displace the cavity
+        # phase reset
+        # self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_ge,
+        #                          phase=0, gain=0, length=10, style="const", phrst=1)
+        # self.pulse(ch=self.qubit_ch[0])
+        # self.set_pulse_registers(ch=self.man_ch[0], freq=self.f_cav,
+        #                          phase=0, gain=0, length=10, style="const", phrst=1)
+        # self.pulse(ch=self.man_ch[0])
+        # self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_ge,
+        #                          phase=0, gain=0, length=10, style="const", phrst=1)
+        # self.pulse(ch=self.f0g1_ch[0])
+        # self.sync_all(10)
+        # now displace
         self.setup_and_pulse(ch=self.man_ch[0], style="arb", freq=self.f_cavity, 
                             phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[0]), 
                             gain=self.cfg.expt.amp_placeholder, waveform="displace")
@@ -87,7 +99,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.custom_pulse(self.cfg, self.parity_pulse, prefix='ParityPulse')
 
         # align channels and measure
-        self.sync_all(self.us2cycles(0.01))
+        # self.sync_all(self.us2cycles(0.01))
         self.measure_wrapper()
     
     def collect_shots(self):
@@ -144,7 +156,9 @@ class WignerTomography1ModeExperiment(Experiment):
             self.cfg.expt.phase_placeholder = np.angle(alpha)/np.pi*180
             lengthrabi = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = lengthrabi
-            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)        
+            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
+                                            #  debug=debug
+                                             )        
             avgi = avgi[0][0]
             avgq = avgq[0][0]
             amp = np.abs(alpha) # Calculating the magnitude

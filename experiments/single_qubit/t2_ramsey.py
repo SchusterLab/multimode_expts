@@ -225,7 +225,7 @@ class RamseyExperiment(Experiment):
                                            threshold=None,
                                            load_pulses=True,
                                            progress=progress,
-                                           debug=debug,
+                                        #    debug=debug,
                                            readouts_per_experiment=read_num)
  
         avgi = avgi[0][-1] # when using active reset, second index selects which out of the 4 readouts per exp

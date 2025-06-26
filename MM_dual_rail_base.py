@@ -64,7 +64,8 @@ class MM_dual_rail_base(MM_base):
         data['Ie'] = []
         data['Qe'] = []
         histpro_g = HistogramProgram(soccfg=self_expt.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_g.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+        avgi, avgq = histpro_g.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, 
+                                    #    debug=debug, 
                                        readouts_per_experiment=readouts_per_experiment)
         data['Ig'], data['Qg'] = histpro_g.collect_shots()
 
@@ -72,7 +73,8 @@ class MM_dual_rail_base(MM_base):
         sscfg.expt.pulse_e = True 
         sscfg.expt.pulse_f = False
         histpro_e= HistogramProgram(soccfg=self_expt.soccfg, cfg=sscfg)
-        avgi, avgq = histpro_e.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, debug=debug, 
+        avgi, avgq = histpro_e.acquire(self_expt.im[self_expt.cfg.aliases.soc], threshold=None, load_pulses=True,progress=progress, 
+                                    #    debug=debug, 
                                        readouts_per_experiment=readouts_per_experiment)
         data['Ie'], data['Qe'] = histpro_e.collect_shots()
         # print(data)

@@ -25,6 +25,8 @@ class PulseProbeSpectroscopyProgram(MMRAveragerProgram):
         self.MM_base_initialize()
         qTest = 0
 
+        print("pulssing on channel: ", self.qubit_chs[qTest])
+
        
         ## Initialize the register and page
         self.q_rp=self.ch_page(self.qubit_chs[qTest]) # get register page for qubit_ch
@@ -96,7 +98,7 @@ class PulseProbeSpectroscopyExperiment(Experiment):
 
         qspec = PulseProbeSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
         self.prog = qspec
-        xpts, avgi, avgq = qspec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
+        xpts, avgi, avgq = qspec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress)        
         avgi = avgi[0][0]
         avgq = avgq[0][0]
         amps = np.abs(avgi+1j*avgq)
