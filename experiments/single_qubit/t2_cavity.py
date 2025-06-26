@@ -23,33 +23,9 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
     def initialize(self):
         cfg = AttrDict(self.cfg)
-        self.cfg.update(cfg.expt)
-        self.checkEF = self.cfg.expt.checkEF
-
-        self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.qubits = self.cfg.expt.qubits
+        self.MM_base_initialize()
+        qTest = 0 # only one qubit for now
         
-        qTest = self.qubits[0]
-
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-
-        self.f0g1_chs = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_types = cfg.hw.soc.dacs.sideband.type
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])
-        self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])
 
         # choose the channel on which ramsey will run 
         if cfg.expt.user_defined_pulse[5] == 1:
@@ -65,8 +41,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.cavity_ch = self.storage_ch
             self.cavity_ch_types = self.storage_ch_type
         elif cfg.expt.user_defined_pulse[5] == 0:
-            self.cavity_ch = self.f0g1_chs
-            self.cavity_ch_types = self.f0g1_ch_types
+            self.cavity_ch = self.f0g1_ch
+            self.cavity_ch_types = self.f0g1_ch_type
         elif cfg.expt.user_defined_pulse[5] == 4:
             self.cavity_ch = self.man_ch
             self.cavity_ch_types = self.man_ch_type
@@ -76,7 +52,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
         self.stor_rps = 0 # get register page for storage channel
         if self.cfg.expt.storage_ramsey[0]: 
             # decide which channel do we flux drive on 
-            sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_idx) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi', 0], 
+            sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_mode_no) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi', 0], 
                        ] 
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
@@ -114,31 +90,6 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.echo_pulse = self.get_prepulse_creator(self.echo_pulse_str).pulse.tolist()
             print(self.echo_pulse)
 
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(self.cfg.device.readout.readout_length, self.adc_chs)]
-
-
-        gen_chs = []
-        
-        # declare res dacs
-        mask = None
-        mixer_freq = 0 # MHz
-        mux_freqs = None # MHz
-        mux_gains = None
-        ro_ch = self.adc_chs[qTest]
-     
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest], mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest], freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-
-        # declare qubit dacs
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
 
         # declare registers for phase incrementing
         self.r_wait = 3
@@ -161,7 +112,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.phase_update_channel = self.cavity_ch
             # if 
         elif self.cfg.expt.user_defined_pulse[0] :
-            print('Running f0g1 ramsey')
+            # print('Running f0g1 ramsey')
             self.phase_update_channel = self.cavity_ch
             # if 
         print(f'phase update channel: {self.phase_update_channel}')
@@ -174,22 +125,17 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
         #for user defined 
         if cfg.expt.user_defined_pulse[0]:
+            print('This is designed for displacing manipulate mode, not for swapping pi/2 into man')
             self.user_freq = self.freq2reg(cfg.expt.user_defined_pulse[1], gen_ch=self.cavity_ch[qTest])
             self.user_gain = cfg.expt.user_defined_pulse[2]
             self.user_sigma = self.us2cycles(cfg.expt.user_defined_pulse[3], gen_ch=self.cavity_ch[qTest])
             self.user_length  = self.us2cycles(cfg.expt.user_defined_pulse[4], gen_ch=self.cavity_ch[qTest])
+            print(f"if user length is 0, then it is a gaussian pulse with sigma {self.user_sigma} cycles")
+            print('user length:', self.user_length)
             self.add_gauss(ch=self.cavity_ch[qTest], name="user_test",
                        sigma=self.user_sigma, length=self.user_sigma*4)
         
-        # qubit pi and hpi pulse 
-        self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])
-        self.hpi_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])
-        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit", sigma=self.hpi_sigma, length=self.hpi_sigma*4)
-
-
-        # add readout pulses to respective channels
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-
+        
         # initialize wait registers
         self.safe_regwi(self.phase_update_page[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
         #self.safe_regwi(self.flux_rps, self.r_wait_flux, self.us2cycles(cfg.expt.start))
@@ -197,9 +143,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
         self.safe_regwi(self.phase_update_page[qTest], self.r_phase3, 0) 
         self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0) 
 
-        
-
         self.sync_all(200)
+        self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = True)
 
     
     def body(self):
@@ -217,12 +162,17 @@ class CavityRamseyProgram(MMRAveragerProgram):
         if cfg.expt.prepulse:
             print('Inside cavity ramsey code')
             print(cfg.expt.pre_sweep_pulse)
-            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='Prepulse')
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
         # play the prepulse for kerr experimenty (dispalcement of manipulate)
         if self.cfg.user_defined_pulse[0]:
             if self.user_length == 0: # its a gaussian pulse
-                self.setup_and_pulse(ch=self.cavity_ch[qTest], style="arb", freq=self.user_freq, phase=self.deg2reg(0), gain=self.user_gain,waveform="user_test")
+                self.setup_and_pulse(ch=self.cavity_ch[qTest], style="arb", freq=self.user_freq, phase=self.deg2reg(0, gen_ch=self.cavity_ch[qTest]), 
+                                     gain=self.user_gain,waveform="user_test")
             else: # its a flat top pulse
                 self.setup_and_pulse(ch=self.cavity_ch[qTest], style="flat_top", freq=self.user_freq, phase=0, gain=self.user_gain, length=self.user_length, waveform="user_test")
             self.sync_all(self.us2cycles(0.01))
@@ -241,6 +191,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
             print(cfg.expt.custom_coupler_pulse)
             print(self.flux_ch)
         elif self.cfg.expt.man_ramsey[0]:
+            # man ramsey should be true if you are swapping in a 0+1 into manipulate instead of doing displacements; 
+            # if displacements, then do user defined pulse
             self.custom_pulse(self.cfg, self.creator.pulse, prefix='Manipulate' + str(cfg.expt.man_ramsey[1]))
             self.sync_all(self.us2cycles(0.01))
             print(self.creator.pulse)
@@ -275,9 +227,6 @@ class CavityRamseyProgram(MMRAveragerProgram):
         elif self.cfg.expt.man_ramsey[0]:   
             self.pulse(ch=self.cavity_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
-        
-        
-
 
         if self.cfg.user_defined_pulse[0]:
             self.pulse(ch=self.cavity_ch[qTest])
@@ -286,34 +235,17 @@ class CavityRamseyProgram(MMRAveragerProgram):
         # postpulse 
         self.sync_all()
         if cfg.expt.postpulse:
-            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='Postpulse')
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.post_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'post_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post_')
 
         # parity measurement
         if self.cfg.expt.parity_meas: 
-            parity_meas_str = [['qubit', 'ge', 'hpi'], # Starting parity meas
-                       ['qubit', 'ge', 'parity_M' + str(self.cfg.expt.man_idx)], 
-                       ['qubit', 'ge', 'hpi']]
-            creator = self.get_prepulse_creator(parity_meas_str)
-            print(creator.pulse)
-            self.custom_pulse(self.cfg, creator.pulse, prefix='ParityMeas', sync_zero_const=True)
-        # if self.cfg.expt.parity_meas: 
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge, phase=self.deg2reg(0), gain=cfg.device.qubit.pulses.hpi_ge.gain[0], waveform="hpi_qubit")
-        #     self.sync_all() # align channels
-        #     #self.sync_all(self.us2cycles(np.abs(1 / self.cfg.device.QM.chi_shift_matrix[0][self.cfg.expt.manipulate] / 2))) # wait for pi/chi (noe chi in config is in MHz)
-        #     self.sync_all(self.us2cycles(np.abs(self.cfg.device.manipulate.revival_time[self.cfg.expt.manipulate]))) # wait for parity revival time
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge, phase=self.deg2reg(0), gain=cfg.device.qubit.pulses.hpi_ge.gain[0], waveform="hpi_qubit")
-        #     self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
-
-
-        # align channels and measure
-        self.sync_all(5)
-        self.measure(
-            pulse_ch=self.res_chs[qTest], 
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+            self.custom_pulse(self.cfg, self.parity_meas_pulse, prefix='ParityMeas')
+        
+        self.measure_wrapper()
 
     def update(self):
         '''
@@ -416,7 +348,8 @@ class CavityRamseyExperiment(Experiment):
 
         print(self.cfg.expt.expts)
         
-        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug,
+        x_pts, avgi, avgq = ramsey.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
+                                            # debug=debug,
                                             readouts_per_experiment=read_num)        
  
         avgi = avgi[0][0]
@@ -425,7 +358,8 @@ class CavityRamseyExperiment(Experiment):
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
         data={'xpts': x_pts, 'avgi':avgi, 'avgq':avgq, 'amps':amps, 'phases':phases} 
-        data['idata'], data['qdata'] = ramsey.collect_shots()      
+        data['idata'], data['qdata'] = ramsey.collect_shots()  
+        self.data = data    
         #print(ramsey) 
         
         # if self.cfg.expt.normalize:

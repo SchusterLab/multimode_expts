@@ -173,147 +173,7 @@ class HistogramPrepulseProgram(MMRBAveragerProgram):
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
         #qTest = 0
-        self.qubits = self.cfg.expt.qubits
-        #self.drive_freq = self.cfg.expt.freq
-
-        qTest = self.qubits[0]
-        
-        self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        self.res_chs = cfg.hw.soc.dacs.readout.ch
-        self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        self.f0g1_chs = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_types = cfg.hw.soc.dacs.sideband.type
-
-        self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
-
-        self.man_chs = cfg.hw.soc.dacs.manipulate_in.ch
-        self.man_ch_types = cfg.hw.soc.dacs.manipulate_in.type
-        
-        # self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch[qTest])
-        # self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch[qTest])
-        # self.f_res_reg = self.freq2reg(cfg.device.readout.frequency, gen_ch=self.res_ch, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_dac = self.us2cycles(cfg.device.readout.readout_length, gen_ch=self.res_ch[qTest])
-        # self.readout_length_adc = self.us2cycles(cfg.device.readout.readout_length, ro_ch=self.adc_ch[qTest])
-        # self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
-        # get register page for qubit_chs
-        self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
-        self.f_ge_reg = [self.freq2reg(
-            cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
-        self.f_ef_reg = [self.freq2reg(
-            cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_chs[qTest])]
-
-        self.f_res_reg = [self.freq2reg(f, gen_ch=gen_ch, ro_ch=adc_ch) for f, gen_ch, adc_ch in zip(
-            cfg.device.readout.frequency, self.res_chs, self.adc_chs)]
-        self.readout_lengths_dac = [self.us2cycles(length, gen_ch=gen_ch) for length, gen_ch in zip(
-            self.cfg.device.readout.readout_length, self.res_chs)]
-        self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(
-            self.cfg.device.readout.readout_length, self.adc_chs)]
-
-        # # declare dacs
-        # mask = None
-        # mixer_freq = 0 # MHz
-        # mux_freqs = None # MHz
-        # mux_gains = None
-        # ro_ch = self.adc_ch
-        # if self.res_ch_type == 'int4':
-        #     mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-        # elif self.res_ch_type == 'mux4':
-        #     assert self.res_ch == 6
-        #     mask = [0, 1, 2, 3] # indices of mux_freqs, mux_gains list to play
-        #     mixer_freq = cfg.hw.soc.dacs.readout.mixer_freq
-        #     mux_freqs = [0]*4
-        #     mux_freqs[cfg.expt.qubit] = cfg.device.readout.frequency
-        #     mux_gains = [0]*4
-        #     mux_gains[cfg.expt.qubit] = cfg.device.readout.gain
-        # self.declare_gen(ch=self.res_ch, nqz=cfg.hw.soc.dacs.readout.nyquist, mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-
-        # mixer_freq = 0
-        # if self.qubit_ch_type == 'int4':
-        #     mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq
-        # self.declare_gen(ch=self.qubit_ch, nqz=cfg.hw.soc.dacs.qubit.nyquist, mixer_freq=mixer_freq)
-
-        # # declare adcs
-        # self.declare_readout(ch=self.adc_ch, length=self.readout_length_adc, freq=cfg.device.readout.frequency, gen_ch=self.res_ch)
-
-        # self.pi_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma, gen_ch=self.qubit_ch)
-        # self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain
-        # self.pi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma, gen_ch=self.qubit_ch)
-        # self.pi_ef_gain = cfg.device.qubit.pulses.pi_ef.gain
-        
-        # # add qubit and readout pulses to respective channels
-        # self.add_gauss(ch=self.qubit_ch, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
-        # self.add_gauss(ch=self.qubit_ch, name="pi_ef_qubit", sigma=self.pi_ef_sigma, length=self.pi_ef_sigma*4)
-
-        # if self.res_ch_type == 'mux4':
-        #     self.set_pulse_registers(ch=self.res_ch, style="const", length=self.readout_length_dac, mask=mask)
-        # else: self.set_pulse_registers(ch=self.res_ch, style="const", freq=self.f_res_reg, phase=self.deg2reg(cfg.device.readout.phase), gain=cfg.device.readout.gain, length=self.readout_length_dac)
-        gen_chs = []
-
-        # declare res dacs
-        mask = None
-        mixer_freq = 0  # MHz
-        mux_freqs = None  # MHz
-        mux_gains = None
-        ro_ch = None
-        self.declare_gen(ch=self.res_chs[qTest], nqz=cfg.hw.soc.dacs.readout.nyquist[qTest],
-                         mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=ro_ch)
-        self.declare_readout(ch=self.adc_chs[qTest], length=self.readout_lengths_adc[qTest],
-                             freq=cfg.device.readout.frequency[qTest], gen_ch=self.res_chs[qTest])
-
-        # declare qubit dacs
-        
-        for q in self.qubits:
-            mixer_freq = 0
-            if self.qubit_ch_types[q] == 'int4':
-                mixer_freq = cfg.hw.soc.dacs.qubit.mixer_freq[q]
-            if self.qubit_chs[q] not in gen_chs:
-                self.declare_gen(
-                    ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
-                gen_chs.append(self.qubit_chs[q])
-
-        # define pi_test_ramp as the pulse that we are calibrating with ramsey, update in outer loop over averager program
-        # self.pi_test_ramp = self.us2cycles(
-        #     cfg.device.qubit.ramp_sigma[qTest], gen_ch=self.qubit_chs[qTest])
-        # self.f_pi_test_reg = self.freq2reg(self.drive_freq)  # freq we are trying to calibrate
-        # self.gain_pi_test = self.cfg.expt.gain  # gain we are trying to play
-
-        # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
-        self.pisigma_ge = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ge value
-        self.pisigma_ef = self.us2cycles(
-            cfg.device.qubit.pulses.pi_ef.sigma[qTest], gen_ch=self.qubit_chs[qTest])  # default pi_ef value
-        self.f_ge_init_reg = self.f_ge_reg[qTest]
-        self.f_ef_init_reg = self.f_ef_reg[qTest]
-        self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        self.gain_ef_init = self.cfg.device.qubit.pulses.pi_ef.gain[qTest]
-
-        # waveforms for custom pulse 
-        self.initialize_waveforms()
-
-        # add qubit pulses to respective channels
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test_ramp", sigma=self.pi_test_ramp,
-        #                length=self.pi_test_ramp*2*cfg.device.qubit.ramp_sigma_num[qTest])
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge",
-        #                sigma=self.pisigma_ge, length=self.pisigma_ge*4)
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef",
-        #                sigma=self.pisigma_ef, length=self.pisigma_ef*4)
-        # self.add_gauss(ch=self.f0g1_chs[qTest], name="pi_test",
-        #                sigma=self.us2cycles(self.cfg.expt.ramp_sigma), length=self.us2cycles(self.cfg.expt.ramp_sigma)*4)
-
-        self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
-            cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-        self.sync_all(200)
+        self.MM_base_initialize()
     
     # def reset_and_sync(self):
     #     # Phase reset all channels except readout DACs 
@@ -365,7 +225,7 @@ class HistogramPrepulseProgram(MMRBAveragerProgram):
         if cfg.expt.prepulse:
             if cfg.expt.gate_based: 
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
-                #print(creator.pulse)
+                print(creator.pulse)
                 self.custom_pulse_with_preloaded_wfm(cfg, creator.pulse, prefix = 'pre_gate_based_')
             else: 
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
@@ -452,14 +312,7 @@ class HistogramPrepulseProgram(MMRBAveragerProgram):
         #                                                    gen_ch=self.tempch))
         #         self.sync_all()
 
-        self.sync_all(self.us2cycles(0.05))
-        self.measure(
-            pulse_ch=self.res_chs[qTest],
-            adcs=[self.adc_chs[qTest]],
-            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-            wait=True,
-            syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
-        )
+        self.measure_wrapper()
 
     # def collect_shots(self):
     #     # collect shots for the relevant adc and I and Q channels
@@ -487,16 +340,7 @@ class HistogramPrepulseExperiment(Experiment):
     def acquire(self, progress=False, debug=False):
         q_ind = self.cfg.expt.qubits[0]
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
-            for key, value in subcfg.items():
-                if isinstance(value, dict):
-                    for key2, value2 in value.items():
-                        for key3, value3 in value2.items():
-                            if not(isinstance(value3, list)):
-                                value2.update(
-                                    {key3: [value3]*num_qubits_sample})
-                elif not(isinstance(value, list)):
-                    subcfg.update({key: [value]*num_qubits_sample})
+        self.format_config_before_experiment( num_qubits_sample) 
 
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
