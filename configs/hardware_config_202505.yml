@@ -221,4 +221,4 @@ hw:
 aliases:
     soc: Qick101
 data_management:
-    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
+    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs #update

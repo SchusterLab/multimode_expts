@@ -83,8 +83,8 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
             self.man_reset(man_idx = self.cfg.expt.check_man_reset[1])
             self.sync_all()
         # self.custom_pulse(cfg, cfg.expt.check_man_reset_pi, prefix='pi3')
-        if self.cfg.expt.postpulse: 
-            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='postpulse')
+        # if self.cfg.expt.postpulse: 
+        #     self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='postpulse')
 
         # align channels and wait 50ns and measure
         self.sync_all(self.us2cycles(0.05))

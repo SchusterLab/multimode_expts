@@ -36,8 +36,8 @@ class WignerAnalysis(GeneralFitting):
             xdata=self.data['xpts'], 
             ydata=expec_value, 
             W_vacuum=self.W_vacuum, 
-            initial_guess=[0.0001], 
-            bounds=[(0, 0.001)]
+            initial_guess=[0.000001], 
+            bounds=[(0, 0.01)]
         )
         self.plot_wigner_fit(
             xdata=self.data['xpts'], 

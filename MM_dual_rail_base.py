@@ -361,9 +361,32 @@ class MMDualRailAveragerProgram(AveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
+    def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
+        """
+        Acquire data from the device, applying the necessary pulses and post-processing.
+
+        note the soc object is proxy soc not QIckConfig soc
+        """
+        return super().acquire(soc=soc, threshold=threshold, load_pulses=load_pulses, progress=progress, 
+                       readouts_per_experiment=readouts_per_experiment)
+
+
+
 class MMDualRailRAveragerProgram(RAveragerProgram, MM_dual_rail_base):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
+        
+    def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
+        """
+        Acquire data from the device, applying the necessary pulses and post-processing.
+
+        note the soc object is proxy soc not QIckConfig soc
+        """
+        return super().acquire(soc=soc, threshold=threshold, load_pulses=load_pulses, progress=progress, 
+                       readouts_per_experiment=readouts_per_experiment)
+
+
+
     
         
 

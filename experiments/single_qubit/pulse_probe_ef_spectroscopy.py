@@ -164,10 +164,10 @@ class PulseProbeEFSpectroscopyExperiment(Experiment):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
                             if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})                                
+                                value2.update({key3: value3[q_ind]})
 
         qspec_ef=PulseProbeEFSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
-        x_pts, avgi, avgq = qspec_ef.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
+        x_pts, avgi, avgq = qspec_ef.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress) #, debug=debug)        
 
         avgi = avgi[0][0]
         avgq = avgq[0][0]
@@ -260,7 +260,7 @@ class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
                             if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})                                
+                                value2.update({key3: value3[q_ind]})
        
         data={"fpts":[], "gainpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[]}
         for gain in tqdm(gainpts):
@@ -283,7 +283,7 @@ class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
 
         data["fpts"] = fpts
         data["gainpts"] = gainpts
-        
+
         for k, a in data.items():
             data[k] = np.array(a)
 
