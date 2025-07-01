@@ -155,7 +155,7 @@ class T1Experiment(Experiment):
                                 value2.update({key3: value3[q_ind]})                                
 
         t1 = T1Program(soccfg=self.soccfg, cfg=self.cfg)
-        x_pts, avgi, avgq = t1.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
+        x_pts, avgi, avgq = t1.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress) #debug=debug        
 
         avgi = avgi[0][0]
         avgq = avgq[0][0]

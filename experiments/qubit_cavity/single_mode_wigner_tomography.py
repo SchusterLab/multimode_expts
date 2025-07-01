@@ -140,12 +140,20 @@ class WignerTomography1ModeExperiment(Experiment):
         # extract displacement list from file path
 
         alpha_list = np.load(self.cfg.expt["displacement_path"])
+        # alpha_list = [0., 1, 2]
+        # alpha_list = np.append(alpha_list, 1j*alpha_list) # add 0 to the end of the list
+        # print("alpha_list:", alpha_list)
+
+
+
 
         man_mode_no = 1
         print(f"man mode no: {man_mode_no}")
         man_mode_idx = man_mode_no -1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[man_mode_idx] 
+        print(f"gain2alpha: {gain2alpha}")
         displace_sigma = self.cfg.device.manipulate.displace_sigma[man_mode_idx]
+        print(f"displace_sigma: {displace_sigma}")
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
 

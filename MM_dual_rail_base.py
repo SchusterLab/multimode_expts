@@ -121,14 +121,26 @@ class MM_dual_rail_base(MM_base):
         # print(f'BS phase register: {self.r_phase}')
         self.safe_regwi(self.page_bs_phase, self.r_bs_phase, 0) 
 
-    def prep_man_photon(self, man_no, hpi = False): 
+    def prep_man_photon(self, man_no, photon_no, hpi = False): 
         ''' prepare a photon in the manipulate mode '''
-        qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
-        if hpi: 
-            qubit_pi_pulse_str[0][2] = 'hpi'
-        qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]
-        man_pulse_str = [['man', 'M' + str(man_no), 'pi', 0]]
-        return qubit_pi_pulse_str + qubit_ef_pulse_str + man_pulse_str
+
+        pulse_seq = []
+        if photon_no != 0: 
+            qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
+            if hpi: 
+                qubit_pi_pulse_str[0][2] = 'hpi'
+            qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]
+            man_pulse_str = [['man', 'M' + str(man_no), 'pi', 0]]
+            pulse_seq = qubit_pi_pulse_str + qubit_ef_pulse_str + man_pulse_str
+
+            for i in range(photon_no-1):
+                pulse_seq += [['multiphoton', 'g' + str(i+1) + '-e' + str(i+1), 'pi', 0]]
+                pulse_seq += [['multiphoton', 'e' + str(i+1) + '-f' + str(i+1), 'pi', 0]]
+                pulse_seq += [['multiphoton', 'f' + str(i+1) + '-g' + str(i+2), 'pi', 0]]
+                # pulse_seq += [['multiphoton', 'g1-e1', 'pi', 0]]
+                # pulse_seq += [['multiphoton', 'e1-f1', 'pi', 0]]
+                # pulse_seq += [['multiphoton', 'f1-g2', 'pi', 0]] 
+        return pulse_seq
 
 
     def prep_random_state_mode(self, state_num, mode_no): 

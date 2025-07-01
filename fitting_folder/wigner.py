@@ -26,7 +26,7 @@ class WignerAnalysis(GeneralFitting):
             self.init_states()
 
     # ---------------------- For Gain to Alpha Conversion ----------------------
-    def get_gain_to_alpha(self): 
+    def get_gain_to_alpha(self, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False): 
         ydata_mod = self.bin_ss_data_given_ss()
         # wigner function expectation value is pg*(+1) + pe(-1)
         pe = ydata_mod 
@@ -36,9 +36,21 @@ class WignerAnalysis(GeneralFitting):
             xdata=self.data['xpts'], 
             ydata=expec_value, 
             W_vacuum=self.W_vacuum, 
-            initial_guess=[0.000001], 
-            bounds=[(0, 0.01)]
+            initial_guess=initial_guess, 
+            bounds=bounds
         )
+        print('Gain to Alpha Conversion Factor:', gain_to_alpha)
+
+        # plot the initial guess 
+        if plot_guess:
+            self.plot_wigner_fit(
+                xdata=self.data['xpts'],
+                ydata=expec_value,
+                gain_to_alpha=initial_guess[0],
+            W_vacuum=self.W_vacuum,
+            title='Initial Guess: Gain to Alpha Conversion Factor: {:.8f}'.format(initial_guess[0])
+            )
+
         self.plot_wigner_fit(
             xdata=self.data['xpts'], 
             ydata=expec_value, 

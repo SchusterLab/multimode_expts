@@ -152,7 +152,10 @@ class MM_base:
             *** MULTIPHOTON in not a channel but  redirects to qubit and f0 g1
             **** Man is not refferring to man channel but f0g1 channel
         '''
+
         creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, self.multiphoton_cfg)
+
+
 
         if sweep_pulse is not None:
             for pulse_idx in range(len(sweep_pulse)):
