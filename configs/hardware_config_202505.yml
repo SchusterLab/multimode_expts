@@ -51,11 +51,11 @@ device:
         gain:
         - 800
         phase:
-        - 402.4828965158572
+        - 73.4451705076109
         threshold:
-        - -298.73630962746415
+        - -283.43264261118475
         threshold_list:
-        -   - -298.73630962746415
+        -   - -283.43264261118475
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -70,14 +70,12 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9939999999999999
-        - 0.006000000000000116
-        - 0.02661064425770308
-        - 0.9733893557422969
-        Ie:
-        - 30.360986532350132
-        Ig:
-        - -506.7363096274642
+        - 0.9912
+        - 0.00880000000000003
+        - 0.02039999999999999
+        - 0.9796
+        Ie: 36.44400085547777
+        Ig: -507.43264261118486
     manipulate:
         f_ge:
         - 4984.517099141256
@@ -223,4 +221,4 @@ hw:
 aliases:
     soc: Qick101
 data_management:
-    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs #update
+    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
