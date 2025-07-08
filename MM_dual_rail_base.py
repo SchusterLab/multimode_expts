@@ -177,7 +177,7 @@ class MM_dual_rail_base(MM_base):
                 
 
 
-    def prep_man_photon(self, man_no, photon_no): 
+    def prep_man_photon(self, man_no, photon_no=1): 
         ''' prepare a photon in the manipulate mode '''
 
         pulse_seq = []
