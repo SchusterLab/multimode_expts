@@ -91,15 +91,15 @@ class QsimBaseProgram(MMAveragerProgram):
 
         # prepulse: ge -> ef -> f0g1
         # TODO: make this overridable from cfg
-        prepules_cfg = [
+        prepulse_cfg = [
             ['qubit', 'ge', 'pi', 0,],
             ['qubit', 'ef', 'pi', 0,],
             ['man', 'M1', 'pi', 0,],
         ]
         if init_stor > 0:
-            prepules_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
+            prepulse_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
 
-        pulse_creator = self.get_prepulse_creator(prepules_cfg)
+        pulse_creator = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all(self.us2cycles(0.1))
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
         self.sync_all(self.us2cycles(0.1))
@@ -108,9 +108,9 @@ class QsimBaseProgram(MMAveragerProgram):
         self.core_pulses()
 
         # postpulse
-        postpules_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
-        postpules_cfg.append(['man', 'M1', 'pi', 0,],)
-        pulse_creator = self.get_prepulse_creator(postpules_cfg)
+        postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
+        postpulse_cfg.append(['man', 'M1', 'pi', 0,],)
+        pulse_creator = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all(self.us2cycles(0.1))
         self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
         self.sync_all(self.us2cycles(0.1))

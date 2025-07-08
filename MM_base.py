@@ -1137,7 +1137,7 @@ class prepulse_creator2:
                         [2],
                         ['const'],
                         [0.0]], dtype = object)
-                self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+        self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
 
     def man(self, pulse_param):
