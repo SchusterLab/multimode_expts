@@ -104,16 +104,26 @@ class GeneralFitting:
         I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps)), (0, 2, 1)), (rounds*reps, expts))
         Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps)), (0, 2, 1)), (rounds*reps, expts))
 
-        
+        if 'angle' not in temp_data:
+            print('No angle calibration found in data, assuming no rotation')
+            temp_data['angle'] = 0
+        if 'thresholds' not in temp_data:
+            print('No thresholds found in data, using default threshold')
+            temp_data['thresholds'] = self.cfg.device.readout.threshold[0]
+        if 'confusion_matrix' not in temp_data:
+            print('No confusion matrix found in data, using default confusion matrix')
+            temp_data['confusion_matrix'] = self.cfg.device.readout.confusion_matrix_without_reset
+
         # rotate I,Q based on the angle calibration
-        theta = (-1*(float(temp_data['angle'])) - self.cfg['device']['readout']['phase'][0]) * np.pi/180 # to radians
+        # theta = (-1*(float(temp_data['angle'])) - self.cfg['device']['readout']['phase'][0]) * np.pi/180 # to radians
+        theta = -1*float(temp_data['angle']) * np.pi/180 # to radians
+
         print(f'Rotating data by {theta} radians')
         I_data_rot = I_data*np.cos(theta) - Q_data*np.sin(theta)
         Q_data_rot = I_data*np.sin(theta) + Q_data*np.cos(theta)
 
         # threshold data
         shots = np.zeros((rounds*reps, expts))
-        print(shots.shape)
         shots[I_data_rot > temp_data['thresholds']] = 1
 
         # average over rounds and reps

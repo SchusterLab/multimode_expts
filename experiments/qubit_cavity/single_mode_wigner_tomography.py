@@ -6,6 +6,8 @@ from qick.helpers import gauss
 from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
 from MM_base import MMAveragerProgram
+from fitting_folder.wigner import WignerAnalysis
+from qutip import fock  
 # from scipy.sepcial import erf
 
 import experiments.fitting as fitter
@@ -17,7 +19,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
 
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -33,8 +35,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest],gen_ch = self.man_ch[0]),
                                   gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
-
-        self.parity_pulse = self.get_parity_str(1, return_pulse=True, second_phase=180, fast=True)
+        print('phase second pulse:', self.cfg.expt.phase_second_pulse)
+        self.parity_pulse = self.get_parity_str(1, return_pulse=True, second_phase=self.cfg.expt.phase_second_pulse, fast=True)
         # self.chi_shift = cfg.expt.guessed_chi
         # self.ratio = np.cos(np.pi*2*self.chi_shift/4*(2*self.cycles2us(self.tp)+3*self.cycles2us(self.displace_sigma*4)))/np.cos(np.pi*2*self.chi_shift/4*self.cycles2us(self.displace_sigma*4))
         # if cfg.expt.optpulse:
@@ -130,17 +132,26 @@ class WignerTomography1ModeExperiment(Experiment):
     def __init__(self, soccfg=None, path='', prefix='WignweTomography1Mode', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
+
     def acquire(self, progress=False, debug=False):
         # expand entries in config that are length 1 to fill all qubits
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.format_config_before_experiment( num_qubits_sample) 
+        self.format_config_before_experiment(num_qubits_sample) 
 
         qTest = self.cfg.expt.qubits[0]
+
+        if 'pulse_correction' in self.cfg.expt:
+            print("Pulse correction is applied")
+            self.pulse_correction = self.cfg.expt.pulse_correction
+        else:
+            self.pulse_correction = False
+
+        
 
         # extract displacement list from file path
 
         alpha_list = np.load(self.cfg.expt["displacement_path"])
-        # alpha_list = [0., 1, 2]
+        # alpha_list = np.linspace(0, 2, 40)
         # alpha_list = np.append(alpha_list, 1j*alpha_list) # add 0 to the end of the list
         # print("alpha_list:", alpha_list)
 
@@ -148,23 +159,23 @@ class WignerTomography1ModeExperiment(Experiment):
 
 
         man_mode_no = 1
-        print(f"man mode no: {man_mode_no}")
+        # print(f"man mode no: {man_mode_no}")
         man_mode_idx = man_mode_no -1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[man_mode_idx] 
-        print(f"gain2alpha: {gain2alpha}")
+        # print(f"gain2alpha: {gain2alpha}")
         displace_sigma = self.cfg.device.manipulate.displace_sigma[man_mode_idx]
-        print(f"displace_sigma: {displace_sigma}")
+        # print(f"displace_sigma: {displace_sigma}")
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
 
         for alpha in tqdm(alpha_list, disable=not progress):
-            # scale =  1.764162781524843     # np.sqrt(np.pi)*erf(2) = ratio of gaussian/square 
+            self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse
             scale =  displace_sigma# parity gain calibration Gaussian pulse length here (in unit of us)
             self.cfg.expt.amp_placeholder =  int(np.abs(alpha)/gain2alpha*scale/self.cfg.expt.displace_length) # scaled, reference is a Gaussian pulse
             self.cfg.expt.phase_placeholder = np.angle(alpha)/np.pi*180
-            lengthrabi = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
-            self.prog = lengthrabi
-            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
+            wigner = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
+            self.prog = wigner
+            avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
                                             #  debug=debug
                                              )        
             avgi = avgi[0][0]
@@ -177,10 +188,28 @@ class WignerTomography1ModeExperiment(Experiment):
             data["amps"].append(amp)
             data["phases"].append(phase)
             # collect single shots
-            i0, q0 = lengthrabi.collect_shots()
+            i0, q0 = wigner.collect_shots()
             data["i0"].append(i0)
             data["q0"].append(q0)
-        
+            # print('i0 shape:', i0.shape)
+            # print('data i0 shape:',np.array(data["i0"]).shape)
+
+            if self.pulse_correction:
+                self.cfg.expt.phase_second_pulse = 0
+                wigner = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
+                avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
+                                                #  debug=debug
+                                                )
+                avgi = avgi[0][0]
+                avgq = avgq[0][0]
+                i0, q0 = wigner.collect_shots()
+                data["avgi"].append(avgi)
+                data["avgq"].append(avgq)
+                data["i0"].append(i0)
+                data["q0"].append(q0)
+                # print('i0 shape:', i0.shape)
+                # print('data i0 shape:',np.array(data["i0"]).shape)
+
         self.cfg.expt['expts'] = len(data["alpha"])
 
           
@@ -191,24 +220,60 @@ class WignerTomography1ModeExperiment(Experiment):
         self.data = data
         return data
 
-    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, **kwargs):
         if data is None:
             data=self.data
-        
-        if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            # Remove the first and last point from fit in case weird edge measurements
-            xdata = data['xpts']
 
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi   
-            data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi   
-            data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+        expt = self.cfg.expt
+        if 'pulse_correction' in self.cfg.expt:
+            self.pulse_correction = self.cfg.expt.pulse_correction
+        else:
+            self.pulse_correction = False
+
+        if 'mode_state_num' in kwargs:
+            mode_state_num = kwargs['mode_state_num']
+        else:
+            mode_state_num = 10
+
+        if self.pulse_correction:
+            # we need to reshape the data before processing
+            data_minus = {}
+            data_plus = {}
+            data_minus["i0"] = data["i0"][::2, :, :]
+            data_minus["q0"] = data["q0"][::2, :, :]
+            data_plus["i0"] = data["i0"][1::2, :, :]
+            data_plus["q0"] = data["q0"][1::2, :, :]
+
+            wigner_analysis_minus = WignerAnalysis(data=data_minus,
+                                                   config=self.cfg, 
+                                                    mode_state_num=mode_state_num,
+                                                    alphas=data["alpha"])
+
+            wigner_analysis_plus = WignerAnalysis(data=data_plus,
+                                                  config=self.cfg,
+                                                  mode_state_num=mode_state_num,
+                                                  alphas=data["alpha"])
+            
+            pe_plus = wigner_analysis_plus.bin_ss_data()
+            pe_minus = wigner_analysis_minus.bin_ss_data()
+            parity_plus = (1 - pe_plus) - pe_plus
+            parity_minus = (1 - pe_minus) - pe_minus
+            parity = (parity_minus - parity_plus) / 2
+            
+            data["pe_plus"] = pe_plus
+            data["pe_minus"] = pe_minus
+            data["parity_plus"] = parity_plus
+            data["parity_minus"] = parity_minus
+            data["parity"] = parity
+        else:
+            wigner_analysis = WignerAnalysis(data=data,
+                                              config=self.cfg, 
+                                              mode_state_num=mode_state_num,
+                                              alphas=data["alpha"])
+            pe = wigner_analysis.bin_ss_data()
+            data["pe"] = pe
+            data["parity"] = (1 - pe) - pe
+
         return data
 
     def display(self, data=None, fit=True, fitparams=None, vline = None, **kwargs):

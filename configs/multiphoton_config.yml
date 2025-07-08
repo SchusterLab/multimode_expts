@@ -1,85 +1,121 @@
 pulses:
   hpi_e0-f0:
-    frequency: 3423.990931159239
-    gain: 4325
+    frequency: 3423.9884929737523
+    gain: 4413
     length: 0
     sigma: 0.035
     type: gauss
   hpi_e1-f1:
-    frequency: 3423.724467
-    gain: 3859
+    frequency: 3423.7266366015674
+    gain: 4390
     length: 0
     sigma: 0.035
     type: gauss
   hpi_e2-f2:
-    frequency: 3423.444467
+    frequency: 3423.464917683452
+    gain: 4494
+    length: 0
+    sigma: 0.035
+    type: gauss
+  hpi_e3-f3:
+    frequency: 3423.2192518006295
     gain: 3860
     length: 0
     sigma: 0.035
     type: gauss
   hpi_g0-e0:
-    frequency: 3567.3521693039097
-    gain: 5003
+    frequency: 3567.3608840739785
+    gain: 10182
     length: 0
-    sigma: 0.02
+    sigma: 0.015
     type: gauss
   hpi_g1-e1:
-    frequency: 3566.7980640454493
-    gain: 4648
+    frequency:  3567.0799647644612
+    gain: 5146
     length: 0
     sigma: 0.035
     type: gauss
   hpi_g2-e2:
-    frequency: 3566.7980640454495
-    gain: 2518
+    frequency: 3566.7644237298246
+    gain: 5026
+    length: 0
+    sigma: 0.035
+    type: gauss
+  hpi_g3-e3:
+    frequency: 3566.49698806312
+    gain: 4856
     length: 0
     sigma: 0.035
     type: gauss
   pi_e0-f0:
-    frequency: 3423.990931159239
-    gain: 9161
+    frequency: 3423.9884929737523
+    gain: 9137
     length: 0
     sigma: 0.035
     type: gauss
   pi_e1-f1:
-    frequency: 3423.724467
-    gain: 8276
+    frequency: 3423.7266366015674
+    gain: 9159
     length: 0
     sigma: 0.035
     type: gauss
   pi_e2-f2:
-    frequency: 3423.444467
+    frequency:  3423.464917683452
+    gain: 9266
+    length: 0
+    sigma: 0.035
+    type: gauss
+  pi_e3-f3:
+    frequency: 3423.2192518006295
     gain: 8326
     length: 0
     sigma: 0.035
     type: gauss
   pi_f0-g1:
-    frequency: 2005.9
+    frequency: 2005.8600000000006
     gain: 15000
-    length: 1.082052142
+    length: 1.0955314021401903
     sigma: 0.005
     type: flat_top
   pi_f1-g2:
-    frequency: 2005.3750648263679
+    frequency: 2005.3250648263681
     gain: 15000
-    length: 0.8270231014780026
+    length:  0.7774181220945486
+    sigma: 0.005
+    type: flat_top
+  pi_f2-g3:
+    frequency: 2004.900423280029
+    gain: 15000
+    length: 0.6274662037166608
+    sigma: 0.005
+    type: flat_top
+  pi_f3-g4:
+    frequency: 2004.3350000000019
+    gain: 15000
+    length: 0.5491206701698654
     sigma: 0.005
     type: flat_top
   pi_g0-e0:
-    frequency: 3567.3521693039097
-    gain: 10748
+    frequency: 3567.3608840739785
+    gain: 19013
     length: 0
-    sigma: 0.02
+    sigma: 0.015
     type: gauss
   pi_g1-e1:
-    frequency: 3567.0780640454495
-    gain: 10518
+    frequency: 3567.0799647644612
+    gain: 10480
     length: 0
     sigma: 0.035
     type: gauss
   pi_g2-e2:
-    frequency: 3566.7980640454493
-    gain: 2518
+    frequency: 3566.7644237298246
+    gain: 10373
+    length: 0
+    sigma: 0.035
+    type: gauss
+  pi_g3-e3:
+    frequency: 3566.49698806312
+    gain: 10349
     length: 0
     sigma: 0.035
     type: gauss

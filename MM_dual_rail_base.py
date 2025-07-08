@@ -121,25 +121,70 @@ class MM_dual_rail_base(MM_base):
         # print(f'BS phase register: {self.r_phase}')
         self.safe_regwi(self.page_bs_phase, self.r_bs_phase, 0) 
 
-    def prep_man_photon(self, man_no, photon_no, hpi = False): 
+
+    def prep_fock_state(self, man_no, photon_no_list: List[int], broadband=False):
+        """ 
+        prepare a fock state in the manipulate mode
+        
+        Args:
+            man_no (int): The manipulate mode number.
+            photon_no_list (List[int]): A list containing one or two photon numbers.
+        Returns:
+            pulse_seq (List[List[str]]): A list of pulse sequences to prepare the fock state.
+        Raises:
+            AssertionError: If the length of photon_no_list is not 1 or 2, or if state_2 is not greater than state_1.
+        """
+        
+        # check length of photon_no_list is 1 or 2 
+        assert len(photon_no_list) in [1, 2], "photon_no_list must be of length 1 or 2"
+        state_1 = photon_no_list[0]
+        state_2 = photon_no_list[1] if len(photon_no_list) == 2 else None
+        assert state_2 is None or state_1 < state_2, "state_2 must be greater than state_1 or state_2 must be None"
+
+        pulse_seq = []
+        for i in range(state_1):
+            pulse_seq += [['multiphoton', 'g' + str(i) + '-e' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'f' + str(i) + '-g' + str(i+1), 'pi', 0]]
+        if state_2 is not None:
+            if broadband:
+                pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'hpi', 0]]
+                diff = state_2 - state_1
+                shelving = 0
+                for k in range(diff):
+                    pulse_seq += [['multiphoton', 'e' + str(state_1+k) + '-f' + str(state_1+k), 'pi', 0]]
+                    if shelving < diff - 1:
+                        pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'pi', 0]]
+                    pulse_seq += [['multiphoton', 'f' + str(state_1+k) + '-g' + str(state_1+k+1), 'pi', 0]]
+                    if shelving < diff - 1:
+                        pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'pi', 0]]
+                    shelving += 1
+            else:
+                pulse_seq += [['multiphoton', 'g' + str(state_1) + '-e' + str(state_1), 'hpi', 0]]
+                diff = state_2 - state_1
+                shelving = 0
+                for k in range(diff):
+                    pulse_seq += [['multiphoton', 'e' + str(state_1+k) + '-f' + str(state_1+k), 'pi', 0]]
+                    if shelving < diff - 1:
+                        pulse_seq += [['multiphoton', 'g' + str(state_1+k) + '-e' + str(state_1+k), 'pi', 0]]
+                    pulse_seq += [['multiphoton', 'f' + str(state_1+k) + '-g' + str(state_1+k+1), 'pi', 0]]
+                    if shelving < diff - 1:
+                        pulse_seq += [['multiphoton', 'g' + str(state_1+k) + '-e' + str(state_1+k), 'pi', 0]]
+                    shelving += 1
+
+
+        return pulse_seq
+                
+
+
+    def prep_man_photon(self, man_no, photon_no): 
         ''' prepare a photon in the manipulate mode '''
 
         pulse_seq = []
-        if photon_no != 0: 
-            qubit_pi_pulse_str = [['qubit', 'ge', 'pi', 0 ]]
-            if hpi: 
-                qubit_pi_pulse_str[0][2] = 'hpi'
-            qubit_ef_pulse_str = [['qubit', 'ef', 'pi', 0 ]]
-            man_pulse_str = [['man', 'M' + str(man_no), 'pi', 0]]
-            pulse_seq = qubit_pi_pulse_str + qubit_ef_pulse_str + man_pulse_str
-
-            for i in range(photon_no-1):
-                pulse_seq += [['multiphoton', 'g' + str(i+1) + '-e' + str(i+1), 'pi', 0]]
-                pulse_seq += [['multiphoton', 'e' + str(i+1) + '-f' + str(i+1), 'pi', 0]]
-                pulse_seq += [['multiphoton', 'f' + str(i+1) + '-g' + str(i+2), 'pi', 0]]
-                # pulse_seq += [['multiphoton', 'g1-e1', 'pi', 0]]
-                # pulse_seq += [['multiphoton', 'e1-f1', 'pi', 0]]
-                # pulse_seq += [['multiphoton', 'f1-g2', 'pi', 0]] 
+        for i in range(photon_no):
+            pulse_seq += [['multiphoton', 'g' + str(i) + '-e' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'f' + str(i) + '-g' + str(i+1), 'pi', 0]]
         return pulse_seq
 
 

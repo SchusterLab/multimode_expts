@@ -13,6 +13,7 @@ from IPython.display import clear_output, display
 import os
 from scipy.optimize import fmin, check_grad, minimize
 from numpy import sqrt, linspace, cos, sin, real, arange
+import matplotlib.pyplot as plt
 
 class WignerAnalysis(GeneralFitting):
     def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5):
@@ -30,7 +31,7 @@ class WignerAnalysis(GeneralFitting):
         ydata_mod = self.bin_ss_data_given_ss()
         # wigner function expectation value is pg*(+1) + pe(-1)
         pe = ydata_mod 
-        pg = 1 - pe
+        pg = 1 - pe        
         expec_value = 2/np.pi * (pg - pe)
         gain_to_alpha, result  = self.fit_gain_to_alpha(
             xdata=self.data['xpts'], 
@@ -271,15 +272,38 @@ class WignerAnalysis(GeneralFitting):
     
     ## Final Plotting and analysis methods
     
-    def wigner_analysis_results(self, allocated_counts, initial_state):
+    def wigner_analysis_results(self, allocated_counts, initial_state, rotate=False):
         alpha_list = self.data['alpha']
         allocated_readout = 2 / np.pi * allocated_counts  # normalization
         initial_state = initial_state.unit()
         rho_ideal = qutip.ket2dm(initial_state).unit()
-        alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.1)
+        alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.05)
         rho = self.rho_pinv_positive_sd(allocated_readout)
         P_ns = [np.array([rho[i][i] for i in range(self.m)])]
+
+
         fid = qutip.fidelity(qutip.Qobj(rho), rho_ideal)
+        # Calculate fidelity
+        if rotate:
+        # apply a rotation to rho to match the ideal state
+            theta = np.linspace(0, 2 * np.pi, 100)
+            fid_vec =np.zeros(len(theta))
+            print('Rotating rho to match ideal state...')
+            for i, t in enumerate(theta):
+                N = np.diag(np.arange(self.m))
+                R = expm(-1j * t * N)
+                rho_rotated = R @ rho @ R.conj().T
+                fid_rotated = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal)
+                fid_vec[i] = fid_rotated
+
+            fid = np.max(fid_vec)
+            R = expm(-1j * theta[np.argmax(fid_vec)] * N)
+            rho = R @ rho @ R.conj().T
+
+            fig, ax = plt.subplots()
+            ax.plot(theta, fid_vec, marker='o')
+
+
         return {
             'alpha_list': alpha_list,
             'allocated_readout': allocated_readout,
@@ -293,7 +317,6 @@ class WignerAnalysis(GeneralFitting):
 
     def plot_wigner_reconstruction_results(self, results, initial_state=None, state_label = None):
         
-        import matplotlib.pyplot as plt
         alpha_list = results['alpha_list']
         allocated_readout = results['allocated_readout']
         rho = results['rho']

@@ -41,10 +41,18 @@ class ParityDelayProgram(MMAveragerProgram):
 
         self.sync_all(self.us2cycles(0.2))
 
+        # if cfg.expt.prepulse:
+        #     creator = self.get_prepulse_creator(cfg.expt.pre_gate_sweep_pulse)
+        #     self.custom_pulse(cfg, creator.pulse.tolist(), prefix = '')
+        #     # self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
+
         if cfg.expt.prepulse:
-            creator = self.get_prepulse_creator(cfg.expt.pre_gate_sweep_pulse)
-            self.custom_pulse(cfg, creator.pulse.tolist(), prefix = '')
-            # self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
+            if cfg.expt.gate_based: 
+                creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+            else: 
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
+
 
         
 

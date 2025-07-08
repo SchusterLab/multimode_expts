@@ -138,7 +138,7 @@ class MM_base:
         dict= {'key = transition' : value = []} 
         '''
 
-    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None):
+    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None, multiphoton_cfg: Optional[AttrDict] = None):
         '''
         sweep_pulse: 
             [name of channel (qubit, multiphoton, man, storage),
@@ -151,11 +151,12 @@ class MM_base:
 
             *** MULTIPHOTON in not a channel but  redirects to qubit and f0 g1
             **** Man is not refferring to man channel but f0g1 channel
+
         '''
+        if multiphoton_cfg is None:
+            multiphoton_cfg = self.multiphoton_cfg
 
-        creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, self.multiphoton_cfg)
-
-
+        creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
         if sweep_pulse is not None:
             for pulse_idx in range(len(sweep_pulse)):
@@ -182,6 +183,16 @@ class MM_base:
             for idx in range(len(prepulse_str)): 
                 prepulse_str[idx][-1] = 180
         return prepulse_str 
+    
+    def prep_man_photon(self, photon_no): 
+        ''' prepare a photon in the manipulate mode '''
+
+        pulse_seq = []
+        for i in range(photon_no):
+            pulse_seq += [['multiphoton', 'g' + str(i) + '-e' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0]]
+            pulse_seq += [['multiphoton', 'f' + str(i) + '-g' + str(i+1), 'pi', 0]]
+        return pulse_seq
 
 
     def MM_base_initialize(self): 
@@ -1017,7 +1028,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
                                progress=progress, readouts_per_experiment=readouts_per_experiment)
                                                        
 
-
+# prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
 class prepulse_creator2: 
     def __init__(self, cfg, storage_man_file, multiphoton_cfg=None):
@@ -1039,6 +1050,9 @@ class prepulse_creator2:
         #     yaml_cfg = yaml.safe_load(cfg_file)
         self.cfg = cfg#AttrDict(yaml_cfg)
 
+        # print(
+        #     "multiphoton_cfg", multiphoton_cfg.pulses["pi_g0-e0"]['frequency'] if multiphoton_cfg else "No multiphoton config provided"
+        # )
         self.multiphoton_cfg = multiphoton_cfg
 
         # man storage swap data 
@@ -1113,14 +1127,17 @@ class prepulse_creator2:
 
         else: # parity string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
-            qubit_pulse = np.array([[freq], 
-                    [0],
-                    [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs 
-                    [phase],
-                    [2],
-                    ['const'],
-                    [0.0]], dtype = object)
-        self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+            # print('Creating parity pulse:' ,self.cfg.device.manipulate.revival_time[man_idx]) 
+
+            if self.cfg.device.manipulate.revival_time[man_idx] != 0: # if revival time is not zero, then use it
+                qubit_pulse = np.array([[freq], 
+                        [0],
+                        [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs 
+                        [phase],
+                        [2],
+                        ['const'],
+                        [0.0]], dtype = object)
+                self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
 
     def man(self, pulse_param):

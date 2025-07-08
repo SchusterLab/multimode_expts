@@ -55,7 +55,8 @@ class ParityGainProgram(MMRAveragerProgram):
             self.add_gauss(ch=self.man_ch[qTest], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
 
         self.parity_pulse = self.get_parity_str(man_mode_no=1, return_pulse=True, second_phase=180, fast = True)
-        
+        print('Parity Gain Program initialized')
+        print('parity pulse:', self.parity_pulse)
     
         self.sync_all(200)
 
@@ -139,6 +140,7 @@ class ParityGainExperiment(Experiment):
             from MM_dual_rail_base import MM_dual_rail_base
             mm_dr_base = MM_dual_rail_base(self.cfg)
             data = mm_dr_base.run_single_shot(self, data, True)
+            print('Single shot data:', data)
             
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
@@ -153,6 +155,8 @@ class ParityGainExperiment(Experiment):
         avgq = avgq[0][0]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
+        print('avig i:', avgi)
+        print('avg q:', avgq)
 
         data['xpts'] = x_pts
         data['avgi'] = avgi
