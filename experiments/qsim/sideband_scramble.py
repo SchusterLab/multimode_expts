@@ -93,8 +93,7 @@ class SidebandScrambleProgram(MMAveragerProgram):
 
         for kk in range(self.cfg.expt.floquet_cycle):
             for jj in range(7):
-                if jj==self.cfg.expt.init_stor:
-                    print(self.m1s_kwargs[jj])
+                if jj+1==self.cfg.expt.init_stor:
                     self.setup_and_pulse(**self.m1s_kwargs[jj])
                     self.sync_all(self.us2cycles(0.1))
                 # else:
@@ -240,7 +239,7 @@ class SidebandScrambleExperiment(Experiment):
             title=f"{title}",
             ylabel="I [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgi"][:-1],'o-')
-        plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
+        plt.subplot(212, xlabel="# of cycles", ylabel="Q [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
 
         plt.tight_layout()
