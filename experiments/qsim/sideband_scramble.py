@@ -35,10 +35,10 @@ class SidebandScrambleProgram(MMAveragerProgram):
         self.m1s_is_low_freq = [True]*4 + [False]*3
         self.m1s_ch = [self.flux_low_ch[qTest]]*4 + [self.flux_high_ch[qTest]]*3
         self.m1s_freq = [self.freq2reg(freq_MHz, gen_ch=ch) for freq_MHz, ch in zip(self.m1s_freq_MHz, self.m1s_ch)]
-        self.m1s_length = [self.us2cycles(self.swap_ds.get_h_pi(stor_name)/3, gen_ch=ch)
+        self.m1s_length = [self.us2cycles(self.swap_ds.get_pi(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
-        self.m1s_gain = [self.swap_ds.get_gain(stor_name)//2
-            if int(stor_name[-1])==self.cfg.expt.init_stor else 0
+        self.m1s_gain = [self.swap_ds.get_gain(stor_name)
+            # if int(stor_name[-1])==self.cfg.expt.init_stor else 0
             for stor_name in stor_names]
         self.m1s_wf_name = ["pi_m1si_low"]*4 + ["pi_m1si_high"]*3
 
@@ -93,8 +93,12 @@ class SidebandScrambleProgram(MMAveragerProgram):
 
         for kk in range(self.cfg.expt.floquet_cycle):
             for jj in range(7):
-                self.setup_and_pulse(**self.m1s_kwargs[jj])
-                self.sync_all(self.us2cycles(0.1))
+                if jj==self.cfg.expt.init_stor:
+                    print(self.m1s_kwargs[jj])
+                    self.setup_and_pulse(**self.m1s_kwargs[jj])
+                    self.sync_all(self.us2cycles(0.1))
+                # else:
+                #     self.sync_all(self.us2cycles(1.2))
 
         # postpulse
         if ro_stor > 0:
@@ -158,8 +162,9 @@ class SidebandScrambleExperiment(Experiment):
                                             progress=False,
                                             debug=debug,
                                             readouts_per_experiment=read_num)
-            data['avgi'].append(avgi[0][-1])
-            data['avgq'].append(avgq[0][-1])
+            avgi, avgq = avgi[0][-1], avgq[0][-1]
+            data['avgi'].append(avgi)
+            data['avgq'].append(avgq)
             data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
             data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
 
