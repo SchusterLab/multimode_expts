@@ -17,12 +17,12 @@ class SidebandScrambleProgram(QsimBaseProgram):
                     pulse_args['phase'] = self.deg2reg(self.cfg.expt.advance_phase*kk)
                     self.setup_and_pulse(**pulse_args)
                     self.sync_all()
-                elif jj+1==2:
-                    pulse2 = deepcopy(self.m1s_kwargs[1])
-                    pulse2['gain'] //= self.cfg.expt.gain_div
-                    pulse2['length'] //= self.cfg.expt.length_div
-                    pulse2['phase'] = self.deg2reg(-130*kk)
-                    self.setup_and_pulse(**pulse2)
+                # elif jj+1==2:
+                #     pulse2 = deepcopy(self.m1s_kwargs[1])
+                #     pulse2['gain'] //= self.cfg.expt.gain_div
+                #     pulse2['length'] //= self.cfg.expt.length_div
+                #     pulse2['phase'] = self.deg2reg(-130*kk)
+                #     self.setup_and_pulse(**pulse2)
                 else:
                     self.sync_all(self.us2cycles(0.3))
 
