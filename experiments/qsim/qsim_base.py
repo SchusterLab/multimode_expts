@@ -238,10 +238,13 @@ class QsimBaseExperiment(Experiment):
                 xlabel, ylabel = self.inner_param, self.outer_param
             except AttributeError:
                 try:
-                    ylabel, xlabel = self.cfg.expt.swept_params
-                except Exception as e:
-                    print("Couldn't get x and y labels automatially:", e)
-                    xlabel, ylabel = None, None
+                        ylabel, xlabel = self.cfg.swept_params
+                except AttributeError:
+                    try:
+                        ylabel, xlabel = self.cfg.expt.swept_params
+                    except Exception as e:
+                        print("Couldn't get x and y labels automatically:", e)
+                        xlabel, ylabel = None, None
             for ax in axs:
                 ax.set_xlabel(xlabel)
                 ax.set_ylabel(ylabel)
