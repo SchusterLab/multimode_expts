@@ -1,7 +1,8 @@
 # from audioop import avg
+import cmath
+
 import numpy as np
 import scipy as sp
-import cmath
 
 # ====================================================== #
 
@@ -336,7 +337,7 @@ def fitdecaysin(xdata, ydata, fitparams=None):
     if fitparams[5] is None: fitparams[5]=xdata[0]
     bounds = (
         [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, 0.3*(max(xdata)-min(xdata)), np.min(ydata), xdata[0]-(xdata[-1]-xdata[0])],
-        [1.5*fitparams[0], 15/(max(xdata)-min(xdata)), 360, np.inf, np.max(ydata), xdata[-1]+(xdata[-1]-xdata[0])]
+        [1.5*fitparams[0], 50/(max(xdata)-min(xdata)), 360, np.inf, np.max(ydata), xdata[-1]+(xdata[-1]-xdata[0])]
         )
     for i, param in enumerate(fitparams):
         if not (bounds[0][i] < param < bounds[1][i]):
@@ -346,6 +347,40 @@ def fitdecaysin(xdata, ydata, fitparams=None):
     pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
     try:
         pOpt, pCov = sp.optimize.curve_fit(decaysin, xdata, ydata, p0=fitparams, bounds=bounds)
+        # return pOpt, pCov
+    except RuntimeError: 
+        print('Warning: fit failed!')
+        # return 0, 0
+    return pOpt, pCov
+
+
+
+
+def gaussianfunc(x, *p):
+    y0, yscale, x0, sigma = p
+    return y0 + yscale * np.exp(-((x - x0) / sigma) ** 2)
+
+def fitgaussian(xdata, ydata, fitparams=None):
+    if fitparams is None: fitparams = [None]*4
+    if fitparams[0] is None: fitparams[0]=np.min(ydata)
+    if fitparams[1] is None: fitparams[1]=np.max(ydata)-np.min(ydata)
+    if fitparams[2] is None: fitparams[2]=xdata[np.argmax(ydata)]
+    if fitparams[3] is None: fitparams[3]= (max(xdata)-min(xdata))/10
+
+    # bounds = (
+    #     [np.min(ydata), 0, np.min(xdata), 0],
+    #     [np.max(ydata), np.inf, np.max(xdata), np.inf]
+    # )
+    # for i, param in enumerate(fitparams):
+    #     if not (bounds[0][i] < param < bounds[1][i]):
+    #         fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
+    #         print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
+
+    pOpt = fitparams
+    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
+    try:
+        print('fitparams', fitparams)
+        pOpt, pCov = sp.optimize.curve_fit(gaussianfunc, xdata, ydata, p0=fitparams)
         # return pOpt, pCov
     except RuntimeError: 
         print('Warning: fit failed!')

@@ -1,9 +1,16 @@
-from qick import QickProgram, AveragerProgram, RAveragerProgram
-import numpy as np
-from slab import AttrDict
-from dataset import storage_man_swap_dataset
-import matplotlib.pyplot as plt
+import logging
 from typing import List, Optional, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+from qick import AveragerProgram, QickProgram, RAveragerProgram
+from slab import AttrDict
+
+from dataset import storage_man_swap_dataset
+
+logger = logging.getLogger("qick.qick_asm")
+logger.setLevel(logging.ERROR)
+
 
 def print_debug(): 
     import inspect
@@ -138,7 +145,7 @@ class MM_base:
         dict= {'key = transition' : value = []} 
         '''
 
-    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None, multiphoton_cfg: Optional[AttrDict] = None):
+    def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None, cfg: Optional[AttrDict] = None):
         '''
         sweep_pulse: 
             [name of channel (qubit, multiphoton, man, storage),
@@ -153,11 +160,10 @@ class MM_base:
             **** Man is not refferring to man channel but f0g1 channel
 
         '''
-        if multiphoton_cfg is None:
-            multiphoton_cfg = self.multiphoton_cfg
+        if cfg is None:
+            cfg = self.cfg
 
-        creator = prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
-
+        creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
             for pulse_idx in range(len(sweep_pulse)):
                 # for each pulse 
@@ -787,9 +793,19 @@ class MM_base:
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
                     ['qubit', 'ge', 'hpi', second_phase]]
         if fast: 
+            # take the AC stark phase 
+            freq_AC = self.cfg.device.manipulate.revival_stark_shift[man_mode_no-1]
+            revival_time = self.cfg.device.manipulate.revival_time[man_mode_no-1]
+            theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
+            theta_2 = theta_2 % 360
+            print('theta_2', theta_2)
+            print('revival_time', revival_time)
+            # print('freq_AC', freq_AC)
+
             parity_str = [['multiphoton', 'g0-e0', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
-                    ['multiphoton', 'g0-e0', 'hpi', second_phase]]
+                    ['multiphoton', 'g0-e0', 'hpi', theta_2]]
+                    # ['multiphoton', 'g0-e0', 'hpi', second_phase]]
             # print('Doing fast parity pulse; hope you calibratied multiphoton hpi-g0-e0')
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
@@ -918,7 +934,8 @@ class MM_base:
 
         if span is None:
             span = (np.max(np.concatenate((Ie_new, Ig_new))) - np.min(np.concatenate((Ie_new, Ig_new))))/2
-        xlims = [xg-span, xg+span]
+        midpoint = (np.max(np.concatenate((Ie_new, Ig_new))) + np.min(np.concatenate((Ie_new, Ig_new))))/2
+        xlims = [midpoint-span, midpoint+span]
         ylims = [yg-span, yg+span]
 
         if plot:
@@ -1031,7 +1048,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
 class prepulse_creator2: 
-    def __init__(self, cfg, storage_man_file, multiphoton_cfg=None):
+    def __init__(self, cfg, storage_man_file):
         '''
         Takes pulse param of form 
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
@@ -1053,7 +1070,6 @@ class prepulse_creator2:
         # print(
         #     "multiphoton_cfg", multiphoton_cfg.pulses["pi_g0-e0"]['frequency'] if multiphoton_cfg else "No multiphoton config provided"
         # )
-        self.multiphoton_cfg = multiphoton_cfg
 
         # man storage swap data 
         self.dataset = storage_man_swap_dataset(storage_man_file)
@@ -1091,16 +1107,40 @@ class prepulse_creator2:
         ''' pulse name comes from yaml file '''
         transition_name, pulse_name, phase = pulse_param
         # frequency
-        pulse_full_name = pulse_name + '_' + transition_name
-        cfg = self.multiphoton_cfg
+        # pulse_full_name = pulse_name + '_' + transition_name
+        # cfg = self.multiphoton_cfg
 
-        qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']], 
-                    [cfg.pulses[pulse_full_name]['gain']],
-                    [cfg.pulses[pulse_full_name]['length']],
-                    [phase],
-                    [self.channel_assign(transition_name)],
-                    [cfg.pulses[pulse_full_name]['type']],
-                    [cfg.pulses[pulse_full_name]['sigma']]], dtype = object)
+        # qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']], 
+        #             [cfg.pulses[pulse_full_name]['gain']],
+        #             [cfg.pulses[pulse_full_name]['length']],
+        #             [phase],
+        #             [self.channel_assign(transition_name)],
+        #             [cfg.pulses[pulse_full_name]['type']],
+        #             [cfg.pulses[pulse_full_name]['sigma']]], dtype = object)
+        # self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+
+        cfg = self.cfg
+        state_start = transition_name[0]
+        state_end = transition_name[3]
+        photon_no_start = int(transition_name[1])
+        if state_start =='g':
+            assert state_end == 'e', "transition name should be gn-en"
+            transition = 'gn-en'
+        elif state_start == 'e':
+            assert state_end == 'f', "transition name should be en-fn"
+            transition = 'en-fn'
+        elif state_start == 'f':
+            assert state_end == 'g', "transition name should be fn-gn+1"
+            transition = 'fn-gn+1'
+
+        qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]], 
+                               [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]], 
+                               [cfg.device.multiphoton[pulse_name][transition]['length'][photon_no_start]], 
+                               [phase], 
+                               [self.channel_assign(transition_name)], 
+                               [cfg.device.multiphoton[pulse_name][transition]['type'][photon_no_start]], 
+                               [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
+
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
 
@@ -1125,6 +1165,9 @@ class prepulse_creator2:
                     [self.cfg.device.qubit.pulses[pulse_full_name]['type'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['sigma'][0]]], dtype = object)
 
+            self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+
+
         else: # parity string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
             # print('Creating parity pulse:' ,self.cfg.device.manipulate.revival_time[man_idx]) 
@@ -1137,7 +1180,7 @@ class prepulse_creator2:
                         [2],
                         ['const'],
                         [0.0]], dtype = object)
-        self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+                self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
 
     def man(self, pulse_param):
