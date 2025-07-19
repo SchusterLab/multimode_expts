@@ -1,11 +1,13 @@
-import numpy as np
+from copy import deepcopy
+
 import matplotlib.pyplot as plt
+import numpy as np
 from qick import *
 from qick.helpers import gauss
-from slab import Experiment, AttrDict
+from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
+
 import experiments.fitting as fitter
-from copy import deepcopy
 from MM_base import MMRAveragerProgram
 
 
@@ -28,16 +30,26 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # what pulse do we want to calibrate?
         # use the pre_pulse_creator to define pulse parameters
         # I should add user define pulse later for more flexibility
-        self.pulse_to_test = self.get_prepulse_creator(cfg.expt.pulse_type).pulse.tolist()
-
+        self.pulse_to_test = self.get_prepulse_creator([cfg.expt.pulse_type], cfg=cfg).pulse.tolist()
+        # flatten the list
+        self.pulse_to_test = [item for sublist in self.pulse_to_test for item in sublist]
         # add the pulse to test to the channel
         if self.pulse_to_test[5] == 'gauss' and self.pulse_to_test[6] > 0:
+            _sigma = self.us2cycles(self.pulse_to_test[6], gen_ch=self.pulse_to_test[4])
             self.add_gauss(ch=self.pulse_to_test[4],
                            name="pulse_to_test",
-                           sigma=self.pulse_to_test[6],
-                           length=self.pulse_to_test[6]*4, # take 4 sigma cutoff
+                           sigma=_sigma,
+                           length=_sigma*4, # take 4 sigma cutoff
                            )
+        elif self.pulse_to_test[5] == 'flat_top' and  self.pulse_to_test[6] > 0: 
+            _sigma = self.us2cycles(self.pulse_to_test[6], gen_ch=self.pulse_to_test[4])
+            self.add_gauss(ch=self.pulse_to_test[4],
+                              name="pulse_to_test",
+                              sigma=_sigma,
+                              length=_sigma*4, # take 4 sigma cutoff
+                              )
 
+        
         # initialize registers
         if cfg.expt.parameter_to_test == 'gain':
             if self.pulse_to_test[5] == "flat_top":
@@ -48,7 +60,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
             self.r_gain3 = 4 # I am taking this from amplitude rabi but I am not sure why 4
             self.channel_page = self.ch_page(self.pulse_to_test[4])
-            self.safe_regwi(self.channel_page, self.r_gain3, self.cfg.expt.start)
+            self.safe_regwi(self.channel_page, self.r_gain3, int(self.cfg.expt.start))
 
         if cfg.expt.parameter_to_test == 'frequency':
             self.channel_page = self.ch_page(self.pulse_to_test[4])
@@ -57,6 +69,9 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             self.f_step = self.freq2reg(cfg.expt.step, gen_ch=self.pulse_to_test[4])
             self.r_freq2 = 4
             self.safe_regwi(self.channel_page, self.r_freq2, self.f_start)
+            # define phase register to update it later for pi, -pi pulses
+            self.r_phase= self.sreg(self.pulse_to_test[4], "phase")
+            
 
         self.sync_all(200)
 
@@ -75,6 +90,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                     [['qubit', 'ge', 'pi', 0]]
                 )
                 self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
+
         
         # this will be deleted once we replace everything with the multiphoton def
         elif cfg.expt.pulse_type[0] == 'man':
@@ -97,22 +113,22 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             photon_no = int(cfg.expt.pulse_type[1][1])
             qubit_state_start = cfg.expt.pulse_type[1][0]
             prep_pulses = self.prep_man_photon(photon_no)
-            if qubit_state_start == 'e':
-                prep_pulses += [['qubit', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
+            if qubit_state_start == 'g':
+                prep_pulses += []
+            elif qubit_state_start == 'e':
+                prep_pulses += [['multiphoton', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
             elif qubit_state_start == 'f':
-                prep_pulses += [['qubit', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
-                prep_pulses += [['qubit', 'e' + str(photon_no) + '-f' + str(photon_no), 'pi', 0]]
+                prep_pulses += [['multiphoton', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
+                prep_pulses += [['multiphoton', 'e' + str(photon_no) + '-f' + str(photon_no), 'pi', 0]]
             else :
-                raise ValueError("Invalid qubit state start. Must be 'e' or 'f'.")
+                raise ValueError("Invalid qubit state start. Must be 'g', 'e' or 'f'.")
+            # print("prep_pulses:", prep_pulses)
             self.creator = self.get_prepulse_creator(prep_pulses)
             self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
-
-
 
         else:
             raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
 
-        print("pulse preparation: ", self.creator.pulse)
 
         # set the pulse register to test 
         if self.pulse_to_test[5] == 'gauss':
@@ -124,10 +140,11 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
 
         if cfg.expt.parameter_to_test == 'gain':
+            _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
             self.set_pulse_registers(
                 ch=self.pulse_to_test[4],
                 style = pulse_style,
-                freq=self.pulse_to_test[0],
+                freq=_freq,
                 phase = 0,
                 gain = 0, # dummy
                 waveform = "pulse_to_test",
@@ -138,14 +155,31 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 self.mathi(self.channel_page, self.r_gain2, self.r_gain3, "+", 0)
 
         elif cfg.expt.parameter_to_test == 'frequency':
-            self.set_pulse_registers(
-                ch=self.pulse_to_test[4],
-                style = pulse_style,
-                freq=self.pulse_to_test[0], # dummy 
-                phase = 0,
-                gain = self.pulse_to_test[1], 
-                waveform = "pulse_to_test",
-            )
+            _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
+            if self.pulse_to_test[5] == "gauss":
+                self.set_pulse_registers(
+                    ch=self.pulse_to_test[4],
+                    style = pulse_style,
+                    freq=_freq,
+                    phase = 0,
+                    gain = self.pulse_to_test[1],
+                    waveform = "pulse_to_test",
+                )
+            elif self.pulse_to_test[5] == "flat_top":
+                _length = self.us2cycles(self.pulse_to_test[2], gen_ch=self.pulse_to_test[4])
+                self.set_pulse_registers(
+                    ch=self.pulse_to_test[4],
+                    style = pulse_style,
+                    freq=_freq,
+                    length = _length,
+                    phase = 0,
+                    gain = self.pulse_to_test[1], 
+                    waveform = "pulse_to_test",
+                )
+                
+
+
+
             self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
 
         else:
@@ -156,10 +190,31 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         n_pulses = 1
         if "n_pulses" in cfg.expt:
             n_pulses = cfg.expt.n_pulses
-        if cfg.expt.pulse_type[2] == 'hpi':
-            n_pulses *=2
-        for i in range(n_pulses):
-            self.pulse(ch = self.pulse_to_test[4])
+
+
+
+        if cfg.expt.parameter_to_test == 'gain':
+            for i in range(n_pulses):
+                if cfg.expt.pulse_type[2] == 'pi':
+                    for p in range(2):
+                        self.pulse(ch = self.pulse_to_test[4])
+                elif cfg.expt.pulse_type[2] == 'hpi':
+                    for p in range(4):
+                        self.pulse(ch = self.pulse_to_test[4])
+
+        elif cfg.expt.parameter_to_test == 'frequency':
+            # set the phase register to the initial value
+            phase = self.pulse_to_test[3]
+            for i in range(n_pulses):
+                for p in range(2):
+                    # play the pulse
+                    self.pulse(ch = self.pulse_to_test[4])
+                    # update the phase modulo 360
+                    phase += 180
+                    phase = phase % 360
+                    _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
+                    self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
+
 
         self.sync_all()
 
@@ -167,23 +222,26 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         if cfg.expt.pulse_type[0] == 'qubit':
             if self.pulse_to_test[1] == 'ef':
-                post_pulse = self.creator.pulse.tolist()[0] # ge
-                self.custom_pulse(cfg, [post_pulse], prefix='post_')
-        elif cfg.expt.pulse_type[0] == 'man':
-            post_pulse = self.creator.pulse.tolist()[-1] # ef 
-            self.custom_pulse(cfg, [post_pulse], prefix='post_')
-        elif cfg.expt.pulse_type[0] == 'storage':
-            post_pulse = self.creator.pulse.tolist()[-2:]
-            post_pulse = post_pulse[::-1]
-            self.custom_pulse(cfg, post_pulse, prefix='post_')
+                post_pulse = self.creator.pulse.tolist() # ge
+                self.custom_pulse(cfg, post_pulse, prefix='post_')
+        elif cfg.expt.pulse_type[0] in ('man', 'storage'):
+            post_pulse = self.creator.pulse.tolist() # ef 
+            # Reverse the order of the prepulses, skipping the last g-e qubit pulse
+            last_pulse = [sublist[:0:-1] for sublist in  self.creator.pulse.tolist()]
+            self.custom_pulse(cfg, last_pulse, prefix='post_')
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             qubit_state_start = cfg.expt.pulse_type[1][0]
+            if qubit_state_start == 'g':
+                post_pulse = []
             if qubit_state_start == 'e':
-                post_pulse = self.creator.pulse.tolist()[-0] #ge
-                self.custom_pulse(cfg, [post_pulse], prefix='post_')
+                last_pulse = [[sublist[-1]] for sublist in  self.creator.pulse.tolist()]
+                print("post_pulse:", last_pulse)
+                self.custom_pulse(cfg, last_pulse, prefix='post_')
             elif qubit_state_start == 'f':
-                post_pulse = self.creator.pulse.tolist()[-1] # ef
-                self.custom_pulse(cfg, [post_pulse], prefix='post_')
+                print("post_pulse:", self.creator.pulse.tolist())
+                last_pulse = [[sublist[-1]] for sublist in  self.creator.pulse.tolist()]
+                # print("post_pulse:", last_pulse)
+                self.custom_pulse(cfg, last_pulse, prefix='post_')
         else:
             raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
 
@@ -195,9 +253,10 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         step = self.cfg.expt.step
         if self.cfg.expt.parameter_to_test == 'gain':
-            self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", step)
+            self.mathi(self.channel_page, self.r_gain3, self.r_gain3, "+", int(step))
         elif self.cfg.expt.parameter_to_test == 'frequency':
-            self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", step)
+            _step = self.freq2reg(step, gen_ch=self.pulse_to_test[4])
+            self.mathi(self.channel_page, self.r_freq2, self.r_freq2, "+", _step)
         else:
             raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
 
@@ -228,54 +287,88 @@ class ErrorAmplificationExperiment(Experiment):
     def __init__(self, soccfg=None, path='', prefix='ErrorAmplification', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
+        print(self.cfg.expt)
+
+
 
     
     def acquire(self, progress=False, debug=False):
-        q_ind = self.cfg.expt.qubit
+
+        num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
             for key, value in subcfg.items() :
-                if isinstance(value, list):
-                    subcfg.update({key: value[q_ind]})
-                elif isinstance(value, dict):
+                if isinstance(value, dict):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
-                            if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})   
+                            if not(isinstance(value3, list)):
+                                value2.update({key3: [value3]*num_qubits_sample})                                
+                elif not(isinstance(value, list)):
+                    subcfg.update({key: [value]*num_qubits_sample})
 
 
         cfg = deepcopy(self.cfg)
         adc_ch = cfg.hw.soc.adcs.readout.ch
         n_pts = np.arange(1, cfg.expt.n_pulses) 
-        x_pts = np.arange(cfg.expt.start, cfg.expt.start + cfg.expt.step * len(n_pts), cfg.expt.step)
         
-        data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amps":[], "phase":[]}
-        for pt in n_pts:
+        data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amp":[], "phase":[]}
+        for pt in tqdm(n_pts):
             cfg.expt.n_pulses = pt
             prog = ErrorAmplificationProgram(soccfg=self.soccfg, cfg=cfg)
             xpts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)
-        
-            avgi = avgi[adc_ch][0]
-            avgq = avgq[adc_ch][0]
-            amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-            phases = np.angle(avgi+1j*avgq) # Calculating the phase        
+            avgi = avgi[adc_ch[0]][0]
+            avgq = avgq[adc_ch[0]][0]
+            amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
+            phase = np.angle(avgi+1j*avgq) # Calculating the phase        
 
             data["avgi"].append(avgi)
             data["avgq"].append(avgq)
-            data["amps"].append(amps)
-            data["phases"].append(phases)
+            data["amp"].append(amp)
+            data["phase"].append(phase)
 
         data["N_pts"] = n_pts
-        data["x_pts"] = x_pts
+        data["x_pts"] = xpts
 
         for k, a in data.items():
             data[k] = np.array(a)
         self.data=data
         return data
     
-    def analyze(self, data=None, fit=True, **kwargs):
+    def analyze(self, data=None, fit=True, state_fin='g', **kwargs):
         if data is None:
             data=self.data
-        pass
+
+        # use the fitting process implemented by MIT 
+        # https://arxiv.org/pdf/2406.08295
+        
+        # for avgi, avgq, amp and phase take the product of the raws and
+
+        # prod_avgi = np.abs(np.prod(data['avgi'], axis=0))
+        # prod_avgq = np.abs(np.prod(data['avgq'], axis=0))
+        # prod_amp = np.abs(np.prod(data['amp'], axis=0))
+        # prod_phase = np.abs(np.prod(data['phase'], axis=0))
+
+
+        Ie = self.cfg.device.readout.Ie[0]
+        Ig = self.cfg.device.readout.Ig[0]
+
+        # rescale avgi so that when equal to v_e it is 0 and when equal to v_g it is 1
+        if state_fin == 'g':
+            data_avgi_scaled = (data['avgi'] - Ie) / (Ig - Ie)
+        elif state_fin == 'e':
+            data_avgi_scaled = (data['avgi'] - Ig) / (Ie - Ig)
+        else:
+            raise ValueError("Invalid state_fin. Must be 'g' or 'e'.")
+
+        prod_avgi = np.prod(data_avgi_scaled, axis=0)/ np.prod(data_avgi_scaled, axis=0).max()  # normalize the product
+        data['prod_avgi'] = prod_avgi  # normalize the product
+
+        if fit:
+            p_avgi, pCov_avgi = fitter.fitgaussian(data['x_pts'], data['prod_avgi'])
+            data['prod_avgi_fit'] = fitter.gaussianfunc(data['x_pts'], *p_avgi)
+            # add the fit parameters to the data dictionary
+            data['fit_avgi'] = p_avgi
+            data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
+    
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
@@ -287,41 +380,75 @@ class ErrorAmplificationExperiment(Experiment):
         avgq = data['avgq']
 
         if self.cfg.expt.parameter_to_test == 'gain':
-            ylabel = "Gain [dac units]"
+            xlabel = "Gain [dac units]"
         elif self.cfg.expt.parameter_to_test == 'frequency':
-            ylabel = "Frequency [MHz]"
+            xlabel = "Frequency [MHz]"
         else:
             raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
 
 
 
-        title= f"Error Amplification: {self.cfg.expt.pulse_type[0]}-{self.cfg.expt.pulse_type[1]}"
-
-        plt.figure(figsize=(10,8))
-        plt.subplot(211, title=title, ylabel=ylabel)
-        plt.imshow(
+        title= f"Err Ampl: {self.cfg.expt.pulse_type[0]}-{self.cfg.expt.pulse_type[1]}-{self.cfg.expt.pulse_type[2]}"
+        fig, ax = plt.subplots(2, 1, figsize=(8, 8), sharex=True, sharey=True)
+        ax[0].imshow(
             np.flip(avgi, 0),
             cmap='viridis',
             extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]],
             aspect='auto')
-        plt.colorbar(label='I [ADC level]')
-        plt.clim(vmin=None, vmax=None)
-        # plt.axvline(1684.92, color='k')
-        # plt.axvline(1684.85, color='r')
+        ax[0].set_title(title)
+        ax[0].set_xlabel(xlabel)
+        ax[0].set_ylabel('N pulse')
+        fig.colorbar(ax[0].imshow(np.flip(avgi, 0), cmap='viridis', extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]], aspect='auto'), ax=ax[0], label='I [ADC level]')
 
-        plt.subplot(212, title=title, ylabel=ylabel, xlabel='N pulse')
-        plt.imshow(
+        ax[1].imshow(
             np.flip(avgq, 0),
             cmap='viridis',
             extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]],
             aspect='auto')
-        plt.colorbar(label='Q [ADC level]')
-        plt.clim(vmin=None, vmax=None)
-        
-        if fit: pass
+        ax[1].set_title(title)
+        ax[1].set_xlabel(xlabel)
+        ax[1].set_ylabel('N pulse')
+        fig.colorbar(ax[1].imshow(np.flip(avgq, 0), cmap='viridis', extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]], aspect='auto'), ax=ax[1], label='Q [ADC level]')
 
-        plt.tight_layout()
-        plt.show()
+        if fit: 
+            if 'fit_avgi' in data:
+                x_opt = data['fit_avgi'][2]
+                ax[0].axvline(x_opt, color='black', linestyle='--')
+
+            fig2, ax2 = plt.subplots(figsize=(6, 4))
+            ax2.scatter(x_sweep, data['prod_avgi'], label='Avg I Product')
+            # add the fit line if available
+            if 'prod_avgi_fit' in data:
+                ax2.plot(x_sweep, data['prod_avgi_fit'], label='Fit Avg I Product', color='black')
+                # add a text annotation for the optimal point if available and put it in the upper left corner
+                x_opt = data['fit_avgi'][2]
+                if self.cfg.expt.parameter_to_test == 'gain':
+                    text = f"Optimal Gain: {x_opt:.2f} DAC units"
+                elif self.cfg.expt.parameter_to_test == 'frequency':
+                    text = f"Optimal Frequency: {x_opt:.2f} MHz"
+                ax2.axvline(x_opt, color='black', linestyle='--')
+                ax2.text(0.05, 0.95, text, transform=ax2.transAxes, fontsize=10,
+                         verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
+            ax2.set_xlabel(xlabel)
+            ax2.set_ylabel('Avg I Product')
+            ax2.legend(loc='lower left')
+            ax2.grid()
+
+            if 'fit_avgq' in data:
+                ax[1].fill_between(x_sweep, 
+                                 data['fit_avgq'] - data['fit_avgq_err'], 
+                                 data['fit_avgq'] + data['fit_avgq_err'], 
+                                 alpha=0.2, color='black')
+                ax[1].set_xlabel(xlabel)
+                ax[1].set_ylabel('Avgq')
+
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data)        
+
+            
     
 
 

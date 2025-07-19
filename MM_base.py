@@ -165,10 +165,10 @@ class MM_base:
 
         creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
-            for pulse_idx in range(len(sweep_pulse)):
+            for pulse_idx, pulse in enumerate(sweep_pulse):
                 # for each pulse 
-                pulse_param = list(sweep_pulse[pulse_idx][1:])
-                channel_name = sweep_pulse[pulse_idx][0]
+                pulse_param = list(pulse[1:])
+                channel_name = pulse[0]
                 eval(f"creator.{channel_name}({pulse_param})")
 
         return creator

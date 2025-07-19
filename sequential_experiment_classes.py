@@ -1,27 +1,29 @@
-import numpy as np
+import json
 import os
 import time
-from tqdm import tqdm
-import json
-from slab.datamanagement import SlabFile
-from slab import get_next_filename, AttrDict
-from slab.experiment import Experiment
-import experiments as meas
-from slab.instruments import *
-import yaml
-from scipy.interpolate import UnivariateSpline
-from slab import get_next_filename, get_current_filename
 
-from slab.dsfit import *
-from scipy.optimize import curve_fit
-import experiments.fitting as fitter
-from scipy.fft import fft, fftfreq
-from multimode_expts.MM_base import MM_base
-from multimode_expts.MM_rb_base import MM_rb_base
-from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import * # for generate combos in MultiRBAM
+import numpy as np
+import yaml
+
 #import clear_output
 from IPython.display import clear_output
+from scipy.fft import fft, fftfreq
+from scipy.interpolate import UnivariateSpline
+from scipy.optimize import curve_fit
+from slab import AttrDict, get_current_filename, get_next_filename
+from slab.datamanagement import SlabFile
+from slab.dsfit import *
+from slab.experiment import Experiment
+from slab.instruments import *
+from tqdm import tqdm
+
+import experiments as meas
+import experiments.fitting as fitter
+from multimode_expts.fit_display import *  # for generate combos in MultiRBAM
+from multimode_expts.MM_base import MM_base
+from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
+from multimode_expts.MM_rb_base import MM_rb_base
+
 
 class sequential_base_class():
     def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, config_thisrun=None
@@ -39,7 +41,7 @@ class sequential_base_class():
 
         pass
 
-    def run_with_configthisrun(self, run_expt):
+    def run_with_configthisrun(self, run_expt, verbose=True):
         """
         Run the experiment with a specific configuration for this run.
         
@@ -53,9 +55,11 @@ class sequential_base_class():
         
         if self.config_thisrun is not None:
             run_expt.cfg = self.config_thisrun
-            print(f"Running experiment with config: configthisrun")
+            if verbose:
+                print(f"Running experiment with config: configthisrun")
         else:
-            print("yoohoo, no config_thisrun provided, using default config")
+            if verbose:
+                print("yoohoo, no config_thisrun provided, using default config")
         return run_expt
 
 
@@ -126,6 +130,7 @@ class sequential_base_class():
             # Close previous plots and display the new one
             #
             from IPython.display import clear_output
+
             # from multimode_expts.fit_display_classes import SidebandFitting
             clear_output(wait=True)
             plt.close('all')  # Close all existing figures
@@ -181,6 +186,7 @@ class sequential_base_class():
     
     def close_prev_plots(self): 
         from IPython.display import clear_output
+
         # from multimode_expts.fit_display_classes import SidebandFitting
         clear_output(wait=True)
         plt.close('all')  # Close all existing figures
@@ -251,7 +257,7 @@ class sequential_base_class():
                 if data_key not in self.expt_sweep.data.keys():
                     self.expt_sweep.data[data_key] = []
                 self.expt_sweep.data[data_key].append(run_exp.data[data_key])
-        print(self.expt_sweep)
+        # print(self.expt_sweep)
         self.expt_sweep.save_data()
 
    
@@ -353,6 +359,7 @@ class histogram_sweep_class(sequential_base_class):
                                         zlabels=['Fidelity', 'Contrast'])
         
         from IPython.display import clear_output
+
         # from multimode_expts.fit_display_classes import SidebandFitting
         clear_output(wait=True)
         plt.close('all')  # Close all existing figures
@@ -389,10 +396,13 @@ class histogram_sweep_class(sequential_base_class):
 class sidebands_class(sequential_base_class):
     '''Class for sideband experiments; using sideband general experiment'''
 
-    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, config_thisrun = None):
+    def __init__(self, soccfg=None, path=None, prefix=None, config_file=None, exp_param_file=None, config_thisrun = None, liveplotting=True):
         super().__init__(soccfg, path, prefix, config_file, exp_param_file, config_thisrun=config_thisrun)
         self.experiment_class = 'single_qubit.sideband_general'
         self.experiment_name = 'SidebandGeneralExperiment'
+        self.liveplotting = liveplotting
+        if self.liveplotting:
+            print("Live plotting is enabled. All plots will be closed between iterations of this experiment!")
 
 
     def sideband_freq_sweep(self):
@@ -400,22 +410,25 @@ class sidebands_class(sequential_base_class):
         self.initialize_expt_sweep(keys = ['freq_sweep'])
         chevron = None
 
-        for index, freq in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['freq_start'], 
-                                                self.loaded[self.sweep_experiment_name]['freq_stop'], 
-                                                self.loaded[self.sweep_experiment_name]['freq_step'])):
+        for index, freq in enumerate(tqdm(np.arange(
+            self.loaded[self.sweep_experiment_name]['freq_start'],
+            self.loaded[self.sweep_experiment_name]['freq_stop'],
+            self.loaded[self.sweep_experiment_name]['freq_step']
+            ), disable=self.liveplotting)):
 
-            print('Index: %s Freq. = %s MHz' % (index, freq))
+            if self.liveplotting:
+                print('Index: %s Freq. = %s MHz' % (index, freq))
             self.loaded[self.experiment_name]['flux_drive'][1] = freq
 
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
-            run_exp = self.run_with_configthisrun(run_exp)  # Use the config_thisrun if provided
+            run_exp = self.run_with_configthisrun(run_exp, verbose=self.liveplotting)  # Use the config_thisrun if provided
 
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
             # run_exp.cfg.device.readout.relax_delay = 8000
             # if run_exp.cfg.expt.active_reset:
             #     run_exp.cfg.device.readout.relax_delay = 100  # Wait time between experiments [us]
-            print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
+            # print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
 
             run_exp.go(analyze=False, display=False, progress=False, save=False)
 
@@ -423,7 +436,8 @@ class sidebands_class(sequential_base_class):
             self.save_sweep_data('freq_sweep', freq, run_exp)
 
             # Perform sideband analysis and live plotting
-            chevron = self.perform_chevron_analysis()
+            if self.liveplotting:
+                chevron = self.perform_chevron_analysis()
         return chevron
 
     def sideband_gain_freq_sweep(self):
@@ -610,12 +624,12 @@ class MM_DualRailRB(sequential_base_class):
         """
         
         try:
-            from multimode_expts.fit_display_classes import MM_DualRailRBFitting
-
             # Initialize RB analysis
             # print all args to rb analysis 
             # Close previous plots and display the new one
             from IPython.display import clear_output
+
+            from multimode_expts.fit_display_classes import MM_DualRailRBFitting
 
             clear_output(wait=True)
             plt.close('all')  # Close all existing figures
