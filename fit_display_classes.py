@@ -4,16 +4,18 @@
 # Description : This file contains classes for analyzing and displaying data from qubit experiments.This is a simpler and cleaned up version of fit_display.py
 # # %reload_ext autoreload
 # %autoreload 2
-import numpy as np
-import matplotlib.pyplot as plt
-
-from scipy.optimize import curve_fit
-from scipy.fft import rfft, rfftfreq
-import os
-import experiments.fitting as fitter
 import datetime
-import lmfit
+import os
 from copy import deepcopy
+
+import lmfit
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.fft import rfft, rfftfreq
+from scipy.optimize import curve_fit
+
+import experiments.fitting as fitter
+
 
 class GeneralFitting:
     def __init__(self, data, readout_per_round=None, threshold=None, config=None):
@@ -287,19 +289,22 @@ class RamseyFitting(GeneralFitting):
             Ilist, Qlist = self.post_select_raverager_data(data)
             data['avgi'] = Ilist[start_idx:end_idx]
             data['avgq'] = Qlist[start_idx:end_idx]
-            data['xpts'] = data['xpts'][:-1][start_idx:end_idx]
+            xpts = data['xpts'][:-1][start_idx:end_idx]
             #data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
         else:
             data['avgi'] = data['avgi'][start_idx:end_idx]
             data['avgq'] = data['avgq'][start_idx:end_idx]
-            data['xpts'] = data['xpts'][start_idx:end_idx]
+            xpts = data['xpts'][start_idx:end_idx]
 
         if fit:
             # if fitparams is None:
             #     fitparams = [200, 0.2, 0, 200, None, None]
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            # p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
+            if fitparams is None:
+                fitparams = [None, self.cfg.expt.ramsey_freq, None, None, None, None]
+            print("length", len(data["xpts"]), len(data["avgi"]))
+            p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams)
+            p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams)
+            # p_amps, pCov_amps = fitter.fitdecaysin(xpts[:-1], data["amps"][:-1], fitparams=fitparams)
             data['fit_avgi'] = p_avgi
             data['fit_avgq'] = p_avgq
             # data['fit_amps'] = p_amps
@@ -605,7 +610,8 @@ class Histogram(GeneralFitting):
 
         if self.span is None:
             self.span = (np.max(np.concatenate((Ie_new, Ig_new))) - np.min(np.concatenate((Ie_new, Ig_new)))) / 2
-        xlims = [xg - self.span, xg + self.span]
+        midpoint = (np.max(np.concatenate((Ie_new, Ig_new))) + np.min(np.concatenate((Ie_new, Ig_new))))/2
+        xlims = [midpoint-self.span, midpoint+self.span]
 
         ng, binsg = np.histogram(Ig_new, bins=numbins, range=xlims, density=True)
         ne, binse = np.histogram(Ie_new, bins=numbins, range=xlims, density=True)

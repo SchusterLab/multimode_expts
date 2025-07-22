@@ -2,11 +2,11 @@
 device:
     qubit:
         T1:
-        - 277.39755232213906
+        - 351.64566547320703
         f_ge:
-        - 3567.340096037547
+        - 3571.672429380876
         f_ef:
-        - 3423.9707763531014
+        - 3428.4217571066574
         ramp_sigma:
         - 0.005
         ramp_sigma_num:
@@ -14,48 +14,53 @@ device:
         pulses:
             pi_ge:
                 gain:
-                - 10748
+                - 3454
                 sigma:
                 - 0.035
                 length:
                 - 0.0
-                type: gauss
+                type:
+                - gauss
             hpi_ge:
                 gain:
-                - 5003
+                - 1686
                 length:
                 - 0.0
                 sigma:
                 - 0.035
-                type: gauss
+                type:
+                - gauss
             pi_ef:
                 gain:
-                - 9161
+                - 2770
                 length:
                 - 0.0
                 sigma:
                 - 0.035
-                type: gauss
+                type:
+                - gauss
             hpi_ef:
                 gain:
-                - 4325
+                - 1318
                 sigma:
                 - 0.035
-                type: gauss
+                type:
+                - gauss
         T1_ef:
-        - 167.85602598963504
+        - 144.16571854782674
     readout:
-        trig_offset: 450
+        trig_offset:
+        - 450
         frequency:
-        - 748.8941512875441
+        - 749.1194783440185
         gain:
         - 800
         phase:
-        - 73.69187754633023
+        - 167.22384448659207
         threshold:
-        - -298.9150578233093
+        - -121.30623669882084
         threshold_list:
-        -   - -298.9150578233093
+        -   - -121.30623669882084
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -70,24 +75,29 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9911999999999994
-        - 0.008800000000000585
-        - 0.030818491094656796
-        - 0.9691815089053432
-        Ie: 35.96504172330171
-        Ig: -506.9150578233092
+        - 0.9584000000000001
+        - 0.04159999999999986
+        - 0.043000000000000003
+        - 0.957
+        Ie:
+        - -55.840880866940815
+        Ig:
+        - -169.30623669882078
     manipulate:
         f_ge:
-        - 4984.517099141256
+        - 4985.067071108202
         - 5157.8527963217475
         displace_sigma:
         - 0.05
         - 0.05
         revival_time:
-        - 1.584663918482869
+        - 1.5645496612202388
         - 1.7366205852286094
+        revival_stark_shift:
+        - -2.6792227141937364
+        - -2.6792227141937364
         gain_to_alpha:
-        - 0.0002753329059097354
+        - 0.000414659120029712
         - 0.00020045
         freq_to_alpha:
         - 0.495062203431879
@@ -182,43 +192,260 @@ device:
             - 2.0
     multiphoton_config:
         file: C:\_Lib\python\multimode_expts\configs\multiphoton_config.yml
+    multiphoton:
+        pi:
+            gn-en:
+                frequency:
+                - 3579.9600164369886
+                - 3571.5382408986256
+                - 3571.543042357372
+                - 3571.299620008302
+                gain:
+                - 18768
+                - 3456
+                - 3449
+                - 3430
+                length:
+                - 0
+                - 0
+                - 0
+                - 0
+                sigma:
+                - 0.007
+                - 0.035
+                - 0.035
+                - 0.035
+                type:
+                - gauss
+                - gauss
+                - gauss
+                - gauss
+            en-fn:
+                frequency:
+                - 3428.2303438452373
+                - 3427.977089804622
+                - 3427.712094472353
+                - 3427.4772366132443
+                gain:
+                - 2759
+                - 2760
+                - 2763
+                - 2768
+                length:
+                - 0
+                - 0
+                - 0
+                - 0
+                sigma:
+                - 0.035
+                - 0.035
+                - 0.035
+                - 0.035
+                type:
+                - gauss
+                - gauss
+                - gauss
+                - gauss
+            fn-gn+1:
+                frequency:
+                - 2011.3740763005724
+                - 2011.0147366265876
+                - 2010.3014597410997
+                - 2009.7836365005194
+                gain:
+                - 8000
+                - 8000
+                - 8000
+                - 8000
+                length:
+                - 0.5358111825204673
+                - 0.38504166408699336
+                - 0.31584821479967073
+                - 0.26838059127779085
+                sigma:
+                - 0.005
+                - 0.005
+                - 0.005
+                - 0.005
+                type:
+                - flat_top
+                - flat_top
+                - flat_top
+                - flat_top
+        hpi:
+            gn-en:
+                frequency:
+                - 3573.00785430557
+                - 3570.0567055299525
+                - 3567.7644237298246
+                - 3565.49698806312
+                gain:
+                - 8833
+                - 1689
+                - 1689
+                - 1697
+                length:
+                - 0
+                - 0
+                - 0
+                - 0
+                sigma:
+                - 0.007
+                - 0.035
+                - 0.035
+                - 0.035
+                type:
+                - gauss
+                - gauss
+                - gauss
+                - gauss
+            en-fn:
+                frequency:
+                - 0
+                - 0
+                - 0
+                - 0
+                gain:
+                - 0
+                - 0
+                - 0
+                - 0
+                length:
+                - 0
+                - 0
+                - 0
+                - 0
+                sigma:
+                - 0.035
+                - 0.035
+                - 0.035
+                - 0.035
+                type:
+                - gauss
+                - gauss
+                - gauss
+                - gauss
 hw:
     soc:
         dacs:
             qubit:
-                ch: 2
-                type: full
-                nyquist: 1
+                ch:
+                - 2
+                type:
+                - full
+                nyquist:
+                - 1
             readout:
-                ch: 5
-                type: full
-                nyquist: 1
+                ch:
+                - 5
+                type:
+                - full
+                nyquist:
+                - 1
             manipulate_in:
-                ch: 3
-                type: full
-                nyquist: 2
+                ch:
+                - 3
+                type:
+                - full
+                nyquist:
+                - 2
             storage_in:
-                ch: 6
-                type: full
-                nyquist: 2
+                ch:
+                - 6
+                type:
+                - full
+                nyquist:
+                - 2
             flux_low:
-                ch: 1
-                type: full
-                nyquist: 1
+                ch:
+                - 1
+                type:
+                - full
+                nyquist:
+                - 1
             flux_high:
-                ch: 1
-                type: full
-                nyquist: 1
+                ch:
+                - 1
+                type:
+                - full
+                nyquist:
+                - 1
             sideband:
-                ch: 0
-                type: full
-                nyquist: 1
+                ch:
+                - 0
+                type:
+                - full
+                nyquist:
+                - 1
         adcs:
             readout:
-                ch: 0
+                ch:
+                - 0
             cavity_out:
-                ch: 1
+                ch:
+                - 1
 aliases:
     soc: Qick101
 data_management:
     plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
+expt:
+    start: 2
+    step: 0.1
+    qubits:
+    - 0
+    expts: 25
+    reps: 300
+    rounds: 1
+    gain: 8000
+    freq: 2011.7147366265876
+    use_arb_waveform: 0
+    pi_ge_before: 0
+    pi_ef_before: 0
+    pi_ge_after: 0
+    pi_ef_after: 0
+    normalize: 0
+    active_reset: 0
+    check_man_reset:
+    - 0
+    - 0
+    swap_lossy: 0
+    check_man_reset_pi: []
+    prepulse: 1
+    pre_sweep_pulse:
+    -   - 3579.4384683413878
+        - 3428.2303438452373
+        - 2011.4000000000008
+        - 3571.9213048825372
+        - 3423.7266366015674
+    -   - 18962
+        - 2767
+        - 8000
+        - 10566
+        - 9159
+    -   - 0
+        - 0
+        - 0.5452584298467464
+        - 0
+        - 0
+    -   - 0
+        - 0
+        - 0
+        - 0
+        - 0
+    -   - 2
+        - 2
+        - 0
+        - 2
+        - 2
+    -   - gauss
+        - gauss
+        - flat_top
+        - gauss
+        - gauss
+    -   - 0.007
+        - 0.035
+        - 0.005
+        - 0.035
+        - 0.035
+    err_amp_reps: 0
+    length_placeholder: 4.4

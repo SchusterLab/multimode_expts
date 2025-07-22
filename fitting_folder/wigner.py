@@ -14,6 +14,7 @@ import os
 from scipy.optimize import fmin, check_grad, minimize
 from numpy import sqrt, linspace, cos, sin, real, arange
 import matplotlib.pyplot as plt
+# from joblib import Parallel, delayed
 
 class WignerAnalysis(GeneralFitting):
     def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5):
@@ -31,7 +32,7 @@ class WignerAnalysis(GeneralFitting):
         ydata_mod = self.bin_ss_data_given_ss()
         # wigner function expectation value is pg*(+1) + pe(-1)
         pe = ydata_mod 
-        pg = 1 - pe        
+        pg = 1 - pe  
         expec_value = 2/np.pi * (pg - pe)
         gain_to_alpha, result  = self.fit_gain_to_alpha(
             xdata=self.data['xpts'], 
@@ -223,8 +224,17 @@ class WignerAnalysis(GeneralFitting):
     
 
     def extracted_W(self, rho, alphaxs, alphays):
-        return array([[np.trace(dot(self.W_op(alphax + 1j * alphay, analytic=False), rho))
+        return array([[np.trace(dot(self.W_op(alphax + 1j * alphay, analytic=True), rho))
                        for alphax in alphaxs] for alphay in alphays])
+    
+
+    # def extracted_W_fast(rho, alphaxs, alphays, wigner_obj):
+    #     def calc(alpha):
+    #         return np.trace(dot(wigner_obj.W_op(alpha, analytic=True), rho))
+
+    #     alphas = [x + 1j * y for y in alphays for x in alphaxs]
+    #     W_vals = Parallel(n_jobs=-1)(delayed(calc)(a) for a in alphas)
+    #     return np.array(W_vals).reshape(len(alphays), len(alphaxs))
 
     def extracted_W_single(self, rho, alpha):
         return np.trace(dot(self.W_op(alpha, analytic=False), rho))
@@ -273,11 +283,14 @@ class WignerAnalysis(GeneralFitting):
     ## Final Plotting and analysis methods
     
     def wigner_analysis_results(self, allocated_counts, initial_state, rotate=False):
+        # print the keys in the data dictionary
+        print('Keys in data:', self.data.keys())
+        print('Alpha data:', self.data['alpha'])
         alpha_list = self.data['alpha']
         allocated_readout = 2 / np.pi * allocated_counts  # normalization
         initial_state = initial_state.unit()
         rho_ideal = qutip.ket2dm(initial_state).unit()
-        alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.05)
+        alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.1)
         rho = self.rho_pinv_positive_sd(allocated_readout)
         P_ns = [np.array([rho[i][i] for i in range(self.m)])]
 
@@ -326,6 +339,9 @@ class WignerAnalysis(GeneralFitting):
         mode_state_num = rho.shape[0]
         fidelity = results.get('fidelity', None)
 
+        import time 
+        start_time = time.time()
+
         fig1 = plt.figure(figsize=(14, 12))
         if fidelity is not None:
             fig1.suptitle(f'MLE Fidelity: {fidelity:.4f}', fontsize=16)
@@ -345,6 +361,7 @@ class WignerAnalysis(GeneralFitting):
         ticks = np.linspace(vmin, vmax, 5)
         cbar1.set_ticks(ticks)
         cbar1.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+        print('Time taken for first subplot:', time.time() - start_time)
 
         # Second subplot
         ax2 = fig1.add_subplot(2, 2, 2, title='$\\rho_{m,n}$')
@@ -352,6 +369,7 @@ class WignerAnalysis(GeneralFitting):
         ax2.set_ylabel('n')
         ax2.set_xlabel('m')
         fig1.colorbar(c, ax=ax2)
+        print('Time taken for second subplot:', time.time() - start_time)
 
         # Third subplot
         ax3 = fig1.add_subplot(2, 2, 3, title='MLE')
@@ -359,6 +377,12 @@ class WignerAnalysis(GeneralFitting):
         vmax = 2 / np.pi
         c3 = ax3.pcolormesh(alphas2, alphas2, real(w.extracted_W(rho, alphas2, alphas2)),
                             cmap='RdBu_r', vmin=vmin, vmax=vmax)
+
+        # c3 = ax3.pcolormesh(alphas2, alphas2, real(wigner_grid := extracted_W_fast(rho, alphas2, alphas2, self)),
+        #                     cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        
+
+
         r = sqrt(5)
         th = linspace(-3.14, 3.14, 100)
         ax3.plot(r * cos(th), r * sin(th), 'k--')
@@ -366,6 +390,7 @@ class WignerAnalysis(GeneralFitting):
         cbar3.set_label('Wigner ($1/2\pi$ units)')
         cbar3.set_ticks(ticks)
         cbar3.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+        print('Time taken for third subplot:', time.time() - start_time)
 
         print('MLE Fidelity: ', fidelity)
 
@@ -386,6 +411,7 @@ class WignerAnalysis(GeneralFitting):
             ticks = np.linspace(vmin, vmax, 5)
             cbar4.set_ticks(ticks)
             cbar4.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+            print('Time taken for fourth subplot:', time.time() - start_time)
 
 
         title = state_label if state_label is not None else 'Wigner Reconstruction Results'

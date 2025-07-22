@@ -53,15 +53,30 @@ class ParityDelayProgram(MMAveragerProgram):
             else: 
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
+        if cfg.expt.parity_fast:
+            f_ge = cfg.device.multiphoton.hpi['gn-en']['frequency'][0]
+            gain = cfg.device.multiphoton.hpi['gn-en']['gain'][0]
+            sigma = cfg.device.multiphoton.hpi['gn-en']['sigma'][0]
+            f_ge_reg = self.freq2reg(f_ge, gen_ch=self.qubit_chs[qTest])
+            _sigma = self.us2cycles(sigma, gen_ch=self.qubit_chs[qTest])
 
-        
+            theta_2 =180 + cfg.expt.length_placeholder*2*np.pi*cfg.device.manipulate.revival_stark_shift[qTest]*180/np.pi # 180 degrees phase shift for the second half of the parity pulse
+            # define the angle modulo 360
+            theta_2 = theta_2 % 360
+            print(f"theta_2: {theta_2} degrees")
+            theta_2_reg = self.deg2reg(theta_2, self.qubit_chs[qTest])
+            self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=_sigma, length=_sigma*4)
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=f_ge_reg, phase=self.deg2reg(0), gain=gain, waveform="hpi_qubit_ge")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=f_ge_reg, phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=f_ge_reg, phase=theta_2_reg, gain=gain, waveform="hpi_qubit_ge")
 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
-        
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
+        else: 
 
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
+            
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
 
-        self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180, self.qubit_chs[qTest]), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
+            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180, self.qubit_chs[qTest]), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
         # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
         self.measure_wrapper()
 

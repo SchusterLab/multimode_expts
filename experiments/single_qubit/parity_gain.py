@@ -111,6 +111,7 @@ class ParityGainProgram(MMRAveragerProgram):
 
     def update(self):
         qTest=0
+        print('Updating gain register', self.cfg.expt.step)
         self.mathi(self.man_rp[qTest], self.r_gain2, self.r_gain2, '+', self.cfg.expt.step) # update gain register
 
 

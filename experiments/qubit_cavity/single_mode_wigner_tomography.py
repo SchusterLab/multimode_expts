@@ -35,14 +35,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest],gen_ch = self.man_ch[0]),
                                   gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
-        print('phase second pulse:', self.cfg.expt.phase_second_pulse)
-        self.parity_pulse = self.get_parity_str(1, return_pulse=True, second_phase=self.cfg.expt.phase_second_pulse, fast=True)
-        # self.chi_shift = cfg.expt.guessed_chi
-        # self.ratio = np.cos(np.pi*2*self.chi_shift/4*(2*self.cycles2us(self.tp)+3*self.cycles2us(self.displace_sigma*4)))/np.cos(np.pi*2*self.chi_shift/4*self.cycles2us(self.displace_sigma*4))
-        # if cfg.expt.optpulse:
-        #     self.add_opt_pulse(ch=self.qubit_chs[0], name="test_opt_qubit", pulse_location=cfg.expt.opt_file_path[0])
-        #     self.add_opt_pulse(ch=self.man_chs[0], name="test_opt_cavity", pulse_location=cfg.expt.opt_file_path[1])
-
+        self.parity_pulse_ = self.get_parity_str(1, return_pulse=True, second_phase=self.cfg.expt.phase_second_pulse, fast=True)
         self.sync_all(200)
 
     
@@ -63,34 +56,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
 
-        #  optpulse
-        # qTest = self.qubits[0]
-        # if cfg.expt.optpulse:
-        #     if cfg.expt.opt_delay_start[0]>0:
-        #         self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.freq2reg(cfg.expt.opt_freq[0], gen_ch=self.qubit_chs[qTest]), phase=0, 
-        #                         gain=0, length=cfg.expt.opt_delay_start[0])
-        #     if cfg.expt.opt_delay_start[1]>0:
-        #         self.setup_and_pulse(ch=self.man_chs[qTest], style="const", freq=self.freq2reg(cfg.expt.opt_freq[1], gen_ch=self.man_chs[qTest]), phase=0, 
-        #                         gain=0, length=cfg.expt.opt_delay_start[1])
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.freq2reg(cfg.expt.opt_freq[0], gen_ch=self.qubit_chs[qTest]), phase=0, 
-        #                         gain=cfg.expt.opt_gain[0], waveform="test_opt_qubit")
-        #     self.setup_and_pulse(ch=self.man_chs[qTest], style="arb", freq=self.freq2reg(cfg.expt.opt_freq[1], gen_ch=self.man_chs[qTest]), phase=0, 
-        #                         gain=cfg.expt.opt_gain[1], waveform="test_opt_cavity")
-                
-
-        # displace the cavity
-        # phase reset
-        # self.set_pulse_registers(ch=self.qubit_ch[0], freq=self.f_ge,
-        #                          phase=0, gain=0, length=10, style="const", phrst=1)
-        # self.pulse(ch=self.qubit_ch[0])
-        # self.set_pulse_registers(ch=self.man_ch[0], freq=self.f_cav,
-        #                          phase=0, gain=0, length=10, style="const", phrst=1)
-        # self.pulse(ch=self.man_ch[0])
-        # self.set_pulse_registers(ch=self.f0g1_ch[0], freq=self.f_ge,
-        #                          phase=0, gain=0, length=10, style="const", phrst=1)
-        # self.pulse(ch=self.f0g1_ch[0])
-        # self.sync_all(10)
-        # now displace
+        
         self.setup_and_pulse(ch=self.man_ch[0], style="arb", freq=self.f_cavity, 
                             phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[0]), 
                             gain=self.cfg.expt.amp_placeholder, waveform="displace")
@@ -98,7 +64,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.sync_all(self.us2cycles(0.05))
 
         # Parity pulse
-        self.custom_pulse(self.cfg, self.parity_pulse, prefix='ParityPulse')
+        self.custom_pulse(self.cfg, self.parity_pulse_, prefix='ParityPulse')
 
         # align channels and measure
         # self.sync_all(self.us2cycles(0.01))
@@ -151,10 +117,9 @@ class WignerTomography1ModeExperiment(Experiment):
         # extract displacement list from file path
 
         alpha_list = np.load(self.cfg.expt["displacement_path"])
-        # alpha_list = np.linspace(0, 2, 40)
+        # alpha_list = np.linspace(0, 4, 20)
         # alpha_list = np.append(alpha_list, 1j*alpha_list) # add 0 to the end of the list
         # print("alpha_list:", alpha_list)
-
 
 
 
@@ -162,9 +127,14 @@ class WignerTomography1ModeExperiment(Experiment):
         # print(f"man mode no: {man_mode_no}")
         man_mode_idx = man_mode_no -1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[man_mode_idx] 
+        print(f"gain2alpha: {gain2alpha}")
         # print(f"gain2alpha: {gain2alpha}")
         displace_sigma = self.cfg.device.manipulate.displace_sigma[man_mode_idx]
         # print(f"displace_sigma: {displace_sigma}")
+
+        
+        ### TRY SOMETHING DIFFERENT
+        # revival_time = self.cfg.device.manipulate.revival_time[man_mode_idx]
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
 
@@ -191,8 +161,6 @@ class WignerTomography1ModeExperiment(Experiment):
             i0, q0 = wigner.collect_shots()
             data["i0"].append(i0)
             data["q0"].append(q0)
-            # print('i0 shape:', i0.shape)
-            # print('data i0 shape:',np.array(data["i0"]).shape)
 
             if self.pulse_correction:
                 self.cfg.expt.phase_second_pulse = 0
@@ -207,8 +175,37 @@ class WignerTomography1ModeExperiment(Experiment):
                 data["avgq"].append(avgq)
                 data["i0"].append(i0)
                 data["q0"].append(q0)
-                # print('i0 shape:', i0.shape)
-                # print('data i0 shape:',np.array(data["i0"]).shape)
+
+
+            # ### TRY SOMETHING DIFFERENT
+            # if self.pulse_correction:
+            #     # add i0_calibration and q0_calibration
+            #     if 'i0_calibration' not in data:
+            #         data['i0_calibration'] = []
+            #         data['q0_calibration'] = []
+                
+            #     # set the revival time to zero, first with second phase = 180
+            #     self.cfg.device.manipulate.revival_time[man_mode_idx] = 0
+            #     wigner = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
+            #     avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
+            #                                     #  debug=debug
+            #                                     )
+            #     i0, q0 = wigner.collect_shots()
+            #     data["i0_calibration"].append(i0)
+            #     data["q0_calibration"].append(q0)
+
+            #     # now with second phase = 0
+            #     self.cfg.expt.phase_second_pulse = 0
+            #     wigner = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
+            #     avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
+            #                                     #  debug=debug
+            #                                     )
+            #     i0, q0 = wigner.collect_shots()
+            #     data["i0_calibration"].append(i0)
+            #     data["q0_calibration"].append(q0)
+
+            #     # set the revival time back to the original value
+            #     self.cfg.device.manipulate.revival_time[man_mode_idx] = revival_time
 
         self.cfg.expt['expts'] = len(data["alpha"])
 
@@ -265,6 +262,45 @@ class WignerTomography1ModeExperiment(Experiment):
             data["parity_plus"] = parity_plus
             data["parity_minus"] = parity_minus
             data["parity"] = parity
+
+
+            # # TRY SOMETHING DIFFERENT
+            # data_calib_plus = {}
+            # data_calib_minus = {}
+            # data_calib_minus["i0"] = data["i0_calibration"][::2, :, :]
+            # data_calib_minus["q0"] = data["q0_calibration"][::2, :, :]
+            # data_calib_plus["i0"] = data["i0_calibration"][1::2, :, :]
+            # data_calib_plus["q0"] = data["q0_calibration"][1::2, :, :]
+            # wigner_analysis_calib_minus = WignerAnalysis(data=data_calib_minus,
+            #                                              config=self.cfg, 
+            #                                              mode_state_num=mode_state_num,
+            #                                              alphas=data["alpha"])
+            # wigner_analysis_calib_plus = WignerAnalysis(data=data_calib_plus,
+            #                                                 config=self.cfg,
+            #                                                 mode_state_num=mode_state_num,
+            #                                                 alphas=data["alpha"])
+            # pe_calib_plus = wigner_analysis_calib_plus.bin_ss_data()
+            # pe_calib_minus = wigner_analysis_calib_minus.bin_ss_data()
+
+            # a = 1 / (pe_calib_plus - pe_calib_minus)
+            # b = -pe_calib_minus / (pe_calib_plus - pe_calib_minus)
+
+            # wigner_analysis_calib = WignerAnalysis(data=data,
+            #                                        config=self.cfg,
+            #                                         mode_state_num=mode_state_num,
+            #                                         alphas=data["alpha"])
+            # pe = wigner_analysis_calib.bin_ss_data()
+            # parity_no_corr = (1 - pe) - pe
+            # parity = a*parity_no_corr + b
+            # data["pe_calib_plus"] = pe_calib_plus
+            # data["pe_calib_minus"] = pe_calib_minus
+            # data['a'] = a
+            # data['b'] = b
+            # data["pe"] = pe
+            # data["parity"] = parity
+            # data["parity_no_corr"] = parity_no_corr
+
+
         else:
             wigner_analysis = WignerAnalysis(data=data,
                                               config=self.cfg, 
