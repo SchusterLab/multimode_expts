@@ -20,6 +20,8 @@ from copy import deepcopy # single shot dictionary cfg copy
 import experiments.fitting as fitter
 from MM_base import *
 from MM_dual_rail_base import *
+from fitting_folder.wigner import WignerAnalysis
+
 
 class ParityGainProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -54,7 +56,7 @@ class ParityGainProgram(MMRAveragerProgram):
             self.displace_sigma = self.us2cycles(cfg.expt.displace[1], gen_ch=self.man_ch[qTest])
             self.add_gauss(ch=self.man_ch[qTest], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
 
-        self.parity_pulse = self.get_parity_str(man_mode_no=1, return_pulse=True, second_phase=180, fast = True)
+        self.parity_pulse = self.get_parity_str(man_mode_no=1, return_pulse=True, second_phase=self.cfg.expt.phase_second_pulse, fast=True)
         print('Parity Gain Program initialized')
         print('parity pulse:', self.parity_pulse)
     
@@ -142,10 +144,19 @@ class ParityGainExperiment(Experiment):
             mm_dr_base = MM_dual_rail_base(self.cfg)
             data = mm_dr_base.run_single_shot(self, data, True)
             print('Single shot data:', data)
+
             
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
-        
+
+        if 'pulse_correction' in self.cfg.expt:
+            print("Pulse correction is applied")
+            self.pulse_correction = self.cfg.expt.pulse_correction
+        else:
+            self.pulse_correction = False
+
+
+        self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse        
         prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
         
         x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
@@ -156,8 +167,6 @@ class ParityGainExperiment(Experiment):
         avgq = avgq[0][0]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
-        print('avig i:', avgi)
-        print('avg q:', avgq)
 
         data['xpts'] = x_pts
         data['avgi'] = avgi
@@ -165,6 +174,27 @@ class ParityGainExperiment(Experiment):
         data['amps'] = amps
         data['phases'] = phases
         data['idata'], data['qdata'] = prog.collect_shots()
+
+        if self.pulse_correction:
+            self.cfg.expt.phase_second_pulse = 0 # reset the phase of the second pulse
+            prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
+            x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
+                                            # debug=debug,
+                                            readouts_per_experiment=read_num)
+            avgi = avgi[0][0]
+            avgq = avgq[0][0]
+            amps = np.abs(avgi+1j*avgq)
+            phases = np.angle(avgi+1j*avgq)
+            data['xpts'] = np.append(data['xpts'], x_pts)
+            data['avgi'] = np.append(data['avgi'], avgi)
+            data['avgq'] = np.append(data['avgq'], avgq)
+            data['amps'] = np.append(data['amps'], amps)
+            data['phases'] = np.append(data['phases'], phases)
+
+            _idata, _qdata = prog.collect_shots()
+            data['idata'] = np.append(data['idata'], _idata)
+            data['qdata'] = np.append(data['qdata'], _qdata)
+
         
         self.data=data
         return data
@@ -179,9 +209,43 @@ class ParityGainExperiment(Experiment):
             
         # fitparams=[y-offset, amp, x-offset, decay rate]
         # Remove the last point from fit in case weird edge measurements
-        data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
-        data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
-        data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
+        # data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
+        # data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
+        # data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
+
+        if 'pulse_correction' in self.cfg.expt and self.cfg.expt.pulse_correction:
+            data_minus = {}
+            data_plus = {}
+            # split the idata, qdata into two parts
+            data_minus["idata"] = data['idata'][: len(data['idata'])//2]
+            data_minus["qdata"] = data['qdata'][: len(data['qdata'])//2]
+            data_minus["xpts"] = data['xpts'][: len(data['xpts'])//2]
+            data_plus["idata"] = data['idata'][len(data['idata'])//2:]
+            data_plus["qdata"] = data['qdata'][len(data['qdata'])//2:]
+            data_plus["xpts"] = data['xpts'][len(data['xpts'])//2:]
+
+
+            wigner_analysis_minus = WignerAnalysis(data_minus, config=self.cfg)
+            wigner_analysis_plus = WignerAnalysis(data_plus, config=self.cfg)
+
+            pe_plus = wigner_analysis_plus.bin_ss_data()
+            pe_minus = wigner_analysis_minus.bin_ss_data()
+            parity_plus = (1 - pe_plus) - pe_plus
+            parity_minus = (1 - pe_minus) - pe_minus
+            parity = (parity_minus - parity_plus) / 2
+            gain_to_alpha, result, ydata = wigner_analysis_minus.get_gain_to_alpha(parity, initial_guess=[0.001])
+            data['gain_to_alpha'] = gain_to_alpha
+            data['parity'] = parity
+
+        else:
+            wigner_analysis = WignerAnalysis(data, config=self.cfg)
+            pe = wigner_analysis.bin_ss_data()
+            parity = (1 - pe) - pe
+            gain_to_alpha, result, ydata = wigner_analysis.get_gain_to_alpha(parity, initial_guess=[0.001])
+            data['gain_to_alpha'] = gain_to_alpha
+            data['parity'] = parity
+
+
         return data
 
     def display(self, data=None, fit=True, **kwargs):

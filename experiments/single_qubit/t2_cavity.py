@@ -144,7 +144,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
         self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0) 
 
         self.sync_all(200)
-        self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = True)
+        self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = False)
 
     
     def body(self):
@@ -487,3 +487,55 @@ class CavityRamseyExperiment(Experiment):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
+    
+
+    class CavityRamseyGainSweepExperiment(Experiment):
+        def __init__(self, soccfg=None, path="", prefix="CavityRamseyGainSweep", config_file=None, progress=None):
+            super().__init__(soccfg=soccfg,
+                            path=path,
+                            prefix=prefix,
+                            config_file=config_file,
+                            progress=progress)
+        
+        def acquire(self, progress=False, debug=False):
+
+            gain_start = self.cfg.expt.gain_start
+            gain_step = self.cfg.expt.gain_step
+            gain_expts = self.cfg.expt.gain_expts
+            gain_list = np.array([gain_start + i * gain_step for i in range(gain_expts)])
+            self.cfg.expt.gain_list = gain_list
+            
+
+            data = {
+                'gain_list': gain_list,
+                'xpts': [],
+                'avgi': [],
+                'avgq': [],
+                'amps': [],
+                'phases': []
+            }
+
+            for gain in tqdm(gain_list, disable = not progress):
+                self.cfg.expt.user_defined_pulse[2] = gain
+
+                _data = super().acquire(progress=progress, debug=debug)
+                data['xpts'].append(_data['xpts'])
+                data['avgi'].append(_data['avgi'])
+                data['avgq'].append(_data['avgq'])
+                data['amps'].append(_data['amps'])
+                data['phases'].append(_data['phases'])
+
+            for k, a in data.items():
+                data[k]=np.array(a)
+
+            self.data = data
+            return data
+        
+
+
+
+            
+
+
+
+

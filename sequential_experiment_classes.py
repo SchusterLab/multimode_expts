@@ -315,8 +315,7 @@ class histogram_sweep_class(sequential_base_class):
     def perform_historgam_analysis(self, hstgrm):
         from multimode_expts.fit_display_classes import Histogram
         hist_analysis = Histogram(
-            hstgrm.data, verbose=True,
-             span=800, threshold=None, config=hstgrm.cfg,
+            hstgrm.data, verbose=True, threshold=None, config=hstgrm.cfg,
         )
         hist_analysis.analyze(plot = True)
        

@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import *
 from qick.helpers import gauss
-
-from slab import Experiment, dsfit, AttrDict
+from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
 from MM_base import *
+
 
 class RamseyProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -43,6 +43,7 @@ class RamseyProgram(MMRAveragerProgram):
         self.pi2sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # -------------<--
         self.f_test_reg = self.f_ge_reg[0] # freq we are trying to calibrate
         self.gain_test = self.cfg.device.qubit.pulses.hpi_ge.gain[qTest] # gain of the pulse we are trying to calibrate ------------<
+
         if cfg.expt.f0g1_cavity > 0:
             ii = 0
             jj = 0

@@ -139,49 +139,34 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
 
 
-        if cfg.expt.parameter_to_test == 'gain':
-            _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
+        _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
+        if self.pulse_to_test[5] == "gauss":
             self.set_pulse_registers(
                 ch=self.pulse_to_test[4],
                 style = pulse_style,
                 freq=_freq,
                 phase = 0,
-                gain = 0, # dummy
+                gain = int(self.pulse_to_test[1]),
                 waveform = "pulse_to_test",
             )
-
+        elif self.pulse_to_test[5] == "flat_top":
+            _length = self.us2cycles(self.pulse_to_test[2], gen_ch=self.pulse_to_test[4])
+            self.set_pulse_registers(
+                ch=self.pulse_to_test[4],
+                style = pulse_style,
+                freq=_freq,
+                length = _length,
+                phase = 0,
+                gain = int(self.pulse_to_test[1]),
+                waveform = "pulse_to_test",
+            )
+            
+        if cfg.expt.parameter_to_test == 'frequency':    
+            self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
+        elif cfg.expt.parameter_to_test == 'gain':
             self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", 0)
             if self.pulse_to_test[5] == "flat_top":
                 self.mathi(self.channel_page, self.r_gain2, self.r_gain3, "+", 0)
-
-        elif cfg.expt.parameter_to_test == 'frequency':
-            _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
-            if self.pulse_to_test[5] == "gauss":
-                self.set_pulse_registers(
-                    ch=self.pulse_to_test[4],
-                    style = pulse_style,
-                    freq=_freq,
-                    phase = 0,
-                    gain = self.pulse_to_test[1],
-                    waveform = "pulse_to_test",
-                )
-            elif self.pulse_to_test[5] == "flat_top":
-                _length = self.us2cycles(self.pulse_to_test[2], gen_ch=self.pulse_to_test[4])
-                self.set_pulse_registers(
-                    ch=self.pulse_to_test[4],
-                    style = pulse_style,
-                    freq=_freq,
-                    length = _length,
-                    phase = 0,
-                    gain = self.pulse_to_test[1], 
-                    waveform = "pulse_to_test",
-                )
-                
-
-
-
-            self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
-
         else:
             raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
 
@@ -287,12 +272,12 @@ class ErrorAmplificationExperiment(Experiment):
     def __init__(self, soccfg=None, path='', prefix='ErrorAmplification', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
-        print(self.cfg.expt)
-
 
 
     
     def acquire(self, progress=False, debug=False):
+
+        print("cfg at start of acquire", self.cfg.expt)
 
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
@@ -442,6 +427,7 @@ class ErrorAmplificationExperiment(Experiment):
                                  alpha=0.2, color='black')
                 ax[1].set_xlabel(xlabel)
                 ax[1].set_ylabel('Avgq')
+        plt.show()
 
 
     def save_data(self, data=None):

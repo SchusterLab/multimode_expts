@@ -15,9 +15,9 @@ from experiments.single_qubit.single_shot import HistogramProgram
 
 
 class MM_dual_rail_base(MM_base): 
-    def __init__(self, cfg):
+    def __init__(self, cfg, soccfg):
         ''' rb base is base class of f0g1 rb for storage modes '''
-        super().__init__( cfg)
+        super().__init__( cfg, soccfg)
         # self.init_gate_length() # creates the dictionary of gate lengths
     
     def run_single_shot(self, self_expt, data,   progress=True, debug=False):

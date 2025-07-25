@@ -14,7 +14,7 @@ import os
 from scipy.optimize import fmin, check_grad, minimize
 from numpy import sqrt, linspace, cos, sin, real, arange
 import matplotlib.pyplot as plt
-# from joblib import Parallel, delayed
+import qutip as qt
 
 class WignerAnalysis(GeneralFitting):
     def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5):
@@ -28,12 +28,8 @@ class WignerAnalysis(GeneralFitting):
             self.init_states()
 
     # ---------------------- For Gain to Alpha Conversion ----------------------
-    def get_gain_to_alpha(self, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False): 
-        ydata_mod = self.bin_ss_data_given_ss()
-        # wigner function expectation value is pg*(+1) + pe(-1)
-        pe = ydata_mod 
-        pg = 1 - pe  
-        expec_value = 2/np.pi * (pg - pe)
+    def get_gain_to_alpha(self, allocated_counts, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False): 
+        expec_value = 2/np.pi * allocated_counts
         gain_to_alpha, result  = self.fit_gain_to_alpha(
             xdata=self.data['xpts'], 
             ydata=expec_value, 
@@ -339,86 +335,72 @@ class WignerAnalysis(GeneralFitting):
         mode_state_num = rho.shape[0]
         fidelity = results.get('fidelity', None)
 
-        import time 
-        start_time = time.time()
+        alpha_max = np.max(np.abs(alpha_list))
+        x_vec = np.linspace(-alpha_max, alpha_max, 200)
+        W_fit = qt.wigner(qt.Qobj(rho), x_vec, x_vec, g=2)
+        W_ideal = qt.wigner(qt.Qobj(rho_ideal), x_vec, x_vec, g=2)
 
-        fig1 = plt.figure(figsize=(14, 12))
-        if fidelity is not None:
-            fig1.suptitle(f'MLE Fidelity: {fidelity:.4f}', fontsize=16)
-
-        # First subplot
-        ax1 = fig1.add_subplot(2, 2, 1, title='direct (reverse order)')
         vmin = -2 / np.pi
         vmax = 2 / np.pi
-        tcf = ax1.tricontourf(-np.real(alpha_list), -np.imag(alpha_list), allocated_readout,
-                              np.linspace(vmin, vmax, 30), cmap='RdBu_r', vmin=vmin, vmax=vmax)
-        ax1.plot(-np.real(alpha_list), -np.imag(alpha_list), 'g. ')
-        r = sqrt(5)
-        th = linspace(-3.14, 3.14, 100)
-        ax1.plot(r * cos(th), r * sin(th), 'k--')
-        cbar1 = fig1.colorbar(tcf, ax=ax1)
-        cbar1.set_label('Wigner ($1/2\pi$ units)')
+        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+        ax[0, 0].set_aspect('equal')
+        ax[0, 1].set_aspect('equal')
+
+        cs = ax[0,0].tricontourf(
+            -np.real(alpha_list), -np.imag(alpha_list), allocated_readout,
+            np.linspace(vmin, vmax, 30), cmap='RdBu_r', vmin=vmin, vmax=vmax
+        )
+        ax[0,0].plot(-np.real(alpha_list), -np.imag(alpha_list), 'g. ')
+        cbar1 = fig.colorbar(cs, ax=ax[0, 0],  fraction=0.045, pad=0.04)
+        # cbar1.set_label('')
         ticks = np.linspace(vmin, vmax, 5)
         cbar1.set_ticks(ticks)
         cbar1.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
-        print('Time taken for first subplot:', time.time() - start_time)
+        ax[0, 0].set_title('Direct (reverse order)')
 
-        # Second subplot
-        ax2 = fig1.add_subplot(2, 2, 2, title='$\\rho_{m,n}$')
-        c = ax2.pcolormesh(arange(mode_state_num), arange(mode_state_num), np.abs(rho), cmap='RdBu_r', vmin=0, vmax=1)
-        ax2.set_ylabel('n')
-        ax2.set_xlabel('m')
-        fig1.colorbar(c, ax=ax2)
-        print('Time taken for second subplot:', time.time() - start_time)
+        c = ax[0, 1].pcolormesh(np.arange(mode_state_num), np.arange(mode_state_num), np.abs(rho), cmap='viridis', vmin=0, vmax=1)
+        ax[0, 1].set_ylabel('n')
+        ax[0, 1].set_xlabel('m')
+        # colorbar for the pcolormesh
+        cbar2 = fig.colorbar(ax[0, 1].collections[0], ax=ax[0, 1], fraction=0.045, pad=0.04)
+        cbar2.set_label(r'$|ρ_{nm}|$')
+        cbar2.set_ticks([0, 0.5, 1])
+        cbar2.set_ticklabels(['0', '1/2', '1'])
+        ax[0, 1].set_title('Density matrix fock basis')
 
-        # Third subplot
-        ax3 = fig1.add_subplot(2, 2, 3, title='MLE')
-        vmin = -2 / np.pi
-        vmax = 2 / np.pi
-        c3 = ax3.pcolormesh(alphas2, alphas2, real(w.extracted_W(rho, alphas2, alphas2)),
-                            cmap='RdBu_r', vmin=vmin, vmax=vmax)
-
-        # c3 = ax3.pcolormesh(alphas2, alphas2, real(wigner_grid := extracted_W_fast(rho, alphas2, alphas2, self)),
-        #                     cmap='RdBu_r', vmin=vmin, vmax=vmax)
-        
-
-
-        r = sqrt(5)
-        th = linspace(-3.14, 3.14, 100)
-        ax3.plot(r * cos(th), r * sin(th), 'k--')
-        cbar3 = fig1.colorbar(c3, ax=ax3)
-        cbar3.set_label('Wigner ($1/2\pi$ units)')
+        ax[1, 0].set_aspect('equal')
+        ax[1, 0].pcolormesh(x_vec, x_vec, W_fit, cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        ax[1, 0].set_xlabel('Re(α)')
+        ax[1, 0].set_ylabel('Im(α)')
+        ax[1, 0].set_title('Wigner function fit')
+        # colorbar for the Wigner function
+        cbar3 = fig.colorbar(ax[1, 0].collections[0], ax=ax[1, 0], fraction=0.045, pad=0.04)
+        cbar3.set_label('')
         cbar3.set_ticks(ticks)
         cbar3.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
-        print('Time taken for third subplot:', time.time() - start_time)
 
-        print('MLE Fidelity: ', fidelity)
-
-        # Fourth subplot
         if initial_state is not None:
-            ax4 = fig1.add_subplot(2, 2, 4, title='Ideal State')
-            # Compute Wigner function for ideal state
-            rho_ideal = results['rho_ideal']
-            wigner_ideal = real(w.extracted_W(rho_ideal.full(), alphas2, alphas2))
-            vmin = -2 / np.pi
-            vmax = 2 / np.pi
-            c4 = ax4.pcolormesh(alphas2, alphas2, wigner_ideal, cmap='RdBu_r', vmin=vmin, vmax=vmax)
-            r = sqrt(5)
-            th = linspace(-3.14, 3.14, 100)
-            ax4.plot(r * cos(th), r * sin(th), 'k--')
-            cbar4 = fig1.colorbar(c4, ax=ax4)
-            cbar4.set_label('Wigner ($1/2\pi$ units)')
-            ticks = np.linspace(vmin, vmax, 5)
+
+            ax[1, 1].set_aspect('equal')
+            ax[1, 1].pcolormesh(x_vec, x_vec, W_ideal, cmap='RdBu_r', vmin=vmin, vmax=vmax)
+            ax[1, 1].set_xlabel('Re(α)')
+            ax[1, 1].set_ylabel('Im(α)')
+            ax[1, 1].set_title('Wigner function ideal state')
+            # colorbar for the Wigner function
+            cbar4 = fig.colorbar(ax[1, 1].collections[0], ax=ax[1, 1], fraction=0.045, pad=0.04)
+            cbar4.set_label('')
             cbar4.set_ticks(ticks)
             cbar4.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
-            print('Time taken for fourth subplot:', time.time() - start_time)
 
+        fig.suptitle(f'Wigner Tomography Results\nFidelity: {fidelity:.4f}', fontsize=16)
+        fig.subplots_adjust(top=0.9, hspace=0.3, wspace=0.3)
+        fig.tight_layout()
 
         title = state_label if state_label is not None else 'Wigner Reconstruction Results'
         filename = title.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig1, filename=filename)
+        self.save_plot(fig, filename=filename)
 
-        return fig1
+        return fig
     
 
 class OptimalDisplacementGeneration():
