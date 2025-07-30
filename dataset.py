@@ -2,108 +2,115 @@ import os
 import pandas as pd
 from datetime import datetime
 
-class storage_man_swap_dataset:
-    def __init__(self, filename = 'man1_storage_swap_dataset.csv'):
+class mm_dataset:
+    def __init__(self, filename):
         self.filename = filename
         if os.path.exists(filename):
             self.df = pd.read_csv(filename)
         else: 
             # create a new dataframe
             self.create_new_df()
+        
+    def create_new_df(self, add_timestamp=True):
+        raise NotImplementedError("This method should be implemented in subclasses by calling self.create_new_df(column_names, rows).")
 
-    def create_new_df(self):
-        column_names = ['stor_name', 'freq (MHz)', 'precision (MHz)', 'pi (mus)', 'h_pi (mus)', 'gain (DAC units)', 'last_update']
+    def create_new_df(self, column_names, rows, add_timestamp=True):
+        """
+        Create a new DataFrame with the specified column names.
+        
+        Args:
+            column_names (list): List of column names for the DataFrame.
+            rows (list): List of dictionaries, where each dictionary represents a row of data.
+        """
+        if add_timestamp:
+            column_names.append('last_update')
+            for row in rows:
+                row['last_update'] = datetime.now()
+            self.add_timestamp = True
+        else:
+            self.add_timestamp = False
+        self.indexing_row_name = column_names[0]  # The first column is the name of each row, this variable stores the name for the name of each row
         self.df = pd.DataFrame(columns=column_names)
-        rows = []
-        for idx in range(1, 13, 1): 
-            row = {'stor_name': 'M1-S' + str(idx),
-                   'freq (MHz)': -1,
-                   'precision (MHz)': -1,
-                   'pi (mus)': -1,
-                   'h_pi (mus)': -1,
-                   'gain (DAC units)': -1,
-                   'last_update': datetime.now()}
-            rows.append(row)
-
-        # also add for the manipulate 
-        row = {'stor_name': 'M1',
-               'freq (MHz)': -1,
-               'precision (MHz)': -1,
-               'pi (mus)': -1,
-               'h_pi (mus)': -1,
-               'gain (DAC units)': -1,
-               'last_update': datetime.now()}
-        rows.append(row)
-
         self.df = pd.concat([self.df, pd.DataFrame(rows)], ignore_index=True)
         self.df.to_csv(self.filename, index=False)
+    
+    def get_value(self, row_name, column_name):
+        """
+        Get the value from the DataFrame for a specific row and column.
+        
+        Args:
+            row_name (str): The name of the row to look up.
+            column_name (str): The name of the column to look up.
+        
+        Returns:
+            The value from the DataFrame at the specified row and column.
+        """
+        return self.df.loc[self.df[self.indexing_row_name] == row_name, column_name].values[0]
 
-    # fetch the data from the csv file
-    def get_freq(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['freq (MHz)'].values[0]
-    def get_precision(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['precision (MHz)'].values[0]
-    def get_pi(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['pi (mus)'].values[0]
-    def get_h_pi(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['h_pi (mus)'].values[0]
-    def get_gain(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['gain (DAC units)'].values[0]
-    def get_last_update(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name]['last_update'].values[0]
-    def get_all(self, stor_name):
-        return self.df[self.df['stor_name'] == stor_name].values[0]
+    def update_value(self, row_name, column_name, value, save_to_file=True):
+        """
+        Update the value in the DataFrame for a specific row and column and saves to the csv file if requested.
+        
+        Args:
+            row_name (str): The name of the row to update.
+            column_name (str): The name of the column to update.
+            value: The new value to set in the DataFrame.
+        """
+        self.df.loc[self.df[self.indexing_row_name] == row_name, column_name] = value
+        if self.add_timestamp:
+            self.df.loc[self.df[self.indexing_row_name] == row_name, 'last_update'] = datetime.now()
+        if save_to_file:
+            self.df.to_csv(self.filename, index=False)
 
-    # update the data in the csv file
-    def update_freq(self, stor_name, freq):
-        self.df.loc[self.df['stor_name'] == stor_name, 'freq (MHz)'] = freq
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
-    def update_precision(self, stor_name, precision):
-        self.df.loc[self.df['stor_name'] == stor_name, 'precision (MHz)'] = precision
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
-    def update_pi(self, stor_name, pi):
-        self.df.loc[self.df['stor_name'] == stor_name, 'pi (mus)'] = pi
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
-    def update_h_pi(self, stor_name, h_pi):
-        self.df.loc[self.df['stor_name'] == stor_name, 'h_pi (mus)'] = h_pi
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
-    def update_gain(self, stor_name, gain):
-        self.df.loc[self.df['stor_name'] == stor_name, 'gain (DAC units)'] = gain
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
-    def update_last_update(self, stor_name):
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
+    def get_last_update(self, row_name):
+        if self.add_timestamp:
+            return self.get_value(row_name, 'last_update')
+        return None
 
-    def update_all(self, stor_name, freq, precision, pi, h_pi, gain):
-        self.df.loc[self.df['stor_name'] == stor_name, 'freq (MHz)'] = freq
-        self.df.loc[self.df['stor_name'] == stor_name, 'precision (MHz)'] = precision
-        self.df.loc[self.df['stor_name'] == stor_name, 'pi (mus)'] = pi
-        self.df.loc[self.df['stor_name'] == stor_name, 'h_pi (mus)'] = h_pi
-        self.df.loc[self.df['stor_name'] == stor_name, 'gain (DAC units)'] = gain
-        self.df.loc[self.df['stor_name'] == stor_name, 'last_update'] = datetime.now()
-        self.df.to_csv(self.filename, index=False)
+    def update_last_update(self, stor_name, save_to_file=True):
+        if not self.add_timestamp:
+            return
+        self.update_value(stor_name, 'last_update', datetime.now(), save_to_file=save_to_file)
 
-    # add a new row to the csv file
-    def append_dataset(self, stor_name, freq, precision, pi, h_pi, gain):
-        new_row = {
-            'stor_name': stor_name,
-            'freq (MHz)': freq,
-            'precision (MHz)': precision,
-            'pi (mus)': pi,
-            'h_pi (mus)': h_pi,
-            'gain (DAC units)': gain,
-            'last_update': datetime.now()}
+    def get_all(self, row_name):
+        return self.df[self.df[self.indexing_row_name] == row_name].values[0]
+
+    def update_all(self, *args, save_to_file=True):
+        """
+        Update all values in the DataFrame for a specific row and always saves the file.
+        Args:
+            *args: A tuple containing the values to update in the order of the columns.
+                   The first value should be the row name, followed by values for each column.
+            save_to_file (bool): Whether to save the updated DataFrame to the CSV file.
+        """
+        if len(args) != len(self.df.columns):
+            raise ValueError(f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}")
+        for i, column in enumerate(self.df.columns):
+            self.update_value(args[0], column, args[i], save_to_file=False)
+        self.update_last_update(args[0], save_to_file=save_to_file)
+
+    def append_dataset(self, *args, add_timestamp=True, save_to_file=True):
+        """
+        Append a new row to the DataFrame with the provided values.
+        Args:
+            *args: A tuple containing the values to append in the order of the columns.
+                   The first value should be the row_name, followed by values for each column, excluding the time stamp which will be added automatically.
+        """
+        if len(args) != len(self.df.columns):
+            raise ValueError(f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}") 
+        new_row = dict()
+        for i, column in enumerate(self.df.columns):
+            if i == len(self.df.columns.tolist()) - 1 and add_timestamp:  # last column is timestamp
+                new_row[column] = datetime.now()
+            else:
+                new_row[column] = args[i]
         self.df = self.df.append(new_row, ignore_index=True)
-        self.df.to_csv(self.filename, index=False)
+        if save_to_file:
+            self.df.to_csv(self.filename, index=False)
 
     # check whether the data is up-to-date
-    def is_up_to_date(self, stor, max_time_diff = 7200):
-        last_update = self.get_last_update(stor)
+    def is_up_to_date(self, row_name, max_time_diff = 7200):
+        last_update = self.get_last_update(row_name)
         # Define the format of the date string
         date_format = "%Y-%m-%d %H:%M:%S.%f"
         # Convert the string to a datetime object
@@ -128,7 +135,7 @@ class storage_man_swap_dataset:
         Compare the current dataset with another dataset and identify differences.
 
         This method iterates through the rows of the current dataset (`self.df`) and compares
-        each row with the corresponding row in the `other_dataset` based on the `stor_name` column.
+        each row with the corresponding row in the `other_dataset` based on the indexing_row_name column.
         It identifies differences in column values between the two datasets and returns a list
         of discrepancies.
 
@@ -139,7 +146,7 @@ class storage_man_swap_dataset:
         Returns:
             list: A list of dictionaries, where each dictionary represents a difference. Each
               dictionary contains the following keys:
-              - 'stor_name': The identifier of the row being compared.
+              - whatever indexing_row_name is: The identifier of the row being compared.
               - 'column': The column where the difference was found, or 'all' if the row
                       exists in `self` but is missing in `other_dataset`.
               - 'self_value': The value in the current dataset.
@@ -153,20 +160,20 @@ class storage_man_swap_dataset:
         """
         differences = []
         for _, row in self.df.iterrows():
-            stor_name = row['stor_name']
-            if stor_name in other_dataset.df['stor_name'].values:
-                other_row = other_dataset.df[other_dataset.df['stor_name'] == stor_name].iloc[0]
+            row_name = row[self.indexing_row_name]
+            if row_name in other_dataset.df[self.indexing_row_name].values:
+                other_row = other_dataset.df[other_dataset.df[self.indexing_row_name] == row_name].iloc[0]
                 for column in self.df.columns:
                     if row[column] != other_row[column]:
                         differences.append({
-                            'stor_name': stor_name,
+                            self.indexing_row_name: row_name,
                             'column': column,
                             'self_value': row[column],
                             'other_value': other_row[column]
                         })
             else:
                 differences.append({
-                    'stor_name': stor_name,
+                    self.indexing_row_name: row_name,
                     'column': 'all',
                     'self_value': 'exists',
                     'other_value': 'missing'
@@ -182,3 +189,93 @@ class storage_man_swap_dataset:
         """
         self.df.to_csv(filepath, index=False)
 
+    
+class storage_man_swap_dataset(mm_dataset):
+    def __init__(self, filename='man1_storage_swap_dataset.csv'):
+        super().__init__(filename=filename)
+
+    def create_new_df(self, add_timestamp=True):
+        column_names = [
+            'stor_name',
+            'freq (MHz)',
+            'precision (MHz)',
+            'pi (mus)',
+            'h_pi (mus)',
+            'gain (DAC units)',
+        ]
+
+        rows = []
+        for idx in range(1, 13, 1): 
+            row = {
+                'stor_name': 'M1-S' + str(idx),
+                'freq (MHz)': -1,
+                'precision (MHz)': -1,
+                'pi (mus)': -1,
+                'h_pi (mus)': -1,
+                'gain (DAC units)': -1,
+            }
+            rows.append(row)
+
+        # also add for the manipulate 
+        row = {
+            'stor_name': 'M1',
+            'freq (MHz)': -1,
+            'precision (MHz)': -1,
+            'pi (mus)': -1,
+            'h_pi (mus)': -1,
+            'gain (DAC units)': -1,
+        }
+        rows.append(row)
+        self.create_new_df(column_names, rows, add_timestamp=add_timestamp)
+
+
+    # fetch the data from the csv file
+    def get_freq(self, stor_name):
+        return self.get_value(stor_name, 'freq (MHz)')
+    def get_precision(self, stor_name):
+        return self.get_value(stor_name, 'precision (MHz)')
+    def get_pi(self, stor_name):
+        return self.get_value(stor_name, 'pi (mus)')
+    def get_h_pi(self, stor_name):
+        return self.get_value(stor_name, 'h_pi (mus)')
+    def get_gain(self, stor_name):
+        return self.get_value(stor_name, 'gain (DAC units)')
+
+    # update the data in the csv file
+    def update_freq(self, stor_name, freq):
+        self.update_value(stor_name, 'freq (MHz)', freq)
+    def update_precision(self, stor_name, precision):
+        self.update_value(stor_name, 'precision (MHz)', precision)
+    def update_pi(self, stor_name, pi):
+        self.update_value(stor_name, 'pi (mus)', pi)
+    def update_h_pi(self, stor_name, h_pi):
+        self.update_value(stor_name, 'h_pi (mus)', h_pi)
+    def update_gain(self, stor_name, gain):
+        self.update_value(stor_name, 'gain (DAC units)', gain)
+
+
+class floquet_storage_swap_dataset(mm_dataset):
+    def __init__(self, filename='floquet_storage_swap_dataset.csv'):
+        super().__init__(filename=filename)
+
+    def create_new_df(self, add_timestamp=True):
+        column_names = [
+            'stor_name',
+            'pi_frac', # this pulse implements a pi * pi_frac pulse
+            'freq (MHz)',
+            'gain (DAC units)',
+            'stark_shift (MHz)', # stark shift of the manipulate due to this pulse
+        ]
+
+        rows = []
+        for idx in range(1, 8, 1): 
+            row = {
+                'stor_name': 'M1-S' + str(idx),
+                'pi_frac': -1,
+                'freq (MHz)': -1,
+                'gain (DAC units)': -1,
+                'stark_shift (MHz)': -1,
+            }
+            rows.append(row)
+
+        self.create_new_df(column_names, rows, add_timestamp=add_timestamp) 
