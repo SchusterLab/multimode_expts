@@ -3,10 +3,11 @@ from typing import List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy as sp
 from qick import AveragerProgram, QickProgram, RAveragerProgram
 from slab import AttrDict
 
-from dataset import storage_man_swap_dataset
+from dataset import floquet_storage_swap_dataset, storage_man_swap_dataset
 
 logger = logging.getLogger("qick.qick_asm")
 logger.setLevel(logging.ERROR)
@@ -164,14 +165,18 @@ class MM_base:
         if cfg is None:
             cfg = self.cfg
 
-        creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
+        if 'floquet_man_stor_file' not in cfg.device.storage:
+            cfg.device.storage.floquet_man_stor_file = None
+
+        creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file, cfg.device.storage.floquet_man_stor_file)
+        # creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
             for pulse_idx, pulse in enumerate(sweep_pulse):
                 # for each pulse 
                 pulse_param = list(pulse[1:])
                 channel_name = pulse[0]
-                print('pulse param', pulse_param)
-                print('channel name', channel_name)
+                # print('pulse param', pulse_param)
+                # print('channel name', channel_name)
                 eval(f"creator.{channel_name}({pulse_param})")
 
         return creator
@@ -377,7 +382,7 @@ class MM_base:
                      advance_qubit_phase: float=0,
                      sync_zero_const: bool=False,
                      prefix: str='pre', 
-                     plot = False):
+                     plot_IQ: bool=True):
         '''
         Executes prepulse or postpulse
         pulse data:
@@ -389,7 +394,6 @@ class MM_base:
         '''
         if pulse_data is None:
             return None
-        print('pulse_data', pulse_data)
 
         pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
 
@@ -447,21 +451,23 @@ class MM_base:
 
                     # load the corresponding waveform
                     filename = self.cfg.device.optimal_control[encoding][state]['filename']
-                    if self.tempch == self.qubit_ch: 
-                        with np.load(filename) as data:
-                            times = data['times']
-                            I = data[f'I_0']
-                            Q = data[f'Q_0']
-                    elif self.tempch == self.man_ch: 
-                        with np.load(filename) as data:
-                            times = data['times']
-                            I = data[f'I_1']
-                            Q = data[f'Q_1']
+                    # load only once the waveform
+                    data = np.load(filename, allow_pickle=True)
+
+                    if self.tempch == self.qubit_ch[0]: 
+                        times = data['times']
+                        I = data[f'I_q']
+                        Q = data[f'Q_q']
+
+                    elif self.tempch == self.man_ch[0]: 
+                        times = data['times']
+                        I = data[f'I_c']
+                        Q = data[f'Q_c']
 
                     # convert in us and MHz 
                     times_us = times * 1e-3
-                    I_mhz = I * 1e-3
-                    Q_mhz = Q * 1e-3
+                    I_mhz = I 
+                    Q_mhz = Q 
 
                     gencfg = self.soccfg["gens"][self.tempch]
                     maxv = gencfg["maxv"] * gencfg["maxv_scale"] - 1
@@ -471,7 +477,13 @@ class MM_base:
                     num_samps_tot = samps_per_clk * self.us2cycles(times_us[-1], gen_ch=self.tempch)
                     times_samps = np.arange(0, int(num_samps_tot))
                     times_samps_interp = np.linspace(0, num_samps_tot, len(times_us))
+
+
                     IQ_scale = max((np.max(np.abs(I_mhz)), np.max(np.abs(Q_mhz))))
+                    if IQ_scale == 0:
+                        # skip this pulse if the IQ scale is zero
+                        continue
+                    print("IQ scale", IQ_scale)
                     I_func = sp.interpolate.interp1d(times_samps_interp,
                                                       I_mhz / IQ_scale, kind="linear", fill_value=0)
                     Q_func = sp.interpolate.interp1d(times_samps_interp,
@@ -479,28 +491,30 @@ class MM_base:
                     iamps = I_func(times_samps)
                     qamps = Q_func(times_samps)
 
-                    if plot_IQ:
-                        fig, ax = plt.figure()
-                        ax.set_title(f"Pulse on ch{ch}, waveform {name}")
-                        # ax.plot(iamps, '.-')
-                        ax.plot(times_samps, I_func(times_samps), ".-", label="I")
-                        # ax.plot(qamps, '.-')
-                        ax.plot(times_samps, Q_func(times_samps), ".-", label="Q")
-                        # print(times_samps.shape, I_func(times_samps).shape)
-                        ax.set_ylabel("Amplitude [a.u.]")
-                        ax.set_xlabel("Sample Index")
-                        ax.legend()
-                        fig.show()
+                    # if plot_IQ:
+                    #     fig, ax = plt.subplots(figsize=(5, 5))
+                    #     ax.plot(times_samps, I_func(times_samps), ".-", label="I")
+                    #     ax.plot(times_samps, Q_func(times_samps), ".-", label="Q")
+                    #     ax.set_ylabel("Amplitude [a.u.]")
+                    #     ax.set_xlabel("Sample Index")
+                    #     ax.legend()
+                    #     fig.show()
+
+                    waveform = encoding + '_' + state
+                    if self.tempch == self.qubit_ch[0]:
+                        waveform = encoding + '_' + state + '_q'
+                    elif self.tempch == self.man_ch[0]:
+                        waveform = encoding + '_' + state + '_m'
 
                     self.add_pulse(ch=self.tempch, 
-                                   name=encoding + '_' + state,idata=maxv * iamps, qdata=maxv * qamps)
-                    
+                                   name=waveform,idata=maxv * iamps, qdata=maxv * qamps)
+
                     self.sync_all(self.us2cycles(0.01))
                     self.setup_and_pulse(ch=self.tempch, style="arb",
                                         freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
                                         phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
                                         gain=pulse_data[1][jj], 
-                                        waveform=encoding + '_' + state)
+                                        waveform=waveform)
 
 
                 else: # this is for parity measurement wait time, either wait or do constant pulse of 0 amplitude
@@ -882,6 +896,42 @@ class MM_base:
             return creator.pulse.tolist()
 
         return parity_str
+    
+
+    def get_gain_optimal_pulse(self, pulse):
+        encoding = pulse[1]
+        state = pulse[2]
+        # open the file with the optimal pulse
+        filename = self.cfg.device.optimal_control[encoding][state]['filename']
+        data = np.load(filename, allow_pickle=True)
+        print('Optimal pulse file loaded:', filename)
+        I_q = data['I_q']*2*np.pi*1e3
+        Q_q = data['Q_q']*2*np.pi*1e3
+        max_q = max(np.max(np.abs(I_q)), np.max(np.abs(Q_q)))
+        I_c = data['I_c']*2*np.pi*1e3
+        Q_c = data['Q_c']*2*np.pi*1e3
+        max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
+        print('Max q:', max_q)
+        print('Max c:', max_c)
+
+        # import pi pulse parameters
+        gain_qb_pi_pulse = self.cfg.device.qubit.pulses.pi_ge.gain[0]
+        sigma_qb_pi_pulse = self.cfg.device.qubit.pulses.pi_ge.sigma[0]
+        pi_pulse_type = self.cfg.device.qubit.pulses.pi_ge.type[0]
+        assert pi_pulse_type == 'gauss', "Only gaussian pi pulse is supported for now"
+        n=4 # assume the pulse is 4 sigma long
+        theta_to_gain = np.pi/2/gain_qb_pi_pulse
+        drive_to_gain_qb = sigma_qb_pi_pulse * np.sqrt(np.pi)/theta_to_gain * sp.special.erf(n/2)
+        # do the same for the manipulate pulse
+        alpha_to_gain = self.cfg.device.manipulate.gain_to_alpha[0]
+        sigma_cav = self.cfg.device.manipulate.displace_sigma[0]
+        drive_to_gain_cav = sigma_cav * np.sqrt(np.pi)/alpha_to_gain * sp.special.erf(n/2)
+
+        gain_qb = round(max_q * drive_to_gain_qb, 0)
+        gain_qb = int(gain_qb)
+        gain_cav = round(max_c * drive_to_gain_cav, 0)
+        gain_cav = int(gain_cav)
+        return gain_qb, gain_cav
 
     def collect_shots(self):
         # collect shots for the relevant adc and I and Q channels
@@ -1117,7 +1167,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
 class prepulse_creator2: 
-    def __init__(self, cfg, storage_man_file):
+    def __init__(self, cfg, storage_man_file, floquet_man_stor_file=None):
         '''
         Takes pulse param of form 
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
@@ -1142,6 +1192,12 @@ class prepulse_creator2:
 
         # man storage swap data 
         self.dataset = storage_man_swap_dataset(storage_man_file)
+
+        # man storage floquet swap data
+        self.dataset_floquet = None
+        print(floquet_man_stor_file)
+        if floquet_man_stor_file is not None:
+            self.dataset_floquet = floquet_storage_swap_dataset(floquet_man_stor_file)
 
         # initialize pulse 
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)
@@ -1210,6 +1266,8 @@ class prepulse_creator2:
                                [cfg.device.multiphoton[pulse_name][transition]['type'][photon_no_start]], 
                                [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
 
+
+        print("multiphoton", qubit_pulse.shape, self.pulse.shape)
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
     
@@ -1220,29 +1278,31 @@ class prepulse_creator2:
         cfg = self.cfg
 
         # qubit pulse
-        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][0], 
-                        cfg.device.optimal_control[encoding][state]['gain'][0],
-                        0, 
-                        cfg.device.optimal_control[encoding][state]['phase'][0], 
-                        int(self.cfg.hw.soc.dacs.qubit.ch[channel_idx[0]]), 
-                        [encoding, state], 
-                        0]], dtype = object)
-        
+        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][0]], 
+                        [cfg.device.optimal_control[encoding][state]['gain'][0]],
+                        [0], 
+                        [cfg.device.optimal_control[encoding][state]['phase'][0]], 
+                        [int(self.cfg.hw.soc.dacs.qubit.ch[channel_idx[0]])],   
+                        [['opt_cont', encoding, state]], 
+                        [0]], dtype = object)
+
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
 
+        print('careful I am assing channel idx to 4 until I fix it')
         # pulse manipulate
-        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][1],
-                        cfg.device.optimal_control[encoding][state]['gain'][1],
-                        0, 
-                        cfg.device.optimal_control[encoding][state]['phase'][1],
-                        int(self.cfg.hw.soc.dacs.manipulate_in.ch[channel_idx[1]]),
+        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][1]],
+                        [cfg.device.optimal_control[encoding][state]['gain'][1]],
+                        [0], 
+                        [cfg.device.optimal_control[encoding][state]['phase'][1]],
+                        # int(self.cfg.hw.soc.dacs.manipulate_in.ch[channel_idx[1]]),
+                        [int(4)],
                         [['opt_cont', encoding, state]],
-                        0]], dtype = object)
+                        [0]], dtype = object)
+        print("pulse", pulse.shape, self.pulse.shape)
 
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
 
         return None
-
 
  
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
@@ -1265,7 +1325,9 @@ class prepulse_creator2:
                     [self.cfg.device.qubit.pulses[pulse_full_name]['type'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['sigma'][0]]], dtype = object)
 
+            print("qubit_pulse", qubit_pulse.shape, self.pulse.shape)
             self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
+
 
 
         else: # parity string is 'parity_M1' or 'parity_M2'
@@ -1341,3 +1403,23 @@ class prepulse_creator2:
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
 
+
+    def floquet(self, pulse_param):
+        stor_name, pi_frac, phase = pulse_param
+        length = self.dataset_floquet.get_len(stor_name)
+        freq = self.dataset_floquet.get_freq(stor_name)
+        ch = 1 if freq<1000 else 3
+
+        storage_pulse = np.array([
+            [self.dataset_floquet.get_freq(stor_name)],
+            [self.dataset_floquet.get_gain(stor_name)],
+            [length],
+            [phase],
+            [ch],
+            ['flat_top'],
+            [self.dataset_floquet.get_ramp_sigma(stor_name)]
+            ], dtype = object)
+
+        self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
+        return None
+        

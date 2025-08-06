@@ -100,7 +100,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 )
             self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
 
-        elif cfg.expt.pulse_type[0] == 'storage':
+        elif cfg.expt.pulse_type[0] in ['storage', 'floquet']:
             man_idx = cfg.expt.pulse_type[1][1]
             self.creator = self.get_prepulse_creator(
                 [['qubit', 'ge', 'pi', 0],
@@ -178,22 +178,39 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
 
 
+        if cfg.expt.pulse_type[2] == 'pi':
+            pi_frac = 1
+        elif cfg.expt.pulse_type[2] == 'hpi':
+            pi_frac = 2
+        elif cfg.expt.pulse_type[2][2] == '/': # pi/pi_frac
+            pi_frac = int(cfg.expt.pulse_type[2][3:])
+        else:
+            pi_frac = 0 # this should not happen
+            assert False, "Invalid pulse type. Must be 'pi', 'hpi' or 'pi/pi_frac'."
+
         if cfg.expt.parameter_to_test == 'gain':
             for i in range(n_pulses):
-                if cfg.expt.pulse_type[2] == 'pi':
-                    for p in range(2):
-                        self.pulse(ch = self.pulse_to_test[4])
-                elif cfg.expt.pulse_type[2] == 'hpi':
-                    for p in range(4):
-                        self.pulse(ch = self.pulse_to_test[4])
+                for p in range(2 * pi_frac):
+                    self.pulse(ch = self.pulse_to_test[4])
 
         elif cfg.expt.parameter_to_test == 'frequency':
             # set the phase register to the initial value
             phase = self.pulse_to_test[3]
             for i in range(n_pulses):
-                for p in range(2):
-                    # play the pulse
-                    self.pulse(ch = self.pulse_to_test[4])
+                # for p in range(2):
+                #     # play the pulse
+                #     self.pulse(ch = self.pulse_to_test[4])
+                #     # update the phase modulo 360
+                #     phase += 180
+                #     phase = phase % 360
+                #     _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
+                #     self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
+
+                for repeat in range(2):
+                    for p in range(pi_frac):
+                        # play the pulse
+                        self.pulse(ch = self.pulse_to_test[4])
+
                     # update the phase modulo 360
                     phase += 180
                     phase = phase % 360
@@ -209,7 +226,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             if self.pulse_to_test[1] == 'ef':
                 post_pulse = self.creator.pulse.tolist() # ge
                 self.custom_pulse(cfg, post_pulse, prefix='post_')
-        elif cfg.expt.pulse_type[0] in ('man', 'storage'):
+        elif cfg.expt.pulse_type[0] in ('man', 'storage', 'floquet'):
             post_pulse = self.creator.pulse.tolist() # ef 
             # Reverse the order of the prepulses, skipping the last g-e qubit pulse
             last_pulse = [sublist[:0:-1] for sublist in  self.creator.pulse.tolist()]
@@ -228,7 +245,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 # print("post_pulse:", last_pulse)
                 self.custom_pulse(cfg, last_pulse, prefix='post_')
         else:
-            raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
+            raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', 'floquet', or 'multiphoton'.")
 
         self.sync_all()
         # align channel and measure

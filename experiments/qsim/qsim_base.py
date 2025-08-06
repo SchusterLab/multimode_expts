@@ -1,4 +1,5 @@
 import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import QickConfig
@@ -7,7 +8,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from dataset import storage_man_swap_dataset
+from dataset import floquet_storage_swap_dataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
     guess_freq,
@@ -33,11 +34,12 @@ class QsimBaseProgram(MMAveragerProgram):
         """
         qTest = self.qubits[0]
         stor_names = [f'M1-S{stor_no}' for stor_no in range(1,8)]
-        self.m1s_freq_MHz = [self.swap_ds.get_freq(stor_name)+self.cfg.expt.detune for stor_name in stor_names]
+        self.m1s_pi_fracs = [self.swap_ds.get_pi_frac(stor_name) for stor_name in stor_names]
+        self.m1s_freq_MHz = [self.swap_ds.get_freq(stor_name) for stor_name in stor_names]
         self.m1s_is_low_freq = [True]*4 + [False]*3
         self.m1s_ch = [self.flux_low_ch[qTest]]*4 + [self.flux_high_ch[qTest]]*3
         self.m1s_freq = [self.freq2reg(freq_MHz, gen_ch=ch) for freq_MHz, ch in zip(self.m1s_freq_MHz, self.m1s_ch)]
-        self.m1s_length = [self.us2cycles(self.swap_ds.get_h_pi(stor_name), gen_ch=ch)
+        self.m1s_length = [self.us2cycles(self.swap_ds.get_len(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
         self.m1s_gain = [self.swap_ds.get_gain(stor_name) for stor_name in stor_names]
         self.m1s_wf_name = ["pi_m1si_low"]*4 + ["pi_m1si_high"]*3
@@ -49,7 +51,10 @@ class QsimBaseProgram(MMAveragerProgram):
         Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
-        self.swap_ds = storage_man_swap_dataset()
+        if "ds_thisrun" not in self.cfg.expt:
+            self.swap_ds = floquet_storage_swap_dataset()
+        else:
+            self.swap_ds = self.cfg.expt.ds_thisrun
         self.retrieve_swap_parameters()
 
         self.m1s_kwargs = [{
@@ -273,4 +278,5 @@ class QsimBaseExperiment(Experiment):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
+
 
