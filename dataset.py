@@ -285,8 +285,9 @@ class floquet_storage_swap_dataset(mm_dataset):
             'gain (DAC units)',
             'len (mus)',
             'ramp_sigma (mus)',
-            'stark_shift (MHz)', # stark shift of the manipulate due to this pulse
         ]
+        for idx in range(1, 8, 1):
+            column_names.append('phase_from_M1-S' + str(idx) + ' (deg)')  # phase of the pulse on M1-Sx
 
         rows = []
         for idx in range(1, 8, 1): 
@@ -297,9 +298,11 @@ class floquet_storage_swap_dataset(mm_dataset):
                 'gain (DAC units)': -1,
                 'len (mus)': -1.0,
                 'ramp_sigma (mus)': -1,
-                'stark_shift (MHz)': -1.0,
             }
+            for i in range(1, 8, 1):
+                row['phase_from_M1-S' + str(i) + ' (deg)'] = 0.0
             rows.append(row)
+
 
         self.create_new_df_from_labels(column_names, rows, add_timestamp=True) 
 
@@ -313,10 +316,10 @@ class floquet_storage_swap_dataset(mm_dataset):
     def get_gain(self, stor_name):
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
         return self.get_value(stor_name, 'gain (DAC units)')
-    def get_stark_shift(self, stor_name):
-        return self.get_value(stor_name, 'stark_shift (MHz)')
     def get_ramp_sigma(self, stor_name):
         return self.get_value(stor_name, 'ramp_sigma (mus)')
+    def get_phase_from(self, stor_name, from_stor_name):
+        return self.get_value(stor_name, f'phase_from_{from_stor_name} (deg)')
 
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
@@ -328,7 +331,7 @@ class floquet_storage_swap_dataset(mm_dataset):
     def update_gain(self, stor_name, gain):
         self.update_value(stor_name, 'gain (DAC units)', gain)
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
-    def update_stark_shift(self, stor_name, stark_shift):
-        self.update_value(stor_name, 'stark_shift (MHz)', stark_shift)
     def update_ramp_sigma(self, stor_name, ramp_sigma):
         self.update_value(stor_name, 'ramp_sigma (mus)', ramp_sigma)
+    def update_phase_from(self, stor_name, from_stor_name, phase):
+        self.update_value(stor_name, f'phase_from_{from_stor_name} (deg)', phase)
