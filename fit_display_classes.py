@@ -345,8 +345,8 @@ class RamseyFitting(GeneralFitting):
             f_pi_test = self.cfg.device.qubit.f_ge[q]
             if checkEF:
                 f_pi_test = self.cfg.device.qubit.f_ef[q] 
-            if self.cfg.expt.user_defined_freq[0]:
-                f_pi_test = self.cfg.expt.user_defined_freq[1]
+            if 'user_defined_pulse' in self.cfg.expt and self.cfg.expt.user_defined_pulse[0]:
+                f_pi_test = self.cfg.expt.user_defined_pulse[1]
                 print(f'Using user defined frequency: {f_pi_test} MHz')
         
         if getattr(self.cfg.expt, "f0g1_cavity", 0) > 0:
