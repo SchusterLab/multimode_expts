@@ -2,6 +2,9 @@ import numpy as np
 from slab import AttrDict
 from typing import Optional
 from scipy.fft import rfft, rfftfreq
+import lmfit
+from matplotlib import pyplot as plt
+from warnings import warn
 
 def ensure_list_in_cfg(cfg: Optional[AttrDict]):
     """
@@ -73,4 +76,58 @@ def post_select_raverager_data(data, cfg):
         Qlist.append(np.mean(Qg))
 
     return Ilist, Qlist
+
+
+class Cos2dModel(lmfit.Model):
+    """
+    Incompatible with lmfit api but very short to call
+    """
+    def __init__(self, *args, **kwargs):
+        def cos2d(tau, phi, f, phi0, A, C):
+            return A*np.cos(2*np.pi*f*tau + phi/180*np.pi + phi0/180*np.pi) + C
+        super().__init__(cos2d, independent_vars=['tau', 'phi'], *args, **kwargs)
+
+    def guess(self, data, tau, phi, **kwargs):
+        verbose = kwargs.pop('verbose', None)
+        phases = np.unwrap([guess_freq(tau, line)[1] for line in data]) / np.pi*180
+        slope_sign = np.sign(np.corrcoef(phi, phases)[0, 1])
+        # if we don't take care of the sign of the freq, it only finds the local minimum at f>0
+        freq_guess = np.mean([guess_freq(tau, line)[0] for line in data]) * slope_sign
+        offset_guess = np.mean(data)
+        amp_guess = np.ptp(data) / 2
+        if verbose:
+            print(freq_guess, offset_guess, amp_guess)
+            plt.plot(phi, phases)
+        params = self.make_params(
+            f=freq_guess,
+            phi0=0,
+            A=amp_guess,
+            C=offset_guess
+        )
+        return lmfit.models.update_param_vals(params, self.prefix, **kwargs)
+
+    def fit(self, data, tau, phi, **kwargs):
+        Tau, Phi = np.meshgrid(tau, phi)
+        params = self.guess(data, tau, phi)
+        return super().fit(data.ravel(), params, tau=Tau.ravel(), phi=Phi.ravel())
+
+def fit_cos2d(data, tau, phi, plot=False, **kwargs):
+    """
+    Fit a 2D cos model to the data
+    """
+    #TODO: this should handle user supplied param constraints and
+    # options such as whether to force phase at (tau, phi)=(0,0) to be 0
+    model = Cos2dModel()
+    result = model.fit(data, tau=tau, phi=phi, **kwargs)
+    if result.rsquared<0.7:
+        warn('R rsquared small, fit likely failed')
+
+    if plot:
+        fig, axs = plt.subplots(1,2,figsize=(12,5))
+        mesh = axs[0].pcolormesh(tau, phi, data)
+        fig.colorbar(mesh, ax=axs[0])
+        mesh = axs[1].pcolormesh(tau, phi, result.best_fit.reshape(data.shape))
+        fig.colorbar(mesh, ax=axs[1])
+
+    return result
 

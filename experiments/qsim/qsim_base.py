@@ -51,6 +51,8 @@ class QsimBaseProgram(MMAveragerProgram):
         Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        #TODO: this should use a config key to determine whether
+        # to use floquet or gate (pi or pi/2) datasets
         if "ds_thisrun" not in self.cfg.expt:
             self.swap_ds = floquet_storage_swap_dataset()
         else:
@@ -227,6 +229,8 @@ class QsimBaseExperiment(Experiment):
 
 
     def display(self, data=None, fit=True, **kwargs):
+        #TODO: might want to add capability to plot custom keys
+        # such as extra_data_keys=['best_fit']
         if data is None:
             data=self.data
 
@@ -243,7 +247,7 @@ class QsimBaseExperiment(Experiment):
                 xlabel, ylabel = self.inner_param, self.outer_param
             except AttributeError:
                 try:
-                        ylabel, xlabel = self.cfg.swept_params
+                    ylabel, xlabel = self.cfg.swept_params
                 except AttributeError:
                     try:
                         ylabel, xlabel = self.cfg.expt.swept_params
