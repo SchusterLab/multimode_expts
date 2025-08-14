@@ -126,8 +126,13 @@ def fit_cos2d(data, tau, phi, plot=False, **kwargs):
         fig, axs = plt.subplots(1,2,figsize=(12,5))
         mesh = axs[0].pcolormesh(tau, phi, data)
         fig.colorbar(mesh, ax=axs[0])
+        axs[0].set_title('avgi')
         mesh = axs[1].pcolormesh(tau, phi, result.best_fit.reshape(data.shape))
         fig.colorbar(mesh, ax=axs[1])
+        axs[1].set_title('best fit')
+        for ax in axs:
+            ax.set_xlabel('pulse length (us)')
+            ax.set_ylabel('advance phase (deg)')
 
     return result
 
