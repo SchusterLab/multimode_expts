@@ -53,14 +53,17 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # initialize registers
         if cfg.expt.parameter_to_test == 'gain':
             if self.pulse_to_test[5] == "flat_top":
-                self.r_gain = self.sreg(self.pulse_to_test[4], "gain") # get gain register for qubit_ch
-                self.r_gain2 = self.sreg(self.pulse_to_test[4], "gain2") # get gain register for qubit_ch
+                self.r_gain = self.sreg(self.pulse_to_test[4], "gain") # get gain register for qubit_ch ramp part
+                self.r_gain2 = self.sreg(self.pulse_to_test[4], "gain2") # get gain register for qubit_ch const part
             else:
                 self.r_gain = self.sreg(self.pulse_to_test[4], "gain") # get gain register for qubit_ch
-
-            self.r_gain3 = 4 # I am taking this from amplitude rabi but I am not sure why 4
+            self.r_gain3 = 4 # update register for the ramp part
             self.channel_page = self.ch_page(self.pulse_to_test[4])
             self.safe_regwi(self.channel_page, self.r_gain3, int(self.cfg.expt.start))
+            if self.pulse_to_test[5] == "flat_top":
+                assert 5 not in (self.r_gain, self.r_gain2)
+                self.r_gain4 = 5 # update register for the const part, which needs to be 1/2 the ramp part
+                self.safe_regwi(self.channel_page, self.r_gain4, int(self.cfg.expt.start/2))
 
         if cfg.expt.parameter_to_test == 'frequency':
             self.channel_page = self.ch_page(self.pulse_to_test[4])
@@ -160,13 +163,12 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 gain = int(self.pulse_to_test[1]),
                 waveform = "pulse_to_test",
             )
-            
         if cfg.expt.parameter_to_test == 'frequency':    
             self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
         elif cfg.expt.parameter_to_test == 'gain':
-            self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", 0)
+            self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", 0) # the arb part
             if self.pulse_to_test[5] == "flat_top":
-                self.mathi(self.channel_page, self.r_gain2, self.r_gain3, "+", 0)
+                self.mathi(self.channel_page, self.r_gain2, self.r_gain4, "+", 0) #  the const part is renamed to gain2
         else:
             raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
 
@@ -188,10 +190,10 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             pi_frac = 0 # this should not happen
             assert False, "Invalid pulse type. Must be 'pi', 'hpi' or 'pi/pi_frac'."
 
+
         if cfg.expt.parameter_to_test == 'gain':
-            for i in range(n_pulses):
-                for p in range(2 * pi_frac):
-                    self.pulse(ch = self.pulse_to_test[4])
+            for i in range((n_pulses * 2) * pi_frac):
+                self.pulse(ch = self.pulse_to_test[4])
 
         elif cfg.expt.parameter_to_test == 'frequency':
             # set the phase register to the initial value
@@ -256,6 +258,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         step = self.cfg.expt.step
         if self.cfg.expt.parameter_to_test == 'gain':
             self.mathi(self.channel_page, self.r_gain3, self.r_gain3, "+", int(step))
+            if self.pulse_to_test[5] == "flat_top":
+                self.mathi(self.channel_page, self.r_gain4, self.r_gain4, "+", int(step/2))
         elif self.cfg.expt.parameter_to_test == 'frequency':
             _step = self.freq2reg(step, gen_ch=self.pulse_to_test[4])
             self.mathi(self.channel_page, self.r_freq2, self.r_freq2, "+", _step)
@@ -310,7 +314,10 @@ class ErrorAmplificationExperiment(Experiment):
 
         cfg = deepcopy(self.cfg)
         adc_ch = cfg.hw.soc.adcs.readout.ch
-        n_pts = np.arange(1, cfg.expt.n_pulses) 
+        n_start = 1 if "n_start" not in cfg.expt else cfg.expt.n_start
+        n_step = 1 if "n_step" not in cfg.expt else cfg.expt.n_step
+        n_pts = np.arange(n_start, cfg.expt.n_pulses + n_step, n_step) 
+        print("n_pts", n_pts)
         
         data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amp":[], "phase":[]}
         for pt in tqdm(n_pts):

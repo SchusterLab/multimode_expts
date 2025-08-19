@@ -1195,7 +1195,6 @@ class prepulse_creator2:
 
         # man storage floquet swap data
         self.dataset_floquet = None
-        print(floquet_man_stor_file)
         if floquet_man_stor_file is not None:
             self.dataset_floquet = floquet_storage_swap_dataset(floquet_man_stor_file)
 
@@ -1257,6 +1256,9 @@ class prepulse_creator2:
         elif state_start == 'f':
             assert state_end == 'g', "transition name should be fn-gn+1"
             transition = 'fn-gn+1'
+            if photon_no_start == 0:
+                pulse_param = ('M1', pulse_name, phase)
+                return self.man(pulse_param)
 
         qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]], 
                                [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]], 
@@ -1267,7 +1269,7 @@ class prepulse_creator2:
                                [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
 
 
-        print("multiphoton", qubit_pulse.shape, self.pulse.shape)
+        print("multiphoton", transition_name, qubit_pulse.shape, self.pulse.shape)
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
     
@@ -1365,6 +1367,8 @@ class prepulse_creator2:
                 [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)
+        print("man", cav_name)
+
         return None
 
     def buffer(self, pulse_param): 
@@ -1390,10 +1394,12 @@ class prepulse_creator2:
         else:
             length = self.dataset.get_h_pi(stor_name)
         freq = self.dataset.get_freq(stor_name)
-        ch = 1 if freq<1000 else 3
+        flux_low_ch = self.cfg.hw.soc.dacs.flux_low.ch[0]
+        flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
+        ch = flux_low_ch if freq<1000 else flux_high_ch
 
         storage_pulse = np.array([[self.dataset.get_freq(stor_name)],
-                [ self.dataset.get_gain(stor_name)],
+                [self.dataset.get_gain(stor_name)],
                 [length],
                 [phase],
                 [ch],
@@ -1408,7 +1414,9 @@ class prepulse_creator2:
         stor_name, pi_frac, phase = pulse_param
         length = self.dataset_floquet.get_len(stor_name)
         freq = self.dataset_floquet.get_freq(stor_name)
-        ch = 1 if freq<1000 else 3
+        flux_low_ch = self.cfg.hw.soc.dacs.flux_low.ch[0]
+        flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
+        ch = flux_low_ch if freq<1000 else flux_high_ch
 
         storage_pulse = np.array([
             [self.dataset_floquet.get_freq(stor_name)],
