@@ -21,6 +21,7 @@ class T1CavityProgram(RAveragerProgram):
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
+        print('This experiment is very broken and needs an update')
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
         
@@ -55,7 +56,20 @@ class T1CavityProgram(RAveragerProgram):
 
         self.pi_gain = cfg.device.qubit.pulses.pi_ge.gain
         self.pief_gain = cfg.device.qubit.pulses.pi_ef.gain
-        self.pif0g1_gain = cfg.device.qubit.pulses.f0g1.gain
+
+
+        if "f0g1_prep" in cfg.expt and cfg.expt.f0g1_prep:
+            print("Using user defined pi-gain and f0g1 parameters")
+            self.f0g1 = self.freq2reg(cfg.expt.f0g1_param[0], gen_ch=self.f0g1_ch)
+            self.pif0g1_gain = cfg.expt.f0g1_param[1]
+            self.f0g1_length = self.us2cycles(cfg.expt.f0g1_param[2], gen_ch=self.f0g1_ch)
+            self.f0g1_sigma = self.us2cycles(cfg.expt.f0g1_param[3], gen_ch=self.f0g1_ch)
+        else:
+            print("Using multiphoton pi-gain and f0g1 parameters")
+            self.pif0g1_gain = cfg.device.multiphoton.pi['fn-gn+1'].gain[0]
+            self.f0g1 = self.freq2reg(cfg.device.multiphoton.pi['fn-gn+1'].freq[0], gen_ch=self.f0g1_ch)
+            self.f0g1_length = self.us2cycles(cfg.device.multiphoton.pi['fn-gn+1'].length[0], gen_ch=self.f0g1_ch)
+            self.f0g1_sigma = self.us2cycles(cfg.device.multiphoton.pi['fn-gn+1'].sigma[0], gen_ch=self.f0g1_ch)
 
         if cfg.expt.cavity > 0:
             ii = 0
@@ -71,23 +85,22 @@ class T1CavityProgram(RAveragerProgram):
                 ii=0
                 jj=1
                 self.f_man = self.f_man2
+
             # systematic way of adding qubit pulse under chi shift
             # self.pif0g1_gain = self.cfg.device.QM.pulses.f0g1.gain[cfg.expt.cavity-1]
-            self.pif0g1_gain = cfg.expt.f0g1_param[1]
+            # self.pif0g1_gain = cfg.expt.f0g1_param[1]
             # self.f_pi_test_reg = self.freq2reg(self.cfg.device.QM.chi_shift_matrix[0][cfg.expt.f0g1_cavity]+self.cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest]) # freq we are trying to calibrate
-            self.gain_pi_test = self.cfg.device.QM.pulses.qubit_pi_ge.gain[ii][jj] # gain of the pulse we are trying to calibrate
+            # self.gain_pi_test = self.cfg.device.QM.pulses.qubit_pi_ge.gain[ii][jj] # gain of the pulse we are trying to calibrate
             # self.pi2sigma_test = self.cfg.device.QM.pulses.qubit_pi_ge.sigma[ii][jj]
             # self.add_gauss(ch=self.qubit_chs[qTest], name="pi2_test", sigma=self.pi2sigma, length=self.pi2sigma*4)
             # self.f0g1 = self.freq2reg(cfg.device.QM.pulses.f0g1.freq[cfg.expt.cavity-1], gen_ch=self.f0g1_ch)
             # self.f0g1_length = self.us2cycles(cfg.device.QM.pulses.f0g1.length[cfg.expt.cavity-1], gen_ch=self.f0g1_ch)
-            self.f0g1 = self.freq2reg(cfg.expt.f0g1_param[0], gen_ch=self.f0g1_ch)
-            self.f0g1_length = self.us2cycles(cfg.expt.f0g1_param[2], gen_ch=self.f0g1_ch)
-            self.pi_resolved_sigma = self.us2cycles(cfg.device.QM.pulses.qubit_pi_ge_resolved.sigma[ii][jj], gen_ch=self.qubit_ch)
-            self.flat_length = self.us2cycles(cfg.device.QM.pulses.qubit_pi_ge_resolved.length[ii][jj], gen_ch=self.qubit_ch)
-            self.pi_gain_resolved = self.cfg.device.QM.pulses.qubit_pi_ge_resolved.gain[ii][jj]
-            
-            self.f_ge_resolved = self.freq2reg(self.cfg.device.manipulate.chi[cfg.expt.cavity -1 ]+self.cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
-
+            # self.f0g1 = self.freq2reg(cfg.expt.f0g1_param[0], gen_ch=self.f0g1_ch)
+            # self.f0g1_length = self.us2cycles(cfg.expt.f0g1_param[2], gen_ch=self.f0g1_ch)
+            # self.pi_resolved_sigma = self.us2cycles(cfg.device.QM.pulses.qubit_pi_ge_resolved.sigma[ii][jj], gen_ch=self.qubit_ch)
+            # self.flat_length = self.us2cycles(cfg.device.QM.pulses.qubit_pi_ge_resolved.length[ii][jj], gen_ch=self.qubit_ch)
+            # self.pi_gain_resolved = self.cfg.device.QM.pulses.qubit_pi_ge_resolved.gain[ii][jj]
+            # self.f_ge_resolved = self.freq2reg(self.cfg.device.manipulate.chi[cfg.expt.cavity -1 ]+self.cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
             # self.set_pulse_registers(ch=self.man_ch, style="const", freq=self.f_man, phase=0, gain=self.man_gain, length=self.man_length)
 
         # declare res dacs
@@ -124,12 +137,12 @@ class T1CavityProgram(RAveragerProgram):
 
         # add qubit and readout pulses to respective channels
         self.add_gauss(ch=self.qubit_ch, name="pi_qubit", sigma=self.pi_sigma, length=self.pi_sigma*4)
-        self.add_gauss(ch=self.qubit_ch, name="pi_resolved_qubit", sigma=self.pi_resolved_sigma, length=self.pi_resolved_sigma*4)
+        # self.add_gauss(ch=self.qubit_ch, name="pi_resolved_qubit", sigma=self.pi_resolved_sigma, length=self.pi_resolved_sigma*4)
         self.set_pulse_registers(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=cfg.device.qubit.pulses.pi_ge.gain, waveform="pi_qubit")
         self.add_gauss(ch=self.qubit_ch, name="pief_qubit", sigma=self.pief_sigma, length=self.pief_sigma*4)
 
         self.add_gauss(ch=self.f0g1_ch, name="f0g1_pi_test",
-                       sigma=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma), length=self.us2cycles(self.cfg.device.QM.pulses.f0g1.sigma)*4)
+                       sigma=self.f0g1_sigma, length=self.f0g1_sigma*4)
 
         # if self.res_ch_type == 'mux4':
         #     self.set_pulse_registers(ch=self.res_ch, style="const", length=self.readout_length_dac, mask=mask)
@@ -229,7 +242,9 @@ class T1CavityExperiment(Experiment):
                                 value2.update({key3: value3[q_ind]})                                
 
         t1 = T1CavityProgram(soccfg=self.soccfg, cfg=self.cfg)
-        x_pts, avgi, avgq = t1.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
+        x_pts, avgi, avgq = t1.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
+                                        # debug=debug
+                                        )        
 
         avgi = avgi[0][0]
         avgq = avgq[0][0]
@@ -258,22 +273,32 @@ class T1CavityExperiment(Experiment):
         data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
         data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
         data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
+
+        T1 = data['fit_avgi'][3]  # decay rate
+        T1_err = np.sqrt(data['fit_err_avgi'][3][3])
+        kappa = 1/T1/2/ np.pi  # kappa = 1/T1/2/pi in unit of freq
+        kappa_err = T1_err/T1**2 # kappa_err = T1_err/T1**2 * kappa
+
+        data['T1'] = T1
+        data['T1_err'] = T1_err
+        data['kappa_in_freq'] = kappa
+        data['kappa_err_in_freq'] = kappa_err
+
+
         return data
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
             data=self.data 
-        
-        # plt.figure(figsize=(12, 8))
-        # plt.subplot(111,title="$T_1$", xlabel="Wait Time [us]", ylabel="Amplitude [ADC level]")
-        # plt.plot(data["xpts"][:-1], data["amps"][:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     pCov = data['fit_err_amps']
-        #     captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-        #     plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_amps"]), label=captionStr)
-        #     plt.legend()
-        #     print(f'Fit T1 amps [us]: {data["fit_amps"][3]}')
+
+        T1 = data['T1']
+        T1_err = data['T1_err']
+        kappa = data['kappa_in_freq']
+        kappa_err = data['kappa_err_in_freq']
+
+        text = f"$T_1$ = {T1:.3f} $\pm$ {T1_err:.3f} us\n"
+        text += f"$\kappa$ = {kappa*1e3:.3f} $\pm$ {kappa_err*1e3:.3f}KHz *2$\pi$\n"
+
 
         plt.figure(figsize=(10,10))
         plt.subplot(211, title="$T_1$", ylabel="I [ADC units]")
@@ -282,11 +307,16 @@ class T1CavityExperiment(Experiment):
             p = data['fit_avgi']
             pCov = data['fit_err_avgi']
             captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgi [us]: {data["fit_avgi"][3]}')
         plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC units]")
         plt.plot(data["xpts"][:-1], data["avgq"][:-1],'o-')
+
+        # add the text box with T1 and kappa values
+        plt.gcf().text(0.15, 0.8, text, fontsize=12, bbox=dict(facecolor='white', alpha=0.5))
+
         if fit:
             p = data['fit_avgq']
             pCov = data['fit_err_avgq']

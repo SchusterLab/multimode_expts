@@ -181,6 +181,8 @@ class WignerAnalysis(GeneralFitting):
     def wigner_mat_and_grad(self, disps, FD, reshape=True):
         
         ND = len(disps)
+        # seb: for some reason I need to apply a phase shift to disps
+        disps = np.abs(disps) * np.exp(1j * (np.angle(disps) + np.pi))
         wig_tens = np.zeros((ND, FD, FD), dtype=np.complex128)
         grad_mat_r = np.zeros((ND, FD, FD), dtype=np.complex128)
         grad_mat_i = np.zeros((ND, FD, FD), dtype=np.complex128)
@@ -249,6 +251,7 @@ class WignerAnalysis(GeneralFitting):
         vec_b[:self.m ** 2] = dot(conjugate(transpose(self.curlyM())), w_vec)
         rho_vec = dot(pinv(A), vec_b)[:self.m ** 2]
         rho = rho_vec.reshape(self.m, self.m)
+        # for some reason I need to conjugate the result
         return (rho)
 
     def rho_pinv_positive_sd(self, w_vec):
@@ -260,6 +263,7 @@ class WignerAnalysis(GeneralFitting):
         lps = self.positive_semidefinite_eigs(ls)
         rho_new = dot((array(vs).T.conj()), dot(diag(lps, 0), array(vs)))
         return (rho_new)
+        # return (rho)
 
     def positive_semidefinite_eigs(self, vs):
         a = 0
@@ -337,6 +341,7 @@ class WignerAnalysis(GeneralFitting):
 
         alpha_max = np.max(np.abs(alpha_list))
         x_vec = np.linspace(-alpha_max, alpha_max, 200)
+        # why do I need to reverse the x_vec?
         W_fit = qt.wigner(qt.Qobj(rho), x_vec, x_vec, g=2)
         W_ideal = qt.wigner(qt.Qobj(rho_ideal), x_vec, x_vec, g=2)
 

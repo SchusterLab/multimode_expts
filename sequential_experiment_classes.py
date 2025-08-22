@@ -369,16 +369,16 @@ class histogram_sweep_class(sequential_base_class):
 
     def histogram_jpa_gain_current_sweep(self):
         '''Gain and frequency sweep for histogram experiments'''
-        raise NotImplementedError("This method is not implemented yet.")
+        # raise NotImplementedError("This method is not implemented yet.")
         self.initialize_expt_sweep()
     
-        for index, gain in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['gain_start'],
-                                               self.loaded[self.sweep_experiment_name]['gain_stop'],
-                                               self.loaded[self.sweep_experiment_name]['gain_step'])):
+        for index, gain in enumerate(np.arange(self.loaded[self.sweep_experiment_name]['jpa_gain_start'],
+                                               self.loaded[self.sweep_experiment_name]['jpa_gain_stop'],
+                                               self.loaded[self.sweep_experiment_name]['jpa_gain_step'])):
             print('Index: %s Gain. = %s' % (index, gain))
             self.loaded[self.experiment_name]['jpa_gain'] = gain
-        
 
+            self.set_jpa_gain(gain)  # Set the JPA gain using the instrument
             self.histogram_jpa_current_sweep()
 
     def run_sweep(self, sweep_experiment_name):
@@ -388,6 +388,9 @@ class histogram_sweep_class(sequential_base_class):
 
         if sweep_experiment_name == 'histogram_jpa_current_sweep':
             return self.histogram_jpa_current_sweep()
+
+        elif sweep_experiment_name == 'histogram_jpa_gain_current_sweep':
+            return self.histogram_jpa_gain_current_sweep()
 
         elif sweep_experiment_name == 'histogram_gain_freq_sweep':
             self.histogram_gain_freq_sweep()

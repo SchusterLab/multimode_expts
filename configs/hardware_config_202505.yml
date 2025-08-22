@@ -65,11 +65,11 @@ device:
         gain:
         - 800
         phase:
-        - 81.27912588279425
+        - -69.8075664914381
         threshold:
-        - -53.39219530818241
+        - -71.93799978190091
         threshold_list:
-        -   - -53.39219530818241
+        -   - -71.93799978190091
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -84,14 +84,14 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9637999999999997
-        - 0.03620000000000034
-        - 0.059611922384476886
-        - 0.9403880776155231
+        - 0.9660000000000003
+        - 0.0339999999999997
+        - 0.04500000000000002
+        - 0.955
         Ie:
-        - 2.739633467314171
+        - -16.72328365182862
         Ig:
-        - -108.35605389329318
+        - -124.34351224376776
     manipulate:
         f_ge:
         - 4984.779973902164
@@ -380,7 +380,7 @@ device:
                 phase:
                 - 0.0
                 - 0.0
-                filename: H:\Shared drives\SLab\Multimode\optimal_control\test_pi.npz
+                filename: H:\Shared drives\SLab\Multimode\optimal_control\test.npz
             '2':
                 frequency:
                 - 3571.6994214615424
@@ -391,7 +391,7 @@ device:
                 phase:
                 - 0.0
                 - 0.0
-                filename: H:\Shared drives\SLab\Multimode\optimal_control\test.npz
+                filename: H:\Shared drives\SLab\Multimode\optimal_control\test_pi.npz
 hw:
     soc:
         dacs:

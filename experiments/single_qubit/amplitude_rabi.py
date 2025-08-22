@@ -118,7 +118,7 @@ class AmplitudeRabiProgram(MMRAveragerProgram):
                     freq=self.f_pi_test_reg,
                     phase=0,
                     gain=0, # gain set by update
-                    length=self.sigma_test)
+                    length=self.pi_test_sigma)
         self.mathi(self.q_rps[qTest], self.r_gain, self.r_gain3, "+", 0)
         if cfg.expt.pulse_type == "flat_top":
             self.mathi(self.q_rps[qTest], self.r_gain2, self.r_gain3, "+", 0)

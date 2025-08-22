@@ -1,10 +1,9 @@
-import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm_notebook as tqdm
-
+import numpy as np
 from qick import *
 from qick.helpers import gauss
-from slab import Experiment, dsfit, AttrDict
+from slab import AttrDict, Experiment, dsfit
+from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
 from MM_base import *
@@ -32,11 +31,11 @@ class SidebandGeneralProgram(MMAveragerProgram):
         self.rf_ch = self.flux_low_ch if self.cfg.expt.flux_drive[0] == 'low' else self.flux_high_ch
 
         self.test_pulse_str = [
-            [self.cfg.expt.flux_drive[1]],
-            [self.cfg.expt.flux_drive[2]],
-            [self.cfg.expt.length_placeholder],
-            [0],
-            [self.rf_ch[qTest]],
+            [self.cfg.expt.flux_drive[1]], # freq (MHz)
+            [self.cfg.expt.flux_drive[2]], # gain
+            [self.cfg.expt.length_placeholder], # length (us)
+            [0], # phase
+            [self.rf_ch[qTest]], # ch
             ["flat_top"],
             [self.cfg.device.storage.ramp_sigma]]
         # flux drive = [low/high (ch), freq, gain, ramp_sigma(us)]
@@ -61,7 +60,6 @@ class SidebandGeneralProgram(MMAveragerProgram):
         # self.wait_all(self.us2cycles(cfg.expt.length_placeholder))
 
         if self.cfg.expt.length_placeholder>0:
-
             self.custom_pulse(cfg, self.test_pulse_str, prefix='flux')
 
         self.sync_all()  # align channels
