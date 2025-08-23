@@ -409,6 +409,8 @@ class MM_base:
         '''
         if pulse_data is None:
             return None
+        
+        sync_all_flag=True
 
         pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
 
@@ -495,6 +497,7 @@ class MM_base:
                         times = data['times']
                         I = data[f'I_q']
                         Q = data[f'Q_q']
+                        sync_all_flag = False # dont sync for qubit channel
 
                     elif self.tempch == self.man_ch[0]: 
                         times = data['times']
@@ -544,7 +547,11 @@ class MM_base:
                     self.add_pulse(ch=self.tempch, 
                                 name=waveform,idata=maxv * iamps, qdata=maxv * qamps)
                     
-                    self.sync_all(self.us2cycles(0.01))
+                    # if sync_all_flag:
+                    #     self.sync_all(self.us2cycles(0.01))
+                    # else:
+                    #     sync_all_flag=True
+                    
 
                     self.setup_and_pulse(ch=self.tempch, style="arb",
                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
@@ -557,6 +564,7 @@ class MM_base:
                     if self.tempch == self.qubit_ch[0]:
                         # look for the waveform_preload ending by _qb
                         waveform = [w for w in waveform_preload if w.endswith('_qb')]
+                        sync_all_flag = False # dont sync for qubit channels
                         if waveform:
                             waveform = waveform[0]
                         else:
@@ -588,8 +596,10 @@ class MM_base:
                                     length=self.us2cycles(pulse_data[2][jj], 
                                                         gen_ch=self.tempch))
             # self.wait_all(self.us2cycles(0.01))
-            self.sync_all(self.us2cycles(0.01))
-
+            if sync_all_flag:
+                self.sync_all(self.us2cycles(0.01))
+            else:
+                sync_all_flag=True
 
     def custom_pulse_with_preloaded_wfm(self, cfg, pulse_data, advance_qubit_phase = None, sync_zero_const = False, prefix='pre',
                                         same_storage = False, same_qubit_pulse = False, storage_no=1): 

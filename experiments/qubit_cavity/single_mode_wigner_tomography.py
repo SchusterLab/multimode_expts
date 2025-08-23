@@ -1,18 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import qutip as qt
 from qick import *
 from qick.helpers import gauss
-
-from slab import Experiment, dsfit, AttrDict
+from qutip import fock
+from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
-from MM_base import MMAveragerProgram
-from fitting_folder.wigner import WignerAnalysis
-from fit_display_classes import GeneralFitting
-from qutip import fock  
-import qutip as qt
-# from scipy.sepcial import erf
 
 import experiments.fitting as fitter
+from fit_display_classes import GeneralFitting
+from fitting_folder.wigner import WignerAnalysis
+from MM_base import MMAveragerProgram
+
+# from scipy.sepcial import erf
+
 
 class WignerTomography1ModeProgram(MMAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -48,6 +49,71 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                                 ) 
             self.waveforms_opt_ctrl = waveform_names
 
+    
+    # def body(self):
+    #     cfg=AttrDict(self.cfg)
+    #     qTest = self.qubits[0]
+
+    #     # phase reset
+    #     self.reset_and_sync()
+
+    #     # fire pulses 
+    #     self.setup_and_pulse(ch=self.man_ch[0], style="const", freq=self.f_cavity, phase=self.deg2reg(0),
+    #                         gain=10000, length=self.us2cycles(5, gen_ch = self.man_ch[0]) )
+    #     self.setup_and_pulse(ch=self.qubit_chs[0], style="const", freq=self.f_ge_reg[0], phase=self.deg2reg(0),
+    #                         gain=10000, length=self.us2cycles(5, gen_ch = self.qubit_chs[0]) )
+    
+            
+        # #  prepulse
+        # if cfg.expt.prepulse:
+        #     if cfg.expt.gate_based: 
+        #         creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+        #         self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+        #     else: 
+        #         print("Using custom pulse for pre-sweep pulse")
+        #         print(cfg.expt.pre_sweep_pulse)
+        #         self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
+
+
+        # if "opt_pulse" in cfg.expt and cfg.expt.opt_pulse:
+        #     creator = self.get_prepulse_creator(cfg.expt.opt_pulse)
+        #     self.custom_pulse(cfg, creator.pulse.tolist(),
+        #                       waveform_preload=self.waveforms_opt_ctrl)
+
+        # if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
+
+        #     # do the eg/ef measurement after the custom pulse, before the tomography
+        #     man_reset = False
+        #     storage_reset = False
+        #     coupler_reset = False
+        #     pre_selection_reset = False
+        #     ef_reset = False
+
+        #     self.active_reset(man_reset=man_reset, storage_reset=storage_reset,
+        #                       coupler_reset=coupler_reset,
+        #                       pre_selection_reset=pre_selection_reset,
+        #                       ef_reset=ef_reset)
+
+    
+
+
+
+        
+        # self.setup_and_pulse(ch=self.man_ch[0], style="arb", freq=self.f_cavity, 
+        #                     phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[0]), 
+        #                     gain=self.cfg.expt.amp_placeholder, waveform="displace")
+
+        # self.sync_all(self.us2cycles(0.05))
+
+        # Parity pulse
+        # self.custom_pulse(self.cfg, self.parity_pulse_, prefix='ParityPulse')
+
+        # align channels and measure
+        # self.sync_all(self.us2cycles(0.01))
+        # self.measure_wrapper()
+   
+   
+   
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = self.qubits[0]
@@ -94,7 +160,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                             phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[0]), 
                             gain=self.cfg.expt.amp_placeholder, waveform="displace")
 
-        self.sync_all(self.us2cycles(0.05))
+        # self.sync_all(self.us2cycles(0.05))
+        self.sync_all()
 
         # Parity pulse
         self.custom_pulse(self.cfg, self.parity_pulse_, prefix='ParityPulse')
@@ -591,4 +658,4 @@ class WignerTomographyOptimalPulseExperiment(WignerTomography1ModeExperiment):
 
 
 
-                      
+                                            

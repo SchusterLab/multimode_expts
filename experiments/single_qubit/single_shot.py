@@ -24,10 +24,25 @@ class HistogramProgram(MMAveragerProgram):
         self.sync_all(200)  # not sure if this is needed
 
 
+
+    # def set_gen_delays(self):
+    #     for ch in self.gen_chs:
+    #         delay_ns = self.cfg.hw.soc.dacs.delay_chs.delay_ns[
+    #             np.argwhere(np.array(self.cfg.hw.soc.dacs.delay_chs.ch) == ch)[0][0]
+    #         ]
+    #         delay_cycles = self.us2cycles(delay_ns * 1e-3, gen_ch=ch)
+    #         self.gen_delays[ch] = delay_cycles
+    # def sync_all(self, t=0, gen_t0=None):
+    #     if gen_t0 is None:
+    #         gen_t0 = self.gen_delays
+    #     super().sync_all(t=t, gen_t0=gen_t0)
+        
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = 0
 
+        
+        
         # Prepulse 
         if cfg.expt.prepulse:
             if cfg.expt.gate_based: 
