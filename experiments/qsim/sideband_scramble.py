@@ -1,40 +1,50 @@
 from copy import deepcopy
-
 import numpy as np
-
 from experiments.qsim.qsim_base import QsimBaseProgram
+
+
+class FloquetCalibrationProgram(QsimBaseProgram):
+    """
+    Vary the phases to find out the optimal virtual Z correction because of AC Zeeman shift
+    Will always do a series of M1-init and M1-ro swaps as specified in the exp config
+    The phase of each can be varied
+
+    expt params:
+        init_stor
+        ro_stor
+        init_advance_phase
+        ro_advance_phase
+        floquet_cycle
+    """
+    def core_pulses(self):
+        init_stor = self.cfg.expt.init_stor
+        ro_stor = self.cfg.expt.ro_stor
+        assert init_stor != ro_stor, "init and ro storage modes must be different for this calibration for now"
+        assert init_stor>0 and ro_stor>0, "init and ro must be storage modes, not M1"
+        init_pulse_args = deepcopy(self.m1s_kwargs[init_stor-1])
+        ro_pulse_args = deepcopy(self.m1s_kwargs[ro_stor-1])
+
+        for kk in range(self.cfg.expt.floquet_cycle):
+            init_pulse_args['phase'] = self.deg2reg(self.cfg.expt.init_advance_phase*kk)
+            self.setup_and_pulse(**init_pulse_args)
+            self.sync_all()
+            # pulse2['gain'] //= self.cfg.expt.gain_div
+            # pulse2['length'] //= self.cfg.expt.length_div
+            ro_pulse_args['phase'] = self.deg2reg(self.cfg.expt.ro_advance_phase*kk)
+            self.setup_and_pulse(**ro_pulse_args)
+            self.sync_all()
 
 
 class SidebandScrambleProgram(QsimBaseProgram):
     """
     Scramble 1 photon via fractional beam splitters
 
-    
     expt params:
     swap_stors: list of storage modes to apply the floquet swaps to, will go in order of the list
     update_phases: boolean of whether to update each subsequent swap with the calibrated stark shift phase
     """
     def core_pulses(self):
         pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
-
-        # for kk in range(self.cfg.expt.floquet_cycle):
-        #     for jj in range(7):
-        #         if jj+1==self.cfg.expt.init_stor:
-        #             pulse_args['phase'] = self.deg2reg(self.cfg.expt.advance_phase*kk)
-        #             self.setup_and_pulse(**pulse_args)
-        #             self.sync_all()
-        #         elif jj+1==2:
-        #             pulse2 = deepcopy(self.m1s_kwargs[1])
-        #             # pulse2['gain'] //= self.cfg.expt.gain_div
-        #             # pulse2['length'] //= self.cfg.expt.length_div
-        #             pulse2['phase'] = self.deg2reg(3*kk)
-        #             self.setup_and_pulse(**pulse2)
-        #         else:
-        #             # self.sync_all(self.us2cycles(0.3))
-        #             pass
-        # # self.sync_all(self.us2cycles(0.3 * 2 * self.cfg.expt.floquet_cycle))
-        # self.sync_all()
-
 
         swap_stors = self.cfg.expt.swap_stors
         swap_stor_phases = np.zeros(len(swap_stors))
