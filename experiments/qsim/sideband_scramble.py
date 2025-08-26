@@ -2,6 +2,18 @@ from copy import deepcopy
 import numpy as np
 from experiments.qsim.qsim_base import QsimBaseProgram
 
+class StorageT1Program(QsimBaseProgram):
+    """
+    T1: just a wait
+
+    expt params:
+        init_stor
+        ro_stor
+        wait
+    """
+    def core_pulses(self):
+        self.sync_all(self.us2cycles(self.cfg.expt.wait))
+
 
 class FloquetCalibrationProgram(QsimBaseProgram):
     """
