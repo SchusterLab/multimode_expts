@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -279,8 +280,12 @@ class QsimBaseExperiment(Experiment):
     def save_data(self, data=None):
         # do we really need to ovrride this?
         # TODO: at least make this save line-by-line
+        temp_cfg = deepcopy(self.cfg)
+        if "ds_thisrun" in self.cfg:
+            self.cfg.pop('ds_thisrun')  # remove the dataset object from cfg before saving otherwise json gets mad
+        if "ds_thisrun" in self.cfg.expt:
+            self.cfg.expt.pop('ds_thisrun')  # remove the dataset object from cfg before saving otherwise json gets mad
         print(f'Saving {self.fname}')
         super().save_data(data=data)
+        self.cfg = temp_cfg
         return self.fname
-
-

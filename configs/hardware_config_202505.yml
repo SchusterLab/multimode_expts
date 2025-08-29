@@ -100,13 +100,13 @@ device:
         - 0.05
         - 0.05
         revival_time:
-        - 1.6240527177605477
+        - 1.7442250468651126
         - 1.7366205852286094
         revival_stark_shift:
         - -1.3008346758366192
         - -2.6792227141937364
         gain_to_alpha:
-        - 0.00064149413531407
+        - 0.00021460433155138454
         - 0.00020045
         freq_to_alpha:
         - 0.495062203431879
@@ -177,6 +177,7 @@ device:
         - -3.2053137013077597
         - -2.935087792327744
         ramp_sigma: 0.005
+        floquet_man_stor_file: C:/_Lib/python/multimode_expts/floquet_storage_swap_dataset.csv
     active_reset:
         qubit_ge:
         - 4000
@@ -205,13 +206,13 @@ device:
         pi:
             gn-en:
                 frequency:
-                - 3580.3825840728755
-                - 3571.5382408986256
+                - 3579.7738728599984
+                - 3571.869462789635
                 - 3571.543042357372
                 - 3571.299620008302
                 gain:
-                - 18554
-                - 3456
+                - 18719
+                - 3440
                 - 3449
                 - 3430
                 length:
@@ -231,13 +232,13 @@ device:
                 - gauss
             en-fn:
                 frequency:
-                - 3428.2303438452373
-                - 3427.977089804622
+                - 3428.2636504748903
+                - 3427.984451944102
                 - 3427.712094472353
                 - 3427.4772366132443
                 gain:
-                - 2759
-                - 2760
+                - 2751
+                - 2749
                 - 2763
                 - 2768
                 length:
@@ -257,8 +258,8 @@ device:
                 - gauss
             fn-gn+1:
                 frequency:
-                - 2011.6658682784348
-                - 2011.134436736124
+                - 2011.7173171154775
+                - 2011.1834449076475
                 - 2010.595323987349
                 - 2010.07793195468
                 gain:
@@ -267,8 +268,8 @@ device:
                 - 8000
                 - 8000
                 length:
-                - 0.5358111825204673
-                - 0.38504166408699336
+                - 0.5430077768100537
+                - 0.38972624590019683
                 - 0.31584821479967073
                 - 0.26838059127779085
                 sigma:
@@ -284,12 +285,12 @@ device:
         hpi:
             gn-en:
                 frequency:
-                - 3573.0032581219675
+                - 3572.9959650749265
                 - 3570.0567055299525
                 - 3567.7644237298246
                 - 3565.49698806312
                 gain:
-                - 8853
+                - 8790
                 - 1689
                 - 1689
                 - 1697
@@ -358,7 +359,29 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_2.npz
-            0+4:
+            '0+2':
+                frequency:
+                - 3571.6994214615424
+                - 4984.779973902164
+                gain:
+                - 10
+                - 10
+                phase:
+                - 0.0
+                - 0.0
+                filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2.npz
+            '0+2i':
+                frequency:
+                - 3571.6994214615424
+                - 4984.779973902164
+                gain:
+                - 10
+                - 10
+                phase:
+                - 0.0
+                - 0.0
+                filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2i.npz
+            '0+4':
                 frequency:
                 - 3571.6994214615424
                 - 4984.779973902164
@@ -369,6 +392,8 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+4.npz
+
+
         test:
             '1':
                 frequency:
@@ -386,8 +411,8 @@ device:
                 - 3571.6994214615424
                 - 4984.779973902164
                 gain:
-                - 3429
-                - 3429
+                - 850
+                - 2413
                 phase:
                 - 0.0
                 - 0.0
@@ -455,64 +480,3 @@ aliases:
     soc: Qick101
 data_management:
     plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
-expt:
-    start: 2
-    step: 0.1
-    qubits:
-    - 0
-    expts: 25
-    reps: 300
-    rounds: 1
-    gain: 8000
-    freq: 2011.7147366265876
-    use_arb_waveform: 0
-    pi_ge_before: 0
-    pi_ef_before: 0
-    pi_ge_after: 0
-    pi_ef_after: 0
-    normalize: 0
-    active_reset: 0
-    check_man_reset:
-    - 0
-    - 0
-    swap_lossy: 0
-    check_man_reset_pi: []
-    prepulse: 1
-    pre_sweep_pulse:
-    -   - 3579.4384683413878
-        - 3428.2303438452373
-        - 2011.4000000000008
-        - 3571.9213048825372
-        - 3423.7266366015674
-    -   - 18962
-        - 2767
-        - 8000
-        - 10566
-        - 9159
-    -   - 0
-        - 0
-        - 0.5452584298467464
-        - 0
-        - 0
-    -   - 0
-        - 0
-        - 0
-        - 0
-        - 0
-    -   - 2
-        - 2
-        - 0
-        - 2
-        - 2
-    -   - gauss
-        - gauss
-        - flat_top
-        - gauss
-        - gauss
-    -   - 0.007
-        - 0.035
-        - 0.005
-        - 0.035
-        - 0.035
-    err_amp_reps: 0
-    length_placeholder: 4.4
