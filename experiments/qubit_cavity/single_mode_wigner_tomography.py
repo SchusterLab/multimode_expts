@@ -16,7 +16,7 @@ from MM_base import MMAveragerProgram
 
 
 class WignerTomography1ModeProgram(MMAveragerProgram):
-    def __init__(self, soccfg, cfg):
+    def __init__(self, soccfg, cfg, loaded_pulses=None):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
 
@@ -48,6 +48,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                                 IQ_table=cfg.expt.IQ_table,
                                 ) 
             self.waveforms_opt_ctrl = waveform_names
+
+        
 
     
     # def body(self):
@@ -127,8 +129,6 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
             else: 
-                print("Using custom pulse for pre-sweep pulse")
-                print(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
 
@@ -201,6 +201,8 @@ class WignerTomography1ModeExperiment(Experiment):
 
     def __init__(self, soccfg=None, path='', prefix='WignweTomography1Mode', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
+        self._loaded_pulses = set()
+
 
 
     def acquire(self, progress=False, debug=False):
@@ -211,7 +213,6 @@ class WignerTomography1ModeExperiment(Experiment):
         qTest = self.cfg.expt.qubits[0]
 
         if 'pulse_correction' in self.cfg.expt:
-            print("Pulse correction is applied")
             self.pulse_correction = self.cfg.expt.pulse_correction
         else:
             self.pulse_correction = False
@@ -321,7 +322,6 @@ class WignerTomography1ModeExperiment(Experiment):
             if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
                 I_eg = data["i0"][0::2, 0, 0::idx_step]
                 Q_eg = data["q0"][0::2, 0, 0::idx_step]
-                print('I_eg shape:', I_eg.shape)
 
                 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
                 ax.plot(I_eg[0, :], Q_eg[0, :], 'o')

@@ -138,7 +138,7 @@ class MM_dual_rail_base(MM_base):
         assert len(photon_no_list) in [1, 2], "photon_no_list must be of length 1 or 2"
         state_1 = photon_no_list[0]
         state_2 = photon_no_list[1] if len(photon_no_list) == 2 else None
-        assert state_2 is None or state_1 < state_2, "state_2 must be greater than state_1 or state_2 must be None"
+        assert state_2 is None or state_1 < np.abs(state_2), "state_2 must be greater than state_1 or state_2 must be None"
 
         pulse_seq = []
         for i in range(state_1):
@@ -146,8 +146,24 @@ class MM_dual_rail_base(MM_base):
             pulse_seq += [['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0]]
             pulse_seq += [['multiphoton', 'f' + str(i) + '-g' + str(i+1), 'pi', 0]]
         if state_2 is not None:
+
+            coeff = state_2/np.abs(state_2) # get the sign/imag of state_2
+            state_2 = int(np.abs(state_2))
+            print(f'Preparing state {state_1} and {state_2} with coeff {coeff}')
+            
+            # check state the coeff if 1, -1, 1j, -1j
+            assert coeff in [1, -1, 1j, -1j], "state_2 must be 1, -1, 1j or -1j"
+            if coeff == 1:
+                phase_hpi = 0
+            elif coeff == -1:
+                phase_hpi = 180
+            elif coeff == 1j:
+                phase_hpi = 90
+            elif coeff == -1j:
+                phase_hpi = -90
+
             if broadband:
-                pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'hpi', 0]]
+                pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'hpi', phase_hpi]]
                 diff = state_2 - state_1
                 shelving = 0
                 for k in range(diff):
@@ -159,7 +175,7 @@ class MM_dual_rail_base(MM_base):
                         pulse_seq += [['multiphoton', 'g' + str(0) + '-e' + str(0), 'pi', 0]]
                     shelving += 1
             else:
-                pulse_seq += [['multiphoton', 'g' + str(state_1) + '-e' + str(state_1), 'hpi', 0]]
+                pulse_seq += [['multiphoton', 'g' + str(state_1) + '-e' + str(state_1), 'hpi', phase_hpi]]
                 diff = state_2 - state_1
                 shelving = 0
                 for k in range(diff):
