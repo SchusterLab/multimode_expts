@@ -1,14 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from fit_display_classes import GeneralFitting, RamseyFitting, CavityRamseyGainSweepFitting
-from MM_base import *
-from MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import *
 from qick import *
 from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
+
 import experiments.fitting as fitter
+from fit_display_classes import (
+    CavityRamseyGainSweepFitting,
+    GeneralFitting,
+    RamseyFitting,
+)
+from MM_base import *
+from MM_dual_rail_base import MM_dual_rail_base
+from multimode_expts.fit_display import *
 
 
 class CavityRamseyProgram(MMRAveragerProgram):
@@ -140,8 +145,21 @@ class CavityRamseyProgram(MMRAveragerProgram):
             # print('user length:', self.user_length)
             self.add_gauss(ch=self.cavity_ch[qTest], name="user_test",
                        sigma=self.user_sigma, length=self.user_sigma*4)
-            
         
+        # for kerr engineering, drive a tone near the qubit
+        if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
+            print(self._gen_regmap)
+            # print("register", self.sreg(self.qubit_chs[qTest], "len"))
+            # self.qTest = self.qubits[0]
+            # self.qubit_drive_freq = self.freq2reg(cfg.expt.qubit_drive_pulse[1], gen_ch=self.qubit_chs[self.qTest])
+            # self.qubit_drive_gain = cfg.expt.qubit_drive_pulse[2]
+            # self.qubit_drive_sigma = self.us2cycles(cfg.expt.qubit_drive_pulse[3], gen_ch=self.qubit_chs[self.qTest])
+            # self.qubit_drive_length = self.us2cycles(cfg.expt.qubit_drive_pulse[4], gen_ch=self.qubit_chs[self.qTest])
+            # # Flat top pulse
+            # if self.qubit_drive_length == 0:
+            #     self.add_gauss(ch=self.qubit_chs[self.qTest], name="test_qubit_drive",
+            #                    sigma=self.qubit_drive_sigma, length=self.qubit_drive_sigma*4)
+
         # load the slow pulse waveform
         _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
         sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
@@ -181,7 +199,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             else: 
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
-        # play the prepulse for kerr experimenty (dispalcement of manipulate)
+        # play the prepulse for kerr experiment (displacement of manipulate)
         if self.cfg.user_defined_pulse[0]:
             if "prep_e_first" in self.cfg.expt.keys() and self.cfg.expt.prep_e_first:
                 print('prep e first')
@@ -590,34 +608,22 @@ class CavityRamseyGainSweepExperiment(Experiment):
         
         do_g_and_e = self.cfg.expt.do_g_and_e
         
-        if not do_g_and_e:
-        
-            data = {
-                'gain_list': gain_list,
-                'xpts': [],
-                'avgi': [],
-                'avgq': [],
-                'amps': [],
-                'phases': []
-            }
-            
-        else:
-            data = {
-                'gain_list': gain_list,
-                'xpts': [],
-                'g_avgi': [],
-                'g_avgq': [],
-                'g_amps': [],
-                'g_phases': [],
-                'e_avgi': [],
-                'e_avgq': [],
-                'e_amps': [],
-                'e_phases': []
-            }
+        data = {
+            'gain_list': gain_list,
+            'xpts': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'g_avgi': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'g_avgq': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'g_amps': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'g_phases': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'e_avgi': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'e_avgq': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'e_amps': np.zeros((len(gain_list), self.cfg.expt.expts)),
+            'e_phases': np.zeros((len(gain_list), self.cfg.expt.expts))
+        }
 
         self.cfg.expt.prep_e_first = False # if True prepare the qb in e before g
 
-        for gain in tqdm(gain_list, disable = not progress):
+        for i_gain, gain in enumerate(tqdm(gain_list, disable = not progress)):
             self.cfg.expt.user_defined_pulse[2] = gain
             
 
@@ -631,22 +637,15 @@ class CavityRamseyGainSweepExperiment(Experiment):
             amps = np.abs(avgi + 1j * avgq)
             phases = np.angle(avgi + 1j * avgq)
             
-            data['xpts'].append(x_pts)
-            
-            if not do_g_and_e:
-                data['avgi'].append(avgi)
-                data['avgq'].append(avgq)
-                data['amps'].append(amps)
-                data['phases'].append(phases)
-            else:
-                data['g_avgi'].append(avgi)
-                data['g_avgq'].append(avgq)
-                data['g_amps'].append(amps)
-                data['g_phases'].append(phases)
-                self.cfg.expt.prep_e_first = True
+            data['xpts'][i_gain] = x_pts
+
+            data['g_avgi'][i_gain] = avgi
+            data['g_avgq'][i_gain] = avgq
+            data['g_amps'][i_gain] = amps
+            data['g_phases'][i_gain] = phases
 
             if do_g_and_e:
-
+                self.cfg.expt.prep_e_first = True
                 ramsey = CavityRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
                 x_pts, avgi, avgq = ramsey.acquire(soc=self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
                                                     # debug=debug,
@@ -656,15 +655,12 @@ class CavityRamseyGainSweepExperiment(Experiment):
                 avgq = avgq[0][0]
                 amps = np.abs(avgi + 1j * avgq)
                 phases = np.angle(avgi + 1j * avgq)
-                data['e_avgi'].append(avgi)
-                data['e_avgq'].append(avgq)
-                data['e_amps'].append(amps)
-                data['e_phases'].append(phases)
+                data['e_avgi'][i_gain] = avgi
+                data['e_avgq'][i_gain] = avgq
+                data['e_amps'][i_gain] = amps
+                data['e_phases'][i_gain] = phases
 
                 self.cfg.expt.prep_e_first = False # reset the flag for next gain
-
-            
-
 
         for k, a in data.items():
             data[k]=np.array(a)
@@ -846,6 +842,16 @@ class CavityRamseyGainSweepExperiment(Experiment):
 
       
     
+
+
+
+            
+
+
+
+
+            
+
 
 
 

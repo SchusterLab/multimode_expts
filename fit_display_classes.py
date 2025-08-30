@@ -446,215 +446,128 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         if data is None:
             data = self.data
 
+        if not fit: return
+
         gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha[0]
         x = data['xpts'][0]
         y = data['gain_list']
         print('gain_to_alpha', gain_to_alpha)
         alpha_list = gain_to_alpha * y
         
-        if not self.cfg.expt.do_g_and_e:
-            g_z = data['avgi']
-            g_norm = np.zeros_like(g_z)
-            omega_vec = np.zeros_like(g_z)
-            t0_vec = np.zeros_like(g_z)
-            gain_to_plot_g = np.array([])
-        else:
-            g_z = data['g_avgi']
-            e_z = data['e_avgi']
-            g_norm = np.zeros_like(g_z)
-            e_norm = np.zeros_like(e_z)
-            omega_vec = np.zeros((len(g_z), 2))
-            t0_vec = np.zeros((len(g_z), 2))
-            gain_to_plot_e = np.array([])
-            gain_to_plot_g = np.array([])
+        g_z = data['g_avgi']
+        e_z = data['e_avgi']
+        g_norm = np.zeros_like(g_z)
+        e_norm = np.zeros_like(e_z)
+        pop_norms = [g_norm, e_norm]
+        omega_vec = np.zeros((len(g_z), 2))
+        t0_vec = np.zeros((len(g_z), 2))
+        gain_to_plot_e = np.array([])
+        gain_to_plot_g = np.array([])
+        gain_to_plot = [gain_to_plot_e, gain_to_plot_g]
 
-        if fit:
-            time_peak_g = []
-            if self.cfg.expt.do_g_and_e:
-                time_peak_e = []
-            for i in range(len(y)):
-                _g = g_z[i]
-                _g_norm = (_g - np.min(_g)) / (np.max(_g) - np.min(_g))
-                g_norm[i] = _g_norm 
+        # Fit omega_e and omega_g versus alpha_list**2
+        x_fit = alpha_list**2
 
-                signal_smooth = gaussian_filter1d(g_norm[i], sigma=1.5)
+        time_peak_g = []
+        time_peak_e = []
+        time_peaks = [time_peak_g, time_peak_e]
+        for i_gain in range(len(y)):
+            for i_pop, data_set in enumerate([g_z, e_z]):
+                _pop = data_set[i_gain]
+                _pop_norm = (_pop - np.min(_pop)) / (np.max(_pop) - np.min(_pop))
+                pop_norm = pop_norms[i_pop]
+                pop_norm[i_gain] = _pop_norm
+
+                signal_smooth = gaussian_filter1d(pop_norm[i_gain], sigma=1.5)
                 # Calculate adaptive thresholds
                 peak_height = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.3 + np.min(signal_smooth)
                 peak_prominence = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.2
-                if i == 0:
-                    peak_distance_g = None
+                if i_gain == 0:
+                    peak_distance = None
                 # Find peaks
                 peaks, props = find_peaks(
                     signal_smooth,
                     height=peak_height,
                     prominence=peak_prominence,
-                    distance=peak_distance_g
+                    distance=peak_distance
                 )
-                peak_distance_g=np.mean(np.diff(peaks)*0.9)
-
+                peak_distance=np.mean(np.diff(peaks)*0.9)
 
                 if len(peaks) >= 2:
                     n = np.arange(len(peaks))
                     popt, _ = curve_fit(linear_model, n, x[peaks])
                     T_fit, t0_fit = popt
                     omega_fit = 2 * np.pi / T_fit
-                    time_peak_g.append(x[peaks])
+                    time_peaks[i_pop].append(x[peaks])
                 else:
                     # Not enough peaks to perform a fit
                     popt = [np.nan, np.nan]  # or some default/fallback behavior
                     omega_fit = np.nan
 
-                if self.cfg.expt.do_g_and_e:
-                    omega_vec[i, 0] = omega_fit
-                    t0_vec[i, 0] = t0_fit
+                omega_vec[i_gain, i_pop] = omega_fit
+                t0_vec[i_gain, i_pop] = t0_fit
 
-                    if omega_fit is not np.nan:
-                        gain_to_plot_g = np.append(gain_to_plot_g, y[i])
-
-
-                else:
-                    omega_vec[i] = omega_fit
-                    t0_vec[i] = t0_fit
-                    if omega_fit is not np.nan:
-                        gain_to_plot_g = np.append(gain_to_plot_g, y[i])
+                if omega_fit is not np.nan:
+                    gain_to_plot[i_pop] = np.append(gain_to_plot[i_pop], y[i_gain])
 
 
+        # Now get the fitted kerr and chi values
 
-                if self.cfg.expt.do_g_and_e:
-                    _e = e_z[i]
-                    _e_norm = (_e - np.max(_e)) / (np.min(_e) - np.max(_e))
-                    e_norm[i] = _e_norm
-            
+        deltaf_e = omega_vec[:, 1] / (2 * np.pi) - self.cfg.expt.ramsey_freq
+        deltaf_g = omega_vec[:, 0] / (2 * np.pi) - self.cfg.expt.ramsey_freq
 
+        # Mask out invalid (NaN/inf) data
+        valid_g = np.isfinite(deltaf_g) & np.isfinite(x_fit)
+        valid_e = np.isfinite(deltaf_e) & np.isfinite(x_fit)
 
-                    signal_smooth_e = gaussian_filter1d(e_norm[i], sigma=1.5)
-                    # Calculate adaptive thresholds
-                    peak_height_e = (np.max(signal_smooth_e) - np.min(signal_smooth_e)) * 0.3 + np.min(signal_smooth_e)
-                    peak_prominence_e = (np.max(signal_smooth_e) - np.min(signal_smooth_e)) * 0.2
+        # Initialize fit variables
+        popt_g = [np.nan, np.nan]
+        popt_e = [np.nan, np.nan]
+        Kerr = chi = chi2 = detuning_g = np.nan
+        Kerr_err = chi_err = chi2_err = detuning_g_err = np.nan
 
-                    if i == 0:
-                        peak_distance_e = None
+        # Fit ground state
+        if np.sum(valid_g) >= 2:
+            popt_g, pcov_g = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_g], deltaf_g[valid_g])
+            detuning_g = popt_g[1]
+            Kerr = -popt_g[0] 
+            perr_g = np.sqrt(np.diag(pcov_g))
+            Kerr_err = perr_g[0] 
+            detuning_g_err = perr_g[1]
 
-
-
-                    peaks_e, props_e = find_peaks(
-                        signal_smooth_e,
-                        height=peak_height_e,
-                        prominence=peak_prominence_e,
-                        distance=peak_distance_e
-                    )
-                    peaks_distances_e = np.mean(np.diff(peaks_e) * 0.9)
-
-                    if len(peaks_e) >= 2:
-                        n_e = np.arange(len(peaks_e))
-                        popt_e, _ = curve_fit(linear_model, n_e, x[peaks_e])
-                        T_fit_e, t0_fit_e = popt_e
-                        omega_fit_e = 2 * np.pi / T_fit_e
-                        time_peak_e.append(x[peaks_e])
-
-                    else:
-                        # Not enough peaks to perform a fit
-                        popt_e = [np.nan, np.nan]  # or some default/fallback behavior
-                        omega_fit_e = np.nan
-
-                    if omega_fit_e is not np.nan:
-                        gain_to_plot_e = np.append(gain_to_plot_e, y[i])
-
-                    omega_vec[i, 1] = omega_fit_e
-                    t0_vec[i, 1] = t0_fit_e
-
-            # Fit omega_e and omega_g versus alpha_list**2
-            x_fit = alpha_list**2
-
+            # Fit excited state
             if self.cfg.expt.do_g_and_e:
-                deltaf_e = omega_vec[:, 1] / (2 * np.pi) - self.cfg.expt.ramsey_freq
-                deltaf_g = omega_vec[:, 0] / (2 * np.pi) - self.cfg.expt.ramsey_freq
+                popt_e, pcov_e = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_e], deltaf_e[valid_e])
+                perr_e = np.sqrt(np.diag(pcov_e))
+                chi = -(popt_e[1] - detuning_g)
+                chi2 = -0.5 * (popt_e[0] + Kerr)
+                chi_err = np.sqrt(perr_e[1]**2 + detuning_g_err**2)
+                chi2_err = 0.5 * np.sqrt(perr_e[0]**2 + perr_g[0]**2)
 
-                # Mask out invalid (NaN/inf) data
-                valid_g = np.isfinite(deltaf_g) & np.isfinite(x_fit)
-                valid_e = np.isfinite(deltaf_e) & np.isfinite(x_fit)
+        # Store results
+        self.results['omega'] = omega_vec
+        self.results['t0'] = t0_vec
 
-                # Initialize fit variables
-                popt_g = [np.nan, np.nan]
-                popt_e = [np.nan, np.nan]
-                Kerr = chi = chi2 = detunning_g = np.nan
-                Kerr_err = chi_err = chi2_err = detunning_g_err = np.nan
-
-                # Fit ground state
-                if np.sum(valid_g) >= 2:
-                    popt_g, pcov_g = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_g], deltaf_g[valid_g])
-                    detunning_g = popt_g[1]
-                    Kerr = -popt_g[0] 
-                    perr_g = np.sqrt(np.diag(pcov_g))
-                    Kerr_err = perr_g[0] 
-                    detunning_g_err = perr_g[1]
-
-                # Fit excited state
-                if np.sum(valid_e) >= 2:
-                    popt_e, pcov_e = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_e], deltaf_e[valid_e])
-                    chi = -(popt_e[1] - detunning_g)
-                    chi2 = -0.5 * (popt_e[0] + Kerr)
-                    perr_e = np.sqrt(np.diag(pcov_e))
-                    chi_err = np.sqrt(perr_e[1]**2 + detunning_g_err**2)
-                    chi2_err = 0.5 * np.sqrt(perr_e[0]**2 + perr_g[0]**2)
-
-            else:
-                deltaf_g = omega_vec[:, 0] / (2 * np.pi) - self.cfg.expt.ramsey_freq
-                valid_g = np.isfinite(deltaf_g) & np.isfinite(x_fit)
-
-                popt_g = [np.nan, np.nan]
-                Kerr = detunning_g = Kerr_err = detunning_g_err = np.nan
-
-                if np.sum(valid_g) >= 2:
-                    popt_g, pcov_g = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_g], deltaf_g[valid_g])
-                    detunning_g = popt_g[1]
-                    Kerr = -popt_g[0] 
-                    perr_g = np.sqrt(np.diag(pcov_g))
-                    Kerr_err = perr_g[0] 
-                    detunning_g_err = perr_g[1]
-
-                    print(popt_g)
-                    print(f'Kerr: {Kerr} MHz, Detuning Ground State: {detunning_g} MHz')
-
-            # Store results
-            if self.cfg.expt.do_g_and_e:
-                self.results['omega'] = omega_vec
-                self.results['t0'] = t0_vec
-
-                data['g_omega'] = omega_vec[:, 0]
-                data['g_t0'] = t0_vec[:, 0]
-                data['e_omega'] = omega_vec[:, 1]
-                data['e_t0'] = t0_vec[:, 1]
-                data['g_norm'] = g_norm
-                data['e_norm'] = e_norm
-                data['alpha_list'] = alpha_list
-                data['time_peak_g'] = time_peak_g
-                data['time_peak_e'] = time_peak_e
-                data['detunning_g'] = detunning_g
-                data['Kerr'] = Kerr
-                data['chi'] = chi
-                data['chi2'] = chi2
-                data['Kerr_err'] = Kerr_err
-                data['chi_err'] = chi_err
-                data['chi2_err'] = chi2_err
-                data['detunning_g_err'] = detunning_g_err
-                data['gain_to_plot_g'] = gain_to_plot_g
-                data['gain_to_plot_e'] = gain_to_plot_e
-
-            else:
-                self.results['omega'] = omega_vec[:, 0]
-                self.results['t0'] = t0_vec[:, 0]
-
-                data['g_omega'] = omega_vec
-                data['t0'] = t0_vec
-                data['g_norm'] = g_norm
-                data['alpha_list'] = alpha_list
-                data['time_peak_g'] = time_peak_g
-                data['detunning_g'] = detunning_g
-                data['Kerr'] = Kerr
-                data['Kerr_err'] = Kerr_err
-                data['detunning_g_err'] = detunning_g_err
-                data['gain_to_plot_g'] = gain_to_plot_g
+        data['g_omega'] = omega_vec[:, 0]
+        data['g_t0'] = t0_vec[:, 0]
+        data['e_omega'] = omega_vec[:, 1]
+        data['e_t0'] = t0_vec[:, 1]
+        data['g_norm'] = g_norm
+        data['e_norm'] = e_norm
+        data['alpha_list'] = alpha_list
+        data['time_peak_g'] = time_peaks[0]
+        data['time_peak_e'] = time_peaks[1]
+        data['detuning_g'] = detuning_g
+        data['detuning_g_err'] = detuning_g_err
+        data['Kerr'] = Kerr
+        data['Kerr_err'] = Kerr_err
+        if self.cfg.expt.do_g_and_e:
+            data['chi'] = chi
+            data['chi2'] = chi2
+            data['chi_err'] = chi_err
+            data['chi2_err'] = chi2_err
+        data['gain_to_plot_g'] = gain_to_plot[0]
+        data['gain_to_plot_e'] = gain_to_plot[1]
 
     def display(self, data=None, fit=True, vline=None, save_fig=False, title_str='CavityRamseyGainSweep', **kwargs):
                 
@@ -662,43 +575,19 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         if data is None: 
             data = self.data
 
-        if not self.cfg.expt.do_g_and_e:
-            g_omega = data['g_omega']
-            g_t0 = data['g_t0']
-            g_norm = data['g_norm']
-            alpha_list = data['alpha_list']
-            x = data['xpts'][0]
-            y = data['gain_list']
-            y_plot_g = data['gain_to_plot_g']
-            z = data['avgi']
-            fig, ax = plt.subplots(figsize=(8, 6))
+        x = data['xpts'][0]
+        y = data['gain_list']
 
+        if not self.cfg.expt.do_g_and_e:
+            z = data['g_avgi']
+            fig, ax = plt.subplots(figsize=(8, 6))
             c = ax.pcolormesh(x, y, z, shading='auto', cmap='viridis')
             ax.set_title('Cavity Ramsey Gain Sweep')
             ax.set_xlabel('Wait Time [us]')
             ax.set_ylabel('Gain')
             fig.colorbar(c, ax=ax, label='I [a.u.]')
 
-            # if fit:
-            #     fitted_curve_g = data['fitted_curve_g']
-            #     fig2, ax2 = plt.subplots(figsize=(5, 5))
-            #     for i in range(len(y)):
-            #         ax2.plot(x, g_norm[i], marker='o', markersize=3)
-            #         ax2.plot(x, fitted_curve_g[i], linestyle='--')
-
         else:
-            if fit:
-                g_omega = data['g_omega']
-                g_t0 = data['g_t0']
-                e_omega = data['e_omega']
-                e_t0 = data['e_t0']
-                g_norm = data['g_norm']
-                e_norm = data['e_norm']
-                alpha_list = data['alpha_list']
-                y_plot_g = data['gain_to_plot_g']
-                y_plot_e = data['gain_to_plot_e']
-            x = data['xpts'][0]
-            y = data['gain_list']
             fig, ax = plt.subplots(2, 1, figsize=(8, 8))
 
             c = ax[0].pcolormesh(x, y, data['g_avgi'], shading='auto', cmap='viridis')
@@ -711,87 +600,96 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
             fig.colorbar(c2, ax=ax[1], label='I [a.u.]')
 
 
-            if fit:
-                time_peak_g = data['time_peak_g']
+        if fit:
+            g_omega = data['g_omega']
+            g_t0 = data['g_t0']
+            e_omega = data['e_omega']
+            e_t0 = data['e_t0']
+            g_norm = data['g_norm']
+            e_norm = data['e_norm']
+            alpha_list = data['alpha_list']
+            y_plot_g = data['gain_to_plot_g']
+            y_plot_e = data['gain_to_plot_e']
+            time_peak_g = data['time_peak_g']
+            if self.cfg.expt.do_g_and_e:
+                time_peak_e = data['time_peak_e']
+
+            # add the peaks dots to the plots
+            for i in range(len(y)):
                 if self.cfg.expt.do_g_and_e:
-                    time_peak_e = data['time_peak_e']
-
-                # add the peaks dots to the plots
-                for i in range(len(y)):
-                    if self.cfg.expt.do_g_and_e:
-                        [ax[0].plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
-                            markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
-                        [ax[1].plot(time_peak_e[i][j], y_plot_e[i], 'ro', markerfacecolor='white',
-                            markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_e[i]))]
-                    else:
-                        [ax.plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
-                            markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
-                
-                fig4, ax4 = plt.subplots(1, 1, figsize=(5, 5))
-                if self.cfg.expt.do_g_and_e:
-                    e_omega = data['e_omega']
-                    g_omega = data['g_omega']
-                    alpha_list = data['alpha_list']
-                    detunning_g = data['detunning_g']
-                    Kerr = data['Kerr']
-                    chi = data['chi']
-                    chi2 = data['chi2']
-                    Kerr_err = data['Kerr_err']
-                    chi_err = data['chi_err']
-                    chi2_err = data['chi2_err']
-                    detunning_g_err = data['detunning_g_err']
-                    deltaf_e = e_omega/2/np.pi - self.cfg.expt.ramsey_freq
-                    deltaf_g = g_omega/2/np.pi - self.cfg.expt.ramsey_freq
-
-                    deltaf_g_th = detunning_g - Kerr * alpha_list**2
-                    deltaf_e_th = (detunning_g - chi) - 2*alpha_list**2*(chi2 + Kerr/2)
-
-                    ax4.plot(alpha_list**2, deltaf_g, 'o', label='|g>')
-                    ax4.plot(alpha_list**2, deltaf_e, 'o', label='|e>')
-                    ax4.plot(alpha_list**2, deltaf_g_th, '-', color='black')
-                    ax4.plot(alpha_list**2, deltaf_e_th, '-', color='black')
-
-
-                    print(f'Kerr : {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz')
-                    print(f'Detunning Ground State: {detunning_g*1e3:.3f} +/- {detunning_g_err*1e3:.3f} kHz')
-                    print(f'Chi: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz')
-                    print(f'Chi2: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz')
-                    text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
-                           f'$\Delta$: {detunning_g*1e3:.3f} +/- {detunning_g_err*1e3:.3f} kHz\n' \
-                           f'$\chi$: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz\n' \
-                           f'$\chi_2$: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz'
-                    ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
-                             verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
-
+                    [ax[0].plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
+                        markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
+                    [ax[1].plot(time_peak_e[i][j], y_plot_e[i], 'ro', markerfacecolor='white',
+                        markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_e[i]))]
                 else:
-                    omega_vec = data['g_omega']
-                    alpha_list = data['alpha_list']
-                    Kerr = data['Kerr']
-                    detunning_g = data['detunning_g']
-                    Kerr_err = data['Kerr_err']
-                    detunning_g_err = data['detunning_g_err']
-                    deltaf_g = omega_vec/2/np.pi - self.cfg.expt.ramsey_freq
-                    ax4.plot(alpha_list**2, deltaf_g, 'o', label='Ground State')
-                    deltaf_g_th = detunning_g - 2*Kerr * alpha_list**2
-                    ax4.plot(alpha_list**2, deltaf_g_th, '-', label='Ground State Theory')
-                    text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
-                            f'$\Delta$: {detunning_g*1e3:.3f} +/- {detunning_g_err*1e3:.3f} kHz'
-                    print(f'Kerr : {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz')
-                    print(f'Detunning Ground State: {detunning_g*1e3:.3f} +/- {detunning_g_err*1e3:.3f} kHz')   
+                    [ax.plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
+                        markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
+            
+            fig4, ax4 = plt.subplots(1, 1, figsize=(5, 5))
+            if self.cfg.expt.do_g_and_e:
+                e_omega = data['e_omega']
+                g_omega = data['g_omega']
+                alpha_list = data['alpha_list']
+                detuning_g = data['detuning_g']
+                Kerr = data['Kerr']
+                chi = data['chi']
+                chi2 = data['chi2']
+                Kerr_err = data['Kerr_err']
+                chi_err = data['chi_err']
+                chi2_err = data['chi2_err']
+                detuning_g_err = data['detuning_g_err']
+                deltaf_e = e_omega/2/np.pi - self.cfg.expt.ramsey_freq
+                deltaf_g = g_omega/2/np.pi - self.cfg.expt.ramsey_freq
+
+                deltaf_g_th = detuning_g - Kerr * alpha_list**2
+                deltaf_e_th = (detuning_g - chi) - 2*alpha_list**2*(chi2 + Kerr/2)
+
+                ax4.plot(alpha_list**2, deltaf_g, 'o', label='|g>')
+                ax4.plot(alpha_list**2, deltaf_e, 'o', label='|e>')
+                ax4.plot(alpha_list**2, deltaf_g_th, '-', color='black')
+                ax4.plot(alpha_list**2, deltaf_e_th, '-', color='black')
+
+
+                print(f'Kerr : {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz')
+                print(f'detuning Ground State: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz')
+                print(f'Chi: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz')
+                print(f'Chi2: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz')
+                text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
+                       f'$\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz\n' \
+                       f'$\chi$: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz\n' \
+                       f'$\chi_2$: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz'
                 ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
                          verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
 
-                ax4.set_xlabel(r'$|\alpha|^2$')
-                ax4.set_ylabel('frequency [MHz]')
-                ax4.legend(loc='center')
+            else:
+                omega_vec = data['g_omega']
+                alpha_list = data['alpha_list']
+                Kerr = data['Kerr']
+                detuning_g = data['detuning_g']
+                Kerr_err = data['Kerr_err']
+                detuning_g_err = data['detuning_g_err']
+                deltaf_g = omega_vec/2/np.pi - self.cfg.expt.ramsey_freq
+                ax4.plot(alpha_list**2, deltaf_g, 'o', label='Ground State')
+                deltaf_g_th = detuning_g - 2*Kerr * alpha_list**2
+                ax4.plot(alpha_list**2, deltaf_g_th, '-', label='Ground State Theory')
+                text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
+                        f'$\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz'
+                print(f'Kerr : {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz')
+                print(f'detuning Ground State: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz')   
+            ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
+                     verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
 
-                if save_fig:
-                    filename = title_str.replace(' ', '_').replace(':', '') + '.png'
-                    fig.savefig(filename)
-                    print(f"Plot saved to {filename}")
-                    filename4 = title_str.replace(' ', '_').replace(':', '') + '_detuning.png'
-                    fig4.savefig(filename4)
-                    print(f"Fit plot saved to {filename4}")
+            ax4.set_xlabel(r'$|\alpha|^2$')
+            ax4.set_ylabel('frequency [MHz]')
+            ax4.legend(loc='center')
+
+            if save_fig:
+                filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+                fig.savefig(filename)
+                print(f"Plot saved to {filename}")
+                filename4 = title_str.replace(' ', '_').replace(':', '') + '_detuning.png'
+                fig4.savefig(filename4)
+                print(f"Fit plot saved to {filename4}")
 
 
 
