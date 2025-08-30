@@ -284,8 +284,6 @@ class WignerAnalysis(GeneralFitting):
     
     def wigner_analysis_results(self, allocated_counts, initial_state, rotate=False):
         # print the keys in the data dictionary
-        print('Keys in data:', self.data.keys())
-        print('Alpha data:', self.data['alpha'])
         alpha_list = self.data['alpha']
         allocated_readout = 2 / np.pi * allocated_counts  # normalization
         initial_state = initial_state.unit()
@@ -295,36 +293,41 @@ class WignerAnalysis(GeneralFitting):
         P_ns = [np.array([rho[i][i] for i in range(self.m)])]
 
 
-        fid = qutip.fidelity(qutip.Qobj(rho), rho_ideal)
+        fid = qutip.fidelity(qutip.Qobj(rho), rho_ideal)**2
         # Calculate fidelity
         if rotate:
         # apply a rotation to rho to match the ideal state
             theta = np.linspace(0, 2 * np.pi, 100)
             fid_vec =np.zeros(len(theta))
-            print('Rotating rho to match ideal state...')
             for i, t in enumerate(theta):
                 N = np.diag(np.arange(self.m))
                 R = expm(-1j * t * N)
                 rho_rotated = R @ rho @ R.conj().T
-                fid_rotated = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal)
+                fid_rotated = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal)**2
                 fid_vec[i] = fid_rotated
 
             fid = np.max(fid_vec)
             R = expm(-1j * theta[np.argmax(fid_vec)] * N)
-            rho = R @ rho @ R.conj().T
+            rho_rotated = R @ rho @ R.conj().T
+            theta_max = theta[np.argmax(fid_vec)]
 
-            fig, ax = plt.subplots()
-            ax.plot(theta, fid_vec, marker='o')
+            # fig, ax = plt.subplots()
+            # ax.plot(theta, fid_vec, marker='o')
+        else: 
+            theta_max = 0
+            rho_rotated = rho
 
 
         return {
             'alpha_list': alpha_list,
             'allocated_readout': allocated_readout,
             'rho': rho,
+            'rho_rotated': rho_rotated,
             'rho_ideal': rho_ideal,
             'P_ns': P_ns,
             'alphas2': alphas2,
             'fidelity': fid,
+            'theta_max': theta_max,
             'wigner_analysis': self
         }
 
@@ -490,7 +493,6 @@ class OptimalDisplacementGeneration():
         init_disps = np.random.normal(0, 1, 2*self.n_disps)
         init_disps[0] = init_disps[self.n_disps] = 0
         ret = minimize(self.wrap_cost, init_disps, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6))
-        print(ret.message)
         new_disps = ret.x[:self.n_disps] + 1j*ret.x[self.n_disps:]
         new_disps = np.concatenate(([0], new_disps))
         save_path = None

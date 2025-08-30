@@ -219,7 +219,6 @@ class MM_base:
         self.parse_config()  # parse the cfg to get the parameters
         cfg = self.cfg
         qTest = self.qubits[0]
-
         # ------ declare res dacs -------
         gen_chs = []
         mask = None
@@ -421,28 +420,10 @@ class MM_base:
                     raise ValueError("Waveform preload must be of kind 'opt_cont'")
 
         for jj in range(len(pulse_data[0])):
-            # translate ch id to ch / seb: not sure why we dont just use the channel name
-            # connie: i'm getting rid of this...
-            # if pulse_data[4][jj] == 1:
-            #     self.tempch = self.flux_low_ch
-            # elif pulse_data[4][jj] == 2:
-            #     self.tempch = self.qubit_ch
-            # elif pulse_data[4][jj] == 3:
-            #     self.tempch = self.flux_high_ch
-            # elif pulse_data[4][jj] == 6:
-            #     self.tempch = self.storage_ch
-            # elif pulse_data[4][jj] == 0:   # used to be 5
-            #     self.tempch = self.f0g1_ch
-            # elif pulse_data[4][jj] == 4:
-            #     self.tempch = self.man_ch
 
             self.tempch = pulse_data[4][jj]
-            # self.tempch = self.channel_table(pulse_data[4][jj])
-
             if type(self.tempch) == list:
                 self.tempch = self.tempch[0]
-            # self.tempch = self.channel_table(pulse_data[4][jj])
-            # determine the pulse shape
             if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g":
                 self.pisigma_resolved = self.us2cycles(
                     pulse_data[6][jj], gen_ch=self.tempch)
