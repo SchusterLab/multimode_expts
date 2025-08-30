@@ -106,7 +106,7 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
         all_data = dict()
 
         for n_scramble_cycle in n_scramble_cycles:
-            floquet_cycle = n_scramble_cycle * n_floquet_per_scramble
+            floquet_cycle = (2*n_scramble_cycle+1) * n_floquet_per_scramble
             print("Starting experiment for n_scramble_cycle", n_scramble_cycle, "with total floquet cycles", floquet_cycle)
             self.cfg.expt.floquet_cycle = floquet_cycle
             super().acquire(progress=progress, debug=debug)
