@@ -175,8 +175,6 @@ class MM_base:
                 # for each pulse 
                 pulse_param = list(pulse[1:])
                 channel_name = pulse[0]
-                # print('pulse param', pulse_param)
-                # print('channel name', channel_name)
                 eval(f"creator.{channel_name}({pulse_param})")
 
         return creator
@@ -321,7 +319,6 @@ class MM_base:
             None
         """
         # align channels and measure
-        # print(f"mesuring channels {self.res_chs} with ADCs {self.adc_chs}")
         qTest = self.cfg.expt.qubits[0]
         self.sync_all(10)
         self.measure(
@@ -473,7 +470,6 @@ class MM_base:
                     sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
                 self.sync_all(self.us2cycles(0.01))
 
-                # print("Playing", self.tempch, "freq", pulse_data[0][jj], "gain", pulse_data[1][jj], "length", pulse_data[2][jj])
                 self.setup_and_pulse(ch=self.tempch, style="flat_top", 
                                 freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
                                 phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
@@ -613,8 +609,6 @@ class MM_base:
 
         same_storage: if True, then the storage mode is not changed, we can reuse already prgrammed pulse
         '''
-        # print('------------------------------')
-        # print(pulse_data)
         if pulse_data is None:
             return None
         
@@ -632,7 +626,6 @@ class MM_base:
                 self.tempch = self.f0g1_ch
             elif pulse_data[4][jj] == 4:
                 self.tempch = self.man_ch
-            # print(self.tempch)
             if type(self.tempch) == list:
                 self.tempch = self.tempch[0]
             # determine the pulse shape
@@ -642,28 +635,8 @@ class MM_base:
             if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g": 
                 # likely a qubit pulse on ge space with 35 ns sigma 
                 waveform_name = "pi_qubit_ge"
-                # self.sync_all(self.us2cycles(0.01))
-                # if self.cfg.expt.preloaded_pulses and self.tempch == 2:
-                #     self.safe_regwi(self.page_qubit_phase, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
-                #     self.pulse(ch=self.tempch) 
-                # self.setup_and_pulse(ch=self.tempch, style="arb", 
-                #                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                #                     phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                #                     gain=pulse_data[1][jj], 
-                #                     waveform=waveform_name)
                 if self.cfg.expt.preloaded_pulses and self.tempch == 2 and same_qubit_pulse: 
                     self.pulse(ch=self.tempch)
-                #     # else:
-                #         # print('reusing qubit')
-                #         # print('Setting phase to ', pulse_data[3][jj])
-                #         # print('Setting freq to ', self.f_ge_reg[0])
-                #         # print('Setting gain to ', pulse_data[1][jj])
-
-                #         # self.safe_regwi(self.page_qubit, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
-                #         # self.safe_regwi(self.page_qubit, self.r_qubit_freq, self.f_ge_reg[0])
-                #         # self.safe_regwi(self.page_qubit, self.r_qubit_gain, pulse_data[1][jj])
-                #         # # self.sync_all(self.us2cycles(0.02))
-                #         # self.pulse(ch=self.tempch)
                 else: 
                     self.setup_and_pulse(ch=self.tempch, style="arb", 
                                 freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
@@ -687,7 +660,6 @@ class MM_base:
                     self.pulse(ch=self.tempch) 
 
                 elif self.cfg.expt.preloaded_pulses and self.tempch == (1 or 3) and same_storage: # storage reuse
-                    # print(self.tempch)
                     if self.tempch == 1: 
                         self.safe_regwi(self.page_flux_low_phase, self.r_flux_low_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
                     else: 
@@ -701,7 +673,6 @@ class MM_base:
                     # using arb waveform for flat top pulse
                     
                     if self.cfg.expt.use_arb_waveform:
-                        print('printing arb waveform')
                         if self.tempch == 0:  # f0g1
                             self.setup_and_pulse(ch=self.tempch, style="arb", 
                                             freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
@@ -716,7 +687,6 @@ class MM_base:
                                             waveform="pi_m1s" + str(storage_no) + "_arb")
                     else:                    
                         # using standard flat top pulse
-                        # print('printing flat_top waveform')
                         self.setup_and_pulse(ch=self.tempch, style="flat_top", 
                                             freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
                                             phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
@@ -737,7 +707,6 @@ class MM_base:
                                                         gen_ch=self.tempch))
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
-            # print(waveform_name)
 
     def load_opt_ctrl_pulse(self, pulse_conf, IQ_table):
         '''
@@ -748,12 +717,8 @@ class MM_base:
 
         pulse_param = self.get_prepulse_creator(pulse_conf).pulse
         # # we load the IQ waveform with the param 
-        print("pulse_param", pulse_param)
-        print(pulse_param[4][0], pulse_param[4][1])
         qb_channel = pulse_param[4][0]
         cav_channel = pulse_param[4][1]
-        print("qb_channel", qb_channel)
-        print("cav_channel", cav_channel)
 
 
         qb_cfg = self.soccfg["gens"][qb_channel]
@@ -789,14 +754,11 @@ class MM_base:
         iq_amps = Iq_func(qb_times_samps)
         qq_amps = Qq_func(qb_times_samps)
 
-        print("pulse_conf", pulse_conf)
         encoding = pulse_conf[0][1]
         state = pulse_conf[0][2]
 
         waveform_cav = encoding + '_' + state + '_man'
         waveform_qb = encoding + '_' + state + '_qb'
-        print("waveform_cav", waveform_cav)
-        print("waveform_qb", waveform_qb)
 
         self.add_pulse(ch=cav_channel, name=waveform_cav,
                        idata=cav_maxv * ic_amps, qdata=cav_maxv * qc_amps)
@@ -1023,15 +985,11 @@ class MM_base:
             revival_time = self.cfg.device.manipulate.revival_time[man_mode_no-1]
             theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
             theta_2 = theta_2 % 360
-            print('theta_2', theta_2)
-            print('revival_time', revival_time)
-            # print('freq_AC', freq_AC)
 
             parity_str = [['multiphoton', 'g0-e0', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
                     ['multiphoton', 'g0-e0', 'hpi', theta_2]]
                     # ['multiphoton', 'g0-e0', 'hpi', second_phase]]
-            # print('Doing fast parity pulse; hope you calibratied multiphoton hpi-g0-e0')
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
             creator = self.get_prepulse_creator(parity_str)
@@ -1046,15 +1004,12 @@ class MM_base:
         # open the file with the optimal pulse
         filename = self.cfg.device.optimal_control[encoding][state]['filename']
         data = np.load(filename, allow_pickle=True)
-        print('Optimal pulse file loaded:', filename)
         I_q = data['I_q']*2*np.pi*1e3
         Q_q = data['Q_q']*2*np.pi*1e3
         max_q = max(np.max(np.abs(I_q)), np.max(np.abs(Q_q)))
         I_c = data['I_c']*2*np.pi*1e3
         Q_c = data['Q_c']*2*np.pi*1e3
         max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
-        print('Max q:', max_q)
-        print('Max c:', max_c)
 
         # import pi pulse parameters
         gain_qb_pi_pulse = self.cfg.device.qubit.pulses.pi_ge.gain[0]
@@ -1079,7 +1034,6 @@ class MM_base:
         # collect shots for the relevant adc and I and Q channels
         qTest = 0
         cfg=AttrDict(self.cfg)
-        # print(np.average(self.di_buf[0]))
         shots_i0 = self.di_buf[0] / self.readout_lengths_adc[qTest]
         shots_q0 = self.dq_buf[0] / self.readout_lengths_adc[qTest]
         return shots_i0, shots_q0
@@ -1119,14 +1073,10 @@ class MM_base:
             # Qg = filter_data(data['Qg'], threshold, readout_per_experiment=readout_per_round)
             Ie, Qe = self.filter_data_IQ(data['Ie'], data['Qe'], threshold, readout_per_experiment=readout_per_round)
             # Qe = filter_data(data['Qe'], threshold, readout_per_experiment=readout_per_round)
-            print(len(Ig))
-            print(len(Ie))
             plot_f = False 
             if 'If' in data.keys():
                 plot_f = True
                 If, Qf = self.filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
-                # Qf = filter_data(data['Qf'], threshold, readout_per_experiment=readout_per_round)
-                print(len(If))
         else:
             Ig = data['Ig']
             Qg = data['Qg']
@@ -1411,7 +1361,6 @@ class prepulse_creator2:
                                [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
 
 
-        print("multiphoton", transition_name, qubit_pulse.shape, self.pulse.shape)
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
     
@@ -1432,7 +1381,6 @@ class prepulse_creator2:
 
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
 
-        print('careful I am assing channel idx to 4 until I fix it')
         # pulse manipulate
         pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][1]],
                         [cfg.device.optimal_control[encoding][state]['gain'][1]],
@@ -1442,7 +1390,6 @@ class prepulse_creator2:
                         [int(self.cfg.hw.soc.dacs.manipulate_in.ch[channel_idx[0]])],
                         [['opt_cont', encoding, state]],
                         [0]], dtype = object)
-        print("pulse", pulse.shape, self.pulse.shape)
 
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
 
@@ -1469,14 +1416,12 @@ class prepulse_creator2:
                     [self.cfg.device.qubit.pulses[pulse_full_name]['type'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['sigma'][0]]], dtype = object)
 
-            # print("qubit_pulse", qubit_pulse.shape, self.pulse.shape)
             self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
 
 
 
         else: # parity string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
-            # print('Creating parity pulse:' ,self.cfg.device.manipulate.revival_time[man_idx]) 
 
             if self.cfg.device.manipulate.revival_time[man_idx] != 0: # if revival time is not zero, then use it
                 qubit_pulse = np.array([[freq], 
@@ -1510,7 +1455,6 @@ class prepulse_creator2:
                 [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)
-        # print("man", cav_name)
 
         return None
 
