@@ -1,7 +1,10 @@
 from copy import deepcopy
+import os
 
 import numpy as np
+from matplotlib import pyplot as plt
 
+import experiments.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 
 
@@ -157,21 +160,63 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
         data['prod_avgi'] = prod_avgi  # normalize the product
 
         if fit:
-            p_avgi, pCov_avgi = fitter.fitgaussian(data['xpts'], data['prod_avgi'])
-            data['prod_avgi_fit'] = fitter.gaussianfunc(data['xpts'], *p_avgi)
-            # add the fit parameters to the data dictionary
-            data['fit_avgi'] = p_avgi
-            data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-    
+            if 'ypts' not in data.keys():
+                p_avgi, pCov_avgi = fitter.fitgaussian(data['xpts'], data['prod_avgi'])
+                data['prod_avgi_fit'] = fitter.gaussianfunc(data['xpts'], *p_avgi)
+                # add the fit parameters to the data dictionary
+                data['fit_avgi'] = p_avgi
+                data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
+            else:
+                xproj = np.mean(data['prod_avgi'], axis=0)
+                yproj = np.mean(data['prod_avgi'], axis=1)
+                px, covx = fitter.fitgaussian(data['xpts'][0], xproj)
+                py, covy = fitter.fitgaussian(data['ypts'][0], yproj)
+                data['xproj_fit'] = fitter.gaussianfunc(data['xpts'][0], *px)
+                data['yproj_fit'] = fitter.gaussianfunc(data['ypts'][0], *py)
+                data['xproj_popts'] = px
+                data['xproj_err'] = np.sqrt(np.diag(covx))
+                data['yproj_popts'] = py
+                data['yproj_err'] = np.sqrt(np.diag(covy))
+
+                fig, axs = plt.subplots(nrows=2, figsize=(8,8))
+                m = axs[0].pcolormesh(data['xpts'][0], data['ypts'][0], data['prod_avgi'])
+                fig.colorbar(m, ax=axs[0])
+                axs[0].scatter([data['xproj_popts'][2]], [data['yproj_popts'][2]], marker='x', color='r', s=100)
+                axs[0].set_xlabel('storB advance phase (deg)')
+                axs[0].set_ylabel('storA advance phase (deg)')
+                axs[0].set_title(self.fname.split(os.path.sep)[-1], fontsize=12)
+                axs[1].scatter(data['xpts'][0], xproj, label='storB')
+                axs[1].scatter(data['ypts'][0], yproj, label='storA')
+                axs[1].plot(data['xpts'][0], data['xproj_fit'])
+                axs[1].plot(data['ypts'][0], data['yproj_fit'])
+                axs[1].legend()
+                axs[1].set_xlabel('advance phase (deg)')
+                axs[1].set_ylabel('col/row mean')
+
+                print(f'x center: {px[2]:.6f} (err: {np.sqrt(covx[2,2]):.6f})')
+                print(f'y center: {py[2]:.6f} (err: {np.sqrt(covy[2,2]):.6f})')
+
+
 
     def display(self, data=None, fit=False):
         if data is None:
             data=self.data 
         
-        fig, axs = super().display(data, fit=fit)
+        try:
+            fig, axs = super().display(data, fit=fit)
+            x_sweep = data['xpts']
+            xlabel = self.inner_param
+        except ValueError:
+            plt.close()
+            zlen, ylen, xlen = data['avgi'].shape
+            fig, axs = plt.subplots(nrows=zlen, figsize=(6,3*zlen))
+            for zind, ax in enumerate(axs):
+                m = ax.pcolormesh(data['xpts'][0], data['ypts'][0], data['avgi'][zind])
+                fig.colorbar(m, ax= ax, label='avgi')
+            axs[0].set_title(self.fname.split(os.path.sep)[-1], fontsize=12)
+            axs[-1].set_xlabel('storB advance phase (deg)')
+            axs[-1].set_ylabel('storA advance phase (deg)')
 
-        x_sweep = data['xpts']
-        xlabel = self.inner_param
 
         if fit: 
             if 'fit_avgi' in data:
@@ -196,3 +241,6 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
             ax2.legend(loc='lower left')
             ax2.grid()
         plt.show()
+
+        return fig, axs
+
