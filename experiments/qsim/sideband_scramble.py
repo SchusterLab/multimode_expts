@@ -1,7 +1,8 @@
-from copy import deepcopy
 import os
+from copy import deepcopy
 
 import numpy as np
+from lmfit.models import Model
 from matplotlib import pyplot as plt
 
 import experiments.fitting as fitter
@@ -127,15 +128,17 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
         # data shape: (len(n_scramble_cycles), len(storA_advance_phases), len(storB_advance_phases))
         self.data = all_data
 
-            
-    def analyze(self, data=None, fit=True, state_fin='g'):
 
+    def analyze(self, data=None, fit=True, state_fin='g', fit_model='sg'):
+        """
+        fit_model: 'sg' for a single Gaussian peak or 'dl' for double Lorentzian peaks
+        """
         if data is None:
             data=self.data
 
         # use the fitting process implemented by MIT 
         # https://arxiv.org/pdf/2406.08295
-        
+
         # for avgi, avgq, amp and phase take the product of the raws and
 
         # prod_avgi = np.abs(np.prod(data['avgi'], axis=0))
@@ -166,36 +169,82 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
                 # add the fit parameters to the data dictionary
                 data['fit_avgi'] = p_avgi
                 data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-            else:
+            else: # fitting 3D sweeps
                 xproj = np.mean(data['prod_avgi'], axis=0)
                 yproj = np.mean(data['prod_avgi'], axis=1)
-                px, covx = fitter.fitgaussian(data['xpts'][0], xproj)
-                py, covy = fitter.fitgaussian(data['ypts'][0], yproj)
-                data['xproj_fit'] = fitter.gaussianfunc(data['xpts'][0], *px)
-                data['yproj_fit'] = fitter.gaussianfunc(data['ypts'][0], *py)
-                data['xproj_popts'] = px
-                data['xproj_err'] = np.sqrt(np.diag(covx))
-                data['yproj_popts'] = py
-                data['yproj_err'] = np.sqrt(np.diag(covy))
-
                 fig, axs = plt.subplots(nrows=2, figsize=(8,8))
                 m = axs[0].pcolormesh(data['xpts'][0], data['ypts'][0], data['prod_avgi'])
                 fig.colorbar(m, ax=axs[0])
-                axs[0].scatter([data['xproj_popts'][2]], [data['yproj_popts'][2]], marker='x', color='r', s=100)
                 axs[0].set_xlabel('storB advance phase (deg)')
                 axs[0].set_ylabel('storA advance phase (deg)')
                 axs[0].set_title(self.fname.split(os.path.sep)[-1], fontsize=12)
                 axs[1].scatter(data['xpts'][0], xproj, label='storB')
                 axs[1].scatter(data['ypts'][0], yproj, label='storA')
-                axs[1].plot(data['xpts'][0], data['xproj_fit'])
-                axs[1].plot(data['ypts'][0], data['yproj_fit'])
                 axs[1].legend()
                 axs[1].set_xlabel('advance phase (deg)')
                 axs[1].set_ylabel('col/row mean')
+                if fit_model == 'sg':
+                    px, covx = fitter.fitgaussian(data['xpts'][0], xproj)
+                    py, covy = fitter.fitgaussian(data['ypts'][0], yproj)
+                    data['xproj_fit'] = fitter.gaussianfunc(data['xpts'][0], *px)
+                    data['yproj_fit'] = fitter.gaussianfunc(data['ypts'][0], *py)
+                    data['xproj_popts'] = px
+                    data['xproj_err'] = np.sqrt(np.diag(covx))
+                    data['yproj_popts'] = py
+                    data['yproj_err'] = np.sqrt(np.diag(covy))
 
-                print(f'x center: {px[2]:.6f} (err: {np.sqrt(covx[2,2]):.6f})')
-                print(f'y center: {py[2]:.6f} (err: {np.sqrt(covy[2,2]):.6f})')
+                    axs[0].scatter([data['xproj_popts'][2]], [data['yproj_popts'][2]], marker='x', color='r', s=100)
+                    axs[1].plot(data['xpts'][0], data['xproj_fit'])
+                    axs[1].plot(data['ypts'][0], data['yproj_fit'])
+                    print(f'x center: {px[2]:.6f} (err: {np.sqrt(covx[2,2]):.6f})')
+                    print(f'y center: {py[2]:.6f} (err: {np.sqrt(covy[2,2]):.6f})')
 
+                elif fit_model == 'dl':
+                    def dlorentz(x, amp1, amp2, cen, sep, wid):  # shared width g
+                        c1 = cen - sep/2.0
+                        c2 = cen + sep/2.0
+                        return (amp1 / (1 + ((x-c1)/wid)**2) +
+                                amp2 / (1 + ((x-c2)/wid)**2))
+
+                    def fwhm(x, y):
+                        halfmax = np.max(y) / 2.0
+                        above = np.where(y >= halfmax)[0]
+                        if len(above) < 2:
+                            return 0  # nothing above halfmax
+                        return x[above[-1]] - x[above[0]]
+
+                    def guess_dlorentz(x, y):
+                        return dict(
+                            amp1 = dict(value=np.max(y), min=0),
+                            amp2 = dict(value=np.max(y), min=0),
+                            cen = dict(value=x[y.argmax()], min=x[0], max=x[-1]),
+                            sep = dict(value=fwhm(x, y), min=0, max=x[-1]-x[0]),
+                            wid = dict(value=fwhm(x, y)/2, min=0, max=x[-1]-x[0]),
+                        )
+
+                    mod = Model(dlorentz)
+                    pars = mod.make_params(**guess_dlorentz(data['xpts'][0], xproj))
+                    xresult = mod.fit(xproj, pars, x=data['xpts'][0])
+                    xbestfit = xresult.best_fit
+                    data['xresult'] = xresult
+
+                    axs[1].plot(data['xpts'][0], xbestfit)
+                    axs[1].axvline(xresult.best_values['cen'] - xresult.best_values['sep']/2, color='C0')
+                    axs[1].axvline(xresult.best_values['cen'] + xresult.best_values['sep']/2, color='C0')
+
+                    pars = mod.make_params(**guess_dlorentz(data['ypts'][0], yproj))
+                    yresult = mod.fit(yproj, pars, x=data['ypts'][0])
+                    ybestfit = yresult.best_fit
+                    data['yresult'] = yresult
+                    axs[1].plot(data['xpts'][0], ybestfit)
+                    axs[1].axvline(yresult.best_values['cen'] - yresult.best_values['sep']/2, color='C1')
+                    axs[1].axvline(yresult.best_values['cen'] + yresult.best_values['sep']/2, color='C1')
+
+                    axs[0].scatter([xresult.best_values['cen']], [yresult.best_values['cen']], marker='x', color='r', s=100)
+                    print(f'x center: {xresult.best_values["cen"]:.6f}')
+                    print(f'y center: {yresult.best_values["cen"]:.6f}')
+                else:
+                    raise ValueError('fit_model must be sg or dl')
 
 
     def display(self, data=None, fit=False):

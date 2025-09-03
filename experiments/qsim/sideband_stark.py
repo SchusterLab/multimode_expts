@@ -123,7 +123,7 @@ class SidebandStarkAmplificationExperiment(QsimBaseExperiment):
 
         # use the fitting process implemented by MIT 
         # https://arxiv.org/pdf/2406.08295
-        
+
         # for avgi, avgq, amp and phase take the product of the raws and
 
         # prod_avgi = np.abs(np.prod(data['avgi'], axis=0))
@@ -152,16 +152,16 @@ class SidebandStarkAmplificationExperiment(QsimBaseExperiment):
             # add the fit parameters to the data dictionary
             data['fit_avgi'] = p_avgi
             data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-    
+
 
     def display(self, data=None, fit=False):
         if data is None:
             data=self.data 
-        
+
         fig, axs = super().display(data, fit=fit)
 
         x_sweep = data['xpts']
-        xlabel = self.inner_param
+        xlabel = self.cfg.swept_params[-1]
 
         if fit: 
             if 'fit_avgi' in data:
@@ -186,3 +186,5 @@ class SidebandStarkAmplificationExperiment(QsimBaseExperiment):
             ax2.legend(loc='lower left')
             ax2.grid()
         plt.show()
+        return fig, axs
+
