@@ -55,7 +55,10 @@ class QsimBaseProgram(MMAveragerProgram):
         #TODO: this should use a config key to determine whether
         # to use floquet or gate (pi or pi/2) datasets
         if "ds_thisrun" not in self.cfg.expt:
-            self.swap_ds = floquet_storage_swap_dataset()
+            if 'floquet_dataset_filename' in self.cfg.expt:
+                self.swap_ds = floquet_storage_swap_dataset(self.cfg.expt.floquet_dataset_filename)
+            else:
+                self.swap_ds = floquet_storage_swap_dataset()
         else:
             self.swap_ds = self.cfg.expt.ds_thisrun
         self.retrieve_swap_parameters()
@@ -99,13 +102,27 @@ class QsimBaseProgram(MMAveragerProgram):
 
         # prepulse: ge -> ef -> f0g1
         # TODO: make this overridable from cfg
-        prepulse_cfg = [
-            ['qubit', 'ge', 'pi', 0,],
-            ['qubit', 'ef', 'pi', 0,],
-            ['man', 'M1', 'pi', 0,],
-        ]
-        if init_stor > 0:
-            prepulse_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
+        if type(init_stor) is list:
+            prepulse_cfg = []
+
+            for each_init_stor in init_stor:
+                prepulse_cfg += [
+                    ['qubit', 'ge', 'pi', 0,],
+                    ['qubit', 'ef', 'pi', 0,],
+                    ['man', 'M1', 'pi', 0,],
+                ]
+                if each_init_stor > 0:
+                    prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
+        elif type(init_stor) is int:
+            prepulse_cfg = [
+                ['qubit', 'ge', 'pi', 0,],
+                ['qubit', 'ef', 'pi', 0,],
+                ['man', 'M1', 'pi', 0,],
+            ]
+            if init_stor > 0:
+                prepulse_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
+        else:
+            raise ValueError("init_stor must be int or list of int")
 
         pulse_creator = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all(self.us2cycles(0.1))

@@ -51,6 +51,7 @@ class FloquetCalibrationProgram(QsimBaseProgram):
             self.setup_and_pulse(**storB_args)
             self.sync_all()
 
+
 class SidebandScrambleProgram(QsimBaseProgram):
     """
     Scramble 1 photon via fractional beam splitters
@@ -60,7 +61,7 @@ class SidebandScrambleProgram(QsimBaseProgram):
     update_phases: boolean of whether to update each subsequent swap with the calibrated stark shift phase
     """
     def core_pulses(self):
-        pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
+        # pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
 
         swap_stors = self.cfg.expt.swap_stors
         swap_stor_phases = np.zeros(len(swap_stors))
@@ -82,8 +83,6 @@ class SidebandScrambleProgram(QsimBaseProgram):
                             swap_stor_phases[j_stor] += self.swap_ds.get_phase_from(stor_B_name, stor_name)
                             swap_stor_phases[j_stor] = swap_stor_phases[j_stor] % 360
         self.sync_all()
-
-
 
 
 class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
@@ -117,14 +116,14 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
                     all_data[key].append(self.data[key])
             if debug:
                 super().display()
-        
+
         for key in all_data:
             all_data[key] = np.array(all_data[key])
 
         # data shape: (len(n_scramble_cycles), len(storA_advance_phases), len(storB_advance_phases))
         self.data = all_data
 
-            
+
     def analyze(self, data=None, fit=True, state_fin='g'):
 
         if data is None:
@@ -162,12 +161,12 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
             # add the fit parameters to the data dictionary
             data['fit_avgi'] = p_avgi
             data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-    
+
 
     def display(self, data=None, fit=False):
         if data is None:
             data=self.data 
-        
+
         fig, axs = super().display(data, fit=fit)
 
         x_sweep = data['xpts']
