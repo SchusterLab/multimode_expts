@@ -55,6 +55,7 @@ class FloquetCalibrationProgram(QsimBaseProgram):
             self.setup_and_pulse(**storB_args)
             self.sync_all()
 
+
 class SidebandScrambleProgram(QsimBaseProgram):
     """
     Scramble 1 photon via fractional beam splitters
@@ -64,7 +65,7 @@ class SidebandScrambleProgram(QsimBaseProgram):
     update_phases: boolean of whether to update each subsequent swap with the calibrated stark shift phase
     """
     def core_pulses(self):
-        pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
+        # pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
 
         swap_stors = self.cfg.expt.swap_stors
         swap_stor_phases = np.zeros(len(swap_stors))
@@ -86,8 +87,6 @@ class SidebandScrambleProgram(QsimBaseProgram):
                             swap_stor_phases[j_stor] += self.swap_ds.get_phase_from(stor_B_name, stor_name)
                             swap_stor_phases[j_stor] = swap_stor_phases[j_stor] % 360
         self.sync_all()
-
-
 
 
 class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
@@ -121,7 +120,7 @@ class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
                     all_data[key].append(self.data[key])
             if debug:
                 super().display()
-        
+
         for key in all_data:
             all_data[key] = np.array(all_data[key])
 
