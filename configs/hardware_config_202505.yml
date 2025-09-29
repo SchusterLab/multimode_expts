@@ -2,11 +2,11 @@
 device:
     qubit:
         T1:
-        - 486.46448644846816
+        - 433.0775501808963
         f_ge:
-        - 3571.709750355705
+        - 3569.6978631006828
         f_ef:
-        - 3428.4457610447353
+        - 3426.624285537752
         ramp_sigma:
         - 0.005
         ramp_sigma_num:
@@ -14,7 +14,7 @@ device:
         pulses:
             pi_ge:
                 gain:
-                - 3445
+                - 3522
                 sigma:
                 - 0.035
                 length:
@@ -23,7 +23,7 @@ device:
                 - gauss
             hpi_ge:
                 gain:
-                - 1701
+                - 1740
                 length:
                 - 0.0
                 sigma:
@@ -32,7 +32,7 @@ device:
                 - gauss
             pi_ef:
                 gain:
-                - 2770
+                - 2931
                 length:
                 - 0.0
                 sigma:
@@ -41,7 +41,7 @@ device:
                 - gauss
             hpi_ef:
                 gain:
-                - 1318
+                - 1470
                 sigma:
                 - 0.035
                 type:
@@ -56,20 +56,20 @@ device:
                 type:
                 - flat_top
         T1_ef:
-        - 144.16571854782674
+        - 127.19717490775781
     readout:
         trig_offset:
         - 450
         frequency:
-        - 749.0683556354792
+        - 749.1893739821222
         gain:
         - 800
         phase:
-        - -68.34629972735932
+        - -116.2217725004495
         threshold:
-        - -55.25421651086265
+        - -71.51747583162074
         threshold_list:
-        -   - -55.25421651086265
+        -   - -71.51747583162074
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -84,35 +84,35 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9569913982796561
-        - 0.04300860172034393
-        - 0.04260852170434087
-        - 0.9573914782956592
+        - 0.9069999999999999
+        - 0.09300000000000008
+        - 0.08341668333666732
+        - 0.9165833166633327
         Ie:
-        - 3.070220837343409
+        - -12.94451313014568
         Ig:
-        - -106.46612015520745
+        - -123.31425343680938
     manipulate:
         f_ge:
-        - 4984.779973902164
+        - 4984.8599830542125
         - 5157.8527963217475
         displace_sigma:
         - 0.05
         - 0.05
         revival_time:
-        - 1.7442250468651126
+        - 1.6562926457024991
         - 1.7366205852286094
         revival_stark_shift:
-        - -1.3008346758366192
+        - -1.092140493733816
         - -2.6792227141937364
         gain_to_alpha:
-        - 0.00021460433155138454
+        - 0.0007377158577217475
         - 0.00020045
         freq_to_alpha:
         - 0.495062203431879
         - 0.0
         chi_ge:
-        - -0.2725917475648555
+        - -0.310456
         chi_ef:
         - -0.24480332166390534
         ramp_sigma: 0.005
@@ -206,12 +206,12 @@ device:
         pi:
             gn-en:
                 frequency:
-                - 3579.7738728599984
+                - 3576.8252034638526
                 - 3571.869462789635
                 - 3571.543042357372
                 - 3571.299620008302
                 gain:
-                - 18719
+                - 19401
                 - 3440
                 - 3449
                 - 3430
@@ -232,12 +232,12 @@ device:
                 - gauss
             en-fn:
                 frequency:
-                - 3428.2636504748903
+                - 3426.493877993644
                 - 3427.984451944102
                 - 3427.712094472353
                 - 3427.4772366132443
                 gain:
-                - 2751
+                - 2922
                 - 2749
                 - 2763
                 - 2768
@@ -258,7 +258,7 @@ device:
                 - gauss
             fn-gn+1:
                 frequency:
-                - 2011.7173171154775
+                - 2008.3046663331068
                 - 2011.1834449076475
                 - 2010.595323987349
                 - 2010.07793195468
@@ -268,7 +268,7 @@ device:
                 - 8000
                 - 8000
                 length:
-                - 0.5430077768100537
+                - 0.5880301302559898
                 - 0.38972624590019683
                 - 0.31584821479967073
                 - 0.26838059127779085
@@ -285,12 +285,12 @@ device:
         hpi:
             gn-en:
                 frequency:
-                - 3572.9959650749265
+                - 3570.8050444633063
                 - 3570.0567055299525
                 - 3567.7644237298246
                 - 3565.49698806312
                 gain:
-                - 8790
+                - 8992
                 - 1689
                 - 1689
                 - 1697
@@ -339,8 +339,8 @@ device:
         fock:
             '1':
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 10
                 - 10
@@ -350,8 +350,8 @@ device:
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_1.npz
             '2':
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 10
                 - 10
@@ -359,10 +359,10 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_2.npz
-            '0+2':
+            0+2:
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 10
                 - 10
@@ -370,10 +370,10 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2.npz
-            '0+2i':
+            0+2i:
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 10
                 - 10
@@ -381,10 +381,10 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2i.npz
-            '0+4':
+            0+4:
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 10
                 - 10
@@ -392,13 +392,23 @@ device:
                 - 0.0
                 - 0.0
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+4.npz
-
-
+        GKP:
+            Z:
+                frequency:
+                - 3569.6978631006828
+                - 4984.8599830542125
+                gain:
+                - 10
+                - 10
+                phase:
+                - 0.0
+                - 0.0
+                filename: H:\Shared drives\SLab\Multimode\optimal_control\pulse_GKP_Z.npz
         test:
             '1':
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 3429
                 - 3429
@@ -408,8 +418,8 @@ device:
                 filename: H:\Shared drives\SLab\Multimode\optimal_control\test.npz
             '2':
                 frequency:
-                - 3571.6994214615424
-                - 4984.779973902164
+                - 3569.6978631006828
+                - 4984.8599830542125
                 gain:
                 - 850
                 - 2413
@@ -480,3 +490,29 @@ aliases:
     soc: Qick101
 data_management:
     plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
+expt:
+    start: 5
+    step: 0.02
+    qubits:
+    - 0
+    expts: 101
+    reps: 100
+    rounds: 1
+    gain: 8000
+    freq: 2008.082385232546
+    use_arb_waveform: 0
+    pi_ge_before: 1
+    pi_ef_before: 1
+    pi_ge_after: 0
+    pi_ef_after: 0
+    normalize: 0
+    active_reset: 1
+    check_man_reset:
+    - 0
+    - 0
+    swap_lossy: 0
+    check_man_reset_pi: []
+    prepulse: 0
+    pre_sweep_pulse: []
+    err_amp_reps: 0
+    length_placeholder: 7.0

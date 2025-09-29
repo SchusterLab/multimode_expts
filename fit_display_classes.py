@@ -473,15 +473,22 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         time_peaks = [time_peak_g, time_peak_e]
         for i_gain in range(len(y)):
             for i_pop, data_set in enumerate([g_z, e_z]):
+                # distinguish e and g here and play with the peak distance parameter
                 _pop = data_set[i_gain]
-                _pop_norm = (_pop - np.min(_pop)) / (np.max(_pop) - np.min(_pop))
+                if i_pop == 0:
+                    _pop_norm = (_pop - np.min(_pop)) / (np.max(_pop) - np.min(_pop))
+                else: 
+                    _pop_norm = (_pop - np.max(_pop)) / (np.min(_pop) - np.max(_pop))
                 pop_norm = pop_norms[i_pop]
                 pop_norm[i_gain] = _pop_norm
 
+
                 signal_smooth = gaussian_filter1d(pop_norm[i_gain], sigma=1.5)
                 # Calculate adaptive thresholds
-                peak_height = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.3 + np.min(signal_smooth)
+                peak_height = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.5 + np.min(signal_smooth)
                 peak_prominence = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.2
+                # ax.axhline(peak_height, color='r', linestyle='--', label='Peak Height Threshold')
+                # ax.axhline(peak_prominence, color='g', linestyle='--', label='Peak Prominence Threshold')
                 if i_gain == 0:
                     peak_distance = None
                 # Find peaks
@@ -491,7 +498,9 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                     prominence=peak_prominence,
                     distance=peak_distance
                 )
-                peak_distance=np.mean(np.diff(peaks)*0.9)
+                peak_distance=np.mean(np.diff(peaks)*0.5)
+
+                # ax.plot(x[peaks], signal_smooth[peaks], "x", label='Detected Peaks')
 
                 if len(peaks) >= 2:
                     n = np.arange(len(peaks))

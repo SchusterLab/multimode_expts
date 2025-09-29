@@ -291,8 +291,8 @@ class histogram_sweep_class(sequential_base_class):
             run_exp = eval(f"meas.{self.experiment_class}.{self.experiment_name}(soccfg=self.soccfg, path=self.path, prefix=self.prefix, config_file=self.config_file)")
             run_exp.cfg.expt = eval(f"self.loaded['{self.experiment_name}']")
 
-            # if hasattr(run_exp.cfg.expt, 'active_reset') and run_exp.cfg.expt.active_reset:
-            #     run_exp.cfg.device.readout.relax_delay = 100
+            if hasattr(run_exp.cfg.expt, 'active_reset') and run_exp.cfg.expt.active_reset:
+                run_exp.cfg.device.readout.relax_delay = 5
             # run_exp.cfg.device.readout.relax_delay = 8000
             print('Waiting for %s us' % run_exp.cfg.device.readout.relax_delay)
 
@@ -303,6 +303,8 @@ class histogram_sweep_class(sequential_base_class):
             analysis_result = self.perform_historgam_analysis(run_exp)
 
             # Save sweep data
+            print('Saving data for jpa_current =', jpa_current)
+            print('run_exp.data.keys():', run_exp.data['jpa_current'])
             self.save_sweep_data('jpa_current_sweep', jpa_current, run_exp)
             self.perform_lineplotting() # Perform color plotting after each sweep
 

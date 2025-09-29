@@ -2,6 +2,9 @@
 
 plots/
 .vscode/
+node_modules/
+analysis_notebooks/bosonic/outcmaes/
+analysis_notebooks/bosonic/*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

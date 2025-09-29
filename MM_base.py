@@ -979,18 +979,36 @@ class MM_base:
         return parity_str
     
 
-    def get_gain_optimal_pulse(self, pulse):
-        encoding = pulse[1]
-        state = pulse[2]
+    def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None):
+        if pulse is not None:
+            encoding = pulse[1]
+            state = pulse[2]
         # open the file with the optimal pulse
-        filename = self.cfg.device.optimal_control[encoding][state]['filename']
-        data = np.load(filename, allow_pickle=True)
-        I_q = data['I_q']*2*np.pi*1e3
-        Q_q = data['Q_q']*2*np.pi*1e3
-        max_q = max(np.max(np.abs(I_q)), np.max(np.abs(Q_q)))
-        I_c = data['I_c']*2*np.pi*1e3
-        Q_c = data['Q_c']*2*np.pi*1e3
-        max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
+            filename = self.cfg.device.optimal_control[encoding][state]['filename']
+            data = np.load(filename, allow_pickle=True)
+            I_q = data['I_q']*2*np.pi*1e3
+            Q_q = data['Q_q']*2*np.pi*1e3
+            max_q = max(np.max(np.abs(I_q)), np.max(np.abs(Q_q)))
+            I_c = data['I_c']*2*np.pi*1e3
+            Q_c = data['Q_c']*2*np.pi*1e3
+            max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
+        elif pulse_IQ is not None:
+            if 'I_q' in pulse_IQ.keys():
+                I_q = pulse_IQ['I_q']*2*np.pi*1e3
+                Q_q = pulse_IQ['Q_q']*2*np.pi*1e3
+                I_c = pulse_IQ['I_c']*2*np.pi*1e3
+                Q_c = pulse_IQ['Q_c']*2*np.pi*1e3
+            elif 'Iq' in pulse_IQ.keys():
+                I_q = pulse_IQ['Iq']*2*np.pi*1e3
+                Q_q = pulse_IQ['Qq']*2*np.pi*1e3
+                I_c = pulse_IQ['Ic']*2*np.pi*1e3
+                Q_c = pulse_IQ['Qc']*2*np.pi*1e3
+            else:
+                raise ValueError("pulse_IQ must contain keys 'I_q', 'Q_q', 'I_c', 'Q_c' or 'Iq', 'Qq', 'Ic', 'Qc'")
+            max_q = max(np.max(np.abs(I_q)), np.max(np.abs(Q_q)))
+            max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
+        else:
+            raise ValueError("Either pulse or pulse_IQ must be provided")
 
         # import pi pulse parameters
         gain_qb_pi_pulse = self.cfg.device.qubit.pulses.pi_ge.gain[0]
@@ -1477,7 +1495,6 @@ class prepulse_creator2:
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
 
-
     def floquet(self, pulse_param):
         stor_name, pi_frac, phase = pulse_param
         length = self.dataset_floquet.get_len(stor_name)
@@ -1498,4 +1515,18 @@ class prepulse_creator2:
 
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
+    
+    def wait(self, pulse_param):
+        wait_len = float(pulse_param[0])
+
+        wait = np.array([[self.cfg.device.manipulate.f_ge[0]], #dummy freq
+                [0], #dummy gain
+                [wait_len], #wait len
+                [0.0], #dummy phase
+                [self.cfg.hw.soc.dacs.manipulate_in.ch[0]], #man channel
+                ['const'],
+                [0]], dtype = object)
+        self.pulse = np.concatenate((self.pulse, wait), axis=1)
+        return None
+
         

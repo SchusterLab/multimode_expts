@@ -317,6 +317,11 @@ class WignerAnalysis(GeneralFitting):
             theta_max = 0
             rho_rotated = rho
 
+        alpha_max = np.max(np.abs(alpha_list))
+        x_vec = np.linspace(-alpha_max, alpha_max, 200)
+        W_fit = qt.wigner(qt.Qobj(rho), x_vec, x_vec, g=2)
+        W_ideal = qt.wigner(rho_ideal, x_vec, x_vec, g=2)
+
 
         return {
             'alpha_list': alpha_list,
@@ -328,7 +333,10 @@ class WignerAnalysis(GeneralFitting):
             'alphas2': alphas2,
             'fidelity': fid,
             'theta_max': theta_max,
-            'wigner_analysis': self
+            'wigner_analysis': self,
+            'W_fit': W_fit,
+            'W_ideal': W_ideal,
+            'x_vec': x_vec,
         }
 
     def plot_wigner_reconstruction_results(self, results, initial_state=None, state_label = None):
@@ -342,12 +350,10 @@ class WignerAnalysis(GeneralFitting):
         mode_state_num = rho.shape[0]
         fidelity = results.get('fidelity', None)
 
-        alpha_max = np.max(np.abs(alpha_list))
-        x_vec = np.linspace(-alpha_max, alpha_max, 200)
+        x_vec = results['x_vec']
         # why do I need to reverse the x_vec?
-        W_fit = qt.wigner(qt.Qobj(rho), x_vec, x_vec, g=2)
-        W_ideal = qt.wigner(qt.Qobj(rho_ideal), x_vec, x_vec, g=2)
-
+        W_fit = results['W_fit']
+        W_ideal = results['W_ideal']
         vmin = -2 / np.pi
         vmax = 2 / np.pi
         fig, ax = plt.subplots(2, 2, figsize=(10, 10))
@@ -490,8 +496,23 @@ class OptimalDisplacementGeneration():
     def optimize(self, save_dir=None):
         import matplotlib.pyplot as plt
         self.f, self.ax = plt.subplots(figsize=(5, 5))
-        init_disps = np.random.normal(0, 1, 2*self.n_disps)
-        init_disps[0] = init_disps[self.n_disps] = 0
+        low, high = -np.sqrt(self.FD), np.sqrt(self.FD)
+        # init_disps = np.random.normal(0, scale=2, size=(self.n_disps, 2))
+        # init_disps = np.clip(init_disps, low, high)
+        from scipy.stats import truncnorm
+
+        low, high = -1.5*np.sqrt(self.FD), 1.5*np.sqrt(self.FD)
+
+        # parameters for truncnorm: (a, b) are in std units
+        a, b = (low - 0) / 2, (high - 0) / 2
+
+        # sample
+        samples = truncnorm.rvs(a, b, loc=0, scale=1, size=(self.n_disps, 2))
+
+        init_disps = samples
+
+
+        # init_disps[0] = init_disps[self.n_disps] = 0
         ret = minimize(self.wrap_cost, init_disps, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6))
         new_disps = ret.x[:self.n_disps] + 1j*ret.x[self.n_disps:]
         new_disps = np.concatenate(([0], new_disps))

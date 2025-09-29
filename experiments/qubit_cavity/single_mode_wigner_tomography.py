@@ -122,7 +122,18 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
 
         # phase reset
         self.reset_and_sync()
-            
+
+        if 'active_reset' in cfg.expt and cfg.expt.active_reset:
+            man_reset = False
+            storage_reset = False
+            coupler_reset = False
+            pre_selection_reset = False
+            ef_reset = False
+            self.active_reset(man_reset=man_reset, storage_reset=storage_reset,
+                              coupler_reset=coupler_reset,
+                              pre_selection_reset=pre_selection_reset,
+                              ef_reset=ef_reset)
+
         #  prepulse
         if cfg.expt.prepulse:
             if cfg.expt.gate_based: 
@@ -174,6 +185,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         # collect shots for 1 adc and I and Q channels
         cfg = self.cfg
         read_num = 1
+        if 'active_reset' in cfg.expt and cfg.expt.active_reset:
+            read_num += 1
         if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
             read_num += 1
 
@@ -219,6 +232,8 @@ class WignerTomography1ModeExperiment(Experiment):
 
         read_num = 1
         if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
+            read_num += 1
+        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
             read_num += 1
 
         # extract displacement list from file path
@@ -300,9 +315,14 @@ class WignerTomography1ModeExperiment(Experiment):
         read_num = 1
         if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
             read_num += 1
+        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
+            read_num += 1
 
         idx_start = read_num - 1
         idx_step = read_num
+        idx_post_select = 0 
+        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
+            idx_post_select += 1
 
         if self.pulse_correction:
             # we need to reshape the data before processing
@@ -320,8 +340,8 @@ class WignerTomography1ModeExperiment(Experiment):
             data_plus["q0"] = data["q0"][1::2, :, idx_start::idx_step]
 
             if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
-                I_eg = data["i0"][0::2, 0, 0::idx_step]
-                Q_eg = data["q0"][0::2, 0, 0::idx_step]
+                I_eg = data["i0"][0::2, 0, idx_post_select::idx_step]
+                Q_eg = data["q0"][0::2, 0, idx_post_select::idx_step]
 
                 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
                 ax.plot(I_eg[0, :], Q_eg[0, :], 'o')
@@ -334,8 +354,8 @@ class WignerTomography1ModeExperiment(Experiment):
                 data["Q_postpulse_minus"] = Q_eg
 
                 data_temp = {}
-                data_temp["i0"] = data["i0"][0::2, :, 0::idx_step]
-                data_temp["q0"] = data["q0"][0::2, :, 0::idx_step]
+                data_temp["i0"] = data["i0"][0::2, :, idx_post_select::idx_step]
+                data_temp["q0"] = data["q0"][0::2, :, idx_post_select::idx_step]
                 wigner_analysis = WignerAnalysis(data=data_temp,
                                                     config=self.cfg,
                                                     mode_state_num=mode_state_num,
@@ -343,8 +363,8 @@ class WignerTomography1ModeExperiment(Experiment):
                 pe_postpulse_minus = 1 - wigner_analysis.bin_ss_data()
 
                 data_temp = {}
-                data_temp["i0"] = data["i0"][1::2, :, 0::idx_step]
-                data_temp["q0"] = data["q0"][1::2, :, 0::idx_step]
+                data_temp["i0"] = data["i0"][1::2, :, idx_post_select::idx_step]
+                data_temp["q0"] = data["q0"][1::2, :, idx_post_select::idx_step]
                 wigner_analysis = WignerAnalysis(data=data_temp,
                                                     config=self.cfg,
                                                     mode_state_num=mode_state_num,
