@@ -5,6 +5,8 @@ plots/
 node_modules/
 analysis_notebooks/bosonic/outcmaes/
 analysis_notebooks/bosonic/*.png
+.jupyter_ystore.db
+.fileid.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
