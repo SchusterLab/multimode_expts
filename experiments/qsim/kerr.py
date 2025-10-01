@@ -1,21 +1,17 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from qick import *
 from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
-from tqdm import tqdm_notebook as tqdm
+from tqdm.auto import tqdm
 
 import experiments.fitting as fitter
+from experiments.qsim.qsim_base import QsimBaseProgram, QsimBaseExperiment
 from fit_display_classes import (
     CavityRamseyGainSweepFitting,
     GeneralFitting,
     RamseyFitting,
 )
-from MM_base import *
 from MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import *
-
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 
 """
 In this file, each program looks at the effect of a particular combo of 
@@ -34,7 +30,23 @@ For cavity Kerr, this is CavityRamseyProgram adapted with the pulse applied duri
 
 class KerrEngBaseProgram(QsimBaseProgram):
     def initialize(self):
-        return super().initialize()
+        super().initialize()
+
+        # for kerr engineering, drive a tone near the qubit
+        # if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
+        if True:
+            print(self._gen_regmap)
+            print("register", self.sreg(self.qubit_chs[qTest], "len"))
+            # self.qTest = self.qubits[0]
+            # self.qubit_drive_freq = self.freq2reg(cfg.expt.qubit_drive_pulse[1], gen_ch=self.qubit_chs[self.qTest])
+            # self.qubit_drive_gain = cfg.expt.qubit_drive_pulse[2]
+            # self.qubit_drive_sigma = self.us2cycles(cfg.expt.qubit_drive_pulse[3], gen_ch=self.qubit_chs[self.qTest])
+            # self.qubit_drive_length = self.us2cycles(cfg.expt.qubit_drive_pulse[4], gen_ch=self.qubit_chs[self.qTest])
+            # Flat top pulse
+            # if self.qubit_drive_length == 0:
+            #     self.add_gauss(ch=self.qubit_chs[self.qTest], name="test_qubit_drive",
+            #                    sigma=self.qubit_drive_sigma, length=self.qubit_drive_sigma*4)
+
 
 
 class KerrHeatingProgram(KerrEngBaseProgram):
@@ -55,14 +67,15 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
+
 
     def initialize(self):
         cfg = AttrDict(self.cfg)
         self.MM_base_initialize()
         qTest = 0 # only one qubit for now
-        
+
         # choose the channel on which ramsey will run 
         if cfg.expt.user_defined_pulse[5] == 1:
             self.cavity_ch = self.flux_low_ch
@@ -114,7 +127,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         #     self.ramse
 
         if self.cfg.expt.echoes[0]: 
-            mm_base_dummy = MM_dual_rail_base(self.cfg)
+            mm_base_dummy = MM_dual_rail_base(self.cfg, self.soccfg)
             if self.cfg.expt.storage_ramsey[0]:
                 prep_stor = mm_base_dummy.prep_random_state_mode(3, self.cfg.expt.storage_ramsey[1])  # prepare the storage state + 
             elif self.cfg.expt.man_ramsey[0]:
@@ -164,20 +177,6 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.add_gauss(ch=self.cavity_ch[qTest], name="user_test",
                        sigma=self.user_sigma, length=self.user_sigma*4)
 
-        # for kerr engineering, drive a tone near the qubit
-        if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
-            print(self._gen_regmap)
-            # print("register", self.sreg(self.qubit_chs[qTest], "len"))
-            # self.qTest = self.qubits[0]
-            # self.qubit_drive_freq = self.freq2reg(cfg.expt.qubit_drive_pulse[1], gen_ch=self.qubit_chs[self.qTest])
-            # self.qubit_drive_gain = cfg.expt.qubit_drive_pulse[2]
-            # self.qubit_drive_sigma = self.us2cycles(cfg.expt.qubit_drive_pulse[3], gen_ch=self.qubit_chs[self.qTest])
-            # self.qubit_drive_length = self.us2cycles(cfg.expt.qubit_drive_pulse[4], gen_ch=self.qubit_chs[self.qTest])
-            # # Flat top pulse
-            # if self.qubit_drive_length == 0:
-            #     self.add_gauss(ch=self.qubit_chs[self.qTest], name="test_qubit_drive",
-            #                    sigma=self.qubit_drive_sigma, length=self.qubit_drive_sigma*4)
-
         # load the slow pulse waveform
         _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
         sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
@@ -198,7 +197,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = self.qubits[0] 
-        
+
         # reset and sync all channels
         self.reset_and_sync()
 
