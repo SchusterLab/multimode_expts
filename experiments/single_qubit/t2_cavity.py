@@ -127,7 +127,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.user_freq = self.freq2reg(cfg.expt.user_defined_pulse[1], gen_ch=self.cavity_ch[qTest])
             self.user_gain = cfg.expt.user_defined_pulse[2]
             self.user_sigma = self.us2cycles(cfg.expt.user_defined_pulse[3], gen_ch=self.cavity_ch[qTest])
-            self.user_length  = self.us3cycles(cfg.expt.user_defined_pulse[4], gen_ch=self.cavity_ch[qTest])
+            self.user_length  = self.us2cycles(cfg.expt.user_defined_pulse[4], gen_ch=self.cavity_ch[qTest])
             # print(f"if user length is 0, then it is a gaussian pulse with sigma {self.user_sigma} cycles")
             # print('user length:', self.user_length)
             self.add_gauss(ch=self.cavity_ch[qTest], name="user_test",

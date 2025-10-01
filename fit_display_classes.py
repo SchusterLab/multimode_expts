@@ -85,7 +85,7 @@ class GeneralFitting:
                 ydata[i] = counts_new[1,0]
         return ydata
 
-        
+
     def bin_ss_data_given_ss(self, conf = True):
         '''
         Assumes that experiment perfroms its own single shot 
@@ -438,11 +438,10 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         #     omega, t0 = params
         #     args = {'alpha': alpha, 'omega': omega, 't0': t0}
         #     return small_angle_approx_P0(t, args) - ydata
-        
-        
+
         def linear_model(n, T, t0):
             return T * n + t0  
-                
+
         if data is None:
             data = self.data
 
@@ -453,7 +452,7 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         y = data['gain_list']
         print('gain_to_alpha', gain_to_alpha)
         alpha_list = gain_to_alpha * y
-        
+
         g_z = data['g_avgi']
         e_z = data['e_avgi']
         g_norm = np.zeros_like(g_z)
@@ -578,9 +577,8 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         data['gain_to_plot_g'] = gain_to_plot[0]
         data['gain_to_plot_e'] = gain_to_plot[1]
 
+
     def display(self, data=None, fit=True, vline=None, save_fig=False, title_str='CavityRamseyGainSweep', **kwargs):
-                
-        
         if data is None: 
             data = self.data
 
@@ -607,7 +605,6 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
             ax[1].set_xlabel('Wait Time [us]')
             ax[1].set_ylabel('Gain for Excited State')
             fig.colorbar(c2, ax=ax[1], label='I [a.u.]')
-
 
         if fit:
             g_omega = data['g_omega']
