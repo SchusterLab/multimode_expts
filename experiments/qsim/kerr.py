@@ -31,22 +31,37 @@ For cavity Kerr, this is CavityRamseyProgram adapted with the pulse applied duri
 class KerrEngBaseProgram(QsimBaseProgram):
     def initialize(self):
         super().initialize()
+        cfg = self.cfg
 
         # for kerr engineering, drive a tone near the qubit
-        # if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
-        if True:
-            print(self._gen_regmap)
-            print("register", self.sreg(self.qubit_chs[qTest], "len"))
-            # self.qTest = self.qubits[0]
-            # self.qubit_drive_freq = self.freq2reg(cfg.expt.qubit_drive_pulse[1], gen_ch=self.qubit_chs[self.qTest])
-            # self.qubit_drive_gain = cfg.expt.qubit_drive_pulse[2]
-            # self.qubit_drive_sigma = self.us2cycles(cfg.expt.qubit_drive_pulse[3], gen_ch=self.qubit_chs[self.qTest])
-            # self.qubit_drive_length = self.us2cycles(cfg.expt.qubit_drive_pulse[4], gen_ch=self.qubit_chs[self.qTest])
+        if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
+            self.qTest = self.qubits[self.qTest]
+            self.qubit_drive_freq = self.freq2reg(cfg.expt.qubit_drive_pulse[1], gen_ch=self.qubit_chs[self.qTest])
+            self.qubit_drive_gain = cfg.expt.qubit_drive_pulse[2]
+            self.qubit_drive_sigma = self.us2cycles(cfg.expt.qubit_drive_pulse[3], gen_ch=self.qubit_chs[self.qTest])
+            self.qubit_drive_length = self.us2cycles(cfg.expt.qubit_drive_pulse[4], gen_ch=self.qubit_chs[self.qTest])
             # Flat top pulse
-            # if self.qubit_drive_length == 0:
-            #     self.add_gauss(ch=self.qubit_chs[self.qTest], name="test_qubit_drive",
-            #                    sigma=self.qubit_drive_sigma, length=self.qubit_drive_sigma*4)
+            if self.qubit_drive_length == 0:
+                self.add_gauss(ch=self.qubit_chs[self.qTest],
+                               name="test_qubit_drive",
+                               sigma=self.qubit_drive_sigma,
+                               length=self.qubit_drive_sigma*4)
 
+    def core_pulses(self):
+        qTest = 0
+        ecfg = self.cfg.expt
+        kerr_pulse = [
+            [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],
+            [ecfg.kerr_gain],
+            [ecfg.kerr_length],
+            [0],
+            [self.qubit_chs[qTest]],
+            ['flat_top'],
+            [self.cfg.device.qubit.ramp_sigma[qTest]],
+        ]
+        self.custom_pulse(self.cfg, kerr_pulse, prefix='kerr_')
+        # [[frequency], [gain], [length (us)], [phases],
+        # [drive channel], [shape], [ramp sigma]]
 
 
 class KerrHeatingProgram(KerrEngBaseProgram):

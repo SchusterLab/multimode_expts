@@ -405,7 +405,7 @@ class MM_base:
         '''
         if pulse_data is None:
             return None
-        
+
         sync_all_flag=True
 
         pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
@@ -437,7 +437,6 @@ class MM_base:
                                     phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
                                     gain=pulse_data[1][jj], 
                                     waveform="temp_gaussian"+str(jj)+prefix)
-                
 
 
             elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
@@ -523,12 +522,11 @@ class MM_base:
 
                     self.add_pulse(ch=self.tempch, 
                                 name=waveform,idata=maxv * iamps, qdata=maxv * qamps)
-                    
+
                     # if sync_all_flag:
                     #     self.sync_all(self.us2cycles(0.01))
                     # else:
                     #     sync_all_flag=True
-                    
 
                     self.setup_and_pulse(ch=self.tempch, style="arb",
                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
@@ -592,7 +590,7 @@ class MM_base:
         '''
         if pulse_data is None:
             return None
-        
+
         for jj in range(len(pulse_data[0])):
             # translate ch id to ch
             if pulse_data[4][jj] == 1:
@@ -646,13 +644,13 @@ class MM_base:
                     else: 
                         self.safe_regwi(self.page_flux_high_phase, self.r_flux_high_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
                     self.pulse(ch=self.tempch)
-                
+
                 # elif self.cfg.expt.preloaded_pulses and self.tempch == 2: # qubit reuse
                 #     self.safe_regwi(self.page_qubit_phase, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
                 #     self.pulse(ch=self.tempch)
                 else: 
                     # using arb waveform for flat top pulse
-                    
+
                     if self.cfg.expt.use_arb_waveform:
                         if self.tempch == 0:  # f0g1
                             self.setup_and_pulse(ch=self.tempch, style="arb", 
@@ -666,7 +664,7 @@ class MM_base:
                                                 phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
                                                 gain=pulse_data[1][jj],
                                             waveform="pi_m1s" + str(storage_no) + "_arb")
-                    else:                    
+                    else:
                         # using standard flat top pulse
                         self.setup_and_pulse(ch=self.tempch, style="flat_top", 
                                             freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
