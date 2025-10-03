@@ -111,9 +111,6 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.cavity_ch = self.man_ch
             self.cavity_ch_types = self.man_ch_type
 
-        self.q_rps = [self.ch_page(ch) for ch in self.cavity_ch] # get register page for f0g1 channel
-        self.stor_rps = 0 # get register page for storage channel
-
         if self.cfg.expt.storage_ramsey[0]: 
             # decide which channel do we flux drive on 
             sweep_pulse = [
@@ -122,8 +119,6 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
             self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
-            # get register page for that channel 
-            self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
 
         if self.cfg.expt.man_ramsey[0]: 
             sweep_pulse = [
@@ -136,10 +131,6 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             pulse_str = self.cfg.expt.custom_coupler_pulse
             freq = pulse_str[0][0]
             self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
-            # get register page for that channel 
-            self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
-        # if self.cfg.expt.custom_coupler_pulse[0]:
-        #     self.ramse
 
         if self.cfg.expt.echoes[0]: 
             mm_base_dummy = MM_dual_rail_base(self.cfg, self.soccfg)
@@ -153,18 +144,13 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             # print(self.echo_pulse)
 
         # declare registers for phase incrementing
-        self.r_wait = 3
-        self.r_wait_flux = 3
-        self.r_phase2 = 4
-        self.r_phase3 = 0
-        self.r_phase4 = 6
-        # if self.cavity_ch_types[qTest] == 'int4':
-        #     self.r_phase = self.sreg(self.cavity_ch[qTest], "freq")
-        #     self.r_phase3 = 5 # for storing the left shifted value
-        # else:
+        # self.r_wait = 3
+        # self.r_wait_flux = 3
+        # self.r_phase2 = 4
+        # self.r_phase3 = 0
+        # self.r_phase4 = 6
         if (self.cfg.expt.storage_ramsey[0] and self.cfg.expt.storage_ramsey[2]) or self.cfg.expt.coupler_ramsey:
             self.phase_update_channel = self.flux_ch
-            # self.q_rps = self.flux_rps
         elif self.cfg.expt.man_ramsey[0]:
             self.phase_update_channel = self.cavity_ch
 
@@ -175,8 +161,8 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             # print('Running f0g1 ramsey')
             self.phase_update_channel = self.cavity_ch
         # print(f'phase update channel: {self.phase_update_channel}')
-        self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
-        self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")
+        # self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
+        # self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")
 
         self.current_phase = 0   # in degree
 
@@ -199,11 +185,11 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                        sigma=sigma_2_cycles, length=sigma_2_cycles*4)
 
         # initialize wait registers
-        self.safe_regwi(self.phase_update_page[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
-        #self.safe_regwi(self.flux_rps, self.r_wait_flux, self.us2cycles(cfg.expt.start))
-        self.safe_regwi(self.phase_update_page[qTest], self.r_phase2, self.deg2reg(0)) 
-        self.safe_regwi(self.phase_update_page[qTest], self.r_phase3, 0) 
-        self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0) 
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
+        # #self.safe_regwi(self.flux_rps, self.r_wait_flux, self.us2cycles(cfg.expt.start))
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase2, self.deg2reg(0)) 
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase3, 0) 
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0) 
 
         self.sync_all(200)
         self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = False)
@@ -272,9 +258,20 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
 
         # wait advanced wait time
-        self.sync_all()
-        self.sync(self.phase_update_page[qTest], self.r_wait)
-        self.sync_all()
+        self.sync_all(self.us2cycles(0.01))
+        # self.sync(self.phase_update_page[qTest], self.r_wait)
+        ecfg = self.cfg.expt
+        kerr_pulse = [
+            [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],
+            [ecfg.kerr_gain],
+            [ecfg.kerr_length],
+            [0],
+            [self.qubit_chs[qTest]],
+            ['flat_top'],
+            [self.cfg.device.qubit.ramp_sigma[qTest]],
+        ]
+        self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
+        self.sync_all(self.us2cycles(0.01))
 
         # echoes 
         if cfg.expt.echoes[0]:
@@ -287,8 +284,8 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                     self.sync(self.phase_update_page[qTest], self.r_wait)
                     self.sync_all()
 
-        self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
-        self.sync_all(self.us2cycles(0.01))
+        # self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
+        # self.sync_all(self.us2cycles(0.01))
 
         if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
             self.pulse(ch=self.flux_ch[qTest])
@@ -298,7 +295,22 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.sync_all(self.us2cycles(0.01))
 
         if self.cfg.user_defined_pulse[0]:
-            self.pulse(ch=self.cavity_ch[qTest])
+            phase_adv = cfg.expt.ramsey_freq * cfg.expt.kerr_length *360 # in degree
+            if self.user_length == 0: # its a gaussian pulse
+                self.setup_and_pulse(ch=self.cavity_ch[qTest],
+                                     style="arb",
+                                     freq=self.user_freq,
+                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]), 
+                                     gain=self.user_gain,
+                                     waveform="user_test")
+            else: # its a flat top pulse
+                self.setup_and_pulse(ch=self.cavity_ch[qTest],
+                                     style="flat_top",
+                                     freq=self.user_freq,
+                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]), 
+                                     gain=self.user_gain,
+                                     length=self.user_length,
+                                     waveform="user_test")
             self.sync_all(self.us2cycles(0.01))
 
         # postpulse 
@@ -314,8 +326,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             # parity measurement
             if self.cfg.expt.parity_meas: 
                 self.custom_pulse(self.cfg, self.parity_meas_pulse, prefix='ParityMeas')
-
-        else: 
+        else:
             _freq = cfg.device.qubit.f_ge[qTest]
             _phase = 0
             _gain = cfg.device.qubit.pulses.slow_pi_ge.gain[qTest]
