@@ -21,10 +21,11 @@ class CavityQubitEnv(gym.Env):
                  psi_0=None, 
                  pulse_IQ =None,
                  nb_sample = None,
-                 N_points = None
+                 N_points = None, 
+                 n_times=200
                  ):
         super().__init__()
-        self.n_times = 200  # number of time steps for simulation
+        self.n_times = n_times # number of time steps for simulation
 
         if system_params is None:
             Kq = -0.2
@@ -373,3 +374,104 @@ class CavityQubitEnv(gym.Env):
         ax1.legend()
         ax2.legend()
         fig.tight_layout()
+
+
+class PredistortionFilter:
+    def __init__(self, N_amp=2, N_phase=2):
+        self.N_amp = N_amp
+        self.N_phase = N_phase
+        # Initialize polynomial coefficients
+        self.amp_coeffs = np.ones(N_amp)  # [a0, a1, ...]
+        self.phase_coeffs = np.zeros(N_phase)  # [b0, b1, ...]
+
+    def apply(self, I, Q, times, t_offset=0, plot=False):
+        """
+        Apply the predistortion filter to I/Q pulses
+        """
+        # Compute frequency-domain representation
+        # before anything we need to upsample the signal a lot to avoid aliasing
+
+
+        # Complex signal
+        V = I + 1j*Q
+
+        # Zero padding factor (adjust this)
+        pad_factor = 100
+        N = len(V)
+        N_fft = N * pad_factor  
+
+        # Compute FFT
+        dt = times[1] - times[0]  # original sample spacing
+        f = np.fft.fftfreq(N_fft, d=dt)
+        V_fft = np.fft.fft(V, n=N_fft)
+
+
+        # H_amp is A*(1 + a1*f*2*pi + a2*(f*2*pi)^2 + ...)
+        # H_phase is exp(i*(b0 + b1*f*2*pi + b2*(f*2*pi)^2 + ...))
+        f_scaled = f * 2 * np.pi  # scale frequency for polynomial evaluation
+        coeff_amp = self.amp_coeffs[::-1]
+        coeff_phase = self.phase_coeffs[::-1]
+        _coeff_amp = np.copy(coeff_amp)
+        _coeff_amp[-1] = 0  # ensure leading coeff is 0 for
+        H_amp = coeff_amp[-1]*(np.polyval(_coeff_amp, f_scaled) + 1)
+        H_phase = np.exp(1j*np.polyval(coeff_phase, f_scaled))
+        H = H_amp * H_phase
+        V_distorted = np.fft.fft(V, n=N_fft) * H
+        V_filtered = np.fft.ifft(V_distorted)
+
+        # Truncate back to original length
+        V_filtered = V_filtered[:N]
+
+
+
+        if plot: 
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.set_xlabel('Frequency (MHz)')
+            ax.set_ylabel('|V_fft|')
+            ax.set_title("FFT of input signal")
+            ax.plot(f*1e3, np.abs(V_fft))
+            # ax.plot(f*1e3, np.abs(H), label='|H|')
+            ax.plot(f*1e3, np.abs(V_distorted), label='|V_distorted|')
+            ax.legend()
+            ax.set_xlim(-50, 50)
+            fig.tight_layout()
+
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.set_xlabel('Time (ns)')
+            ax.set_ylabel('Amplitude')
+            ax.set_title("Input and distorted signals")
+            ax.plot(times*1e3, I, label='I input', color='tab:blue')
+            ax.plot(times*1e3, Q, label='Q input', color='tab:orange')
+            ax.plot(times*1e3, V_filtered.real, label='I filtered', linestyle='--', color='tab:blue')
+            ax.plot(times*1e3, V_filtered.imag, label='Q filtered', linestyle='--', color='tab:orange')
+            fig.tight_layout()
+            ax.legend()
+
+
+        # Apply optional time offset
+        n_shift = int(t_offset / (times[1]-times[0]))
+        V_filtered = np.roll(V_filtered, n_shift)
+        if n_shift > 0:
+            V_filtered[:n_shift] = 0
+        elif n_shift < 0:
+            V_filtered[n_shift:] = 0
+
+        return V_filtered.real, V_filtered.imag
+    
+# helper function 
+
+def unscale(x_scaled, bounds):
+    """Map CMA-ES [0,1] vector to real parameter bounds."""
+    return np.array([b[0] + xi * (b[1] - b[0]) for xi, b in zip(x_scaled, bounds)])
+
+def scale(x, bounds):
+    """Map real parameter bounds to CMA-ES [0,1] vector."""
+    return np.array([(xi - b[0]) / (b[1] - b[0]) for xi, b in zip(x, bounds)])
+
+
+
+
+
+
+
+

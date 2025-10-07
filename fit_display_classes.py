@@ -277,7 +277,7 @@ class RamseyFitting(GeneralFitting):
             if self.cfg.expt.echoes[0]: # if there are echoes
                 print('Echoes in the data')
                 print(data['xpts'][:5])
-                data['xpts'] *= (1 + attrs['config']['expt']['echoes'][1]) # multiply by the number of echoes
+                data['xpts'] *= (1 + self.cfg.expt['echoes'][1]) # multiply by the number of echoes
                 print(data['xpts'][:5])
             else:
                 print('No echoes in the data')

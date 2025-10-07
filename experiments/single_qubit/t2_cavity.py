@@ -83,12 +83,16 @@ class CavityRamseyProgram(MMRAveragerProgram):
         #     self.ramse
 
         if self.cfg.expt.echoes[0]: 
-            mm_base_dummy = MM_dual_rail_base(self.cfg)
+            mm_base_dummy = MM_dual_rail_base(self.cfg, self.soccfg)
             if self.cfg.expt.storage_ramsey[0]:
                 prep_stor = mm_base_dummy.prep_random_state_mode(3, self.cfg.expt.storage_ramsey[1])  # prepare the storage state + 
             elif self.cfg.expt.man_ramsey[0]:
-                prep_stor = mm_base_dummy.prep_man_photon(man_no=self.cfg.expt.man_ramsey[1], hpi = True)
+                # prep_stor = mm_base_dummy.prep_man_photon(man_no=self.cfg.expt.man_ramsey[1], hpi = True)
+                prep_stor = mm_base_dummy.prep_fock_state(man_no=self.cfg.expt.man_ramsey[1], 
+                                                          photon_no_list=[0,1], broadband=True) # prepare the manipulate state +   
+
             get_stor = prep_stor[::-1] # get the storage state
+            print('Echo pulse:', get_stor + prep_stor)
             self.echo_pulse_str = get_stor + prep_stor # echo pulse is the sum of the two pulse sequences
             self.echo_pulse = self.get_prepulse_creator(self.echo_pulse_str).pulse.tolist()
             # print(self.echo_pulse)
