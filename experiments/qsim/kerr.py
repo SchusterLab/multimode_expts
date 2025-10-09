@@ -171,6 +171,9 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             # print('This is designed for displacing manipulate mode, not for swapping pi/2 into man')
             self.user_freq = self.freq2reg(cfg.expt.user_defined_pulse[1], gen_ch=self.cavity_ch[qTest])
             self.user_gain = cfg.expt.user_defined_pulse[2]
+            # dirty patch...
+            if 'displace_gain' in cfg.expt.keys():
+                self.user_gain = cfg.expt.displace_gain
             self.user_sigma = self.us2cycles(cfg.expt.user_defined_pulse[3], gen_ch=self.cavity_ch[qTest])
             self.user_length  = self.us2cycles(cfg.expt.user_defined_pulse[4], gen_ch=self.cavity_ch[qTest])
             # print(f"if user length is 0, then it is a gaussian pulse with sigma {self.user_sigma} cycles")
