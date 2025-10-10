@@ -91,6 +91,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.MM_base_initialize()
         qTest = 0 # only one qubit for now
 
+        self.swap_ds = self.cfg.expt.ds_thisrun
         # choose the channel on which ramsey will run 
         if cfg.expt.user_defined_pulse[5] == 1:
             self.cavity_ch = self.flux_low_ch
@@ -264,15 +265,26 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.sync_all(self.us2cycles(0.01))
         # self.sync(self.phase_update_page[qTest], self.r_wait)
         ecfg = self.cfg.expt
-        kerr_pulse = [
-            [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],
-            [ecfg.kerr_gain],
-            [ecfg.kerr_length],
-            [0],
-            [self.qubit_chs[qTest]],
-            ['flat_top'],
-            [self.cfg.device.qubit.ramp_sigma[qTest]],
-        ]
+        if ecfg.drive_coupler:
+            kerr_pulse = [
+                [self.swap_ds.get_freq('M1-C') + ecfg.kerr_detune],
+                [ecfg.kerr_gain],
+                [ecfg.kerr_length],
+                [0],
+                [self.cfg.hw.soc.dacs.flux_low.ch[0]],
+                ['flat_top'],
+                [0.005],
+            ]
+        else:
+            kerr_pulse = [
+                [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],
+                [ecfg.kerr_gain],
+                [ecfg.kerr_length],
+                [0],
+                [self.qubit_chs[qTest]],
+                ['flat_top'],
+                [self.cfg.device.qubit.ramp_sigma[qTest]],
+            ]
         self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
         self.sync_all(self.us2cycles(0.01))
 
