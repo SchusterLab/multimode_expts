@@ -21,11 +21,6 @@ We need to know the following effects of such a tone:
 - Qubit AC Stark shift: find the phase correction for the second qubit pi/2 pulse
   Q: do we need this for qsim if we never use non-pi gates on QB?
 - Cavity Ramsey: extract the effective Kerr under this drive
-
-A base class that extracts everything needed to do the Kerr pump pulse in init
-For heating, this is just directly measuring the qubit again at the end
-For Stark shift, this is a Ramsey on the qubit
-For cavity Kerr, this is CavityRamseyProgram adapted with the pulse applied during the wait
 """
 
 class KerrEngBaseProgram(QsimBaseProgram):
@@ -62,11 +57,6 @@ class KerrEngBaseProgram(QsimBaseProgram):
         self.custom_pulse(self.cfg, kerr_pulse, prefix='kerr_')
         # [[frequency], [gain], [length (us)], [phases],
         # [drive channel], [shape], [ramp sigma]]
-
-
-class KerrHeatingProgram(KerrEngBaseProgram):
-    def body(self):
-        pass
 
 
 class KerrStarkProgram(KerrEngBaseProgram):
