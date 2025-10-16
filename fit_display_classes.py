@@ -447,6 +447,13 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
         if not fit: return
 
+        # Controls for robustness and debugging
+        debug = kwargs.get('debug', False)
+        track_peaks = kwargs.get('track_peaks', True)
+        guide_window_frac = kwargs.get('guide_window_frac', 0.35)  # fraction of previous spacing
+        if debug:
+            print(f"[analyze] debug=True, track_peaks={track_peaks}, guide_window_frac={guide_window_frac}")
+
         gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha[0]
         x = data['xpts'][0]
         y = data['gain_list']
@@ -470,8 +477,21 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         time_peak_g = []
         time_peak_e = []
         time_peaks = [time_peak_g, time_peak_e]
+
+        # Maintain per-pop tracking state across gain slices
+        last_peaks_idx = [None, None]  # [g, e] last detected peak indices
+        last_peak_distance_idx = [None, None]  # mean peak spacing in index units
+        last_T_fit = [np.nan, np.nan]
+        last_t0_fit = [np.nan, np.nan]
+
+        # plot the slices and threshold to debug 
+
         for i_gain in range(len(y)):
             for i_pop, data_set in enumerate([g_z, e_z]):
+                ax = None
+                if debug:
+                    fig, ax = plt.subplots(1, 1)
+
                 # distinguish e and g here and play with the peak distance parameter
                 _pop = data_set[i_gain]
                 if i_pop == 0:
@@ -481,41 +501,90 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                 pop_norm = pop_norms[i_pop]
                 pop_norm[i_gain] = _pop_norm
 
-
                 signal_smooth = gaussian_filter1d(pop_norm[i_gain], sigma=1.5)
+                if debug:
+                    ax.plot(x, signal_smooth, label='smoothed')
+                    ax.plot(x, pop_norm[i_gain], label='raw')
                 # Calculate adaptive thresholds
-                peak_height = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.5 + np.min(signal_smooth)
+                peak_height = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.4 + np.min(signal_smooth)
                 peak_prominence = (np.max(signal_smooth) - np.min(signal_smooth)) * 0.2
-                # ax.axhline(peak_height, color='r', linestyle='--', label='Peak Height Threshold')
-                # ax.axhline(peak_prominence, color='g', linestyle='--', label='Peak Prominence Threshold')
-                if i_gain == 0:
+                if debug:
+                    ax.axhline(peak_height, color='r', linestyle='--', label='height thr')
+                    ax.axhline(peak_prominence, color='g', linestyle='--', label='prom thr')
+
+                # Use previous spacing as a guide for minimum distance in index units
+                if i_gain == 0 or last_peak_distance_idx[i_pop] is None:
                     peak_distance = None
-                # Find peaks
+                else:
+                    # be a bit permissive to allow slow drift
+                    peak_distance = max(1, int(np.round(0.8 * last_peak_distance_idx[i_pop])))
+
+                # Find peaks (unguided)
                 peaks, props = find_peaks(
                     signal_smooth,
                     height=peak_height,
                     prominence=peak_prominence,
                     distance=peak_distance
                 )
-                peak_distance=np.mean(np.diff(peaks)*0.5)
-
-                # ax.plot(x[peaks], signal_smooth[peaks], "x", label='Detected Peaks')
-
+                # Estimate spacing for next iteration
                 if len(peaks) >= 2:
-                    n = np.arange(len(peaks))
-                    popt, _ = curve_fit(linear_model, n, x[peaks])
+                    last_peak_distance_candidate = np.mean(np.diff(peaks))
+                else:
+                    last_peak_distance_candidate = last_peak_distance_idx[i_pop]
+
+                if debug and ax is not None:
+                    ax.plot(x[peaks], signal_smooth[peaks], "x", label='detected')
+
+                # If requested, use previous peaks to guide detection for this slice
+                guided_peaks = None
+                if track_peaks and last_peaks_idx[i_pop] is not None and last_peak_distance_idx[i_pop] is not None:
+                    w = int(max(2, np.round(guide_window_frac * last_peak_distance_idx[i_pop])))
+                    candidates = []
+                    for pidx in last_peaks_idx[i_pop]:
+                        lo = max(0, pidx - w)
+                        hi = min(signal_smooth.size, pidx + w + 1)
+                        if hi > lo:
+                            local = signal_smooth[lo:hi]
+                            off = int(np.argmax(local))
+                            candidates.append(lo + off)
+                    if len(candidates) >= 2:
+                        guided_peaks = np.array(sorted(np.unique(candidates)))
+                        if debug and ax is not None:
+                            ax.plot(x[guided_peaks], signal_smooth[guided_peaks], 'o', mfc='none', label='guided')
+                if debug and ax is not None:
+                    ax.set_title(f"Slice {i_gain} - {'g' if i_pop==0 else 'e'}")
+                    ax.legend(loc='best')
+                    plt.show()
+
+                # Choose peaks to use
+                use_peaks = peaks
+                if len(use_peaks) < 2 and guided_peaks is not None and len(guided_peaks) >= 2:
+                    use_peaks = guided_peaks
+
+                # Update tracking state for next slice
+                if len(use_peaks) >= 2:
+                    last_peaks_idx[i_pop] = use_peaks
+                    last_peak_distance_idx[i_pop] = last_peak_distance_candidate if last_peak_distance_candidate is not None else np.mean(np.diff(use_peaks))
+                # If still no peaks found, keep previous tracking as-is
+
+                if len(use_peaks) >= 2:
+                    n = np.arange(len(use_peaks))
+                    popt, _ = curve_fit(linear_model, n, x[use_peaks])
                     T_fit, t0_fit = popt
                     omega_fit = 2 * np.pi / T_fit
-                    time_peaks[i_pop].append(x[peaks])
+                    last_T_fit[i_pop] = T_fit
+                    last_t0_fit[i_pop] = t0_fit
+                    time_peaks[i_pop].append(x[use_peaks])
                 else:
                     # Not enough peaks to perform a fit
                     popt = [np.nan, np.nan]  # or some default/fallback behavior
                     omega_fit = np.nan
+                    t0_fit = np.nan
 
                 omega_vec[i_gain, i_pop] = omega_fit
                 t0_vec[i_gain, i_pop] = t0_fit
 
-                if omega_fit is not np.nan:
+                if not np.isnan(omega_fit):
                     gain_to_plot[i_pop] = np.append(gain_to_plot[i_pop], y[i_gain])
 
 
@@ -528,6 +597,45 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         valid_g = np.isfinite(deltaf_g) & np.isfinite(x_fit)
         valid_e = np.isfinite(deltaf_e) & np.isfinite(x_fit)
 
+    # Optional per-curve selection of points to fit
+        N = x_fit.size
+        sel_mask_g = np.ones(N, dtype=bool)
+        sel_mask_e = np.ones(N, dtype=bool)
+
+        # Accept boolean masks directly
+        if 'fit_mask_g' in kwargs and kwargs['fit_mask_g'] is not None:
+            m = np.asarray(kwargs['fit_mask_g'])
+            if m.dtype == bool and m.size == N:
+                sel_mask_g = m.copy()
+        if 'fit_mask_e' in kwargs and kwargs['fit_mask_e'] is not None:
+            m = np.asarray(kwargs['fit_mask_e'])
+            if m.dtype == bool and m.size == N:
+                sel_mask_e = m.copy()
+
+        print('kwargs', kwargs)
+
+        # Or accept indices
+        if 'fit_indices_g' in kwargs and kwargs['fit_indices_g'] is not None:
+            idx = np.asarray(kwargs['fit_indices_g'], dtype=int)
+            if idx.size > 0:
+                mask = np.zeros(N, dtype=bool)
+                mask[np.clip(idx, 0, N-1)] = True
+                sel_mask_g = mask
+        if 'fit_indices_e' in kwargs and kwargs['fit_indices_e'] is not None:
+            idx = np.asarray(kwargs['fit_indices_e'], dtype=int)
+            if idx.size > 0:
+                mask = np.zeros(N, dtype=bool)
+                mask[np.clip(idx, 0, N-1)] = True
+                sel_mask_e = mask
+
+        # Or accept ranges in alpha^2 units
+        if 'fit_alpha2_range_g' in kwargs and kwargs['fit_alpha2_range_g'] is not None:
+            lo, hi = kwargs['fit_alpha2_range_g']
+            sel_mask_g &= (x_fit >= lo) & (x_fit <= hi)
+        if 'fit_alpha2_range_e' in kwargs and kwargs['fit_alpha2_range_e'] is not None:
+            lo, hi = kwargs['fit_alpha2_range_e']
+            sel_mask_e &= (x_fit >= lo) & (x_fit <= hi)
+
         # Initialize fit variables
         popt_g = [np.nan, np.nan]
         popt_e = [np.nan, np.nan]
@@ -535,8 +643,19 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         Kerr_err = chi_err = chi2_err = detuning_g_err = np.nan
 
         # Fit ground state
-        if np.sum(valid_g) >= 2:
-            popt_g, pcov_g = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_g], deltaf_g[valid_g])
+        mask_g = valid_g & sel_mask_g
+        # Warn if excited fit selection is requested but not enabled
+        if (kwargs.get('fit_mask_e') is not None or kwargs.get('fit_indices_e') is not None or kwargs.get('fit_alpha2_range_e') is not None) and not self.cfg.expt.do_g_and_e:
+            print('[analyze] Note: do_g_and_e is False; ignoring excited-state fit selectors.')
+
+        # Report selection summary when debugging
+        if debug:
+            print(f"[analyze] Ground fit candidates: total={N}, valid={np.sum(valid_g)}, selected={np.sum(sel_mask_g)}")
+            if self.cfg.expt.do_g_and_e:
+                print(f"[analyze] Excited fit candidates: total={N}, valid={np.sum(valid_e)}, selected={np.sum(sel_mask_e)}")
+
+        if np.sum(mask_g) >= 2:
+            popt_g, pcov_g = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[mask_g], deltaf_g[mask_g])
             detuning_g = popt_g[1]
             Kerr = -popt_g[0] 
             perr_g = np.sqrt(np.diag(pcov_g))
@@ -545,7 +664,12 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
             # Fit excited state
             if self.cfg.expt.do_g_and_e:
-                popt_e, pcov_e = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[valid_e], deltaf_e[valid_e])
+                mask_e = valid_e & sel_mask_e
+                if np.sum(mask_e) >= 2:
+                    popt_e, pcov_e = curve_fit(lambda n, T, t0: linear_model(n, T, t0), x_fit[mask_e], deltaf_e[mask_e])
+                else:
+                    popt_e = [np.nan, np.nan]
+                    pcov_e = np.array([[np.nan, np.nan],[np.nan, np.nan]])
                 perr_e = np.sqrt(np.diag(pcov_e))
                 chi = -(popt_e[1] - detuning_g)
                 chi2 = -0.5 * (popt_e[0] + Kerr)
@@ -576,6 +700,14 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
             data['chi2_err'] = chi2_err
         data['gain_to_plot_g'] = gain_to_plot[0]
         data['gain_to_plot_e'] = gain_to_plot[1]
+        # Store masks for optional display/debug
+        data['fit_mask_g'] = (valid_g & sel_mask_g)
+        data['fit_mask_e'] = (valid_e & sel_mask_e)
+        data['fit_used_indices_g'] = np.where(valid_g & sel_mask_g)[0]
+        if self.cfg.expt.do_g_and_e:
+            data['fit_used_indices_e'] = np.where(valid_e & sel_mask_e)[0]
+        else:
+            data['fit_used_indices_e'] = np.array([], dtype=int)
 
 
     def display(self, data=None, fit=True, vline=None, save_fig=False, title_str='CavityRamseyGainSweep', **kwargs):

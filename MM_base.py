@@ -965,10 +965,11 @@ class MM_base:
             theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
             theta_2 = theta_2 % 360
 
-            parity_str = [['multiphoton', 'g0-e0', 'hpi', 0],
+            parity_str = [
+                    ['multiphoton', 'g0-e0', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
-                    ['multiphoton', 'g0-e0', 'hpi', theta_2]]
-                    # ['multiphoton', 'g0-e0', 'hpi', second_phase]]
+                    ['multiphoton', 'g0-e0', 'hpi', theta_2]
+                    ]
         if return_pulse:
             # mm_base = MM_rb_base(cfg = self.cfg)
             creator = self.get_prepulse_creator(parity_str)
@@ -1333,6 +1334,8 @@ class prepulse_creator2:
         # self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
 
         cfg = self.cfg
+
+
         state_start = transition_name[0]
         state_end = transition_name[3]
         photon_no_start = int(transition_name[1])
@@ -1345,9 +1348,10 @@ class prepulse_creator2:
         elif state_start == 'f':
             assert state_end == 'g', "transition name should be fn-gn+1"
             transition = 'fn-gn+1'
-            if photon_no_start == 0:
-                pulse_param = ('M1', pulse_name, phase)
-                return self.man(pulse_param)
+            # if photon_no_start == 0:
+            #     pulse_param = ('M1', pulse_name, phase)
+            #     return self.man(pulse_param)
+            
 
         qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]], 
                                [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]], 

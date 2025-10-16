@@ -67,9 +67,11 @@ class CavityRamseyProgram(MMRAveragerProgram):
             self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
 
         if self.cfg.expt.man_ramsey[0]: 
-            sweep_pulse = [
-                ['man', 'M'+ str(self.cfg.expt.man_ramsey[1]) , 'pi', 0], 
-            ]
+            print('using multiphoton conf for the f0-g1')
+            sweep_pulse = [['multiphoton', 'f0-g1', 'pi', 0]]
+            # sweep_pulse = [
+            #     ['man', 'M'+ str(self.cfg.expt.man_ramsey[1]) , 'pi', 0], 
+            # ]
             self.creator = self.get_prepulse_creator(sweep_pulse)
 
         if self.cfg.expt.coupler_ramsey: 
@@ -552,7 +554,8 @@ class CavityRamseyGainSweepExperiment(Experiment):
             cavity_ramsey_analysis = CavityRamseyGainSweepFitting(
                 data, config=self.cfg, 
             )
-            cavity_ramsey_analysis.analyze(fit=fit)
+            # forward any selection/debug kwargs to the fitter
+            cavity_ramsey_analysis.analyze(fit=fit, **kwargs)
 
         return cavity_ramsey_analysis.data
 
@@ -571,8 +574,10 @@ class CavityRamseyGainSweepExperiment(Experiment):
         else:
             save_fit = False
 
+        # forward any extra kwargs to display as well
         cavity_ramsey_analysis.display(
-            save_fig=save_fit
+            save_fig=save_fit,
+            **{k: v for k, v in kwargs.items() if k != 'save_fig'}
         )
 
 

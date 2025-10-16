@@ -63,7 +63,6 @@ class ParityDelayProgram(MMAveragerProgram):
             theta_2 =180 + cfg.expt.length_placeholder*2*np.pi*cfg.device.manipulate.revival_stark_shift[qTest]*180/np.pi # 180 degrees phase shift for the second half of the parity pulse
             # define the angle modulo 360
             theta_2 = theta_2 % 360
-            print(f"theta_2: {theta_2} degrees")
             theta_2_reg = self.deg2reg(theta_2, self.qubit_chs[qTest])
             self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=_sigma, length=_sigma*4)
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=f_ge_reg, phase=self.deg2reg(0), gain=gain, waveform="hpi_qubit_ge")

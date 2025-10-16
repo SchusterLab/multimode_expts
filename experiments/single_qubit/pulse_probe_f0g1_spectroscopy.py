@@ -8,6 +8,7 @@ from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
 from MM_base import MMRAveragerProgram
+from experiments.single_qubit.pulse_probe_ef_spectroscopy import PulseProbeEFSpectroscopyProgram
 
 class PulseProbeF0g1SpectroscopyProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -171,6 +172,8 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
         super().save_data(data=data)
 
 
+
+
 class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
     """
     Pulse probe EF power sweep spectroscopy experiment
@@ -302,3 +305,191 @@ class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
+
+
+# ----------------------------------------------------------------------
+# 2D Experiment: PulseProbe f0g1 spectroscopy vs DC flux (single H5 file)
+# ----------------------------------------------------------------------
+class PulseProbeF0g1SpectroscopyFluxSweepExperiment(Experiment):
+    """
+    2D sweep of f0g1 spectroscopy vs DC flux current using Yokogawa GS200.
+
+    Experimental Config
+    expt = dict(
+        # Frequency axis (handled inside the f0g1 program)
+        start: start frequency (Hz or MHz per your setup)
+        step: frequency step
+        expts: number of frequency points
+        reps: averages per frequency point
+        rounds: sweep repetitions
+        length: f0g1 const pulse length [us]
+        gain: f0g1 const pulse gain [DAC units]
+        qubits: [qubit_index]
+
+        # Current axis (outer sweep)
+        curr_start: starting current [A]
+        curr_step: step [A]
+        curr_expts: number of current points
+
+        # Optional safety/driver
+        yokogawa_address: '192.168.137.148'
+        sweeprate: 0.002  # A/s
+        safety_limit: 0.03  # |A|
+    )
+    """
+
+    def __init__(self, soccfg=None, path='', prefix='PulseProbeF0g1SpectroscopyFluxSweep', config_file=None, progress=None):
+        super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
+
+    def acquire(self, progress=False):
+        # Resolve current sweep params with defaults
+        ex = self.cfg.expt
+        curr_start = float(getattr(ex, 'curr_start', 0.0))*1e-3
+        curr_step = float(getattr(ex, 'curr_step', 0.001))*1e-3
+        curr_expts = int(getattr(ex, 'curr_expts', 11))
+        address = getattr(ex, 'yokogawa_address', '192.168.137.148')
+        sweeprate = float(getattr(ex, 'sweeprate', 2))*1e-3
+        safety_limit = float(getattr(ex, 'safety_limit', 30))*1e-3
+
+        currents = curr_start + curr_step * np.arange(curr_expts, dtype=float) # to mA
+        # Initialize Yokogawa
+        try:
+            from slab.instruments import YokogawaGS200
+        except Exception as e:
+            raise ImportError("YokogawaGS200 instrument driver not available. Ensure slab/instruments are installed.") from e
+
+        dcflux = YokogawaGS200(address=address)
+        dcflux.set_output(True)
+        dcflux.set_mode('current')
+        dcflux.ramp_current(0.000, sweeprate=sweeprate)
+
+        avgi_rows = []
+        avgq_rows = []
+        amps_rows = []
+        phases_rows = []
+        xpts_ref = None
+
+        try:
+            for idx, target in enumerate(currents):
+                # safety clip
+                clipped = max(min(float(target), safety_limit), -safety_limit)
+                if clipped != float(target):
+                    print(f"[WARN] Requested current {target:.6f} A exceeds ±{safety_limit:.3f} A. Clipped to {clipped:.6f} A.")
+                    target = clipped
+
+                print(f"{idx}: Setting DC flux to {target*1e3:.3f} mA")
+                dcflux.ramp_current(target, sweeprate=sweeprate)
+
+                # Run the f0g1 frequency sweep program at this current
+                # Pass current through cfg so it can be saved
+                try:
+                    ex['current'] = float(target)
+                except Exception:
+                    setattr(ex, 'current', float(target))
+
+                spec = PulseProbeF0g1SpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
+                x_pts, avgi, avgq = spec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress)
+
+                # Flatten to 1D
+                avgi = avgi[0][0]
+                avgq = avgq[0][0]
+                amps = np.abs(avgi + 1j * avgq)
+                phases = np.angle(avgi + 1j * avgq)
+
+                if xpts_ref is None:
+                    xpts_ref = np.array(x_pts).copy()
+
+                avgi_rows.append(np.array(avgi))
+                avgq_rows.append(np.array(avgq))
+                amps_rows.append(np.array(amps))
+                phases_rows.append(np.array(phases))
+        finally:
+            try:
+                dcflux.ramp_current(0.000, sweeprate=sweeprate)
+            except Exception:
+                pass
+
+        # Stack into 2D arrays (currents x freqs)
+        data = {
+            'fpts': np.array(xpts_ref),
+            'currents': np.array(currents),
+            'avgi': np.array(avgi_rows),
+            'avgq': np.array(avgq_rows),
+            'amps': np.array(amps_rows),
+            'phases': np.array(phases_rows),
+        }
+
+        self.data = data
+        return data
+
+    def analyze(self, data=None, fit=False, **kwargs):
+        # Placeholder: 2D fits can be added later; right now we just return the data.
+        if data is None:
+            data = self.data
+        return data
+
+    def display(self, data=None, which: str = 'amps', **kwargs):
+        if data is None:
+            data = self.data
+
+        fpts = data['fpts']
+        currents = data['currents']*1e3
+        Z = data.get(which, data['amps'])
+
+        # Frequency axis: add mixer_freq if present (similar to 1D display)
+        if 'mixer_freq' in self.cfg.hw.soc.dacs.qubit:
+            faxis = self.cfg.hw.soc.dacs.qubit.mixer_freq + fpts
+        else:
+            faxis = fpts
+
+        plt.figure(figsize=(10, 6))
+        plt.title(f"f0g1 Spectroscopy vs Flux ({which})")
+        plt.xlabel("Pulse Frequency")
+        plt.ylabel("Flux current [mA]")
+        plt.imshow(
+            np.flip(Z, 0),
+            cmap='viridis',
+            extent=[faxis[0], faxis[-1], currents[0], currents[-1]],
+            aspect='auto')
+        plt.colorbar(label=which)
+        plt.tight_layout()
+        plt.show()
+
+        
+
+    def save_data(self, data=None):
+        print(f"Saving {self.fname}")
+        super().save_data(data=data)
+        return self.fname
+
+
+# ---------------------------------------------------------------
+# Convenience runner: instantiate the 2D Experiment and save one H5
+# ---------------------------------------------------------------
+def run_pulseprobe_f0g1_spectroscopy_vs_flux(
+    soccfg=None,
+    path: str = '',
+    prefix: str = 'PulseProbeF0g1SpectroscopyFluxSweep',
+    config_file: str = None,
+    progress: bool = False,
+    curr_start: float = 0.0,
+    curr_step: float = 0.001,
+    curr_expts: int = 11,
+    yokogawa_address: str = '192.168.137.148',
+    sweeprate: float = 0.002,
+    safety_limit: float = 0.03,
+    save: bool = True,
+):
+    # Prepare an experiment instance and push sweep params into cfg.expt
+    exp = PulseProbeF0g1SpectroscopyFluxSweepExperiment(
+        soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress
+    )
+    exp.cfg.expt.curr_start = curr_start
+    exp.cfg.expt.curr_step = curr_step
+    exp.cfg.expt.curr_expts = curr_expts
+    exp.cfg.expt.yokogawa_address = yokogawa_address
+    exp.cfg.expt.sweeprate = sweeprate
+    exp.cfg.expt.safety_limit = safety_limit
+
+    exp.go(analyze=False, display=False, progress=progress, save=save)
+    return getattr(exp, 'fname', None)
