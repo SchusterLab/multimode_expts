@@ -21,7 +21,7 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -33,22 +33,6 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         qTest = self.qubits[0]
 
         self.MM_base_initialize()
-
-        # self.adc_chs = cfg.hw.soc.adcs.readout.ch
-        # self.res_chs = cfg.hw.soc.dacs.readout.ch
-        # self.res_ch_types = cfg.hw.soc.dacs.readout.type
-        # self.qubit_chs = cfg.hw.soc.dacs.qubit.ch
-        # self.qubit_ch_types = cfg.hw.soc.dacs.qubit.type
-        # self.man_ch = cfg.hw.soc.dacs.manipulate_in.ch
-        # self.man_ch_type = cfg.hw.soc.dacs.manipulate_in.type
-        # self.flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
-        # self.flux_low_ch_type = cfg.hw.soc.dacs.flux_low.type
-        # self.flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        # self.flux_high_ch_type = cfg.hw.soc.dacs.flux_high.type
-        # self.f0g1_ch = cfg.hw.soc.dacs.sideband.ch
-        # self.f0g1_ch_type = cfg.hw.soc.dacs.sideband.type
-        # self.storage_ch = cfg.hw.soc.dacs.storage_in.ch
-        # self.storage_ch_type = cfg.hw.soc.dacs.storage_in.type
 
         if self.cfg.expt.flux_drive[0] == 'low':
             self.rf_ch = cfg.hw.soc.dacs.flux_low.ch
@@ -148,7 +132,6 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
 
-        
         ## ALL ACTIVE RESET REQUIREMENTS
         # read val definition
         self.r_read_q = 3   # ge active reset register
@@ -167,7 +150,7 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         self.safe_regwi(0, self.r_counter, 0)  # init counter val to 0
 
         self.sync_all(self.us2cycles(0.2))
-    
+
     def body(self):
         cfg = AttrDict(self.cfg)
         qTest = self.qubits[0]
@@ -181,7 +164,6 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre')
         # RF flux modulation
 
-
         self.setup_and_pulse(ch=self.rf_ch[0], style="const", freq=self.freqreg, phase=0, gain=self.cfg.expt.flux_drive[2], length=self.us2cycles(self.cfg.expt.flux_drive[3]))
 
         self.sync_all()  # align channels
@@ -189,8 +171,6 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         # post pulse
         if cfg.expt.postpulse:
             self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post')
-            
-
 
         # align channels and wait 50ns and measure
         self.sync_all(self.us2cycles(0.05))
@@ -235,17 +215,6 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
                                     {key3: [value3]*num_qubits_sample})
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
-        # q_ind = self.cfg.expt.qubit
-        # for subcfg in (self.cfg.device.manipulate, self.cfg.device.storage, self.cfg.device.qubit, self.cfg.hw.soc):
-        #     for key, value in subcfg.items() :
-        #         if isinstance(value, list):
-        #             subcfg.update({key: value[q_ind]})
-        #         elif isinstance(value, dict):
-        #             for key2, value2 in value.items():
-        #                 for key3, value3 in value2.items():
-        #                     if isinstance(value3, list):
-        #                         value2.update({key3: value3[q_ind]})       
-                                  
 
         data={"xpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[], "idata":[], "qdata":[]}
         for f in tqdm(xpts, disable=not progress):
@@ -282,7 +251,7 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
     def analyze(self, data=None, fit=False, findpeaks=False, verbose=True, fitparams=None, **kwargs):
         if data is None:
             data=self.data
-            
+
         if fit:
             # fitparams = [f0, Qi, Qe, phi, scale]
             xdata = data["xpts"][1:-1]
@@ -302,12 +271,12 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
                     print(f'\tQ0: {1/(1/Qi+1/Qe)}')
                     print(f'\tkappa [MHz]: {f0*(1/Qi+1/Qe)}')
                     print(f'\tphi [radians]: {phi}')
-            
+
         if findpeaks:
             maxpeaks, minpeaks = dsfit.peakdetect(data['amps'][1:-1], x_axis=data['xpts'][1:-1], lookahead=30, delta=5*np.std(data['amps'][:5]))
             data['maxpeaks'] = maxpeaks
             data['minpeaks'] = minpeaks
-            
+
         return data
 
     def display(self, data=None, fit=True, findpeaks=False, **kwargs):
@@ -335,10 +304,9 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
         plt.subplot(313, xlabel="RF Frequency [MHz]", ylabel="Phases [ADC units]")
         plt.plot(xpts, data["phases"][1:-1],'o-')
         plt.show()
-        
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
 
 
-# ====================================================== #

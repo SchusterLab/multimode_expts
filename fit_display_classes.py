@@ -200,7 +200,8 @@ class GeneralFitting:
 
         Ilist = []
         Qlist = []
-        for ii in range(len(I_data) - 1):
+        # for ii in range(len(I_data) - 1): # why was this done???
+        for ii in range(len(I_data)):
             Ig, Qg = self.filter_data_IQ(I_data[ii], Q_data[ii], self.threshold)
             Ilist.append(np.mean(Ig))
             Qlist.append(np.mean(Qg))
@@ -287,23 +288,16 @@ class RamseyFitting(GeneralFitting):
 
         start_idx = None
         end_idx = None
-        if self.cfg.expt.active_reset:
+        if 'avgi' not in data.keys():
             Ilist, Qlist = self.post_select_raverager_data(data)
             data['avgi'] = Ilist[start_idx:end_idx]
             data['avgq'] = Qlist[start_idx:end_idx]
-            xpts = data['xpts'][:-1][start_idx:end_idx]
-            #data['amps'] = data['amps'][:-1][start_idx :end_idx] # adjust since active reset throws away the last data point
-        else:
-            data['avgi'] = data['avgi'][start_idx:end_idx]
-            data['avgq'] = data['avgq'][start_idx:end_idx]
-            xpts = data['xpts'][start_idx:end_idx]
+        xpts = data['xpts'][start_idx:end_idx]
 
         if fit:
-            # if fitparams is None:
-            #     fitparams = [200, 0.2, 0, 200, None, None]
             if fitparams is None:
                 fitparams = [None, self.cfg.expt.ramsey_freq, None, None, None, None]
-            print("length", len(data["xpts"]), len(data["avgi"]))
+                # fitparams = [200, 0.2, 0, 200, None, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams)
             # p_amps, pCov_amps = fitter.fitdecaysin(xpts[:-1], data["amps"][:-1], fitparams=fitparams)
@@ -350,16 +344,16 @@ class RamseyFitting(GeneralFitting):
             if 'user_defined_pulse' in self.cfg.expt and self.cfg.expt.user_defined_pulse[0]:
                 f_pi_test = self.cfg.expt.user_defined_pulse[1]
                 print(f'Using user defined frequency: {f_pi_test} MHz')
-        
+
         if getattr(self.cfg.expt, "f0g1_cavity", 0) > 0:
-            ii = 0
-            jj = 0
-            if self.cfg.expt.f0g1_cavity == 1:
-                ii = 1
-                jj = 0
-            if self.cfg.expt.f0g1_cavity == 2:
-                ii = 0
-                jj = 1
+            # ii = 0
+            # jj = 0
+            # if self.cfg.expt.f0g1_cavity == 1:
+            #     ii = 1
+            #     jj = 0
+            # if self.cfg.expt.f0g1_cavity == 2:
+            #     ii = 0
+            #     jj = 1
             f_pi_test = self.cfg.device.QM.chi_shift_matrix[0][self.cfg.expt.f0g1_cavity] + self.cfg.device.qubit.f_ge[0]
 
         title = ('EF' if checkEF else '') + 'Ramsey'
@@ -416,10 +410,10 @@ class RamseyFitting(GeneralFitting):
         plt.tight_layout()
         plt.show()
 
-
         #make filename same as titlestr
         filename = title_str.replace(' ', '_').replace(':', '') + '.png'
         self.save_plot(fig, filename=filename)
+
 
 class CavityRamseyGainSweepFitting(RamseyFitting):
 

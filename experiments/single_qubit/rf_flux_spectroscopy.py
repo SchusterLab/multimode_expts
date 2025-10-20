@@ -10,13 +10,10 @@ from slab import Experiment, dsfit, AttrDict
 import experiments.fitting as fitter
 
 """
-
 Note that harmonics of the clock frequency (6144 MHz) will show up as "infinitely"  narrow peaks!
-
-
-
 DONT USE THIS CODE
 """
+
 class FluxSpectroscopyProgram(AveragerProgram):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
@@ -214,7 +211,7 @@ class FluxSpectroscopyProgram(AveragerProgram):
                                      length=self.us2cycles(cfg.expt.pre_sweep_pulse[2][ii], 
                                                            gen_ch=self.tempch[0]))
                 self.sync_all()
-        
+
         # for debugging 
         # print('---------------------------------for debugging---------------------------------')
         # print('pi_ge:', self.pisigma_ge)
@@ -295,7 +292,6 @@ class FluxSpectroscopyProgram(AveragerProgram):
         #                              length=self.us2cycles(cfg.expt.post_sweep_pulse[2][ii], 
         #                                                    gen_ch=self.tempch2[0]))
         #         self.sync_all()
-            
 
 
         # align channels and wait 50ns and measure
@@ -351,7 +347,7 @@ class FluxSpectroscopyExperiment(Experiment):
         #                 for key3, value3 in value2.items():
         #                     if isinstance(value3, list):
         #                         value2.update({key3: value3[q_ind]})       
-                                  
+
 
         data={"xpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[]}
         for f in tqdm(xpts, disable=not progress):
@@ -372,10 +368,10 @@ class FluxSpectroscopyExperiment(Experiment):
             data["avgq"].append(avgq)
             data["amps"].append(amp)
             data["phases"].append(phase)
-        
+
         for k, a in data.items():
             data[k]=np.array(a)
-        
+
         self.data=data
 
         return data
@@ -383,7 +379,7 @@ class FluxSpectroscopyExperiment(Experiment):
     def analyze(self, data=None, fit=False, findpeaks=False, verbose=True, fitparams=None, **kwargs):
         if data is None:
             data=self.data
-            
+
         if fit:
             # fitparams = [f0, Qi, Qe, phi, scale]
             xdata = data["xpts"][1:-1]
@@ -403,12 +399,12 @@ class FluxSpectroscopyExperiment(Experiment):
                     print(f'\tQ0: {1/(1/Qi+1/Qe)}')
                     print(f'\tkappa [MHz]: {f0*(1/Qi+1/Qe)}')
                     print(f'\tphi [radians]: {phi}')
-            
+
         if findpeaks:
             maxpeaks, minpeaks = dsfit.peakdetect(data['amps'][1:-1], x_axis=data['xpts'][1:-1], lookahead=30, delta=5*np.std(data['amps'][:5]))
             data['maxpeaks'] = maxpeaks
             data['minpeaks'] = minpeaks
-            
+
         return data
 
     def display(self, data=None, fit=True, findpeaks=False, **kwargs):
@@ -436,10 +432,9 @@ class FluxSpectroscopyExperiment(Experiment):
         plt.subplot(313, xlabel="RF Frequency [MHz]", ylabel="Phases [ADC units]")
         plt.plot(xpts, data["phases"][1:-1],'o-')
         plt.show()
-        
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
 
 
-# ====================================================== #
