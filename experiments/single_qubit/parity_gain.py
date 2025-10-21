@@ -59,7 +59,7 @@ class ParityGainProgram(MMRAveragerProgram):
         self.parity_pulse = self.get_parity_str(man_mode_no=1,
                                                 return_pulse=True,
                                                 second_phase=self.cfg.expt.phase_second_pulse,
-                                                fast=True)
+                                                fast=False)
         print('parity pulse:', self.parity_pulse)
 
         self.sync_all(200)
@@ -135,6 +135,7 @@ class ParityGainExperiment(Experiment):
     def __init__(self, soccfg=None, path='', prefix='T1', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
+
     def acquire(self, progress=False, debug=False):
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.format_config_before_experiment( num_qubits_sample)  
@@ -145,7 +146,6 @@ class ParityGainExperiment(Experiment):
             mm_dr_base = MM_dual_rail_base(self.cfg)
             data = mm_dr_base.run_single_shot(self, data, True)
             print('Single shot data:', data)
-
 
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
