@@ -137,8 +137,6 @@ class MM_base:
         with open(f_path, 'r') as f:
             self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
 
-        
-
 
     def initialize_idling_dataset(self): 
         '''
@@ -195,7 +193,7 @@ class MM_base:
             for idx in range(len(prepulse_str)): 
                 prepulse_str[idx][-1] = 180
         return prepulse_str 
-    
+
     def prep_man_photon(self, photon_no): 
         ''' prepare a photon in the manipulate mode '''
 
@@ -886,7 +884,7 @@ class MM_base:
 
         # Reset ef level
         # ======================================================
-        if  ef_reset:    
+        if  ef_reset:
             # Map f level to e level
             self.set_pulse_registers(ch=self.qubit_chs[qTest],
                                     freq=self.f_ef_reg[qTest],
@@ -976,7 +974,7 @@ class MM_base:
             return creator.pulse.tolist()
 
         return parity_str
-    
+
 
     def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None):
         if pulse is not None:
@@ -1038,7 +1036,6 @@ class MM_base:
 
     # def post_select_histogram(self):
 
-    
 
     # --------------------------------- Single shot analysis code  ---------------------------------
     # hmm do these really belong here or in a separate single shot file?
@@ -1223,13 +1220,12 @@ class MM_base:
         return fids, thresholds, theta*180/np.pi, confusion_matrix # fids: ge, gf, ef
 
     # g states for q0
-    
 
 
 class MMAveragerProgram(AveragerProgram, MM_base):
     def __init__(self, soccfg, cfg):
         AveragerProgram.__init__(self, soccfg, cfg)
-    
+
     def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
         """
         Acquire data from the device, applying the necessary pulses and post-processing.
@@ -1243,7 +1239,7 @@ class MMAveragerProgram(AveragerProgram, MM_base):
 class MMRAveragerProgram(RAveragerProgram, MM_base): 
     def __init__(self, soccfg, cfg):
         RAveragerProgram.__init__(self, soccfg, cfg)
-    
+
     def acquire(self, soc, threshold=None, load_pulses=False, progress=False, debug=False, readouts_per_experiment = 1):
         """
         Acquire data from the device, applying the necessary pulses and post-processing.
@@ -1252,7 +1248,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
         """
         return super().acquire(soc=soc, threshold=threshold,load_pulses=load_pulses,
                                progress=progress, readouts_per_experiment=readouts_per_experiment)
-                                                       
+
 
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
@@ -1267,9 +1263,9 @@ class prepulse_creator2:
         Creates pulses of the form 
             [[frequency], [gain], [length (us)], [phases],
             [drive channel], [shape], [ramp sigma]]
-        where drive channel=
-            1 (flux low), 2 (qubit), 3 (flux high),
-            4 (storage),  0 (f0g1),  6 (manipulate)
+        where drive channel should be looked up in the hardware config file
+            1 (flux low & high), 2 (qubit), 3 (manipulate),
+            4 (storage),  0 (f0g1), as of fall 2025
         '''
         # config 
         # with open(config_file, 'r') as cfg_file:
@@ -1307,7 +1303,7 @@ class prepulse_creator2:
             if type(ch) is list :
                 ch = ch[0]  # use the first qubit channel if multiple are defined
             return int(ch)
-            
+
         elif "f" in transition_name and "g" in transition_name:
             ch =  self.cfg.hw.soc.dacs.sideband.ch
             if type(ch) is list:
@@ -1316,7 +1312,7 @@ class prepulse_creator2:
         else:
             raise ValueError(f"Unknown transition name: {transition_name}")
 
-    
+
     def multiphoton(self, pulse_param):
         ''' pulse name comes from yaml file '''
         transition_name, pulse_name, phase = pulse_param
@@ -1335,7 +1331,6 @@ class prepulse_creator2:
 
         cfg = self.cfg
 
-
         state_start = transition_name[0]
         state_end = transition_name[3]
         photon_no_start = int(transition_name[1])
@@ -1351,7 +1346,7 @@ class prepulse_creator2:
             # if photon_no_start == 0:
             #     pulse_param = ('M1', pulse_name, phase)
             #     return self.man(pulse_param)
-            
+
 
         qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]], 
                                [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]], 
@@ -1364,7 +1359,7 @@ class prepulse_creator2:
 
         self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
-    
+
 
     def optimal_control(self, pulse_param):
 
@@ -1419,8 +1414,6 @@ class prepulse_creator2:
 
             self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
 
-
-
         else: # parity string is 'parity_M1' or 'parity_M2'
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
 
@@ -1434,6 +1427,7 @@ class prepulse_creator2:
                         [0.0]], dtype = object)
                 self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
         return None
+
 
     def man(self, pulse_param):
         '''name can be pi or hpi
@@ -1517,7 +1511,7 @@ class prepulse_creator2:
 
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
-    
+
     def wait(self, pulse_param):
         wait_len = float(pulse_param[0])
 

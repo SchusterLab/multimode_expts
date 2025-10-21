@@ -23,7 +23,7 @@ class ParityFreqProgram(MMAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -39,22 +39,18 @@ class ParityFreqProgram(MMAveragerProgram):
             self.add_gauss(ch=self.man_ch[qTest ], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
         self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
 
-        
-
         self.sync_all(200)
 
-    
 
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = 0
 
         self.reset_and_sync()
-       
+
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
 
-        
         #----------------------------------------------------
         #  Now Parity Freq   
         #  Setup cavity pulse form
@@ -66,8 +62,7 @@ class ParityFreqProgram(MMAveragerProgram):
                     phase=self.deg2reg(0), 
                     gain=self.cfg.expt.displace[2], # placeholder
                     waveform="displace")
-            
-        
+
         if self.cfg.expt.const_pulse[0]:
             self.set_pulse_registers(ch=self.man_ch[qTest], 
                                  style="const", 
@@ -84,6 +79,7 @@ class ParityFreqProgram(MMAveragerProgram):
         self.custom_pulse(cfg, self.parity_pulse_for_custom_pulse, prefix='Parity')
         self.measure_wrapper()
 
+
     def collect_shots(self):
         # collect shots for the relevant adc and I and Q channels
         # print(np.average(self.di_buf[0]))
@@ -91,6 +87,7 @@ class ParityFreqProgram(MMAveragerProgram):
         shots_q0 = self.dq_buf[0] / self.readout_length_adc
         return shots_i0, shots_q0
         # return shots_i0[:5000], shots_q0[:5000]
+
 
 class ParityFreqExperiment(Experiment):
     """
@@ -111,10 +108,10 @@ class ParityFreqExperiment(Experiment):
     def acquire(self, progress=False, debug=False):
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.format_config_before_experiment( num_qubits_sample)  
-                                     
+
         if not self.cfg.expt.single_shot:
             #t1 = ParityFreqProgram(soccfg=self.soccfg, cfg=self.cfg)
-            
+
             x_pts = np.arange(self.cfg.expt.start,self.cfg.expt.stop, self.cfg.expt.step)
 
             data={"xpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[]}
@@ -125,7 +122,7 @@ class ParityFreqExperiment(Experiment):
                 self.prog = program
                 avgi, avgq = program.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, 
                                             #  debug=debug
-                                             )        
+                                             )
                 avgi = avgi[0][0]
                 avgq = avgq[0][0]
                 amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
@@ -135,7 +132,7 @@ class ParityFreqExperiment(Experiment):
                 data["avgq"].append(avgq)
                 data["amps"].append(amp)
                 data["phases"].append(phase)
-           
+
         else:
             from experiments.single_qubit.single_shot import hist, HistogramProgram
 
@@ -174,12 +171,10 @@ class ParityFreqExperiment(Experiment):
             data['thresholds'] = thresholds
             data['confusion_matrix'] = confusion_matrix
 
-
             print(f'ge fidelity (%): {100*fids[0]}')
             print(f'rotation angle (deg): {angle}')
             print(f'threshold ge: {thresholds[0]}')
             print('Confusion matrix [Pgg, Pge, Peg, Pee]: ',confusion_matrix)
-
 
             # ------------------- Experiment -------------------
 
@@ -206,9 +201,10 @@ class ParityFreqExperiment(Experiment):
                 data['avgi'].append(avgi) # for debugging
                 data['avgq'].append(avgq)
                 data['xpts'] = x_pts # same for all rounds
-            
+
         self.data=data
         return data
+
 
     def single_shot_analysis(self, data=None, **kwargs):
         '''
@@ -240,11 +236,10 @@ class ParityFreqExperiment(Experiment):
         return data
 
 
-
     def analyze(self, data=None, **kwargs):
         if data is None:
             data=self.data
-            
+
         # fitparams=[y-offset, amp, x-offset, decay rate]
         # Remove the last point from fit in case weird edge measurements
         data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
@@ -252,20 +247,10 @@ class ParityFreqExperiment(Experiment):
         data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
         return data
 
+
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
             data=self.data 
-        
-        # plt.figure(figsize=(12, 8))
-        # plt.subplot(111,title="$T_1$", xlabel="Wait Time [us]", ylabel="Amplitude [ADC level]")
-        # plt.plot(data["xpts"][:-1], data["amps"][:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     pCov = data['fit_err_amps']
-        #     captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
-        #     plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_amps"]), label=captionStr)
-        #     plt.legend()
-        #     print(f'Fit T1 amps [us]: {data["fit_amps"][3]}')
 
         plt.figure(figsize=(10,10))
         plt.subplot(211, title="$T_1$", ylabel="I [ADC units]")
@@ -288,8 +273,10 @@ class ParityFreqExperiment(Experiment):
             print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')
 
         plt.show()
-        
+
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         return self.fname
+

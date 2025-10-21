@@ -17,14 +17,14 @@ class T1CavityProgram(RAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
         print('This experiment is very broken and needs an update')
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
-        
+
         self.adc_ch = cfg.hw.soc.adcs.readout.ch
         self.res_ch = cfg.hw.soc.dacs.readout.ch
         self.res_ch_type = cfg.hw.soc.dacs.readout.type
@@ -39,7 +39,7 @@ class T1CavityProgram(RAveragerProgram):
         self.q_rp = self.ch_page(self.qubit_ch) # get register page for qubit_ch
         self.r_wait = 3
         self.safe_regwi(self.q_rp, self.r_wait, self.us2cycles(cfg.expt.start))
-        
+
         self.f_ge = self.freq2reg(cfg.device.qubit.f_ge, gen_ch=self.qubit_ch)
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef, gen_ch=self.qubit_ch)
         # self.f0g1 = self.freq2reg(cfg.device.qubit.f0g1, gen_ch=self.f0g1_ch)
@@ -49,7 +49,6 @@ class T1CavityProgram(RAveragerProgram):
         self.readout_length_adc += 1 # ensure the rounding of the clock ticks calculation doesn't mess up the buffer
         # self.f0g1_length = self.us2cycles(cfg.device.qubit.pulses.f0g1.length, gen_ch=self.f0g1_ch)
 
-        
 
         self.f_man1 = self.freq2reg(cfg.device.manipulate.f_ge[0], gen_ch=self.man_ch)
         self.f_man2 = self.freq2reg(cfg.device.manipulate.f_ge[1], gen_ch=self.man_ch)
@@ -76,7 +75,7 @@ class T1CavityProgram(RAveragerProgram):
             jj = 0
             self.man_gain = self.cfg.expt.cavity_prepulse[1]
             self.man_length = self.us2cycles(self.cfg.expt.cavity_prepulse[2], gen_ch=self.man_ch)           
-            
+
             if cfg.expt.cavity==1: 
                 ii=1
                 jj=0
@@ -171,13 +170,13 @@ class T1CavityProgram(RAveragerProgram):
                     waveform="f0g1_pi_test")
             # self.setup_and_pulse(ch=self.qubit_ch, style="const", freq=self.f0g1, phase=0, gain=self.pif0g1_gain, length=self.f0g1_length)
             self.sync_all() # align channels
-        
+
         if cfg.expt.cavity_prepulse[0]:
             self.setup_and_pulse(ch=self.man_ch, style="const", freq=self.f_man, phase=0, gain=self.man_gain, length=self.man_length)
             self.sync_all(self.us2cycles(0.05)) # align cavity pulse and qubit pulse, remember to calibrate!!!! 
-        
+
         self.sync(self.q_rp, self.r_wait) # wait for the time stored in the wait variable register
-       
+
 
         if cfg.expt.resolved_pi:
             self.setup_and_pulse(ch=self.qubit_ch, style="flat_top", freq=self.f_ge_resolved, phase=0, length=self.flat_length, gain=self.pi_gain_resolved, waveform="pi_resolved_qubit")
@@ -199,9 +198,7 @@ class T1CavityProgram(RAveragerProgram):
             # self.sync_all() # align channels
             # self.setup_and_pulse(ch=self.qubit_ch, style="arb", freq=self.f_ge, phase=0, gain=self.pi_gain, waveform="pi_resolved_qubit")
             # self.sync_all() # align channels
-        
-        
-            
+
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
         self.measure(pulse_ch=self.res_ch, 
              adcs=[self.adc_ch],
@@ -256,18 +253,18 @@ class T1CavityExperiment(Experiment):
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
             g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-            
+
             data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
             data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
             data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-        
+
         self.data=data
         return data
 
     def analyze(self, data=None, **kwargs):
         if data is None:
             data=self.data
-            
+
         # fitparams=[y-offset, amp, x-offset, decay rate]
         # Remove the last point from fit in case weird edge measurements
         data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)

@@ -173,7 +173,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = self.qubits[0] 
-        
+
         # reset and sync all channels
         self.reset_and_sync()
 
@@ -189,7 +189,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
                 print('gate based prepulse')
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
-            else: 
+            else:
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
         # play the prepulse for kerr experiment (displacement of manipulate)
@@ -230,7 +230,6 @@ class CavityRamseyProgram(MMRAveragerProgram):
             # if displacements, then do user defined pulse
             self.custom_pulse(self.cfg, self.creator.pulse, prefix='Manipulate' + str(cfg.expt.man_ramsey[1]))
             self.sync_all(self.us2cycles(0.01))
-
 
         # wait advanced wait time
         self.sync_all()

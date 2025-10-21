@@ -19,7 +19,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -49,7 +49,6 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                               length=_sigma*4, # take 4 sigma cutoff
                               )
 
-        
         # initialize registers
         if cfg.expt.parameter_to_test == 'gain':
             if self.pulse_to_test[5] == "flat_top":
@@ -74,9 +73,9 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             self.safe_regwi(self.channel_page, self.r_freq2, self.f_start)
             # define phase register to update it later for pi, -pi pulses
             self.r_phase= self.sreg(self.pulse_to_test[4], "phase")
-            
 
         self.sync_all(200)
+
 
     def body(self):
 
@@ -94,7 +93,6 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 )
                 self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
 
-        
         # this will be deleted once we replace everything with the multiphoton def
         elif cfg.expt.pulse_type[0] == 'man':
             self.creator = self.get_prepulse_creator(

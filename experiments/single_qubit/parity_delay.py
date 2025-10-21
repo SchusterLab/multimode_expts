@@ -17,7 +17,7 @@ class ParityDelayProgram(MMAveragerProgram):
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
         self.cfg.rounds = cfg.expt.rounds
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -26,7 +26,6 @@ class ParityDelayProgram(MMAveragerProgram):
 
         self.sync_all(200)
 
-    
 
     def body(self):
         cfg=AttrDict(self.cfg)
@@ -69,14 +68,12 @@ class ParityDelayProgram(MMAveragerProgram):
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=f_ge_reg, phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=f_ge_reg, phase=theta_2_reg, gain=gain, waveform="hpi_qubit_ge")
 
-        else: 
-
+        else:
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
-            
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="const", freq=self.f_ge_reg[qTest], phase=self.deg2reg(0), gain=0, length=self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest]))
-
             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[qTest], phase=self.deg2reg(180, self.qubit_chs[qTest]), gain=self.hpi_ge_gain, waveform="hpi_qubit_ge")
         # self.wait_all(self.us2cycles(0.01)) # wait for the time stored in the wait variable register
+
         self.measure_wrapper()
 
 

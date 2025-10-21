@@ -126,8 +126,6 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
                        sigma=self.pisigma_ef, length=self.pisigma_ef*4)
         # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_resolved",
         #                sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
-        self.add_gauss(ch=self.rf_ch[0], name="rf_test",
-                       sigma=self.us2cycles(self.cfg.expt.flux_drive[3]), length=self.us2cycles(self.cfg.expt.flux_drive[3])*4)
 
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
@@ -162,9 +160,15 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         self.sync_all()
         if cfg.expt.prepulse:
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre')
+        self.sync_all()
         # RF flux modulation
 
-        self.setup_and_pulse(ch=self.rf_ch[0], style="const", freq=self.freqreg, phase=0, gain=self.cfg.expt.flux_drive[2], length=self.us2cycles(self.cfg.expt.flux_drive[3]))
+        self.setup_and_pulse(ch=self.rf_ch[0],
+                             style="const",
+                             freq=self.freqreg,
+                             phase=0,
+                             gain=self.cfg.expt.flux_drive[2],
+                             length=self.us2cycles(self.cfg.expt.flux_drive[3]))
 
         self.sync_all()  # align channels
 
@@ -240,10 +244,10 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
                 #print('getting i data')
                 data["idata"].append(idata)
                 data["qdata"].append(qdata)
-        
+
         for k, a in data.items():
             data[k]=np.array(a)
-        
+
         self.data=data
 
         return data
@@ -286,7 +290,7 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
         xpts = data['xpts'][1:-1]
 
         plt.figure(figsize=(16,16))
-        plt.subplot(311, title=f"RF Flux Spectroscopy at gain {self.cfg.expt.drive_gain}",  ylabel="Amps [ADC units]")
+        plt.subplot(311, title=f"RF Flux Spectroscopy at gain {self.cfg.expt.flux_drive[2]}",  ylabel="Amps [ADC units]")
         plt.plot(xpts, data['amps'][1:-1],'o-')
         if fit:
             plt.plot(xpts, fitter.hangerS21func_sloped(data["xpts"][1:-1], *data["fit"]))
