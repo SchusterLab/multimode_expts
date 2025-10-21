@@ -43,9 +43,9 @@ class expts_run_base:
         self.qubit_i = qubit_i
 
         self._print_paths()
-        
+
         self.im = self._init_instrument_manager()
-        
+
         self.expts_path = self._add_expts_path(self.mm_expts_path)
         self.yaml_cfg = self._load_yaml_config(self.config_file)
         self.soc = self._init_qick_config()
@@ -77,7 +77,7 @@ class expts_run_base:
     def _load_yaml_config(self, config_file):
         with open(config_file, 'r') as cfg_file:
             yaml_cfg = yaml.safe_load(cfg_file)
-        
+
         return AttrDict(yaml_cfg)
 
     def _init_instrument_manager(self):
@@ -184,12 +184,12 @@ class expts_run_base:
                 self.recursive_compare(d1[key], d2[key], current_path)
             elif d1[key] != d2[key]:
                 print(f"Key '{current_path}' differs:")
-                if isinstance(d1[key], list) and len(d1[key]) == 1:
-                    print(f"  Old value (config1): {d1[key][0]}")
-                    print(f"  New value (config2): {d2[key][0]}")
-                else:
-                    print(f"  Old value (config1): {d1[key]}")
-                    print(f"  New value (config2): {d2[key]}")
+                # if isinstance(d1[key], list) and len(d1[key]) == 1:
+                #     print(f"  Old value (config1): {d1[key][0]}")
+                #     print(f"  New value (config2): {d2[key][0]}")
+                # else:
+                print(f"  Old value (config1): {d1[key]}")
+                print(f"  New value (config2): {d2[key]}")
         for key in d2.keys():
             current_path = f"{path}.{key}" if path else key
             if key not in d1:
