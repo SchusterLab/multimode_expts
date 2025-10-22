@@ -208,6 +208,8 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
     def acquire(self, progress=False, debug=False):
         xpts=self.cfg.expt["start"] + self.cfg.expt["step"]*np.arange(self.cfg.expt["expts"])
 
+        read_num = 4 if self.cfg.expt.active_reset else 1
+
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
             for key, value in subcfg.items():
@@ -223,14 +225,16 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
         data={"xpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[], "idata":[], "qdata":[]}
         for f in tqdm(xpts, disable=not progress):
             self.cfg.expt.frequency = f
-            rspec = FluxSpectroscopyF0g1Program(
-                soccfg=self.soccfg, cfg=self.cfg)
+            rspec = FluxSpectroscopyF0g1Program(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = rspec
-            # rspec = FluxSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
-            # print(rspec)
-            avgi, avgq = rspec.acquire(self.im[self.cfg.aliases.soc], load_pulses=True, progress=False, debug=debug)
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            avgi, avgq = rspec.acquire(self.im[self.cfg.aliases.soc],
+                                       load_pulses=True,
+                                       progress=False,
+                                       debug=debug,
+                                       readouts_per_experiment=read_num)
+
+            avgi = avgi[0][-1]
+            avgq = avgq[0][-1]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
             phase = np.angle(avgi+1j*avgq) # Calculating the phase
 
@@ -241,7 +245,6 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
             data["phases"].append(phase)
             if self.cfg.expt.active_reset:
                 idata, qdata = rspec.collect_shots()
-                #print('getting i data')
                 data["idata"].append(idata)
                 data["qdata"].append(qdata)
 
