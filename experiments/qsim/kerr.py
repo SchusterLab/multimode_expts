@@ -355,3 +355,11 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.measure_wrapper()
 
 
+class KerrCavityRamseyExperiment(QsimBaseExperiment):
+
+    def analyze(self, data=None, **kwargs):
+        return super().analyze(data, **kwargs)()
+
+    def display(self, data=None, fit=True, **kwargs):
+        return super().display(data, fit, **kwargs)()
+
