@@ -149,7 +149,20 @@ class LengthRabiProgram(AveragerProgram):
             # self.set_pulse_registers(
             #         ch=self.qubit_chs[qTest], style="arb", freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test, waveform="pi_test")
             for i in range(repeat_time):
-                self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test, waveform="pi_test")
+                if self.cfg.expt.pulse_type.lower() == "const":
+                    self.setup_and_pulse(ch=self.qubit_chs[qTest],
+                                         style="const",
+                                         freq=self.f_pi_test_reg,
+                                         phase=0,
+                                         gain=self.gain_pi_test,
+                                         length=self.pi_test_sigma)
+                else:
+                    self.setup_and_pulse(ch=self.qubit_chs[qTest],
+                                        style="arb",
+                                        freq=self.f_pi_test_reg,
+                                        phase=0,
+                                        gain=self.gain_pi_test,
+                                        waveform="pi_test")
                 self.sync_all()
                 # self.pulse(ch=self.qubit_chs[qTest])
 
@@ -209,7 +222,7 @@ class LengthRabiExperiment(Experiment):
             self.cfg.expt.length_placeholder = float(length)
             lengthrabi = LengthRabiProgram(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = lengthrabi
-            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)        
+            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False)        
             avgi = avgi[0][0]
             avgq = avgq[0][0]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude

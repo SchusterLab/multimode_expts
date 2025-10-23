@@ -447,29 +447,30 @@ class AmplitudeRabiChevronExperiment(Experiment):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        q_ind = self.cfg.expt.qubit
+        # expand entries in config that are length 1 to fill all qubits
+        num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):
             for key, value in subcfg.items() :
-                if isinstance(value, list):
-                    subcfg.update({key: value[q_ind]})
-                elif isinstance(value, dict):
+                if isinstance(value, dict):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
-                            if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})                                
-        
+                            if not(isinstance(value3, list)):
+                                value2.update({key3: [value3]*num_qubits_sample})                                
+                elif not(isinstance(value, list)):
+                    subcfg.update({key: [value]*num_qubits_sample})
+
         if 'sigma_test' not in self.cfg.expt:
             self.cfg.expt.sigma_test = self.cfg.device.qubit.pulses.pi_ge.sigma
 
         freqpts = self.cfg.expt["start_f"] + self.cfg.expt["step_f"]*np.arange(self.cfg.expt["expts_f"])
         data={"xpts":[], "freqpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[]}
-        adc_ch = self.cfg.hw.soc.adcs.readout.ch
+        adc_ch = self.cfg.hw.soc.adcs.readout.ch[0]
 
         self.cfg.expt.start = self.cfg.expt.start_gain
         self.cfg.expt.step = self.cfg.expt.step_gain
         self.cfg.expt.expts = self.cfg.expt.expts_gain
         for freq in tqdm(freqpts):
-            self.cfg.device.qubit.f_ge = freq
+            self.cfg.device.qubit.f_ge = [freq]
             amprabi = AmplitudeRabiProgram(soccfg=self.soccfg, cfg=self.cfg)
         
             xpts, avgi, avgq = amprabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)
