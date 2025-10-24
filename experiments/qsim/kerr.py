@@ -409,7 +409,6 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
             alpha_guess = y[lid]*self.cfg.device.manipulate.gain_to_alpha[0]
 
-            print(alpha_guess)
             # Create lmfit Model
             model = Model(fit_model)
 
@@ -417,7 +416,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             params = model.make_params(
                 # alpha2 = dict(value=alpha_guess**2, min=alpha_guess**2/2, max=alpha_guess**2*2),
                 alpha2 = dict(value=alpha_guess**2, vary=False),
-                f=f_initial, 
+                f=f_initial,
                 scale=dict(value=1, min=0.1, max=1.2),
                 offset=dict(value=0, min=-0.1, max=0.5))
 
@@ -430,9 +429,18 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             fit_results.append(result)
             z_fits.append(result.best_fit)
 
-        # Linear fit of f vs alpha2 to extract kc and delta
-        alpha2_array = np.array(alpha2_fits)
-        f_array = np.array(f_fits)
+
+        f_fits = np.array(f_fits)
+        alpha2_fits = np.array(alpha2_fits)
+        # Filter fit results based on R-squared > 0.5
+        fit_good = [res.rsquared > 0.5 for res in fit_results]
+
+        filtered_alpha2 = alpha2_fits[fit_good]
+        filtered_f = f_fits[fit_good]
+
+        # Convert filtered lists to arrays
+        alpha2_array = np.array(filtered_alpha2)
+        f_array = np.array(filtered_f)
         z_smooths = np.array(z_smooths)
 
         # Create linear model: f = kc * alpha2 + delta
@@ -449,7 +457,8 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             'kc': linear_result.params['kc'].value,
             'delta': linear_result.params['delta'].value,
             'linear_fit_result': linear_result,
-            'z_smooths': z_smooths
+            'z_smooths': z_smooths,
+            'fit_good': fit_good
         }
 
 
@@ -481,6 +490,9 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         ax2.set_ylabel('Y')
         ax2.set_title('Best Fit')
         plt.colorbar(im2, ax=ax2)
+        for lid, good in enumerate(self.fit_results['fit_good']):
+            if not good:
+                ax2.axhline(self.data['ypts'][lid], color= 'r', ls='--', linewidth=1)
 
         # Panel 3: Linear fit of f vs alpha2
         ax3 = axes[2]
