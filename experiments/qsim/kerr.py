@@ -1,16 +1,13 @@
+import json
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
-from slab import AttrDict, Experiment, dsfit
-from tqdm.auto import tqdm
+from lmfit import Model
+from scipy.ndimage import gaussian_filter1d
+from slab import AttrDict
 
-import experiments.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseProgram, QsimBaseExperiment
-from fit_display_classes import (
-    CavityRamseyGainSweepFitting,
-    GeneralFitting,
-    RamseyFitting,
-)
+from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from MM_dual_rail_base import MM_dual_rail_base
 
 """
@@ -359,9 +356,6 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
     def analyze(self, data=None, **kwargs):
 
-        from scipy.ndimage import gaussian_filter1d
-        from scipy.signal import find_peaks
-        from lmfit import Model
 
         def estimate_periodicity(y, sampling_rate=1.0):
             # Compute FFT
@@ -429,21 +423,24 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             fit_results.append(result)
             z_fits.append(result.best_fit)
 
-
         f_fits = np.array(f_fits)
         alpha2_fits = np.array(alpha2_fits)
-        # Filter fit results based on R-squared > 0.5
-        fit_good = [res.rsquared > 0.5 for res in fit_results]
+        fit_good = [res.rsquared > 0.2 for res in fit_results]
 
         filtered_alpha2 = alpha2_fits[fit_good]
         filtered_f = f_fits[fit_good]
 
-        # Convert filtered lists to arrays
+        # here we deduct the virtual ramsey from fitted f
+        # self.cfg.expt got erased during initialization... so extracting it another way
+        cfg = json.loads(self.data['attrs']['config'])
+        virtual_freq = cfg['expt']['ramsey_freq']
+        kerr_gain = cfg['expt']['kerr_gain']
+
         alpha2_array = np.array(filtered_alpha2)
-        f_array = np.array(filtered_f)
+        f_array = np.array(filtered_f) - virtual_freq
         z_smooths = np.array(z_smooths)
 
-        # Create linear model: f = kc * alpha2 + delta
+        # Create linear model: w = kc * alpha2 + delta
         linear_model = Model(lambda x, kc, delta: kc * x + delta, independent_vars=['x'])
         linear_params = linear_model.make_params(kc=1.0, delta=0.0)
         linear_result = linear_model.fit(2*np.pi*f_array, linear_params, x=alpha2_array)
@@ -458,7 +455,8 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             'delta': linear_result.params['delta'].value,
             'linear_fit_result': linear_result,
             'z_smooths': z_smooths,
-            'fit_good': fit_good
+            'fit_good': fit_good,
+            'kerr_gain': kerr_gain,
         }
 
 
@@ -477,17 +475,17 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         ax1 = axes[0]
         im1 = ax1.pcolormesh(self.data['xpts'], self.data['ypts'], self.data['avgi'],
                              shading='auto', cmap='viridis')
-        ax1.set_xlabel('X')
-        ax1.set_ylabel('Y')
-        ax1.set_title('Original Data (avgi)')
+        ax1.set_xlabel('duration (us)')
+        ax1.set_ylabel('displacement gain')
+        ax1.set_title(f'{self.fname.split(os.path.sep)[-1]} (avgi)')
         plt.colorbar(im1, ax=ax1)
 
         # Panel 2: Best fit heatmap
         ax2 = axes[1]
         im2 = ax2.pcolormesh(self.data['xpts'], self.data['ypts'], self.fit_results['z_fits'],
                              shading='auto', cmap='viridis')
-        ax2.set_xlabel('X')
-        ax2.set_ylabel('Y')
+        ax2.set_xlabel('duration (us)')
+        ax2.set_ylabel('displacement gain')
         ax2.set_title('Best Fit')
         plt.colorbar(im2, ax=ax2)
         for lid, good in enumerate(self.fit_results['fit_good']):
@@ -509,16 +507,16 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         f_fit_line = (kc * alpha2_fit_line + delta)/np.pi/2
         ax3.plot(alpha2_fit_line, f_fit_line, 'r-', linewidth=2, label='Linear Fit')
 
-        ax3.set_xlabel('alpha2')
-        ax3.set_ylabel('f')
-        ax3.set_title('Frequency vs Alpha2')
+        ax3.set_xlabel(r'$|\alpha|^2$')
+        ax3.set_ylabel(r'$f$ (kHz)')
+        ax3.set_title('freq vs displacement')
         ax3.legend()
 
         # Add annotation with fit parameters
-        textstr = f'kc = {kc*1e3:.3f}kHz\ndelta = {delta*1e3:.3f}kHz'
+        textstr = f'$K_c$ = {kc*1e3:.3f} krad/s\n$\delta$ = {delta*1e3:.3f} krad/s'
         ax3.text(0.05, 0.95, textstr, transform=ax3.transAxes,
-                fontsize=10, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                fontsize=12, verticalalignment='top',
+                bbox=dict(boxstyle='round', alpha=0.2))
 
         plt.tight_layout()
         return fig
