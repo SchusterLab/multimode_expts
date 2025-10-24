@@ -18,7 +18,7 @@ class LengthRabiProgram(AveragerProgram):
 
         # copy over parameters for the acquire method
         self.cfg.reps = cfg.expt.reps
-        
+
         super().__init__(soccfg, self.cfg)
 
     def initialize(self):
@@ -29,13 +29,14 @@ class LengthRabiProgram(AveragerProgram):
 
         self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.qubits = self.cfg.expt.qubits
-        
+
         if self.checkZZ:
             assert len(self.qubits) == 2
             qA, qTest = self.qubits
             assert qA != 1
             assert qTest == 1
-        else: qTest = self.qubits[0]
+        else:
+            qTest = self.qubits[0]
 
         self.adc_chs = cfg.hw.soc.adcs.readout.ch
         self.res_chs = cfg.hw.soc.dacs.readout.ch
@@ -52,7 +53,7 @@ class LengthRabiProgram(AveragerProgram):
         self.readout_lengths_adc = [1+self.us2cycles(length, ro_ch=ro_ch) for length, ro_ch in zip(self.cfg.device.readout.readout_length, self.adc_chs)]
 
         gen_chs = []
-        
+
         # declare res dacs
         mask = None
         mixer_freq = 0 # MHz
@@ -85,8 +86,11 @@ class LengthRabiProgram(AveragerProgram):
         # define pi_test_sigma as the pulse that we are calibrating with ramsey, update in outer loop over averager program
         self.pi_test_sigma = self.us2cycles(cfg.expt.length_placeholder, gen_ch=self.qubit_chs[qTest])
         self.f_pi_test_reg = self.f_ge_reg[qTest] # freq we are trying to calibrate
-        if 'gain' in self.cfg.expt: self.gain_pi_test = self.cfg.expt.gain 
-        else: self.gain_pi_test = self.cfg.device.qubit.pulses.pi_ge.gain[qTest] # gain of the pulse we are trying to calibrate
+        # gain of the pulse we are trying to calibrate
+        if 'gain' in self.cfg.expt:
+            self.gain_pi_test = self.cfg.expt.gain
+        else:
+            self.gain_pi_test = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
         # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
         self.pisigma_ge = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # default pi_ge value
         self.f_ge_init_reg = self.f_ge_reg[qTest]
@@ -114,9 +118,9 @@ class LengthRabiProgram(AveragerProgram):
         # if self.res_ch_types[qTest] == 'mux4':
         #     self.set_pulse_registers(ch=self.res_chs[qTest], style="const", length=self.readout_lengths_dac[qTest], mask=mask)
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-        
+
         self.sync_all(200)
-    
+
     def body(self):
         cfg=AttrDict(self.cfg)
         repeat_time = cfg.expt.repeat_time
@@ -125,15 +129,14 @@ class LengthRabiProgram(AveragerProgram):
         if self.checkZZ: qA, qTest = self.qubits
         else: qTest = self.qubits[0]
 
-        # Apply pre pulse 
+        # Apply pre pulse
         if pre_pulse:
             pre_repeat = self.cfg.prepulse_qubit.repeat_time
             for i in range(pre_repeat):
                 for j in range(len(self.cfg.prepulse_qubit.freq)):
-                    self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.cfg.prepulse_qubit.freq[j], 
+                    self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.cfg.prepulse_qubit.freq[j],
                                             phase=self.deg2reg(self.cfg.prepulse_qubit.phase[j]), gain=self.cfg.prepulse_qubit.length[j], waveform="pi_test")
                     self.sync_all()
-
 
         # initializations as necessary
         if self.checkZZ:
@@ -146,8 +149,6 @@ class LengthRabiProgram(AveragerProgram):
 
         # play pi pulse that we want to calibrate
         if self.pi_test_sigma > 0:
-            # self.set_pulse_registers(
-            #         ch=self.qubit_chs[qTest], style="arb", freq=self.f_pi_test_reg, phase=0, gain=self.gain_pi_test, waveform="pi_test")
             for i in range(repeat_time):
                 if self.cfg.expt.pulse_type.lower() == "const":
                     self.setup_and_pulse(ch=self.qubit_chs[qTest],
@@ -164,7 +165,6 @@ class LengthRabiProgram(AveragerProgram):
                                         gain=self.gain_pi_test,
                                         waveform="pi_test")
                 self.sync_all()
-                # self.pulse(ch=self.qubit_chs[qTest])
 
         self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
 
@@ -174,21 +174,22 @@ class LengthRabiProgram(AveragerProgram):
         # align channels and wait 50ns and measure
         self.sync_all(0.05)
         self.measure(
-            pulse_ch=self.res_chs[qTest], 
+            pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],
             adc_trig_offset=cfg.device.readout.trig_offset[qTest],
             wait=True,
             syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest])
         )
-        
+
+
 class LengthRabiExperiment(Experiment):
     """
     Length Rabi Experiment
     Experimental Config
     expt = dict(
         start: start length [us],
-        step: length step, 
-        expts: number of different length experiments, 
+        step: length step,
+        expts: number of different length experiments,
         reps: number of reps,
         gain: gain to use for the qubit pulse
         pulse_type: 'gauss' or 'const'
@@ -210,7 +211,7 @@ class LengthRabiExperiment(Experiment):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
                             if not(isinstance(value3, list)):
-                                value2.update({key3: [value3]*num_qubits_sample})                                
+                                value2.update({key3: [value3]*num_qubits_sample})
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
 
@@ -222,7 +223,7 @@ class LengthRabiExperiment(Experiment):
             self.cfg.expt.length_placeholder = float(length)
             lengthrabi = LengthRabiProgram(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = lengthrabi
-            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False)        
+            avgi, avgq = lengthrabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False)
             avgi = avgi[0][0]
             avgq = avgq[0][0]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
@@ -247,34 +248,29 @@ class LengthRabiExperiment(Experiment):
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             # Remove the first and last point from fit in case weird edge measurements
             # fitparams = [None, 1/max(data['xpts']), None, None]
-            # fitparams = None
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
             p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi   
+            data['fit_avgi'] = p_avgi
             data['fit_avgq'] = p_avgq
             data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi   
+            data['fit_err_avgi'] = pCov_avgi
             data['fit_err_avgq'] = pCov_avgq
             data['fit_err_amps'] = pCov_amps
         return data
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
-            data=self.data 
+            data=self.data
 
         xpts_ns = data['xpts']*1e3
 
-        # plt.figure(figsize=(12, 8))
-        # plt.subplot(111, title=f"Length Rabi", xlabel="Length [ns]", ylabel="Amplitude [ADC units]")
-        # plt.plot(xpts_ns[1:-1], data["amps"][1:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     plt.plot(xpts_ns[1:-1], fitter.sinfunc(data["xpts"][1:-1], *p))
-
         plt.figure(figsize=(10,8))
-        if 'gain' in self.cfg.expt: gain = self.cfg.expt.gain
-        else: gain = self.cfg.device.qubit.pulses.pi_ge.gain[self.cfg.expt.qubits[-1]] # gain of the pulse we are trying to calibrate
+        if 'gain' in self.cfg.expt:
+            gain = self.cfg.expt.gain
+        else:
+            gain = self.cfg.device.qubit.pulses.pi_ge.gain[self.cfg.expt.qubits[-1]]
+            # gain of the pulse we are trying to calibrate
         plt.subplot(211, title=f"Length Rabi (Qubit Gain {gain})", ylabel="I [adc level]")
         plt.plot(xpts_ns[1:-1], data["avgi"][1:-1],'o-')
         if fit:
@@ -290,8 +286,7 @@ class LengthRabiExperiment(Experiment):
             print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
             plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
             plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-        
-        print()
+
         plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
         plt.plot(xpts_ns[1:-1], data["avgq"][1:-1],'o-')
         if fit:
