@@ -1,20 +1,17 @@
+import json
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
-from slab import AttrDict, Experiment, dsfit
-from tqdm.auto import tqdm
+from lmfit import Model
+from scipy.ndimage import gaussian_filter1d
+from slab import AttrDict
 
-import experiments.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseProgram, QsimBaseExperiment
-from fit_display_classes import (
-    CavityRamseyGainSweepFitting,
-    GeneralFitting,
-    RamseyFitting,
-)
+from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from MM_dual_rail_base import MM_dual_rail_base
 
 """
-In this file, each program looks at the effect of a particular combo of 
+In this file, each program looks at the effect of a particular combo of
 detuning, amplitude and duration of the Kerr engineering pulse on the qubit.
 We need to know the following effects of such a tone:
 - Qubit heating test: apply pump and check qubit state again to check heat up
@@ -82,7 +79,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         qTest = 0 # only one qubit for now
 
         self.swap_ds = self.cfg.expt.ds_thisrun
-        # choose the channel on which ramsey will run 
+        # choose the channel on which ramsey will run
         if cfg.expt.user_defined_pulse[5] == 1:
             self.cavity_ch = self.flux_low_ch
             self.cavity_ch_types = self.flux_low_ch_type
@@ -102,31 +99,31 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.cavity_ch = self.man_ch
             self.cavity_ch_types = self.man_ch_type
 
-        if self.cfg.expt.storage_ramsey[0]: 
-            # decide which channel do we flux drive on 
+        if self.cfg.expt.storage_ramsey[0]:
+            # decide which channel do we flux drive on
             sweep_pulse = [
-                ['storage', 'M'+ str(self.cfg.expt.man_mode_no) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi', 0], 
+                ['storage', 'M'+ str(self.cfg.expt.man_mode_no) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi', 0],
             ]
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
             self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
 
-        if self.cfg.expt.man_ramsey[0]: 
+        if self.cfg.expt.man_ramsey[0]:
             sweep_pulse = [
-                ['man', 'M'+ str(self.cfg.expt.man_ramsey[1]) , 'pi', 0], 
+                ['man', 'M'+ str(self.cfg.expt.man_ramsey[1]) , 'pi', 0],
             ]
             self.creator = self.get_prepulse_creator(sweep_pulse)
 
-        if self.cfg.expt.coupler_ramsey: 
-            # decide which channel do we flux drive on 
+        if self.cfg.expt.coupler_ramsey:
+            # decide which channel do we flux drive on
             pulse_str = self.cfg.expt.custom_coupler_pulse
             freq = pulse_str[0][0]
             self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
 
-        if self.cfg.expt.echoes[0]: 
+        if self.cfg.expt.echoes[0]:
             mm_base_dummy = MM_dual_rail_base(self.cfg, self.soccfg)
             if self.cfg.expt.storage_ramsey[0]:
-                prep_stor = mm_base_dummy.prep_random_state_mode(3, self.cfg.expt.storage_ramsey[1])  # prepare the storage state + 
+                prep_stor = mm_base_dummy.prep_random_state_mode(3, self.cfg.expt.storage_ramsey[1])  # prepare the storage state +
             elif self.cfg.expt.man_ramsey[0]:
                 prep_stor = mm_base_dummy.prep_man_photon(man_no=self.cfg.expt.man_ramsey[1], hpi = True)
             get_stor = prep_stor[::-1] # get the storage state
@@ -157,7 +154,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
         self.current_phase = 0   # in degree
 
-        #for user defined 
+        #for user defined
         if cfg.expt.user_defined_pulse[0]:
             # print('This is designed for displacing manipulate mode, not for swapping pi/2 into man')
             self.user_freq = self.freq2reg(cfg.expt.user_defined_pulse[1], gen_ch=self.cavity_ch[qTest])
@@ -181,9 +178,9 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         # initialize wait registers
         # self.safe_regwi(self.phase_update_page[qTest], self.r_wait, self.us2cycles(cfg.expt.start))
         # #self.safe_regwi(self.flux_rps, self.r_wait_flux, self.us2cycles(cfg.expt.start))
-        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase2, self.deg2reg(0)) 
-        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase3, 0) 
-        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0) 
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase2, self.deg2reg(0))
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase3, 0)
+        # self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0)
 
         self.sync_all(200)
         self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = False)
@@ -191,24 +188,24 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
     def body(self):
         cfg=AttrDict(self.cfg)
-        qTest = self.qubits[0] 
+        qTest = self.qubits[0]
 
         # reset and sync all channels
         self.reset_and_sync()
 
-        # active reset 
-        if self.cfg.expt.active_reset: 
+        # active reset
+        if self.cfg.expt.active_reset:
             self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
 
         # pre pulse
         if cfg.expt.prepulse:
             print('pre pulse')
             # print(cfg.expt.pre_sweep_pulse)
-            if cfg.expt.gate_based: 
+            if cfg.expt.gate_based:
                 print('gate based prepulse')
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
-            else: 
+            else:
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
 
         # play the prepulse for kerr experiment (displacement of manipulate)
@@ -223,7 +220,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 self.setup_and_pulse(ch=self.cavity_ch[qTest],
                                      style="arb",
                                      freq=self.user_freq,
-                                     phase=self.deg2reg(0, gen_ch=self.cavity_ch[qTest]), 
+                                     phase=self.deg2reg(0, gen_ch=self.cavity_ch[qTest]),
                                      gain=self.user_gain,
                                      waveform="user_test")
             else: # its a flat top pulse
@@ -245,7 +242,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             self.custom_pulse(cfg, cfg.expt.custom_coupler_pulse, prefix='CustomCoupler')
             self.sync_all(self.us2cycles(0.01))
         elif self.cfg.expt.man_ramsey[0]:
-            # man ramsey should be true if you are swapping in a 0+1 into manipulate instead of doing displacements; 
+            # man ramsey should be true if you are swapping in a 0+1 into manipulate instead of doing displacements;
             # if displacements, then do user defined pulse
             self.custom_pulse(self.cfg, self.creator.pulse, prefix='Manipulate' + str(cfg.expt.man_ramsey[1]))
             self.sync_all(self.us2cycles(0.01))
@@ -278,7 +275,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
         self.sync_all(self.us2cycles(0.01))
 
-        # echoes 
+        # echoes
         if cfg.expt.echoes[0]:
             for i in range(cfg.expt.echoes[1]):
                 if cfg.expt.storage_ramsey[0] or self.cfg.expt.man_ramsey[0] :
@@ -295,7 +292,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
             self.pulse(ch=self.flux_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
-        elif self.cfg.expt.man_ramsey[0]:   
+        elif self.cfg.expt.man_ramsey[0]:
             self.pulse(ch=self.cavity_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
 
@@ -305,31 +302,31 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 self.setup_and_pulse(ch=self.cavity_ch[qTest],
                                      style="arb",
                                      freq=self.user_freq,
-                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]), 
+                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]),
                                      gain=self.user_gain,
                                      waveform="user_test")
             else: # its a flat top pulse
                 self.setup_and_pulse(ch=self.cavity_ch[qTest],
                                      style="flat_top",
                                      freq=self.user_freq,
-                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]), 
+                                     phase=self.deg2reg(phase_adv, gen_ch=self.cavity_ch[qTest]),
                                      gain=self.user_gain,
                                      length=self.user_length,
                                      waveform="user_test")
             self.sync_all(self.us2cycles(0.01))
 
-        # postpulse 
+        # postpulse
         self.sync_all()
         if cfg.expt.postpulse:
-            if cfg.expt.gate_based: 
+            if cfg.expt.gate_based:
                 creator = self.get_prepulse_creator(cfg.expt.post_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'post_')
-            else: 
+            else:
                 self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post_')
 
         if not self.cfg.user_defined_pulse[0]:
             # parity measurement
-            if self.cfg.expt.parity_meas: 
+            if self.cfg.expt.parity_meas:
                 self.custom_pulse(self.cfg, self.parity_meas_pulse, prefix='ParityMeas')
         else:
             _freq = cfg.device.qubit.f_ge[qTest]
@@ -346,7 +343,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
             self.setup_and_pulse(ch=self.qubit_chs[qTest],
                                  style=_style,
-                                 freq=freq_2_reg, 
+                                 freq=freq_2_reg,
                                  phase=phase_2_reg,
                                  gain=_gain,
                                  length=_length_2_cycles,
@@ -358,8 +355,169 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
     def analyze(self, data=None, **kwargs):
-        return super().analyze(data, **kwargs)()
+
+
+        def estimate_periodicity(y, sampling_rate=1.0):
+            # Compute FFT
+            fft = np.fft.fft(y - np.mean(y))  # remove DC offset
+            freqs = np.fft.fftfreq(len(y), d=1/sampling_rate)
+
+            # Only take the positive frequencies
+            pos_mask = freqs > 0
+            freqs = freqs[pos_mask]
+            power = np.abs(fft[pos_mask])
+
+            # Find the dominant frequency
+            dominant_freq = freqs[np.argmax(power)]
+
+            # Convert frequency to period
+            estimated_period = 1 / dominant_freq if dominant_freq != 0 else np.inf
+            return estimated_period
+
+        def fit_model(x, alpha2, f, scale, offset):
+            """Fitting model: exp(2*alpha2*(-cos(2*pi*f*x)-1))"""
+            return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi * f * x) - 1)) + offset
+
+        def normalize(z):
+            Ig = self.cfg.device.readout.Ig[0]
+            Ie = self.cfg.device.readout.Ie[0]
+            return (z - Ig) / (Ie - Ig)
+
+
+        x, y, z = self.data['xpts'], self.data['ypts'], normalize(self.data['avgi'])
+
+        # Lists to collect fit results
+        alpha2_fits = []
+        f_fits = []
+        fit_results = []
+        z_fits = []
+        z_smooths = []
+
+        period_estimate = estimate_periodicity(z[0], sampling_rate=1/(x[1] - x[0]))
+        f_initial = 1.0 / period_estimate if period_estimate != 0 and np.isfinite(period_estimate) else 0.1
+
+        # Fit each line
+        for lid, line in enumerate(z):
+            signal_smooth = gaussian_filter1d(line, sigma=1.5)
+            z_smooths.append(signal_smooth)
+
+            alpha_guess = y[lid]*self.cfg.device.manipulate.gain_to_alpha[0]
+
+            # Create lmfit Model
+            model = Model(fit_model)
+
+            # Set initial parameters
+            params = model.make_params(
+                # alpha2 = dict(value=alpha_guess**2, min=alpha_guess**2/2, max=alpha_guess**2*2),
+                alpha2 = dict(value=alpha_guess**2, vary=False),
+                f=f_initial,
+                scale=dict(value=1, min=0.1, max=1.2),
+                offset=dict(value=0, min=-0.1, max=0.5))
+
+            # Perform fit
+            result = model.fit(line, params, x=x)
+
+            # Collect best-fit parameters
+            alpha2_fits.append(result.params['alpha2'].value)
+            f_fits.append(result.params['f'].value)
+            fit_results.append(result)
+            z_fits.append(result.best_fit)
+
+        f_fits = np.array(f_fits)
+        alpha2_fits = np.array(alpha2_fits)
+        fit_good = [res.rsquared > 0.2 for res in fit_results]
+
+        filtered_alpha2 = alpha2_fits[fit_good]
+        filtered_f = f_fits[fit_good]
+
+        # here we deduct the virtual ramsey from fitted f
+        # self.cfg.expt got erased during initialization... so extracting it another way
+        cfg = json.loads(self.data['attrs']['config'])
+        virtual_freq = cfg['expt']['ramsey_freq']
+        kerr_gain = cfg['expt']['kerr_gain']
+
+        alpha2_array = np.array(filtered_alpha2)
+        f_array = np.array(filtered_f) - virtual_freq
+        z_smooths = np.array(z_smooths)
+
+        # Create linear model: w = kc * alpha2 + delta
+        linear_model = Model(lambda x, kc, delta: kc * x + delta, independent_vars=['x'])
+        linear_params = linear_model.make_params(kc=1.0, delta=0.0)
+        linear_result = linear_model.fit(2*np.pi*f_array, linear_params, x=alpha2_array)
+
+        # Store results
+        self.fit_results = {
+            'alpha2': alpha2_array,
+            'f': f_array,
+            'results': fit_results,
+            'z_fits': np.array(z_fits),
+            'kc': linear_result.params['kc'].value,
+            'delta': linear_result.params['delta'].value,
+            'linear_fit_result': linear_result,
+            'z_smooths': z_smooths,
+            'fit_good': fit_good,
+            'kerr_gain': kerr_gain,
+        }
+
+
 
     def display(self, data=None, fit=True, **kwargs):
-        return super().display(data, fit, **kwargs)()
+        if not data:
+            data = self.data
+
+        if not fit:
+            return super().display(data, fit, **kwargs)
+
+        # Create figure with 3 panels
+        fig, axes = plt.subplots(3, 1, figsize=(8, 12))
+
+        # Panel 1: Original data heatmap
+        ax1 = axes[0]
+        im1 = ax1.pcolormesh(self.data['xpts'], self.data['ypts'], self.data['avgi'],
+                             shading='auto', cmap='viridis')
+        ax1.set_xlabel('duration (us)')
+        ax1.set_ylabel('displacement gain')
+        ax1.set_title(f'{self.fname.split(os.path.sep)[-1]} (avgi)')
+        plt.colorbar(im1, ax=ax1)
+
+        # Panel 2: Best fit heatmap
+        ax2 = axes[1]
+        im2 = ax2.pcolormesh(self.data['xpts'], self.data['ypts'], self.fit_results['z_fits'],
+                             shading='auto', cmap='viridis')
+        ax2.set_xlabel('duration (us)')
+        ax2.set_ylabel('displacement gain')
+        ax2.set_title('Best Fit')
+        plt.colorbar(im2, ax=ax2)
+        for lid, good in enumerate(self.fit_results['fit_good']):
+            if not good:
+                ax2.axhline(self.data['ypts'][lid], color= 'r', ls='--', linewidth=1)
+
+        # Panel 3: Linear fit of f vs alpha2
+        ax3 = axes[2]
+        alpha2_array = self.fit_results['alpha2']
+        f_array = self.fit_results['f']
+        kc = self.fit_results['kc']
+        delta = self.fit_results['delta']
+
+        # Scatter plot of data points
+        ax3.scatter(alpha2_array, f_array, alpha=0.6, label='Data')
+
+        # Plot best fit line
+        alpha2_fit_line = np.linspace(alpha2_array.min(), alpha2_array.max(), 3)
+        f_fit_line = (kc * alpha2_fit_line + delta)/np.pi/2
+        ax3.plot(alpha2_fit_line, f_fit_line, 'r-', linewidth=2, label='Linear Fit')
+
+        ax3.set_xlabel(r'$|\alpha|^2$')
+        ax3.set_ylabel(r'$f$ (kHz)')
+        ax3.set_title('freq vs displacement')
+        ax3.legend()
+
+        # Add annotation with fit parameters
+        textstr = f'$K_c$ = {kc*1e3:.3f} krad/s\n$\delta$ = {delta*1e3:.3f} krad/s'
+        ax3.text(0.05, 0.95, textstr, transform=ax3.transAxes,
+                fontsize=12, verticalalignment='top',
+                bbox=dict(boxstyle='round', alpha=0.2))
+
+        plt.tight_layout()
+        return fig
 

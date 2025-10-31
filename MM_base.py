@@ -13,7 +13,7 @@ logger = logging.getLogger("qick.qick_asm")
 logger.setLevel(logging.ERROR)
 
 
-def print_debug(): 
+def print_debug():
     import inspect
     print(inspect.getfile(QickProgram))
     print(inspect.getfile(AveragerProgram))
@@ -23,7 +23,7 @@ def print_debug():
 class MM_base:
     """
     Methods and handy properties that are useful for both averager and raverager programs
-    Prepares the commonly used pulses in multimode experiments 
+    Prepares the commonly used pulses in multimode experiments
     such as qubit ge, ef, f0g1, M1-Sx π and π/2 pulses,
     such that child classes can directly use the waveforms (gaussians) added here.
     Also provides a more generic way to create custom pulses and many convenience functions.
@@ -46,7 +46,7 @@ class MM_base:
         '''
         "Software" initialization: parses the cfg and stores parameters in self for easy access
         such as channel info, frequency, gain for various pulses.
-        This is called by self.MM_base_initialize() during intialization 
+        This is called by self.MM_base_initialize() during intialization
         '''
         cfg = self.cfg
         # self.cfg = cfg
@@ -56,7 +56,7 @@ class MM_base:
         try:
             self.qubits = self.cfg.expt.qubits
         except AttributeError:
-            self.qubits = self.cfg.expt.qubit 
+            self.qubits = self.cfg.expt.qubit
 
         qTest = self.qubits[0]
 
@@ -87,15 +87,6 @@ class MM_base:
         self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
 
-        #TODO: cleanup these name references. Should be easy with the help of LSP!
-        # It can show you the references to this variable in the entire project.
-        # E.g. f0g1 info has multiple sources of truth:
-        #   is it cfg.device.QM.pulses.f0g1.[freq/gain/length/hpilength/sigma]?
-        #   or cfg.device.qubit.pulses.f0g1.[gain/length/sigma]
-        #   or cfg.device.qubit.pulses.pi_f0g1.sigma?
-        #   or perhaps not in cfg at all but in the CSV?
-        # All of the above are used in various places!
-
         # -----------freqeuncies: (same as above but diff name and as lists...)-----------
         self.f_ge_reg = [self.freq2reg(
             cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
@@ -120,7 +111,7 @@ class MM_base:
         self.hpi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
 
         # --------------qubit pulse parameters: gain----------
-        self.pi_ge_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest] 
+        self.pi_ge_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
         self.hpi_ge_gain = cfg.device.qubit.pulses.hpi_ge.gain[qTest]
         self.pi_ef_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
         self.hpi_ef_gain = cfg.device.qubit.pulses.hpi_ef.gain[qTest]
@@ -138,18 +129,18 @@ class MM_base:
             self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
 
 
-    def initialize_idling_dataset(self): 
+    def initialize_idling_dataset(self):
         '''
         Create a dictionary that will keep a record of idling times
 
-        dict= {'key = transition' : value = []} 
+        dict= {'key = transition' : value = []}
         '''
 
     def get_prepulse_creator(self, sweep_pulse: Optional[List[List[Union[str,int]]]] = None, cfg: Optional[AttrDict] = None):
         '''
-        sweep_pulse: 
+        sweep_pulse:
             [name of channel (qubit, multiphoton, man, storage),
-            name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
+            name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1',
             name of pulse like pi, hpi, or parity_M1 or parity_M2,
             phase  (int form )]
         Returns:
@@ -170,31 +161,31 @@ class MM_base:
         # creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
             for pulse_idx, pulse in enumerate(sweep_pulse):
-                # for each pulse 
+                # for each pulse
                 pulse_param = list(pulse[1:])
                 channel_name = pulse[0]
                 eval(f"creator.{channel_name}({pulse_param})")
 
         return creator
 
-    def compound_storage_gate(self, input = True, storage_no = 1, man_no = 1): 
+    def compound_storage_gate(self, input = True, storage_no = 1, man_no = 1):
         '''
         input: if True, then the storage gate is on, else output to storage mode
 
-        input from ge state 
+        input from ge state
 
-        returns gate based prepulse string 
+        returns gate based prepulse string
         '''
         prepulse_str = [ ['qubit', 'ef', 'pi',0],
-                    ['man', 'M1' , 'pi',0 ], 
+                    ['man', 'M1' , 'pi',0 ],
                     ['storage', 'M' + str(man_no) + '-S' + str(storage_no), 'pi',0]]
-        if not input: 
+        if not input:
             prepulse_str = prepulse_str [::-1]
-            for idx in range(len(prepulse_str)): 
+            for idx in range(len(prepulse_str)):
                 prepulse_str[idx][-1] = 180
-        return prepulse_str 
+        return prepulse_str
 
-    def prep_man_photon(self, photon_no): 
+    def prep_man_photon(self, photon_no):
         ''' prepare a photon in the manipulate mode '''
 
         pulse_seq = []
@@ -205,11 +196,11 @@ class MM_base:
         return pulse_seq
 
 
-    def MM_base_initialize(self): 
+    def MM_base_initialize(self):
         '''
         This is effectively the actual initialization function of this class,
         as when inherited after eg RAveragerProgram,
-        the __init__ of this class never gets called due to MRO 
+        the __init__ of this class never gets called due to MRO
         where as the initialize() of the child classes does.
         First calls parse_config() to get the parameters
         Then does "hardware" initialization: declares gen/ro channels and adds waveforms
@@ -250,34 +241,34 @@ class MM_base:
         # ---------- readout pulse parameters -----------
         self.set_pulse_registers(ch=self.res_chs[qTest], style="const", freq=self.f_res_reg[qTest], phase=self.deg2reg(
             cfg.device.readout.phase[qTest]), gain=cfg.device.readout.gain[qTest], length=self.readout_lengths_dac[qTest])
-        
+
         # Useful pulse sequences
         self.parity_pulse = self.get_parity_str(1, return_pulse=True, second_phase=180)
 
         # self.wait_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.2))
- 
+
 
     def get_total_time(self, test_pulse, gate_based = False, cycles = False, cycles2us = 0.0023251488095238095):
         '''
-        Takes in pulse str of form 
+        Takes in pulse str of form
         # [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]]s
         '''
-        if gate_based: 
+        if gate_based:
             test_pulse = self.get_prepulse_creator(test_pulse).pulse
-        t = 0 
+        t = 0
         for i in range(len(test_pulse[0])):
             if test_pulse[5][i] == 'g' or test_pulse[5][i] == 'gauss' or test_pulse[5][i] == 'gaussian':
                 t += test_pulse[-1][i] * 4
             elif test_pulse[5][i] == 'flat_top' or test_pulse[5][i] == 'f':
                 t += test_pulse[-1][i] * 6 + test_pulse[2][i]
             t+= 0.01 # 10ns delay
-        if cycles: 
+        if cycles:
             # QickConfig(im[yaml_cfg['aliases']['soc']].get_cfg())
             return int(round(t / cycles2us))
-        return t 
+        return t
 
-    def initialize_waveforms(self): 
+    def initialize_waveforms(self):
         '''
         Initialize waveforms for ge, ef_new, f0g1 and sidebands
         '''
@@ -287,17 +278,17 @@ class MM_base:
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_ge_sigma, length=self.hpi_ge_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pi_ef_sigma, length=self.pi_ef_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ef", sigma=self.hpi_ef_sigma, length=self.hpi_ef_sigma*4)
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top 
+        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top
 
         # self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
         self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
         self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
 
-        
 
 
-    def measure_wrapper(self): 
+
+    def measure_wrapper(self):
         """
         Aligns channels and performs a measurement on the first qubit specified in the experiment configuration.
         This method synchronizes all channels, then triggers a measurement pulse on the readout channel
@@ -319,7 +310,7 @@ class MM_base:
         qTest = self.cfg.expt.qubits[0]
         self.sync_all(10)
         self.measure(
-            pulse_ch=self.res_chs[qTest], 
+            pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],
             adc_trig_offset=self.cfg.device.readout.trig_offset[qTest],
             wait=True,
@@ -328,7 +319,7 @@ class MM_base:
 
 
     def reset_and_sync(self):
-        # Phase reset all channels except readout DACs 
+        # Phase reset all channels except readout DACs
 
         # self.setup_and_pulse(ch=self.res_chs[0], style='const', freq=self.freq2reg(18, gen_ch=self.res_chs[0]), phase=0, gain=5, length=10, phrst=1)
         # self.setup_and_pulse(ch=self.qubit_chs[qTest]s[0], style='const', freq=self.freq2reg(18, gen_ch=self.qubit_chs[qTest]s[0]), phase=0, gain=5, length=10, phrst=1)
@@ -345,7 +336,7 @@ class MM_base:
         except AttributeError:
             self.parse_config()
 
-        # some dummy variables 
+        # some dummy variables
         qTest = 0
         self.f_cav = self.freq2reg(5000, gen_ch=self.man_ch[0])
 
@@ -385,7 +376,7 @@ class MM_base:
             return ch[0]
         return ch
 
-    def custom_pulse(self, 
+    def custom_pulse(self,
                      cfg, # not used but in order not to break old API
                      pulse_data: Optional[Union[List[List[float]], np.ndarray]]=None,
                      advance_qubit_phase: float=0,
@@ -430,10 +421,10 @@ class MM_base:
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
 
-                self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                    gain=pulse_data[1][jj], 
+                self.setup_and_pulse(ch=self.tempch, style="arb",
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                    gain=pulse_data[1][jj],
                                     waveform="temp_gaussian"+str(jj)+prefix)
 
 
@@ -448,15 +439,15 @@ class MM_base:
                     sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
                 self.sync_all(self.us2cycles(0.01))
 
-                self.setup_and_pulse(ch=self.tempch, style="flat_top", 
-                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                gain=pulse_data[1][jj], 
-                                length=self.us2cycles(pulse_data[2][jj], 
+                self.setup_and_pulse(ch=self.tempch, style="flat_top",
+                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                gain=pulse_data[1][jj],
+                                length=self.us2cycles(pulse_data[2][jj],
                                                     gen_ch=self.tempch),
                                 waveform="temp_gaussian"+str(jj)+prefix)
 
-            # check if pulse_data[5][jj] is a list or not 
+            # check if pulse_data[5][jj] is a list or not
             elif isinstance(pulse_data[5][jj], list) and pulse_data[5][jj][0] == 'opt_cont':
                 if waveform_preload is None:
                     encoding = pulse_data[5][jj][1] # fock, gkp, etc.
@@ -467,21 +458,21 @@ class MM_base:
                     # load only once the waveform
                     data = np.load(filename, allow_pickle=True)
 
-                    if self.tempch == self.qubit_ch[0]: 
+                    if self.tempch == self.qubit_ch[0]:
                         times = data['times']
                         I = data[f'I_q']
                         Q = data[f'Q_q']
                         sync_all_flag = False # dont sync for qubit channel
 
-                    elif self.tempch == self.man_ch[0]: 
+                    elif self.tempch == self.man_ch[0]:
                         times = data['times']
                         I = data[f'I_c']
                         Q = data[f'Q_c']
 
-                    # convert in us and MHz 
+                    # convert in us and MHz
                     times_us = times * 1e-3
-                    I_mhz = I 
-                    Q_mhz = -Q 
+                    I_mhz = I
+                    Q_mhz = -Q
 
                     gencfg = self.soccfg["gens"][self.tempch]
                     maxv = gencfg["maxv"] * gencfg["maxv_scale"] - 1
@@ -518,7 +509,7 @@ class MM_base:
                     elif self.tempch == self.man_ch[0]:
                         waveform = encoding + '_' + state + '_m'
 
-                    self.add_pulse(ch=self.tempch, 
+                    self.add_pulse(ch=self.tempch,
                                 name=waveform,idata=maxv * iamps, qdata=maxv * qamps)
 
                     # if sync_all_flag:
@@ -527,9 +518,9 @@ class MM_base:
                     #     sync_all_flag=True
 
                     self.setup_and_pulse(ch=self.tempch, style="arb",
-                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                    gain=pulse_data[1][jj], 
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                    gain=pulse_data[1][jj],
                                     waveform=waveform)
 
                 else:
@@ -551,22 +542,22 @@ class MM_base:
                             raise ValueError("No waveform found for manipulation channel in waveform_preload")
 
                     self.setup_and_pulse(ch=self.tempch, style="arb",
-                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                    gain=pulse_data[1][jj], 
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                    gain=pulse_data[1][jj],
                                     waveform=waveform)
 
 
             else: # this is for parity measurement wait time, either wait or do constant pulse of 0 amplitude
-                if sync_zero_const and pulse_data[1][jj] ==0: 
-                    self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
+                if sync_zero_const and pulse_data[1][jj] ==0:
+                    self.sync_all(self.us2cycles(pulse_data[2][jj])) #,
                                                         #gen_ch=self.tempch))
                 else:
-                    self.setup_and_pulse(ch=self.tempch, style="const", 
-                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                    gain=pulse_data[1][jj], 
-                                    length=self.us2cycles(pulse_data[2][jj], 
+                    self.setup_and_pulse(ch=self.tempch, style="const",
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                    gain=pulse_data[1][jj],
+                                    length=self.us2cycles(pulse_data[2][jj],
                                                         gen_ch=self.tempch))
             # self.wait_all(self.us2cycles(0.01))
             if sync_all_flag:
@@ -575,13 +566,13 @@ class MM_base:
                 sync_all_flag=True
 
     def custom_pulse_with_preloaded_wfm(self, cfg, pulse_data, advance_qubit_phase = None, sync_zero_const = False, prefix='pre',
-                                        same_storage = False, same_qubit_pulse = False, storage_no=1): 
+                                        same_storage = False, same_qubit_pulse = False, storage_no=1):
         '''
         Executes prepulse or postpulse
 
         # [[frequency], [gain], [length (us)], [phases], [drive channel],
         #  [shape], [ramp sigma]],
-        #  drive channel=1 (flux low), 
+        #  drive channel=1 (flux low),
         # 2 (qubit),3 (flux high),4 (storage),0 (f0g1),6 (manipulate),
 
         same_storage: if True, then the storage mode is not changed, we can reuse already prgrammed pulse
@@ -607,80 +598,80 @@ class MM_base:
                 self.tempch = self.tempch[0]
             # determine the pulse shape
 
-            waveform_name = None 
+            waveform_name = None
 
-            if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g": 
-                # likely a qubit pulse on ge space with 35 ns sigma 
+            if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g":
+                # likely a qubit pulse on ge space with 35 ns sigma
                 waveform_name = "pi_qubit_ge"
-                if self.cfg.expt.preloaded_pulses and self.tempch == 2 and same_qubit_pulse: 
+                if self.cfg.expt.preloaded_pulses and self.tempch == 2 and same_qubit_pulse:
                     self.pulse(ch=self.tempch)
-                else: 
-                    self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                gain=pulse_data[1][jj], 
+                else:
+                    self.setup_and_pulse(ch=self.tempch, style="arb",
+                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                gain=pulse_data[1][jj],
                                 waveform=waveform_name)
-                
+
             elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
-                if self.tempch == 0 : 
+                if self.tempch == 0 :
                     waveform_name = "pi_f0g1"
                 elif self.tempch == 1:
                     waveform_name = "pi_m1si_low"
                 elif self.tempch == 3:
                     waveform_name = "pi_m1si_high"
-                # elif self.tempch == 2: 
+                # elif self.tempch == 2:
                 #     waveform_name = "pi_qubit_ef_ftop"
 
                 # self.sync_all(self.us2cycles(0.01))
                 if self.cfg.expt.preloaded_pulses and self.tempch == 0: # f0g1 resuse
                     self.safe_regwi(self.page_f0g1_phase, self.r_f0g1_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
-                    self.pulse(ch=self.tempch) 
+                    self.pulse(ch=self.tempch)
 
                 elif self.cfg.expt.preloaded_pulses and self.tempch == (1 or 3) and same_storage: # storage reuse
-                    if self.tempch == 1: 
+                    if self.tempch == 1:
                         self.safe_regwi(self.page_flux_low_phase, self.r_flux_low_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
-                    else: 
+                    else:
                         self.safe_regwi(self.page_flux_high_phase, self.r_flux_high_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
                     self.pulse(ch=self.tempch)
 
                 # elif self.cfg.expt.preloaded_pulses and self.tempch == 2: # qubit reuse
                 #     self.safe_regwi(self.page_qubit_phase, self.r_qubit_phase, self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch))
                 #     self.pulse(ch=self.tempch)
-                else: 
+                else:
                     # using arb waveform for flat top pulse
 
                     if self.cfg.expt.use_arb_waveform:
                         if self.tempch == 0:  # f0g1
-                            self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                            self.setup_and_pulse(ch=self.tempch, style="arb",
+                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
                                             gain=pulse_data[1][jj],
                                         waveform="pi_f0g1_arb")
                         else:  # M1-Si, need to specify storage number
-                            self.setup_and_pulse(ch=self.tempch, style="arb", 
-                                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
+                            self.setup_and_pulse(ch=self.tempch, style="arb",
+                                                freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                                phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
                                                 gain=pulse_data[1][jj],
                                             waveform="pi_m1s" + str(storage_no) + "_arb")
                     else:
                         # using standard flat top pulse
-                        self.setup_and_pulse(ch=self.tempch, style="flat_top", 
-                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                            gain=pulse_data[1][jj], 
-                                            length=self.us2cycles(pulse_data[2][jj], 
+                        self.setup_and_pulse(ch=self.tempch, style="flat_top",
+                                            freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                            phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                            gain=pulse_data[1][jj],
+                                            length=self.us2cycles(pulse_data[2][jj],
                                                                 gen_ch=self.tempch),
                                         waveform=waveform_name)
             else:
-                if sync_zero_const and pulse_data[1][jj] ==0: 
-                    self.sync_all(self.us2cycles(pulse_data[2][jj])) #, 
+                if sync_zero_const and pulse_data[1][jj] ==0:
+                    self.sync_all(self.us2cycles(pulse_data[2][jj])) #,
                                                         #gen_ch=self.tempch))
                 else:
-                    self.setup_and_pulse(ch=self.tempch, style="const", 
-                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch), 
-                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch), 
-                                    gain=pulse_data[1][jj], 
-                                    length=self.us2cycles(pulse_data[2][jj], 
+                    self.setup_and_pulse(ch=self.tempch, style="const",
+                                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                                    gain=pulse_data[1][jj],
+                                    length=self.us2cycles(pulse_data[2][jj],
                                                         gen_ch=self.tempch))
             # self.wait_all(self.us2cycles(0.01))
             self.sync_all(self.us2cycles(0.01))
@@ -693,7 +684,7 @@ class MM_base:
         self.IQ_table = IQ_table
 
         pulse_param = self.get_prepulse_creator(pulse_conf).pulse
-        # # we load the IQ waveform with the param 
+        # # we load the IQ waveform with the param
         qb_channel = pulse_param[4][0]
         cav_channel = pulse_param[4][1]
 
@@ -750,11 +741,11 @@ class MM_base:
         return [waveform_cav, waveform_qb]
 
 
-    def man_reset(self, man_idx, chi_dressed = True ): 
+    def man_reset(self, man_idx, chi_dressed = True ):
         '''
-        Reset manipulate mode by swapping it to lossy mode 
+        Reset manipulate mode by swapping it to lossy mode
 
-        chi_dressed: if man freq shifted due to pop in qubit e, f states. 
+        chi_dressed: if man freq shifted due to pop in qubit e, f states.
         '''
         qTest = 0
         cfg=AttrDict(self.cfg)
@@ -781,7 +772,7 @@ class MM_base:
             for chi in chis:
                 freq_chi_shifted = M1D1_freq + (n * chi)
                 self.set_pulse_registers(ch=ch,
-                                        freq=self.freq2reg(freq_chi_shifted,gen_ch=ch), 
+                                        freq=self.freq2reg(freq_chi_shifted,gen_ch=ch),
                                         style="flat_top",
                                         phase=self.deg2reg(0),
                                         length=self.us2cycles(10, gen_ch=ch),
@@ -793,9 +784,9 @@ class MM_base:
         self.sync_all(self.us2cycles(2))
 
 
-    def man_stor_swap(self, man_idx: int, stor_idx: int): 
+    def man_stor_swap(self, man_idx: int, stor_idx: int):
         '''
-        Perform Swap (pi pulse only) between manipulate mode and storage mode 
+        Perform Swap (pi pulse only) between manipulate mode and storage mode
         '''
         sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(stor_idx), 'pi', 0], ]
         creator = self.get_prepulse_creator(sweep_pulse)
@@ -806,9 +797,9 @@ class MM_base:
 
     def coup_stor_swap(self, man_idx):
         '''
-        Perform Swap between manipulate mode and  storage mode 
+        Perform Swap between manipulate mode and  storage mode
         '''
-        sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'C', 'pi', 0], 
+        sweep_pulse = [['storage', 'M'+ str(man_idx) + '-' + 'C', 'pi', 0],
                        ]
         creator = self.get_prepulse_creator(sweep_pulse)
         # self.sync_all(self.us2cycles(0.2))
@@ -819,13 +810,13 @@ class MM_base:
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
                       ef_reset = True, pre_selection_reset = True, prefix = 'base'):
         '''
-        Performs active reset on g,e,f as well as man/storage modes 
+        Performs active reset on g,e,f as well as man/storage modes
         Includes post selection measurement
         '''
         cfg = self.cfg
         qTest = 0
 
-        # Prepare Active Reset 
+        # Prepare Active Reset
         ## ALL ACTIVE RESET REQUIREMENTS
         # read val definition
         self.r_read_q = 9  # ge active reset register
@@ -846,7 +837,7 @@ class MM_base:
         # self.sync_all(self.us2cycles(0.2))
         self.sync_all(self.us2cycles(0.05))
 
-        # First Reset Manipulate Modes 
+        # First Reset Manipulate Modes
         # =====================================
         if man_reset:
             # self.man_reset(0)
@@ -865,7 +856,7 @@ class MM_base:
 
         self.read(0, 0, "lower", self.r_read_q)  # read data from I buffer, QA, and store
         # self.wait_all(self.us2cycles(0.05))  # to allow the read to be complete might be reduced
-        self.sync_all(self.us2cycles(0.05)) # EG: this is not doing anything 
+        self.sync_all(self.us2cycles(0.05)) # EG: this is not doing anything
 
         # perform Qubit active reset comparison, jump if condition is true to the label1 location
         self.condj(0, self.r_read_q, "<", self.r_thresh_q,
@@ -879,7 +870,7 @@ class MM_base:
                                  waveform='pi_qubit_ge')
         self.pulse(ch=self.qubit_chs[qTest])
         self.label(prefix + "LABEL_1")  # location to be jumped to
-        self.wait_all(self.us2cycles(0.05)) 
+        self.wait_all(self.us2cycles(0.05))
         self.sync_all(self.us2cycles(0.25))
 
         # Reset ef level
@@ -919,14 +910,14 @@ class MM_base:
                                     waveform='pi_qubit_ge')
             self.pulse(ch=self.qubit_chs[qTest])
             self.label(prefix + "LABEL_2")  # location to be jumped to
-            # self.wait_all(self.us2cycles(0.05)) 
+            # self.wait_all(self.us2cycles(0.05))
             self.sync_all(self.us2cycles(0.25))
 
         # Dump storage population to manipulate, then to lossy mode
         # ======================================================
-        if storage_reset: 
+        if storage_reset:
             for ii in range(7):
-                man_idx = 0 
+                man_idx = 0
                 stor_idx = ii
                 self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
                 # self.man_reset(0, chi_dressed = False)
@@ -939,7 +930,7 @@ class MM_base:
 
         # post selection
         # ======================================================
-        if pre_selection_reset: 
+        if pre_selection_reset:
             self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
             self.measure(pulse_ch=self.res_chs[qTest],
                         adcs=[self.adc_chs[qTest]],
@@ -949,15 +940,15 @@ class MM_base:
             self.sync_all(self.us2cycles(0.2))
 
 
-    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0, fast = False): 
+    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0, fast = False):
         '''
-        Create parity pulse 
+        Create parity pulse
         '''
         parity_str = [['qubit', 'ge', 'hpi', 0],
                     ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
                     ['qubit', 'ge', 'hpi', second_phase]]
-        if fast: 
-            # take the AC stark phase 
+        if fast:
+            # take the AC stark phase
             freq_AC = self.cfg.device.manipulate.revival_stark_shift[man_mode_no-1]
             revival_time = self.cfg.device.manipulate.revival_time[man_mode_no-1]
             theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
@@ -1068,7 +1059,7 @@ class MM_base:
             # Qg = filter_data(data['Qg'], threshold, readout_per_experiment=readout_per_round)
             Ie, Qe = self.filter_data_IQ(data['Ie'], data['Qe'], threshold, readout_per_experiment=readout_per_round)
             # Qe = filter_data(data['Qe'], threshold, readout_per_experiment=readout_per_round)
-            plot_f = False 
+            plot_f = False
             if 'If' in data.keys():
                 plot_f = True
                 If, Qf = self.filter_data_IQ(data['If'], data['Qf'], threshold, readout_per_experiment=readout_per_round)
@@ -1077,7 +1068,7 @@ class MM_base:
             Qg = data['Qg']
             Ie = data['Ie']
             Qe = data['Qe']
-            plot_f = False 
+            plot_f = False
             if 'If' in data.keys():
                 plot_f = True
                 If = data['If']
@@ -1119,7 +1110,7 @@ class MM_base:
 
         """Rotate the IQ data"""
         Ig_new = Ig*np.cos(theta) - Qg*np.sin(theta)
-        Qg_new = Ig*np.sin(theta) + Qg*np.cos(theta) 
+        Qg_new = Ig*np.sin(theta) + Qg*np.cos(theta)
 
         Ie_new = Ie*np.cos(theta) - Qe*np.sin(theta)
         Qe_new = Ie*np.sin(theta) + Qe*np.cos(theta)
@@ -1149,8 +1140,8 @@ class MM_base:
             axs[0,1].scatter(Ie_new, Qe_new, label='e', color='r', marker='.', s=1)
             if plot_f: axs[0, 1].scatter(If_new, Qf_new, label='f', color='g', marker='.', s=1)
             axs[0,1].scatter(xg, yg, color='k', marker='o')
-            axs[0,1].scatter(xe, ye, color='k', marker='o')    
-            if plot_f: axs[0, 1].scatter(xf, yf, color='k', marker='o')    
+            axs[0,1].scatter(xe, ye, color='k', marker='o')
+            if plot_f: axs[0, 1].scatter(xf, yf, color='k', marker='o')
 
             axs[0,1].set_xlabel('I [ADC levels]')
             axs[0,1].legend(loc='upper right')
@@ -1196,7 +1187,7 @@ class MM_base:
             thresholds.append(binsg[tind])
             fids.append(contrast[tind])
 
-        if plot: 
+        if plot:
             axs[1,0].set_title(f'Histogram (Fidelity g-e: {100*fids[0]:.3}%)')
             axs[1,0].axvline(thresholds[0], color='0.2', linestyle='--')
             if plot_f:
@@ -1214,7 +1205,7 @@ class MM_base:
             axs[1,1].legend()
             axs[1,1].set_xlabel('I [ADC levels]')
 
-            plt.subplots_adjust(hspace=0.25, wspace=0.15)        
+            plt.subplots_adjust(hspace=0.25, wspace=0.15)
             plt.show()
 
         return fids, thresholds, theta*180/np.pi, confusion_matrix # fids: ge, gf, ef
@@ -1232,11 +1223,11 @@ class MMAveragerProgram(AveragerProgram, MM_base):
 
         note the soc object is proxy soc not QIckConfig soc
         """
-        return super().acquire(soc=soc, threshold=threshold, load_pulses=load_pulses, progress=progress, 
+        return super().acquire(soc=soc, threshold=threshold, load_pulses=load_pulses, progress=progress,
                        readouts_per_experiment=readouts_per_experiment)
 
 
-class MMRAveragerProgram(RAveragerProgram, MM_base): 
+class MMRAveragerProgram(RAveragerProgram, MM_base):
     def __init__(self, soccfg, cfg):
         RAveragerProgram.__init__(self, soccfg, cfg)
 
@@ -1252,22 +1243,22 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
-class prepulse_creator2: 
+class prepulse_creator2:
     def __init__(self, cfg, storage_man_file, floquet_man_stor_file=None):
         '''
-        Takes pulse param of form 
-            [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1', 
+        Takes pulse param of form
+            [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1',
             name of pulse like pi, hpi, or parity_M1 or parity_M2,
             phase  (int form )]
 
-        Creates pulses of the form 
+        Creates pulses of the form
             [[frequency], [gain], [length (us)], [phases],
             [drive channel], [shape], [ramp sigma]]
         where drive channel should be looked up in the hardware config file
             1 (flux low & high), 2 (qubit), 3 (manipulate),
             4 (storage),  0 (f0g1), as of fall 2025
         '''
-        # config 
+        # config
         # with open(config_file, 'r') as cfg_file:
         #     yaml_cfg = yaml.safe_load(cfg_file)
         self.cfg = cfg#AttrDict(yaml_cfg)
@@ -1276,7 +1267,7 @@ class prepulse_creator2:
         #     "multiphoton_cfg", multiphoton_cfg.pulses["pi_g0-e0"]['frequency'] if multiphoton_cfg else "No multiphoton config provided"
         # )
 
-        # man storage swap data 
+        # man storage swap data
         self.dataset = storage_man_swap_dataset(storage_man_file)
 
         # man storage floquet swap data
@@ -1284,7 +1275,7 @@ class prepulse_creator2:
         if floquet_man_stor_file is not None:
             self.dataset_floquet = floquet_storage_swap_dataset(floquet_man_stor_file)
 
-        # initialize pulse 
+        # initialize pulse
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)
 
     def flush(self):
@@ -1320,7 +1311,7 @@ class prepulse_creator2:
         # pulse_full_name = pulse_name + '_' + transition_name
         # cfg = self.multiphoton_cfg
 
-        # qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']], 
+        # qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']],
         #             [cfg.pulses[pulse_full_name]['gain']],
         #             [cfg.pulses[pulse_full_name]['length']],
         #             [phase],
@@ -1348,12 +1339,12 @@ class prepulse_creator2:
             #     return self.man(pulse_param)
 
 
-        qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]], 
-                               [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]], 
-                               [cfg.device.multiphoton[pulse_name][transition]['length'][photon_no_start]], 
-                               [phase], 
-                               [self.channel_assign(transition_name)], 
-                               [cfg.device.multiphoton[pulse_name][transition]['type'][photon_no_start]], 
+        qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]],
+                               [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]],
+                               [cfg.device.multiphoton[pulse_name][transition]['length'][photon_no_start]],
+                               [phase],
+                               [self.channel_assign(transition_name)],
+                               [cfg.device.multiphoton[pulse_name][transition]['type'][photon_no_start]],
                                [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
 
 
@@ -1367,12 +1358,12 @@ class prepulse_creator2:
         cfg = self.cfg
 
         # qubit pulse
-        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][0]], 
+        pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][0]],
                         [cfg.device.optimal_control[encoding][state]['gain'][0]],
-                        [0], 
-                        [cfg.device.optimal_control[encoding][state]['phase'][0]], 
-                        [int(self.cfg.hw.soc.dacs.qubit.ch[channel_idx[0]])],   
-                        [['opt_cont', encoding, state]], 
+                        [0],
+                        [cfg.device.optimal_control[encoding][state]['phase'][0]],
+                        [int(self.cfg.hw.soc.dacs.qubit.ch[channel_idx[0]])],
+                        [['opt_cont', encoding, state]],
                         [0]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, pulse), axis=1)
@@ -1380,7 +1371,7 @@ class prepulse_creator2:
         # pulse manipulate
         pulse = np.array([[cfg.device.optimal_control[encoding][state]['frequency'][1]],
                         [cfg.device.optimal_control[encoding][state]['gain'][1]],
-                        [0], 
+                        [0],
                         [cfg.device.optimal_control[encoding][state]['phase'][1]],
                         # int(self.cfg.hw.soc.dacs.manipulate_in.ch[channel_idx[1]]),
                         [int(self.cfg.hw.soc.dacs.manipulate_in.ch[channel_idx[0]])],
@@ -1391,20 +1382,20 @@ class prepulse_creator2:
 
         return None
 
- 
+
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
         ''' pulse name comes from yaml file '''
         transition_name, pulse_name, phase = pulse_param
-        # frequency 
-        if transition_name[:2] == 'ge': 
+        # frequency
+        if transition_name[:2] == 'ge':
             freq = self.cfg.device.qubit.f_ge[0]
-        else: 
+        else:
             freq = self.cfg.device.qubit.f_ef[0]
 
         if pulse_name[:6] != 'parity':
             pulse_full_name = pulse_name + '_' + transition_name # like pi_ge or pi_ef or pi_ge_new or pi_ef_new
 
-            qubit_pulse = np.array([[freq], 
+            qubit_pulse = np.array([[freq],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['gain'][0]],
                     [self.cfg.device.qubit.pulses[pulse_full_name]['length'][0]],
                     [phase],
@@ -1418,9 +1409,9 @@ class prepulse_creator2:
             man_idx = int(pulse_name[-1:]) -1 # 1 for man1, 2 for man2
 
             if self.cfg.device.manipulate.revival_time[man_idx] != 0: # if revival time is not zero, then use it
-                qubit_pulse = np.array([[freq], 
+                qubit_pulse = np.array([[freq],
                         [0],
-                        [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs 
+                        [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs
                         [phase],
                         [2],
                         ['const'],
@@ -1436,7 +1427,7 @@ class prepulse_creator2:
         # connie: this whole function should really be calling multiphoton with f0-g1
         cav_name, pulse_name, phase = pulse_param
 
-        if pulse_name == 'pi': 
+        if pulse_name == 'pi':
             length = self.dataset.get_pi(cav_name)
         else:
             length = self.dataset.get_h_pi(cav_name)
@@ -1445,7 +1436,7 @@ class prepulse_creator2:
                 [ self.dataset.get_gain(cav_name)],
                 [length],
                 [phase],
-                [0], # f0g1 pulse 
+                [0], # f0g1 pulse
                 ['flat_top'],
                 [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 
@@ -1453,7 +1444,7 @@ class prepulse_creator2:
 
         return None
 
-    def buffer(self, pulse_param): 
+    def buffer(self, pulse_param):
         '''here the last parameter is time  (NOT THE MODE; this is just empty pulse; buffer tyime between gates )'''
         buffer = np.array([[0],
                 [0],
@@ -1471,7 +1462,7 @@ class prepulse_creator2:
         name can be pi or hpi'''
         stor_name, pulse_name, phase = pulse_param
 
-        if pulse_name == 'pi': 
+        if pulse_name == 'pi':
             length = self.dataset.get_pi(stor_name)
         else:
             length = self.dataset.get_h_pi(stor_name)
@@ -1524,5 +1515,3 @@ class prepulse_creator2:
                 [0]], dtype = object)
         self.pulse = np.concatenate((self.pulse, wait), axis=1)
         return None
-
-        
