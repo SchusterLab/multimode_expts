@@ -442,7 +442,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         # Create linear model: w = kc * alpha2 + delta
         linear_model = Model(lambda x, kc, delta: kc * x + delta, independent_vars=['x'])
         linear_params = linear_model.make_params(kc=1.0, delta=0.0)
-        linear_result = linear_model.fit(2*np.pi*f_array, linear_params, x=alpha2_array)
+        linear_result = linear_model.fit(f_array, linear_params, x=alpha2_array)
 
         # Store results
         self.fit_results = {
@@ -503,7 +503,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
         # Plot best fit line
         alpha2_fit_line = np.linspace(alpha2_array.min(), alpha2_array.max(), 3)
-        f_fit_line = (kc * alpha2_fit_line + delta)/np.pi/2
+        f_fit_line = (kc * alpha2_fit_line + delta)
         ax3.plot(alpha2_fit_line, f_fit_line*1e3, 'r-', linewidth=2, label='Linear Fit')
 
         ax3.set_xlabel(r'$|\alpha|^2$')
@@ -512,7 +512,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         ax3.legend()
 
         # Add annotation with fit parameters
-        textstr = f'$K_c$ = {kc*1e3:.3f} krad/s\n$\delta$ = {delta*1e3:.3f} krad/s'
+        textstr = f'$K_c$ = {kc*1e3:.3f} kHz\n$\delta$ = {delta*1e3:.3f} kHz'
         ax3.text(0.05, 0.95, textstr, transform=ax3.transAxes,
                 fontsize=12, verticalalignment='top',
                 bbox=dict(boxstyle='round', alpha=0.2))

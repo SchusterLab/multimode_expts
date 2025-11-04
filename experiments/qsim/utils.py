@@ -6,6 +6,26 @@ import lmfit
 from matplotlib import pyplot as plt
 from warnings import warn
 
+import os
+import subprocess
+
+
+def ensure_local_file(remote_path, local_path, filename):
+    """
+    Ensure that a file from remote_path exists in local_path.
+    If not, copy it over via sftp
+    """
+    local_file = os.path.join(local_path, filename)
+    if os.path.exists(local_file):
+        print(f'Found local file {local_file}')
+    else:
+        print(f'Fetching remote file {filename} to local path {local_path}')
+        remote_file = os.path.join(remote_path, filename)
+        subprocess_cmd = f'sftp {remote_file} {local_file}'
+        subprocess.run(subprocess_cmd, shell=True, check=True)
+    return local_file
+
+
 def ensure_list_in_cfg(cfg: Optional[AttrDict]):
     """
     Expand entries in config that are length 1 to fill all qubits
