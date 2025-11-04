@@ -383,7 +383,6 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             Ie = self.cfg.device.readout.Ie[0]
             return (z - Ig) / (Ie - Ig)
 
-
         x, y, z = self.data['xpts'], self.data['ypts'], normalize(self.data['avgi'])
 
         # Lists to collect fit results
@@ -500,12 +499,12 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         delta = self.fit_results['delta']
 
         # Scatter plot of data points
-        ax3.scatter(alpha2_array, f_array, alpha=0.6, label='Data')
+        ax3.scatter(alpha2_array, f_array*1e3, alpha=0.6, label='Data')
 
         # Plot best fit line
         alpha2_fit_line = np.linspace(alpha2_array.min(), alpha2_array.max(), 3)
         f_fit_line = (kc * alpha2_fit_line + delta)/np.pi/2
-        ax3.plot(alpha2_fit_line, f_fit_line, 'r-', linewidth=2, label='Linear Fit')
+        ax3.plot(alpha2_fit_line, f_fit_line*1e3, 'r-', linewidth=2, label='Linear Fit')
 
         ax3.set_xlabel(r'$|\alpha|^2$')
         ax3.set_ylabel(r'$f$ (kHz)')
