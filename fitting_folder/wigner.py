@@ -28,7 +28,7 @@ class WignerAnalysis(GeneralFitting):
             self.init_states()
 
     # ---------------------- For Gain to Alpha Conversion ----------------------
-    def get_gain_to_alpha(self, allocated_counts, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False): 
+    def get_gain_to_alpha(self, allocated_counts, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False, plot=True): 
         expec_value = 2/np.pi * allocated_counts
         gain_to_alpha, result  = self.fit_gain_to_alpha(
             xdata=self.data['xpts'], 
@@ -49,13 +49,14 @@ class WignerAnalysis(GeneralFitting):
             title='Initial Guess: Gain to Alpha Conversion Factor: {:.8f}'.format(initial_guess[0])
             )
 
-        self.plot_wigner_fit(
-            xdata=self.data['xpts'], 
-            ydata=expec_value, 
-            gain_to_alpha=gain_to_alpha, 
-            W_vacuum=self.W_vacuum, 
-            title=f'Gain to Alpha Conversion Factor: {gain_to_alpha:.8f}'
-        )
+        if plot:
+            self.plot_wigner_fit(
+                xdata=self.data['xpts'], 
+                ydata=expec_value, 
+                gain_to_alpha=gain_to_alpha, 
+                W_vacuum=self.W_vacuum, 
+                title=f'Gain to Alpha Conversion Factor: {gain_to_alpha:.8f}'
+            )
         print('alpha = 1 requires gain of : {:.8f}'.format(1/gain_to_alpha))
         return gain_to_alpha, result, expec_value
 

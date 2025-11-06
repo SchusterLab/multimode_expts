@@ -209,6 +209,7 @@ class ParityGainExperiment(Experiment):
         # data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
         # data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
 
+        plot = kwargs.get('plot', True)
         if 'pulse_correction' in self.cfg.expt and self.cfg.expt.pulse_correction:
             data_minus = {}
             data_plus = {}
@@ -220,7 +221,6 @@ class ParityGainExperiment(Experiment):
             data_plus["qdata"] = data['qdata'][len(data['qdata'])//2:]
             data_plus["xpts"] = data['xpts'][len(data['xpts'])//2:]
 
-
             wigner_analysis_minus = WignerAnalysis(data_minus, config=self.cfg)
             wigner_analysis_plus = WignerAnalysis(data_plus, config=self.cfg)
 
@@ -229,7 +229,7 @@ class ParityGainExperiment(Experiment):
             parity_plus = (1 - pe_plus) - pe_plus
             parity_minus = (1 - pe_minus) - pe_minus
             parity = (parity_minus - parity_plus) / 2
-            gain_to_alpha, result, ydata = wigner_analysis_minus.get_gain_to_alpha(parity, initial_guess=[0.001])
+            gain_to_alpha, result, ydata = wigner_analysis_minus.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot)
             data['gain_to_alpha'] = gain_to_alpha
             data['parity'] = parity
 
@@ -237,17 +237,17 @@ class ParityGainExperiment(Experiment):
             wigner_analysis = WignerAnalysis(data, config=self.cfg)
             pe = wigner_analysis.bin_ss_data()
             parity = (1 - pe) - pe
-            gain_to_alpha, result, ydata = wigner_analysis.get_gain_to_alpha(parity, initial_guess=[0.001])
+            gain_to_alpha, result, ydata = wigner_analysis.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot)
             data['gain_to_alpha'] = gain_to_alpha
             data['parity'] = parity
 
-
         return data
+
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
             data=self.data 
-        
+
         # plt.figure(figsize=(12, 8))
         # plt.subplot(111,title="$T_1$", xlabel="Wait Time [us]", ylabel="Amplitude [ADC level]")
         # plt.plot(data["xpts"][:-1], data["amps"][:-1],'o-')
