@@ -424,7 +424,8 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
         f_fits = np.array(f_fits)
         alpha2_fits = np.array(alpha2_fits)
-        fit_good = [res.rsquared > 0.2 for res in fit_results]
+        fit_rsq_threshold = kwargs.get('fit_rsq_threshold', 0.2)
+        fit_good = [res.rsquared > fit_rsq_threshold for res in fit_results]
 
         filtered_alpha2 = alpha2_fits[fit_good]
         filtered_f = f_fits[fit_good]
