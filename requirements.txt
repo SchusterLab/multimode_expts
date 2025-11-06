@@ -1,0 +1,11 @@
+tqdm
+lmfit
+h5py
+Pyro4
+tabulate
+yaml
+matplotlib
+
+# qick
+# slab
+
