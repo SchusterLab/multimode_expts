@@ -1,13 +1,13 @@
-import numpy as np
-from slab import AttrDict
-from typing import Optional
-from scipy.fft import rfft, rfftfreq
-import lmfit
-from matplotlib import pyplot as plt
-from warnings import warn
-
 import os
 import subprocess
+from typing import Optional
+from warnings import warn
+
+import lmfit
+import numpy as np
+from matplotlib import pyplot as plt
+from scipy.fft import rfft, rfftfreq
+from slab import AttrDict
 
 
 def ensure_local_file(remote_path, local_path, filename):
