@@ -120,8 +120,8 @@ class expts_run_base:
 
     def load_storage_man_swap_dataset(self):
         file_path = os.path.join(self.expts_path, 'man1_storage_swap_dataset.csv')
-        ds = storage_man_swap_dataset(file_path)
-        ds_thisrun = storage_man_swap_dataset(ds.create_copy())
+        ds = StorageManSwapDataset(file_path)
+        ds_thisrun = StorageManSwapDataset(ds.create_copy())
         ds_thisrun_file_path = os.path.join(self.expts_path, ds_thisrun.filename)
         return ds, ds_thisrun, ds_thisrun_file_path
 

@@ -3,26 +3,41 @@ from datetime import datetime
 
 import pandas as pd
 
-
 class mm_dataset:
+    def __init__(self) -> None:
+        raise NotImplementedError('This has been renamed to MMDataset')
+    
+class storage_man_swap_dataset:
+    def __init__(self) -> None:
+        raise NotImplementedError('This has been renamed to StorageManSwapDataset')
+    
+class  floquet_storage_swap_dataset:
+    def __init__(self) -> None:
+        raise NotImplementedError('This has been renamed to FloquetStorageSwapDataset')
+
+
+class MMDataset:
     def __init__(self, filename):
         self.filename = filename
         if os.path.exists(filename):
             self.df = pd.read_csv(filename)
-        else: 
+        else:
             # create a new dataframe
             self.create_new_df()
-        self.indexing_row_name = self.get_columns()[0]  # The first column is the name of each row, this variable stores the name for the name of each row
+        self.indexing_row_name = self.get_columns()[0]
+        # The first column is the name of each row, this variable stores the name for the name of each row
         if self.get_columns()[-1] == 'last_update':
             self.add_timestamp = True
-        
+
     def create_new_df(self):
-        raise NotImplementedError("This method should be implemented in subclasses by calling self.create_new_df(column_names, rows).")
+        raise NotImplementedError(
+            "This method should be implemented in subclasses by calling self.create_new_df(column_names, rows)."
+        )
 
     def create_new_df_from_labels(self, column_names, rows, add_timestamp=True):
         """
         Create a new DataFrame with the specified column names.
-        
+
         Args:
             column_names (list): List of column names for the DataFrame.
             rows (list): List of dictionaries, where each dictionary represents a row of data.
@@ -39,24 +54,26 @@ class mm_dataset:
 
         print("Creating or updating new csv at path:", self.filename)
         self.df.to_csv(self.filename, index=False)
-    
+
     def get_value(self, row_name, column_name):
         """
         Get the value from the DataFrame for a specific row and column.
-        
+
         Args:
             row_name (str): The name of the row to look up.
             column_name (str): The name of the column to look up.
-        
+
         Returns:
             The value from the DataFrame at the specified row and column.
         """
-        return self.df.loc[self.df[self.indexing_row_name] == row_name, column_name].values[0]
+        return self.df.loc[
+            self.df[self.indexing_row_name] == row_name, column_name
+        ].values[0]
 
     def update_value(self, row_name, column_name, value, save_to_file=True):
         """
         Update the value in the DataFrame for a specific row and column and saves to the csv file if requested.
-        
+
         Args:
             row_name (str): The name of the row to update.
             column_name (str): The name of the column to update.
@@ -64,7 +81,9 @@ class mm_dataset:
         """
         self.df.loc[self.df[self.indexing_row_name] == row_name, column_name] = value
         if self.add_timestamp:
-            self.df.loc[self.df[self.indexing_row_name] == row_name, 'last_update'] = datetime.now()
+            self.df.loc[self.df[self.indexing_row_name] == row_name, 'last_update'] = (
+                datetime.now()
+            )
         if save_to_file:
             print("Creating or updating new csv at path:", self.filename)
             self.df.to_csv(self.filename, index=False)
@@ -77,8 +96,10 @@ class mm_dataset:
     def update_last_update(self, stor_name, save_to_file=True):
         if not self.add_timestamp:
             return
-        self.update_value(stor_name, 'last_update', datetime.now(), save_to_file=save_to_file)
-    
+        self.update_value(
+            stor_name, 'last_update', datetime.now(), save_to_file=save_to_file
+        )
+
     def get_columns(self):
         return self.df.columns.tolist()
 
@@ -97,7 +118,9 @@ class mm_dataset:
         if self.add_timestamp:
             num_cols -= 1  # Exclude the timestamp column for check
         if len(args) != num_cols:
-            raise ValueError(f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}")
+            raise ValueError(
+                f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}"
+            )
         for i in range(1, num_cols):
             column = self.get_columns()[i]
             self.update_value(args[0], column, args[i], save_to_file=False)
@@ -111,10 +134,14 @@ class mm_dataset:
                    The first value should be the row_name, followed by values for each column, excluding the time stamp which will be added automatically.
         """
         if len(args) != len(self.df.columns):
-            raise ValueError(f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}") 
+            raise ValueError(
+                f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}"
+            )
         new_row = dict()
         for i, column in enumerate(self.df.columns):
-            if i == len(self.df.columns.tolist()) - 1 and add_timestamp:  # last column is timestamp
+            if (
+                i == len(self.df.columns.tolist()) - 1 and add_timestamp
+            ):  # last column is timestamp
                 new_row[column] = datetime.now()
             else:
                 new_row[column] = args[i]
@@ -124,12 +151,12 @@ class mm_dataset:
             self.df.to_csv(self.filename, index=False)
 
     # check whether the data is up-to-date
-    def is_up_to_date(self, row_name, max_time_diff = 7200):
+    def is_up_to_date(self, row_name, max_time_diff=7200):
         last_update = self.get_last_update(row_name)
         # Define the format of the date string
         date_format = "%Y-%m-%d %H:%M:%S.%f"
         # Convert the string to a datetime object
-        last_update_object= datetime.strptime(last_update, date_format)
+        last_update_object = datetime.strptime(last_update, date_format)
         time_diff = (datetime.now() - last_update_object).total_seconds()
         return time_diff < max_time_diff
 
@@ -178,22 +205,28 @@ class mm_dataset:
         for _, row in self.df.iterrows():
             row_name = row[self.indexing_row_name]
             if row_name in other_dataset.df[self.indexing_row_name].values:
-                other_row = other_dataset.df[other_dataset.df[self.indexing_row_name] == row_name].iloc[0]
+                other_row = other_dataset.df[
+                    other_dataset.df[self.indexing_row_name] == row_name
+                ].iloc[0]
                 for column in self.df.columns:
                     if row[column] != other_row[column]:
-                        differences.append({
-                            self.indexing_row_name: row_name,
-                            'column': column,
-                            'self_value': row[column],
-                            'other_value': other_row[column]
-                        })
+                        differences.append(
+                            {
+                                self.indexing_row_name: row_name,
+                                'column': column,
+                                'self_value': row[column],
+                                'other_value': other_row[column],
+                            }
+                        )
             else:
-                differences.append({
-                    self.indexing_row_name: row_name,
-                    'column': 'all',
-                    'self_value': 'exists',
-                    'other_value': 'missing'
-                })
+                differences.append(
+                    {
+                        self.indexing_row_name: row_name,
+                        'column': 'all',
+                        'self_value': 'exists',
+                        'other_value': 'missing',
+                    }
+                )
         return differences
 
     def save_to_file(self, filepath):
@@ -206,8 +239,8 @@ class mm_dataset:
         print("Creating or updating new csv at path:", filepath)
         self.df.to_csv(filepath, index=False)
 
-    
-class storage_man_swap_dataset(mm_dataset):
+
+class StorageManSwapDataset(MMDataset):
     def __init__(self, filename='man1_storage_swap_dataset.csv'):
         super().__init__(filename=filename)
 
@@ -222,7 +255,7 @@ class storage_man_swap_dataset(mm_dataset):
         ]
 
         rows = []
-        for idx in range(1, 13, 1): 
+        for idx in range(1, 13, 1):
             row = {
                 'stor_name': 'M1-S' + str(idx),
                 'freq (MHz)': -1,
@@ -233,7 +266,7 @@ class storage_man_swap_dataset(mm_dataset):
             }
             rows.append(row)
 
-        # also add for the manipulate 
+        # also add for the manipulate
         row = {
             'stor_name': 'M1',
             'freq (MHz)': -1,
@@ -245,16 +278,19 @@ class storage_man_swap_dataset(mm_dataset):
         rows.append(row)
         self.create_new_df_from_labels(column_names, rows, add_timestamp=True)
 
-
     # fetch the data from the csv file
     def get_freq(self, stor_name):
         return self.get_value(stor_name, 'freq (MHz)')
+
     def get_precision(self, stor_name):
         return self.get_value(stor_name, 'precision (MHz)')
+
     def get_pi(self, stor_name):
         return self.get_value(stor_name, 'pi (mus)')
+
     def get_h_pi(self, stor_name):
         return self.get_value(stor_name, 'h_pi (mus)')
+
     def get_gain(self, stor_name):
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
         return self.get_value(stor_name, 'gain (DAC units)')
@@ -262,35 +298,41 @@ class storage_man_swap_dataset(mm_dataset):
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
         self.update_value(stor_name, 'freq (MHz)', freq)
+
     def update_precision(self, stor_name, precision):
         self.update_value(stor_name, 'precision (MHz)', precision)
+
     def update_pi(self, stor_name, pi):
         self.update_value(stor_name, 'pi (mus)', pi)
+
     def update_h_pi(self, stor_name, h_pi):
         self.update_value(stor_name, 'h_pi (mus)', h_pi)
+
     def update_gain(self, stor_name, gain):
         self.update_value(stor_name, 'gain (DAC units)', gain)
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
 
 
-class floquet_storage_swap_dataset(mm_dataset):
+class FloquetStorageSwapDataset(MMDataset):
     def __init__(self, filename='floquet_storage_swap_dataset.csv'):
         super().__init__(filename=filename)
 
     def create_new_df(self):
         column_names = [
             'stor_name',
-            'pi_frac', # this pulse implements a pi / pi_frac pulse
+            'pi_frac',  # this pulse implements a pi / pi_frac pulse
             'freq (MHz)',
             'gain (DAC units)',
             'len (mus)',
             'ramp_sigma (mus)',
         ]
         for idx in range(1, 8, 1):
-            column_names.append('phase_from_M1-S' + str(idx) + ' (deg)')  # phase of the pulse on M1-Sx
+            column_names.append(
+                'phase_from_M1-S' + str(idx) + ' (deg)'
+            )  # phase of the pulse on M1-Sx
 
         rows = []
-        for idx in range(1, 8, 1): 
+        for idx in range(1, 8, 1):
             row = {
                 'stor_name': 'M1-S' + str(idx),
                 'pi_frac': -1,
@@ -303,35 +345,65 @@ class floquet_storage_swap_dataset(mm_dataset):
                 row['phase_from_M1-S' + str(i) + ' (deg)'] = 0.0
             rows.append(row)
 
-
-        self.create_new_df_from_labels(column_names, rows, add_timestamp=True) 
+        self.create_new_df_from_labels(column_names, rows, add_timestamp=True)
 
     # fetch the data from the csv file
     def get_freq(self, stor_name):
         return self.get_value(stor_name, 'freq (MHz)')
+
     def get_pi_frac(self, stor_name):
         return self.get_value(stor_name, 'pi_frac')
+
     def get_len(self, stor_name):
         return self.get_value(stor_name, 'len (mus)')
+
     def get_gain(self, stor_name):
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
         return self.get_value(stor_name, 'gain (DAC units)')
+
     def get_ramp_sigma(self, stor_name):
         return self.get_value(stor_name, 'ramp_sigma (mus)')
+
     def get_phase_from(self, stor_name, from_stor_name):
         return self.get_value(stor_name, f'phase_from_{from_stor_name} (deg)')
 
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
         self.update_value(stor_name, 'freq (MHz)', freq)
+
     def update_pi_frac(self, stor_name, pi_frac):
         self.update_value(stor_name, 'pi_frac', pi_frac)
+
     def update_len(self, stor_name, length):
         self.update_value(stor_name, 'len (mus)', length)
+
     def update_gain(self, stor_name, gain):
         self.update_value(stor_name, 'gain (DAC units)', gain)
         self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
+
     def update_ramp_sigma(self, stor_name, ramp_sigma):
         self.update_value(stor_name, 'ramp_sigma (mus)', ramp_sigma)
+
     def update_phase_from(self, stor_name, from_stor_name, phase):
         self.update_value(stor_name, f'phase_from_{from_stor_name} (deg)', phase)
+
+    def import_from_swap_dataset(
+        self, stor_man_ds: StorageManSwapDataset, gain_div: int, pi_div: int
+    ):
+        """
+        Import the frequency, gain and pulse length from the pi/hpi swap dataset
+        Freq is directly copied for all 7 modes
+        gain is copied and divided by gain_div
+        length is the pi pulse length divided by pi_div
+        pi_frac is the product of the gain and pi divisions
+        """
+        for stor_name in range(1, 8):
+            stor_name_str = 'M1-S' + str(stor_name)
+            orig_freq = stor_man_ds.get_freq(stor_name_str)
+            orig_gain = stor_man_ds.get_gain(stor_name_str)
+            orig_pi = stor_man_ds.get_pi(stor_name_str)
+            self.update_freq(stor_name_str, orig_freq)
+            self.update_gain(stor_name_str, orig_gain // gain_div)
+            self.update_len(stor_name_str, orig_pi / pi_div)
+            self.update_pi_frac(stor_name_str, gain_div * pi_div)
+
