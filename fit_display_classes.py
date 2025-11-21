@@ -31,7 +31,7 @@ class GeneralFitting:
         self.threshold = threshold
     
 
-    def bin_ss_data(self, conf=True):
+    def bin_ss_data(self, conf=True, return_shots=False, filter_map=None):
         '''
         This function takes config saved single shot parameters, applies the angle correction and threshold to the main data of the experiment
         bins it into counts_g and counts_e
@@ -67,12 +67,18 @@ class GeneralFitting:
        
         # threshold data
         shots = np.zeros((rounds*reps, expts))
-        print(shots.shape)
         shots[I_data > threshold] = 1
 
-        # average over rounds and reps
-        shots_avg = np.mean(shots, axis=0)
-        np.shape(shots_avg)
+        # if filter map is given, only take those indices, 
+        if filter_map is not None:
+            shots_filtered = np.ma.array(shots, mask=~filter_map)
+            # print('number of unmasked points:', np.sum(~shots_filtered.mask, axis=0))
+            # print('shots shape after masking:', shots_filtered.shape)
+            # average over rounds and reps
+            shots_avg = np.mean(shots_filtered, axis=0)
+        else: 
+            # average over rounds and reps
+            shots_avg = np.mean(shots, axis=0)
 
         # fix using confusion matrix 
         ydata = shots_avg
@@ -83,8 +89,11 @@ class GeneralFitting:
                 from numpy.linalg import inv
                 counts_new = inv(P_matrix)*np.matrix([[1-ydata[i]],[ydata[i]]])
                 ydata[i] = counts_new[1,0]
-        return ydata
-
+        if return_shots:
+            return ydata, shots
+        else:
+            return ydata
+    
 
     def bin_ss_data_given_ss(self, conf = True):
         '''
@@ -145,7 +154,7 @@ class GeneralFitting:
                 ydata[i] = counts_new[1,0]
         
         return ydata
-
+    
 
     def filter_data_BS(self, a1, a2, a3, threshold, post_selection = False):
         # assume the last one  is experiment data, the last but one is for post selection

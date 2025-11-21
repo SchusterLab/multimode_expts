@@ -56,6 +56,11 @@ class ParityDelayProgram(MMAveragerProgram):
             f_ge = cfg.device.multiphoton.hpi['gn-en']['frequency'][0]
             gain = cfg.device.multiphoton.hpi['gn-en']['gain'][0]
             sigma = cfg.device.multiphoton.hpi['gn-en']['sigma'][0]
+            
+            print('sigma', sigma)
+            print('f_ge', f_ge)
+            print('gain', gain)
+            
             f_ge_reg = self.freq2reg(f_ge, gen_ch=self.qubit_chs[qTest])
             _sigma = self.us2cycles(sigma, gen_ch=self.qubit_chs[qTest])
 

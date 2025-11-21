@@ -86,7 +86,8 @@ class MM_base:
         # --------------frequencies (register values)----------
         self.f_ge = self.freq2reg(cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_ch[qTest])
         self.f_ef = self.freq2reg(cfg.device.qubit.f_ef[qTest], gen_ch=self.qubit_ch[qTest])
-
+        self.f_ge_pi_fast = self.freq2reg(cfg.device.multiphoton.pi['gn-en'].frequency[0], gen_ch=self.qubit_ch[qTest])
+        self.f_ge_hpi_fast = self.freq2reg(cfg.device.multiphoton.hpi['gn-en'].frequency[0], gen_ch=self.qubit_ch[qTest])
         # -----------freqeuncies: (same as above but diff name and as lists...)-----------
         self.f_ge_reg = [self.freq2reg(
             cfg.device.qubit.f_ge[qTest], gen_ch=self.qubit_chs[qTest])]
@@ -109,12 +110,15 @@ class MM_base:
         self.hpi_ge_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ge.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.pi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.pi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
         self.hpi_ef_sigma = self.us2cycles(cfg.device.qubit.pulses.hpi_ef.sigma[0], gen_ch=self.qubit_chs[qTest])
-
+        self.pi_ge_sigma_fast = self.us2cycles(cfg.device.multiphoton.pi['gn-en'].sigma[0], gen_ch=self.qubit_chs[qTest])
+        self.hpi_ge_sigma_fast = self.us2cycles(cfg.device.multiphoton.hpi['gn-en'].sigma[0], gen_ch=self.qubit_chs[qTest])
         # --------------qubit pulse parameters: gain----------
         self.pi_ge_gain = cfg.device.qubit.pulses.pi_ge.gain[qTest]
         self.hpi_ge_gain = cfg.device.qubit.pulses.hpi_ge.gain[qTest]
         self.pi_ef_gain = cfg.device.qubit.pulses.pi_ef.gain[qTest]
         self.hpi_ef_gain = cfg.device.qubit.pulses.hpi_ef.gain[qTest]
+        self.pi_ge_gain_fast = cfg.device.multiphoton.pi['gn-en'].gain[0]
+        self.hpi_ge_gain_fast = cfg.device.multiphoton.hpi['gn-en'].gain[0]
 
         # -------------f0g1 and M1-S sigmas-------
         #TODO: Get from dataset
@@ -278,14 +282,13 @@ class MM_base:
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge", sigma=self.hpi_ge_sigma, length=self.hpi_ge_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef", sigma=self.pi_ef_sigma, length=self.pi_ef_sigma*4)
         self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ef", sigma=self.hpi_ef_sigma, length=self.hpi_ef_sigma*4)
-        # self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ef_ftop", sigma=self.pief_ftop_sigma, length=self.pief_ftop_sigma*6) # this is flat top
+        # add fast pi pulse
+        self.add_gauss(ch=self.qubit_chs[qTest], name="hpi_qubit_ge_fast", sigma=self.hpi_ge_sigma_fast, length=self.hpi_ge_sigma_fast*4)
+        self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge_fast", sigma=self.pi_ge_sigma_fast, length=self.pi_ge_sigma_fast*4)
 
-        # self.add_gauss(ch=self.f0g1_ch[qTest], name="pi_f0g1", sigma=self.pi_f0g1_sigma, length=self.pi_f0g1_sigma*6)
 
         self.add_gauss(ch=self.flux_low_ch[qTest], name="pi_m1si_low", sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
         self.add_gauss(ch=self.flux_high_ch[qTest], name="pi_m1si_high", sigma=self.pi_m1_sigma_high, length=self.pi_m1_sigma_high*6)
-
-
 
 
     def measure_wrapper(self):
@@ -806,6 +809,48 @@ class MM_base:
         self.custom_pulse(self.cfg, creator.pulse, prefix='Coupler')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
 
+    def parity_active_reset(self, name='parity_reset', register_label='base', play_parity=True):
+        '''
+        Perform a parity measurement and if the qubit end up in e do a pi pulse reset
+        '''
+
+        # import the config and set qubit number, by default 0 since we have only one, but should be done better
+        cfg=AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+        self.r_read_q = 9
+        self.r_thresh_q = 11 
+        self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
+
+        # parity pulses, for now I will do something hacky, 
+        # i.e. will only load the waveform once, should rewrite custom_pulse to be more general
+        if play_parity: 
+            parity_str = self.get_parity_str(1, return_pulse=True, second_phase=180, fast=False)
+            self.custom_pulse(cfg, parity_str, prefix=name)
+
+        # measurement
+        self.measure(pulse_ch=self.res_chs[qTest],
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                t='auto', wait=True)
+        # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
+        self.wait_all(self.us2cycles(0.10))        
+        # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
+        self.read(0, 0, "lower", self.r_read_q) # stores I in (0,0) into r_read_q
+        # # first if 
+        self.condj(0, self.r_read_q, "<", self.r_thresh_q,
+                   register_label)  # compare the value recorded above to the value stored in threshold.
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=self.f_ge_reg[qTest],
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=self.pi_ge_gain,
+                                 waveform='pi_qubit_ge')
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.label(register_label)  # location to be jumped to
+        print("needs a pretty long sync here I should be smatter with parity pulse timing")
+        self.sync_all(self.us2cycles(1))
+
+
 
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
                       ef_reset = True, pre_selection_reset = True, prefix = 'base'):
@@ -967,7 +1012,47 @@ class MM_base:
         return parity_str
 
 
-    def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None):
+    def play_parity_pulse(self, man_mode_no, qubit_no=0, second_phase=180, fast=False):
+        '''
+        Play parity pulse
+        '''
+        cfg=AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[qubit_no] 
+        revival_time = cfg.device.manipulate.revival_time[man_mode_no]
+        revival_cycles = self.us2cycles(revival_time)
+        reg_page = self.ch_page(self.qubit_chs[qTest])
+        reg_phase =self.sreg(self.qubit_chs[qTest], "phase")
+        if fast: 
+            freq_pi = self.f_ge_hpi_fast
+            gain_pi = self.hpi_ge_gain_fast
+            waveform_pi = 'hpi_qubit_ge_fast'
+            freq_AC = self.cfg.device.manipulate.revival_stark_shift[man_mode_no]
+            theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
+            theta_2 = theta_2 % 360
+        else:
+            freq_pi = self.f_ge
+            gain_pi = self.hpi_ge_gain
+            theta_2 = second_phase
+            waveform_pi = 'hpi_qubit_ge'
+
+        #first pi/2 pulse
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=freq_pi,
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=gain_pi,
+                                 waveform=waveform_pi)
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.sync_all()
+        # wait based on revival time 
+        self.sync_all(revival_cycles)
+        # second pi/2 pulse, if fast take into account AC stark phase
+        # here we can just update the phase of the waveform
+        self.safe_regwi(reg_page, reg_phase, self.deg2reg(theta_2))
+        self.pulse(ch=self.qubit_chs[qTest])
+
+
+    def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None, plot=False):
         if pulse is not None:
             encoding = pulse[1]
             state = pulse[2]
@@ -997,6 +1082,20 @@ class MM_base:
             max_c = max(np.max(np.abs(I_c)), np.max(np.abs(Q_c)))
         else:
             raise ValueError("Either pulse or pulse_IQ must be provided")
+        
+        if plot: 
+            times = data['times']
+            fig, axs = plt.subplots(2, 1, figsize=(10, 6))
+            axs[0].plot(times, I_q, label='I_q')
+            axs[0].plot(times, Q_q, label='Q_q')
+            axs[0].set_title('Qubit Pulse')
+            axs[0].legend()
+            axs[1].plot(times, I_c, label='I_c')
+            axs[1].plot(times, Q_c, label='Q_c')
+            axs[1].set_title('Cavity Pulse')
+            axs[1].legend()
+            plt.tight_layout()
+            plt.show()
 
         # import pi pulse parameters
         gain_qb_pi_pulse = self.cfg.device.qubit.pulses.pi_ge.gain[0]

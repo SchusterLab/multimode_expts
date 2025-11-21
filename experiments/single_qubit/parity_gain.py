@@ -56,12 +56,6 @@ class ParityGainProgram(MMRAveragerProgram):
                            sigma=self.displace_sigma,
                            length=self.displace_sigma*4)
 
-        self.parity_pulse = self.get_parity_str(man_mode_no=1,
-                                                return_pulse=True,
-                                                second_phase=self.cfg.expt.phase_second_pulse,
-                                                fast=False)
-        print('parity pulse:', self.parity_pulse)
-
         self.sync_all(200)
 
 
@@ -108,7 +102,7 @@ class ParityGainProgram(MMRAveragerProgram):
         self.sync_all() # align channels
 
         # Parity Measurement
-        self.custom_pulse(cfg, self.parity_pulse, prefix='Parity')
+        self.play_parity_pulse(0, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
         self.measure_wrapper()
 
 
@@ -151,10 +145,14 @@ class ParityGainExperiment(Experiment):
         if self.cfg.expt.active_reset: read_num = 4
 
         if 'pulse_correction' in self.cfg.expt:
-            print("Pulse correction is applied")
             self.pulse_correction = self.cfg.expt.pulse_correction
         else:
             self.pulse_correction = False
+
+        if 'parity_fast' in self.cfg.expt:
+            self.cfg.expt.parity_fast = self.cfg.expt.parity_fast
+        else:
+            self.cfg.expt.parity_fast = False
 
         self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse        
         prog = ParityGainProgram(soccfg=self.soccfg, cfg=self.cfg)
@@ -203,6 +201,9 @@ class ParityGainExperiment(Experiment):
         if data is None:
             data=self.data
 
+        # check if scale is in kwargs
+        scale = kwargs.get('scale', False)
+
         # fitparams=[y-offset, amp, x-offset, decay rate]
         # Remove the last point from fit in case weird edge measurements
         # data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
@@ -229,17 +230,23 @@ class ParityGainExperiment(Experiment):
             parity_plus = (1 - pe_plus) - pe_plus
             parity_minus = (1 - pe_minus) - pe_minus
             parity = (parity_minus - parity_plus) / 2
-            gain_to_alpha, result, ydata = wigner_analysis_minus.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot)
+            gain_to_alpha, result, ydata = wigner_analysis_minus.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot, scale=scale)
             data['gain_to_alpha'] = gain_to_alpha
             data['parity'] = parity
+            # if scale is True, also return scale factor
+            if scale:
+                data['scale'] = result.x[1] if len(result.x) > 1 else 1.0
 
         else:
             wigner_analysis = WignerAnalysis(data, config=self.cfg)
             pe = wigner_analysis.bin_ss_data()
             parity = (1 - pe) - pe
-            gain_to_alpha, result, ydata = wigner_analysis.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot)
+            gain_to_alpha, result, ydata = wigner_analysis.get_gain_to_alpha(parity, initial_guess=[0.001], plot=plot, scale=scale)
             data['gain_to_alpha'] = gain_to_alpha
             data['parity'] = parity
+            # if scale is True, also return scale factor
+            if scale:
+                data['scale'] = result.x[1] if len(result.x) > 1 else 1.0
 
         return data
 

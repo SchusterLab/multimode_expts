@@ -28,14 +28,15 @@ class WignerAnalysis(GeneralFitting):
             self.init_states()
 
     # ---------------------- For Gain to Alpha Conversion ----------------------
-    def get_gain_to_alpha(self, allocated_counts, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False, plot=True): 
+    def get_gain_to_alpha(self, allocated_counts, initial_guess=[0.0001], bounds=[(0, 0.01)], plot_guess=False, plot=True, scale=False): 
         expec_value = 2/np.pi * allocated_counts
         gain_to_alpha, result  = self.fit_gain_to_alpha(
             xdata=self.data['xpts'], 
             ydata=expec_value, 
             W_vacuum=self.W_vacuum, 
             initial_guess=initial_guess, 
-            bounds=bounds
+            bounds=bounds,
+            scale=scale
         )
         print('Gain to Alpha Conversion Factor:', gain_to_alpha)
 
@@ -45,6 +46,7 @@ class WignerAnalysis(GeneralFitting):
                 xdata=self.data['xpts'],
                 ydata=expec_value,
                 gain_to_alpha=initial_guess[0],
+                scale=initial_guess[1] if scale and len(initial_guess) >1 else 1.0,
             W_vacuum=self.W_vacuum,
             title='Initial Guess: Gain to Alpha Conversion Factor: {:.8f}'.format(initial_guess[0])
             )
@@ -54,27 +56,36 @@ class WignerAnalysis(GeneralFitting):
                 xdata=self.data['xpts'], 
                 ydata=expec_value, 
                 gain_to_alpha=gain_to_alpha, 
+                scale=result.x[1] if scale and len(result.x) > 1 else 1.0,
                 W_vacuum=self.W_vacuum, 
                 title=f'Gain to Alpha Conversion Factor: {gain_to_alpha:.8f}'
             )
         print('alpha = 1 requires gain of : {:.8f}'.format(1/gain_to_alpha))
         return gain_to_alpha, result, expec_value
 
-    def fit_gain_to_alpha(self, xdata, ydata, W_vacuum, initial_guess=[0.0002], bounds=[(0, 0.001)]):
+    def fit_gain_to_alpha(self, xdata, ydata, W_vacuum, initial_guess=[0.0002], bounds=[(0, 0.001)], scale=False):
+        
+        # if scale=true we add a scaling factor to the Wigner function
+
         def objective(param):
             gain_to_alpha = param[0]
+            scale_factor = param[1] if scale else 1.0
             new_alpha_list = gain_to_alpha * xdata
-            ws = W_vacuum(new_alpha_list)
+            ws = scale_factor * W_vacuum(new_alpha_list)
             return np.sum(np.abs(ws - ydata))
+        if scale and len(initial_guess) < 2:
+            initial_guess = initial_guess + [1.0]
+            if len(bounds) < 2:
+                bounds = bounds + [(0.1, 10.0)]
         result = minimize(objective, initial_guess, bounds=bounds)
         gain_to_alpha = result.x[0]
         return gain_to_alpha, result
 
-    def plot_wigner_fit(self, xdata, ydata, gain_to_alpha, W_vacuum, title=None):
+    def plot_wigner_fit(self, xdata, ydata, gain_to_alpha, W_vacuum, scale=1.0, title=None):
         import matplotlib.pyplot as plt
         new_alpha_list = gain_to_alpha * xdata
         fig = plt.figure(figsize=(6,4))
-        plt.plot(new_alpha_list, W_vacuum(new_alpha_list), '-', label='Fit')
+        plt.plot(new_alpha_list, scale * W_vacuum(new_alpha_list), '-', label='Fit')
         plt.plot(new_alpha_list, ydata, 'o', label='Data')
         plt.xlabel(r'$\alpha$')
         plt.ylabel(r'$W(\alpha)$')
