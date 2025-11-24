@@ -5,6 +5,8 @@ Pyro4
 tabulate
 yaml
 matplotlib
+qutip
+pandas
 
 # qick
 # slab

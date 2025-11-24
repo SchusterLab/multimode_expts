@@ -6,7 +6,7 @@ import numpy as np
 from qick import QickConfig
 from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
-from tqdm import tqdm_notebook as tqdm
+from tqdm.auto import tqdm
 
 import experiments.fitting as fitter
 from dataset import FloquetStorageSwapDataset

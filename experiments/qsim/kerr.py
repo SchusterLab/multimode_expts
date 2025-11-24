@@ -253,8 +253,9 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         # self.sync(self.phase_update_page[qTest], self.r_wait)
         ecfg = self.cfg.expt
         if ecfg.drive_coupler:
+            m1c_freq = self.swap_ds.get_freq('M1-C')
             kerr_pulse = [
-                [self.swap_ds.get_freq('M1-C') + ecfg.kerr_detune],
+                [m1c_freq + ecfg.kerr_detune],
                 [ecfg.kerr_gain],
                 [ecfg.kerr_length],
                 [0],
@@ -262,6 +263,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 ['flat_top'],
                 [0.005],
             ]
+            self.cfg.expt.m1c_freq = m1c_freq # just so we can double check in the h5 file
         else:
             kerr_pulse = [
                 [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],

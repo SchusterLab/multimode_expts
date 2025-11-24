@@ -122,7 +122,7 @@ device:
         - 1.2311804927283654
         ramp_sigma: 0.005
     storage:
-        storage_man_file: C:/_Lib/python/multimode_expts/man1_storage_swap_dataset.csv
+        storage_man_file: man1_storage_swap_dataset.csv
         idling_phase:
         -   - -52.6696123
             - -22.7088024
@@ -182,7 +182,7 @@ device:
         - -3.2053137013077597
         - -2.935087792327744
         ramp_sigma: 0.005
-        floquet_man_stor_file: C:/_Lib/python/multimode_expts/floquet_storage_swap_dataset.csv
+        floquet_man_stor_file: floquet_storage_swap_dataset.csv
     active_reset:
         qubit_ge:
         - 4000
