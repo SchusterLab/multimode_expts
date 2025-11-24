@@ -206,7 +206,8 @@ device:
             - 2.0
             - 2.0
     multiphoton_config:
-        file: C:\_Lib\python\multimode_expts\configs\multiphoton_config.yml
+        # file: C:\_Lib\python\multimode_expts\configs\multiphoton_config.yml
+        file: /home/slab/code/multimode_expts/configs/multiphoton_config.yml
     multiphoton:
         pi:
             gn-en:

@@ -36,7 +36,7 @@ class MM_base:
     #     Inherit together with a QickProgram.
     #     See eg MMAveragerProgram or MMRAveragerProgram for usage.
     #     """)
-        # ------------ Multiphoton COnfig ----------
+        # ------------ Multiphoton Config ----------
         f_path = self.cfg.device.multiphoton_config.file
         import yaml
         with open(f_path, 'r') as f:
@@ -126,7 +126,7 @@ class MM_base:
         self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
         self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
-        # ------------ Multiphoton COnfig ---------- Redundant but needed for some exopts
+        # ------------ Multiphoton Config ---------- Redundant but needed for some expts
         f_path = self.cfg.device.multiphoton_config.file
         import yaml
         with open(f_path, 'r') as f:

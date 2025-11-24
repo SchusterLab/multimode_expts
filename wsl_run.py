@@ -23,7 +23,7 @@ import multimode_expts.experiments as meas
 # Verify the module is imported from the correct path
 print(meas.__file__)
 
-from dataset import floquet_storage_swap_dataset, storage_man_swap_dataset
+from dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 from MM_dual_rail_base import MM_dual_rail_base
 
 
@@ -51,17 +51,17 @@ print(soc)
 
 # %%
 
-ds = floquet_storage_swap_dataset(
+ds = FloquetStorageSwapDataset(
     os.path.join(expts_path, "floquet_storage_swap_dataset.csv")
 )
 
-ds_thisrun = floquet_storage_swap_dataset(ds.create_copy())
+ds_thisrun = FloquetStorageSwapDataset(ds.create_copy())
 ds_thisrun_file_path = os.path.join(expts_path, ds_thisrun.filename)
 ds_thisrun.df
 
 # %%
 
-ds_storage = storage_man_swap_dataset(
+ds_storage = StorageManSwapDataset(
     os.path.join(expts_path, "man1_storage_swap_dataset.csv")
 )
 ds_storage.df
