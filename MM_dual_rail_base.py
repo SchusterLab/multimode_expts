@@ -4,7 +4,7 @@ from qick.helpers import gauss
 import time
 from slab import AttrDict
 from dataset import * 
-from dataset import storage_man_swap_dataset
+from dataset import StorageManSwapDataset
 import matplotlib.pyplot as plt
 import random
 from MM_base import * 

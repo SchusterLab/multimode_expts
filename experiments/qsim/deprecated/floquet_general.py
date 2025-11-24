@@ -10,7 +10,7 @@ from slab import Experiment, dsfit, AttrDict
 import experiments.fitting as fitter
 from MM_base import *
 
-from dataset import storage_man_swap_dataset
+from dataset import StorageManSwapDataset
 
 
 """
@@ -41,7 +41,7 @@ class FloquetGeneralProgram(MMAveragerProgram):
         self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
-        self.dataset = storage_man_swap_dataset(self.cfg.device.storage.storage_man_file)
+        self.dataset = StorageManSwapDataset(self.cfg.device.storage.storage_man_file)
 
         self.num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.qubits = self.cfg.expt.qubits

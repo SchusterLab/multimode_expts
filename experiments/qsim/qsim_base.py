@@ -9,7 +9,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from dataset import floquet_storage_swap_dataset
+from dataset import FloquetStorageSwapDataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
     guess_freq,
@@ -56,9 +56,9 @@ class QsimBaseProgram(MMAveragerProgram):
         # to use floquet or gate (pi or pi/2) datasets
         if "ds_thisrun" not in self.cfg.expt:
             if 'floquet_dataset_filename' in self.cfg.expt:
-                self.swap_ds = floquet_storage_swap_dataset(self.cfg.expt.floquet_dataset_filename)
+                self.swap_ds = FloquetStorageSwapDataset(self.cfg.expt.floquet_dataset_filename)
             else:
-                self.swap_ds = floquet_storage_swap_dataset()
+                self.swap_ds = FloquetStorageSwapDataset()
         else:
             self.swap_ds = self.cfg.expt.ds_thisrun
         self.retrieve_swap_parameters()

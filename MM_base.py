@@ -7,7 +7,7 @@ import scipy as sp
 from qick import AveragerProgram, QickProgram, RAveragerProgram
 from slab import AttrDict
 
-from dataset import floquet_storage_swap_dataset, storage_man_swap_dataset
+from dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 
 logger = logging.getLogger("qick.qick_asm")
 logger.setLevel(logging.ERROR)
@@ -122,7 +122,7 @@ class MM_base:
 
         # -------------f0g1 and M1-S sigmas-------
         #TODO: Get from dataset
-        self.dataset = storage_man_swap_dataset(cfg.device.storage.storage_man_file)
+        self.dataset = StorageManSwapDataset(cfg.device.storage.storage_man_file)
         self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
         self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
@@ -1367,12 +1367,12 @@ class prepulse_creator2:
         # )
 
         # man storage swap data
-        self.dataset = storage_man_swap_dataset(storage_man_file)
+        self.dataset = StorageManSwapDataset(storage_man_file)
 
         # man storage floquet swap data
         self.dataset_floquet = None
         if floquet_man_stor_file is not None:
-            self.dataset_floquet = floquet_storage_swap_dataset(floquet_man_stor_file)
+            self.dataset_floquet = FloquetStorageSwapDataset(floquet_man_stor_file)
 
         # initialize pulse
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)

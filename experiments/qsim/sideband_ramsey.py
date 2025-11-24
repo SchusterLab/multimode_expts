@@ -6,7 +6,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from dataset import storage_man_swap_dataset
+from dataset import StorageManSwapDataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
     guess_freq,
@@ -47,7 +47,7 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         """
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         cfg = self.cfg # should be AttrDict already if experiment class init was run properly
-        self.swap_ds = storage_man_swap_dataset()
+        self.swap_ds = StorageManSwapDataset()
         self.retrieve_swap_parameters()
 
         # declare registers for waiting time and phase incrementing

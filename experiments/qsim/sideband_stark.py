@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm_notebook as tqdm
 
 import experiments.fitting as fitter
-from dataset import storage_man_swap_dataset
+from dataset import StorageManSwapDataset
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.utils import (
     fit_cos2d,
