@@ -3,15 +3,18 @@ from datetime import datetime
 
 import pandas as pd
 
+
 class mm_dataset:
     def __init__(self) -> None:
         raise NotImplementedError('This has been renamed to MMDataset')
-    
+
+
 class storage_man_swap_dataset:
     def __init__(self) -> None:
         raise NotImplementedError('This has been renamed to StorageManSwapDataset')
-    
-class  floquet_storage_swap_dataset:
+
+
+class floquet_storage_swap_dataset:
     def __init__(self) -> None:
         raise NotImplementedError('This has been renamed to FloquetStorageSwapDataset')
 

@@ -342,12 +342,13 @@ class WignerTomography1ModeExperiment(Experiment):
 
             # apply scale 
             scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
+            print('scale parity:', scale_parity )
             
             data["pe_plus"] = pe_plus
             data["pe_minus"] = pe_minus
             data["parity_plus"] = parity_plus
             data["parity_minus"] = parity_minus
-            data["parity"] = parity / (scale_parity * np.pi / 2)
+            data["parity"] = parity / (scale_parity)
             print('max parity:', np.max(data["parity"]))
             print('max parity before scaling:', np.max(parity))
 
@@ -1018,7 +1019,7 @@ class ProcessTomographyExperiment(Experiment):
                             pe_plus_filtered = wa_plus.bin_ss_data(filter_map=filter_map_plus)
                             parity_minus_filtered = (1 - pe_minus_filtered) - pe_minus_filtered
                             parity_plus_filtered = (1 - pe_plus_filtered) - pe_plus_filtered
-                            parity_filtered = (parity_minus_filtered - parity_plus_filtered) / 2 / (scale_parity * np.pi / 2)
+                            parity_filtered = (parity_minus_filtered - parity_plus_filtered) / 2 / scale_parity 
                             # raise an error if one of the mask is true, ie no shot are available for this 
                             #displacement 
                             mask = parity_filtered.mask
@@ -1043,7 +1044,7 @@ class ProcessTomographyExperiment(Experiment):
 
                         parity_minus = (1 - pe_minus) - pe_minus
                         parity_plus = (1 - pe_plus) - pe_plus
-                        parity = (parity_minus - parity_plus) / 2 / (scale_parity * np.pi / 2)
+                        parity = (parity_minus - parity_plus) / 2 / scale_parity
                         data_slice = {'alpha': data['alpha'], 'parity': parity}
 
                         wigner_analysis = WignerAnalysis(data=data_slice, config=cfg_local,
@@ -1395,13 +1396,22 @@ class ProcessTomographyExperiment(Experiment):
 
         serial['theta_opt'] = stack_1d(data['theta_opt']) if 'theta_opt' in data else None
 
-        # # check for filtered versions
-        # for key in ("parity_filtered", "pe_filtered", "parity_plus_filtered", "parity_minus_filtered"):
-        #     if key in data and isinstance(data[key], np.ndarray) and data[key].dtype == object:
-        #         serial[key] = stack_1d(data[key])
-        #     elif key in data:
-        #         serial[key] = np.asarray(data[key])
-        # serial['theta_opt_filtered'] = stack_1d(data['theta_opt_filtered']) if 'theta_opt_filtered' in data else None
+
+        if "parity_shot" in self.cfg.expt and self.cfg.expt.parity_shot:
+
+            # check for filtered versions
+            for key in ("parity_filtered", "pe_filtered", "parity_plus_filtered", "parity_minus_filtered"):
+                if key in data and isinstance(data[key], np.ndarray) and data[key].dtype == object:
+                    serial[key] = stack_1d(data[key])
+                elif key in data:
+                    serial[key] = np.asarray(data[key])
+
+
+            if "filter_map_plus" in data and isinstance(data["filter_map_plus"], np.ndarray) and data["filter_map_plus"].dtype == object:
+                serial["filter_map_plus"] = stack_2d(data["filter_map_plus"])
+            if "filter_map_minus" in data and isinstance(data["filter_map_minus"], np.ndarray) and data["filter_map_minus"].dtype == object:
+                serial["filter_map_minus"] = stack_2d(data["filter_map_minus"])
+            serial['theta_opt_filtered'] = stack_1d(data['theta_opt_filtered']) if 'theta_opt_filtered' in data else None
 
 
         # Density matrices (2D)
