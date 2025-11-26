@@ -1,5 +1,8 @@
 import os
 from datetime import datetime
+from typing import List, Union
+from fractions import Fraction
+from numbers import Rational
 
 import pandas as pd
 
@@ -391,7 +394,10 @@ class FloquetStorageSwapDataset(MMDataset):
         self.update_value(stor_name, f'phase_from_{from_stor_name} (deg)', phase)
 
     def import_from_swap_dataset(
-        self, stor_man_ds: StorageManSwapDataset, gain_div: int, pi_div: int
+        self,
+        stor_man_ds: StorageManSwapDataset,
+        gain_div: Union[int, List[int]],
+        pi_div: Union[int, List[int]]
     ):
         """
         Import the frequency, gain and pulse length from the pi/hpi swap dataset
@@ -399,14 +405,20 @@ class FloquetStorageSwapDataset(MMDataset):
         gain is copied and divided by gain_div
         length is the pi pulse length divided by pi_div
         pi_frac is the product of the gain and pi divisions
+        These can be either lists of integers or an integer applied to all modes
         """
+        if isinstance(gain_div, int):
+            gain_div = [gain_div] * 7
+        if isinstance(pi_div, int):
+            pi_div = [pi_div] * 7
+
         for stor_name in range(1, 8):
             stor_name_str = 'M1-S' + str(stor_name)
             orig_freq = stor_man_ds.get_freq(stor_name_str)
             orig_gain = stor_man_ds.get_gain(stor_name_str)
             orig_pi = stor_man_ds.get_pi(stor_name_str)
             self.update_freq(stor_name_str, orig_freq)
-            self.update_gain(stor_name_str, orig_gain // gain_div)
-            self.update_len(stor_name_str, orig_pi / pi_div)
-            self.update_pi_frac(stor_name_str, gain_div * pi_div)
+            self.update_gain(stor_name_str, orig_gain // gain_div[stor_name-1])
+            self.update_len(stor_name_str, orig_pi / pi_div[stor_name-1])
+            self.update_pi_frac(stor_name_str, gain_div[stor_name-1] * pi_div[stor_name-1])
 
