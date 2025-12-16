@@ -15,12 +15,12 @@ def ensure_local_file(remote_path, local_path, filename):
     Ensure that a file from remote_path exists in local_path.
     If not, copy it over via sftp
     """
-    local_file = os.path.join(local_path, filename)
+    local_file = local_path + '/' + filename
     if os.path.exists(local_file):
         print(f'Found local file {local_file}')
     else:
         print(f'Fetching remote file {filename} to local path {local_path}')
-        remote_file = os.path.join(remote_path, filename)
+        remote_file = remote_path + '/' + filename
         subprocess_cmd = f'sftp {remote_file} {local_file}'
         subprocess.run(subprocess_cmd, shell=True, check=True)
     return local_file
