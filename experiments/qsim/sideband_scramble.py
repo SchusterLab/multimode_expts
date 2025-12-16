@@ -76,7 +76,7 @@ class SidebandScrambleProgram(QsimBaseProgram):
                 pulse_args['phase'] = self.deg2reg(swap_stor_phases[i_stor], gen_ch=pulse_args['ch'])
                 # print("phase on storage", stor, swap_stor_phases[i_stor])
                 self.setup_and_pulse(**pulse_args)
-                self.sync_all()
+                self.sync_all(10)
 
                 # Update the phases for all other swaps using the phases accumulated during this swap
                 if update_phases:
