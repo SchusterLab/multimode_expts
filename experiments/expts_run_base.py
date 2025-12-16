@@ -1,14 +1,15 @@
-# This notebook take care of 
-# 1. Importing the necessary libraries
-# 2. initializing qick 
-# 3. Initializing important paths (data )
-# 4. Getting the datsets.
+""""
+Shared environment setup for notebooks running multimode experiments.
+1. Importing the necessary libraries
+2. initializing qick 
+3. Initializing important paths (data, config, etc)
+4. Getting the CSV datasets
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from qick import *
-from qick.helpers import gauss
+from qick import QickConfig
 from tqdm.notebook import tqdm
 
 import time
@@ -20,7 +21,6 @@ sys.path.append('C:\\_Lib\\python\\rfsoc\\rfsoc_multimode\\example_expts')
 # sys.path.append('C:\\_Lib\\python\\multimode')
 import scipy as sp
 import json
-from scipy.fft import fft, fftfreq
 
 from slab.instruments import *
 from slab.experiment import Experiment
@@ -32,7 +32,7 @@ from multimode_expts.dataset import *
 
 
 
-class expts_run_base:
+class MultimodeStation:
     def __init__(self, data_path=None, config_name='hardware_config_202505.yml', exp_param_name='experiment_config.yml', qubit_i=0):
         self.path = data_path or r'H:\Shared drives\SLab\Multimode\experiment\250505_craqm'
         self.expt_path = os.path.join(self.path, 'data')  # Bad labveling here ; this is the data 
