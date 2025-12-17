@@ -19,10 +19,6 @@ exclude = [
   "slab",
 ]
 
-[tool.ruff.format]
-# don't enforce single or double quotes
-quote-style = "preserve"
-
 [tool.pixi.workspace]
 name = "multimode_expts"
 channels = ["conda-forge"]
@@ -50,4 +46,12 @@ slab = { path = "../slab", editable = true }
 multimode_expts = { path = ".", editable = true }
 
 visa = ">=1.0.0, <2"
+
+[tool.ruff.format]
+quote-style = "preserve" # don't enforce single or double quotes
+
+[tool.pyright]
+executionEnvironments = [
+  { root = ".", extraPaths = ["../"] }
+]
 

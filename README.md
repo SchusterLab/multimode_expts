@@ -1,5 +1,6 @@
-# Multimode Experiment Code 
+# Multimode Experiment Code
 
-### Dependencies 
+## Dependencies
+
 slab - On branch Keysight
 

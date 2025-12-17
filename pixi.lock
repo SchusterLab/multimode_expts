@@ -2089,7 +2089,7 @@ packages:
 - pypi: ./
   name: multimode-expts
   version: 0.0.1
-  sha256: a48151262196e89d38c6463e571d579e1e1cd9ffd17972129409498f99bd9d7f
+  sha256: 9404f61193f4290ee3c163c471163c51ddd75354a5c949eb6b693605f526abcb
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/munkres-1.1.4-pyhd8ed1ab_1.conda
   sha256: d09c47c2cf456de5c09fa66d2c3c5035aa1fa228a1983a433c47b876aa16ce90
