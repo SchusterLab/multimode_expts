@@ -28,6 +28,15 @@ Two important but tricky dependencies to deal with are slab and qick. These also
 - Now we can actually pixi install and start running something in a jupyter notebook. But the LSP tooling still doesn't know slab despite the python runtime being able to resolve package imports. This is because again slab is also a flat package layout and the packages and modules live under D:\python\slab instead of D:\python\slab\slab which the tools expect. The path of least resistance is to give the tools we use a little help. Inside `multimode_expts/.vscode/settings.json` we tell python analysis to add the parent dir of multimode_expts as an extra path so when it looks for the slab package it sees our slab repo. Inside the pyrightconfig.json we do the same for pyright running in neovim. 
 - Also on the tooling side, VS Code doesn't support pixi very well yet. It was easy enough to get LSP to work just by pointing the python interpreter path to the pixi default env one, but this doesn't fly with Jupyter notebook execution simply because VS Code tries to shoehorn the environment activation strategy of other tools and it doesn't work so that times out after a long while and it just decides to accept that the python runtime doesn't have any PATH env var populated. This leads directly to kernel crash when you import anything because there's no PATH and it cannot find the DLLs. The solution that is compatible with most of our workflows including VS Code remote seems to be to make a manual Jupyter kernel spec under C:\Users\26049\AppData\Roaming\jupyter\kernels for each workspace (see the json there for detail). Since we only have one active workspace now, let's just live with this approach for now until the VS Code people solve their compatibility issue (it seems the GitHub issue is actively being looked into literally this week).
 
-Now the inti sections of the single qubit autocalibrate notebook seems to run and I tried running resonator spectroscopy and single shot and we got back data from RFSoC no problem although fridge was warm so if there's any issue with the data (I guess that's unlikely but who knows) we don't know. tqdm doesn't work yet though. To do.
+Now the init sections of the single qubit autocalibrate notebook seems to run and I tried running resonator spectroscopy and single shot and we got back data from RFSoC no problem although fridge was warm so if there's any issue with the data (I guess that's unlikely but who knows) we don't know. tqdm doesn't work yet though. To do.
 
 As a note, please refrain from using sys.path.append whenever a package/module under multimode_expts or slab cannot be found. There's usually a better, more sustainable solution than that. Talk to people or LLMs. It takes a little bit more time than the few seconds of typing that one line but you spare your fellow colleagues from having to clean after horrendous piles of tech debt in the future. Please be nice to those you work with. It also forces you to write better code which, even if you don't realize it yet, means being more efficient at your own work.
+
+
+--- 
+
+Edit 20251217:
+
+The current state of the slab package is beyond rescue. 
+I'm vendoring the useful code into multimode_expts/slab and deleting D:\python\slab since it's already backed up 3 times in the C lib python backups.
+
