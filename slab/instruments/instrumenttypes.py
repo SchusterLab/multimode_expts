@@ -1,17 +1,10 @@
-try:
-    import visa
-
-except Exception as e:
-    print(e)
-    print("Warning VISA library import failed")
-import telnetlib as telnetlib # telnetlib deprecated in python 3.13, use telnetlib3 instead
 import socket
+import telnetlib as telnetlib
+# telnetlib deprecated in python 3.13, use telnetlib3 instead
 import time
 
-try:
-    import serial
-except ImportError:
-    print("Warning serial library import failed.")
+import pyvisa
+import serial
 
 
 class Instrument(object):
@@ -108,7 +101,7 @@ class VisaInstrument(Instrument):
             self.protocol = 'VISA'
             self.timeout = timeout
             address = address.upper()
-            self.instrument = visa.ResourceManager().open_resource(address)
+            self.instrument = pyvisa.ResourceManager().open_resource(address)
             self.instrument.timeout = timeout * 1000
 
     def write(self, s):

@@ -5,8 +5,6 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
-    options:
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -161,6 +159,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pyobjc-framework-cocoa-12.1-py312h1de3e18_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyparsing-3.2.5-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyro4-4.82-pyhd8ed1ab_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pyserial-3.5-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pysocks-1.7.1-pyha55dd90_7.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/python-3.12.12-h18782d2_1_cpython.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-dateutil-2.9.0.post0-pyhe01879c_2.conda
@@ -170,6 +169,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.3-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-8_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytz-2025.2-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pyvisa-1.15.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pyyaml-6.0.3-py312h5748b74_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pyzmq-27.1.0-py312hd65ceae_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/qhull-2020.2-h420ef59_5.conda
@@ -219,7 +219,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.2-h248ca61_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
-      - pypi: https://files.pythonhosted.org/packages/ad/82/3ef18ecc71b75252fee1af96847ef555cfaa3d32c38082ac85f9a6c9cf7a/visa-1.0.0-py2.py3-none-any.whl
       - pypi: ../qick
       - pypi: ./
       win-64:
@@ -387,6 +386,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/pygments-2.19.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyparsing-3.2.5-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pyro4-4.82-pyhd8ed1ab_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pyserial-3.5-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pyside6-6.10.1-py312h0c8bdd4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pysocks-1.7.1-pyh09c184e_7.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/python-3.12.12-h0159041_1_cpython.conda
@@ -397,6 +397,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.3-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-8_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytz-2025.2-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/pyvisa-1.15.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pywin32-311-py312h829343e_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pywinpty-2.0.15-py312h275cf98_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/pyyaml-6.0.3-py312h05f76fc_0.conda
@@ -455,7 +456,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-3.23.0-pyhcf101f3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-ng-2.3.2-h5112557_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: https://files.pythonhosted.org/packages/ad/82/3ef18ecc71b75252fee1af96847ef555cfaa3d32c38082ac85f9a6c9cf7a/visa-1.0.0-py2.py3-none-any.whl
       - pypi: ../qick
       - pypi: ./
 packages:
@@ -3189,7 +3189,7 @@ packages:
 - pypi: ./
   name: multimode-expts
   version: 0.0.1
-  sha256: e360db6be57b0de2320e8e5f211804f8c97b645fbddd57482e3fa2ea609ca861
+  sha256: 427f8f4bcb71b07eec0bc29b220b9b67b9c849d352b77f21d202ab0225e9da17
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/munkres-1.1.4-pyhd8ed1ab_1.conda
   sha256: d09c47c2cf456de5c09fa66d2c3c5035aa1fa228a1983a433c47b876aa16ce90
@@ -3832,6 +3832,17 @@ packages:
   - pkg:pypi/pyro4?source=hash-mapping
   size: 73365
   timestamp: 1736129156350
+- conda: https://conda.anaconda.org/conda-forge/noarch/pyserial-3.5-pyhd8ed1ab_1.conda
+  sha256: 48b51797fa1f5d8b2ed5d5f155a18993bb02616eef7a3b053a9125d7650bbe59
+  md5: 0127bf00a534e0c7b8075090f162bf82
+  depends:
+  - python >=3.9
+  license: BSD-3-Clause
+  license_family: BSD
+  purls:
+  - pkg:pypi/pyserial?source=hash-mapping
+  size: 69380
+  timestamp: 1734140304034
 - conda: https://conda.anaconda.org/conda-forge/win-64/pyside6-6.10.1-py312h0c8bdd4_0.conda
   sha256: 7041cca95f5486b56e8b5e433b1ed2ca8c597caf86c2047c0cabc89e48417da2
   md5: 23882de6dbb761a28bc4dd50c0fc0452
@@ -4004,6 +4015,18 @@ packages:
   - pkg:pypi/pytz?source=hash-mapping
   size: 189015
   timestamp: 1742920947249
+- conda: https://conda.anaconda.org/conda-forge/noarch/pyvisa-1.15.0-pyhd8ed1ab_0.conda
+  sha256: f1721e60186b8c0d343f0c7e1447c4843c10a82cc441984660877fdaae9cadac
+  md5: 0a6c6875239774d4617691a16601477b
+  depends:
+  - python >=3.10
+  - typing_extensions
+  license: MIT
+  license_family: MIT
+  purls:
+  - pkg:pypi/pyvisa?source=hash-mapping
+  size: 133558
+  timestamp: 1761076035871
 - conda: https://conda.anaconda.org/conda-forge/win-64/pywin32-311-py312h829343e_1.conda
   sha256: a7505522048dad63940d06623f07eb357b9b65510a8d23ff32b99add05aac3a1
   md5: 64cbe4ecbebe185a2261d3f298a60cde
@@ -4130,8 +4153,8 @@ packages:
   timestamp: 1720814433486
 - pypi: ../qick
   name: qick
-  version: 0.2.302
-  sha256: 6f5c5eefbfb9b058e273509de4d3eab8d8db1e426d0ebfb311dc883c04e39975
+  version: 0.2.291
+  sha256: 59494be983965a4adf1a9c846858a549ab1d6b8babcd670a9971bc7efc5591bd
   requires_dist:
   - numpy
   - pynq>=2.6 ; platform_machine == 'aarch64' or platform_machine == 'armv7l'
@@ -4781,14 +4804,6 @@ packages:
   purls: []
   size: 115073
   timestamp: 1765216325898
-- pypi: https://files.pythonhosted.org/packages/ad/82/3ef18ecc71b75252fee1af96847ef555cfaa3d32c38082ac85f9a6c9cf7a/visa-1.0.0-py2.py3-none-any.whl
-  name: visa
-  version: 1.0.0
-  sha256: d81d2ed0c894f97dff6e04b721b2500405a47433dc0531393f2dc27677820c50
-  requires_dist:
-  - requests[security]>=2.20 ; python_full_version < '3'
-  - requests>=2.20 ; python_full_version >= '3'
-  requires_python: '>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*'
 - conda: https://conda.anaconda.org/conda-forge/noarch/wcwidth-0.2.14-pyhd8ed1ab_0.conda
   sha256: e311b64e46c6739e2a35ab8582c20fa30eb608da130625ed379f4467219d4813
   md5: 7e1e5ff31239f9cd5855714df8a3783d
