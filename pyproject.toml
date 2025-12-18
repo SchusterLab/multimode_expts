@@ -42,7 +42,7 @@ pip = ">=25.3,<26"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
-slab = { path = "../slab", editable = true }
+# slab = { path = "../slab", editable = true }
 multimode_expts = { path = ".", editable = true }
 
 visa = ">=1.0.0, <2"

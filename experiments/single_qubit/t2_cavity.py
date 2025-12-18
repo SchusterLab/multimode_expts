@@ -13,7 +13,7 @@ from fit_display_classes import (
 )
 from MM_base import *
 from MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import *
+from fit_display import *
 
 
 class CavityRamseyProgram(MMRAveragerProgram):
