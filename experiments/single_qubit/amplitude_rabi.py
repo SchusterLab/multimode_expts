@@ -9,7 +9,7 @@ from tqdm import tqdm_notebook as tqdm
 from copy import deepcopy
 
 import fitting.fitting as fitter
-from MM_base import MMRAveragerProgram
+from experiments.MM_base import MMRAveragerProgram
 
 class AmplitudeRabiProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):

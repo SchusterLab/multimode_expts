@@ -15,7 +15,7 @@ from tqdm import tqdm_notebook as tqdm
 from experiments.single_qubit.single_shot import  HistogramProgram
 
 import fitting.fitting as fitter
-from MM_dual_rail_base import *
+from experiments.MM_dual_rail_base import *
 
 """
 Single Beam Splitter RB sequence generator

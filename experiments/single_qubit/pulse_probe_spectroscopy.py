@@ -8,7 +8,7 @@ from tqdm import tqdm_notebook as tqdm
 import time
 
 import fitting.fitting as fitter
-from MM_base import MMRAveragerProgram
+from experiments.MM_base import MMRAveragerProgram
 
 class PulseProbeSpectroscopyProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):

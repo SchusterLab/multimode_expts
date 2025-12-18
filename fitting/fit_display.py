@@ -2562,7 +2562,7 @@ def generate_mode_combinations(mode_list, num_modes_sim_rb, skip_combos):
     return combinations
 
 # for computing gate_length 
-from MM_rb_base import *
+from experiments.MM_rb_base import *
 
 def get_spec_idling_time(spec_reps, spectator_mode_no, cfg): 
     '''computes total idling time for the spectator mode pulse sequence'''

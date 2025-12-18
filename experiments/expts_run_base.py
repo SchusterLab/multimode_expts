@@ -28,7 +28,7 @@ from slab.datamanagement import SlabFile
 from slab import get_next_filename, get_current_filename, AttrDict
 import yaml
 
-from dataset import *
+from experiments.dataset import *
 
 
 

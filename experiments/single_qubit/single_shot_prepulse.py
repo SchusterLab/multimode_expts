@@ -6,8 +6,8 @@ from copy import deepcopy
 
 from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
-from MM_base import *
-from MM_rb_base import * 
+from experiments.MM_base import *
+from experiments.MM_rb_base import * 
 
 
  

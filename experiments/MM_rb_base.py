@@ -3,11 +3,11 @@ import numpy as np
 from qick.helpers import gauss
 import time
 from slab import AttrDict
-from dataset import * 
-from dataset import StorageManSwapDataset
+from experiments.dataset import * 
+from experiments.dataset import StorageManSwapDataset
 import matplotlib.pyplot as plt
 import random
-from MM_base import * 
+from experiments.MM_base import * 
 
 
 

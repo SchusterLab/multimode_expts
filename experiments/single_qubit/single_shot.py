@@ -4,7 +4,7 @@ from qick import *
 from copy import deepcopy
 
 from slab import Experiment, AttrDict
-from MM_base import * 
+from experiments.MM_base import * 
 
 
 class HistogramProgram(MMAveragerProgram):

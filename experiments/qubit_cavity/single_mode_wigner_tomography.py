@@ -8,9 +8,9 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from fit_display_classes import GeneralFitting
-from fitting_folder.wigner import WignerAnalysis
-from MM_base import MMAveragerProgram
+from fitting.fit_display_classes import GeneralFitting
+from fitting.wigner import WignerAnalysis
+from experiments.MM_base import MMAveragerProgram
 
 # from scipy.sepcial import erf
 

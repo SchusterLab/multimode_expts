@@ -8,7 +8,7 @@ from qick.helpers import gauss
 from slab import Experiment, dsfit, AttrDict
 
 import fitting.fitting as fitter
-from MM_base import MMAveragerProgram
+from experiments.MM_base import MMAveragerProgram
 
 """
 Measures the cavity frequency when the qubit is in its ground state: sweep readout pulse frequency and look for the frequency with the maximum measured amplitude.

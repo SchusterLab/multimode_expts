@@ -19,10 +19,10 @@ from tqdm import tqdm
 
 import experiments as meas
 import fitting.fitting as fitter
-from multimode_expts.fit_display import *  # for generate combos in MultiRBAM
-from multimode_expts.MM_base import MM_base
-from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.MM_rb_base import MM_rb_base
+from fitting.fit_display import *  # for generate combos in MultiRBAM
+from experiments.MM_base import MM_base
+from experiments.MM_dual_rail_base import MM_dual_rail_base
+from experiments.MM_rb_base import MM_rb_base
 
 
 class sequential_base_class():
@@ -115,7 +115,7 @@ class sequential_base_class():
         """
         
         try:
-            from multimode_expts.fit_display_classes import ChevronFitting
+            from fitting.fit_display_classes import ChevronFitting
 
             # Initialize Chevron analysis
             chevron_analysis = ChevronFitting(
@@ -131,7 +131,7 @@ class sequential_base_class():
             #
             from IPython.display import clear_output
 
-            # from multimode_expts.fit_display_classes import SidebandFitting
+            # from fitting.fit_display_classes import SidebandFitting
             clear_output(wait=True)
             plt.close('all')  # Close all existing figures
             chevron_analysis.display_results()
@@ -187,7 +187,7 @@ class sequential_base_class():
     def close_prev_plots(self): 
         from IPython.display import clear_output
 
-        # from multimode_expts.fit_display_classes import SidebandFitting
+        # from fitting.fit_display_classes import SidebandFitting
         clear_output(wait=True)
         plt.close('all')  # Close all existing figures
         
@@ -315,7 +315,7 @@ class histogram_sweep_class(sequential_base_class):
         return analysis_result
 
     def perform_historgam_analysis(self, hstgrm):
-        from multimode_expts.fit_display_classes import Histogram
+        from fitting.fit_display_classes import Histogram
         hist_analysis = Histogram(
             hstgrm.data, verbose=True, threshold=None, config=hstgrm.cfg,
         )
@@ -334,7 +334,7 @@ class histogram_sweep_class(sequential_base_class):
         hstgrm.data['contrast']  = np.median(hstgrm.data['Ie_rot']) -  np.median(hstgrm.data['Ig_rot'])
     
     def perform_lineplotting(self):
-        from multimode_expts.fit_display_classes import LinePlotting
+        from fitting.fit_display_classes import LinePlotting
         xlist = self.expt_sweep.data['jpa_current']
         ylist1 = self.expt_sweep.data['fids']
         ylist2 = self.expt_sweep.data['contrast']
@@ -354,14 +354,14 @@ class histogram_sweep_class(sequential_base_class):
         zlist1 = self.expt_sweep.data['fids']
         zlist2 = self.expt_sweep.data['contrast']
 
-        from multimode_expts.fit_display_classes import ColorPlotting2D
+        from fitting.fit_display_classes import ColorPlotting2D
         color_plot = ColorPlotting2D(xlist = xlist, ylist = ylist, zlists = [zlist1, zlist2],
                                         xlabel='JPA Current [mA]', ylabel='JPA Gain [dB]',
                                         zlabels=['Fidelity', 'Contrast'])
         
         from IPython.display import clear_output
 
-        # from multimode_expts.fit_display_classes import SidebandFitting
+        # from fitting.fit_display_classes import SidebandFitting
         clear_output(wait=True)
         plt.close('all')  # Close all existing figures
         
@@ -633,7 +633,7 @@ class MM_DualRailRB(sequential_base_class):
             # Close previous plots and display the new one
             from IPython.display import clear_output
 
-            from multimode_expts.fit_display_classes import MM_DualRailRBFitting
+            from fitting.fit_display_classes import MM_DualRailRBFitting
 
             clear_output(wait=True)
             plt.close('all')  # Close all existing figures

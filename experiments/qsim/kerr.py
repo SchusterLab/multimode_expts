@@ -8,7 +8,7 @@ from scipy.ndimage import gaussian_filter1d
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
-from MM_dual_rail_base import MM_dual_rail_base
+from experiments.MM_dual_rail_base import MM_dual_rail_base
 
 """
 In this file, each program looks at the effect of a particular combo of

@@ -1,4 +1,4 @@
-from fit_display_classes import GeneralFitting
+from fitting.fit_display_classes import GeneralFitting
 
 import numpy as np
 from scipy.optimize import minimize

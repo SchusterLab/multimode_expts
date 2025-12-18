@@ -7,7 +7,7 @@ from qick import *
 from slab import Experiment, dsfit, AttrDict
 
 import fitting.fitting as fitter
-from MM_base import MMAveragerProgram
+from experiments.MM_base import MMAveragerProgram
 
 """
 Measures Rabi oscillations by sweeping over the duration of the qubit drive pulse. This is a preliminary measurement to prove that we see Rabi oscillations. This measurement is followed up by the Amplitude Rabi experiment.

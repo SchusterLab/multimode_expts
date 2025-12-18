@@ -7,7 +7,7 @@ from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from MM_base import *
+from experiments.MM_base import *
 
 class ParityTempProgram(MMRAveragerProgram):
     def __init__(self, soccfg, cfg):

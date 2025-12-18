@@ -16,7 +16,7 @@ from experiments.single_qubit.single_shot_old import hist, HistogramProgram_oldo
 from experiments.single_qubit.single_shot import  HistogramProgram
 
 import fitting.fitting as fitter
-from MM_rb_base import * #MMRBAveragerProgram
+from experiments.MM_rb_base import * #MMRBAveragerProgram
 
 """
 Single qubit RB sequence generator

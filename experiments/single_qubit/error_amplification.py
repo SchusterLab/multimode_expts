@@ -8,7 +8,7 @@ from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from MM_base import MMRAveragerProgram
+from experiments.MM_base import MMRAveragerProgram
 
 
 class ErrorAmplificationProgram(MMRAveragerProgram):

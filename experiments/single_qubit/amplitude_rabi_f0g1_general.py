@@ -7,7 +7,7 @@ from qick import *
 from slab import Experiment, dsfit, AttrDict
 
 import fitting.fitting as fitter
-from MM_base import *
+from experiments.MM_base import *
 
 """
 Measures Rabi oscillations by sweeping over the amplitude of the f0g1 drive pulse. 

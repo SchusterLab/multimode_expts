@@ -16,10 +16,10 @@ from slab.dsfit import *
 from scipy.optimize import curve_fit
 import fitting.fitting as fitter
 from scipy.fft import fft, fftfreq
-from multimode_expts.MM_base import MM_base
-from multimode_expts.MM_rb_base import MM_rb_base
-from multimode_expts.MM_dual_rail_base import MM_dual_rail_base
-from multimode_expts.fit_display import * # for generate combos in MultiRBAM
+from experiments.MM_base import MM_base
+from experiments.MM_rb_base import MM_rb_base
+from experiments.MM_dual_rail_base import MM_dual_rail_base
+from fitting.fit_display import * # for generate combos in MultiRBAM
 
 '''
 Updates: 

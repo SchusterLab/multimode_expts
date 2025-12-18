@@ -6,14 +6,14 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from fit_display_classes import (
+from fitting.fit_display_classes import (
     CavityRamseyGainSweepFitting,
     GeneralFitting,
     RamseyFitting,
 )
-from MM_base import *
-from MM_dual_rail_base import MM_dual_rail_base
-from fit_display import *
+from experiments.MM_base import *
+from experiments.MM_dual_rail_base import MM_dual_rail_base
+from fitting.fit_display import *
 
 
 class CavityRamseyProgram(MMRAveragerProgram):

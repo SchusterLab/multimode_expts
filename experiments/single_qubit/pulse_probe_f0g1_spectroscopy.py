@@ -7,7 +7,7 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from MM_base import MMRAveragerProgram
+from experiments.MM_base import MMRAveragerProgram
 from experiments.single_qubit.pulse_probe_ef_spectroscopy import PulseProbeEFSpectroscopyProgram
 
 class PulseProbeF0g1SpectroscopyProgram(MMRAveragerProgram):

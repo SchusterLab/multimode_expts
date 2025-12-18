@@ -18,9 +18,9 @@ from tqdm import tqdm_notebook as tqdm
 from copy import deepcopy # single shot dictionary cfg copy
 
 import fitting.fitting as fitter
-from MM_base import *
-from MM_dual_rail_base import *
-from fitting_folder.wigner import WignerAnalysis
+from experiments.MM_base import *
+from experiments.MM_dual_rail_base import *
+from fitting.wigner import WignerAnalysis
 
 
 class ParityGainProgram(MMRAveragerProgram):
@@ -136,7 +136,7 @@ class ParityGainExperiment(Experiment):
         data = {}
 
         if self.cfg.expt.single_shot:
-            from MM_dual_rail_base import MM_dual_rail_base
+            from experiments.MM_dual_rail_base import MM_dual_rail_base
             mm_dr_base = MM_dual_rail_base(self.cfg)
             data = mm_dr_base.run_single_shot(self, data, True)
             print('Single shot data:', data)

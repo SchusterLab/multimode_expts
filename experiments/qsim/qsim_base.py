@@ -9,13 +9,13 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from dataset import FloquetStorageSwapDataset
+from experiments.dataset import FloquetStorageSwapDataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
     guess_freq,
     post_select_raverager_data,
 )
-from MM_base import MMAveragerProgram
+from experiments.MM_base import MMAveragerProgram
 
 
 class QsimBaseProgram(MMAveragerProgram):

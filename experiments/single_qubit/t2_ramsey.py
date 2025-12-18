@@ -6,7 +6,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from MM_base import *
+from experiments.MM_base import *
 
 
 class RamseyProgram(MMRAveragerProgram):
