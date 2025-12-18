@@ -18,7 +18,7 @@ exclude = [ ]
 [tool.pixi.workspace]
 name = "multimode_expts"
 channels = ["conda-forge"]
-platforms = ["win-64"]
+platforms = ["win-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
 python = "3.12.*"
@@ -35,6 +35,7 @@ ipywidgets = ">=8.1.8,<9"
 pandas = ">=2.3.3,<3"
 qutip = ">=5.2.2,<6"
 pip = ">=25.3,<26"
+gymnasium = ">=1.2.2,<2"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
