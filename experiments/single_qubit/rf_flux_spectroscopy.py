@@ -7,7 +7,7 @@ from qick import *
 from qick.helpers import gauss
 from slab import Experiment, dsfit, AttrDict
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 """
 Note that harmonics of the clock frequency (6144 MHz) will show up as "infinitely"  narrow peaks!

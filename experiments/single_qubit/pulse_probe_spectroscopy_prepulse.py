@@ -9,7 +9,7 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 import time
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 class PulseProbePrePulseSpectroscopyProgram(RAveragerProgram):
     def __init__(self, soccfg, cfg):

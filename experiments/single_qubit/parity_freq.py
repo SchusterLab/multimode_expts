@@ -9,7 +9,7 @@ from tqdm import tqdm_notebook as tqdm
 
 from copy import deepcopy # single shot dictionary cfg copy
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from MM_base import MMAveragerProgram
 '''
 Sweeps frequency of prepulse 

@@ -16,7 +16,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 
 class GeneralFitting:

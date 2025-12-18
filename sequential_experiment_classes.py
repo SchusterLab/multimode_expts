@@ -18,7 +18,7 @@ from slab.instruments import *
 from tqdm import tqdm
 
 import experiments as meas
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from multimode_expts.fit_display import *  # for generate combos in MultiRBAM
 from multimode_expts.MM_base import MM_base
 from multimode_expts.MM_dual_rail_base import MM_dual_rail_base

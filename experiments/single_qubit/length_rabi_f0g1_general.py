@@ -6,7 +6,7 @@ from qick import *
 # from qick.helpers import gauss, sin2, tanh, flat_top_gauss
 from slab import Experiment, dsfit, AttrDict
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from MM_base import *
 
 """

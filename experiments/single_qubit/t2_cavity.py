@@ -5,7 +5,7 @@ from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from fit_display_classes import (
     CavityRamseyGainSweepFitting,
     GeneralFitting,

@@ -14,7 +14,7 @@ from slab import get_next_filename, get_current_filename
 
 from slab.dsfit import *
 from scipy.optimize import curve_fit
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from scipy.fft import fft, fftfreq
 from multimode_expts.MM_base import MM_base
 from multimode_expts.MM_rb_base import MM_rb_base

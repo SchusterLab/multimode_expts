@@ -18,7 +18,7 @@ from qick import *
 from slab.instruments import *
 from slab import Experiment, dsfit, AttrDict
 from slab.dsfit import *
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 
 def normalize_data(axi, axq, data, normalize): 

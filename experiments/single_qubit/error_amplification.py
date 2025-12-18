@@ -7,7 +7,7 @@ from qick.helpers import gauss
 from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from MM_base import MMRAveragerProgram
 
 

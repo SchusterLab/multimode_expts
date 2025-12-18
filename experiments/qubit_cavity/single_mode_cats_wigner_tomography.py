@@ -7,7 +7,7 @@ from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
 # from scipy.sepcial import erf
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 class WignerTomography1ModeCatProgram(AveragerProgram):
     def __init__(self, soccfg, cfg):

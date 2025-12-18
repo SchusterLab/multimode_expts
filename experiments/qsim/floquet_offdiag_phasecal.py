@@ -1,4 +1,4 @@
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.utils import (
     fit_cos2d,

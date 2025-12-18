@@ -5,7 +5,7 @@ import numpy as np
 from lmfit.models import Model
 from matplotlib import pyplot as plt
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 
 

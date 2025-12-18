@@ -6,7 +6,7 @@ from qick.helpers import gauss
 from slab import Experiment, dsfit, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 
 
 class TestOptProgram(AveragerProgram):

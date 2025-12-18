@@ -5,7 +5,7 @@ from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
-import experiments.fitting as fitter
+import fitting.fitting as fitter
 from dataset import StorageManSwapDataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
