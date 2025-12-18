@@ -8,16 +8,12 @@ version = "0.0.1"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["*"]
-exclude = [
-  "node_modules",
-  "RAM_paper_results",
-  "analysis_notebooks",
-  "configs",
-  "logs",
-  "plots",
-  "slab",
+include = [
+  "experiments*",
+  "fitting*",
+  "slab*",
 ]
+exclude = [ ]
 
 [tool.pixi.workspace]
 name = "multimode_expts"
@@ -50,8 +46,8 @@ visa = ">=1.0.0, <2"
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes
 
-[tool.pyright]
-executionEnvironments = [
-  { root = ".", extraPaths = ["../"] }
-]
+# [tool.pyright]
+# executionEnvironments = [
+#   { root = ".", extraPaths = ["../"] }
+# ]
 
