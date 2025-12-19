@@ -9,8 +9,8 @@ Shared environment setup for notebooks running multimode experiments.
 import json
 import os
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -29,12 +29,12 @@ class MultimodeStation:
         an InstrumentManager,
         a QICK RFSoC,
         a hardware config yaml file,
+        a manipulate-storage swap database file,
+        a multiphoton config yaml file.
         a path to save data/plot/logs to,
         (without any of these the station cannot initialize)
     and optionally:
         Yokogawa sources for JPA and coupler flux,
-        a manipulate-storage swap database file,
-        a multiphoton config yaml file.
     In the future we should consolidate hardware-dependent configs
     so that the code can on run on different fridges.
     """
@@ -95,8 +95,10 @@ class MultimodeStation:
         if not self.output_root.exists():
             raise FileNotFoundError(
                 f"""Output root {self.output_root} does not exist.
-                Double check if you're running this on the wrong machine 
-                because this is not something that should be automatically created""")
+                This is not something that should be automatically created.
+                Double check if your file system matches what hardware config wants
+                and modify the data_management field accordingly."""
+            )
 
         self.experiment_path = self.output_root / self.experiment_name
         self.data_path = self.experiment_path / "data"
@@ -117,7 +119,6 @@ class MultimodeStation:
                 os.makedirs(subpath)
                 print("Directory created at:", subpath)
 
-
     def _initialize_hardware(self):
         self.im = InstrumentManager(ns_address="192.168.137.25")
         self.soc = QickConfig(self.im[self.yaml_cfg["aliases"]["soc"]].get_cfg())
@@ -128,13 +129,6 @@ class MultimodeStation:
         print("Hardware configs will be read from", self.hardware_config_file)
         print(self.im.keys())
         print(self.soc)
-
-    # def __repr__(self) -> str:
-    #     self._print_paths()
-    #     print(self.im)
-    #     print(self.soc)
-    # print(im['Qick101'])
-    # print(soc)
 
     def load_data(self, filename=None, prefix=None):
         if prefix is not None:
