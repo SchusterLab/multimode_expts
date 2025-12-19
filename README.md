@@ -9,3 +9,10 @@ slab code that is actively used in this repo is now vendored inside slab as a mo
 Just modify the include and exclude lists therein to control which directories contain code that is allowed to be imported.
 
 
+## TODO
+
+- [ ] Delete the binary files that don't belong in git. hdf5 data, images etc. Move them to the data/log folder accompanying each experiment.
+- [ ] The few `slab` files are simply vendored in their original cursed state. If we straighten up the Experiment class and allow say proper file-reading functionalities, we can actually easily use the `analyze` functions in each child class to do the analysis instead of collecting everything in `fitting_display_classes` or such.
+- [ ] Migrate to tProcv2 at some point
+- [ ] Consider using pydantic for complex config dictionaries.
+
