@@ -22,6 +22,7 @@ from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
 from slab.instruments import InstrumentManager
 
+# TODO: add a dummy station class to allow for testing its dependents without hardware
 
 class MultimodeStation:
     """

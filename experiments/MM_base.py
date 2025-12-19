@@ -1,5 +1,7 @@
 import logging
 from typing import List, Optional, Union
+import yaml
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,16 +33,11 @@ class MM_base:
     def __init__(self, cfg: AttrDict, soccfg: AttrDict):
         self.cfg = cfg
         self.soccfg = soccfg
-    #     raise NotImplementedError("""
-    #     Don't instantiate this directly.
-    #     Inherit together with a QickProgram.
-    #     See eg MMAveragerProgram or MMRAveragerProgram for usage.
-    #     """)
-        # ------------ Multiphoton COnfig ----------
-        f_path = self.cfg.device.multiphoton_config.file
-        import yaml
-        with open(f_path, 'r') as f:
-            self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
+        # raise NotImplementedError("""
+        # Don't instantiate this directly.
+        # Inherit together with a QickProgram.
+        # See eg MMAveragerProgram or MMRAveragerProgram for usage.
+        # """)
 
     def parse_config(self):
         '''
@@ -126,10 +123,10 @@ class MM_base:
         self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
         self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
-        # ------------ Multiphoton COnfig ---------- Redundant but needed for some exopts
+        # ------------ Multiphoton Config ---------- 
         f_path = self.cfg.device.multiphoton_config.file
-        import yaml
-        with open(f_path, 'r') as f:
+        f_path = Path(__file__).parent.parent / 'configs' / f_path
+        with f_path.open('r') as f:
             self.multiphoton_cfg = AttrDict(yaml.safe_load(f))
 
 
