@@ -10,7 +10,7 @@ import json
 import os
 from copy import deepcopy
 from pathlib import Path
-from datetime import date
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -20,7 +20,6 @@ from qick import QickConfig
 from experiments.dataset import StorageManSwapDataset
 from slab import AttrDict, get_current_filename, get_next_filename
 from slab.datamanagement import SlabFile
-from slab.experiment import Experiment
 from slab.instruments import InstrumentManager
 
 
@@ -40,124 +39,121 @@ class MultimodeStation:
     so that the code can on run on different fridges.
     """
 
-    output_root = Path(r'D:\experiments')  # where data, plots, logs are saved
-    repo_root = Path(__file__).resolve().parent.parent
-    config_dir = repo_root / 'configs'
-
-
     def __init__(
         self,
         experiment_name: Optional[str] = None,
-        hardware_config: str = 'hardware_config_202505.yml',
-        create_missing_paths: bool = True,
+        hardware_config: str = "hardware_config_202505.yml",
         qubit_i=0,
     ):
         """
         Args:
             - experiment_name: format is yymmdd_name. None defaults to today's date
         """
+        self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
-            experiment_name or f'{date.today().strftime("%y%m%d")}_experiment'
+            experiment_name or f'{datetime.now().strftime("%y%m%d")}_experiment'
         )
-        self.experiment_path = self.output_root / self.experiment_name
-        self.data_path = self.experiment_path / 'data'
-        self.plot_path = self.experiment_path / 'plots'
-        self.hardware_config_file = self.config_dir / hardware_config
-
         self.qubit_i = qubit_i
 
-        self._initialize_paths()
+        self._initialize_configs(hardware_config)
 
+        self._initialize_output_paths()
 
+        self._initialize_hardware()
 
-        # self.expts_path = self._add_expts_path(self.mm_expts_path)
-        self.yaml_cfg = self._load_yaml_config()
-        # self.soc = self._init_qick_config()
-        # self.meas = self._import_experiments_module()
+        # For config update logic
+        # self.updateConfig_bool = False
+
+        self.print()
+
+    def _initialize_configs(self, hardware_config):
+        self.config_dir = self.repo_root / "configs"
+
+        # load hardware config
+        self.hardware_config_file = self.config_dir / hardware_config
+        with self.hardware_config_file.open("r") as cfg_file:
+            self.yaml_cfg = AttrDict(yaml.safe_load(cfg_file))
 
         # Config for this instance (deepcopy of yaml_cfg)
         self.config_thisrun = AttrDict(deepcopy(self.yaml_cfg))
 
         # load the multiphoton config
-        with open(self.config_thisrun.device.multiphoton_config.file, 'r') as f:
-            self.multimode_cfg = yaml.safe_load(f)
+        self.multiphoton_config_file = (
+            self.config_dir / self.config_thisrun.device.multiphoton_config.file
+        )
+        with self.multiphoton_config_file.open("r") as f:
+            self.multimode_cfg = AttrDict(yaml.safe_load(f))
 
         # Initailize the dataset
         ds, ds_thisrun, ds_thisrun_file_path = self.load_storage_man_swap_dataset()
         self.ds_thisrun = ds_thisrun
 
-        # Path for autocalibration plots
-        self.autocalib_path = self.create_autocalib_path()
+    def _initialize_output_paths(self):
+        self.output_root = Path(
+            self.yaml_cfg.data_management.output_root
+        )  # where data, plots, logs are saved
+        if not self.output_root.exists():
+            raise FileNotFoundError(
+                f"""Output root {self.output_root} does not exist.
+                Double check if you're running this on the wrong machine 
+                because this is not something that should be automatically created""")
 
-        # For config update logic
-        self.updateConfig_bool = False
+        self.experiment_path = self.output_root / self.experiment_name
+        self.data_path = self.experiment_path / "data"
+        self.plot_path = self.experiment_path / "plots"
+        self.log_path = self.experiment_path / "logs"
+        self.autocalib_path = (
+            self.plot_path / f'autocalibration_{datetime.now().strftime("%Y-%m-%d")}'
+        )
 
-        # initialize hardware interfaces
-        self.im = InstrumentManager(ns_address='192.168.137.25')
-        self.soc = QickConfig(self.im[self.yaml_cfg['aliases']['soc']].get_cfg())
+        for subpath in [
+            self.experiment_path,
+            self.data_path,
+            self.plot_path,
+            self.log_path,
+            self.autocalib_path,
+        ]:
+            if not subpath.exists():
+                os.makedirs(subpath)
+                print("Directory created at:", subpath)
+
+
+    def _initialize_hardware(self):
+        self.im = InstrumentManager(ns_address="192.168.137.25")
+        self.soc = QickConfig(self.im[self.yaml_cfg["aliases"]["soc"]].get_cfg())
         # add yokos to im
 
-
-    def _initialize_paths(self):
-        print('Data, plots, logs will be stored in: ', self.experiment_path)
-        print('Hardware configs will be read from', self.hardware_config_file)
-
-    def _load_yaml_config(self):
-        with open(self.hardware_config_file, 'r') as cfg_file:
-            yaml_cfg = yaml.safe_load(cfg_file)
-        return AttrDict(yaml_cfg)
-
-    def _print_paths(self):
-        pass
+    def print(self):
+        print("Data, plots, logs will be stored in: ", self.experiment_path)
+        print("Hardware configs will be read from", self.hardware_config_file)
+        print(self.im.keys())
+        print(self.soc)
 
     # def __repr__(self) -> str:
     #     self._print_paths()
     #     print(self.im)
     #     print(self.soc)
-
-    # def _init_instrument_manager(self):
-    #     im = InstrumentManager(ns_address='192.168.137.25')
-    #     print(im['Qick101'])
-    #     return im
-    #
-    # def _init_qick_config(self):
-    #     soc = QickConfig(self.im[self.yaml_cfg['aliases']['soc']].get_cfg())
-    #     print(soc)
-    #     return soc
-
-    # def _add_expts_path(self, expts_path):
-    #     sys.path.insert(0, expts_path)
-    #     print('Path added at highest priority')
-    #     print(sys.path)
-    #     return expts_path
-
-    # def _import_experiments_module(self):
-    #     self._add_expts_path(self.mm_expts_path)
-    #     import experiments as meas
-    #
-    #     print('Importing experiments module from', self.expts_path)
-    #     print(meas.__file__)
-    #     return meas
+    # print(im['Qick101'])
+    # print(soc)
 
     def load_data(self, filename=None, prefix=None):
         if prefix is not None:
-            temp_data_file = os.path.join(
-                self.expt_path,
-                get_current_filename(self.expt_path, prefix=prefix, suffix='.h5'),
+            data_file = self.data_path / get_current_filename(
+                self.data_path, prefix=prefix, suffix=".h5"
             )
         else:
-            temp_data_file = self.data_path / filename
-        with SlabFile(temp_data_file) as a:
+            data_file = self.data_path / filename
+        with SlabFile(data_file) as a:
             attrs = dict()
             for key in list(a.attrs):
                 attrs.update({key: json.loads(a.attrs[key])})
             keys = list(a)
-            temp_data = dict()
+            data = dict()
             for key in keys:
-                temp_data.update({key: np.array(a[key])})
-        return temp_data, attrs, temp_data_file
+                data.update({key: np.array(a[key])})
+        return data, attrs, data_file
 
-    def load_storage_man_swap_dataset(self, filename = 'man1_storage_swap_dataset.csv'):
+    def load_storage_man_swap_dataset(self, filename="man1_storage_swap_dataset.csv"):
         file_path = self.config_dir / filename
         ds = StorageManSwapDataset(file_path)
         ds_thisrun = StorageManSwapDataset(ds.create_copy())
@@ -169,12 +165,6 @@ class MultimodeStation:
         Creates a directory inside the data folder for autocalibration plots, named with the current date.
         Returns the path to the created directory.
         """
-        autocalib_path = os.path.join(
-            self.expt_path,
-            f'autocalibration_plots_{datetime.now().strftime("%Y-%m-%d")}',
-        )
-        os.makedirs(autocalib_path, exist_ok=True)
-        print('Directory created for autocalibration plots at:', autocalib_path)
         return autocalib_path
 
     def convert_attrdict_to_dict(self, attrdict):
@@ -255,12 +245,12 @@ class MultimodeStation:
         """
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         old_config_path = os.path.join(
-            autocalib_path, f'old_config_{current_time}.yaml'
+            autocalib_path, f"old_config_{current_time}.yaml"
         )
         old_config = self.convert_numbers_to_float(
             self.convert_attrdict_to_dict(yaml_cfg)
         )
-        with open(old_config_path, 'w') as cfg_file:
+        with open(old_config_path, "w") as cfg_file:
             yaml.dump(
                 old_config,
                 cfg_file,
@@ -279,7 +269,7 @@ class MultimodeStation:
                 self.update_yaml_config(yaml_cfg, config_thisrun)
             )
         )
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             yaml.dump(
                 updated_config,
                 f,

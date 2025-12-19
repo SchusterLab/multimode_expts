@@ -125,7 +125,7 @@ device:
         - 1.2311804927283654
         ramp_sigma: 0.005
     storage:
-        storage_man_file: C:/_Lib/python/multimode_expts/man1_storage_swap_dataset.csv
+        storage_man_file: man1_storage_swap_dataset.csv # will be looked for under configs
         idling_phase:
         -   - -52.6696123
             - -22.7088024
@@ -185,7 +185,7 @@ device:
         - -3.2053137013077597
         - -2.935087792327744
         ramp_sigma: 0.005
-        floquet_man_stor_file: C:/_Lib/python/multimode_expts/floquet_storage_swap_dataset.csv
+        floquet_man_stor_file: floquet_storage_swap_dataset.csv # will be looked for under configs
     active_reset:
         qubit_ge:
         - 4000
@@ -209,7 +209,7 @@ device:
             - 2.0
             - 2.0
     multiphoton_config:
-        file: C:\_Lib\python\multimode_expts\configs\multiphoton_config.yml
+        file: multiphoton_config.yml # will be looked for under configs
     multiphoton:
         pi:
             gn-en:
@@ -519,4 +519,4 @@ hw:
 aliases:
     soc: Qick101
 data_management:
-    plot_and_logs_folder: H:\Shared drives\SLab\Multimode\experiment\250505_craqm\data\plots_and_logs
+    output_root: "D:/experiments" # this is where we store data, plots and logs
