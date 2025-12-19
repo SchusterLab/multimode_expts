@@ -18,7 +18,7 @@ import yaml
 from qick import QickConfig
 
 from experiments.dataset import StorageManSwapDataset
-from slab import AttrDict, get_current_filename, get_next_filename
+from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
 from slab.instruments import InstrumentManager
 
@@ -43,11 +43,14 @@ class MultimodeStation:
         self,
         experiment_name: Optional[str] = None,
         hardware_config: str = "hardware_config_202505.yml",
-        qubit_i=0,
+        storage_man_file: str = "man1_storage_swap_dataset.csv",
+        qubit_i: int = 0,
     ):
         """
         Args:
             - experiment_name: format is yymmdd_name. None defaults to today's date
+            - hardware_config: filename for the yaml config. To be found under station.config_dir
+            - storage_man_file: filename for the storage manipulate swap csv. Under station.config_dir
         """
         self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
@@ -85,7 +88,10 @@ class MultimodeStation:
             self.multimode_cfg = AttrDict(yaml.safe_load(f))
 
         # Initailize the dataset
-        ds, ds_thisrun, ds_thisrun_file_path = self.load_storage_man_swap_dataset()
+        self.storage_man_file = self.yaml_cfg.device.storage.storage_man_file
+        ds, ds_thisrun, ds_thisrun_file_path = self.load_storage_man_swap_dataset(
+            self.storage_man_file
+        )
         self.ds_thisrun = ds_thisrun
 
     def _initialize_output_paths(self):
@@ -122,7 +128,7 @@ class MultimodeStation:
     def _initialize_hardware(self):
         self.im = InstrumentManager(ns_address="192.168.137.25")
         self.soc = QickConfig(self.im[self.yaml_cfg["aliases"]["soc"]].get_cfg())
-        # add yokos to im
+        # TODO: add yokos to im
 
     def print(self):
         print("Data, plots, logs will be stored in: ", self.experiment_path)
@@ -130,7 +136,7 @@ class MultimodeStation:
         print(self.im.keys())
         print(self.soc)
 
-    def load_data(self, filename=None, prefix=None):
+    def load_data(self, filename: Optional[str] = None, prefix: Optional[str] = None):
         if prefix is not None:
             data_file = self.data_path / get_current_filename(
                 self.data_path, prefix=prefix, suffix=".h5"
@@ -147,19 +153,15 @@ class MultimodeStation:
                 data.update({key: np.array(a[key])})
         return data, attrs, data_file
 
-    def load_storage_man_swap_dataset(self, filename="man1_storage_swap_dataset.csv"):
-        file_path = self.config_dir / filename
-        ds = StorageManSwapDataset(file_path)
-        ds_thisrun = StorageManSwapDataset(ds.create_copy())
-        ds_thisrun_file_path = self.config_dir / ds_thisrun.filename
+    def load_storage_man_swap_dataset(
+        self, filename: str, parent_path: Optional[str | Path] = None
+    ):
+        if parent_path is None:
+            parent_path = self.config_dir
+        ds = StorageManSwapDataset(filename, parent_path)
+        ds_thisrun = StorageManSwapDataset(ds.create_copy(), parent_path)
+        ds_thisrun_file_path = ds_thisrun.file_path
         return ds, ds_thisrun, ds_thisrun_file_path
-
-    def create_autocalib_path(self):
-        """
-        Creates a directory inside the data folder for autocalibration plots, named with the current date.
-        Returns the path to the created directory.
-        """
-        return autocalib_path
 
     def convert_attrdict_to_dict(self, attrdict):
         """
@@ -221,75 +223,63 @@ class MultimodeStation:
             if key not in d1:
                 print(f"Key '{current_path}' is missing in config1.")
 
-    def update_yaml_config(self, yaml_cfg, config_thisrun):
+    def sanitize_config_fields(self, config_thisrun) -> AttrDict:
         """
-        Update the yaml_cfg with values from config_thisrun, excluding the storage_man_file.
+        Clean up a couple entries in config_thisrun in preparation for saving:
+            - storage_man_file is restored to the value in self.yaml_cfg (why??)
+            - remove the 'expt' field that got added to config_thisrun
+        Returns a fresh deep copy with these updates
         """
         updated_config = deepcopy(config_thisrun)
         updated_config.device.storage.storage_man_file = (
-            yaml_cfg.device.storage.storage_man_file
+            self.yaml_cfg.device.storage.storage_man_file
         )
+        updated_config.pop("expt", None)  # this shouldn't be written to hardware config
         return updated_config
 
-    def save_configurations(
-        self, yaml_cfg, config_thisrun, autocalib_path, config_path
-    ):
+    def save_config(self):
         """
         Save the old and updated configurations to their respective files.
         """
-        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        old_config_path = os.path.join(
-            autocalib_path, f"old_config_{current_time}.yaml"
+        yaml_dump_kwargs = dict(
+            default_flow_style=False,
+            indent=4,
+            width=80,
+            canonical=False,
+            explicit_start=True,
+            explicit_end=False,
+            sort_keys=False,
+            line_break=True,
         )
-        old_config = self.convert_numbers_to_float(
-            self.convert_attrdict_to_dict(yaml_cfg)
-        )
-        with open(old_config_path, "w") as cfg_file:
-            yaml.dump(
-                old_config,
-                cfg_file,
-                default_flow_style=False,
-                indent=4,
-                width=80,
-                canonical=False,
-                explicit_start=True,
-                explicit_end=False,
-                sort_keys=False,
-                line_break=True,
-            )
 
+        # first save a copy of the old config to a backup location before overwriting
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        old_config_path = self.autocalib_path / f"old_config_{current_time}.yaml"
+        old_config = self.convert_numbers_to_float(
+            self.convert_attrdict_to_dict(self.yaml_cfg)
+        )
+        with old_config_path.open("w") as cfg_file:
+            yaml.dump(old_config, cfg_file, **yaml_dump_kwargs)
+
+        # next save the updated config_thisrun to the hardware config yaml, overwriting it
         updated_config = self.convert_numbers_to_float(
             self.convert_attrdict_to_dict(
-                self.update_yaml_config(yaml_cfg, config_thisrun)
+                self.sanitize_config_fields(self.config_thisrun)
             )
         )
-        with open(config_path, "w") as f:
-            yaml.dump(
-                updated_config,
-                f,
-                default_flow_style=False,
-                indent=4,
-                width=80,
-                canonical=False,
-                explicit_start=True,
-                explicit_end=False,
-                sort_keys=False,
-                line_break=True,
-            )
+        with self.hardware_config_file.open("w") as f:
+            yaml.dump(updated_config, f, **yaml_dump_kwargs)
 
-    def handle_config_update(self, updateConfig_bool=False):
+    def handle_config_update(self, write_to_file=False):
         """
         Main logic for comparing, updating, and saving configuration files.
         Only does config this run
         """
         print("Comparing configurations:")
         self.recursive_compare(self.yaml_cfg, self.config_thisrun)
-        autocalib_path = self.create_autocalib_path()
-        updated_config = self.update_yaml_config(self.yaml_cfg, self.config_thisrun)
-        if updateConfig_bool:
-            self.save_configurations(
-                self.yaml_cfg, updated_config, autocalib_path, self.hardware_config_file
-            )
+        updated_config = self.sanitize_config_fields(self.config_thisrun)
+        if write_to_file:
+            self.save_config()
             self.yaml_cfg = updated_config
             print("Configuration updated and saved, excluding storage_man_file.")
 

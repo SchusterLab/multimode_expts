@@ -1,8 +1,8 @@
-import os
 from datetime import datetime
-from typing import List, Union
 from fractions import Fraction
 from numbers import Rational
+from pathlib import Path
+from typing import List, Optional
 
 import pandas as pd
 
@@ -23,10 +23,29 @@ class floquet_storage_swap_dataset:
 
 
 class MMDataset:
-    def __init__(self, filename):
+    repo_root = Path(__file__).parent.parent
+
+    def __init__(self, filename: str, parent_path: str | Path = 'configs'):
+        """
+        Args:
+            - filename: full file name without any path prefix
+            - parent_path: parent directory of the file. Can be either a string,
+                in which case it's RELATIVE to the multimode repo root,
+                or an ABSOLUTE Path object. """
         self.filename = filename
-        if os.path.exists(filename):
-            self.df = pd.read_csv(filename)
+        if isinstance(parent_path, str):
+            self.parent_path = self.repo_root / parent_path
+            if not self.parent_path.exists():
+                raise FileNotFoundError(f"Directory {self.parent_path} does not exist.")
+        else:
+            if not parent_path.is_absolute():
+                raise ValueError("parent_path must be either a string relative path or an absolute Path object.")
+            self.parent_path = parent_path
+
+        self.file_path = self.parent_path / self.filename
+
+        if self.file_path.exists():
+            self.df = pd.read_csv(self.file_path)
         else:
             # create a new dataframe
             self.create_new_df()
@@ -59,7 +78,7 @@ class MMDataset:
         self.df = pd.concat([self.df, pd.DataFrame(rows)], ignore_index=True)
 
         print("Creating or updating new csv at path:", self.filename)
-        self.df.to_csv(self.filename, index=False)
+        self.df.to_csv(self.file_path, index=False)
 
     def get_value(self, row_name, column_name):
         """
@@ -91,8 +110,8 @@ class MMDataset:
                 datetime.now()
             )
         if save_to_file:
-            print("Creating or updating new csv at path:", self.filename)
-            self.df.to_csv(self.filename, index=False)
+            print("Creating or updating new csv at path:", self.file_path)
+            self.df.to_csv(self.file_path, index=False)
 
     def get_last_update(self, row_name):
         if self.add_timestamp:
@@ -154,7 +173,7 @@ class MMDataset:
         self.df = self.df.append(new_row, ignore_index=True)
         if save_to_file:
             print("Creating or updating new csv at path:", self.filename)
-            self.df.to_csv(self.filename, index=False)
+            self.df.to_csv(self.file_path, index=False)
 
     # check whether the data is up-to-date
     def is_up_to_date(self, row_name, max_time_diff=7200):
@@ -166,17 +185,13 @@ class MMDataset:
         time_diff = (datetime.now() - last_update_object).total_seconds()
         return time_diff < max_time_diff
 
-    def create_copy(self, new_filename=None):
-        expts_path = ''
-        # print(f"expts_path: {expts_path}")
-
+    def create_copy(self, new_filename: Optional[str] = None):
         if new_filename is None:
-            name, ext = os.path.splitext(os.path.basename(self.filename))
-            new_filename = os.path.join(expts_path, f"{name}_copy{ext}")
-        else:
-            new_filename = os.path.join(expts_path, new_filename)
-        print(f"Creating a copy of the dataset at path: {new_filename}")
-        self.df.to_csv(new_filename, index=False)
+            name, ext = self.filename.rsplit('.', 1)
+            new_filename = f"{name}_new.{ext}"
+        new_file_path = self.parent_path / new_filename
+        print(f"Creating a copy of the dataset at path: {new_file_path}")
+        self.df.to_csv(new_file_path, index=False)
         return new_filename
 
     def compare_with(self, other_dataset):
@@ -235,20 +250,23 @@ class MMDataset:
                 )
         return differences
 
-    def save_to_file(self, filepath):
+    def save_to_file(self, filename: Optional[str] = None):
         """
         Save the current dataset to a specified file.
 
         Args:
-            filepath (str): The path to the file where the dataset should be saved.
+            - filename (str): string filename only, no path. 
+                defaults to self.filename
         """
-        print("Creating or updating new csv at path:", filepath)
-        self.df.to_csv(filepath, index=False)
+        filename = filename or self.filename
+        file_path = self.parent_path / filename
+        print("Creating or updating new csv at path:", file_path)
+        self.df.to_csv(file_path, index=False)
 
 
 class StorageManSwapDataset(MMDataset):
-    def __init__(self, filename='man1_storage_swap_dataset.csv'):
-        super().__init__(filename=filename)
+    def __init__(self, filename='man1_storage_swap_dataset.csv', parent_path='configs'):
+        super().__init__(filename=filename, parent_path=parent_path)
 
     def create_new_df(self):
         column_names = [
@@ -396,8 +414,8 @@ class FloquetStorageSwapDataset(MMDataset):
     def import_from_swap_dataset(
         self,
         stor_man_ds: StorageManSwapDataset,
-        gain_div: Union[int, List[int]],
-        pi_div: Union[int, List[int]]
+        gain_div: int | List[int],
+        pi_div: int | List[int]
     ):
         """
         Import the frequency, gain and pulse length from the pi/hpi swap dataset
