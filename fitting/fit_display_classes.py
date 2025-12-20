@@ -1,11 +1,7 @@
-
 # Author : Eesh Gupta 
 # Date : 2025-05-12
 # Description : This file contains classes for analyzing and displaying data from qubit experiments.This is a simpler and cleaned up version of fit_display.py
-# # %reload_ext autoreload
-# %autoreload 2
-import datetime
-import os
+
 from copy import deepcopy
 
 import lmfit
@@ -936,7 +932,7 @@ class Histogram(GeneralFitting):
         self.active_reset = self.cfg.expt.active_reset 
         self.results = {}
 
-    def analyze(self, plot=True):
+    def analyze(self, plot=True, subdir = None):
         if self.active_reset:
             print('Active reset is enabled')
             Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.threshold)
@@ -1109,7 +1105,7 @@ class Histogram(GeneralFitting):
             plt.subplots_adjust(hspace=0.25, wspace=0.15)
             plt.show()
             # save into a file ;
-            self.save_plot(fig, filename="histogram.png")
+            self.save_plot(fig, filename="histogram.png", subdir=subdir)
             
 
             

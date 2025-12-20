@@ -24,6 +24,7 @@ from slab.instruments import InstrumentManager
 
 # TODO: add a dummy station class to allow for testing its dependents without hardware
 
+
 class MultimodeStation:
     """
     This represents a measurement setup that controls at least:
@@ -164,23 +165,29 @@ class MultimodeStation:
         ds_thisrun_file_path = ds_thisrun.file_path
         return ds, ds_thisrun, ds_thisrun_file_path
 
-    def save_plot(self, fig, filename: str = "plot.png", subdir: Optional[str] = None):
+    def save_plot(
+        self, fig, filename: str = "plot.png", subdir: Optional[str | Path] = None
+    ):
         """
         Save a matplotlib figure to the station's plot directory with markdown logging.
 
         Parameters:
         - fig: matplotlib.figure.Figure object to save
         - filename: Base name for the file (timestamp will be prepended)
-        - subdir: Optional subdirectory within plot_path (e.g., "autocalibration")
+        - subdir: Optional subdirectory:
+            either a str within plot_path (e.g., "autocalibration")
+            or a Path in which case it OVERWRITES the save path
 
         Returns:
         - filepath: Path object of the saved file
         """
         # Determine save path
         save_path = self.plot_path
-        if subdir:
+        if isinstance(subdir, str):
             save_path = save_path / subdir
             save_path.mkdir(parents=True, exist_ok=True)
+        elif isinstance(subdir, Path):
+            save_path = subdir
 
         # Generate timestamp
         now = datetime.now()
