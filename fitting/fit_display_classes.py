@@ -20,8 +20,9 @@ import fitting.fitting as fitter
 
 
 class GeneralFitting:
-    def __init__(self, data, readout_per_round=None, threshold=None, config=None):
+    def __init__(self, data, readout_per_round=None, threshold=None, config=None, station=None):
         self.cfg = config
+        self.station = station
         self.data = data
         if readout_per_round is None:
             readout_per_round = 4
@@ -218,62 +219,32 @@ class GeneralFitting:
         return Ilist, Qlist
 
 
-    def save_plot(self, fig, filename="plot.png"):
+    def save_plot(self, fig, filename="plot.png", subdir=None):
         """
-        Save a matplotlib figure to the specified folder.
-        Optionally append the image path to a markdown file for viewing.
+        Save a matplotlib figure using the station's save_plot method.
 
         Parameters:
-        - fig: matplotlib.figure.Figure object to save.
-        - folder_path: Path to the folder where the plot will be saved.
-        - filename: Name of the file (default: "plot.png").
-        - markdown_path: Path to a markdown file to append the image (optional).
-        """ 
-        plots_folder_path = "plots"
-        markdown_path = None
-        # print('entering save_plot') 
+        - fig: matplotlib.figure.Figure object to save
+        - filename: Name of the file (default: "plot.png")
+        - subdir: Optional subdirectory within station's plot_path
 
-        # Extract markdown folder from config if available
-        if self.cfg and hasattr(self.cfg, "data_management"):
-            markdown_folder = getattr(self.cfg.data_management, "plot_and_logs_folder")
-            # print(f"Markdown folder path: {markdown_folder}")
-            plots_folder_path = markdown_folder + "/plots"
-            if markdown_folder:
-                os.makedirs(markdown_folder, exist_ok=True)
-                today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                markdown_path = os.path.join(markdown_folder, f"{today_str}.md")
-                if not os.path.exists(markdown_path):
-                    with open(markdown_path, "w") as f:
-                        f.write(f"# Plots for {today_str}\n\n")
+        Raises:
+        - ValueError: If no station was provided during initialization
+        """
+        if self.station is None:
+            raise ValueError(
+                "No station provided to fitting class. "
+                "Cannot save plot without a MultimodeStation instance. "
+                "Pass station=<your_station> when initializing this fitting class."
+            )
 
-        now = datetime.datetime.now()
-        date_str = now.strftime("%Y-%m-%d_%H-%M-%S")
-        print("supertitle is ", fig._suptitle)
-        if fig._suptitle is not None:
-            fig._suptitle.set_text(fig._suptitle.get_text() + f" | {date_str} - {filename}")
-        else:
-            fig.suptitle(f"{date_str} - {filename}", fontsize=16)
-        #get tight layout
-        fig.tight_layout()
-        filename = f"{date_str}_{filename}"
-        os.makedirs(plots_folder_path, exist_ok=True)
-        filepath = os.path.join(plots_folder_path, filename)
-        fig.savefig(filepath)
-        print(f"Plot saved to {filepath}")
-
-        if markdown_path is not None:
-            # Use relative path if markdown file is in the same folder or subfolder
-            rel_path = os.path.relpath(filepath, os.path.dirname(markdown_path))
-            md_line = f"![Plot]({rel_path})\n"
-            with open(markdown_path, "a") as md_file:
-                md_file.write(md_line)
-            print(f"Plot path appended to {markdown_path}")
+        return self.station.save_plot(fig, filename, subdir=subdir)
 
 
 
 class RamseyFitting(GeneralFitting):
-    def __init__(self, data, readout_per_round=None, threshold=None, config=None, fitparams=None):
-        super().__init__(data, readout_per_round, threshold, config)
+    def __init__(self, data, readout_per_round=None, threshold=None, config=None, station=None, fitparams=None):
+        super().__init__(data, readout_per_round, threshold, config, station)
         self.fitparams = fitparams
         self.results = {}
 
@@ -826,11 +797,9 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
             if save_fig:
                 filename = title_str.replace(' ', '_').replace(':', '') + '.png'
-                fig.savefig(filename)
-                print(f"Plot saved to {filename}")
+                self.save_plot(fig, filename=filename)
                 filename4 = title_str.replace(' ', '_').replace(':', '') + '_detuning.png'
-                fig4.savefig(filename4)
-                print(f"Fit plot saved to {filename4}")
+                self.save_plot(fig4, filename=filename4)
 
 
 
@@ -838,8 +807,8 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
 
 class AmplitudeRabiFitting(GeneralFitting):
-    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, fitparams=None):
-        super().__init__(data, readout_per_round, threshold, config)
+    def __init__(self, data, readout_per_round=2, threshold=-4.0, config=None, station=None, fitparams=None):
+        super().__init__(data, readout_per_round, threshold, config, station)
         self.fitparams = fitparams
         self.results = {}
 
@@ -958,8 +927,8 @@ class AmplitudeRabiFitting(GeneralFitting):
 
 
 class Histogram(GeneralFitting):
-    def __init__(self, data, span=None, verbose=True, active_reset=False, readout_per_round=None, threshold=None, config=None):
-        super().__init__(data, readout_per_round, threshold, config)
+    def __init__(self, data, span=None, verbose=True, active_reset=False, readout_per_round=None, threshold=None, config=None, station=None):
+        super().__init__(data, readout_per_round, threshold, config, station)
         # print(self.data)
         self.span = span
         self.verbose = verbose
@@ -1146,8 +1115,8 @@ class Histogram(GeneralFitting):
             
 
 class Spectroscopy(GeneralFitting):
-    def __init__(self, data, signs=[1, 1, 1], config=None):
-        super().__init__(data, readout_per_round=2, threshold=-4.0, config=config)
+    def __init__(self, data, signs=[1, 1, 1], config=None, station=None):
+        super().__init__(data, readout_per_round=2, threshold=-4.0, config=config, station=station)
         self.signs = signs
 
 
@@ -1194,8 +1163,8 @@ class Spectroscopy(GeneralFitting):
 
 class LengthRabiFitting(GeneralFitting):
     def __init__(self, data, fit=True, fitparams=None, normalize=[False, 'g_data', 'e_data'], vlines=None, title='length_rabi',
-                    active_reset=False, readout_per_round=4, threshold=-4.0, fit_sin=False, config=None):
-        super().__init__(data, readout_per_round, threshold, config)
+                    active_reset=False, readout_per_round=4, threshold=-4.0, fit_sin=False, config=None, station=None):
+        super().__init__(data, readout_per_round, threshold, config, station)
         self.fit = fit
         self.fitparams = fitparams
         self.normalize = normalize
@@ -1355,15 +1324,16 @@ class LinePlotting(GeneralFitting):
     LinePlotting: support multiple ylists (each as a separate subplot)
     ylabels can be a list of labels for each subplot, or a single string for all.
     """
-    def __init__(self, xlist, ylist, config=None, xlabel="X", ylabels="Y"):
+    def __init__(self, xlist, ylist, config=None, station=None, xlabel="X", ylabels="Y"):
         """
         xlist: 1D array of x values (e.g., time)
         ylist: 1D array or list of 1D arrays of y values (e.g., frequency or multiple traces)
         config: optional configuration object
+        station: optional MultimodeStation instance
         xlabel: label for x axis
         ylabels: label(s) for y axis; can be a string or a list of strings
         """
-        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config, station=station)
         self.xlist = np.array(xlist)
         # Accept a single ylist or a list of ylists
         if isinstance(ylist, (list, tuple)) and hasattr(ylist[0], "__len__"):
@@ -1423,17 +1393,18 @@ class ColorPlot2D(GeneralFitting):
     Class for producing 2D color plots from x, y, and multiple z lists.
     The analyze function finds the maximum response time (x value) for each 2D color plot.
     """
-    def __init__(self, xlist, ylist, zlists, config=None, xlabel="X", ylabel="Y", zlabels=None):
+    def __init__(self, xlist, ylist, zlists, config=None, station=None, xlabel="X", ylabel="Y", zlabels=None):
         """
         xlist: 1D array of x values (e.g., time)
         ylist: 1D array of y values (e.g., frequency)
         zlists: list of 2D arrays, each shape (len(ylist), len(xlist)), representing response matrices
         config: optional configuration object
+        station: optional MultimodeStation instance
         xlabel: label for x axis
         ylabel: label for y axis
         zlabels: list of labels for each z plot (optional)
         """
-        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config, station=station)
         self.xlist = np.array(xlist)
         self.ylist = np.array(ylist)
         self.zlists = [np.array(z) for z in zlists]
@@ -1495,15 +1466,13 @@ class ColorPlot2D(GeneralFitting):
                 plt.legend()
             plt.tight_layout()
             if save_fig:
-                if directory:
-                    os.makedirs(directory, exist_ok=True)
-                    fname = f"colorplot2d_{idx+1}.png"
-                    plt.savefig(os.path.join(directory, fname))
+                fname = f"colorplot2d_{idx+1}.png"
+                self.save_plot(plt.gcf(), filename=fname)
             plt.show()
 
 class ChevronFitting(GeneralFitting):
-    def __init__(self, frequencies, time, response_matrix, config=None):
-        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config)
+    def __init__(self, frequencies, time, response_matrix, config=None, station=None):
+        super().__init__(data=None, readout_per_round=2, threshold=-4.0, config=config, station=station)
         self.frequencies = frequencies
         self.time = time
         self.response_matrix = response_matrix
@@ -1678,12 +1647,12 @@ class ChevronFitting(GeneralFitting):
             plt.show()
     
 
-class MM_DualRailRBFitting(GeneralFitting): 
+class MM_DualRailRBFitting(GeneralFitting):
 
     def __init__(self, filename = None , file_prefix = None, data=None, readout_per_round=2, threshold=-4.0, config=None,
-                 prev_data = None, expt_path = None,  title = 'RB', dir_path = None): 
+                 station=None, prev_data = None, expt_path = None,  title = 'RB', dir_path = None):
         '''Analysis for dual rail experiments '''
-        super().__init__(data, readout_per_round, threshold, config)
+        super().__init__(data, readout_per_round, threshold, config, station)
         self.filename = filename
         self.expt_path = expt_path
         self.prev_data = prev_data

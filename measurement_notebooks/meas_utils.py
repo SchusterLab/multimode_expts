@@ -164,6 +164,60 @@ class MultimodeStation:
         ds_thisrun_file_path = ds_thisrun.file_path
         return ds, ds_thisrun, ds_thisrun_file_path
 
+    def save_plot(self, fig, filename: str = "plot.png", subdir: Optional[str] = None):
+        """
+        Save a matplotlib figure to the station's plot directory with markdown logging.
+
+        Parameters:
+        - fig: matplotlib.figure.Figure object to save
+        - filename: Base name for the file (timestamp will be prepended)
+        - subdir: Optional subdirectory within plot_path (e.g., "autocalibration")
+
+        Returns:
+        - filepath: Path object of the saved file
+        """
+        # Determine save path
+        save_path = self.plot_path
+        if subdir:
+            save_path = save_path / subdir
+            save_path.mkdir(parents=True, exist_ok=True)
+
+        # Generate timestamp
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+        today_str = now.strftime("%Y-%m-%d")
+
+        # Add timestamp to figure title
+        if fig._suptitle is not None:
+            fig._suptitle.set_text(
+                f"{fig._suptitle.get_text()} | {timestamp} - {filename}"
+            )
+        else:
+            fig.suptitle(f"{timestamp} - {filename}", fontsize=16)
+
+        fig.tight_layout()
+
+        # Save figure
+        timestamped_filename = f"{timestamp}_{filename}"
+        filepath = save_path / timestamped_filename
+        fig.savefig(filepath)
+        print(f"Plot saved to {filepath}")
+
+        # Markdown logging
+        markdown_path = self.log_path / f"{today_str}.md"
+        if not markdown_path.exists():
+            with markdown_path.open("w") as f:
+                f.write(f"# Plots for {today_str}\n\n")
+
+        # Use relative path from markdown file to plot
+        rel_path = os.path.relpath(filepath, markdown_path.parent)
+        md_line = f"![{filename}]({rel_path})\n"
+        with markdown_path.open("a") as md_file:
+            md_file.write(md_line)
+        print(f"Plot reference appended to {markdown_path}")
+
+        return filepath
+
     def convert_attrdict_to_dict(self, attrdict):
         """
         Recursively converts an AttrDict or a nested dictionary into a standard Python dictionary.
