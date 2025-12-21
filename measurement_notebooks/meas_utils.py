@@ -11,14 +11,15 @@ import os
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
+from typing import Protocol, Any, Dict
 
 import numpy as np
 import yaml
 from qick import QickConfig
 
 from experiments.dataset import StorageManSwapDataset
-from slab import AttrDict, get_current_filename
+from slab import AttrDict, get_current_filename, Experiment
 from slab.datamanagement import SlabFile
 from slab.instruments import InstrumentManager
 
@@ -285,7 +286,7 @@ class MultimodeStation:
             if key not in d1:
                 print(f"Key '{current_path}' is missing in config1.")
 
-    def sanitize_config_fields(self, config_thisrun) -> AttrDict:
+    def _sanitize_config_fields(self, config_thisrun) -> AttrDict:
         """
         Clean up a couple entries in config_thisrun in preparation for saving:
             - storage_man_file is restored to the value in self.yaml_cfg (why??)
@@ -326,7 +327,7 @@ class MultimodeStation:
         # next save the updated config_thisrun to the hardware config yaml, overwriting it
         updated_config = self.convert_numbers_to_float(
             self.convert_attrdict_to_dict(
-                self.sanitize_config_fields(self.config_thisrun)
+                self._sanitize_config_fields(self.config_thisrun)
             )
         )
         with self.hardware_config_file.open("w") as f:
@@ -339,7 +340,7 @@ class MultimodeStation:
         """
         print("Comparing configurations:")
         self.recursive_compare(self.yaml_cfg, self.config_thisrun)
-        updated_config = self.sanitize_config_fields(self.config_thisrun)
+        updated_config = self._sanitize_config_fields(self.config_thisrun)
         if write_to_file:
             self.save_config()
             self.yaml_cfg = updated_config
@@ -364,3 +365,122 @@ class MultimodeStation:
         #     print(
         #         "Configuration updated and saved, excluding storage_man_file. \n!!!!Please set updateConfig to False after this run!!!!!!."
         #     )
+
+
+class PreProcessor(Protocol):
+    def __call__(
+        self, station: MultimodeStation, default_expt_cfg: AttrDict, **kwargs
+    ) -> AttrDict:
+        """Must take a default template + user defined kwargs and
+        return a deepcopied expt config to be direclty passed to the Experiment."""
+        ...
+
+
+class PostProcessor(Protocol):
+    def __call__(self, station: MultimodeStation, expt: Experiment) -> None:
+        """Must extract results and mutate station.config_thisrun (returns None)."""
+        ...
+
+
+def default_preprocessor(station, default_expt_cfg, **kwargs):
+    return deepcopy(default_expt_cfg).update(kwargs)
+
+
+def default_postprocessor(station, expt):
+    return
+
+
+class CharacterizationRunner:
+    def __init__(
+        self,
+        station: MultimodeStation,
+        ExptClass: type[Experiment],
+        cfg: AttrDict,
+        default_expt_cfg: AttrDict,
+        preprocessor: Optional[PreProcessor] = None,
+        postprocessor: Optional[PostProcessor] = None,
+    ):
+        self.ExptClass = ExptClass
+        self.cfg = cfg
+        self.default_expt_cfg = default_expt_cfg
+        self.station = station
+        self.preprocessor = preprocessor or default_preprocessor
+        self.postprocessor = postprocessor or default_postprocessor
+
+    # def _set_nested_attr(self, obj, key_path, value):
+    #     """
+    #     Set a nested attribute using dot notation.
+    #
+    #     Args:
+    #         obj: The object to modify (typically an AttrDict)
+    #         key_path: Dot-separated path like 'readout.relax_delay'
+    #         value: The value to set
+    #
+    #     Example:
+    #         _set_nested_attr(cfg.device, 'readout.relax_delay', [50])
+    #         # Sets cfg.device.readout.relax_delay = [50]
+    #     """
+    #     keys = key_path.split('.')
+    #     for key in keys[:-1]:
+    #         obj = getattr(obj, key)
+    #     setattr(obj, keys[-1], value)
+
+    def run(self, postprocess=True, go_kwargs={}, **kwargs):
+        """
+        Standard measurement execution pattern to reduce boilerplate.
+
+        This method handles the repetitive parts of running measurements:
+        1. Experiment object creation with station settings
+
+        Args:
+            device_overrides: Optional dict of device config overrides.
+                Keys use dot notation like 'readout.relax_delay' to set cfg.device.readout.relax_delay
+            analysis_class: Optional analysis class to instantiate with (data, config=cfg)
+            go_kwargs: Additional kwargs passed to expt.go().
+                Defaults: analyze=True, display=True, progress=True, save=True
+
+        Returns:
+            If analysis_class is provided: analysis object
+            Otherwise: experiment object
+
+        Example:
+            # Simple measurement
+            expt = station.run_measurement(
+                meas.ResonatorSpectroscopyExperiment,
+                expt_config={'start': 6000, 'step': 0.01, 'expts': 250},
+                device_overrides={'readout.relax_delay': [50]}
+            )
+
+            # With separate analysis
+            analysis = station.run_measurement(
+                meas.AmplitudeRabiExperiment,
+                expt_config={'start': 0, 'step': 100, 'expts': 151},
+                analysis_class=AmplitudeRabiFitting,
+                analyze=False  # Override default to skip built-in analysis
+            )
+        """
+        # Create experiment instance
+        expt = self.ExptClass(
+            soccfg=self.station.soc,
+            path=self.station.data_path,
+            prefix=self.ExptClass.__name__,
+            config_file=self.station.hardware_config_file,
+        )
+
+        # Deepcopy config for this measurement
+        expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+
+        # Apply experiment-specific config
+        expt.cfg.expt = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
+        expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
+
+        # Execute with sensible defaults
+        go_defaults = {'analyze': True, 'display': True, 'progress': True, 'save': True}
+        go_defaults.update(go_kwargs)
+        expt.go(**go_defaults)
+
+        # Update config
+        if postprocess:
+            self.postprocessor(self.station, expt)
+
+        return expt
