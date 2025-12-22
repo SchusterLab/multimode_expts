@@ -383,7 +383,9 @@ class PostProcessor(Protocol):
 
 
 def default_preprocessor(station, default_expt_cfg, **kwargs):
-    return deepcopy(default_expt_cfg).update(kwargs)
+    expt_cfg = deepcopy(default_expt_cfg)
+    expt_cfg.update(kwargs)
+    return expt_cfg
 
 
 def default_postprocessor(station, expt):
@@ -395,13 +397,11 @@ class CharacterizationRunner:
         self,
         station: MultimodeStation,
         ExptClass: type[Experiment],
-        cfg: AttrDict,
         default_expt_cfg: AttrDict,
         preprocessor: Optional[PreProcessor] = None,
         postprocessor: Optional[PostProcessor] = None,
     ):
         self.ExptClass = ExptClass
-        self.cfg = cfg
         self.default_expt_cfg = default_expt_cfg
         self.station = station
         self.preprocessor = preprocessor or default_preprocessor
