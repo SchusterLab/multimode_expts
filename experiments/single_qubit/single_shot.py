@@ -1,10 +1,6 @@
-import matplotlib.pyplot as plt
-import numpy as np
-from qick import *
-from copy import deepcopy
-
 from slab import Experiment, AttrDict
-from experiments.MM_base import * 
+from experiments.MM_base import MMAveragerProgram
+from fitting.fit_display_classes import Histogram
 
 
 class HistogramProgram(MMAveragerProgram):
@@ -145,25 +141,32 @@ class HistogramExperiment(Experiment):
     def analyze(self, data=None, span=None, verbose=True, **kwargs):
         if data is None:
             data=self.data
-        
-        mm_base_dummy = MM_base(self.cfg)
-        fids, thresholds, angle, confusion_matrix = mm_base_dummy.hist(data=data, plot=False, span=span, verbose=verbose)
-        data['fids'] = fids
-        data['angle'] = angle
-        data['thresholds'] = thresholds
-        data['confusion_matrix'] = confusion_matrix
-        
+
+        hist_fitter = Histogram(data=data, span=span, verbose=verbose,
+                                config=self.cfg, station=self.im)
+        hist_fitter.analyze(plot=False)
+
+        data['fids'] = hist_fitter.results['fids']
+        data['angle'] = hist_fitter.results['angle']
+        data['thresholds'] = hist_fitter.results['thresholds']
+        data['confusion_matrix'] = hist_fitter.results['confusion_matrix']
+
         return data
 
     def display(self, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs):
         if data is None:
-            data=self.data 
-        
-        mm_base_dummy = MM_base(self.cfg)
-        fids, thresholds, angle, confusion_matrix = mm_base_dummy.hist(data=data, plot=True, verbose=verbose, span=span)
-            
+            data=self.data
+
+        hist_fitter = Histogram(data=data, span=span, verbose=verbose,
+                                config=self.cfg, station=self.im)
+        hist_fitter.analyze(plot=True)
+
+        fids = hist_fitter.results['fids']
+        thresholds = hist_fitter.results['thresholds']
+        angle = hist_fitter.results['angle']
+
         print(f'ge fidelity (%): {100*fids[0]}')
-        if 'expt' not in self.cfg: 
+        if 'expt' not in self.cfg:
             self.cfg.expt.check_e = plot_e
             self.cfg.expt.check_f = plot_f
         if self.cfg.expt.check_f:
