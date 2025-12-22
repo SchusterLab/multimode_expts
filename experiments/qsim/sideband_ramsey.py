@@ -9,9 +9,9 @@ import fitting.fitting as fitter
 from experiments.dataset import StorageManSwapDataset
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
-    guess_freq,
     post_select_raverager_data,
 )
+from fitting.fit_utils import guess_freq
 from experiments.MM_base import MMRAveragerProgram
 
 

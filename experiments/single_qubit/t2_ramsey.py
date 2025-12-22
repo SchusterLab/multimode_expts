@@ -6,7 +6,9 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import *
+from experiments.MM_base import MMRAveragerProgram
+
+from fitting.fit_utils import guess_sinusoidal_params
 
 
 class RamseyProgram(MMRAveragerProgram):
@@ -254,10 +256,10 @@ class RamseyExperiment(Experiment):
 
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            # Remove the first and last point from fit in case weird edge measurements
-            # fitparams = None
             if fitparams is None:
-                fitparams=[200,  0.2, 0, 200, None, None]
+                freq, amp, offset = guess_sinusoidal_params(data['xpts'], data['avgi'])
+                fitparams=[amp,  freq, 0, data['xpts'][-1]/2, offset, None]
+            # Remove the first and last point from fit in case weird edge measurements
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
             p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)

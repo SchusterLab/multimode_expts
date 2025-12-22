@@ -9,6 +9,8 @@ from matplotlib import pyplot as plt
 from scipy.fft import rfft, rfftfreq
 from slab import AttrDict
 
+from fitting.fit_utils import guess_freq
+
 
 def ensure_local_file(remote_path, local_path, filename):
     """
@@ -43,14 +45,6 @@ def ensure_list_in_cfg(cfg: Optional[AttrDict]):
                             value2.update({key3: [value3]*num_qubits_sample})                                
             elif not(isinstance(value, list)):
                 subcfg.update({key: [value]*num_qubits_sample})
-
-def guess_freq(x, y):
-    # note: could also guess phase but need zero-padding
-    # just guessing freq seems good enough to escape from local minima in most cases
-    yf = rfft(y - np.mean(y))
-    xf = rfftfreq(len(x), x[1] - x[0])
-    peak_idx = np.argmax(np.abs(yf[1:])) + 1
-    return np.abs(xf[peak_idx]), np.angle(yf[peak_idx])
 
 def filter_data_IQ(II, IQ, threshold):
     """
