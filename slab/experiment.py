@@ -5,6 +5,7 @@ __author__ = 'David Schuster'
 import json
 import os.path
 import traceback
+from pathlib import Path
 
 import numpy as np
 import yaml
@@ -53,9 +54,13 @@ class Experiment:
             self.config_file = os.path.join(path, config_file)
         else:
             self.config_file = None
-        if 'no_im' not in kwargs.keys() or not kwargs['no_im']: 
+        if 'no_im' not in kwargs.keys() or not kwargs['no_im']:
             # this takes forever! skip especially if reading existing data
-            self.im = InstrumentManager()
+            if not hasattr(self, 'ns_port'):
+                self.ns_port = None
+            if not hasattr(self, 'ns_address'):
+                self.ns_address = None
+            self.im = InstrumentManager(ns_address=self.ns_address, ns_port=self.ns_port)
         # if liveplot_enabled:
         #     self.plotter = LivePlotClient()
         # self.dataserver= dataserver_client()
@@ -149,16 +154,6 @@ class Experiment:
     def display(self, data=None, **kwargs):
         pass
 
-    # def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
-    #     if data is None:
-    #         data=self.data
-
-    #     with self.datafile() as f:
-        
-    #         for k, d in data.items():
-    #             f.add(k, np.array(d))
-    #     return f
-    
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:
             data=self.data
@@ -167,66 +162,37 @@ class Experiment:
 
         
             for k, d in data.items():
-                if k not in f.keys():   
+                if k not in f.keys():
                     f.add(k, np.array(d))
                 else:   # overwrite data
                     del f[k]
-                    print(k)
-                    print(f)
-                    print(d)
                     f.add(k, np.array(d))
         return f
-    # def save_data(self, data=None, data_file=None):
-    #     """ Save data to the file 
-    #         2025-050-12  Made edits so can append data to the file
-    #     """
-    #     if data is None:
-    #         data = self.data
-
-    #     with self.datafile(data_file=data_file) as f:
-    #         for k, d in data.items():
-    #             if k not in f.keys():   
-    #                 f.add(k, np.array(d))
-    #             else:
-    #                 #append data to the file
-    #                 old_data = f[k]
-    #                 print(old_data)
-    #                 print (k)
-    #                 new_data = np.vstack((old_data, d))
-    #                 del f[k]
-    #                 f.add(k, new_data)
-    #     return f
-    
-    
-    # save data to a specific file (overwriting the file)
-    # def save_data_to_file(self, data=None, data_file=None):
-    #     if data is None:
-    #         data=self.data
-
-    #     with self.datafile(data_file=data_file) as f:
-    #         for k, d in data.items():
-    #             f.add(k, np.array(d))
 
     def load_data(self, f):
         data={}
         for k in f.keys():
             data[k]=np.array(f[k])
         data['attrs']=f.get_dict()
+        self.data = data
         return data
 
+    @classmethod
+    def from_h5file(cls, fname):
+        """
+        Alternative constructor method building returning a object
+        that only has data and config read from the hdf5 file.
+        Mostly used for loading measured data and running the
+        analysis/display methods of its corresponding experiment.
+        Note that this bypasses the normal Experiment.__init__
+        """
+        assert Path(fname).exists(), f"Path {fname} does not exist"
+        self = cls.__new__(cls)
+        self.fname = fname
 
-    def load_data(self, f):
-        data={}
-        for k in f.keys():
-            data[k]=np.array(f[k])
-        data['attrs']=f.get_dict()
-        return data
+        with SlabFile(fname, 'r') as f:
+            self.load_data(f)
+            self.cfg = AttrDict(yaml.safe_load(self.data['attrs']['config']))
 
-
-    def load_data(self, f):
-        data={}
-        for k in f.keys():
-            data[k]=np.array(f[k])
-        data['attrs']=f.get_dict()
-        return data
+        return self
 
