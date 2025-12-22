@@ -1,17 +1,24 @@
-from qick import *
-import numpy as np
-from qick.helpers import gauss
-import time
-from slab import AttrDict
-from experiments.dataset import * 
-from experiments.dataset import StorageManSwapDataset
-import matplotlib.pyplot as plt
+# BREAKING CHANGE (2025-12-21): Updated to use Histogram class from fit_display_classes
+# instead of MM_base.hist(). This file is old and may have other breaking changes.
+# If you encounter issues, review the histogram analysis section.
+
 import random
-from experiments.MM_base import * 
+import time
+
 # from multimode_expts.experiments.single_qubit.single_shot import  HistogramProgram
 from copy import deepcopy
-from experiments.single_qubit.single_shot import HistogramProgram
 
+import matplotlib.pyplot as plt
+import numpy as np
+from qick import *
+from qick.helpers import gauss
+
+from experiments.dataset import *
+from experiments.dataset import StorageManSwapDataset
+from experiments.MM_base import *
+from experiments.single_qubit.single_shot import HistogramProgram
+from fitting.fit_display_classes import Histogram
+from slab import AttrDict
 
 
 class MM_dual_rail_base(MM_base): 
@@ -78,13 +85,17 @@ class MM_dual_rail_base(MM_base):
         data['Ie'], data['Qe'] = histpro_e.collect_shots()
         # print(data)
 
-        fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self_expt.cfg.expt.span, 
-                                                         active_reset=self_expt.cfg.expt.active_reset, threshold = self_expt.cfg.device.readout.threshold[0],
-                                                         readout_per_round=readouts_per_experiment)
-        data['fids'] = fids
-        data['angle'] = angle
-        data['thresholds'] = thresholds
-        data['confusion_matrix'] = confusion_matrix
+        # Updated to use Histogram class instead of MM_base.hist()
+        hist_fitter = Histogram(data=data, span=self_expt.cfg.expt.span, verbose=False,
+                                readout_per_round=readouts_per_experiment,
+                                threshold=self_expt.cfg.device.readout.threshold[0],
+                                config=self_expt.cfg, station=self_expt.im)
+        hist_fitter.analyze(plot=False)
+
+        data['fids'] = hist_fitter.results['fids']
+        data['angle'] = hist_fitter.results['angle']
+        data['thresholds'] = hist_fitter.results['thresholds']
+        data['confusion_matrix'] = hist_fitter.results['confusion_matrix']
         return data
     
     def initialize_beam_splitter_pulse(self):

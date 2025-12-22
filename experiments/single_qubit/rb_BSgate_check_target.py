@@ -1,4 +1,8 @@
 # Author: Ziqian 09/01/2024
+#
+# BREAKING CHANGE (2025-12-21): Updated to use Histogram class from fit_display_classes
+# instead of MM_base.hist(). This file is old and may have other breaking changes.
+# If you encounter issues, review the histogram analysis section in acquire().
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -237,10 +241,19 @@ class SingleBeamSplitterRB_check_target(Experiment):
             data['Ie'], data['Qe'] = histpro_e.collect_shots()
             # print(data)
 
-            fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
-                                                            active_reset=self.cfg.expt.active_reset, threshold = self.cfg.expt.threshold,
-                                                            readout_per_round=self.cfg.expt.readout_per_round)
-        else: 
+            # Updated to use Histogram class instead of MM_base.hist()
+            from fitting.fit_display_classes import Histogram
+            hist_fitter = Histogram(data=data, span=self.cfg.expt.span, verbose=False,
+                                    readout_per_round=self.cfg.expt.readout_per_round,
+                                    threshold=self.cfg.expt.threshold,
+                                    config=self.cfg, station=self.im)
+            hist_fitter.analyze(plot=False)
+
+            fids = hist_fitter.results['fids']
+            thresholds = hist_fitter.results['thresholds']
+            angle = hist_fitter.results['angle']
+            confusion_matrix = hist_fitter.results['confusion_matrix']
+        else:
             fids = [0]
             thresholds = [0]
             angle = [0]

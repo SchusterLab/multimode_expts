@@ -1,4 +1,8 @@
 # Author: Ziqian 11/08/2023
+#
+# BREAKING CHANGE (2025-12-21): Updated to use Histogram class from fit_display_classes
+# instead of MM_base.hist(). This file is old and may have other breaking changes.
+# If you encounter issues, review the histogram analysis section in acquire().
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -272,14 +276,22 @@ class MultiRBAM(Experiment):
         data['Ie'], data['Qe'] = histpro_e.collect_shots()
         # print(data)
 
-        fids, thresholds, angle, confusion_matrix = histpro_e.hist(data=data, plot=False, verbose=False, span=self.cfg.expt.span, 
-                                                         active_reset=self.cfg.expt.active_reset, threshold = self.cfg.device.readout.threshold[q_ind],
-                                                         readout_per_round=sscfg_readout_per_round)
-        data['fids'] = fids
-        data['angle'] = angle
-        data['thresholds'] = thresholds
-        data['confusion_matrix'] = confusion_matrix
+        # Updated to use Histogram class instead of MM_base.hist()
+        from fitting.fit_display_classes import Histogram
+        hist_fitter = Histogram(data=data, span=self.cfg.expt.span, verbose=False,
+                                readout_per_round=sscfg_readout_per_round,
+                                threshold=self.cfg.device.readout.threshold[q_ind],
+                                config=self.cfg, station=self.im)
+        hist_fitter.analyze(plot=False)
 
+        data['fids'] = hist_fitter.results['fids']
+        data['angle'] = hist_fitter.results['angle']
+        data['thresholds'] = hist_fitter.results['thresholds']
+        data['confusion_matrix'] = hist_fitter.results['confusion_matrix']
+
+        fids = hist_fitter.results['fids']
+        angle = hist_fitter.results['angle']
+        thresholds = hist_fitter.results['thresholds']
 
         print(f'ge fidelity (%): {100*fids[0]}')
         print(f'rotation angle (deg): {angle}')
