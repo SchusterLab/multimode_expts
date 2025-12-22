@@ -925,10 +925,8 @@ class AmplitudeRabiFitting(GeneralFitting):
 class Histogram(GeneralFitting):
     def __init__(self, data, span=None, verbose=True, active_reset=False, readout_per_round=None, threshold=None, config=None, station=None):
         super().__init__(data, readout_per_round, threshold, config, station)
-        # print(self.data)
         self.span = span
         self.verbose = verbose
-        print(self.cfg)
         self.active_reset = self.cfg.expt.active_reset 
         self.results = {}
 

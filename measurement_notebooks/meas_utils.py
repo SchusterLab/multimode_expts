@@ -339,7 +339,9 @@ class MultimodeStation:
         Only does config this run
         """
         print("Comparing configurations:")
-        self.recursive_compare(self.yaml_cfg, self.convert_numbers_to_float(self.config_thisrun))
+        self.recursive_compare(
+            self.yaml_cfg, self.convert_numbers_to_float(self.config_thisrun)
+        )
         updated_config = self._sanitize_config_fields(self.config_thisrun)
         if write_to_file:
             self.save_config()
@@ -383,12 +385,23 @@ class PostProcessor(Protocol):
 
 
 def default_preprocessor(station, default_expt_cfg, **kwargs):
+    """
+    If your preprocessor just needs to update default_expt_cfg with user kwargs,
+        you don't have to write one at all. Just leave preprocessor=None in 
+        CharacterizationRunner.__init__ and we'll use this automatically.
+    In general your own override should insert logic between the first two lines here.
+    """
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
     return expt_cfg
 
 
 def default_postprocessor(station, expt):
+    """
+    Extract results from the expt class and update station.config_thisrun here.
+    This should not write the config file to disk (add that functionality to 
+        the run method if needed).
+    """
     return
 
 
@@ -401,6 +414,24 @@ class CharacterizationRunner:
         preprocessor: Optional[PreProcessor] = None,
         postprocessor: Optional[PostProcessor] = None,
     ):
+        """
+        Manages the execution of one characterization experiment.
+        Typically we need to create a default expt.cfg.expt template,
+            modify it with user kwargs, run the measurement and 
+            extract results to update station config.
+        This class encapsulates that boilerplate.
+        See meas_utils.default_preprocessor and default_postprocessor
+            for how to write custom pre/post processors (they need to 
+            strictly adhere to the Protocols including arg names etc).
+
+        Args:
+            station: MultimodeStation instance
+            ExptClass: a child class of slab.Experiment
+            default_expt_cfg: AttrDict template for expt.cfg.expt
+            preprocessor: function that generates expt.cfg.expt from
+                default_expt_cfg and user kwargs
+            postprocessor: function that updates station.config_thisrun
+        """
         self.ExptClass = ExptClass
         self.default_expt_cfg = default_expt_cfg
         self.station = station
@@ -425,39 +456,23 @@ class CharacterizationRunner:
     #         obj = getattr(obj, key)
     #     setattr(obj, keys[-1], value)
 
-    def run(self, postprocess=True, go_kwargs={}, **kwargs):
+    def run(
+        self, postprocess: bool = True, go_kwargs: dict = {}, **kwargs
+    ) -> Experiment:
         """
-        Standard measurement execution pattern to reduce boilerplate.
-
-        This method handles the repetitive parts of running measurements:
-        1. Experiment object creation with station settings
+        Standard measurement execution boilerplate.
+        Use preprocessor and default config template to generate cfg.expt,
+        create a new Experiment object, run its go() method, and optionally
+        run postprocessor to update station config.
 
         Args:
-            device_overrides: Optional dict of device config overrides.
-                Keys use dot notation like 'readout.relax_delay' to set cfg.device.readout.relax_delay
-            analysis_class: Optional analysis class to instantiate with (data, config=cfg)
-            go_kwargs: Additional kwargs passed to expt.go().
+            postprocess: enable whether to run self.postprocessor after expt.go()
+            go_kwargs: dict that will be passed to expt.go()
                 Defaults: analyze=True, display=True, progress=True, save=True
+            kwargs: key-value pairs passed to preprocessor to update expt config
 
         Returns:
-            If analysis_class is provided: analysis object
-            Otherwise: experiment object
-
-        Example:
-            # Simple measurement
-            expt = station.run_measurement(
-                meas.ResonatorSpectroscopyExperiment,
-                expt_config={'start': 6000, 'step': 0.01, 'expts': 250},
-                device_overrides={'readout.relax_delay': [50]}
-            )
-
-            # With separate analysis
-            analysis = station.run_measurement(
-                meas.AmplitudeRabiExperiment,
-                expt_config={'start': 0, 'step': 100, 'expts': 151},
-                analysis_class=AmplitudeRabiFitting,
-                analyze=False  # Override default to skip built-in analysis
-            )
+            Experiment object
         """
         # Create experiment instance
         expt = self.ExptClass(
@@ -475,7 +490,7 @@ class CharacterizationRunner:
         expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
 
         # Execute with sensible defaults
-        go_defaults = {'analyze': True, 'display': True, 'progress': True, 'save': True}
+        go_defaults = {"analyze": True, "display": True, "progress": True, "save": True}
         go_defaults.update(go_kwargs)
         expt.go(**go_defaults)
 

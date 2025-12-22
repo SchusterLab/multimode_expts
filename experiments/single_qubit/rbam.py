@@ -16,7 +16,6 @@ from qick.helpers import gauss
 from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
-from experiments.single_qubit.single_shot_old import hist, HistogramProgram_oldold
 from experiments.single_qubit.single_shot import  HistogramProgram
 
 import fitting.fitting as fitter
