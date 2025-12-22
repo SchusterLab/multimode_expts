@@ -13,6 +13,7 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks
 
 import fitting.fitting as fitter
+from fitting.fit_utils import guess_sinusoidal_params
 
 
 class GeneralFitting:
@@ -855,8 +856,13 @@ class AmplitudeRabiFitting(GeneralFitting):
                 hpi_gain = (1 / 2 - p[2] / 360) / p[1]
             return int(pi_gain), int(hpi_gain)
 
+
         if fit:
             xdata = data['xpts']
+            if fitparams is None:
+                freq, amp, offset = guess_sinusoidal_params(data['xpts'], data['avgi'])
+                # [amplitude, frequency, phase, decay_time, offset, decay_offset]
+                fitparams=[amp, freq, np.pi, 100000, offset, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
             p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
             p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)

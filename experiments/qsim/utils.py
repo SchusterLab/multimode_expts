@@ -6,10 +6,9 @@ from warnings import warn
 import lmfit
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.fft import rfft, rfftfreq
-from slab import AttrDict
 
 from fitting.fit_utils import guess_freq
+from slab import AttrDict
 
 
 def ensure_local_file(remote_path, local_path, filename):

@@ -38,9 +38,6 @@ def guess_sinusoidal_params(x, y):
     amp = np.ptp(y) / 2
 
     # Estimate frequency using FFT
-    yf = rfft(y - offset)
-    xf = rfftfreq(len(x), x[1] - x[0])
-    peak_idx = np.argmax(np.abs(yf[1:])) + 1
-    freq = np.abs(xf[peak_idx])
+    freq, _ = guess_freq(x, y)
 
     return freq, amp, offset

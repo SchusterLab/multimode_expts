@@ -9,6 +9,7 @@ from tqdm import tqdm_notebook as tqdm
 from copy import deepcopy
 
 import fitting.fitting as fitter
+from fitting.fit_display_classes import AmplitudeRabiFitting
 from experiments.MM_base import MMRAveragerProgram
 
 class AmplitudeRabiProgram(MMRAveragerProgram):
@@ -342,43 +343,27 @@ class AmplitudeRabiExperiment(Experiment):
 
 
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+        """
+        Analyze amplitude rabi data using the canonical AmplitudeRabiFitting implementation.
+
+        This method delegates to AmplitudeRabiFitting to ensure consistent analysis
+        between standalone data analysis and experiment-based workflows.
+
+        Note: When data=None, this modifies self.data in place (standard behavior).
+        """
         if data is None:
-            data=self.data
+            data = self.data
 
-        def get_pi_hpi_gain_from_fit(p):
-            if p[2] > 180:
-                p[2] = p[2] - 360
-            elif p[2] < -180:
-                p[2] = p[2] + 360
-            if np.abs(p[2]-90) > np.abs(p[2]+90): # y intercept is the min
-                pi_gain = (1/4 - p[2]/360)/p[1]
-                hpi_gain = (0 - p[2]/360)/p[1]
-            else: # y intercept is the max
-                pi_gain= (3/4 - p[2]/360)/p[1]
-                hpi_gain= (1/2 - p[2]/360)/p[1]
-            return int(pi_gain), int(hpi_gain)
+        # Use the canonical implementation from fitting_display_classes
+        fitter_instance = AmplitudeRabiFitting(
+            data=data,
+            config=self.cfg,
+            fitparams=fitparams
+        )
 
-        if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            # Remove the first and last point from fit in case weird edge measurements
-            xdata = data['xpts']
-            # if fitparams is None:
-            #     fitparams = [None]*6
-            #     fitparams[0] = np.max(data["avgi"][1:-1])
-            #     fitparams[1] = 2/(xdata[-1]-xdata[0])
+        # Run analysis - this modifies data in place and returns it
+        data = fitter_instance.analyze(data=data, fit=fit, fitparams=fitparams, **kwargs)
 
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi
-            data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi
-            data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
-
-            data['pi_gain_avgi'], data['hpi_gain_avgi']  = get_pi_hpi_gain_from_fit(p_avgi)
-            data['pi_gain_avgq'], data['hpi_gain_avgq']  = get_pi_hpi_gain_from_fit(p_avgq)
         return data
 
     def display(self, data=None, fit=True, fitparams=None, vline = None, **kwargs):
