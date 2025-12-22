@@ -142,9 +142,12 @@ class HistogramExperiment(Experiment):
         if data is None:
             data=self.data
 
-        hist_fitter = Histogram(data=data, span=span, verbose=verbose,
-                                config=self.cfg, station=self.im)
-        hist_fitter.analyze(plot=False)
+        hist_fitter = Histogram(data=data,
+                                span=span,
+                                verbose=verbose,
+                                config=self.cfg,
+                                station=kwargs.pop('station', None))
+        hist_fitter.analyze(plot=True, subdir=kwargs.pop('subdir', None))
 
         data['fids'] = hist_fitter.results['fids']
         data['angle'] = hist_fitter.results['angle']

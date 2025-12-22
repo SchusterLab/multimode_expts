@@ -339,7 +339,7 @@ class MultimodeStation:
         Only does config this run
         """
         print("Comparing configurations:")
-        self.recursive_compare(self.yaml_cfg, self.config_thisrun)
+        self.recursive_compare(self.yaml_cfg, self.convert_numbers_to_float(self.config_thisrun))
         updated_config = self._sanitize_config_fields(self.config_thisrun)
         if write_to_file:
             self.save_config()

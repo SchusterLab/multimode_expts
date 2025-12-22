@@ -61,15 +61,15 @@ device:
         trig_offset:
         - 450
         frequency:
-        - 749.2317271627182
+        - 749.3996749125845
         gain:
         - 800
         phase:
-        - -213.26463327819903
+        - -368.30551301332
         threshold:
-        - -13.078561639058279
+        - -28.05136170621853
         threshold_list:
-        -   - -13.078561639058279
+        -   - -28.05136170621853
         man1_drive_list:
         - 0.0
         man2_drive_list:
@@ -84,14 +84,14 @@ device:
         - 0.013768302080657598
         - 0.9862316979193424
         confusion_matrix_without_reset:
-        - 0.9737947589517904
-        - 0.02620524104820965
-        - 0.0446
-        - 0.9554
+        - 0.9541999999999999
+        - 0.04580000000000006
+        - 0.28720000000000007
+        - 0.7127999999999999
         Ie:
-        - 43.54775433813482
+        - 21.668143747421603
         Ig:
-        - -70.35841205747658
+        - -83.40871363472647
         confusion_matrix_with_active_reset:
         - 0.996662693682956
         - 0.0033373063170439865
@@ -125,7 +125,7 @@ device:
         - 1.2311804927283654
         ramp_sigma: 0.005
     storage:
-        storage_man_file: man1_storage_swap_dataset.csv # will be looked for under configs
+        storage_man_file: man1_storage_swap_dataset.csv
         idling_phase:
         -   - -52.6696123
             - -22.7088024
@@ -185,7 +185,7 @@ device:
         - -3.2053137013077597
         - -2.935087792327744
         ramp_sigma: 0.005
-        floquet_man_stor_file: floquet_storage_swap_dataset.csv # will be looked for under configs
+        floquet_man_stor_file: floquet_storage_swap_dataset.csv
     active_reset:
         qubit_ge:
         - 4000
@@ -209,7 +209,7 @@ device:
             - 2.0
             - 2.0
     multiphoton_config:
-        file: multiphoton_config.yml # will be looked for under configs
+        file: multiphoton_config.yml
     multiphoton:
         pi:
             gn-en:
@@ -519,4 +519,4 @@ hw:
 aliases:
     soc: Qick101
 data_management:
-    output_root: "D:/experiments" # this is where we store data, plots and logs
+    output_root: D:/experiments
