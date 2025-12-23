@@ -183,87 +183,30 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
         if data is None:
             data = self.data
-        if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            # Remove the first and last point from fit in case weird edge measurements
-            # fitparams = [None, 1/max(data['xpts']), None, None]
-            # fitparams = None
-            p_avgi, pCov_avgi = fitter.fitdecaysin(
-                data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(
-                data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(
-                data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi
-            data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi
-            data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+
+        # Delegate to the newer implementation in fit_display_classes
+        from fitting.fit_display_classes import LengthRabiFitting
+        analysis = LengthRabiFitting(data, fit=fit, fitparams=fitparams, config=self.cfg, station=None)
+        analysis.analyze()
+
+        # Store results in self for access by postprocessor
+        self._length_rabi_analysis = analysis
+
         return data
 
-    def display(self, data=None, fit=True, **kwargs):
+    def display(self, data=None, fit=True, title_str='Length Rabi General F0g1', **kwargs):
         if data is None:
             data = self.data
 
-        xpts_ns = data['xpts']*1e3
-
-        # plt.figure(figsize=(12, 8))
-        # plt.subplot(111, title=f"Length Rabi", xlabel="Length [ns]", ylabel="Amplitude [ADC units]")
-        # plt.plot(xpts_ns[1:-1], data["amps"][1:-1],'o-')
-        # if fit:
-        #     p = data['fit_amps']
-        #     plt.plot(xpts_ns[1:-1], fitter.sinfunc(data["xpts"][1:-1], *p))
-
-        plt.figure(figsize=(10, 8))
-        if 'gain' in self.cfg.expt:
-            gain = self.cfg.expt.gain
+        # Delegate to the newer implementation in fit_display_classes
+        # Use the analysis object created in analyze() if available
+        if hasattr(self, '_length_rabi_analysis'):
+            self._length_rabi_analysis.display(title_str=title_str, **kwargs)
         else:
-            # gain of the pulse we are trying to calibrate
-            gain = self.cfg.device.qubit.pulses.pi_ge.gain[self.cfg.expt.qubits[-1]]
-        plt.subplot(
-            211, title=f"Length Rabi (Qubit Gain {gain})", ylabel="I [adc level]")
-        plt.plot(xpts_ns[1:-1], data["avgi"][1:-1], 'o-')
-        if fit:
-            p = data['fit_avgi']
-            plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-            if p[2] > 180:
-                p[2] = p[2] - 360
-            elif p[2] < -180:
-                p[2] = p[2] + 360
-            if p[2] < 0:
-                pi_length = (1/2 - p[2]/180)/2/p[1]
-            else:
-                pi_length = (3/2 - p[2]/180)/2/p[1]
-            pi2_length = pi_length/2
-            print('Decay from avgi [us]', p[3])
-            print(f'Pi length from avgi data [us]: {pi_length}')
-            print(f'\tPi/2 length from avgi data [us]: {pi2_length}')
-            plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-            plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-
-        print()
-        plt.subplot(212, xlabel="Pulse length [ns]", ylabel="Q [adc levels]")
-        plt.plot(xpts_ns[1:-1], data["avgq"][1:-1], 'o-')
-        if fit:
-            p = data['fit_avgq']
-            plt.plot(xpts_ns[0:-1], fitter.decaysin(data["xpts"][0:-1], *p))
-            if p[2] > 180:
-                p[2] = p[2] - 360
-            elif p[2] < -180:
-                p[2] = p[2] + 360
-            if p[2] < 0:
-                pi_length = (1/2 - p[2]/180)/2/p[1]
-            else:
-                pi_length = (3/2 - p[2]/180)/2/p[1]
-            pi2_length = pi_length/2
-            print('Decay from avgq [us]', p[3])
-            print(f'Pi length from avgq data [us]: {pi_length}')
-            print(f'Pi/2 length from avgq data [us]: {pi2_length}')
-            plt.axvline(pi_length*1e3, color='0.2', linestyle='--')
-            plt.axvline(pi2_length*1e3, color='0.2', linestyle='--')
-        plt.tight_layout()
-        plt.show()
+            # Fallback: create a new analysis object
+            from fitting.fit_display_classes import LengthRabiFitting
+            analysis = LengthRabiFitting(data, config=self.cfg, station=None)
+            analysis.display(title_str=title_str, **kwargs)
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

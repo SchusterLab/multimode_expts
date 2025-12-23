@@ -126,46 +126,25 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
     def analyze(self, data=None, fit=True, signs=[1,1,1], **kwargs):
         if data is None:
             data=self.data
-        if fit:
-            xdata = data['xpts'][1:-1]
-            data['fit_amps'], data['fit_err_amps'] = fitter.fitlor(xdata, signs[0]*data['amps'][1:-1])
-            data['fit_avgi'], data['fit_err_avgi'] = fitter.fitlor(xdata, signs[1]*data['avgi'][1:-1])
-            data['fit_avgq'], data['fit_err_avgq'] = fitter.fitlor(xdata, signs[2]*data['avgq'][1:-1])
+
+        # Delegate to the newer implementation in fit_display_classes
+        from fitting.fit_display_classes import Spectroscopy
+        spec_analysis = Spectroscopy(data, signs=signs, config=self.cfg, station=None)
+        spec_analysis.analyze(fit=fit)
+
         return data
 
-    def display(self, data=None, fit=True, signs=[1,1, 1], **kwargs):
+    def display(self, data=None, fit=True, signs=[1,1, 1], title='Manipulate Spectroscopy', **kwargs):
         if data is None:
-            data=self.data 
+            data=self.data
 
-        if 'mixer_freq' in self.cfg.hw.soc.dacs.qubit:
-            xpts = self.cfg.hw.soc.dacs.qubit.mixer_freq + data['xpts'][1:-1]
-        else: 
-            xpts = data['xpts'][1:-1]
+        # Delegate to the newer implementation in fit_display_classes
+        from fitting.fit_display_classes import Spectroscopy
+        spec_analysis = Spectroscopy(data, signs=signs, config=self.cfg, station=None)
 
-        plt.figure(figsize=(9, 11))
-        plt.subplot(311, title=f" Spectroscopy (Gain {self.cfg.expt.gain})", ylabel="Amplitude [ADC units]")
-        plt.plot(xpts, data["amps"][1:-1],'o-')
-        if fit:
-            plt.plot(xpts, signs[0]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_amps"]))
-            print(f'Found peak in amps at [MHz] {data["fit_amps"][2]}, HWHM {data["fit_amps"][3]}')
-
-        plt.subplot(312, ylabel="I [ADC units]")
-        plt.plot(xpts, data["avgi"][1:-1],'o-')
-        if fit:
-            plt.plot(xpts, signs[1]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgi"]))
-            print(f'Found peak in I at [MHz] {data["fit_avgi"][2]}, HWHM {data["fit_avgi"][3]}')
-        plt.subplot(313, xlabel="Pulse Frequency (MHz)", ylabel="Q [ADC units]")
-        plt.plot(xpts, data["avgq"][1:-1],'o-')
-        # plt.axvline(3476, c='k', ls='--')
-        # plt.axvline(3376+50, c='k', ls='--')
-        # plt.axvline(3376, c='k', ls='--')
-        if fit:
-            plt.plot(xpts, signs[2]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgq"]))
-            # plt.axvline(3593.2, c='k', ls='--')
-            print(f'Found peak in Q at [MHz] {data["fit_avgq"][2]}, HWHM {data["fit_avgq"][3]}')
-
-        plt.tight_layout()
-        plt.show()
+        # Extract vlines from kwargs if provided
+        vlines = kwargs.get('vlines', None)
+        spec_analysis.display(title=title, vlines=vlines, fit=fit)
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

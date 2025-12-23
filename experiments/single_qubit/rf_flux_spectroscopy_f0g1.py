@@ -255,62 +255,35 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
 
         return data
 
-    def analyze(self, data=None, fit=False, findpeaks=False, verbose=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=True, signs=[1,1,1], **kwargs):
         if data is None:
             data=self.data
 
-        if fit:
-            # fitparams = [f0, Qi, Qe, phi, scale]
-            xdata = data["xpts"][1:-1]
-            # ydata = data["avgi"][1:-1] + 1j*data["avgq"][1:-1]
-            ydata = data['amps'][1:-1]
-            fitparams=fitparams
-            data['fit'], data['fit_err'] = fitter.fithanger(xdata, ydata, fitparams=fitparams)
-            if isinstance(data['fit'], (list, np.ndarray)):
-                f0, Qi, Qe, phi, scale, a0, slope = data['fit']
-                if verbose:
-                    print(f'\nFreq with minimum transmission: {xdata[np.argmin(ydata)]}')
-                    print(f'Freq with maximum transmission: {xdata[np.argmax(ydata)]}')
-                    print('From fit:')
-                    print(f'\tf0: {f0}')
-                    print(f'\tQi: {Qi}')
-                    print(f'\tQe: {Qe}')
-                    print(f'\tQ0: {1/(1/Qi+1/Qe)}')
-                    print(f'\tkappa [MHz]: {f0*(1/Qi+1/Qe)}')
-                    print(f'\tphi [radians]: {phi}')
+        # Delegate to the newer implementation in fit_display_classes
+        from fitting.fit_display_classes import Spectroscopy
+        spec_analysis = Spectroscopy(data, signs=signs, config=self.cfg, station=None)
+        spec_analysis.analyze(fit=fit)
 
-        if findpeaks:
-            maxpeaks, minpeaks = dsfit.peakdetect(data['amps'][1:-1], x_axis=data['xpts'][1:-1], lookahead=30, delta=5*np.std(data['amps'][:5]))
-            data['maxpeaks'] = maxpeaks
-            data['minpeaks'] = minpeaks
+        # Store analysis object for display() to use
+        self._spec_analysis = spec_analysis
 
         return data
 
-    def display(self, data=None, fit=True, findpeaks=False, **kwargs):
+    def display(self, data=None, fit=True, signs=[1,1,1], title='Storage Spectroscopy', **kwargs):
         if data is None:
-            data=self.data 
+            data=self.data
 
-        xpts = data['xpts'][1:-1]
-
-        plt.figure(figsize=(16,16))
-        plt.subplot(311, title=f"RF Flux Spectroscopy at gain {self.cfg.expt.flux_drive[2]}",  ylabel="Amps [ADC units]")
-        plt.plot(xpts, data['amps'][1:-1],'o-')
-        if fit:
-            plt.plot(xpts, fitter.hangerS21func_sloped(data["xpts"][1:-1], *data["fit"]))
-        if findpeaks:
-            # for peak in np.concatenate((data['maxpeaks'], data['minpeaks'])):
-            for peak in data['minpeaks']:
-                plt.axvline(peak[0], linestyle='--', color='0.2')
-                print(f'Found peak [MHz]: {peak[0]}')
-        # plt.axvline(float(self.cfg.hw.lo.readout.frequency)*1e-6 + self.cfg.device.readout.lo_sideband*(self.cfg.hw.soc.dacs.readout.mixer_freq + 812.37), c='k', ls='--')
-        # plt.axvline(7687.5, c='k', ls='--')
-
-        plt.subplot(312, xlabel="RF Frequency [MHz]", ylabel="I [ADC units]")
-        plt.plot(xpts, data["avgi"][1:-1],'o-')
-
-        plt.subplot(313, xlabel="RF Frequency [MHz]", ylabel="Phases [ADC units]")
-        plt.plot(xpts, data["phases"][1:-1],'o-')
-        plt.show()
+        # Delegate to the newer implementation in fit_display_classes
+        # Use the analysis object created in analyze() if available
+        if hasattr(self, '_spec_analysis'):
+            vlines = kwargs.get('vlines', None)
+            self._spec_analysis.display(title=title, vlines=vlines, fit=fit)
+        else:
+            # Fallback: create a new analysis object
+            from fitting.fit_display_classes import Spectroscopy
+            spec_analysis = Spectroscopy(data, signs=signs, config=self.cfg, station=None)
+            vlines = kwargs.get('vlines', None)
+            spec_analysis.display(title=title, vlines=vlines, fit=fit)
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
