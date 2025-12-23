@@ -499,3 +499,178 @@ class CharacterizationRunner:
             self.postprocessor(self.station, expt)
 
         return expt
+
+
+class SweepRunner:
+    """
+    Manages execution of sweep experiments (2D measurements).
+
+    Unlike CharacterizationRunner which runs a single experiment,
+    SweepRunner loops over a parameter, running the experiment at
+    each point and saving data incrementally to a file.
+
+    Typical use case: Chevron (frequency vs time) sweeps
+
+    Example:
+        chevron_runner = SweepRunner(
+            station=station,
+            ExptClass=meas.LengthRabiGeneralF0g1Experiment,
+            AnalysisClass=ChevronFitting,
+            default_expt_cfg=config,
+            sweep_param='freq',
+            preprocessor=preproc_func,
+            postprocessor=postproc_func,
+        )
+        analysis = chevron_runner.run(
+            sweep_start=2000,
+            sweep_stop=2010,
+            sweep_step=0.5,
+        )
+    """
+
+    def __init__(
+        self,
+        station: MultimodeStation,
+        ExptClass: type[Experiment],
+        AnalysisClass: type,
+        default_expt_cfg: AttrDict,
+        sweep_param: str = 'freq',
+        preprocessor: Optional[Callable] = None,
+        postprocessor: Optional[Callable] = None,
+    ):
+        """
+        Args:
+            station: MultimodeStation instance
+            ExptClass: Experiment class to run at each sweep point
+            AnalysisClass: Analysis class (e.g., ChevronFitting)
+            default_expt_cfg: Default experiment config template
+            sweep_param: Parameter to sweep (e.g., 'freq', 'gain')
+            preprocessor: Optional function to modify config before sweep
+            postprocessor: Optional function called with (station, analysis)
+        """
+        self.station = station
+        self.ExptClass = ExptClass
+        self.AnalysisClass = AnalysisClass
+        self.default_expt_cfg = default_expt_cfg
+        self.sweep_param = sweep_param
+        self.preprocessor = preprocessor or default_preprocessor
+        self.postprocessor = postprocessor
+
+    def run(
+        self,
+        sweep_start: float,
+        sweep_stop: float,
+        sweep_step: float,
+        postprocess: bool = True,
+        go_kwargs: dict = {},
+        **kwargs
+    ):
+        """
+        Run sweep experiment.
+
+        Args:
+            sweep_start: Starting value for sweep parameter
+            sweep_stop: Ending value for sweep parameter
+            sweep_step: Step size for sweep parameter
+            postprocess: Whether to run postprocessor
+            go_kwargs: Kwargs passed to expt.go()
+            **kwargs: Passed to preprocessor
+
+        Returns:
+            Analysis object with results
+        """
+        import numpy as np
+        from slab.datamanagement import SlabFile
+        from slab import get_next_filename
+
+        # Generate sweep values
+        sweep_vals = np.arange(sweep_start, sweep_stop + sweep_step/2, sweep_step)
+
+        # Preprocess config
+        expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
+
+        # Initialize sweep data storage
+        sweep_data = {
+            f'{self.sweep_param}_sweep': [],
+            'xpts': None,
+            'avgi': [],
+            'avgq': [],
+            'amps': [],
+            'phases': [],
+        }
+
+        # Create sweep file
+        sweep_filename = get_next_filename(
+            self.station.data_path,
+            f'{self.ExptClass.__name__}_sweep',
+            suffix='.h5'
+        )
+
+        print(f'Running sweep over {self.sweep_param}: {sweep_start} to {sweep_stop} (step {sweep_step})')
+        print(f'Sweep file: {sweep_filename}')
+
+        # Loop over sweep parameter
+        for idx, sweep_val in enumerate(sweep_vals):
+            print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param} = {sweep_val:.4f}')
+
+            # Create experiment instance
+            expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=self.ExptClass.__name__,
+                config_file=self.station.hardware_config_file,
+            )
+
+            # Setup config
+            expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+            expt.cfg.expt = AttrDict(deepcopy(expt_cfg))
+
+            # Set sweep parameter value
+            expt.cfg.expt[self.sweep_param] = sweep_val
+            expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
+
+            # Run experiment (no analyze/display, no save individual runs)
+            go_defaults = {"analyze": False, "display": False, "progress": False, "save": False}
+            go_defaults.update(go_kwargs)
+            expt.go(**go_defaults)
+
+            # Store data
+            sweep_data[f'{self.sweep_param}_sweep'].append(sweep_val)
+            if sweep_data['xpts'] is None:
+                sweep_data['xpts'] = expt.data['xpts']
+            sweep_data['avgi'].append(expt.data['avgi'])
+            sweep_data['avgq'].append(expt.data['avgq'])
+            sweep_data['amps'].append(expt.data['amps'])
+            sweep_data['phases'].append(expt.data['phases'])
+
+        # Convert to numpy arrays
+        for key in sweep_data:
+            if key != 'xpts':
+                sweep_data[key] = np.array(sweep_data[key])
+
+        # Save sweep file
+        with SlabFile(sweep_filename, 'w') as f:
+            for key, val in sweep_data.items():
+                f[key] = val
+            # Save config as attribute
+            f.attrs['config'] = json.dumps(self.station.convert_attrdict_to_dict(expt.cfg))
+
+        print(f'Sweep complete. Saved to {sweep_filename}')
+
+        # Create analysis object
+        analysis = self.AnalysisClass(
+            frequencies=sweep_data[f'{self.sweep_param}_sweep'],
+            time=sweep_data['xpts'],
+            response_matrix=sweep_data['avgi'],
+            config=self.station.config_thisrun,
+            station=self.station,
+        )
+
+        # Analyze
+        analysis.analyze()
+
+        # Run postprocessor if requested
+        if postprocess and self.postprocessor is not None:
+            self.postprocessor(self.station, analysis)
+
+        return analysis
