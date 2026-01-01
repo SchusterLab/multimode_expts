@@ -9,6 +9,7 @@ import fitting.fitting as fitter
 from experiments.MM_base import MMRAveragerProgram
 
 from fitting.fit_utils import guess_sinusoidal_params
+from fitting.fit_display_classes import RamseyFitting
 
 
 class RamseyProgram(MMRAveragerProgram):
@@ -252,28 +253,16 @@ class RamseyExperiment(Experiment):
 
     def analyze(self, data=None, fit=True, fitparams = None, **kwargs):
         if data is None:
-            data=self.data
+            data = self.data
 
         if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
-            if fitparams is None:
-                freq, amp, offset = guess_sinusoidal_params(data['xpts'], data['avgi'])
-                fitparams=[amp,  freq, 0, data['xpts'][-1]/2, offset, None]
-            # Remove the first and last point from fit in case weird edge measurements
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'][:-1], data["avgi"][:-1], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'][:-1], data["avgq"][:-1], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'][:-1], data["amps"][:-1], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi   
-            data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi   
-            data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+            ramsey_analysis = RamseyFitting(data, config=self.cfg)
+            ramsey_analysis.analyze(fitparams=fitparams)
+            return ramsey_analysis.data
+        else:
+            return data
 
-            if isinstance(p_avgi, (list, np.ndarray)): data['f_adjust_ramsey_avgi'] = sorted((self.cfg.expt.ramsey_freq - p_avgi[1], self.cfg.expt.ramsey_freq + p_avgi[1]), key=abs)
-            if isinstance(p_avgq, (list, np.ndarray)): data['f_adjust_ramsey_avgq'] = sorted((self.cfg.expt.ramsey_freq - p_avgq[1], self.cfg.expt.ramsey_freq + p_avgq[1]), key=abs)
-            if isinstance(p_amps, (list, np.ndarray)): data['f_adjust_ramsey_amps'] = sorted((self.cfg.expt.ramsey_freq - p_amps[1], self.cfg.expt.ramsey_freq + p_amps[1]), key=abs)
-        return data
+
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:

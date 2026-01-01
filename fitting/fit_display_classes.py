@@ -272,18 +272,21 @@ class RamseyFitting(GeneralFitting):
         xpts = data['xpts'][start_idx:end_idx]
 
         if fit:
+            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             if fitparams is None:
-                fitparams = [None, self.cfg.expt.ramsey_freq, None, None, None, None]
-                # fitparams = [200, 0.2, 0, 200, None, None]
-            p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams)
-            # p_amps, pCov_amps = fitter.fitdecaysin(xpts[:-1], data["amps"][:-1], fitparams=fitparams)
+                freq, amp, offset = guess_sinusoidal_params(xpts, data['avgi'])
+                fitparams_i=[amp, freq, 90, xpts[-1]/2, offset, None]
+            p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams_i)
+
+            if fitparams is None:
+                freq, amp, offset = guess_sinusoidal_params(xpts, data['avgq'])
+                fitparams_q=[amp, freq, 90, xpts[-1]/2, offset, None]
+            p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams_q)
+
             data['fit_avgi'] = p_avgi
             data['fit_avgq'] = p_avgq
-            # data['fit_amps'] = p_amps
             data['fit_err_avgi'] = pCov_avgi
             data['fit_err_avgq'] = pCov_avgq
-            # data['fit_err_amps'] = pCov_amps
 
             if isinstance(p_avgi, (list, np.ndarray)):
                 data['f_adjust_ramsey_avgi'] = sorted(
@@ -291,17 +294,12 @@ class RamseyFitting(GeneralFitting):
             if isinstance(p_avgq, (list, np.ndarray)):
                 data['f_adjust_ramsey_avgq'] = sorted(
                     (self.cfg.expt.ramsey_freq - p_avgq[1], self.cfg.expt.ramsey_freq + p_avgq[1]), key=abs)
-            # if isinstance(p_amps, (list, np.ndarray)):
-            #     data['f_adjust_ramsey_amps'] = sorted(
-            #         (self.cfg.expt.ramsey_freq - p_amps[1], self.cfg.expt.ramsey_freq + p_amps[1]), key=abs)
 
             self.results = {
                 'fit_avgi': p_avgi,
                 'fit_avgq': p_avgq,
-                # 'fit_amps': p_amps,
                 'fit_err_avgi': pCov_avgi,
                 'fit_err_avgq': pCov_avgq,
-                # 'fit_err_amps': pCov_amps
             }
         return data
 
