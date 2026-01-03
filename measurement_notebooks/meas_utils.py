@@ -1,18 +1,10 @@
-""" "
-Shared environment setup for notebooks running multimode experiments.
-1. Importing the necessary libraries
-2. initializing qick
-3. Initializing important paths (data, config, etc)
-4. Getting the CSV datasets
-"""
-
 import json
 import os
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable
-from typing import Protocol, Any, Dict
+from typing import Protocol
 
 import numpy as np
 import yaml
@@ -22,9 +14,24 @@ from experiments.dataset import StorageManSwapDataset
 from slab import AttrDict, get_current_filename, Experiment
 from slab.datamanagement import SlabFile
 from slab.instruments import InstrumentManager
+from slab.instruments.voltsource import YokogawaGS200
+
+# add hooks to yaml so that np.float64 etc are written out as plain floats
+def np_float_representer(dumper, data):
+    return dumper.represent_float(float(data))
+
+def np_int_representer(dumper, data): 
+    return dumper.represent_float(int(data))
+
+yaml.add_representer(np.float64, np_float_representer)
+yaml.add_representer(np.float32, np_float_representer)
+yaml.add_representer(np.int64, np_int_representer)
+yaml.add_representer(np.int64, np_int_representer)
+
+# this prevents yaml from using anchors and aliases (&id001 and *id001)
+yaml.Dumper.ignore_aliases = lambda *args : True
 
 # TODO: add a dummy station class to allow for testing its dependents without hardware
-
 
 class MultimodeStation:
     """
@@ -132,6 +139,8 @@ class MultimodeStation:
         self.im = InstrumentManager(ns_address="192.168.137.25")
         self.soc = QickConfig(self.im[self.yaml_cfg["aliases"]["soc"]].get_cfg())
         # TODO: add yokos to im
+        self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
+        self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
 
     def print(self):
         print("Data, plots, logs will be stored in: ", self.experiment_path)
@@ -246,23 +255,6 @@ class MultimodeStation:
         else:
             return attrdict
 
-    def convert_numbers_to_float(self, data):
-        """
-        Recursively converts all numbers in a dictionary to float.
-        """
-        if isinstance(data, dict):
-            return {
-                key: self.convert_numbers_to_float(value) for key, value in data.items()
-            }
-        elif isinstance(data, list):
-            return [self.convert_numbers_to_float(item) for item in data]
-        elif isinstance(data, float):
-            return float(data)
-        elif isinstance(data, int):
-            return int(data)
-        else:
-            return data
-
     def recursive_compare(self, d1, d2, path=""):
         """
         Recursively compares two dictionaries and prints differences.
@@ -318,17 +310,13 @@ class MultimodeStation:
         # first save a copy of the old config to a backup location before overwriting
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         old_config_path = self.autocalib_path / f"old_config_{current_time}.yaml"
-        old_config = self.convert_numbers_to_float(
-            self.convert_attrdict_to_dict(self.yaml_cfg)
-        )
+        old_config = self.convert_attrdict_to_dict(self.yaml_cfg)
         with old_config_path.open("w") as cfg_file:
             yaml.dump(old_config, cfg_file, **yaml_dump_kwargs)
 
         # next save the updated config_thisrun to the hardware config yaml, overwriting it
-        updated_config = self.convert_numbers_to_float(
-            self.convert_attrdict_to_dict(
-                self._sanitize_config_fields(self.config_thisrun)
-            )
+        updated_config = self.convert_attrdict_to_dict(
+            self._sanitize_config_fields(self.config_thisrun)
         )
         with self.hardware_config_file.open("w") as f:
             yaml.dump(updated_config, f, **yaml_dump_kwargs)
@@ -339,9 +327,7 @@ class MultimodeStation:
         Only does config this run
         """
         print("Comparing configurations:")
-        self.recursive_compare(
-            self.yaml_cfg, self.convert_numbers_to_float(self.config_thisrun)
-        )
+        self.recursive_compare(self.yaml_cfg, self.config_thisrun)
         updated_config = self._sanitize_config_fields(self.config_thisrun)
         if write_to_file:
             self.save_config()
