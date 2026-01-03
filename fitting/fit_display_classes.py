@@ -1276,7 +1276,7 @@ class LengthRabiFitting(GeneralFitting):
             return self.results['fit_avgi'], self.results['fit_err_avgi'], xlist, Ilist
         # save figure 
         filename = title_str.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig, filename=filename) 
+        # self.save_plot(fig, filename=filename) 
 
     #@staticmethod
     def _calculate_pi_lengths(self, p):
@@ -1524,8 +1524,8 @@ class ChevronFitting(GeneralFitting):
         uctt=np.mean(result.eval_uncertainty())
         if uctt<1e-6 or uctt>np.std(result.best_fit)*0.5:
             for key in result.best_values.keys():
-                result.best_values[key] = np.NaN
-            result.best_fit = [np.NaN] * len(time)
+                result.best_values[key] = np.nan
+            result.best_fit = [np.nan] * len(time)
             print('uncertainty smells off, marking this line as invalid')
         return result
 

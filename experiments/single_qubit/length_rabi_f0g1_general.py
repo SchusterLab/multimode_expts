@@ -186,7 +186,8 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
 
         # Delegate to the newer implementation in fit_display_classes
         from fitting.fit_display_classes import LengthRabiFitting
-        analysis = LengthRabiFitting(data, fit=fit, fitparams=fitparams, config=self.cfg, station=None)
+        station=kwargs.pop('station', None)
+        analysis = LengthRabiFitting(data, fit=fit, fitparams=fitparams, config=self.cfg, station=station)
         analysis.analyze()
 
         # Store results in self for access by postprocessor
@@ -205,7 +206,8 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
         else:
             # Fallback: create a new analysis object
             from fitting.fit_display_classes import LengthRabiFitting
-            analysis = LengthRabiFitting(data, config=self.cfg, station=None)
+            station=kwargs.pop('station', None)
+            analysis = LengthRabiFitting(data, config=self.cfg, station=station)
             analysis.display(title_str=title_str, **kwargs)
 
     def save_data(self, data=None):

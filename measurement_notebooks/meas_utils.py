@@ -32,6 +32,8 @@ yaml.add_representer(np.int64, np_int_representer)
 yaml.Dumper.ignore_aliases = lambda *args : True
 
 # TODO: add a dummy station class to allow for testing its dependents without hardware
+# TODO: add a state variable that records whether active reset (of qb, man, stor) should be enabled 
+# and use this as the default that can still be overridden by user arg
 
 class MultimodeStation:
     """
