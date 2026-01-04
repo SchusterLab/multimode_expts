@@ -497,17 +497,32 @@ class SweepRunner:
     SweepRunner loops over a parameter, running the experiment at
     each point and saving data incrementally to a file.
 
+    Key features:
+    - Incremental file saving (data saved after each sweep point)
+    - Optional live analysis callback for real-time visualization
+    - Flexible analysis class initialization via factory function
+    - Consistent pattern with CharacterizationRunner (preprocessor/postprocessor)
+
     Typical use case: Chevron (frequency vs time) sweeps
 
     Example:
         chevron_runner = SweepRunner(
             station=station,
             ExptClass=meas.LengthRabiGeneralF0g1Experiment,
-            AnalysisClass=ChevronFitting,
             default_expt_cfg=config,
             sweep_param='freq',
             preprocessor=preproc_func,
             postprocessor=postproc_func,
+            # Analysis can be class or factory function
+            analysis_factory=lambda data, station: ChevronFitting(
+                frequencies=data['freq_sweep'],
+                time=data['xpts'],
+                response_matrix=data['avgi'],
+                config=station.config_thisrun,
+                station=station,
+            ),
+            # Optional: live plotting callback
+            live_analysis_fn=lambda data, station: update_live_plot(data),
         )
         analysis = chevron_runner.run(
             sweep_start=2000,
@@ -520,29 +535,34 @@ class SweepRunner:
         self,
         station: MultimodeStation,
         ExptClass: type[Experiment],
-        AnalysisClass: type,
         default_expt_cfg: AttrDict,
         sweep_param: str = 'freq',
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
+        analysis_factory: Optional[Callable] = None,
+        live_analysis_fn: Optional[Callable] = None,
     ):
         """
         Args:
             station: MultimodeStation instance
             ExptClass: Experiment class to run at each sweep point
-            AnalysisClass: Analysis class (e.g., ChevronFitting)
             default_expt_cfg: Default experiment config template
             sweep_param: Parameter to sweep (e.g., 'freq', 'gain')
-            preprocessor: Optional function to modify config before sweep
-            postprocessor: Optional function called with (station, analysis)
+            preprocessor: Optional function(station, default_cfg, **kwargs) -> expt_cfg
+            postprocessor: Optional function(station, analysis) called after sweep
+            analysis_factory: Optional function(sweep_data, station) -> analysis object.
+                If None, returns raw sweep_data dict instead of analysis object.
+            live_analysis_fn: Optional function(sweep_data, station) called after each
+                sweep point for live visualization. Receives partial data during sweep.
         """
         self.station = station
         self.ExptClass = ExptClass
-        self.AnalysisClass = AnalysisClass
         self.default_expt_cfg = default_expt_cfg
         self.sweep_param = sweep_param
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor
+        self.analysis_factory = analysis_factory
+        self.live_analysis_fn = live_analysis_fn
 
     def run(
         self,
@@ -550,7 +570,8 @@ class SweepRunner:
         sweep_stop: float,
         sweep_step: float,
         postprocess: bool = True,
-        go_kwargs: dict = {},
+        go_kwargs: dict = None,
+        incremental_save: bool = True,
         **kwargs
     ):
         """
@@ -560,16 +581,19 @@ class SweepRunner:
             sweep_start: Starting value for sweep parameter
             sweep_stop: Ending value for sweep parameter
             sweep_step: Step size for sweep parameter
-            postprocess: Whether to run postprocessor
+            postprocess: Whether to run postprocessor after sweep
             go_kwargs: Kwargs passed to expt.go()
+            incremental_save: If True, save to file after each sweep point (safer).
+                If False, save only at end (faster but lose data on crash).
             **kwargs: Passed to preprocessor
 
         Returns:
-            Analysis object with results
+            Analysis object if analysis_factory provided, else sweep_data dict
         """
-        import numpy as np
-        from slab.datamanagement import SlabFile
         from slab import get_next_filename
+
+        if go_kwargs is None:
+            go_kwargs = {}
 
         # Generate sweep values
         sweep_vals = np.arange(sweep_start, sweep_stop + sweep_step/2, sweep_step)
@@ -577,29 +601,25 @@ class SweepRunner:
         # Preprocess config
         expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
-        # Initialize sweep data storage
-        sweep_data = {
-            f'{self.sweep_param}_sweep': [],
-            'xpts': None,
-            'avgi': [],
-            'avgq': [],
-            'amps': [],
-            'phases': [],
-        }
-
-        # Create sweep file
-        sweep_filename = get_next_filename(
-            self.station.data_path,
-            f'{self.ExptClass.__name__}_sweep',
-            suffix='.h5'
+        # Create sweep file using Experiment object (like sequential_base_class does)
+        # This gives us proper save_data() functionality
+        sweep_expt = Experiment(
+            path=self.station.data_path,
+            prefix=f'{self.ExptClass.__name__}_sweep',
+            config_file=self.station.hardware_config_file,
         )
 
+        # Initialize sweep data structure
+        sweep_key = f'{self.sweep_param}_sweep'
+        sweep_expt.data = {sweep_key: []}
+
         print(f'Running sweep over {self.sweep_param}: {sweep_start} to {sweep_stop} (step {sweep_step})')
-        print(f'Sweep file: {sweep_filename}')
+        print(f'  Total points: {len(sweep_vals)}')
+        print(f'  Sweep file: {sweep_expt.fname}')
 
         # Loop over sweep parameter
         for idx, sweep_val in enumerate(sweep_vals):
-            print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param} = {sweep_val:.4f}')
+            print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param} = {sweep_val:.4f}', end='')
 
             # Create experiment instance
             expt = self.ExptClass(
@@ -615,50 +635,85 @@ class SweepRunner:
 
             # Set sweep parameter value
             expt.cfg.expt[self.sweep_param] = sweep_val
-            expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
+
+            # Handle relax_delay - may or may not exist in expt_cfg
+            if hasattr(expt.cfg.expt, 'relax_delay'):
+                expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
 
             # Run experiment (no analyze/display, no save individual runs)
             go_defaults = {"analyze": False, "display": False, "progress": False, "save": False}
             go_defaults.update(go_kwargs)
             expt.go(**go_defaults)
 
-            # Store data
-            sweep_data[f'{self.sweep_param}_sweep'].append(sweep_val)
-            if sweep_data['xpts'] is None:
-                sweep_data['xpts'] = expt.data['xpts']
-            sweep_data['avgi'].append(expt.data['avgi'])
-            sweep_data['avgq'].append(expt.data['avgq'])
-            sweep_data['amps'].append(expt.data['amps'])
-            sweep_data['phases'].append(expt.data['phases'])
+            # Store data - append sweep value
+            sweep_expt.data[sweep_key].append(sweep_val)
 
-        # Convert to numpy arrays
-        for key in sweep_data:
-            if key != 'xpts':
-                sweep_data[key] = np.array(sweep_data[key])
+            # Store experiment data (dynamically handle whatever keys exist)
+            for data_key, data_val in expt.data.items():
+                if data_key not in sweep_expt.data:
+                    sweep_expt.data[data_key] = []
+                sweep_expt.data[data_key].append(data_val)
 
-        # Save sweep file
-        with SlabFile(sweep_filename, 'w') as f:
-            for key, val in sweep_data.items():
-                f[key] = val
-            # Save config as attribute
-            f.attrs['config'] = json.dumps(self.station.convert_attrdict_to_dict(expt.cfg))
+            # Incremental save after each point (like sequential_base_class)
+            if incremental_save:
+                sweep_expt.save_data()
+                print(' [saved]')
+            else:
+                print()
 
-        print(f'Sweep complete. Saved to {sweep_filename}')
+            # Optional live analysis/plotting callback
+            if self.live_analysis_fn is not None:
+                try:
+                    self.live_analysis_fn(sweep_expt.data, self.station)
+                except Exception as e:
+                    print(f'    Live analysis warning: {e}')
 
-        # Create analysis object
-        analysis = self.AnalysisClass(
-            frequencies=sweep_data[f'{self.sweep_param}_sweep'],
-            time=sweep_data['xpts'],
+        # Final save (in case incremental_save was False, or to ensure final state)
+        sweep_expt.save_data()
+        print(f'Sweep complete. Saved to {sweep_expt.fname}')
+
+        # Convert lists to numpy arrays for analysis
+        sweep_data = {}
+        for key, val in sweep_expt.data.items():
+            sweep_data[key] = np.array(val)
+
+        # Store filename and config in sweep_data for reference
+        sweep_data['_filename'] = sweep_expt.fname
+        sweep_data['_config'] = expt.cfg if 'expt' in dir() else None
+
+        # Create analysis object if factory provided
+        if self.analysis_factory is not None:
+            try:
+                analysis = self.analysis_factory(sweep_data, self.station)
+                analysis.analyze()
+
+                # Run postprocessor if requested
+                if postprocess and self.postprocessor is not None:
+                    self.postprocessor(self.station, analysis)
+
+                return analysis
+            except Exception as e:
+                print(f'Analysis failed: {e}')
+                print('Returning raw sweep_data instead')
+                return sweep_data
+        else:
+            # No analysis factory - just return the data
+            # Postprocessor gets data dict instead of analysis object
+            if postprocess and self.postprocessor is not None:
+                self.postprocessor(self.station, sweep_data)
+            return sweep_data
+
+
+# Convenience factory functions for common analysis classes
+def make_chevron_analysis_factory():
+    """Returns a factory function for ChevronFitting analysis."""
+    def factory(sweep_data, station):
+        from fitting.fit_display_classes import ChevronFitting
+        return ChevronFitting(
+            frequencies=sweep_data['freq_sweep'],
+            time=sweep_data['xpts'][0] if sweep_data['xpts'].ndim > 1 else sweep_data['xpts'],
             response_matrix=sweep_data['avgi'],
-            config=self.station.config_thisrun,
-            station=self.station,
+            config=station.config_thisrun,
+            station=station,
         )
-
-        # Analyze
-        analysis.analyze()
-
-        # Run postprocessor if requested
-        if postprocess and self.postprocessor is not None:
-            self.postprocessor(self.station, analysis)
-
-        return analysis
+    return factory
