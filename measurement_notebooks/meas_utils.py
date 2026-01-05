@@ -36,7 +36,7 @@ from experiments.characterization_runner import (
     default_preprocessor,
     default_postprocessor,
 )
-from experiments.sweep_runner import SweepRunner, register_analysis_class
+from experiments.sweep_runner import SweepRunner
 
 # For any code that imported these directly
 __all__ = [
@@ -47,5 +47,4 @@ __all__ = [
     'PostProcessor',
     'default_preprocessor',
     'default_postprocessor',
-    'register_analysis_class',
 ]

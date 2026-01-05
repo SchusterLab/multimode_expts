@@ -4,25 +4,23 @@ SweepRunner: Clean runner for 2D sweep experiments.
 This module provides a pattern for running parameter sweeps with:
 - Incremental file saving (safe against crashes)
 - Optional live plotting during sweep
-- Automatic analysis at completion
+- Automatic analysis at completion via Experiment.analyze()/display()
 - Minimal notebook boilerplate
 
 Usage:
     from experiments.station import MultimodeStation
     from experiments.sweep_runner import SweepRunner
-    from fitting.fit_display_classes import ChevronFitting
     import experiments as meas
 
     station = MultimodeStation(experiment_name="241215_calibration")
 
-    # Clean notebook code - no callbacks or factories needed!
+    # Clean notebook code - analysis handled by Experiment class!
     runner = SweepRunner(
         station=station,
         ExptClass=meas.LengthRabiGeneralF0g1Experiment,
         default_expt_cfg=defaults,
         sweep_param='freq',
-        analysis_class=ChevronFitting,  # Just pass the class
-        live_plot=True,  # Simple flag
+        live_plot=True,
         preprocessor=my_preproc,  # Optional
         postprocessor=my_postproc,  # Optional
     )
@@ -30,16 +28,18 @@ Usage:
     result = runner.run(
         sweep_start=1998,
         sweep_stop=2000,
-        sweep_step=0.1,
+        sweep_npts=21,
     )
+
+    # result is the "mother" experiment with 2D data
+    # Access analysis results via result._chevron_analysis.results
 """
 
 from copy import deepcopy
-from typing import Optional, Callable, Type, TYPE_CHECKING
+from typing import Optional, Callable, TYPE_CHECKING
 
 import numpy as np
 from slab import AttrDict
-from slab.experiment import Experiment
 
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
@@ -62,29 +62,16 @@ class SweepRunner:
 
     Key features:
     - Incremental file saving (data saved after each sweep point)
-    - Optional live analysis with automatic plotting
-    - Automatic final analysis at completion
+    - Optional live plotting via Experiment.display()
+    - Automatic final analysis via Experiment.analyze()
     - Clean notebook API (no callbacks needed)
 
-    Supported analysis classes:
-    - ChevronFitting: For frequency vs time sweeps
-    - (Add more as needed)
+    The "mother" experiment pattern:
+    - Creates an instance of ExptClass to hold the accumulated 2D data
+    - Calls mother_expt.analyze() which detects 2D data and delegates
+      to appropriate analysis (e.g., ChevronFitting for freq sweeps)
+    - Calls mother_expt.display() which shows the 2D results
     """
-
-    # Registry of analysis classes and how to instantiate them from sweep_data
-    ANALYSIS_CONFIGS = {
-        'ChevronFitting': {
-            'module': 'fitting.fit_display_classes',
-            'args_map': lambda data, station: {
-                'frequencies': data['freq_sweep'],
-                'time': data['xpts'][0] if data['xpts'].ndim > 1 else data['xpts'],
-                'response_matrix': data['avgi'],
-                'config': station.config_thisrun,
-                'station': station,
-            }
-        },
-        # Add more analysis classes here as needed
-    }
 
     def __init__(
         self,
@@ -94,7 +81,6 @@ class SweepRunner:
         sweep_param: str = 'freq',
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
-        analysis_class: Optional[Type] = None,
         live_plot: bool = False,
     ):
         """
@@ -106,8 +92,7 @@ class SweepRunner:
             default_expt_cfg: Default experiment config template
             sweep_param: Parameter to sweep (e.g., 'freq', 'gain')
             preprocessor: Optional function(station, default_cfg, **kwargs) -> expt_cfg
-            postprocessor: Optional function(station, analysis) called after sweep
-            analysis_class: Analysis class (e.g., ChevronFitting). If None, returns raw data.
+            postprocessor: Optional function(station, mother_expt) called after sweep
             live_plot: If True, show live analysis plot after each sweep point
         """
         self.station = station
@@ -116,71 +101,38 @@ class SweepRunner:
         self.sweep_param = sweep_param
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor
-        self.analysis_class = analysis_class
         self.live_plot = live_plot
 
     def _convert_to_arrays(self, data_dict: dict) -> dict:
         """Convert all list values to numpy arrays."""
         return {key: np.array(val) for key, val in data_dict.items()}
 
-    def _create_analysis(self, sweep_data: dict):
+    def _do_live_plot(self, mother_expt, n_points: int):
         """
-        Create analysis object from sweep data.
+        Perform live analysis and display plot using mother experiment.
 
         Args:
-            sweep_data: Dict with numpy arrays of sweep results
-
-        Returns:
-            Analysis object (e.g., ChevronFitting instance)
-        """
-        if self.analysis_class is None:
-            return None
-
-        class_name = self.analysis_class.__name__
-
-        # Check if we have a registered config for this class
-        if class_name in self.ANALYSIS_CONFIGS:
-            config = self.ANALYSIS_CONFIGS[class_name]
-            args = config['args_map'](sweep_data, self.station)
-            return self.analysis_class(**args)
-        else:
-            # Generic fallback: try to pass sweep_data and station
-            try:
-                return self.analysis_class(sweep_data, self.station)
-            except TypeError:
-                raise ValueError(
-                    f"Analysis class {class_name} not registered in ANALYSIS_CONFIGS. "
-                    f"Either register it or pass analysis_class=None and handle analysis manually."
-                )
-
-    def _do_live_plot(self, sweep_data_lists: dict):
-        """
-        Perform live analysis and display plot.
-
-        Args:
-            sweep_data_lists: Dict with lists (not yet converted to arrays)
+            mother_expt: The mother experiment instance with accumulated data
+            n_points: Number of points collected so far (for title)
         """
         try:
             import matplotlib.pyplot as plt
             from IPython.display import clear_output
 
-            # Convert to arrays for analysis
-            sweep_data = self._convert_to_arrays(sweep_data_lists)
+            # Convert current data to arrays for analysis
+            original_data = mother_expt.data
+            mother_expt.data = self._convert_to_arrays(original_data)
 
-            # Create and run analysis
-            analysis = self._create_analysis(sweep_data)
-            if analysis is not None:
-                analysis.analyze()
+            # Run analysis and display
+            mother_expt.analyze(station=self.station)
 
-                # Update display
-                clear_output(wait=True)
-                plt.close('all')
+            clear_output(wait=True)
+            plt.close('all')
 
-                n_points = len(sweep_data[f'{self.sweep_param}_sweep'])
-                analysis.display_results(
-                    save_fig=False,
-                    title=f'Live ({n_points} points)'
-                )
+            mother_expt.display(title_str=f'Live ({n_points} points)')
+
+            # Restore list-based data for continued accumulation
+            mother_expt.data = original_data
 
         except Exception as e:
             print(f"    Live plot: {e}")
@@ -208,7 +160,9 @@ class SweepRunner:
             **kwargs: Passed to preprocessor
 
         Returns:
-            Analysis object if analysis_class provided, else sweep_data dict
+            Mother experiment object with 2D data and analysis results.
+            Access analysis via mother_expt._chevron_analysis (for freq sweeps)
+            or mother_expt._length_rabi_analysis (for 1D).
         """
         go_kwargs = go_kwargs or {}
 
@@ -218,25 +172,27 @@ class SweepRunner:
         # Preprocess config
         expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
-        # Create sweep file
-        sweep_expt = Experiment(
+        # Create "mother" experiment to hold accumulated 2D data
+        mother_expt = self.ExptClass(
+            soccfg=self.station.soc,
             path=self.station.data_path,
             prefix=f'{self.ExptClass.__name__}_sweep',
             config_file=self.station.hardware_config_file,
         )
+        mother_expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
-        sweep_expt.data = {sweep_key: []}
+        mother_expt.data = {sweep_key: []}
 
         print(f'Sweep: {self.sweep_param} from {sweep_start} to {sweep_stop} ({sweep_npts} pts)')
-        print(f'  File: {sweep_expt.fname}')
+        print(f'  File: {mother_expt.fname}')
 
         # Run sweep
         for idx, sweep_val in enumerate(sweep_vals):
             print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end='')
 
-            # Create experiment
+            # Create individual experiment for this sweep point
             expt = self.ExptClass(
                 soccfg=self.station.soc,
                 path=self.station.data_path,
@@ -257,78 +213,43 @@ class SweepRunner:
             go_defaults.update(go_kwargs)
             expt.go(**go_defaults)
 
-            # Store data
-            sweep_expt.data[sweep_key].append(sweep_val)
+            # Accumulate data into mother experiment
+            mother_expt.data[sweep_key].append(sweep_val)
             for data_key, data_val in expt.data.items():
-                if data_key not in sweep_expt.data:
-                    sweep_expt.data[data_key] = []
-                sweep_expt.data[data_key].append(data_val)
+                if data_key not in mother_expt.data:
+                    mother_expt.data[data_key] = []
+                mother_expt.data[data_key].append(data_val)
 
             # Incremental save
             if incremental_save:
-                sweep_expt.save_data()
+                mother_expt.save_data()
                 print(' [saved]')
             else:
                 print()
 
             # Live plot
             if self.live_plot:
-                self._do_live_plot(sweep_expt.data)
+                self._do_live_plot(mother_expt, idx + 1)
 
         # Final save
-        sweep_expt.save_data()
-        print(f'Complete. Saved to {sweep_expt.fname}')
+        mother_expt.save_data()
+        print(f'Complete. Saved to {mother_expt.fname}')
 
-        # Convert to arrays
-        sweep_data = self._convert_to_arrays(sweep_expt.data)
-        sweep_data['_filename'] = sweep_expt.fname
-        sweep_data['_config'] = expt.cfg
+        # Convert to arrays for final analysis
+        mother_expt.data = self._convert_to_arrays(mother_expt.data)
+        mother_expt.data['_filename'] = mother_expt.fname
+        mother_expt.data['_config'] = expt.cfg
 
-        # Create analysis
-        if self.analysis_class is not None:
-            try:
-                analysis = self._create_analysis(sweep_data)
-                analysis.analyze()
-                analysis.display_results(save_fig=False)
+        # Run final analysis and display via Experiment methods
+        try:
+            mother_expt.analyze(station=self.station)
+            mother_expt.display()
 
-                if postprocess and self.postprocessor is not None:
-                    self.postprocessor(self.station, analysis)
-
-                return analysis
-
-            except Exception as e:
-                print(f'Analysis failed: {e}')
-                print('Returning raw data')
-                return sweep_data
-        else:
             if postprocess and self.postprocessor is not None:
-                self.postprocessor(self.station, sweep_data)
-            return sweep_data
+                self.postprocessor(self.station, mother_expt)
 
+        except Exception as e:
+            print(f'Analysis failed: {e}')
+            print('Returning mother experiment with raw data')
 
-# Convenience function to register new analysis classes
-def register_analysis_class(class_name: str, module: str, args_map: Callable):
-    """
-    Register a new analysis class for use with SweepRunner.
-
-    Args:
-        class_name: Name of the analysis class (e.g., 'SidebandFitting')
-        module: Module path (e.g., 'fitting.fit_display_classes')
-        args_map: Function(sweep_data, station) -> dict of constructor args
-
-    Example:
-        register_analysis_class(
-            'SidebandFitting',
-            'fitting.fit_display_classes',
-            lambda data, station: {
-                'frequencies': data['freq_sweep'],
-                'time': data['xpts'][0],
-                'response_matrix': data['avgi'],
-                'config': station.config_thisrun,
-            }
-        )
-    """
-    SweepRunner.ANALYSIS_CONFIGS[class_name] = {
-        'module': module,
-        'args_map': args_map,
-    }
+        return mother_expt

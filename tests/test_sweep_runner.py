@@ -1,10 +1,10 @@
 """
-Test harness for SweepRunner vs sequential_base_class comparison.
+Test harness for SweepRunner with mother experiment pattern.
 
 This module provides:
 1. Mock experiment/station objects for unit testing without hardware
-2. Side-by-side comparison of old and new sweep patterns
-3. Validation that both produce equivalent results
+2. Tests for the new "mother experiment" pattern where analyze/display
+   methods detect 2D data and delegate to appropriate fitting classes
 
 Usage:
     # Quick unit test with mock data
@@ -31,9 +31,6 @@ def create_mock_module(name, **attrs):
     return mock
 
 # Mock qick and all its submodules (FPGA library)
-# Need to create proper base classes that can be inherited from
-# (MagicMock causes metaclass conflicts when used as base class)
-
 class MockQickProgram:
     """Mock base class for QICK programs."""
     def __init__(self, soccfg=None, cfg=None):
@@ -55,7 +52,7 @@ mock_qick.RAveragerProgram = MockRAveragerProgram
 mock_qick.QickConfig = MagicMock
 
 mock_qick_helpers = create_mock_module('qick.helpers',
-    gauss=lambda x: x,  # Mock gauss function
+    gauss=lambda x: x,
     sin2=lambda x: x,
     tanh=lambda x: x,
     flat_top_gauss=lambda x: x,
@@ -75,7 +72,7 @@ sys.modules['Pyro4'] = MagicMock()
 sys.modules['visa'] = MagicMock()
 sys.modules['pyvisa'] = MagicMock()
 
-# Mock lmfit (fitting library - may not be installed)
+# Mock lmfit (fitting library)
 mock_lmfit = create_mock_module('lmfit')
 mock_lmfit_models = create_mock_module('lmfit.models')
 mock_lmfit.models = mock_lmfit_models
@@ -89,24 +86,19 @@ import tempfile
 import os
 from copy import deepcopy
 from unittest.mock import patch
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent / 'measurement_notebooks'))
 
 from slab import AttrDict, Experiment
 
-# Pre-import meas_utils to trigger any import errors early
-# Some errors (like metaclass conflicts) happen only on first import
+# Import SweepRunner from the new location
 try:
-    from meas_utils import SweepRunner, default_preprocessor
-    MEAS_UTILS_AVAILABLE = True
+    from experiments.sweep_runner import SweepRunner, default_preprocessor
+    SWEEP_RUNNER_AVAILABLE = True
 except Exception as e:
-    print(f'Warning: Initial meas_utils import failed ({type(e).__name__}: {e})')
-    print('Tests will attempt to import individually.')
-    MEAS_UTILS_AVAILABLE = False
+    print(f'Warning: SweepRunner import failed ({type(e).__name__}: {e})')
+    SWEEP_RUNNER_AVAILABLE = False
     SweepRunner = None
     default_preprocessor = None
 
@@ -115,36 +107,66 @@ except Exception as e:
 # Mock Objects for Testing Without Hardware
 # =============================================================================
 
-class MockProgram:
-    """Mock QICK program that generates synthetic data."""
-    def __init__(self, soccfg, cfg):
-        self.cfg = cfg
-        self.soccfg = soccfg
+class MockChevronAnalysis:
+    """Mock ChevronFitting analysis class."""
 
-    def acquire(self, soc, **kwargs):
-        """Generate synthetic IQ data."""
-        # Simulate length rabi oscillation
-        freq = self.cfg.expt.get('freq', 5000)
-        length = self.cfg.expt.get('length_placeholder', 1.0)
+    def __init__(self, frequencies, time, response_matrix, config=None, station=None):
+        self.frequencies = np.array(frequencies)
+        self.time = np.array(time)
+        self.response_matrix = np.array(response_matrix)
+        self.config = config
+        self.station = station
+        self.results = {}
 
-        # Synthetic decaying sine based on freq and length
-        t = length
-        omega = 2 * np.pi * 0.5  # oscillation rate
-        detuning = (freq - 5000) / 10  # detuning from resonance
-        decay = np.exp(-t / 10)
+    def analyze(self):
+        """Find best frequency based on contrast."""
+        contrasts = []
+        for row in self.response_matrix:
+            contrast = np.max(row) - np.min(row)
+            contrasts.append(contrast)
 
-        avgi = decay * np.cos(omega * t + detuning * t) + np.random.normal(0, 0.01)
-        avgq = decay * np.sin(omega * t + detuning * t) + np.random.normal(0, 0.01)
+        best_idx = np.argmax(contrasts)
+        self.results = {
+            'best_frequency_contrast': self.frequencies[best_idx],
+            'best_frequency_period': self.frequencies[best_idx],  # Simplified
+            'best_contrast': contrasts[best_idx],
+            'contrasts': contrasts,
+        }
+        return self.results
 
-        return [[avgi]], [[avgq]]
+    def display_results(self, save_fig=False, title=''):
+        """Mock display - just print summary."""
+        print(f'[MockChevronAnalysis] Best frequency: {self.results["best_frequency_contrast"]:.4f}')
+        print(f'[MockChevronAnalysis] Best contrast: {self.results["best_contrast"]:.4f}')
+
+
+class MockLengthRabiFitting:
+    """Mock LengthRabiFitting analysis class for 1D data."""
+
+    def __init__(self, data, fit=True, fitparams=None, config=None, station=None, **kwargs):
+        self.data = data
+        self.config = config
+        self.station = station
+        self.results = {}
+
+    def analyze(self, **kwargs):
+        """Mock 1D analysis."""
+        self.results = {
+            'fit_avgi': [1.0, 0.5, 0, 10, 0, 0],  # Mock fit params
+            'fit_avgq': [1.0, 0.5, 0, 10, 0, 0],
+        }
+        return self.results
+
+    def display(self, title_str='', **kwargs):
+        """Mock display."""
+        print(f'[MockLengthRabiFitting] 1D display: {title_str}')
 
 
 class MockExperiment(Experiment):
     """
     Mock experiment that generates synthetic 1D sweep data.
-    Simulates what LengthRabiGeneralF0g1Experiment does.
+    Simulates LengthRabiGeneralF0g1Experiment with 2D detection in analyze/display.
     """
-    ProgramClass = MockProgram
 
     def __init__(self, soccfg=None, path='', prefix='MockExperiment', config_file=None, progress=None):
         # Don't call super().__init__ to avoid file system operations
@@ -156,6 +178,8 @@ class MockExperiment(Experiment):
         self.data = {}
         self.im = {'soc': MagicMock()}
         self._fname = None
+        self._chevron_analysis = None
+        self._length_rabi_analysis = None
 
     @property
     def fname(self):
@@ -178,8 +202,7 @@ class MockExperiment(Experiment):
 
         # Generate synthetic oscillation data
         for length in lengths:
-            # Decaying sine with frequency-dependent rate
-            omega = 2 * np.pi * 0.5 * (1 + (freq - 5000) / 100)  # freq affects oscillation rate
+            omega = 2 * np.pi * 0.5 * (1 + (freq - 5000) / 100)
             decay = np.exp(-length / 10)
             i = decay * np.cos(omega * length) + np.random.normal(0, 0.02)
             q = decay * np.sin(omega * length) + np.random.normal(0, 0.02)
@@ -195,11 +218,65 @@ class MockExperiment(Experiment):
         }
         return self.data
 
-    def analyze(self, data=None, **kwargs):
-        return self.data
+    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+        """
+        Analyze data with 2D detection.
+        This mirrors the pattern in LengthRabiGeneralF0g1Experiment.
+        """
+        if data is None:
+            data = self.data
 
-    def display(self, data=None, **kwargs):
-        pass
+        station = kwargs.pop('station', None)
+
+        # Detect 2D sweep data
+        is_2d = (
+            'freq_sweep' in data
+            and 'avgi' in data
+            and hasattr(data['avgi'], 'ndim')
+            and data['avgi'].ndim == 2
+        )
+
+        if is_2d:
+            # Use mock ChevronFitting for 2D
+            time = data['xpts'][0] if data['xpts'].ndim > 1 else data['xpts']
+            analysis = MockChevronAnalysis(
+                frequencies=data['freq_sweep'],
+                time=time,
+                response_matrix=data['avgi'],
+                config=self.cfg,
+                station=station,
+            )
+            analysis.analyze()
+            self._chevron_analysis = analysis
+            return data
+
+        # 1D case
+        analysis = MockLengthRabiFitting(data, fit=fit, fitparams=fitparams, config=self.cfg, station=station)
+        analysis.analyze()
+        self._length_rabi_analysis = analysis
+        return data
+
+    def display(self, data=None, fit=True, title_str='Mock Experiment', **kwargs):
+        """
+        Display results with 2D detection.
+        This mirrors the pattern in LengthRabiGeneralF0g1Experiment.
+        """
+        if data is None:
+            data = self.data
+
+        # 2D case
+        if hasattr(self, '_chevron_analysis') and self._chevron_analysis is not None:
+            self._chevron_analysis.display_results(
+                save_fig=kwargs.get('save_fig', False),
+                title=title_str,
+            )
+            return
+
+        # 1D case
+        if hasattr(self, '_length_rabi_analysis') and self._length_rabi_analysis is not None:
+            self._length_rabi_analysis.display(title_str=title_str, **kwargs)
+        else:
+            print(f'[MockExperiment] Display: {title_str}')
 
     def save_data(self, data=None):
         # In mock, just pretend to save
@@ -211,7 +288,6 @@ class MockExperiment(Experiment):
             self.analyze()
         if display:
             self.display()
-        # Note: We don't actually save in mock
 
 
 class MockStation:
@@ -243,55 +319,14 @@ class MockStation:
 
         # Mock dataset
         self.ds_thisrun = MagicMock()
-
-    def convert_attrdict_to_dict(self, d):
-        """Convert AttrDict to regular dict (for JSON serialization)."""
-        if isinstance(d, AttrDict):
-            return {k: self.convert_attrdict_to_dict(v) for k, v in d.items()}
-        elif isinstance(d, dict):
-            return {k: self.convert_attrdict_to_dict(v) for k, v in d.items()}
-        elif isinstance(d, list):
-            return [self.convert_attrdict_to_dict(v) for v in d]
-        else:
-            return d
+        self.ds_thisrun.get_freq = MagicMock(return_value=5000)
+        self.ds_thisrun.get_gain = MagicMock(return_value=8000)
 
     def cleanup(self):
         """Remove temporary files."""
         import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-
-
-class MockChevronAnalysis:
-    """Mock ChevronFitting analysis class."""
-
-    def __init__(self, frequencies, time, response_matrix, config=None, station=None):
-        self.frequencies = np.array(frequencies)
-        self.time = np.array(time)
-        self.response_matrix = np.array(response_matrix)
-        self.config = config
-        self.station = station
-        self.results = {}
-
-    def analyze(self):
-        """Find best frequency based on contrast."""
-        contrasts = []
-        for row in self.response_matrix:
-            contrast = np.max(row) - np.min(row)
-            contrasts.append(contrast)
-
-        best_idx = np.argmax(contrasts)
-        self.results = {
-            'best_frequency_contrast': self.frequencies[best_idx],
-            'best_contrast': contrasts[best_idx],
-            'contrasts': contrasts,
-        }
-        return self.results
-
-    def display_results(self, save_fig=False, title=''):
-        """Mock display - just print summary."""
-        print(f'[MockAnalysis] Best frequency: {self.results["best_frequency_contrast"]:.4f}')
-        print(f'[MockAnalysis] Best contrast: {self.results["best_contrast"]:.4f}')
 
 
 # =============================================================================
@@ -304,9 +339,9 @@ def test_sweep_runner_basic():
     print('TEST: SweepRunner Basic Functionality')
     print('='*60)
 
-    if not MEAS_UTILS_AVAILABLE:
-        print('  SKIPPED: meas_utils not available')
-        return True  # Skip but don't fail
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
+        return True
 
     # Setup
     station = MockStation()
@@ -319,48 +354,45 @@ def test_sweep_runner_basic():
         relax_delay=1000,
     ))
 
-    def mock_postproc(station, result):
-        if isinstance(result, dict):
-            print(f'[Postproc] Got raw data with keys: {list(result.keys())}')
-        else:
-            print(f'[Postproc] Got analysis with best_freq: {result.results.get("best_frequency_contrast")}')
-
-    # Create runner WITHOUT analysis factory (returns raw data)
+    # Create runner (no analysis_class - analysis via Experiment.analyze())
     runner = SweepRunner(
         station=station,
         ExptClass=MockExperiment,
         default_expt_cfg=defaults,
         sweep_param='freq',
-        postprocessor=mock_postproc,
     )
 
     # Run sweep
     result = runner.run(
         sweep_start=4990,
         sweep_stop=5010,
-        sweep_step=2,
-        incremental_save=False,  # Faster for test
+        sweep_npts=11,
+        incremental_save=False,
     )
 
-    # Validate
-    assert isinstance(result, dict), "Should return dict when no analysis_factory"
-    assert 'freq_sweep' in result, "Should have sweep values"
-    assert 'avgi' in result, "Should have avgi data"
-    assert len(result['freq_sweep']) == 11, f"Expected 11 points, got {len(result['freq_sweep'])}"
+    # Validate - should return mother experiment
+    assert isinstance(result, MockExperiment), "Should return mother experiment"
+    assert 'freq_sweep' in result.data, "Should have sweep values"
+    assert 'avgi' in result.data, "Should have avgi data"
+    assert len(result.data['freq_sweep']) == 11, f"Expected 11 points, got {len(result.data['freq_sweep'])}"
 
-    print('\n✓ Basic test passed!')
+    # Should have 2D analysis attached
+    assert hasattr(result, '_chevron_analysis'), "Should have _chevron_analysis"
+    assert result._chevron_analysis is not None, "_chevron_analysis should not be None"
+
+    print('\n  Basic test passed!')
     station.cleanup()
     return True
 
 
-def test_sweep_runner_with_analysis():
-    """Test SweepRunner with analysis factory."""
+def test_sweep_runner_2d_detection():
+    """Test that analyze() correctly detects 2D data."""
     print('\n' + '='*60)
-    print('TEST: SweepRunner with Analysis Factory')
+    print('TEST: SweepRunner 2D Detection in analyze()')
     print('='*60)
 
-    if not MEAS_UTILS_AVAILABLE:
-        print('  SKIPPED: meas_utils not available')
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
         return True
 
     station = MockStation()
@@ -373,53 +405,40 @@ def test_sweep_runner_with_analysis():
         relax_delay=1000,
     ))
 
-    def analysis_factory(sweep_data, station):
-        return MockChevronAnalysis(
-            frequencies=sweep_data['freq_sweep'],
-            time=sweep_data['xpts'][0] if sweep_data['xpts'].ndim > 1 else sweep_data['xpts'],
-            response_matrix=sweep_data['avgi'],
-            config=station.config_thisrun,
-            station=station,
-        )
-
-    def postproc(station, analysis):
-        print(f'[Postproc] Best freq: {analysis.results["best_frequency_contrast"]}')
-        station.ds_thisrun.update_freq('M1', analysis.results['best_frequency_contrast'])
-
     runner = SweepRunner(
         station=station,
         ExptClass=MockExperiment,
         default_expt_cfg=defaults,
         sweep_param='freq',
-        analysis_factory=analysis_factory,
-        postprocessor=postproc,
     )
 
     result = runner.run(
-        sweep_start=4990,
-        sweep_stop=5010,
-        sweep_step=2,
+        sweep_start=4995,
+        sweep_stop=5005,
+        sweep_npts=5,
         incremental_save=False,
     )
 
-    # Validate
-    assert hasattr(result, 'results'), "Should return analysis object"
-    assert 'best_frequency_contrast' in result.results, "Should have analysis results"
-    station.ds_thisrun.update_freq.assert_called_once()
+    # Check 2D detection worked
+    assert result._chevron_analysis is not None, "Should detect 2D and create chevron analysis"
+    assert 'best_frequency_contrast' in result._chevron_analysis.results, "Should have analysis results"
 
-    print('\n✓ Analysis test passed!')
+    best_freq = result._chevron_analysis.results['best_frequency_contrast']
+    print(f'  Best frequency found: {best_freq:.4f} MHz')
+
+    print('\n  2D detection test passed!')
     station.cleanup()
     return True
 
 
-def test_sweep_runner_live_callback():
-    """Test SweepRunner with live analysis callback."""
+def test_sweep_runner_postprocessor():
+    """Test postprocessor receives mother experiment."""
     print('\n' + '='*60)
-    print('TEST: SweepRunner with Live Callback')
+    print('TEST: SweepRunner Postprocessor')
     print('='*60)
 
-    if not MEAS_UTILS_AVAILABLE:
-        print('  SKIPPED: meas_utils not available')
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
         return True
 
     station = MockStation()
@@ -427,50 +446,56 @@ def test_sweep_runner_live_callback():
     defaults = AttrDict(dict(
         start=0,
         step=0.1,
-        expts=5,  # Fewer points for faster test
+        expts=10,
         reps=100,
         relax_delay=1000,
     ))
 
-    callback_counts = [0]
+    postproc_called = [False]
+    received_expt = [None]
 
-    def live_callback(sweep_data, station):
-        callback_counts[0] += 1
-        n_points = len(sweep_data['freq_sweep'])
-        print(f'    [Live] Callback #{callback_counts[0]}, {n_points} points collected')
+    def my_postproc(station, mother_expt):
+        postproc_called[0] = True
+        received_expt[0] = mother_expt
+        # Access analysis results
+        if hasattr(mother_expt, '_chevron_analysis') and mother_expt._chevron_analysis:
+            best_freq = mother_expt._chevron_analysis.results.get('best_frequency_contrast')
+            print(f'  [Postproc] Best freq: {best_freq:.4f}')
+            station.ds_thisrun.update_freq('M1', best_freq)
 
     runner = SweepRunner(
         station=station,
         ExptClass=MockExperiment,
         default_expt_cfg=defaults,
         sweep_param='freq',
-        live_analysis_fn=live_callback,
+        postprocessor=my_postproc,
     )
 
     result = runner.run(
         sweep_start=4995,
         sweep_stop=5005,
-        sweep_step=2,
+        sweep_npts=5,
         incremental_save=False,
     )
 
     # Validate
-    expected_points = 6  # 4995, 4997, 4999, 5001, 5003, 5005
-    assert callback_counts[0] == expected_points, f"Expected {expected_points} callbacks, got {callback_counts[0]}"
+    assert postproc_called[0], "Postprocessor should be called"
+    assert received_expt[0] is result, "Postprocessor should receive mother experiment"
+    station.ds_thisrun.update_freq.assert_called_once()
 
-    print(f'\n✓ Live callback test passed! ({callback_counts[0]} callbacks)')
+    print('\n  Postprocessor test passed!')
     station.cleanup()
     return True
 
 
-def test_sweep_runner_incremental_save():
-    """Test that incremental save actually writes files."""
+def test_sweep_runner_live_plot():
+    """Test live plotting functionality."""
     print('\n' + '='*60)
-    print('TEST: SweepRunner Incremental Save')
+    print('TEST: SweepRunner Live Plot')
     print('='*60)
 
-    if not MEAS_UTILS_AVAILABLE:
-        print('  SKIPPED: meas_utils not available')
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
         return True
 
     station = MockStation()
@@ -483,16 +508,57 @@ def test_sweep_runner_incremental_save():
         relax_delay=1000,
     ))
 
-    # Patch Experiment.save_data to count calls
+    # Patch IPython display to avoid errors
+    with patch('experiments.sweep_runner.SweepRunner._do_live_plot') as mock_live:
+        runner = SweepRunner(
+            station=station,
+            ExptClass=MockExperiment,
+            default_expt_cfg=defaults,
+            sweep_param='freq',
+            live_plot=True,
+        )
+
+        result = runner.run(
+            sweep_start=4998,
+            sweep_stop=5002,
+            sweep_npts=5,
+            incremental_save=False,
+        )
+
+    # Should have called _do_live_plot for each point
+    assert mock_live.call_count == 5, f"Expected 5 live plot calls, got {mock_live.call_count}"
+
+    print(f'\n  Live plot test passed! ({mock_live.call_count} calls)')
+    station.cleanup()
+    return True
+
+
+def test_sweep_runner_incremental_save():
+    """Test that incremental save actually writes files."""
+    print('\n' + '='*60)
+    print('TEST: SweepRunner Incremental Save')
+    print('='*60)
+
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
+        return True
+
+    station = MockStation()
+
+    defaults = AttrDict(dict(
+        start=0,
+        step=0.1,
+        expts=5,
+        reps=100,
+        relax_delay=1000,
+    ))
+
     save_counts = [0]
-    original_save = Experiment.save_data
 
     def counting_save(self, data=None):
         save_counts[0] += 1
-        # Don't actually save in test
-        pass
 
-    with patch.object(Experiment, 'save_data', counting_save):
+    with patch.object(MockExperiment, 'save_data', counting_save):
         runner = SweepRunner(
             station=station,
             ExptClass=MockExperiment,
@@ -503,7 +569,7 @@ def test_sweep_runner_incremental_save():
         result = runner.run(
             sweep_start=4998,
             sweep_stop=5002,
-            sweep_step=1,
+            sweep_npts=5,
             incremental_save=True,
         )
 
@@ -511,35 +577,29 @@ def test_sweep_runner_incremental_save():
     expected_saves = 6
     assert save_counts[0] == expected_saves, f"Expected {expected_saves} saves, got {save_counts[0]}"
 
-    print(f'\n✓ Incremental save test passed! ({save_counts[0]} saves)')
+    print(f'\n  Incremental save test passed! ({save_counts[0]} saves)')
     station.cleanup()
     return True
 
 
-def compare_with_sequential_pattern():
-    """
-    Compare SweepRunner output with what sequential_base_class would produce.
-    This is a structural comparison, not a data comparison (since we're using mocks).
-    """
+def test_data_structure():
+    """Test that output data structure is correct for 2D analysis."""
     print('\n' + '='*60)
-    print('TEST: Compare with Sequential Pattern (Structural)')
+    print('TEST: Data Structure for 2D Analysis')
     print('='*60)
 
-    if not MEAS_UTILS_AVAILABLE:
-        print('  SKIPPED: meas_utils not available')
+    if not SWEEP_RUNNER_AVAILABLE:
+        print('  SKIPPED: SweepRunner not available')
         return True
 
     station = MockStation()
 
-    # Config similar to what sequential_base_class would use
     defaults = AttrDict(dict(
         start=0,
         step=0.2,
         expts=10,
         reps=100,
         relax_delay=1000,
-        gain=8000,
-        qubits=[0],
     ))
 
     runner = SweepRunner(
@@ -552,24 +612,25 @@ def compare_with_sequential_pattern():
     result = runner.run(
         sweep_start=4990,
         sweep_stop=5010,
-        sweep_step=2,
+        sweep_npts=11,
         incremental_save=False,
     )
 
-    # Check that output structure matches sequential_base_class
-    # sequential_base_class produces: {'freq_sweep': [...], 'xpts': [...], 'avgi': [...], ...}
+    data = result.data
 
+    # Check required keys
     required_keys = ['freq_sweep', 'xpts', 'avgi', 'avgq']
     for key in required_keys:
-        assert key in result, f"Missing key: {key}"
-        print(f'  ✓ Has {key}: shape={np.array(result[key]).shape}')
+        assert key in data, f"Missing key: {key}"
+        print(f'    Has {key}: shape={np.array(data[key]).shape}')
 
     # Check shapes are consistent
-    n_freqs = len(result['freq_sweep'])
-    assert result['avgi'].shape[0] == n_freqs, "avgi outer dim should match freq count"
-    print(f'  ✓ Shapes consistent: {n_freqs} freq points, each with {result["avgi"].shape[1]} time points')
+    n_freqs = len(data['freq_sweep'])
+    assert data['avgi'].ndim == 2, "avgi should be 2D"
+    assert data['avgi'].shape[0] == n_freqs, "avgi outer dim should match freq count"
+    print(f'    Shapes consistent: {n_freqs} freq points, each with {data["avgi"].shape[1]} time points')
 
-    print('\n✓ Sequential pattern comparison passed!')
+    print('\n  Data structure test passed!')
     station.cleanup()
     return True
 
@@ -582,10 +643,11 @@ def run_all_tests():
     """Run all tests and report results."""
     tests = [
         ('Basic SweepRunner', test_sweep_runner_basic),
-        ('SweepRunner with Analysis', test_sweep_runner_with_analysis),
-        ('SweepRunner Live Callback', test_sweep_runner_live_callback),
-        ('SweepRunner Incremental Save', test_sweep_runner_incremental_save),
-        ('Sequential Pattern Comparison', compare_with_sequential_pattern),
+        ('2D Detection', test_sweep_runner_2d_detection),
+        ('Postprocessor', test_sweep_runner_postprocessor),
+        ('Live Plot', test_sweep_runner_live_plot),
+        ('Incremental Save', test_sweep_runner_incremental_save),
+        ('Data Structure', test_data_structure),
     ]
 
     results = []
@@ -606,7 +668,7 @@ def run_all_tests():
     total = len(results)
 
     for name, success, error in results:
-        status = '✓ PASS' if success else '✗ FAIL'
+        status = '  PASS' if success else '  FAIL'
         print(f'  {status}: {name}')
         if error:
             print(f'         Error: {error}')

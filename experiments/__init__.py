@@ -58,5 +58,5 @@ from experiments.characterization_runner import (
     default_preprocessor,
     default_postprocessor,
 )
-from experiments.sweep_runner import SweepRunner, register_analysis_class
+from experiments.sweep_runner import SweepRunner
 
