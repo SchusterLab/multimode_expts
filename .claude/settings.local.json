@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git show:*)",
+      "Bash(pixi run python:*)",
+      "Bash(ls:*)",
+      "Bash(dir /b:*)"
+    ]
+  }
+}
