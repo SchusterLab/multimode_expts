@@ -326,3 +326,16 @@ class MultimodeStation:
     def handle_multiphoton_config_update(self, updateConfig_bool=False):
         """Handle multiphoton config updates (not yet implemented)."""
         raise NotImplementedError("This is not properly coded yet")
+        # print("Comparing configurations:")
+        # self.recursive_compare(self.yaml_cfg, self.config_thisrun)
+        # autocalib_path = self.create_autocalib_path()
+        # config_path = self.config_file
+        # updated_config = self.update_yaml_config(self.yaml_cfg, self.config_thisrun)
+        # if updateConfig_bool:
+        #     self.save_configurations(
+        #         self.yaml_cfg, updated_config, autocalib_path, config_path
+        #     )
+        #     self.yaml_cfg = updated_config
+        #     print(
+        #         "Configuration updated and saved, excluding storage_man_file. \n!!!!Please set updateConfig to False after this run!!!!!!."
+        #     )
