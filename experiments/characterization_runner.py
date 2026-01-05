@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 class PreProcessor(Protocol):
     """Protocol for preprocessor functions."""
+
     def __call__(
         self, station: "MultimodeStation", default_expt_cfg: AttrDict, **kwargs
     ) -> AttrDict:
@@ -56,6 +57,7 @@ class PreProcessor(Protocol):
 
 class PostProcessor(Protocol):
     """Protocol for postprocessor functions."""
+
     def __call__(self, station: "MultimodeStation", expt: Experiment) -> None:
         """
         Extract results from experiment and update station config.
@@ -132,7 +134,7 @@ class CharacterizationRunner:
         self.postprocessor = postprocessor or default_postprocessor
 
     def run(
-        self, postprocess: bool = True, go_kwargs: dict = None, **kwargs
+        self, postprocess: bool = True, go_kwargs: Optional[dict] = None, **kwargs
     ) -> Experiment:
         """
         Run the experiment.
@@ -145,8 +147,7 @@ class CharacterizationRunner:
         Returns:
             Completed Experiment object
         """
-        if go_kwargs is None:
-            go_kwargs = {}
+        go_kwargs = go_kwargs or {}
 
         # Create experiment instance
         expt = self.ExptClass(
@@ -161,7 +162,7 @@ class CharacterizationRunner:
         expt.cfg.expt = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
         # Handle relax_delay if present
-        if hasattr(expt.cfg.expt, 'relax_delay'):
+        if hasattr(expt.cfg.expt, "relax_delay"):
             expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
 
         # Run with sensible defaults

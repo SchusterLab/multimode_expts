@@ -189,9 +189,9 @@ class SweepRunner:
         self,
         sweep_start: float,
         sweep_stop: float,
-        sweep_step: float,
+        sweep_npts: int,
         postprocess: bool = True,
-        go_kwargs: dict = None,
+        go_kwargs: Optional[dict] = None,
         incremental_save: bool = True,
         **kwargs
     ):
@@ -201,20 +201,19 @@ class SweepRunner:
         Args:
             sweep_start: Starting value for sweep parameter
             sweep_stop: Ending value for sweep parameter
-            sweep_step: Step size for sweep parameter
+            sweep_npts: Number of swept points for sweep parameter
             postprocess: Whether to run postprocessor after sweep
-            go_kwargs: Kwargs passed to expt.go()
+            go_kwargs: Dict passed to expt.go() (analyze, display, progress, save)
             incremental_save: If True, save after each point (safer but slower)
             **kwargs: Passed to preprocessor
 
         Returns:
             Analysis object if analysis_class provided, else sweep_data dict
         """
-        if go_kwargs is None:
-            go_kwargs = {}
+        go_kwargs = go_kwargs or {}
 
         # Generate sweep values (include endpoint)
-        sweep_vals = np.arange(sweep_start, sweep_stop + sweep_step / 2, sweep_step)
+        sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
 
         # Preprocess config
         expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
@@ -230,8 +229,7 @@ class SweepRunner:
         sweep_key = f'{self.sweep_param}_sweep'
         sweep_expt.data = {sweep_key: []}
 
-        print(f'Sweep: {self.sweep_param} from {sweep_start} to {sweep_stop} (step {sweep_step})')
-        print(f'  Points: {len(sweep_vals)}')
+        print(f'Sweep: {self.sweep_param} from {sweep_start} to {sweep_stop} ({sweep_npts} pts)')
         print(f'  File: {sweep_expt.fname}')
 
         # Run sweep
