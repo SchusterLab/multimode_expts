@@ -333,13 +333,13 @@ class StorageManSwapDataset(MMDataset):
         self.update_value(stor_name, 'h_pi (mus)', h_pi)
 
     def update_gain(self, stor_name, gain):
-        self.update_value(stor_name, 'gain (DAC units)', gain)
-        self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
+        self.update_value(stor_name, 'gain (DAC units)', int(gain))
+        # self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
 
 
 class FloquetStorageSwapDataset(MMDataset):
-    def __init__(self, filename='floquet_storage_swap_dataset.csv'):
-        super().__init__(filename=filename)
+    def __init__(self, filename='floquet_storage_swap_dataset.csv', parent_path='configs'):
+        super().__init__(filename=filename, parent_path=parent_path)
 
     def create_new_df(self):
         column_names = [
@@ -402,8 +402,8 @@ class FloquetStorageSwapDataset(MMDataset):
         self.update_value(stor_name, 'len (mus)', length)
 
     def update_gain(self, stor_name, gain):
-        self.update_value(stor_name, 'gain (DAC units)', gain)
-        self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
+        self.update_value(stor_name, 'gain (DAC units)', int(gain))
+        # self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
 
     def update_ramp_sigma(self, stor_name, ramp_sigma):
         self.update_value(stor_name, 'ramp_sigma (mus)', ramp_sigma)

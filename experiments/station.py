@@ -27,7 +27,7 @@ import numpy as np
 import yaml
 from qick import QickConfig
 
-from experiments.dataset import StorageManSwapDataset
+from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
 from slab.instruments import InstrumentManager
@@ -68,7 +68,7 @@ class MultimodeStation:
         im: InstrumentManager for hardware access
         config_thisrun: AttrDict of current run configuration
         yaml_cfg: AttrDict of original yaml configuration
-        ds_thisrun: StorageManSwapDataset for this run
+        ds_storage: StorageManSwapDataset for this run
         data_path: Path to data directory
         plot_path: Path to plots directory
         log_path: Path to logs directory
@@ -78,7 +78,7 @@ class MultimodeStation:
         self,
         experiment_name: Optional[str] = None,
         hardware_config: str = "hardware_config_202505.yml",
-        storage_man_file: str = "man1_storage_swap_dataset.csv",
+        load_ds_floquet: bool = False,
         qubit_i: int = 0,
     ):
         """
@@ -95,6 +95,7 @@ class MultimodeStation:
             experiment_name or f'{datetime.now().strftime("%y%m%d")}_experiment'
         )
         self.qubit_i = qubit_i
+        self.load_ds_floquet = load_ds_floquet
 
         self._initialize_configs(hardware_config)
         self._initialize_output_paths()
@@ -121,12 +122,22 @@ class MultimodeStation:
         with self.multiphoton_config_file.open("r") as f:
             self.multimode_cfg = AttrDict(yaml.safe_load(f))
 
-        # Initialize the dataset
+        # Initialize the storage-man swap dataset
         self.storage_man_file = self.yaml_cfg.device.storage.storage_man_file
-        ds, ds_thisrun, ds_thisrun_file_path = self.load_storage_man_swap_dataset(
+        ds, ds_storage, ds_storage_file_path = self.load_storage_man_swap_dataset(
             self.storage_man_file
         )
-        self.ds_thisrun = ds_thisrun
+        self.ds_storage = ds_storage
+
+        # Initialize the floquet swap dataset
+        self.ds_floquet = None
+        if self.load_ds_floquet:
+            self.floquet_file = self.yaml_cfg.device.storage.floquet_man_stor_file
+            ds, ds_floquet, ds_floquet_file_path = self.load_floquet_swap_dataset(
+                self.floquet_file
+            )
+            self.ds_floquet = ds_floquet
+            
 
     def _initialize_output_paths(self):
         """Create output directories if needed."""
@@ -190,9 +201,20 @@ class MultimodeStation:
         if parent_path is None:
             parent_path = self.config_dir
         ds = StorageManSwapDataset(filename, parent_path)
-        ds_thisrun = StorageManSwapDataset(ds.create_copy(), parent_path)
-        ds_thisrun_file_path = ds_thisrun.file_path
-        return ds, ds_thisrun, ds_thisrun_file_path
+        ds_storage = StorageManSwapDataset(ds.create_copy(), parent_path)
+        ds_storage_file_path = ds_storage.file_path
+        return ds, ds_storage, ds_storage_file_path
+
+    def load_floquet_swap_dataset(
+        self, filename: str, parent_path: Optional[str | Path] = None
+    ):
+        """Load floquet storage-manipulate swap dataset."""
+        if parent_path is None:
+            parent_path = self.config_dir
+        ds = FloquetStorageSwapDataset(filename, parent_path)
+        ds_floquet = FloquetStorageSwapDataset(ds.create_copy(), parent_path)
+        ds_floquet_file_path = ds_floquet.file_path
+        return ds, ds_floquet, ds_floquet_file_path
 
     def save_plot(
         self, fig, filename: str = "plot.png", subdir: Optional[str | Path] = None

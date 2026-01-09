@@ -54,13 +54,13 @@ class QsimBaseProgram(MMAveragerProgram):
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         #TODO: this should use a config key to determine whether
         # to use floquet or gate (pi or pi/2) datasets
-        if "ds_thisrun" not in self.cfg.expt:
+        if "ds_floquet" not in self.cfg.expt:
             if 'floquet_dataset_filename' in self.cfg.expt:
                 self.swap_ds = FloquetStorageSwapDataset(self.cfg.expt.floquet_dataset_filename)
             else:
                 self.swap_ds = FloquetStorageSwapDataset()
         else:
-            self.swap_ds = self.cfg.expt.ds_thisrun
+            self.swap_ds = self.cfg.expt.ds_floquet
         self.retrieve_swap_parameters()
 
         self.m1s_kwargs = [{
@@ -300,10 +300,10 @@ class QsimBaseExperiment(Experiment):
         # do we really need to ovrride this?
         # TODO: at least make this save line-by-line
         temp_cfg = deepcopy(self.cfg)
-        if "ds_thisrun" in self.cfg:
-            self.cfg.pop('ds_thisrun')  # remove the dataset object from cfg before saving otherwise json gets mad
-        if "ds_thisrun" in self.cfg.expt:
-            self.cfg.expt.pop('ds_thisrun')  # remove the dataset object from cfg before saving otherwise json gets mad
+        if "ds_floquet" in self.cfg:
+            self.cfg.pop('ds_floquet')  # remove the dataset object from cfg before saving otherwise json gets mad
+        if "ds_floquet" in self.cfg.expt:
+            self.cfg.expt.pop('ds_floquet')  # remove the dataset object from cfg before saving otherwise json gets mad
         print(f'Saving {self.fname}')
         super().save_data(data=data)
         self.cfg = temp_cfg

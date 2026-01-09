@@ -116,6 +116,7 @@ class CharacterizationRunner:
         default_expt_cfg: AttrDict,
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
+        ExptProgram: Optional[type] = None,
     ):
         """
         Initialize the runner.
@@ -126,12 +127,14 @@ class CharacterizationRunner:
             default_expt_cfg: AttrDict template for expt.cfg.expt
             preprocessor: Function to generate expt.cfg.expt from defaults + kwargs
             postprocessor: Function to extract results and update station.config_thisrun
+            ExptProgram: for QsimBaseExperiment, this is the program class to use
         """
         self.station = station
         self.ExptClass = ExptClass
         self.default_expt_cfg = default_expt_cfg
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor or default_postprocessor
+        self.program = ExptProgram
 
     def run(
         self, postprocess: bool = True, go_kwargs: Optional[dict] = None, **kwargs
@@ -150,12 +153,21 @@ class CharacterizationRunner:
         go_kwargs = go_kwargs or {}
 
         # Create experiment instance
-        expt = self.ExptClass(
-            soccfg=self.station.soc,
-            path=self.station.data_path,
-            prefix=self.ExptClass.__name__,
-            config_file=self.station.hardware_config_file,
-        )
+        if self.program is not None:
+            expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=self.ExptClass.__name__,
+                config_file=self.station.hardware_config_file,
+                program=self.program, 
+            )
+        else:
+            expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=self.ExptClass.__name__,
+                config_file=self.station.hardware_config_file,
+            )
 
         # Setup config
         expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
