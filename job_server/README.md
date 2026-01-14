@@ -100,6 +100,8 @@ Manages immutable snapshots of configuration files:
 - Creates copies of config files before each job runs
 - Uses SHA256 checksums to avoid duplicate copies
 - Links config versions to job IDs for reproducibility
+- Tracks "main" (canonical, most up-to-date) version for each config type
+- Provides push/pull functions to update and retrieve main configs
 
 ### 5. Mock Hardware (`mock_hardware.py`)
 
@@ -135,6 +137,14 @@ Provides simulated hardware for testing:
 | snapshot_path | STRING | Path to versioned copy |
 | checksum | STRING | SHA256 hash for deduplication |
 | created_by_job_id | STRING | Job that triggered this snapshot |
+
+### Main Configs Table
+| Column | Type | Description |
+|--------|------|-------------|
+| config_type | ENUM | hardware_config, multiphoton_config, etc. |
+| version_id | STRING | Main (canonical) version |
+| updated_at | DATETIME | When this was set as main |
+| updated_by | STRING | Username who set this as main |
 
 ## Setup
 
@@ -384,6 +394,72 @@ if result.is_successful() and result.data_file_path:
         avgq = np.array(f['avgq'])
 
     print(f"Loaded {len(xpts)} data points")
+```
+
+### Example: Push/Pull Config Versions
+
+The config versioning system tracks the "main" (canonical, most up-to-date) version of each config type. Use push to update the main version, and pull to retrieve it.
+
+```python
+from pathlib import Path
+from multimode_expts.job_server.database import get_database
+from multimode_expts.job_server.config_versioning import ConfigVersionManager
+from multimode_expts.job_server.models import ConfigType
+
+# Initialize
+db = get_database()
+config_dir = Path("multimode_expts/configs")
+manager = ConfigVersionManager(config_dir)
+
+with db.session() as session:
+    # PUSH: Update the main hardware config
+    # This creates a snapshot and sets it as the main version
+    version_id, snapshot_path = manager.push_hardware_config_to_main(
+        source_path=config_dir / "hardware_config_202505.yml",
+        session=session,
+        updated_by="Claude",  # Your username
+    )
+    print(f"Pushed new main config: {version_id}")
+
+    # PULL: Get the main hardware config version
+    main_version = manager.get_main_version(ConfigType.HARDWARE_CONFIG, session)
+    if main_version:
+        print(f"Main version: {main_version.version_id}")
+        print(f"Snapshot path: {main_version.snapshot_path}")
+
+    # Get path to main config file
+    main_path = manager.get_main_config_path(ConfigType.HARDWARE_CONFIG, session)
+    print(f"Main config path: {main_path}")
+
+    # Get all main configs at once
+    all_main = manager.get_all_main_configs(session)
+    print(f"All main versions: {all_main}")
+```
+
+### Example: Set Existing Version as Main
+
+```python
+from multimode_expts.job_server.database import get_database
+from multimode_expts.job_server.config_versioning import ConfigVersionManager
+from multimode_expts.job_server.models import ConfigType
+from pathlib import Path
+
+db = get_database()
+manager = ConfigVersionManager(Path("multimode_expts/configs"))
+
+with db.session() as session:
+    # List available versions
+    versions = manager.list_versions(ConfigType.HARDWARE_CONFIG, session)
+    for v in versions:
+        print(f"{v.version_id}: {v.original_filename} ({v.created_at})")
+
+    # Set a specific version as main (without creating a new snapshot)
+    manager.set_main_version(
+        config_type=ConfigType.HARDWARE_CONFIG,
+        version_id="CFG-HW-20260113-00001",
+        session=session,
+        updated_by="Claude",
+    )
 ```
 
 ## File Locations

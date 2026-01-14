@@ -82,6 +82,7 @@ class Job(Base):
     completed_at = Column(DateTime, nullable=True)
 
     data_file_path = Column(String(500), nullable=True)
+    expt_pickle_path = Column(String(500), nullable=True)  # Path to pickled expt object
     error_message = Column(Text, nullable=True)
 
     # Relationships
@@ -122,6 +123,7 @@ class Job(Base):
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "data_file_path": self.data_file_path,
+            "expt_pickle_path": self.expt_pickle_path,
             "error_message": self.error_message,
             "hardware_config_version_id": self.hardware_config_version_id,
             "multiphoton_config_version_id": self.multiphoton_config_version_id,
@@ -188,3 +190,37 @@ class IDCounter(Base):
 
     def __repr__(self):
         return f"<IDCounter({self.prefix}, {self.counter})>"
+
+
+class MainConfig(Base):
+    """
+    Tracks the "main" (canonical, most up-to-date) version for each config type.
+
+    This allows users to:
+    - Pull the main config version to use with jobs
+    - Push a new version to become the main one
+
+    There is at most one record per ConfigType.
+    """
+    __tablename__ = "main_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_type = Column(Enum(ConfigType), unique=True, nullable=False, index=True)
+    version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    updated_by = Column(String(100), nullable=True)  # Username who set this as main
+
+    # Relationship to the actual version
+    version = relationship("ConfigVersion", backref="main_config")
+
+    def __repr__(self):
+        return f"<MainConfig({self.config_type.value}, {self.version_id})>"
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "config_type": self.config_type.value,
+            "version_id": self.version_id,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "updated_by": self.updated_by,
+        }

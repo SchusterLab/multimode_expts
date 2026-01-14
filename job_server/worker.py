@@ -20,13 +20,14 @@ Run with:
 import argparse
 import importlib
 import json
+import pickle
 import signal
 import sys
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -192,13 +193,16 @@ class JobWorker:
             expt_config = json.loads(job.experiment_config)
 
             # Run the experiment
-            data_file_path = self._run_experiment(ExptClass, expt_config, job)
+            data_file_path, expt_pickle_path = self._run_experiment(ExptClass, expt_config, job)
 
             # Update job as completed
-            self._update_job_completed(job.job_id, str(data_file_path), config_versions)
+            self._update_job_completed(
+                job.job_id, str(data_file_path), str(expt_pickle_path), config_versions
+            )
 
             print(f"[WORKER] Job completed: {job.job_id}")
             print(f"[WORKER]   Data saved to: {data_file_path}")
+            print(f"[WORKER]   Expt object saved to: {expt_pickle_path}")
 
         except Exception as e:
             # Update job as failed
@@ -247,7 +251,7 @@ class JobWorker:
         module = importlib.import_module(module_path)
         return getattr(module, class_name)
 
-    def _run_experiment(self, ExptClass, expt_config: dict, job: Job) -> Path:
+    def _run_experiment(self, ExptClass, expt_config: dict, job: Job) -> Tuple[Path, Path]:
         """
         Run an experiment using the loaded class.
 
@@ -255,7 +259,8 @@ class JobWorker:
         1. Create experiment instance
         2. Set up configuration
         3. Call expt.go()
-        4. Return data file path
+        4. Save expt object to pickle for client to load
+        5. Return data file path and pickle path
 
         Args:
             ExptClass: The experiment class to instantiate
@@ -263,11 +268,12 @@ class JobWorker:
             job: The job being executed
 
         Returns:
-            Path to the saved data file
+            Tuple of (data_file_path, expt_pickle_path)
         """
         # Generate data filename using job ID
         data_filename = IDGenerator.generate_data_filename(job.job_id, job.experiment_class)
         data_file_path = self.station.data_path / data_filename
+        expt_pickle_path = self.station.data_path / f"{job.job_id}_expt.pkl"
 
         print(f"[WORKER] Creating experiment instance")
         print(f"[WORKER]   Data file: {data_filename}")
@@ -303,15 +309,24 @@ class JobWorker:
             save=True,
         )
 
-        return data_file_path
+        # Save expt object to pickle for client to load
+        # This allows CharacterizationRunner postprocessors to work with the actual expt object
+        print(f"[WORKER] Saving expt object to: {expt_pickle_path}")
+        with open(expt_pickle_path, "wb") as f:
+            pickle.dump(expt, f)
 
-    def _update_job_completed(self, job_id: str, data_file_path: str, config_versions: dict):
+        return data_file_path, expt_pickle_path
+
+    def _update_job_completed(
+        self, job_id: str, data_file_path: str, expt_pickle_path: str, config_versions: dict
+    ):
         """
         Update job status to completed.
 
         Args:
             job_id: The job ID
             data_file_path: Path to the saved data file
+            expt_pickle_path: Path to the pickled expt object
             config_versions: Dict of config version IDs used
         """
         with self.db.session() as session:
@@ -320,6 +335,7 @@ class JobWorker:
                 job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.now(timezone.utc)
                 job.data_file_path = data_file_path
+                job.expt_pickle_path = expt_pickle_path
 
                 # Link config versions
                 job.hardware_config_version_id = config_versions.get("hardware_config")

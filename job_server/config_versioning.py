@@ -44,7 +44,7 @@ from typing import Tuple, Optional, Dict
 
 from sqlalchemy.orm import Session
 
-from .models import ConfigVersion, ConfigType
+from .models import ConfigVersion, ConfigType, MainConfig
 from .id_generator import IDGenerator
 
 
@@ -314,3 +314,205 @@ class ConfigVersionManager:
         if config_type:
             query = query.filter_by(config_type=config_type)
         return query.order_by(ConfigVersion.created_at.desc()).all()
+
+    # =========================================================================
+    # Main Config (Pull/Push) Functions
+    # =========================================================================
+
+    def get_main_version(
+        self, config_type: ConfigType, session: Session
+    ) -> Optional[ConfigVersion]:
+        """
+        Pull the main (canonical, most up-to-date) config version for a type.
+
+        Args:
+            config_type: Type of config to retrieve
+            session: SQLAlchemy session
+
+        Returns:
+            ConfigVersion record if a main version is set, None otherwise
+        """
+        main_config = (
+            session.query(MainConfig)
+            .filter_by(config_type=config_type)
+            .first()
+        )
+        if main_config:
+            return main_config.version
+        return None
+
+    def get_main_config_path(
+        self, config_type: ConfigType, session: Session
+    ) -> Optional[Path]:
+        """
+        Pull the path to the main config file for a type.
+
+        Args:
+            config_type: Type of config to retrieve
+            session: SQLAlchemy session
+
+        Returns:
+            Path to the main config snapshot, or None if not set
+        """
+        version = self.get_main_version(config_type, session)
+        if version:
+            return Path(version.snapshot_path)
+        return None
+
+    def set_main_version(
+        self,
+        config_type: ConfigType,
+        version_id: str,
+        session: Session,
+        updated_by: Optional[str] = None,
+    ) -> MainConfig:
+        """
+        Set an existing version as the main config for a type.
+
+        Args:
+            config_type: Type of config
+            version_id: ID of the version to set as main
+            session: SQLAlchemy session
+            updated_by: Optional username who made this change
+
+        Returns:
+            The MainConfig record
+
+        Raises:
+            ValueError: If the version_id doesn't exist
+        """
+        # Verify the version exists
+        version = session.query(ConfigVersion).filter_by(version_id=version_id).first()
+        if not version:
+            raise ValueError(f"Config version {version_id} not found")
+
+        if version.config_type != config_type:
+            raise ValueError(
+                f"Version {version_id} is type {version.config_type.value}, "
+                f"expected {config_type.value}"
+            )
+
+        # Find or create main config record
+        main_config = (
+            session.query(MainConfig)
+            .filter_by(config_type=config_type)
+            .first()
+        )
+
+        if main_config:
+            main_config.version_id = version_id
+            main_config.updated_by = updated_by
+            print(f"[CONFIG] Updated main {config_type.value} to {version_id}")
+        else:
+            main_config = MainConfig(
+                config_type=config_type,
+                version_id=version_id,
+                updated_by=updated_by,
+            )
+            session.add(main_config)
+            print(f"[CONFIG] Set main {config_type.value} to {version_id}")
+
+        session.flush()
+        return main_config
+
+    def push_to_main(
+        self,
+        source_path: Path,
+        config_type: ConfigType,
+        session: Session,
+        updated_by: Optional[str] = None,
+        job_id: Optional[str] = None,
+    ) -> Tuple[str, Path]:
+        """
+        Push a new config file: create a snapshot and set it as main.
+
+        This is a convenience method that combines snapshot_config and
+        set_main_version in one operation.
+
+        Args:
+            source_path: Path to the source config file
+            config_type: Type of configuration
+            session: SQLAlchemy session
+            updated_by: Optional username who is pushing this config
+            job_id: Optional job ID that triggered this push
+
+        Returns:
+            Tuple of (version_id, snapshot_path)
+        """
+        # Create snapshot
+        version_id, snapshot_path = self.snapshot_config(
+            source_path, config_type, session, job_id
+        )
+
+        # Set as main
+        self.set_main_version(config_type, version_id, session, updated_by)
+
+        return version_id, snapshot_path
+
+    def push_hardware_config_to_main(
+        self, source_path: Path, session: Session, updated_by: Optional[str] = None
+    ) -> Tuple[str, Path]:
+        """Push hardware config and set as main."""
+        return self.push_to_main(
+            source_path, ConfigType.HARDWARE_CONFIG, session, updated_by
+        )
+
+    def push_multiphoton_config_to_main(
+        self, source_path: Path, session: Session, updated_by: Optional[str] = None
+    ) -> Tuple[str, Path]:
+        """Push multiphoton config and set as main."""
+        return self.push_to_main(
+            source_path, ConfigType.MULTIPHOTON_CONFIG, session, updated_by
+        )
+
+    def push_floquet_csv_to_main(
+        self, source_path: Path, session: Session, updated_by: Optional[str] = None
+    ) -> Tuple[str, Path]:
+        """Push floquet CSV and set as main."""
+        return self.push_to_main(
+            source_path, ConfigType.FLOQUET_STORAGE_SWAP, session, updated_by
+        )
+
+    def push_man1_csv_to_main(
+        self, source_path: Path, session: Session, updated_by: Optional[str] = None
+    ) -> Tuple[str, Path]:
+        """Push man1 CSV and set as main."""
+        return self.push_to_main(
+            source_path, ConfigType.MAN1_STORAGE_SWAP, session, updated_by
+        )
+
+    def get_all_main_configs(self, session: Session) -> Dict[str, Optional[str]]:
+        """
+        Get the main version IDs for all config types.
+
+        Args:
+            session: SQLAlchemy session
+
+        Returns:
+            Dict mapping config type name to version ID (or None if not set)
+        """
+        result = {ct.value: None for ct in ConfigType}
+
+        main_configs = session.query(MainConfig).all()
+        for main_config in main_configs:
+            result[main_config.config_type.value] = main_config.version_id
+
+        return result
+
+    def get_all_main_config_paths(self, session: Session) -> Dict[str, Optional[Path]]:
+        """
+        Get the paths to all main config files.
+
+        Args:
+            session: SQLAlchemy session
+
+        Returns:
+            Dict mapping config type name to path (or None if not set)
+        """
+        result = {ct.value: None for ct in ConfigType}
+
+        for config_type in ConfigType:
+            path = self.get_main_config_path(config_type, session)
+            result[config_type.value] = path
+
+        return result

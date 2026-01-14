@@ -7,32 +7,55 @@ with minimal boilerplate in notebooks. Just define:
 - preprocessor: Optional function to transform config (e.g., span/center -> start/step)
 - postprocessor: Optional function to extract results and update station config
 
-Usage:
+By default, experiments are submitted to the job queue server for execution.
+This enables multi-user scheduling and hardware exclusivity. For direct local
+execution (bypassing the queue), use run_local().
+
+Usage (Queued Mode - Default):
+    from multimode_expts.job_server.client import JobClient
     from experiments.station import MultimodeStation
     from experiments.characterization_runner import CharacterizationRunner
     import experiments as meas
 
+    client = JobClient()
     station = MultimodeStation(experiment_name="241215_calibration")
 
     runner = CharacterizationRunner(
         station=station,
-        ExptClass=meas.ResonatorSpectroscopyExperiment,
+        ExptClass=meas.QubitSpectroscopyExperiment,
         default_expt_cfg=defaults,
         preprocessor=my_preproc,  # Optional
         postprocessor=my_postproc,  # Optional
+        job_client=client,
+        user="Claude",
     )
 
-    result = runner.run(some_param=123)
+    # Submits to job queue (default behavior)
+    result = runner.run(center=4500, span=100)
+
+Usage (Local Mode - Direct Execution):
+    runner = CharacterizationRunner(
+        station=station,
+        ExptClass=meas.ResonatorSpectroscopyExperiment,
+        default_expt_cfg=defaults,
+        preprocessor=my_preproc,
+        postprocessor=my_postproc,
+    )
+
+    # Runs directly on hardware, bypassing job queue
+    expt = runner.run_local(some_param=123)
 """
 
 from copy import deepcopy
-from typing import Optional, Callable, Protocol, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Optional, Callable, Protocol, TYPE_CHECKING, Any, Union
 
 from slab import AttrDict
 from slab.experiment import Experiment
 
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
+    from multimode_expts.job_server.client import JobClient, JobResult
 
 
 class PreProcessor(Protocol):
@@ -58,7 +81,7 @@ class PreProcessor(Protocol):
 class PostProcessor(Protocol):
     """Protocol for postprocessor functions."""
 
-    def __call__(self, station: "MultimodeStation", expt: Experiment) -> None:
+    def __call__(self, station: "MultimodeStation", expt: Experiment) -> Any:
         """
         Extract results from experiment and update station config.
 
@@ -67,7 +90,7 @@ class PostProcessor(Protocol):
             expt: Completed experiment object with results
 
         Returns:
-            None (mutates station.config_thisrun in place)
+            Extracted result value (e.g., fitted frequency), or None
         """
         ...
 
@@ -92,8 +115,11 @@ def default_postprocessor(station, expt):
     Default postprocessor: does nothing.
 
     Override this to extract fit results and update station.config_thisrun.
+
+    Returns:
+        None
     """
-    return
+    return None
 
 
 class CharacterizationRunner:
@@ -103,10 +129,11 @@ class CharacterizationRunner:
     Encapsulates the boilerplate of:
     - Creating experiment instance
     - Setting up configuration
-    - Running the experiment
+    - Running the experiment (via job queue or locally)
     - Extracting results to update config
 
-    This keeps notebooks clean with only ephemeral settings visible.
+    By default, experiments are submitted to the job queue for multi-user
+    scheduling. Use run_local() for direct execution without the queue.
     """
 
     def __init__(
@@ -117,6 +144,8 @@ class CharacterizationRunner:
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
         ExptProgram: Optional[type] = None,
+        job_client: Optional["JobClient"] = None,
+        user: str = "anonymous",
     ):
         """
         Initialize the runner.
@@ -128,6 +157,8 @@ class CharacterizationRunner:
             preprocessor: Function to generate expt.cfg.expt from defaults + kwargs
             postprocessor: Function to extract results and update station.config_thisrun
             ExptProgram: for QsimBaseExperiment, this is the program class to use
+            job_client: JobClient instance for submitting to job queue (required for run())
+            user: Username for job submission (default: "anonymous")
         """
         self.station = station
         self.ExptClass = ExptClass
@@ -135,12 +166,101 @@ class CharacterizationRunner:
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor or default_postprocessor
         self.program = ExptProgram
+        self.job_client = job_client
+        self.user = user
+        self.last_job_result = None  # Stores JobResult from most recent run()
 
     def run(
+        self,
+        postprocess: bool = True,
+        priority: int = 0,
+        poll_interval: float = 2.0,
+        timeout: Optional[float] = None,
+        **kwargs
+    ) -> Experiment:
+        """
+        Submit experiment to job queue and wait for completion.
+
+        This is the default execution mode that enables multi-user scheduling.
+        The experiment is submitted to the job server, executed by the worker,
+        and the resulting expt object is loaded from disk.
+
+        Args:
+            postprocess: Whether to run postprocessor after experiment
+            priority: Job priority (higher = runs sooner, default 0)
+            poll_interval: Seconds between status checks while waiting
+            timeout: Maximum seconds to wait (None = wait forever)
+            **kwargs: Passed to preprocessor to modify config
+
+        Returns:
+            Completed Experiment object (loaded from worker's pickle file)
+
+        Raises:
+            ValueError: If job_client is not configured
+            RuntimeError: If job fails or is cancelled
+        """
+        if self.job_client is None:
+            raise ValueError(
+                "job_client is required for run(). Either pass job_client to "
+                "CharacterizationRunner() or use run_local() for direct execution."
+            )
+
+        # Get experiment module path from class
+        experiment_module = self.ExptClass.__module__
+        experiment_class = self.ExptClass.__name__
+
+        # Run preprocessor to get final config
+        expt_config = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
+
+        # Convert AttrDict to regular dict for JSON serialization
+        if hasattr(expt_config, "to_dict"):
+            expt_config_dict = dict(expt_config)
+        else:
+            expt_config_dict = dict(expt_config)
+
+        # Submit job to queue
+        job_id = self.job_client.submit_job(
+            experiment_class=experiment_class,
+            experiment_module=experiment_module,
+            expt_config=expt_config_dict,
+            user=self.user,
+            priority=priority,
+        )
+
+        # Wait for completion
+        result = self.job_client.wait_for_completion(
+            job_id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            verbose=True,
+        )
+
+        # Store result for later access (job_id, config versions, etc.)
+        self.last_job_result = result
+
+        # Check for failure
+        if not result.is_successful():
+            raise RuntimeError(
+                f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+            )
+
+        # Load the expt object from pickle file
+        expt = result.load_expt()
+
+        # Run postprocessor
+        if postprocess:
+            self.postprocessor(self.station, expt)
+
+        return expt
+
+    def run_local(
         self, postprocess: bool = True, go_kwargs: Optional[dict] = None, **kwargs
     ) -> Experiment:
         """
-        Run the experiment.
+        Run the experiment locally, bypassing the job queue.
+
+        Use this for direct hardware access when the job queue is not needed
+        (e.g., single-user mode, debugging, or when you have exclusive hardware access).
 
         Args:
             postprocess: Whether to run postprocessor after experiment
@@ -159,7 +279,7 @@ class CharacterizationRunner:
                 path=self.station.data_path,
                 prefix=self.ExptClass.__name__,
                 config_file=self.station.hardware_config_file,
-                program=self.program, 
+                program=self.program,
             )
         else:
             expt = self.ExptClass(

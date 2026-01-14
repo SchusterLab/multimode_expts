@@ -46,8 +46,11 @@ class JobResult:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     data_file_path: Optional[str] = None
+    expt_pickle_path: Optional[str] = None
     error_message: Optional[str] = None
     queue_position: Optional[int] = None
+    hardware_config_version_id: Optional[str] = None
+    multiphoton_config_version_id: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "JobResult":
@@ -61,8 +64,11 @@ class JobResult:
             started_at=_parse_datetime(data.get("started_at")),
             completed_at=_parse_datetime(data.get("completed_at")),
             data_file_path=data.get("data_file_path"),
+            expt_pickle_path=data.get("expt_pickle_path"),
             error_message=data.get("error_message"),
             queue_position=data.get("queue_position"),
+            hardware_config_version_id=data.get("hardware_config_version_id"),
+            multiphoton_config_version_id=data.get("multiphoton_config_version_id"),
         )
 
     def is_done(self) -> bool:
@@ -72,6 +78,30 @@ class JobResult:
     def is_successful(self) -> bool:
         """Check if job completed successfully."""
         return self.status == "completed"
+
+    def load_expt(self):
+        """
+        Load the experiment object from the saved pickle file.
+
+        This allows postprocessors to work with the actual expt object
+        that was created and run by the worker.
+
+        Returns:
+            The experiment object (e.g., QubitSpectroscopyExperiment instance)
+
+        Raises:
+            ValueError: If job did not complete successfully or pickle path is missing
+            FileNotFoundError: If the pickle file doesn't exist
+        """
+        import pickle
+
+        if not self.is_successful():
+            raise ValueError(f"Cannot load expt: job status is {self.status}")
+        if not self.expt_pickle_path:
+            raise ValueError("No expt_pickle_path available for this job")
+
+        with open(self.expt_pickle_path, "rb") as f:
+            return pickle.load(f)
 
 
 def _parse_datetime(value) -> Optional[datetime]:
