@@ -7,25 +7,51 @@ This module provides a pattern for running parameter sweeps with:
 - Automatic analysis at completion via Experiment.analyze()/display()
 - Minimal notebook boilerplate
 
-Usage:
+By default, sweeps are submitted to the job queue server for execution.
+This enables multi-user scheduling and hardware exclusivity. For direct local
+execution (bypassing the queue), use run_local().
+
+Usage (Queued Mode - Default):
+    from multimode_expts.job_server.client import JobClient
     from experiments.station import MultimodeStation
     from experiments.sweep_runner import SweepRunner
     import experiments as meas
 
+    client = JobClient()
     station = MultimodeStation(experiment_name="241215_calibration")
 
-    # Clean notebook code - analysis handled by Experiment class!
+    runner = SweepRunner(
+        station=station,
+        ExptClass=meas.LengthRabiGeneralF0g1Experiment,
+        default_expt_cfg=defaults,
+        sweep_param='freq',
+        live_plot=False,  # No live plot in queued mode
+        preprocessor=my_preproc,
+        postprocessor=my_postproc,
+        job_client=client,
+        user="Claude",
+    )
+
+    # Submits entire sweep as single job
+    result = runner.run(
+        sweep_start=1998,
+        sweep_stop=2000,
+        sweep_npts=21,
+    )
+
+Usage (Local Mode - Direct Execution):
     runner = SweepRunner(
         station=station,
         ExptClass=meas.LengthRabiGeneralF0g1Experiment,
         default_expt_cfg=defaults,
         sweep_param='freq',
         live_plot=True,
-        preprocessor=my_preproc,  # Optional
-        postprocessor=my_postproc,  # Optional
+        preprocessor=my_preproc,
+        postprocessor=my_postproc,
     )
 
-    result = runner.run(
+    # Runs directly on hardware with live plotting
+    result = runner.run_local(
         sweep_start=1998,
         sweep_stop=2000,
         sweep_npts=21,
@@ -36,13 +62,14 @@ Usage:
 """
 
 from copy import deepcopy
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Optional, Callable, TYPE_CHECKING, Any
 
 import numpy as np
 from slab import AttrDict
 
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
+    from multimode_expts.job_server.client import JobClient, JobResult
 
 
 def default_preprocessor(station, default_expt_cfg, **kwargs):
@@ -82,6 +109,8 @@ class SweepRunner:
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
         live_plot: bool = False,
+        job_client: Optional["JobClient"] = None,
+        user: str = "anonymous",
     ):
         """
         Initialize the sweep runner.
@@ -94,6 +123,8 @@ class SweepRunner:
             preprocessor: Optional function(station, default_cfg, **kwargs) -> expt_cfg
             postprocessor: Optional function(station, mother_expt) called after sweep
             live_plot: If True, show live analysis plot after each sweep point
+            job_client: JobClient instance for submitting to job queue (required for run())
+            user: Username for job submission (default: "anonymous")
         """
         self.station = station
         self.ExptClass = ExptClass
@@ -102,6 +133,9 @@ class SweepRunner:
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor
         self.live_plot = live_plot
+        self.job_client = job_client
+        self.user = user
+        self.last_job_ids = []  # Stores list of job IDs from most recent run()
 
     def _convert_to_arrays(self, data_dict: dict) -> dict:
         """Convert all list values to numpy arrays."""
@@ -143,12 +177,174 @@ class SweepRunner:
         sweep_stop: float,
         sweep_npts: int,
         postprocess: bool = True,
+        priority: int = 0,
+        poll_interval: float = 2.0,
+        timeout: Optional[float] = None,
+        incremental_save: bool = True,
+        **kwargs
+    ):
+        """
+        Submit sweep experiment to job queue, one job per sweep point.
+
+        This is the default execution mode that enables multi-user scheduling.
+        Each sweep point is submitted as a separate job, and results are
+        accumulated into a mother experiment.
+
+        Args:
+            sweep_start: Starting value for sweep parameter
+            sweep_stop: Ending value for sweep parameter
+            sweep_npts: Number of swept points for sweep parameter
+            postprocess: Whether to run postprocessor after sweep
+            priority: Job priority (higher = runs sooner, default 0)
+            poll_interval: Seconds between status checks while waiting
+            timeout: Maximum seconds to wait per job (None = wait forever)
+            incremental_save: If True, save mother expt after each point
+            **kwargs: Passed to preprocessor
+
+        Returns:
+            Mother experiment object with 2D data and analysis results.
+            Access analysis via mother_expt._chevron_analysis (for freq sweeps)
+            or mother_expt._length_rabi_analysis (for 1D).
+
+        Raises:
+            ValueError: If job_client is not configured
+            RuntimeError: If any job fails or is cancelled
+        """
+        if self.job_client is None:
+            raise ValueError(
+                "job_client is required for run(). Either pass job_client to "
+                "SweepRunner() or use run_local() for direct execution."
+            )
+
+        # Get experiment module path from class
+        experiment_module = self.ExptClass.__module__
+        experiment_class = self.ExptClass.__name__
+
+        # Generate sweep values
+        sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
+
+        # Preprocess config
+        base_expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
+
+        # Create "mother" experiment to hold accumulated 2D data
+        mother_expt = self.ExptClass(
+            soccfg=self.station.soc,
+            path=self.station.data_path,
+            prefix=f'{self.ExptClass.__name__}_sweep',
+            config_file=self.station.hardware_config_file,
+        )
+        mother_expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+
+        # Initialize data structure
+        sweep_key = f'{self.sweep_param}_sweep'
+        mother_expt.data = {sweep_key: []}
+
+        print(f'Sweep: {self.sweep_param} from {sweep_start} to {sweep_stop} ({sweep_npts} pts)')
+        print(f'  File: {mother_expt.fname}')
+
+        # Store job results for reference
+        self.job_results = []
+
+        # Run sweep - one job per point
+        for idx, sweep_val in enumerate(sweep_vals):
+            print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
+
+            # Create config for this sweep point
+            expt_config = deepcopy(base_expt_cfg)
+            expt_config[self.sweep_param] = sweep_val
+
+            # Handle relax_delay if present (worker needs this in config)
+            if hasattr(expt_config, 'relax_delay'):
+                expt_config['_relax_delay'] = expt_config.relax_delay
+
+            # Convert to dict for JSON serialization
+            if hasattr(expt_config, "to_dict"):
+                expt_config_dict = dict(expt_config)
+            else:
+                expt_config_dict = dict(expt_config)
+
+            # Submit job
+            job_id = self.job_client.submit_job(
+                experiment_class=experiment_class,
+                experiment_module=experiment_module,
+                expt_config=expt_config_dict,
+                user=self.user,
+                priority=priority,
+            )
+
+            # Wait for completion
+            result = self.job_client.wait_for_completion(
+                job_id,
+                poll_interval=poll_interval,
+                timeout=timeout,
+                verbose=False,
+            )
+            self.job_results.append(result)
+
+            # Check for failure
+            if not result.is_successful():
+                print(f'FAILED: {result.error_message}')
+                raise RuntimeError(
+                    f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                )
+
+            # Load expt and accumulate data
+            expt = result.load_expt()
+
+            mother_expt.data[sweep_key].append(sweep_val)
+            for data_key, data_val in expt.data.items():
+                if data_key not in mother_expt.data:
+                    mother_expt.data[data_key] = []
+                mother_expt.data[data_key].append(data_val)
+
+            # Incremental save
+            if incremental_save:
+                mother_expt.save_data()
+                print(f'[{job_id}] saved')
+            else:
+                print(f'[{job_id}]')
+
+        # Store all job IDs from this sweep for reference
+        self.last_job_ids = [r.job_id for r in self.job_results]
+
+        # Final save
+        mother_expt.save_data()
+        print(f'Complete. Saved to {mother_expt.fname}')
+
+        # Convert to arrays for final analysis
+        mother_expt.data = self._convert_to_arrays(mother_expt.data)
+        mother_expt.data['_filename'] = mother_expt.fname
+        mother_expt.data['_config'] = expt.cfg
+
+        # Run final analysis and display
+        try:
+            mother_expt.analyze(station=self.station)
+            mother_expt.display()
+
+            if postprocess and self.postprocessor is not None:
+                self.postprocessor(self.station, mother_expt)
+
+        except Exception as e:
+            print(f'Analysis failed: {e}')
+            print('Returning mother experiment with raw data')
+
+        return mother_expt
+
+    def run_local(
+        self,
+        sweep_start: float,
+        sweep_stop: float,
+        sweep_npts: int,
+        postprocess: bool = True,
         go_kwargs: Optional[dict] = None,
         incremental_save: bool = True,
         **kwargs
     ):
         """
-        Run the sweep experiment.
+        Run the sweep experiment locally, bypassing the job queue.
+
+        Use this for direct hardware access when the job queue is not needed
+        (e.g., single-user mode, debugging, or when you have exclusive hardware access).
 
         Args:
             sweep_start: Starting value for sweep parameter
