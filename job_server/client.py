@@ -126,12 +126,12 @@ class JobClient:
     Provides methods to submit jobs, check status, and wait for completion.
     """
 
-    def __init__(self, server_url: str = "http://localhost:8000"):
+    def __init__(self, server_url: str = "http://127.0.0.1:8000"):
         """
         Initialize the job client.
 
         Args:
-            server_url: URL of the job server (default: http://localhost:8000)
+            server_url: URL of the job server (default: http://127.0.0.1:8000)
         """
         self.server_url = server_url.rstrip("/")
 
@@ -190,7 +190,7 @@ class JobClient:
                     "rounds": 1,
                     "qubits": [0],
                 },
-                user="connie"
+                user="Claude"
             )
         """
         # Validate required parameters
@@ -265,6 +265,7 @@ class JobClient:
         Raises:
             ValueError: If job_id is empty
             TimeoutError: If timeout is exceeded
+            KeyboardInterrupt: Re-raised after attempting to cancel pending jobs
         """
         if not job_id:
             raise ValueError("job_id is required")
@@ -272,29 +273,53 @@ class JobClient:
         start_time = time.time()
         last_status = None
 
-        while True:
+        try:
+            while True:
+                result = self.get_status(job_id)
+
+                # Print status changes
+                if verbose and result.status != last_status:
+                    elapsed = time.time() - start_time
+                    print(f"[{elapsed:.1f}s] Job {job_id}: {result.status}")
+                    last_status = result.status
+
+                # Check if done
+                if result.is_done():
+                    if verbose:
+                        if result.is_successful():
+                            print(f"Job completed! Data: {result.data_file_path}")
+                        else:
+                            print(f"Job {result.status}: {result.error_message or 'No details'}")
+                    return result
+
+                # Check timeout
+                if timeout and (time.time() - start_time) > timeout:
+                    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+
+                time.sleep(poll_interval)
+
+        except KeyboardInterrupt:
+            # User interrupted - try to cancel the job if it's still pending
+            print(f"\n[INTERRUPT] Keyboard interrupt received for job {job_id}")
             result = self.get_status(job_id)
 
-            # Print status changes
-            if verbose and result.status != last_status:
-                elapsed = time.time() - start_time
-                print(f"[{elapsed:.1f}s] Job {job_id}: {result.status}")
-                last_status = result.status
+            if result.status == "pending":
+                print(f"[INTERRUPT] Job is pending, cancelling...")
+                try:
+                    self.cancel_job(job_id)
+                    print(f"[INTERRUPT] Job {job_id} cancelled successfully")
+                except Exception as e:
+                    print(f"[INTERRUPT] Failed to cancel job: {e}")
+            elif result.status == "running":
+                print(f"[INTERRUPT] ERROR: Job is currently running on worker")
+                print(f"[INTERRUPT] Cannot interrupt running jobs remotely")
+                print(f"[INTERRUPT] The job will continue running until completion")
+                print(f"[INTERRUPT] Check status later with: client.get_status('{job_id}')")
+            else:
+                print(f"[INTERRUPT] Job already in terminal state: {result.status}")
 
-            # Check if done
-            if result.is_done():
-                if verbose:
-                    if result.is_successful():
-                        print(f"Job completed! Data: {result.data_file_path}")
-                    else:
-                        print(f"Job {result.status}: {result.error_message or 'No details'}")
-                return result
-
-            # Check timeout
-            if timeout and (time.time() - start_time) > timeout:
-                raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
-
-            time.sleep(poll_interval)
+            # Re-raise the interrupt
+            raise
 
     def list_queue(self) -> dict:
         """

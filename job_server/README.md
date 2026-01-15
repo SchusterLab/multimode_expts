@@ -157,20 +157,20 @@ pip install fastapi uvicorn sqlalchemy pydantic requests
 ### 2. Start the Server
 
 ```bash
-cd /path/to/folder/containing/multimode_expts
-python -m uvicorn multimode_expts.job_server.server:app --host 0.0.0.0 --port 8000
+cd /path/to/multimode_expts
+pixi run python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000
 ```
 
 ### 3. Start the Worker
 
 **For testing (mock hardware):**
 ```bash
-python -m multimode_expts.job_server.worker --mock
+pixi run python -m job_server.worker --mock
 ```
 
 **For real hardware:**
 ```bash
-python -m multimode_expts.job_server.worker
+pixi run python -m job_server.worker
 ```
 
 ## Usage in Jupyter Notebooks
@@ -178,7 +178,7 @@ python -m multimode_expts.job_server.worker
 ### Basic Example: Submit and Wait
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 
 # Create client (connects to localhost:8000 by default)
 client = JobClient()
@@ -191,7 +191,7 @@ print(f"Pending jobs: {health['pending_jobs']}")
 # Submit an experiment job
 job_id = client.submit_job(
     experiment_class="AmplitudeRabiExperiment",
-    experiment_module="multimode_expts.experiments.single_qubit.amplitude_rabi",
+    experiment_module="experiments.single_qubit.amplitude_rabi",
     expt_config={
         "start": 0,
         "step": 100,
@@ -220,7 +220,7 @@ else:
 ### Example: Submit Multiple Jobs
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 
 client = JobClient()
 
@@ -228,17 +228,17 @@ client = JobClient()
 experiments = [
     {
         "class": "T1Experiment",
-        "module": "multimode_expts.experiments.single_qubit.t1",
+        "module": "experiments.single_qubit.t1",
         "config": {"start": 0, "step": 0.5, "expts": 100, "reps": 200},
     },
     {
         "class": "T2RamseyExperiment",
-        "module": "multimode_expts.experiments.single_qubit.t2_ramsey",
+        "module": "experiments.single_qubit.t2_ramsey",
         "config": {"start": 0, "step": 0.1, "expts": 100, "reps": 200},
     },
     {
         "class": "ResonatorSpectroscopyExperiment",
-        "module": "multimode_expts.experiments.single_qubit.resonator_spectroscopy",
+        "module": "experiments.single_qubit.resonator_spectroscopy",
         "config": {"start": 7000, "stop": 7100, "expts": 101, "reps": 500},
     },
 ]
@@ -269,14 +269,14 @@ for job_id in job_ids:
 ### Example: Priority Scheduling
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 
 client = JobClient()
 
 # Submit a low-priority background calibration
 bg_job = client.submit_job(
     experiment_class="ResonatorSpectroscopyExperiment",
-    experiment_module="multimode_expts.experiments.single_qubit.resonator_spectroscopy",
+    experiment_module="experiments.single_qubit.resonator_spectroscopy",
     expt_config={"start": 7000, "stop": 7100, "expts": 101},
     user="Claude",
     priority=0,  # Low priority
@@ -285,7 +285,7 @@ bg_job = client.submit_job(
 # Submit a high-priority urgent experiment
 urgent_job = client.submit_job(
     experiment_class="T1Experiment",
-    experiment_module="multimode_expts.experiments.single_qubit.t1",
+    experiment_module="experiments.single_qubit.t1",
     expt_config={"start": 0, "step": 0.5, "expts": 100},
     user="Claude",
     priority=10,  # High priority - runs first!
@@ -298,7 +298,7 @@ client.print_queue()
 ### Example: Non-Blocking Submission
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 import time
 
 client = JobClient()
@@ -306,7 +306,7 @@ client = JobClient()
 # Submit job without waiting
 job_id = client.submit_job(
     experiment_class="AmplitudeRabiExperiment",
-    experiment_module="multimode_expts.experiments.single_qubit.amplitude_rabi",
+    experiment_module="experiments.single_qubit.amplitude_rabi",
     expt_config={"start": 0, "step": 100, "expts": 50, "reps": 1000},
     user="Claude",
 )
@@ -329,14 +329,14 @@ if not status.is_done():
 ### Example: Cancel a Job
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 
 client = JobClient()
 
 # Submit a job
 job_id = client.submit_job(
     experiment_class="AmplitudeRabiExperiment",
-    experiment_module="multimode_expts.experiments.single_qubit.amplitude_rabi",
+    experiment_module="experiments.single_qubit.amplitude_rabi",
     expt_config={"start": 0, "step": 100, "expts": 50, "reps": 1000},
     user="Claude",
 )
@@ -352,7 +352,7 @@ except Exception as e:
 ### Example: View Job History
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 
 client = JobClient()
 
@@ -372,7 +372,7 @@ failed = client.get_history(status="failed", limit=10)
 ### Example: Load Data from Completed Job
 
 ```python
-from multimode_expts.job_server import JobClient
+from job_server import JobClient
 from slab.datamanagement import SlabFile
 import numpy as np
 
@@ -402,9 +402,9 @@ The config versioning system tracks the "main" (canonical, most up-to-date) vers
 
 ```python
 from pathlib import Path
-from multimode_expts.job_server.database import get_database
-from multimode_expts.job_server.config_versioning import ConfigVersionManager
-from multimode_expts.job_server.models import ConfigType
+from job_server.database import get_database
+from job_server.config_versioning import ConfigVersionManager
+from job_server.models import ConfigType
 
 # Initialize
 db = get_database()
@@ -439,9 +439,9 @@ with db.session() as session:
 ### Example: Set Existing Version as Main
 
 ```python
-from multimode_expts.job_server.database import get_database
-from multimode_expts.job_server.config_versioning import ConfigVersionManager
-from multimode_expts.job_server.models import ConfigType
+from job_server.database import get_database
+from job_server.config_versioning import ConfigVersionManager
+from job_server.models import ConfigType
 from pathlib import Path
 
 db = get_database()

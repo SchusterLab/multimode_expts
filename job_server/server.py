@@ -8,11 +8,11 @@ This server provides HTTP endpoints for:
 - Cancelling pending jobs
 
 Run with:
-    cd /Users/conniemiao/GDriveStanford/SchusterLab/local_multimode
-    python -m uvicorn multimode_expts.job_server.server:app --host 0.0.0.0 --port 8000
+    cd /path/to/multimode_expts
+    pixi run python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000
 
 Or for development with auto-reload:
-    python -m uvicorn multimode_expts.job_server.server:app --reload --port 8000
+    pixi run python -m uvicorn job_server.server:app --reload --port 8000
 """
 
 import json
@@ -111,7 +111,10 @@ class JobStatusResponse(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     data_file_path: Optional[str] = None
+    expt_pickle_path: Optional[str] = None
     error_message: Optional[str] = None
+    hardware_config_version_id: Optional[str] = None
+    multiphoton_config_version_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -261,7 +264,10 @@ async def list_queue(session: Session = Depends(get_db)):
             started_at=running_job.started_at,
             completed_at=running_job.completed_at,
             data_file_path=running_job.data_file_path,
+            expt_pickle_path=running_job.expt_pickle_path,
             error_message=running_job.error_message,
+            hardware_config_version_id=running_job.hardware_config_version_id,
+            multiphoton_config_version_id=running_job.multiphoton_config_version_id,
         )
 
     pending_responses = [
@@ -275,7 +281,10 @@ async def list_queue(session: Session = Depends(get_db)):
             started_at=job.started_at,
             completed_at=job.completed_at,
             data_file_path=job.data_file_path,
+            expt_pickle_path=job.expt_pickle_path,
             error_message=job.error_message,
+            hardware_config_version_id=job.hardware_config_version_id,
+            multiphoton_config_version_id=job.multiphoton_config_version_id,
         )
         for job in pending_jobs
     ]
@@ -361,7 +370,10 @@ async def get_job_status(job_id: str, session: Session = Depends(get_db)):
         started_at=job.started_at,
         completed_at=job.completed_at,
         data_file_path=job.data_file_path,
+        expt_pickle_path=job.expt_pickle_path,
         error_message=job.error_message,
+        hardware_config_version_id=job.hardware_config_version_id,
+        multiphoton_config_version_id=job.multiphoton_config_version_id,
     )
 
 

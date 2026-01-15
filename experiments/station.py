@@ -150,6 +150,7 @@ class MultimodeStation:
 
         self.experiment_path = self.output_root / self.experiment_name
         self.data_path = self.experiment_path / "data"
+        self.expt_objs_path = self.experiment_path / "expt_objs"
         self.plot_path = self.experiment_path / "plots"
         self.log_path = self.experiment_path / "logs"
         self.autocalib_path = (
@@ -159,6 +160,7 @@ class MultimodeStation:
         for subpath in [
             self.experiment_path,
             self.data_path,
+            self.expt_objs_path,
             self.plot_path,
             self.log_path,
             self.autocalib_path,

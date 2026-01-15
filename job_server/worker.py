@@ -18,8 +18,10 @@ Run with:
 """
 
 import argparse
+import atexit
 import importlib
 import json
+import os
 import pickle
 import signal
 import sys
@@ -39,6 +41,116 @@ from multimode_expts.job_server.id_generator import IDGenerator
 from multimode_expts.job_server.config_versioning import ConfigVersionManager
 from slab.datamanagement import AttrDict
 from copy import deepcopy
+
+
+# Default lock file location (in the job_server directory)
+DEFAULT_LOCK_FILE = Path(__file__).parent / "worker.lock"
+
+
+class WorkerLock:
+    """
+    PID-based lock to prevent multiple workers from running simultaneously.
+
+    How it works:
+    1. On acquire(): Check if lock file exists
+       - If no lock file: create it with our PID, we have the lock
+       - If lock file exists: read the PID and check if that process is alive
+         - If process is dead: delete stale lock, create new one with our PID
+         - If process is alive: raise error (another worker is running)
+    2. On release(): Delete the lock file
+
+    The lock is automatically released when the process exits (via atexit),
+    but if the process crashes or is killed with SIGKILL, the lock file
+    remains. The next worker will detect the stale lock and clean it up.
+    """
+
+    def __init__(self, lock_file: Path = DEFAULT_LOCK_FILE):
+        self.lock_file = lock_file
+        self._acquired = False
+
+    def _is_process_running(self, pid: int) -> bool:
+        """Check if a process with the given PID is running."""
+        if sys.platform == "win32":
+            # Windows-specific check using psutil or ctypes
+            try:
+                import psutil
+                return psutil.pid_exists(pid)
+            except ImportError:
+                # Fallback to ctypes if psutil not available
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                PROCESS_QUERY_INFORMATION = 0x0400
+                handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    return True
+                return False
+        else:
+            # Unix/Linux: os.kill with signal 0 just checks existence
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+
+    def acquire(self) -> bool:
+        """
+        Try to acquire the lock.
+
+        Returns:
+            True if lock was acquired successfully
+
+        Raises:
+            RuntimeError: If another worker is already running
+        """
+        if self.lock_file.exists():
+            # Lock file exists - check if the process is still running
+            try:
+                with open(self.lock_file, "r") as f:
+                    old_pid = int(f.read().strip())
+
+                if self._is_process_running(old_pid):
+                    # Another worker is actually running
+                    raise RuntimeError(
+                        f"Another worker is already running (PID {old_pid}). "
+                        f"If you believe this is an error, delete {self.lock_file}"
+                    )
+                else:
+                    # Stale lock file - process is dead
+                    print(f"[WORKER] Removing stale lock file (old PID {old_pid} is not running)")
+                    self.lock_file.unlink()
+
+            except (ValueError, IOError) as e:
+                # Corrupted lock file - remove it
+                print(f"[WORKER] Removing corrupted lock file: {e}")
+                self.lock_file.unlink()
+
+        # Create lock file with our PID
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.lock_file, "w") as f:
+            f.write(str(os.getpid()))
+
+        self._acquired = True
+
+        # Register cleanup on exit (handles graceful shutdown)
+        atexit.register(self.release)
+
+        return True
+
+    def release(self):
+        """Release the lock by deleting the lock file."""
+        if self._acquired and self.lock_file.exists():
+            try:
+                # Only delete if the file contains our PID (safety check)
+                with open(self.lock_file, "r") as f:
+                    file_pid = int(f.read().strip())
+
+                if file_pid == os.getpid():
+                    self.lock_file.unlink()
+                    print("[WORKER] Lock released")
+            except (ValueError, IOError, FileNotFoundError):
+                pass  # File already gone or corrupted
+            self._acquired = False
 
 
 class JobWorker:
@@ -273,7 +385,14 @@ class JobWorker:
         # Generate data filename using job ID
         data_filename = IDGenerator.generate_data_filename(job.job_id, job.experiment_class)
         data_file_path = self.station.data_path / data_filename
-        expt_pickle_path = self.station.data_path / f"{job.job_id}_expt.pkl"
+
+        # Use expt_objs_path for pickle files if available, otherwise fall back to data_path
+        expt_objs_path = getattr(self.station, 'expt_objs_path', None)
+        if expt_objs_path is None:
+            # Create expt_objs directory if station doesn't have it
+            expt_objs_path = self.station.experiment_path / "expt_objs"
+            expt_objs_path.mkdir(parents=True, exist_ok=True)
+        expt_pickle_path = expt_objs_path / f"{job.job_id}_expt.pkl"
 
         print(f"[WORKER] Creating experiment instance")
         print(f"[WORKER]   Data file: {data_filename}")
@@ -384,13 +503,25 @@ def main():
 
     args = parser.parse_args()
 
+    # Acquire lock to prevent multiple workers
+    lock = WorkerLock()
+    try:
+        lock.acquire()
+        print(f"[WORKER] Lock acquired (PID {os.getpid()})")
+    except RuntimeError as e:
+        print(f"[WORKER] ERROR: {e}")
+        sys.exit(1)
+
     worker = JobWorker(
         mock_mode=args.mock,
         poll_interval=args.poll_interval,
         experiment_name=args.experiment_name,
     )
 
-    worker.run()
+    try:
+        worker.run()
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":
