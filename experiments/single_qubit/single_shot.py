@@ -186,7 +186,7 @@ class HistogramExperiment(Experiment):
             config=self.cfg,
             station=kwargs.pop("station", None),
         )
-        hist_fitter.analyze(plot=True, subdir=kwargs.pop("subdir", None))
+        hist_fitter.analyze(plot=False, subdir=kwargs.pop("subdir", None))
 
         data["fids"] = hist_fitter.results["fids"]
         data["angle"] = hist_fitter.results["angle"]
@@ -196,13 +196,13 @@ class HistogramExperiment(Experiment):
         return data
 
     def display(
-        self, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs
+        self, station, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs
     ):
         if data is None:
             data = self.data
 
         hist_fitter = Histogram(
-            data=data, span=span, verbose=verbose, config=self.cfg, station=self.im
+            data=data, span=span, verbose=verbose, config=self.cfg, station=station
         )
         hist_fitter.analyze(plot=True)
 
