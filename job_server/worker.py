@@ -188,12 +188,18 @@ class JobWorker:
         # Initialize database
         self.db = get_database()
 
-        # Initialize station (mock or real)
-        self.station = None  # Lazy initialization
-
         # Initialize config version manager
         self.config_dir = Path(__file__).parent.parent / "configs"
         self.config_manager = ConfigVersionManager(self.config_dir)
+
+        # Initialize station with hardware connections
+        # Config will be updated per-job from serialized notebook config
+        if self.mock_mode:
+            from multimode_expts.job_server.mock_hardware import MockStation
+            self.station = MockStation(experiment_name=self.experiment_name)
+        else:
+            from multimode_expts.experiments.station import MultimodeStation
+            self.station = MultimodeStation(experiment_name=self.experiment_name)
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -206,19 +212,31 @@ class JobWorker:
         print(f"\n[WORKER] Received signal {signum}, shutting down after current job...")
         self.running = False
 
-    def _initialize_station(self):
-        """Initialize the station (lazy, on first job)."""
-        if self.station is not None:
-            return
+    def _update_station_from_job_config(self, station_config_json: str):
+        """
+        Update station's config attributes from serialized job config.
 
-        print(f"[WORKER] Initializing station: {self.experiment_name}")
+        This updates the worker's station with the exact config state from
+        the notebook at job submission time, including any postprocessor updates.
 
-        if self.mock_mode:
-            from multimode_expts.job_server.mock_hardware import MockStation
-            self.station = MockStation(experiment_name=self.experiment_name)
-        else:
-            from multimode_expts.experiments.station import MultimodeStation
-            self.station = MultimodeStation(experiment_name=self.experiment_name)
+        Args:
+            station_config_json: JSON string containing station config data
+        """
+        import pandas as pd
+
+        station_data = json.loads(station_config_json)
+
+        # Update station's config_thisrun
+        self.station.config_thisrun = AttrDict(station_data["config_thisrun"])
+
+        # Update multiphoton config
+        self.station.multimode_cfg = AttrDict(station_data["multimode_cfg"])
+
+        # Update CSV dataframes
+        self.station.ds_storage.df = pd.DataFrame(station_data["storage_man_data"])
+        self.station.ds_floquet.df = pd.DataFrame(station_data["floquet_data"])
+
+        print(f"[WORKER] Updated station config from job")
 
     def run(self):
         """
@@ -292,11 +310,8 @@ class JobWorker:
         print(f"[WORKER]   User: {job.user}")
 
         try:
-            # Initialize station on first job
-            self._initialize_station()
-
-            # Snapshot configs
-            config_versions = self._snapshot_configs(job.job_id)
+            # Update station config from job's serialized config
+            self._update_station_from_job_config(job.station_config)
 
             # Load experiment class dynamically
             ExptClass = self._load_experiment_class(job.experiment_module, job.experiment_class)
@@ -306,6 +321,9 @@ class JobWorker:
 
             # Run the experiment
             data_file_path, expt_pickle_path = self._run_experiment(ExptClass, expt_config, job)
+
+            # Snapshot configs AFTER experiment runs, using the actual config that was used
+            config_versions = self._snapshot_configs(job.job_id)
 
             # Update job as completed
             self._update_job_completed(
@@ -329,7 +347,11 @@ class JobWorker:
 
     def _snapshot_configs(self, job_id: str) -> dict:
         """
-        Create versioned snapshots of all config files.
+        Create versioned snapshots from station's in-memory configs.
+
+        This snapshots the actual config that will be/was used during experiment
+        execution (station.config_thisrun), not the files on disk. This ensures
+        that postprocessor changes are reflected in subsequent job configs.
 
         Args:
             job_id: The job ID to associate with these snapshots
@@ -338,11 +360,8 @@ class JobWorker:
             Dict mapping config type to version ID
         """
         with self.db.session() as session:
-            versions = self.config_manager.snapshot_all_configs(
-                hardware_config_path=self.station.hardware_config_file,
-                multiphoton_config_path=getattr(self.station, 'multiphoton_config_file', None),
-                floquet_csv_path=None,  # TODO: Add if needed
-                man1_csv_path=self.config_dir / self.station.storage_man_file if hasattr(self.station, 'storage_man_file') else None,
+            versions = self.config_manager.snapshot_station_configs(
+                station=self.station,
                 session=session,
                 job_id=job_id,
             )

@@ -65,6 +65,7 @@ class JobSubmission(BaseModel):
     experiment_class: str  # e.g., "AmplitudeRabiExperiment"
     experiment_module: str  # e.g., "multimode_expts.experiments.single_qubit.amplitude_rabi"
     expt_config: Dict[str, Any]  # The experiment-specific configuration
+    station_config: str  # JSON-serialized station config (required)
     user: str  # Username of submitter
     priority: int = 0  # Higher priority = runs sooner (default 0)
 
@@ -81,6 +82,7 @@ class JobSubmission(BaseModel):
                     "rounds": 1,
                     "qubits": [0],
                 },
+                "station_config": "{\"config_thisrun\": {...}}",
                 "user": "connie",
                 "priority": 0,
             }
@@ -115,6 +117,8 @@ class JobStatusResponse(BaseModel):
     error_message: Optional[str] = None
     hardware_config_version_id: Optional[str] = None
     multiphoton_config_version_id: Optional[str] = None
+    man1_storage_version_id: Optional[str] = None
+    floquet_storage_version_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -205,6 +209,7 @@ async def submit_job(submission: JobSubmission, session: Session = Depends(get_d
         experiment_class=submission.experiment_class,
         experiment_module=submission.experiment_module,
         experiment_config=json.dumps(submission.expt_config),
+        station_config=submission.station_config,
         status=JobStatus.PENDING,
         priority=submission.priority,
     )
@@ -268,6 +273,8 @@ async def list_queue(session: Session = Depends(get_db)):
             error_message=running_job.error_message,
             hardware_config_version_id=running_job.hardware_config_version_id,
             multiphoton_config_version_id=running_job.multiphoton_config_version_id,
+            man1_storage_version_id=running_job.man1_storage_version_id,
+            floquet_storage_version_id=running_job.floquet_storage_version_id,
         )
 
     pending_responses = [
@@ -285,6 +292,8 @@ async def list_queue(session: Session = Depends(get_db)):
             error_message=job.error_message,
             hardware_config_version_id=job.hardware_config_version_id,
             multiphoton_config_version_id=job.multiphoton_config_version_id,
+            man1_storage_version_id=job.man1_storage_version_id,
+            floquet_storage_version_id=job.floquet_storage_version_id,
         )
         for job in pending_jobs
     ]
@@ -374,6 +383,8 @@ async def get_job_status(job_id: str, session: Session = Depends(get_db)):
         error_message=job.error_message,
         hardware_config_version_id=job.hardware_config_version_id,
         multiphoton_config_version_id=job.multiphoton_config_version_id,
+        man1_storage_version_id=job.man1_storage_version_id,
+        floquet_storage_version_id=job.floquet_storage_version_id,
     )
 
 

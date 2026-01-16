@@ -12,6 +12,7 @@ include = [
   "experiments*",
   "fitting*",
   "slab*",
+  "job_server*",
 ]
 exclude = [ ]
 

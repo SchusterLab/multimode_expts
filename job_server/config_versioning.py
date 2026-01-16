@@ -39,8 +39,9 @@ Usage:
 
 import hashlib
 import shutil
+import yaml
 from pathlib import Path
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Any
 
 from sqlalchemy.orm import Session
 
@@ -125,7 +126,9 @@ class ConfigVersionManager:
         # Determine snapshot filename and path
         version_dir = self._get_version_dir(config_type)
         original_name = source_path.name
-        snapshot_name = f"{version_id}_{original_name}"
+        # Use version ID as filename, preserving original extension
+        file_extension = source_path.suffix
+        snapshot_name = f"{version_id}{file_extension}"
         snapshot_path = version_dir / snapshot_name
 
         # Copy file to version directory
@@ -222,6 +225,73 @@ class ConfigVersionManager:
 
         return versions
 
+    def snapshot_station_configs(
+        self,
+        station: Any,
+        session: Session,
+        job_id: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """
+        Snapshot all configs from a MultimodeStation's in-memory state.
+
+        This captures the actual config used during experiment execution
+        (station.config_thisrun), not the files on disk. This ensures that
+        changes made by postprocessors are reflected in subsequent jobs.
+
+        Args:
+            station: MultimodeStation instance with config_thisrun
+            session: SQLAlchemy session
+            job_id: Job ID that triggered these snapshots
+
+        Returns:
+            Dict mapping config type to version ID
+        """
+        versions = {}
+
+        # Snapshot hardware config from station.config_thisrun
+        hw_version, _ = self._snapshot_dict_as_yaml(
+            config_dict=station.config_thisrun,
+            config_type=ConfigType.HARDWARE_CONFIG,
+            original_filename=station.hardware_config_file.name,
+            session=session,
+            job_id=job_id,
+        )
+        versions["hardware_config"] = hw_version
+
+        # Snapshot multiphoton config if available
+        if hasattr(station, 'multiphoton_config_file') and hasattr(station, 'multimode_cfg'):
+            mp_version, _ = self._snapshot_dict_as_yaml(
+                config_dict=station.multimode_cfg,
+                config_type=ConfigType.MULTIPHOTON_CONFIG,
+                original_filename=station.multiphoton_config_file.name,
+                session=session,
+                job_id=job_id,
+            )
+            versions["multiphoton_config"] = mp_version
+
+        # Snapshot CSV files if available
+        if hasattr(station, 'ds_storage') and hasattr(station, 'storage_man_file'):
+            man1_version, _ = self._snapshot_csv_from_dataframe(
+                df=station.ds_storage.df,
+                config_type=ConfigType.MAN1_STORAGE_SWAP,
+                original_filename=station.storage_man_file,
+                session=session,
+                job_id=job_id,
+            )
+            versions["man1_storage_swap"] = man1_version
+
+        if hasattr(station, 'ds_floquet') and station.ds_floquet is not None:
+            floquet_version, _ = self._snapshot_csv_from_dataframe(
+                df=station.ds_floquet.df,
+                config_type=ConfigType.FLOQUET_STORAGE_SWAP,
+                original_filename=station.floquet_file,
+                session=session,
+                job_id=job_id,
+            )
+            versions["floquet_storage_swap"] = floquet_version
+
+        return versions
+
     def get_config_path(self, version_id: str, session: Session) -> Optional[Path]:
         """
         Get the path to a versioned config file.
@@ -261,6 +331,170 @@ class ConfigVersionManager:
             return Path(version.snapshot_path)
         return None
 
+    def _snapshot_dict_as_yaml(
+        self,
+        config_dict: Dict[str, Any],
+        config_type: ConfigType,
+        original_filename: str,
+        session: Session,
+        job_id: Optional[str] = None,
+    ) -> Tuple[str, Path]:
+        """
+        Snapshot a config dictionary as a YAML file.
+
+        Args:
+            config_dict: Configuration dictionary
+            config_type: Type of configuration
+            original_filename: Original filename for reference
+            session: SQLAlchemy session
+            job_id: Optional job ID
+
+        Returns:
+            Tuple of (version_id, snapshot_path)
+        """
+        # Recursively convert AttrDict to plain dict
+        plain_dict = self._convert_to_plain_dict(config_dict)
+
+        # Serialize to YAML bytes
+        yaml_bytes = yaml.dump(
+            plain_dict,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True
+        ).encode('utf-8')
+
+        # Compute checksum
+        checksum = self._compute_checksum_from_data(yaml_bytes)
+
+        # Check if identical version exists
+        existing = self._find_by_checksum(checksum, config_type, session)
+        if existing:
+            print(f"[CONFIG] Reusing existing {config_type.value} version {existing.version_id}")
+            return existing.version_id, Path(existing.snapshot_path)
+
+        # Create new version
+        version_id = IDGenerator.generate_config_version_id(config_type, session)
+        version_dir = self._get_version_dir(config_type)
+        # Use version ID as filename with .yml extension
+        snapshot_name = f"{version_id}.yml"
+        snapshot_path = version_dir / snapshot_name
+
+        # Write to file
+        with open(snapshot_path, 'wb') as f:
+            f.write(yaml_bytes)
+
+        print(f"[CONFIG] Created new {config_type.value} version {version_id}")
+
+        # Record in database
+        version_record = ConfigVersion(
+            version_id=version_id,
+            config_type=config_type,
+            original_filename=original_filename,
+            snapshot_path=str(snapshot_path),
+            checksum=checksum,
+            created_by_job_id=job_id,
+        )
+        session.add(version_record)
+        session.flush()
+
+        return version_id, snapshot_path
+
+    def _snapshot_csv_from_dataframe(
+        self,
+        df: Any,
+        config_type: ConfigType,
+        original_filename: str,
+        session: Session,
+        job_id: Optional[str] = None,
+    ) -> Tuple[str, Path]:
+        """
+        Snapshot a pandas DataFrame as a CSV file.
+
+        Args:
+            df: Pandas DataFrame to snapshot
+            config_type: Type of configuration (CSV)
+            original_filename: Original CSV filename
+            session: SQLAlchemy session
+            job_id: Optional job ID
+
+        Returns:
+            Tuple of (version_id, snapshot_path)
+        """
+        # Serialize to CSV bytes
+        csv_bytes = df.to_csv(index=False).encode('utf-8')
+
+        # Compute checksum
+        checksum = self._compute_checksum_from_data(csv_bytes)
+
+        # Check if identical version exists
+        existing = self._find_by_checksum(checksum, config_type, session)
+        if existing:
+            print(f"[CONFIG] Reusing existing {config_type.value} version {existing.version_id}")
+            return existing.version_id, Path(existing.snapshot_path)
+
+        # Create new version
+        version_id = IDGenerator.generate_config_version_id(config_type, session)
+        version_dir = self._get_version_dir(config_type)
+        # Use version ID as filename with .csv extension
+        snapshot_name = f"{version_id}.csv"
+        snapshot_path = version_dir / snapshot_name
+
+        # Write to file
+        with open(snapshot_path, 'wb') as f:
+            f.write(csv_bytes)
+
+        print(f"[CONFIG] Created new {config_type.value} version {version_id}")
+
+        # Record in database
+        version_record = ConfigVersion(
+            version_id=version_id,
+            config_type=config_type,
+            original_filename=original_filename,
+            snapshot_path=str(snapshot_path),
+            checksum=checksum,
+            created_by_job_id=job_id,
+        )
+        session.add(version_record)
+        session.flush()
+
+        return version_id, snapshot_path
+
+    def _convert_to_plain_dict(self, obj: Any) -> Any:
+        """
+        Recursively convert AttrDict and other custom types to plain Python types.
+
+        This ensures YAML files can be loaded with yaml.safe_load() without
+        encountering Python-specific type tags.
+
+        Args:
+            obj: Object to convert (can be AttrDict, dict, list, or primitive)
+
+        Returns:
+            Plain Python object (dict, list, or primitive)
+        """
+        import numpy as np
+
+        # Handle AttrDict and dict
+        if hasattr(obj, '__dict__') and hasattr(obj, 'keys'):
+            # AttrDict or similar
+            return {key: self._convert_to_plain_dict(value) for key, value in obj.items()}
+        elif isinstance(obj, dict):
+            return {key: self._convert_to_plain_dict(value) for key, value in obj.items()}
+
+        # Handle lists and tuples
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_to_plain_dict(item) for item in obj]
+
+        # Handle numpy types
+        elif isinstance(obj, (np.integer, np.floating)):
+            return obj.item()  # Convert to Python int/float
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()  # Convert to Python list
+
+        # Primitives (str, int, float, bool, None) pass through
+        else:
+            return obj
+
     def _compute_checksum(self, file_path: Path) -> str:
         """
         Compute SHA256 checksum of a file.
@@ -276,6 +510,18 @@ class ConfigVersionManager:
             for chunk in iter(lambda: f.read(8192), b""):
                 sha256.update(chunk)
         return sha256.hexdigest()
+
+    def _compute_checksum_from_data(self, data: bytes) -> str:
+        """
+        Compute SHA256 checksum of in-memory data.
+
+        Args:
+            data: Bytes to hash
+
+        Returns:
+            Hex string of SHA256 hash
+        """
+        return hashlib.sha256(data).hexdigest()
 
     def _find_by_checksum(
         self, checksum: str, config_type: ConfigType, session: Session

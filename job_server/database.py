@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from .models import Base
 
 # Default database path (relative to this file's location)
-DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "jobs.db"
+DEFAULT_DB_PATH = Path(__file__).parent / "jobs.db"
 
 
 class Database:

@@ -9,13 +9,8 @@ Tables:
 from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
+from datetime import datetime
 import enum
-
-
-def utc_now():
-    """Return current UTC time (timezone-aware)."""
-    return datetime.now(timezone.utc)
 
 Base = declarative_base()
 
@@ -35,6 +30,7 @@ class ConfigType(enum.Enum):
     MULTIPHOTON_CONFIG = "multiphoton_config"
     FLOQUET_STORAGE_SWAP = "floquet_storage_swap"
     MAN1_STORAGE_SWAP = "man1_storage_swap"
+    MM_DATASET_BASE = 'mm_dataset_base'
 
 
 class Job(Base):
@@ -67,6 +63,7 @@ class Job(Base):
     experiment_class = Column(String(200), nullable=False)
     experiment_module = Column(String(300), nullable=False)
     experiment_config = Column(Text, nullable=False)  # JSON
+    station_config = Column(Text, nullable=True)  # JSON-serialized station configs (config_thisrun, etc.)
 
     # Config version references
     hardware_config_version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=True)
@@ -77,7 +74,7 @@ class Job(Base):
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, index=True)
     priority = Column(Integer, default=0, index=True)
 
-    created_at = Column(DateTime, default=utc_now)
+    created_at = Column(DateTime, default=datetime.now)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -156,7 +153,7 @@ class ConfigVersion(Base):
     original_filename = Column(String(200), nullable=False)
     snapshot_path = Column(String(500), nullable=False)
     checksum = Column(String(64), nullable=True, index=True)  # SHA256
-    created_at = Column(DateTime, default=utc_now)
+    created_at = Column(DateTime, default=datetime.now)
     created_by_job_id = Column(String(20), nullable=True)
 
     def __repr__(self):
@@ -207,7 +204,7 @@ class MainConfig(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     config_type = Column(Enum(ConfigType), unique=True, nullable=False, index=True)
     version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=False)
-    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     updated_by = Column(String(100), nullable=True)  # Username who set this as main
 
     # Relationship to the actual version

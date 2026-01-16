@@ -120,23 +120,30 @@ Provides simulated hardware for testing:
 | experiment_class | STRING | Class name (e.g., "AmplitudeRabiExperiment") |
 | experiment_module | STRING | Module path for dynamic import |
 | experiment_config | JSON | Experiment-specific parameters |
+| station_config | JSON | Serialized station state (config_thisrun, etc.) |
+| hardware_config_version_id | STRING | Reference to hardware config snapshot |
+| multiphoton_config_version_id | STRING | Reference to multiphoton config snapshot |
+| floquet_storage_version_id | STRING | Reference to floquet CSV snapshot |
+| man1_storage_version_id | STRING | Reference to man1 storage CSV snapshot |
 | status | ENUM | pending, running, completed, failed, cancelled |
 | priority | INT | Higher = runs sooner (default: 0) |
 | created_at | DATETIME | Submission timestamp |
 | started_at | DATETIME | Execution start timestamp |
 | completed_at | DATETIME | Completion timestamp |
 | data_file_path | STRING | Path to output HDF5 file |
+| expt_pickle_path | STRING | Path to pickled experiment object |
 | error_message | TEXT | Error details if failed |
 
 ### Config Versions Table
 | Column | Type | Description |
 |--------|------|-------------|
-| version_id | STRING | Unique ID (CFG-{TYPE}-YYYYMMDD-NNNNN) |
-| config_type | ENUM | hardware_config, multiphoton_config, etc. |
-| original_filename | STRING | Original file name |
-| snapshot_path | STRING | Path to versioned copy |
+| version_id | STRING | Unique ID (CFG-HW-YYYYMMDD-NNNNN, CFG-MP-..., CFG-FL-..., CFG-M1-...) |
+| config_type | ENUM | hardware_config, multiphoton_config, floquet_storage_swap, man1_storage_swap |
+| original_filename | STRING | Original file name for reference |
+| snapshot_path | STRING | Path to versioned snapshot (filename is {version_id}.yml or {version_id}.csv) |
 | checksum | STRING | SHA256 hash for deduplication |
-| created_by_job_id | STRING | Job that triggered this snapshot |
+| created_at | DATETIME | When snapshot was created |
+| created_by_job_id | STRING | Job that triggered this snapshot (if any) |
 
 ### Main Configs Table
 | Column | Type | Description |
@@ -466,7 +473,7 @@ with db.session() as session:
 
 | Item | Path |
 |------|------|
-| Database | `multimode_expts/data/jobs.db` |
+| Database | `multimode_expts/job_server/jobs.db` |
 | Config versions | `multimode_expts/configs/versions/` |
 | Data files | Configured in `hardware_config.yml` → `data_management.output_root` |
 

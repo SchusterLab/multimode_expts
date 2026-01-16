@@ -4,6 +4,9 @@ from numbers import Rational
 from pathlib import Path
 from typing import List, Optional
 
+from job_server.database import get_database
+from job_server.config_versioning import ConfigVersionManager, ConfigType
+
 import pandas as pd
 
 
@@ -53,6 +56,8 @@ class MMDataset:
         # The first column is the name of each row, this variable stores the name for the name of each row
         if self.get_columns()[-1] == 'last_update':
             self.add_timestamp = True
+        
+        self.config_type = ConfigType.MM_DATASET_BASE
 
     def create_new_df(self):
         raise NotImplementedError(
@@ -186,13 +191,23 @@ class MMDataset:
         return time_diff < max_time_diff
 
     def create_copy(self, new_filename: Optional[str] = None):
-        if new_filename is None:
-            name, ext = self.filename.rsplit('.', 1)
-            new_filename = f"{name}_new.{ext}"
-        new_file_path = self.parent_path / new_filename
-        print(f"Creating a copy of the dataset at path: {new_file_path}")
-        self.df.to_csv(new_file_path, index=False)
-        return new_filename
+        print("No more creating copies of datasets! Instead use create_snapshot()")
+    
+    def create_snapshot(self):
+        db = get_database()
+        config_dir = 'D:/python/multimode_expts/configs'
+        config_manager = ConfigVersionManager(config_dir)
+
+        # Snapshot the current station configs (based on in-memory state)
+        with db.session() as session:
+            version, version_path = self._snapshot_csv_from_dataframe(
+                df=self.df,
+                config_type=self.config_type,
+                original_filename=self.filename,
+                session=session,
+                job_id=None,
+            )
+        return version_path
 
     def compare_with(self, other_dataset):
         """
@@ -267,6 +282,7 @@ class MMDataset:
 class StorageManSwapDataset(MMDataset):
     def __init__(self, filename='man1_storage_swap_dataset.csv', parent_path='configs'):
         super().__init__(filename=filename, parent_path=parent_path)
+        self.config_type = ConfigType.MAN1_STORAGE_SWAP
 
     def create_new_df(self):
         column_names = [
@@ -340,6 +356,7 @@ class StorageManSwapDataset(MMDataset):
 class FloquetStorageSwapDataset(MMDataset):
     def __init__(self, filename='floquet_storage_swap_dataset.csv', parent_path='configs'):
         super().__init__(filename=filename, parent_path=parent_path)
+        self.config_type = ConfigType.MAN1_STORAGE_SWAP
 
     def create_new_df(self):
         column_names = [

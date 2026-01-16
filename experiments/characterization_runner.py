@@ -49,6 +49,7 @@ Usage (Local Mode - Direct Execution):
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Callable, Protocol, TYPE_CHECKING, Any, Union
+import json
 
 from slab import AttrDict
 from slab.experiment import Experiment
@@ -170,6 +171,37 @@ class CharacterizationRunner:
         self.user = user
         self.last_job_result = None  # Stores JobResult from most recent run()
 
+    def _serialize_station_config(self) -> str:
+        """
+        Serialize the station's current config state to JSON.
+
+        This captures the exact config that should be used for the experiment,
+        including any updates made by previous postprocessors.
+
+        Returns:
+            JSON string containing config_thisrun, multimode_cfg, and CSV data
+        """
+        station_data = {
+            "config_thisrun": dict(self.station.config_thisrun),
+            "hardware_config_file": str(self.station.hardware_config_file),
+        }
+
+        # Include multiphoton config if available
+        if hasattr(self.station, 'multimode_cfg') and hasattr(self.station, 'multiphoton_config_file'):
+            station_data["multimode_cfg"] = dict(self.station.multimode_cfg)
+            station_data["multiphoton_config_file"] = str(self.station.multiphoton_config_file)
+
+        # Include CSV dataframes as JSON-serializable data
+        if hasattr(self.station, 'ds_storage'):
+            station_data["storage_man_data"] = self.station.ds_storage.df.to_dict(orient='records')
+            station_data["storage_man_file"] = self.station.storage_man_file
+
+        if hasattr(self.station, 'ds_floquet') and self.station.ds_floquet is not None:
+            station_data["floquet_data"] = self.station.ds_floquet.df.to_dict(orient='records')
+            station_data["floquet_file"] = self.station.floquet_file
+
+        return json.dumps(station_data)
+
     def run(
         self,
         postprocess: bool = True,
@@ -218,11 +250,15 @@ class CharacterizationRunner:
         else:
             expt_config_dict = dict(expt_config)
 
+        # Serialize station config to pass with job
+        station_config_json = self._serialize_station_config()
+
         # Submit job to queue
         job_id = self.job_client.submit_job(
             experiment_class=experiment_class,
             experiment_module=experiment_module,
             expt_config=expt_config_dict,
+            station_config=station_config_json,
             user=self.user,
             priority=priority,
         )

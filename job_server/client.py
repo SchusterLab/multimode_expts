@@ -51,6 +51,8 @@ class JobResult:
     queue_position: Optional[int] = None
     hardware_config_version_id: Optional[str] = None
     multiphoton_config_version_id: Optional[str] = None
+    floquet_storage_version_id: Optional[str] = None
+    man1_storage_version_id: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "JobResult":
@@ -69,6 +71,8 @@ class JobResult:
             queue_position=data.get("queue_position"),
             hardware_config_version_id=data.get("hardware_config_version_id"),
             multiphoton_config_version_id=data.get("multiphoton_config_version_id"),
+            floquet_storage_version_id=data.get("floquet_storage_version_id"),
+            man1_storage_version_id=data.get("man1_storage_version_id"),
         )
 
     def is_done(self) -> bool:
@@ -157,18 +161,20 @@ class JobClient:
         experiment_class: str,
         experiment_module: str,
         expt_config: Dict[str, Any],
+        station_config: str,
         user: str,
         priority: int = 0,
     ) -> str:
         """
         Submit an experiment job to the queue.
 
-        All parameters except priority are required and must be explicitly provided.
+        All parameters except priority are required.
 
         Args:
             experiment_class: Name of experiment class (e.g., "AmplitudeRabiExperiment")
             experiment_module: Full module path (e.g., "multimode_expts.experiments.single_qubit.amplitude_rabi")
             expt_config: Experiment-specific configuration dict
+            station_config: JSON-serialized station config (required for config propagation)
             user: Username of submitter (required)
             priority: Job priority (higher = runs sooner, default 0)
 
@@ -190,6 +196,7 @@ class JobClient:
                     "rounds": 1,
                     "qubits": [0],
                 },
+                station_config=json.dumps(station_data),
                 user="Claude"
             )
         """
@@ -200,6 +207,8 @@ class JobClient:
             raise ValueError("experiment_module is required")
         if not expt_config:
             raise ValueError("expt_config is required")
+        if not station_config:
+            raise ValueError("station_config is required")
         if not user:
             raise ValueError("user is required")
         if not isinstance(expt_config, dict):
@@ -212,6 +221,7 @@ class JobClient:
                 "experiment_class": experiment_class,
                 "experiment_module": experiment_module,
                 "expt_config": expt_config,
+                "station_config": station_config,
                 "user": user,
                 "priority": priority,
             },
