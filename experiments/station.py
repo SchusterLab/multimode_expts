@@ -378,10 +378,8 @@ class MultimodeStation:
 
     def _sanitize_config_fields(self):
         """Clean up config before saving."""
-        self.hardware_cfg.device.storage.storage_man_file = (
-            self.hardware_cfg.device.storage.storage_man_file
-        )
-        self.hardware_cfg.pop("expt", None)
+        if "expt" in self.hardware_cfg:
+            self.hardware_cfg.pop("expt")
 
     def preview_config_update(self):
         """Compare parent and current config to view updates."""
@@ -390,7 +388,7 @@ class MultimodeStation:
         with self.hardware_config_file.open("r") as cfg_file:
             old_cfg = AttrDict(yaml.safe_load(cfg_file))
         self.recursive_compare(old_cfg, self.hardware_cfg)
-        self.hardware_cfg = self._sanitize_config_fields()
+        self._sanitize_config_fields()
 
     def update_all_station_snapshots(self, update_main: bool = False) -> dict:
         """
