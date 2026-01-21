@@ -6,12 +6,12 @@ This package provides a job queue system that allows multiple users to submit ex
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Users (via SSH)                             │
-│                                                                  │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
-│   │   Jupyter    │  │   Jupyter    │  │   Jupyter    │         │
-│   │  (User A)    │  │  (User B)    │  │  (User C)    │         │
-│   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘         │
+│                      Users (via SSH)                            │
+│                                                                 │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│   │   Jupyter    │  │   Jupyter    │  │   Jupyter    │          │
+│   │  (User A)    │  │  (User B)    │  │  (User C)    │          │
+│   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
 │          │                 │                 │                  │
 │          └─────────────────┼─────────────────┘                  │
 │                            │                                    │
@@ -120,7 +120,7 @@ Provides simulated hardware for testing:
 | experiment_class | STRING | Class name (e.g., "AmplitudeRabiExperiment") |
 | experiment_module | STRING | Module path for dynamic import |
 | experiment_config | JSON | Experiment-specific parameters |
-| station_config | JSON | Serialized station state (config_thisrun, etc.) |
+| station_config | JSON | Serialized station state (hardware_cfg, etc.) |
 | hardware_config_version_id | STRING | Reference to hardware config snapshot |
 | multiphoton_config_version_id | STRING | Reference to multiphoton config snapshot |
 | floquet_storage_version_id | STRING | Reference to floquet CSV snapshot |

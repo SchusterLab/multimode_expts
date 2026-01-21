@@ -10,7 +10,7 @@ Usage:
     from job_server.mock_hardware import MockStation
 
     station = MockStation(experiment_name="test_experiment")
-    # Use station.soc, station.config_thisrun, etc. as normal
+    # Use station.soc, station.hardware_cfg, etc. as normal
     # Hardware calls print to console instead of executing
 """
 
@@ -274,12 +274,12 @@ class MockStation:
             })
 
         # Create working copy
-        self.config_thisrun = AttrDict(deepcopy(self.yaml_cfg))
+        self.hardware_cfg = AttrDict(deepcopy(self.yaml_cfg))
 
         # Load multiphoton config (or create mock)
         try:
             self.multiphoton_config_file = (
-                self.config_dir / self.config_thisrun.device.multiphoton_config.file
+                self.config_dir / self.hardware_cfg.device.multiphoton_config.file
             )
             if self.multiphoton_config_file.exists():
                 with self.multiphoton_config_file.open("r") as f:

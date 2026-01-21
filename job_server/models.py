@@ -63,7 +63,7 @@ class Job(Base):
     experiment_class = Column(String(200), nullable=False)
     experiment_module = Column(String(300), nullable=False)
     experiment_config = Column(Text, nullable=False)  # JSON
-    station_config = Column(Text, nullable=True)  # JSON-serialized station configs (config_thisrun, etc.)
+    station_config = Column(Text, nullable=True)  # JSON-serialized station configs (hardware_cfg, etc.)
 
     # Config version references
     hardware_config_version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=True)

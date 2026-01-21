@@ -29,7 +29,6 @@ Usage (Queued Mode - Default):
         preprocessor=my_preproc,
         postprocessor=my_postproc,
         job_client=client,
-        user="Claude",
     )
 
     # Submits entire sweep as single job
@@ -110,7 +109,7 @@ class SweepRunner:
         postprocessor: Optional[Callable] = None,
         live_plot: bool = False,
         job_client: Optional["JobClient"] = None,
-        user: str = "anonymous",
+        use_queue: bool = True,
     ):
         """
         Initialize the sweep runner.
@@ -124,7 +123,7 @@ class SweepRunner:
             postprocessor: Optional function(station, mother_expt) called after sweep
             live_plot: If True, show live analysis plot after each sweep point
             job_client: JobClient instance for submitting to job queue (required for run())
-            user: Username for job submission (default: "anonymous")
+            use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
         """
         self.station = station
         self.ExptClass = ExptClass
@@ -134,7 +133,7 @@ class SweepRunner:
         self.postprocessor = postprocessor
         self.live_plot = live_plot
         self.job_client = job_client
-        self.user = user
+        self.use_queue = use_queue
         self.last_job_ids = []  # Stores list of job IDs from most recent run()
 
     def _convert_to_arrays(self, data_dict: dict) -> dict:
@@ -233,7 +232,7 @@ class SweepRunner:
             prefix=f'{self.ExptClass.__name__}_sweep',
             config_file=self.station.hardware_config_file,
         )
-        mother_expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+        mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
@@ -268,7 +267,7 @@ class SweepRunner:
                 experiment_class=experiment_class,
                 experiment_module=experiment_module,
                 expt_config=expt_config_dict,
-                user=self.user,
+                user=self.station.user,
                 priority=priority,
             )
 
@@ -375,7 +374,7 @@ class SweepRunner:
             prefix=f'{self.ExptClass.__name__}_sweep',
             config_file=self.station.hardware_config_file,
         )
-        mother_expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+        mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
@@ -397,7 +396,7 @@ class SweepRunner:
             )
 
             # Setup config
-            expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+            expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
             expt.cfg.expt = AttrDict(deepcopy(expt_cfg))
             expt.cfg.expt[self.sweep_param] = sweep_val
 
@@ -449,3 +448,36 @@ class SweepRunner:
             print('Returning mother experiment with raw data')
 
         return mother_expt
+
+    def execute(
+        self,
+        sweep_start: float,
+        sweep_stop: float,
+        sweep_npts: int,
+        use_queue: Optional[bool] = None,
+        **kwargs
+    ):
+        """
+        Run sweep using configured or specified execution mode.
+
+        This is a convenience method that dispatches to run() or run_local()
+        based on the use_queue flag, allowing notebooks to toggle execution
+        mode without changing individual experiment calls.
+
+        Args:
+            sweep_start: Starting value for sweep parameter
+            sweep_stop: Ending value for sweep parameter
+            sweep_npts: Number of swept points for sweep parameter
+            use_queue: Override instance setting. If None, uses self.use_queue.
+                       True = run() via job queue, False = run_local()
+            **kwargs: Passed to run() or run_local()
+
+        Returns:
+            Mother experiment object with 2D data and analysis results.
+        """
+        mode = use_queue if use_queue is not None else self.use_queue
+
+        if mode:
+            return self.run(sweep_start, sweep_stop, sweep_npts, **kwargs)
+        else:
+            return self.run_local(sweep_start, sweep_stop, sweep_npts, **kwargs)

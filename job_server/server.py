@@ -82,7 +82,7 @@ class JobSubmission(BaseModel):
                     "rounds": 1,
                     "qubits": [0],
                 },
-                "station_config": "{\"config_thisrun\": {...}}",
+                "station_config": "{\"hardware_cfg\": {...}}",
                 "user": "connie",
                 "priority": 0,
             }

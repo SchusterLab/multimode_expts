@@ -12,7 +12,7 @@ Usage:
 
     station = MultimodeStation(experiment_name="241215_calibration")
     # Access hardware: station.soc, station.im
-    # Access config: station.config_thisrun, station.yaml_cfg
+    # Access config: station.hardware_cfg, station.hardware_cfg
     # Access paths: station.data_path, station.plot_path
 """
 
@@ -68,8 +68,7 @@ class MultimodeStation:
     Attributes:
         soc: QickConfig object for FPGA control
         im: InstrumentManager for hardware access
-        config_thisrun: AttrDict of current run configuration
-        yaml_cfg: AttrDict of original yaml configuration
+        hardware_cfg: AttrDict of current hardware configuration
         ds_storage: StorageManSwapDataset for this run
         data_path: Path to data directory
         plot_path: Path to plots directory
@@ -78,6 +77,7 @@ class MultimodeStation:
 
     def __init__(
         self,
+        user: Optional[str] = '',
         experiment_name: Optional[str] = None,
         hardware_config: Optional[str] = None,
         multiphoton_config: Optional[str] = None,
@@ -89,6 +89,7 @@ class MultimodeStation:
         Initialize the measurement station.
 
         Args:
+            user: Username for tracking config changes
             experiment_name: Format is yymmdd_name. None defaults to today's date.
             hardware_config: Filename or version ID (e.g., CFG-HW-20260115-00001). If None, loads from main version in database.
             multiphoton_config: Filename or version ID (e.g., CFG-MP-20260115-00001). If None, loads from main version in database.
@@ -100,6 +101,7 @@ class MultimodeStation:
             experiment_name or f'{datetime.now().strftime("%y%m%d")}_experiment'
         )
         self.qubit_i = qubit_i
+        self.user = user
 
         self._initialize_configs(hardware_config, multiphoton_config, storage_man_file, floquet_file)
         self._initialize_output_paths()
@@ -120,11 +122,9 @@ class MultimodeStation:
                 hardware_config, ConfigType.HARDWARE_CONFIG, config_manager, session, required=True
             )
             with hw_config_path.open("r") as cfg_file:
-                self.yaml_cfg = AttrDict(yaml.safe_load(cfg_file))
+                self.hardware_cfg = AttrDict(yaml.safe_load(cfg_file))
             self.hardware_config_file = hw_config_path
 
-            # Config for this instance (deepcopy of yaml_cfg)
-            self.config_thisrun = AttrDict(deepcopy(self.yaml_cfg))
 
             # Load multiphoton config
             mp_config_path = self._resolve_config_path(
@@ -218,7 +218,7 @@ class MultimodeStation:
 
     def _initialize_output_paths(self):
         """Create output directories if needed."""
-        self.output_root = Path(self.yaml_cfg.data_management.output_root)
+        self.output_root = Path(self.hardware_cfg.data_management.output_root)
         if not self.output_root.exists():
             raise FileNotFoundError(
                 f"Output root {self.output_root} does not exist. "
@@ -249,7 +249,7 @@ class MultimodeStation:
     def _initialize_hardware(self):
         """Connect to hardware."""
         self.im = InstrumentManager(ns_address="192.168.137.25")
-        self.soc = QickConfig(self.im[self.yaml_cfg["aliases"]["soc"]].get_cfg())
+        self.soc = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
 
@@ -376,104 +376,193 @@ class MultimodeStation:
             if key not in d1:
                 print(f"Key '{current_path}' is missing in config1.")
 
-    def _sanitize_config_fields(self, config_thisrun) -> AttrDict:
+    def _sanitize_config_fields(self):
         """Clean up config before saving."""
-        updated_config = deepcopy(config_thisrun)
-        updated_config.device.storage.storage_man_file = (
-            self.yaml_cfg.device.storage.storage_man_file
+        self.hardware_cfg.device.storage.storage_man_file = (
+            self.hardware_cfg.device.storage.storage_man_file
         )
-        updated_config.pop("expt", None)
-        return updated_config
+        self.hardware_cfg.pop("expt", None)
 
-    def save_config(self):
-        """Save current configuration to file."""
-        yaml_dump_kwargs = dict(
-            default_flow_style=False,
-            indent=4,
-            width=80,
-            canonical=False,
-            explicit_start=True,
-            explicit_end=False,
-            sort_keys=False,
-            line_break=True,
-        )
-
-        # Save backup of old config
-        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        old_config_path = self.autocalib_path / f"old_config_{current_time}.yaml"
-        old_config = self.convert_attrdict_to_dict(self.yaml_cfg)
-        with old_config_path.open("w") as cfg_file:
-            yaml.dump(old_config, cfg_file, **yaml_dump_kwargs)
-
-        # Save updated config
-        updated_config = self.convert_attrdict_to_dict(
-            self._sanitize_config_fields(self.config_thisrun)
-        )
-        with self.hardware_config_file.open("w") as f:
-            yaml.dump(updated_config, f, **yaml_dump_kwargs)
-
-    def handle_config_update(self, write_to_file=False):
-        """Compare and optionally save configuration updates."""
+    def preview_config_update(self):
+        """Compare parent and current config to view updates."""
         print("Comparing configurations:")
-        self.recursive_compare(self.yaml_cfg, self.config_thisrun)
-        updated_config = self._sanitize_config_fields(self.config_thisrun)
-        if write_to_file:
-            self.save_config()
-            self.yaml_cfg = updated_config
-            print("Configuration updated and saved.")
+        print("Parent config file:", self.hardware_config_file)
+        with self.hardware_config_file.open("r") as cfg_file:
+            old_cfg = AttrDict(yaml.safe_load(cfg_file))
+        self.recursive_compare(old_cfg, self.hardware_cfg)
+        self.hardware_cfg = self._sanitize_config_fields()
 
-    def update_all_station_snapshots(self, update_main=False, updated_by=None):
+    def update_all_station_snapshots(self, update_main: bool = False) -> dict:
         """
         Create config snapshots from current station state.
 
         Args:
             update_main: If True, set the new snapshots as main versions
-            updated_by: Username for tracking who set the main version
+
+        Returns:
+            Dict mapping config type name to version ID
+        """
+        versions = {}
+
+        versions["hardware_config"] = self.snapshot_hardware_config(update_main=update_main)
+        versions["multiphoton_config"] = self.snapshot_multiphoton_config(update_main=update_main)
+        versions["man1_storage_swap"] = self.snapshot_man1_storage_swap(update_main=update_main)
+        if self.ds_floquet is not None:
+            versions["floquet_storage_swap"] = self.snapshot_floquet_storage_swap(update_main=update_main)
+
+        print("Config snapshots for current station:")
+        for config_type, version_id in versions.items():
+            print(f"  {config_type}: {version_id}")
+
+        if update_main:
+            print("Configs saved and set as main!")
+
+        return versions
+
+    def snapshot_hardware_config(self, update_main: bool = False) -> str:
+        """
+        Create a snapshot of the current hardware config and optionally set as main.
+
+        Args:
+            update_main: If True, set the new snapshot as the main version
+
+        Returns:
+            The version ID of the created snapshot
         """
         db = get_database()
-        config_dir = self.config_dir
-        config_manager = ConfigVersionManager(config_dir)
+        config_manager = ConfigVersionManager(self.config_dir)
+        self._sanitize_config_fields()
 
         with db.session() as session:
-            # Create snapshots
-            versions = config_manager.snapshot_station_configs(
-                station=self,
+            version_id, _ = config_manager._snapshot_dict_as_yaml(
+                config_dict=self.hardware_cfg,
+                config_type=ConfigType.HARDWARE_CONFIG,
+                original_filename=self.hardware_config_file.name,
                 session=session,
             )
 
-            print("Config snapshots for current station:")
-            for config_type, version_id in versions.items():
-                print(f"  {config_type}: {version_id}")
-
-            # Set as main if requested (within the same session)
             if update_main:
-                for config_type_str, version_id in versions.items():
-                    config_type = ConfigType[config_type_str.upper()]
-                    config_manager.set_main_version(
-                        config_type=config_type,
-                        version_id=version_id,
-                        session=session,
-                        updated_by=updated_by
-                    )
-                print("Configs saved and set as main!")
+                config_manager.set_main_version(
+                    config_type=ConfigType.HARDWARE_CONFIG,
+                    version_id=version_id,
+                    session=session,
+                    updated_by=self.user,
+                )
 
-            # Commit happens automatically when exiting the context manager
+        return version_id
 
-        return versions
+    def snapshot_multiphoton_config(self, update_main: bool = False) -> str:
+        """
+        Create a snapshot of the current multiphoton config and optionally set as main.
+
+        Args:
+            update_main: If True, set the new snapshot as the main version
+
+        Returns:
+            The version ID of the created snapshot
+        """
+        db = get_database()
+        config_manager = ConfigVersionManager(self.config_dir)
+
+        with db.session() as session:
+            version_id, _ = config_manager._snapshot_dict_as_yaml(
+                config_dict=self.multimode_cfg,
+                config_type=ConfigType.MULTIPHOTON_CONFIG,
+                original_filename=self.multiphoton_config_file.name,
+                session=session,
+            )
+
+            if update_main:
+                config_manager.set_main_version(
+                    config_type=ConfigType.MULTIPHOTON_CONFIG,
+                    version_id=version_id,
+                    session=session,
+                    updated_by=self.user,
+                )
+
+        return version_id
+
+    def snapshot_man1_storage_swap(self, update_main: bool = False) -> str:
+        """
+        Create a snapshot of the current man1 storage swap CSV and optionally set as main.
+
+        Args:
+            update_main: If True, set the new snapshot as the main version
+
+        Returns:
+            The version ID of the created snapshot
+        """
+        db = get_database()
+        config_manager = ConfigVersionManager(self.config_dir)
+
+        with db.session() as session:
+            version_id, _ = config_manager._snapshot_csv_from_dataframe(
+                df=self.ds_storage.df,
+                config_type=ConfigType.MAN1_STORAGE_SWAP,
+                original_filename=self.storage_man_file,
+                session=session,
+            )
+
+            if update_main:
+                config_manager.set_main_version(
+                    config_type=ConfigType.MAN1_STORAGE_SWAP,
+                    version_id=version_id,
+                    session=session,
+                    updated_by=self.user,
+                )
+
+        return version_id
+
+    def snapshot_floquet_storage_swap(self, update_main: bool = False) -> str:
+        """
+        Create a snapshot of the current floquet storage swap CSV and optionally set as main.
+
+        Args:
+            update_main: If True, set the new snapshot as the main version
+
+        Returns:
+            The version ID of the created snapshot
+
+        Raises:
+            ValueError: If no floquet dataset is loaded
+        """
+        if self.ds_floquet is None:
+            raise ValueError("No floquet dataset loaded in station")
+
+        db = get_database()
+        config_manager = ConfigVersionManager(self.config_dir)
+
+        with db.session() as session:
+            version_id, _ = config_manager._snapshot_csv_from_dataframe(
+                df=self.ds_floquet.df,
+                config_type=ConfigType.FLOQUET_STORAGE_SWAP,
+                original_filename=self.floquet_file,
+                session=session,
+            )
+
+            if update_main:
+                config_manager.set_main_version(
+                    config_type=ConfigType.FLOQUET_STORAGE_SWAP,
+                    version_id=version_id,
+                    session=session,
+                    updated_by=self.user,
+                )
+
+        return version_id
 
     def handle_multiphoton_config_update(self, updateConfig_bool=False):
         """Handle multiphoton config updates (not yet implemented)."""
         raise NotImplementedError("This is not properly coded yet")
         # print("Comparing configurations:")
-        # self.recursive_compare(self.yaml_cfg, self.config_thisrun)
+        # self.recursive_compare(self.hardware_cfg, self.hardware_config)
         # autocalib_path = self.create_autocalib_path()
         # config_path = self.config_file
-        # updated_config = self.update_yaml_config(self.yaml_cfg, self.config_thisrun)
+        # updated_config = self.update_yaml_config(self.hardware_cfg, self.hardware_cfg)
         # if updateConfig_bool:
         #     self.save_configurations(
-        #         self.yaml_cfg, updated_config, autocalib_path, config_path
+        #         self.hardware_cfg, updated_config, autocalib_path, config_path
         #     )
-        #     self.yaml_cfg = updated_config
+        #     self.hardware_cfg = updated_config
         #     print(
         #         "Configuration updated and saved, excluding storage_man_file. \n!!!!Please set updateConfig to False after this run!!!!!!."
         #     )

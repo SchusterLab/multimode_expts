@@ -27,7 +27,6 @@ Usage (Queued Mode - Default):
         preprocessor=my_preproc,  # Optional
         postprocessor=my_postproc,  # Optional
         job_client=client,
-        user="Claude",
     )
 
     # Submits to job queue (default behavior)
@@ -115,7 +114,7 @@ def default_postprocessor(station, expt):
     """
     Default postprocessor: does nothing.
 
-    Override this to extract fit results and update station.config_thisrun.
+    Override this to extract fit results and update station.hardware_cfg.
 
     Returns:
         None
@@ -146,7 +145,7 @@ class CharacterizationRunner:
         postprocessor: Optional[Callable] = None,
         ExptProgram: Optional[type] = None,
         job_client: Optional["JobClient"] = None,
-        user: str = "anonymous",
+        use_queue: bool = True,
     ):
         """
         Initialize the runner.
@@ -156,10 +155,11 @@ class CharacterizationRunner:
             ExptClass: Experiment class to instantiate (e.g., meas.SomeExperiment)
             default_expt_cfg: AttrDict template for expt.cfg.expt
             preprocessor: Function to generate expt.cfg.expt from defaults + kwargs
-            postprocessor: Function to extract results and update station.config_thisrun
+            postprocessor: Function to extract results and update station.hardware_cfg
             ExptProgram: for QsimBaseExperiment, this is the program class to use
             job_client: JobClient instance for submitting to job queue (required for run())
             user: Username for job submission (default: "anonymous")
+            use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
         """
         self.station = station
         self.ExptClass = ExptClass
@@ -168,7 +168,7 @@ class CharacterizationRunner:
         self.postprocessor = postprocessor or default_postprocessor
         self.program = ExptProgram
         self.job_client = job_client
-        self.user = user
+        self.use_queue = use_queue
         self.last_job_result = None  # Stores JobResult from most recent run()
 
     def _serialize_station_config(self) -> str:
@@ -179,10 +179,10 @@ class CharacterizationRunner:
         including any updates made by previous postprocessors.
 
         Returns:
-            JSON string containing config_thisrun, multimode_cfg, and CSV data
+            JSON string containing hardware_cfg, multimode_cfg, and CSV data
         """
         station_data = {
-            "config_thisrun": dict(self.station.config_thisrun),
+            "hardware_cfg": dict(self.station.hardware_cfg),
             "hardware_config_file": str(self.station.hardware_config_file),
         }
 
@@ -259,7 +259,7 @@ class CharacterizationRunner:
             experiment_module=experiment_module,
             expt_config=expt_config_dict,
             station_config=station_config_json,
-            user=self.user,
+            user=self.station.user,
             priority=priority,
         )
 
@@ -326,7 +326,7 @@ class CharacterizationRunner:
             )
 
         # Setup config
-        expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+        expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
         expt.cfg.expt = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
         # Handle relax_delay if present
@@ -343,3 +343,26 @@ class CharacterizationRunner:
             self.postprocessor(self.station, expt)
 
         return expt
+
+    def execute(self, use_queue: Optional[bool] = None, **kwargs) -> Experiment:
+        """
+        Run experiment using configured or specified execution mode.
+
+        This is a convenience method that dispatches to run() or run_local()
+        based on the use_queue flag, allowing notebooks to toggle execution
+        mode without changing individual experiment calls.
+
+        Args:
+            use_queue: Override instance setting. If None, uses self.use_queue.
+                       True = run() via job queue, False = run_local()
+            **kwargs: Passed to run() or run_local()
+
+        Returns:
+            Completed Experiment object
+        """
+        mode = use_queue if use_queue is not None else self.use_queue
+
+        if mode:
+            return self.run(**kwargs)
+        else:
+            return self.run_local(**kwargs)

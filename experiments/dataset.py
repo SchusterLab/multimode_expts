@@ -100,9 +100,9 @@ class MMDataset:
             self.df[self.indexing_row_name] == row_name, column_name
         ].values[0]
 
-    def update_value(self, row_name, column_name, value, save_to_file=True):
+    def update_value(self, row_name, column_name, value):
         """
-        Update the value in the DataFrame for a specific row and column and saves to the csv file if requested.
+        Update the value in the DataFrame for a specific row and column.
 
         Args:
             row_name (str): The name of the row to update.
@@ -114,21 +114,16 @@ class MMDataset:
             self.df.loc[self.df[self.indexing_row_name] == row_name, 'last_update'] = (
                 datetime.now()
             )
-        if save_to_file:
-            print("Creating or updating new csv at path:", self.file_path)
-            self.df.to_csv(self.file_path, index=False)
 
     def get_last_update(self, row_name):
         if self.add_timestamp:
             return self.get_value(row_name, 'last_update')
         return None
 
-    def update_last_update(self, stor_name, save_to_file=True):
+    def update_last_update(self, stor_name):
         if not self.add_timestamp:
             return
-        self.update_value(
-            stor_name, 'last_update', datetime.now(), save_to_file=save_to_file
-        )
+        self.update_value(stor_name, 'last_update', datetime.now())
 
     def get_columns(self):
         return self.df.columns.tolist()
@@ -136,13 +131,12 @@ class MMDataset:
     def get_all(self, row_name):
         return self.df[self.df[self.indexing_row_name] == row_name].values[0]
 
-    def update_all(self, *args, save_to_file=True):
+    def update_all(self, *args):
         """
-        Update all values in the DataFrame for a specific row and always saves the file.
+        Update all values in the DataFrame for a specific row.
         Args:
             *args: A tuple containing the values to update in the order of the columns (excluding the timestamp).
                    The first value should be the row name, followed by values for each column.
-            save_to_file (bool): Whether to save the updated DataFrame to the CSV file.
         """
         num_cols = len(self.get_columns())
         if self.add_timestamp:
@@ -153,10 +147,10 @@ class MMDataset:
             )
         for i in range(1, num_cols):
             column = self.get_columns()[i]
-            self.update_value(args[0], column, args[i], save_to_file=False)
-        self.update_last_update(args[0], save_to_file=save_to_file)
+            self.update_value(args[0], column, args[i])
+        self.update_last_update(args[0])
 
-    def append_dataset(self, *args, add_timestamp=True, save_to_file=True):
+    def append_dataset(self, *args, add_timestamp=True):
         """
         Append a new row to the DataFrame with the provided values.
         Args:
@@ -176,9 +170,6 @@ class MMDataset:
             else:
                 new_row[column] = args[i]
         self.df = self.df.append(new_row, ignore_index=True)
-        if save_to_file:
-            print("Creating or updating new csv at path:", self.filename)
-            self.df.to_csv(self.file_path, index=False)
 
     # check whether the data is up-to-date
     def is_up_to_date(self, row_name, max_time_diff=7200):
@@ -264,19 +255,6 @@ class MMDataset:
                     }
                 )
         return differences
-
-    def save_to_file(self, filename: Optional[str] = None):
-        """
-        Save the current dataset to a specified file.
-
-        Args:
-            - filename (str): string filename only, no path. 
-                defaults to self.filename
-        """
-        filename = filename or self.filename
-        file_path = self.parent_path / filename
-        print("Creating or updating new csv at path:", file_path)
-        self.df.to_csv(file_path, index=False)
 
 
 class StorageManSwapDataset(MMDataset):

@@ -226,8 +226,8 @@ class JobWorker:
 
         station_data = json.loads(station_config_json)
 
-        # Update station's config_thisrun
-        self.station.config_thisrun = AttrDict(station_data["config_thisrun"])
+        # Update station's hardware_cfg
+        self.station.hardware_cfg = AttrDict(station_data["hardware_cfg"])
 
         # Update multiphoton config
         self.station.multimode_cfg = AttrDict(station_data["multimode_cfg"])
@@ -350,7 +350,7 @@ class JobWorker:
         Create versioned snapshots from station's in-memory configs.
 
         This snapshots the actual config that will be/was used during experiment
-        execution (station.config_thisrun), not the files on disk. This ensures
+        execution (station.hardware_cfg), not the files on disk. This ensures
         that postprocessor changes are reflected in subsequent job configs.
 
         Args:
@@ -426,7 +426,7 @@ class JobWorker:
         )
 
         # Setup configuration (following CharacterizationRunner pattern)
-        expt.cfg = AttrDict(deepcopy(self.station.config_thisrun))
+        expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
         expt.cfg.expt = AttrDict(expt_config)
 
         # Override filename to use job-based naming

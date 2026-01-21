@@ -235,11 +235,11 @@ class ConfigVersionManager:
         Snapshot all configs from a MultimodeStation's in-memory state.
 
         This captures the actual config used during experiment execution
-        (station.config_thisrun), not the files on disk. This ensures that
+        (station.hardware_cfg), not the files on disk. This ensures that
         changes made by postprocessors are reflected in subsequent jobs.
 
         Args:
-            station: MultimodeStation instance with config_thisrun
+            station: MultimodeStation instance with hardware_cfg
             session: SQLAlchemy session
             job_id: Job ID that triggered these snapshots
 
@@ -248,9 +248,9 @@ class ConfigVersionManager:
         """
         versions = {}
 
-        # Snapshot hardware config from station.config_thisrun
+        # Snapshot hardware config from station.hardware_cfg
         hw_version, _ = self._snapshot_dict_as_yaml(
-            config_dict=station.config_thisrun,
+            config_dict=station.hardware_cfg,
             config_type=ConfigType.HARDWARE_CONFIG,
             original_filename=station.hardware_config_file.name,
             session=session,
