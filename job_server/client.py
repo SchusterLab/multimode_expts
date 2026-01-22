@@ -254,20 +254,23 @@ class JobClient:
     def wait_for_completion(
         self,
         job_id: str,
-        poll_interval: float = 5.0,
+        poll_interval: float = 2.0,
         timeout: Optional[float] = None,
         verbose: bool = True,
+        stream_output: bool = True,
     ) -> JobResult:
         """
-        Wait for a job to complete.
+        Wait for a job to complete, optionally streaming output in real-time.
 
         Polls the server until the job finishes (completed, failed, or cancelled).
+        By default, streams the job's stdout/stderr output as it runs.
 
         Args:
             job_id: The job ID to wait for (required)
-            poll_interval: Seconds between status checks (default: 5.0)
+            poll_interval: Seconds between status checks (default: 2.0)
             timeout: Maximum seconds to wait (None = wait forever)
-            verbose: Print status updates while waiting
+            verbose: Print status updates while waiting (default: True)
+            stream_output: Stream job output in real-time (default: True)
 
         Returns:
             Final JobResult
@@ -282,6 +285,8 @@ class JobClient:
 
         start_time = time.time()
         last_status = None
+        output_offset = 0
+        output_fetch_failed = False
 
         try:
             while True:
@@ -290,16 +295,38 @@ class JobClient:
                 # Print status changes
                 if verbose and result.status != last_status:
                     elapsed = time.time() - start_time
-                    print(f"[{elapsed:.1f}s] Job {job_id}: {result.status}")
+                    print(f"\n[{elapsed:.1f}s] Job {job_id}: {result.status}")
                     last_status = result.status
+
+                # Stream new output if job is running or just completed
+                if stream_output and result.status in ("running", "completed", "failed"):
+                    try:
+                        output_result = self.get_output(job_id, offset=output_offset)
+                        if output_result["output"]:
+                            print(output_result["output"], end="", flush=True)
+                        output_offset = output_result["line_count"]
+                    except Exception as e:
+                        if not output_fetch_failed:
+                            print(f"\n[WARNING] Failed to fetch job output: {e}")
+                            print("[WARNING] Check the worker terminal on the BF5 computer for output")
+                            output_fetch_failed = True
 
                 # Check if done
                 if result.is_done():
+                    # Fetch any remaining output
+                    if stream_output and not output_fetch_failed:
+                        try:
+                            output_result = self.get_output(job_id, offset=output_offset)
+                            if output_result["output"]:
+                                print(output_result["output"], end="", flush=True)
+                        except Exception:
+                            pass
+
                     if verbose:
                         if result.is_successful():
-                            print(f"Job completed! Data: {result.data_file_path}")
+                            print(f"\nJob completed! Data: {result.data_file_path}")
                         else:
-                            print(f"Job {result.status}: {result.error_message or 'No details'}")
+                            print(f"\nJob {result.status}: {result.error_message or 'No details'}")
                     return result
 
                 # Check timeout
@@ -414,5 +441,30 @@ class JobClient:
             params["status"] = status
 
         response = self._request("GET", "/jobs/history", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def get_output(
+        self,
+        job_id: str,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Get output from a running or completed job.
+
+        Args:
+            job_id: The job ID (required)
+            offset: Line number to start from (for incremental fetching)
+
+        Returns:
+            Dict with 'output', 'line_count', 'is_complete', 'offset'
+
+        Raises:
+            ValueError: If job_id is empty
+        """
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        response = self._request("GET", f"/jobs/{job_id}/output", params={"offset": offset})
         response.raise_for_status()
         return response.json()

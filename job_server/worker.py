@@ -36,11 +36,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from multimode_expts.job_server.database import get_database
-from multimode_expts.job_server.models import Job, JobStatus
+from multimode_expts.job_server.models import Job, JobStatus, JobOutput
 from multimode_expts.job_server.id_generator import IDGenerator
 from multimode_expts.job_server.config_versioning import ConfigVersionManager
+from multimode_expts.job_server.output_capture import OutputCapture
 from slab.datamanagement import AttrDict
 from copy import deepcopy
+
+# Patch tqdm_notebook to use regular tqdm (tqdm_notebook uses IPython widgets, not stdout)
+# This must happen before experiment modules are imported
+import tqdm as tqdm_module
+import tqdm.notebook
+tqdm_module.tqdm_notebook = tqdm_module.tqdm
+tqdm_module.notebook.tqdm_notebook = tqdm_module.tqdm
+tqdm_module.notebook.tqdm = tqdm_module.tqdm
 
 
 # Default lock file location (in the job_server directory)
@@ -205,6 +214,9 @@ class JobWorker:
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
+        # Clean up any jobs left in RUNNING state from previous crashes
+        self._cleanup_incomplete_jobs()
+
         print(f"[WORKER] Initialized in {'MOCK' if mock_mode else 'REAL'} mode")
 
     def _handle_shutdown(self, signum, frame):
@@ -292,14 +304,15 @@ class JobWorker:
 
     def _execute_job(self, job: Job):
         """
-        Execute a single job.
+        Execute a single job with output capture.
 
         Steps:
         1. Initialize station if needed
-        2. Snapshot config files
+        2. Capture stdout/stderr for streaming to client
         3. Load experiment class dynamically
         4. Create and run experiment
-        5. Update job status with results
+        5. Snapshot config files
+        6. Update job status with results
 
         Args:
             job: The Job object to execute
@@ -309,18 +322,26 @@ class JobWorker:
         print(f"[WORKER]   Experiment: {job.experiment_class}")
         print(f"[WORKER]   User: {job.user}")
 
+        # Create log directory for output capture
+        log_dir = self.station.experiment_path / "logs"
+
         try:
             # Update station config from job's serialized config
             self._update_station_from_job_config(job.station_config)
 
-            # Load experiment class dynamically
-            ExptClass = self._load_experiment_class(job.experiment_module, job.experiment_class)
+            # Capture all output during experiment execution
+            with OutputCapture(job.job_id, self.db, log_dir) as capture:
+                # Store log path in job record
+                self._update_job_log_path(job.job_id, str(capture.log_path))
 
-            # Parse experiment config
-            expt_config = json.loads(job.experiment_config)
+                # Load experiment class dynamically
+                ExptClass = self._load_experiment_class(job.experiment_module, job.experiment_class)
 
-            # Run the experiment
-            data_file_path, expt_pickle_path = self._run_experiment(ExptClass, expt_config, job)
+                # Parse experiment config
+                expt_config = json.loads(job.experiment_config)
+
+                # Run the experiment (all print output is captured)
+                data_file_path, expt_pickle_path = self._run_experiment(ExptClass, expt_config, job)
 
             # Snapshot configs AFTER experiment runs, using the actual config that was used
             config_versions = self._snapshot_configs(job.job_id)
@@ -495,6 +516,42 @@ class JobWorker:
                 job.status = JobStatus.FAILED
                 job.completed_at = datetime.now(timezone.utc)
                 job.error_message = error_message
+
+    def _update_job_log_path(self, job_id: str, log_path: str):
+        """
+        Update job record with output log file path.
+
+        Args:
+            job_id: The job ID
+            log_path: Path to the log file
+        """
+        with self.db.session() as session:
+            job = session.query(Job).filter_by(job_id=job_id).first()
+            if job:
+                job.output_log_path = log_path
+
+    def _cleanup_incomplete_jobs(self):
+        """
+        Mark any RUNNING jobs as FAILED on startup (crash recovery).
+
+        If the worker crashes or is killed during job execution, jobs may be
+        left in RUNNING state. This method cleans them up on restart.
+        """
+        with self.db.session() as session:
+            running_jobs = session.query(Job).filter_by(status=JobStatus.RUNNING).all()
+            for job in running_jobs:
+                job.status = JobStatus.FAILED
+                job.completed_at = datetime.now(timezone.utc)
+                job.error_message = "Worker crashed or was restarted during execution"
+
+                # Also mark output as complete
+                output = session.query(JobOutput).filter_by(job_id=job.job_id).first()
+                if output:
+                    output.is_complete = True
+                    output.output_text = (output.output_text or "") + "\n[WORKER CRASHED]"
+
+            if running_jobs:
+                print(f"[WORKER] Marked {len(running_jobs)} incomplete jobs as FAILED")
 
 
 def main():

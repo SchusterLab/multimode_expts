@@ -6,7 +6,7 @@ Tables:
 - ConfigVersion: Tracks versioned snapshots of config files
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -80,6 +80,7 @@ class Job(Base):
 
     data_file_path = Column(String(500), nullable=True)
     expt_pickle_path = Column(String(500), nullable=True)  # Path to pickled expt object
+    output_log_path = Column(String(500), nullable=True)  # Path to job output log file
     error_message = Column(Text, nullable=True)
 
     # Relationships
@@ -220,4 +221,44 @@ class MainConfig(Base):
             "version_id": self.version_id,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "updated_by": self.updated_by,
+        }
+
+
+class JobOutput(Base):
+    """
+    Stores output (stdout/stderr) from running jobs for streaming to clients.
+
+    Each job has one output record that accumulates all output text.
+    The output_text grows as the job runs, and is_complete is set when job finishes.
+
+    Attributes:
+        job_id: Reference to the job
+        output_text: Accumulated stdout/stderr output
+        line_count: Number of lines (for efficient offset queries)
+        last_updated: When output was last updated
+        is_complete: True when job finishes (no more output expected)
+    """
+    __tablename__ = "job_outputs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(20), ForeignKey("jobs.job_id"), unique=True, nullable=False, index=True)
+    output_text = Column(Text, default="")
+    line_count = Column(Integer, default=0)
+    last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    is_complete = Column(Boolean, default=False)
+
+    # Relationship
+    job = relationship("Job", backref="output")
+
+    def __repr__(self):
+        return f"<JobOutput({self.job_id}, lines={self.line_count}, complete={self.is_complete})>"
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "job_id": self.job_id,
+            "output_text": self.output_text,
+            "line_count": self.line_count,
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+            "is_complete": self.is_complete,
         }

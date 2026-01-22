@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .database import get_database, Database
-from .models import Job, JobStatus
+from .models import Job, JobStatus, JobOutput
 from .id_generator import IDGenerator
 
 # Initialize FastAPI app
@@ -139,6 +139,19 @@ class HealthResponse(BaseModel):
     database_connected: bool
     pending_jobs: int
     running_jobs: int
+
+
+class JobOutputResponse(BaseModel):
+    """Response for job output streaming."""
+
+    job_id: str
+    output: str  # Output text (may be partial if using offset)
+    line_count: int  # Total lines of output so far
+    is_complete: bool  # True when job is finished (no more output expected)
+    offset: int  # Lines returned start from this offset
+
+    class Config:
+        from_attributes = True
 
 
 # ============================================================================
@@ -414,6 +427,100 @@ async def cancel_job(job_id: str, session: Session = Depends(get_db)):
     print(f"[SERVER] Job cancelled: {job_id}")
 
     return {"message": f"Job {job_id} cancelled", "job_id": job_id}
+
+
+@app.get("/jobs/{job_id}/output", response_model=JobOutputResponse, tags=["jobs"])
+async def get_job_output(
+    job_id: str,
+    offset: int = 0,
+    session: Session = Depends(get_db),
+):
+    """
+    Get output from a running or completed job.
+
+    This endpoint returns the stdout/stderr output captured during job execution,
+    allowing clients to stream output in real-time by polling.
+
+    Args:
+        job_id: The job ID
+        offset: Line number to start from (0 = beginning). For incremental polling,
+                pass the line_count from the previous response to get only new lines.
+
+    Returns:
+        JobOutputResponse with output text and metadata.
+
+    Usage for incremental polling:
+        1. First call with offset=0 to get initial output
+        2. Subsequent calls with offset=previous_line_count to get only new lines
+        3. When is_complete=True, stop polling
+
+    Edge cases:
+        - Job not started yet: Returns empty output with is_complete=False
+        - Job completed: Returns full output with is_complete=True
+        - Invalid job_id: Returns 404
+    """
+    # Check job exists
+    job = session.query(Job).filter_by(job_id=job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Get output record
+    output = session.query(JobOutput).filter_by(job_id=job_id).first()
+
+    if not output:
+        # Job exists but hasn't started output capture yet
+        # (PENDING state, or just transitioned to RUNNING)
+        is_complete = job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+        return JobOutputResponse(
+            job_id=job_id,
+            output="",
+            line_count=0,
+            is_complete=is_complete,
+            offset=0,
+        )
+
+    # Get output text, optionally from offset
+    full_text = output.output_text or ""
+
+    if offset > 0:
+        # Split by lines and return from offset
+        lines = full_text.split('\n')
+        if offset < len(lines):
+            partial_text = '\n'.join(lines[offset:])
+        else:
+            partial_text = ""
+    else:
+        partial_text = full_text
+
+    return JobOutputResponse(
+        job_id=job_id,
+        output=partial_text,
+        line_count=output.line_count,
+        is_complete=output.is_complete,
+        offset=offset,
+    )
+
+
+@app.get("/jobs/{job_id}/log", tags=["jobs"])
+async def get_job_log_path(
+    job_id: str,
+    session: Session = Depends(get_db),
+):
+    """
+    Get the path to the full log file for a job.
+
+    Returns the log file path which can be read directly from the file system
+    (useful for debugging since worker and server are on the same machine).
+    """
+    job = session.query(Job).filter_by(job_id=job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    return {
+        "job_id": job_id,
+        "log_path": job.output_log_path,
+        "status": job.status.value,
+    }
 
 
 # ============================================================================
