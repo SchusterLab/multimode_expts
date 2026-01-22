@@ -192,12 +192,19 @@ class CharacterizationRunner:
             station_data["multiphoton_config_file"] = str(self.station.multiphoton_config_file)
 
         # Include CSV dataframes as JSON-serializable data
+        # Convert datetime columns (last_update) to strings for JSON serialization
         if hasattr(self.station, 'ds_storage'):
-            station_data["storage_man_data"] = self.station.ds_storage.df.to_dict(orient='records')
+            df = self.station.ds_storage.df.copy()
+            if 'last_update' in df.columns:
+                df['last_update'] = df['last_update'].astype(str)
+            station_data["storage_man_data"] = df.to_dict(orient='records')
             station_data["storage_man_file"] = self.station.storage_man_file
 
         if hasattr(self.station, 'ds_floquet') and self.station.ds_floquet is not None:
-            station_data["floquet_data"] = self.station.ds_floquet.df.to_dict(orient='records')
+            df = self.station.ds_floquet.df.copy()
+            if 'last_update' in df.columns:
+                df['last_update'] = df['last_update'].astype(str)
+            station_data["floquet_data"] = df.to_dict(orient='records')
             station_data["floquet_file"] = self.station.floquet_file
 
         return json.dumps(station_data)
