@@ -238,6 +238,11 @@ class JobWorker:
 
         station_data = json.loads(station_config_json)
 
+        # Update experiment_name and reinitialize output paths if provided
+        if "experiment_name" in station_data:
+            self.station.experiment_name = station_data["experiment_name"]
+            self.station._initialize_output_paths()
+
         # Update station's hardware_cfg
         self.station.hardware_cfg = AttrDict(station_data["hardware_cfg"])
 
@@ -248,7 +253,7 @@ class JobWorker:
         self.station.ds_storage.df = pd.DataFrame(station_data["storage_man_data"])
         self.station.ds_floquet.df = pd.DataFrame(station_data["floquet_data"])
 
-        print(f"[WORKER] Updated station config from job")
+        print(f"[WORKER] Updated station config from job: {self.station.experiment_name}")
 
     def run(self):
         """

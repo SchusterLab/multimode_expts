@@ -182,6 +182,7 @@ class CharacterizationRunner:
             JSON string containing hardware_cfg, multimode_cfg, and CSV data
         """
         station_data = {
+            "experiment_name": self.station.experiment_name,
             "hardware_cfg": dict(self.station.hardware_cfg),
             "hardware_config_file": str(self.station.hardware_config_file),
         }
