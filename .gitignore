@@ -1,7 +1,15 @@
 # User defined stuff here:
 
+pixi.lock
+
+# these are not gitted but backed up to S via a file sync
+configs/versions/ 
+job_server/jobs.db
+job_server/worker.lock
+
 plots/
 .vscode/
+*.code-workspace
 node_modules/
 analysis_notebooks/bosonic/outcmaes/
 analysis_notebooks/bosonic/*.png
