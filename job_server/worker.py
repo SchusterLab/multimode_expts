@@ -395,7 +395,10 @@ class JobWorker:
 
     def _load_experiment_class(self, module_path: str, class_name: str):
         """
-        Dynamically load an experiment class.
+        Dynamically load an experiment class with fresh code.
+
+        Clears cached modules before importing to pick up any source code changes,
+        similar to Jupyter's %autoreload magic.
 
         Args:
             module_path: Full module path (e.g., "multimode_expts.experiments.single_qubit.amplitude_rabi")
@@ -405,6 +408,18 @@ class JobWorker:
             The experiment class
         """
         print(f"[WORKER] Loading {class_name} from {module_path}")
+
+        # Clear cached modules to get fresh code (like autoreload)
+        importlib.invalidate_caches()
+
+        # Remove the experiment module and any multimode_expts modules that might have changed
+        modules_to_remove = [
+            name for name in list(sys.modules.keys())
+            if name == module_path or name.startswith('multimode_expts.')
+        ]
+        for name in modules_to_remove:
+            del sys.modules[name]
+
         module = importlib.import_module(module_path)
         return getattr(module, class_name)
 
