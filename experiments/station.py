@@ -155,6 +155,11 @@ class MultimodeStation:
             )
             self.ds_floquet = ds_floquet
 
+            # Make datasets available via hardware_cfg for all code paths
+            # (CharacterizationRunner/worker will re-inject after deepcopy to ensure live reference)
+            self.hardware_cfg.device.storage._ds_storage = self.ds_storage
+            self.hardware_cfg.device.storage._ds_floquet = self.ds_floquet
+
     def _resolve_config_path(
         self,
         config_spec: Optional[str],

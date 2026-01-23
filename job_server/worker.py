@@ -468,6 +468,12 @@ class JobWorker:
 
         # Setup configuration (following CharacterizationRunner pattern)
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+
+        # Pass dataset objects from worker's station - required, never read from disk
+        # (station datasets were already updated from serialized job config)
+        expt.cfg.device.storage._ds_storage = self.station.ds_storage
+        expt.cfg.device.storage._ds_floquet = self.station.ds_floquet
+
         expt.cfg.expt = AttrDict(expt_config)
 
         # Override filename to use job-based naming

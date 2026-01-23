@@ -118,8 +118,15 @@ class MM_base:
         self.hpi_ge_gain_fast = cfg.device.multiphoton.hpi['gn-en'].gain[0]
 
         # -------------f0g1 and M1-S sigmas-------
-        #TODO: Get from dataset
-        self.dataset = StorageManSwapDataset(cfg.device.storage.storage_man_file)
+        # Use dataset objects from cfg (passed from station) - never read from disk
+        if not hasattr(cfg.device.storage, '_ds_storage'):
+            raise ValueError("Storage dataset not found in cfg. Experiments must be run via CharacterizationRunner.")
+        self.dataset = cfg.device.storage._ds_storage
+
+        if not hasattr(cfg.device.storage, '_ds_floquet'):
+            raise ValueError("Floquet dataset not found in cfg. Experiments must be run via CharacterizationRunner.")
+        self.dataset_floquet = cfg.device.storage._ds_floquet
+
         self.pi_m1_sigma_low = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_low_ch[qTest])
         self.pi_m1_sigma_high = self.us2cycles(self.cfg.device.manipulate.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
 
@@ -1178,7 +1185,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
 class prepulse_creator2:
-    def __init__(self, cfg, storage_man_file, floquet_man_stor_file=None):
+    def __init__(self, cfg, storage_man_file=None, floquet_man_stor_file=None):
         '''
         Takes pulse param of form
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1',
@@ -1192,22 +1199,16 @@ class prepulse_creator2:
             1 (flux low & high), 2 (qubit), 3 (manipulate),
             4 (storage),  0 (f0g1), as of fall 2025
         '''
-        # config
-        # with open(config_file, 'r') as cfg_file:
-        #     yaml_cfg = yaml.safe_load(cfg_file)
-        self.cfg = cfg#AttrDict(yaml_cfg)
+        self.cfg = cfg
 
-        # print(
-        #     "multiphoton_cfg", multiphoton_cfg.pulses["pi_g0-e0"]['frequency'] if multiphoton_cfg else "No multiphoton config provided"
-        # )
+        # Use dataset objects from cfg (passed from station) - never read from disk
+        if not hasattr(cfg.device.storage, '_ds_storage'):
+            raise ValueError("Storage dataset not found in cfg. Experiments must be run via CharacterizationRunner.")
+        self.dataset = cfg.device.storage._ds_storage
 
-        # man storage swap data
-        self.dataset = StorageManSwapDataset(storage_man_file)
-
-        # man storage floquet swap data
-        self.dataset_floquet = None
-        if floquet_man_stor_file is not None:
-            self.dataset_floquet = FloquetStorageSwapDataset(floquet_man_stor_file)
+        if not hasattr(cfg.device.storage, '_ds_floquet'):
+            raise ValueError("Floquet dataset not found in cfg. Experiments must be run via CharacterizationRunner.")
+        self.dataset_floquet = cfg.device.storage._ds_floquet
 
         # initialize pulse
         self.pulse = np.array([[],[],[],[],[],[],[]], dtype = object)

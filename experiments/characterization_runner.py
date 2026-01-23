@@ -181,9 +181,30 @@ class CharacterizationRunner:
         Returns:
             JSON string containing hardware_cfg, multimode_cfg, and CSV data
         """
+        # Convert hardware_cfg to a plain dict recursively, excluding non-serializable dataset objects
+        def to_serializable_dict(obj, exclude_keys=None):
+            """Recursively convert AttrDict/dict to plain dict, excluding specified keys."""
+            if exclude_keys is None:
+                exclude_keys = set()
+            if isinstance(obj, dict):
+                return {
+                    k: to_serializable_dict(v, exclude_keys)
+                    for k, v in obj.items()
+                    if k not in exclude_keys
+                }
+            elif isinstance(obj, list):
+                return [to_serializable_dict(item, exclude_keys) for item in obj]
+            else:
+                return obj
+
+        hardware_cfg_dict = to_serializable_dict(
+            self.station.hardware_cfg,
+            exclude_keys={'_ds_storage', '_ds_floquet'}
+        )
+
         station_data = {
             "experiment_name": self.station.experiment_name,
-            "hardware_cfg": dict(self.station.hardware_cfg),
+            "hardware_cfg": hardware_cfg_dict,
             "hardware_config_file": str(self.station.hardware_config_file),
         }
 
@@ -335,6 +356,11 @@ class CharacterizationRunner:
 
         # Setup config
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+
+        # Pass dataset objects from station (live in-memory data) - required, never read from disk
+        expt.cfg.device.storage._ds_storage = self.station.ds_storage
+        expt.cfg.device.storage._ds_floquet = self.station.ds_floquet
+
         expt.cfg.expt = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
         # Handle relax_delay if present

@@ -32,8 +32,6 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # use the pre_pulse_creator to define pulse parameters
         # I should add user define pulse later for more flexibility
 
-        print("cfg", StorageManSwapDataset(cfg.device.storage.storage_man_file).df['pi (mus)'][0])
-
 
         self.pulse_to_test = self.get_prepulse_creator([cfg.expt.pulse_type], cfg=cfg).pulse.tolist()
         # flatten the list
@@ -334,7 +332,6 @@ class ErrorAmplificationExperiment(Experiment):
         n_start = 1 if "n_start" not in cfg.expt else cfg.expt.n_start
         n_step = 1 if "n_step" not in cfg.expt else cfg.expt.n_step
         n_pts = np.arange(n_start, cfg.expt.n_pulses + n_step, n_step) 
-        print("n_pts", n_pts)
         
         data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amp":[], "phase":[]}
         for pt in tqdm(n_pts):
