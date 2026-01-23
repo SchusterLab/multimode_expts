@@ -35,7 +35,7 @@ class GeneralFitting:
         bins it into counts_g and counts_e
         '''
         temp_data = self.data
-        rounds = self.cfg['expt']['rounds']
+        rounds = self.cfg['expt'].get('rounds', 1)
         reps = self.cfg['expt']['reps']
         expts = self.cfg['expt']['expts']
         threshold = self.cfg.device.readout.threshold[0]
@@ -343,7 +343,7 @@ class RamseyFitting(GeneralFitting):
             if isinstance(p, (list, np.ndarray)):
                 pCov = data['fit_err_avgi']
                 try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
                 except Exception:
                     print('Fit Failed ; aborting')
                     captionStr = None
@@ -366,7 +366,7 @@ class RamseyFitting(GeneralFitting):
             if isinstance(p, (list, np.ndarray)):
                 pCov = data['fit_err_avgq']
                 try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
                 except Exception:
                     print('Fit Failed ; aborting')
                     captionStr = None
@@ -385,9 +385,12 @@ class RamseyFitting(GeneralFitting):
         plt.tight_layout()
         plt.show()
 
-        #make filename same as titlestr
-        filename = title_str.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig, filename=filename)
+        #make filename same as titlestr - only save if station is available
+        if self.station is not None:
+            filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+            self.save_plot(fig, filename=filename)
+
+        
 
 
 class CavityRamseyGainSweepFitting(RamseyFitting):
@@ -762,9 +765,9 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                 print(f'Chi: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz')
                 print(f'Chi2: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz')
                 text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
-                       f'$\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz\n' \
-                       f'$\chi$: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz\n' \
-                       f'$\chi_2$: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz'
+                       f'$\\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz\n' \
+                       f'$\\chi$: {chi*1e3:.3f} +/- {chi_err*1e3:.3f} kHz\n' \
+                       f'$\\chi_2$: {chi2*1e3:.3f} +/- {chi2_err*1e3:.3f} kHz'
                 ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
                          verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
 
@@ -780,13 +783,13 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                 deltaf_g_th = detuning_g - 2*Kerr * alpha_list**2
                 ax4.plot(alpha_list**2, deltaf_g_th, '-', label='Ground State Theory')
                 text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
-                        f'$\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz'
+                        f'$\\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz'
                 print(f'Kerr : {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz')
                 print(f'detuning Ground State: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz')   
             ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
                      verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
 
-            ax4.set_xlabel(r'$|\alpha|^2$')
+            ax4.set_xlabel(f'$|\\alpha|^2$')
             ax4.set_ylabel('frequency [MHz]')
             ax4.legend(loc='center')
 
@@ -970,7 +973,6 @@ class Histogram(GeneralFitting):
         Qg_new = Ig * np.sin(theta) + Qg * np.cos(theta)
         Ie_new = Ie * np.cos(theta) - Qe * np.sin(theta)
         Qe_new = Ie * np.sin(theta) + Qe * np.cos(theta)
-        print('updating temp data')
         self.data['Ig_rot'] = Ig_new
         self.data['Qg_rot'] = Qg_new
         self.data['Ie_rot'] = Ie_new
@@ -1741,7 +1743,7 @@ class MM_DualRailRBFitting(GeneralFitting):
             abs_err = rel_err * np.exp(-1 / fit[3])
             fid = np.exp(-1 / fit[3])
             fid_err = abs_err
-            captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
+            captionStr = f'$t$ fit [gates]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\\pm$ {abs_err*100:.6f} %'
 
             p_post = fit_post
             pCov_post = err_post
@@ -1749,7 +1751,7 @@ class MM_DualRailRBFitting(GeneralFitting):
             abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
             fid_post = np.exp(-1 / fit_post[3])
             fid_err_post = abs_err_post
-            captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
+            captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\\pm$ {abs_err_post*100:.6f}%'
 
             ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
             ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color=colors[1])

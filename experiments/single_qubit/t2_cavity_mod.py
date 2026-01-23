@@ -44,7 +44,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
         elif cfg.expt.user_defined_pulse[5] == 4:
             self.cavity_ch = self.man_ch
             self.cavity_ch_types = self.man_ch_type
-        
+
         
         self.q_rps = [self.ch_page(ch) for ch in self.cavity_ch] # get register page for f0g1 channel
         self.stor_rps = 0 # get register page for storage channel
@@ -240,13 +240,16 @@ class CavityRamseyProgram(MMRAveragerProgram):
 
         # parity measurement
         if self.cfg.expt.parity_meas: 
-            parity_meas_str = [['qubit', 'ge', 'hpi'], # Starting parity meas
-                       ['qubit', 'ge', 'parity_M' + str(self.cfg.expt.man_idx)], 
-                       ['qubit', 'ge', 'hpi']]
-            creator = self.get_prepulse_creator(parity_meas_str)
-            print(creator.pulse)
-            self.custom_pulse(self.cfg, creator.pulse, prefix='ParityMeas', sync_zero_const=True)
-        
+            # parity_meas_str = [['qubit', 'ge', 'hpi'], # Starting parity meas
+            #            ['qubit', 'ge', 'parity_M' + str(self.cfg.expt.man_idx)], 
+            #            ['qubit', 'ge', 'hpi']]
+            
+            # creator = self.get_prepulse_creator(parity_meas_str)
+            # print(creator.pulse)
+            # self.custom_pulse(self.cfg, creator.pulse, prefix='ParityMeas', sync_zero_const=True)
+            self.play_parity_pulse(self.cfg.expt.man_mode_no - 1, second_phase=180)
+
+
         # align channels and measure
         self.measure_wrapper()
 
@@ -443,7 +446,7 @@ class CavityRamseyExperiment(Experiment):
             p = data['fit_avgi']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgi']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -461,7 +464,7 @@ class CavityRamseyExperiment(Experiment):
             p = data['fit_avgq']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgq']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')

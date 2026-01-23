@@ -1,0 +1,470 @@
+"""
+Client library for submitting and monitoring jobs.
+
+This module provides a simple interface for users to:
+- Submit experiment jobs to the queue
+- Check job status
+- Wait for job completion
+- List queue state
+- Cancel pending jobs
+
+Usage in notebooks:
+    from multimode_expts.job_server.client import JobClient
+
+    client = JobClient()
+
+    # Submit a job (all parameters are required)
+    job_id = client.submit_job(
+        experiment_class="AmplitudeRabiExperiment",
+        experiment_module="multimode_expts.experiments.single_qubit.amplitude_rabi",
+        expt_config={"start": 0, "step": 100, "expts": 50, "reps": 1000},
+        user="connie"
+    )
+
+    # Wait for completion
+    result = client.wait_for_completion(job_id)
+    print(f"Data saved to: {result.data_file_path}")
+"""
+
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, Any, Optional, List
+
+import requests
+
+
+@dataclass
+class JobResult:
+    """Result of a job query."""
+
+    job_id: str
+    status: str
+    user: Optional[str] = None
+    experiment_class: Optional[str] = None
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    data_file_path: Optional[str] = None
+    expt_pickle_path: Optional[str] = None
+    error_message: Optional[str] = None
+    queue_position: Optional[int] = None
+    hardware_config_version_id: Optional[str] = None
+    multiphoton_config_version_id: Optional[str] = None
+    floquet_storage_version_id: Optional[str] = None
+    man1_storage_version_id: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "JobResult":
+        """Create JobResult from API response dict."""
+        return cls(
+            job_id=data.get("job_id"),
+            status=data.get("status"),
+            user=data.get("user"),
+            experiment_class=data.get("experiment_class"),
+            created_at=_parse_datetime(data.get("created_at")),
+            started_at=_parse_datetime(data.get("started_at")),
+            completed_at=_parse_datetime(data.get("completed_at")),
+            data_file_path=data.get("data_file_path"),
+            expt_pickle_path=data.get("expt_pickle_path"),
+            error_message=data.get("error_message"),
+            queue_position=data.get("queue_position"),
+            hardware_config_version_id=data.get("hardware_config_version_id"),
+            multiphoton_config_version_id=data.get("multiphoton_config_version_id"),
+            floquet_storage_version_id=data.get("floquet_storage_version_id"),
+            man1_storage_version_id=data.get("man1_storage_version_id"),
+        )
+
+    def is_done(self) -> bool:
+        """Check if job has finished (completed, failed, or cancelled)."""
+        return self.status in ("completed", "failed", "cancelled")
+
+    def is_successful(self) -> bool:
+        """Check if job completed successfully."""
+        return self.status == "completed"
+
+    def load_expt(self):
+        """
+        Load the experiment object from the saved pickle file.
+
+        This allows postprocessors to work with the actual expt object
+        that was created and run by the worker.
+
+        Returns:
+            The experiment object (e.g., QubitSpectroscopyExperiment instance)
+
+        Raises:
+            ValueError: If job did not complete successfully or pickle path is missing
+            FileNotFoundError: If the pickle file doesn't exist
+        """
+        import pickle
+
+        if not self.is_successful():
+            raise ValueError(f"Cannot load expt: job status is {self.status}")
+        if not self.expt_pickle_path:
+            raise ValueError("No expt_pickle_path available for this job")
+
+        with open(self.expt_pickle_path, "rb") as f:
+            return pickle.load(f)
+
+
+def _parse_datetime(value) -> Optional[datetime]:
+    """Parse datetime from string or return None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        # Handle ISO format with or without timezone
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+class JobClient:
+    """
+    Client for interacting with the job queue server.
+
+    Provides methods to submit jobs, check status, and wait for completion.
+    """
+
+    def __init__(self, server_url: str = "http://127.0.0.1:8000"):
+        """
+        Initialize the job client.
+
+        Args:
+            server_url: URL of the job server (default: http://127.0.0.1:8000)
+        """
+        self.server_url = server_url.rstrip("/")
+
+    def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
+        """Make an HTTP request to the server."""
+        url = f"{self.server_url}{endpoint}"
+        response = requests.request(method, url, **kwargs)
+        return response
+
+    def health_check(self) -> dict:
+        """
+        Check if the server is healthy.
+
+        Returns:
+            Health status dict with database_connected, pending_jobs, running_jobs
+        """
+        response = self._request("GET", "/health")
+        response.raise_for_status()
+        return response.json()
+
+    def submit_job(
+        self,
+        experiment_class: str,
+        experiment_module: str,
+        expt_config: Dict[str, Any],
+        station_config: str,
+        user: str,
+        priority: int = 0,
+    ) -> str:
+        """
+        Submit an experiment job to the queue.
+
+        All parameters except priority are required.
+
+        Args:
+            experiment_class: Name of experiment class (e.g., "AmplitudeRabiExperiment")
+            experiment_module: Full module path (e.g., "multimode_expts.experiments.single_qubit.amplitude_rabi")
+            expt_config: Experiment-specific configuration dict
+            station_config: JSON-serialized station config (required for config propagation)
+            user: Username of submitter (required)
+            priority: Job priority (higher = runs sooner, default 0)
+
+        Returns:
+            Unique job_id string
+
+        Raises:
+            ValueError: If any required parameter is missing or invalid
+
+        Example:
+            job_id = client.submit_job(
+                experiment_class="AmplitudeRabiExperiment",
+                experiment_module="multimode_expts.experiments.single_qubit.amplitude_rabi",
+                expt_config={
+                    "start": 0,
+                    "step": 100,
+                    "expts": 50,
+                    "reps": 1000,
+                    "rounds": 1,
+                    "qubits": [0],
+                },
+                station_config=json.dumps(station_data),
+                user="Claude"
+            )
+        """
+        # Validate required parameters
+        if not experiment_class:
+            raise ValueError("experiment_class is required")
+        if not experiment_module:
+            raise ValueError("experiment_module is required")
+        if not expt_config:
+            raise ValueError("expt_config is required")
+        if not station_config:
+            raise ValueError("station_config is required")
+        if not user:
+            raise ValueError("user is required")
+        if not isinstance(expt_config, dict):
+            raise ValueError("expt_config must be a dict")
+
+        response = self._request(
+            "POST",
+            "/jobs/submit",
+            json={
+                "experiment_class": experiment_class,
+                "experiment_module": experiment_module,
+                "expt_config": expt_config,
+                "station_config": station_config,
+                "user": user,
+                "priority": priority,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        print(f"Job submitted: {data['job_id']} (queue position: {data.get('queue_position', '?')})")
+        return data["job_id"]
+
+    def get_status(self, job_id: str) -> JobResult:
+        """
+        Get the current status of a job.
+
+        Args:
+            job_id: The job ID to query
+
+        Returns:
+            JobResult with current status and details
+
+        Raises:
+            ValueError: If job_id is empty
+        """
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        response = self._request("GET", f"/jobs/{job_id}")
+        response.raise_for_status()
+        return JobResult.from_dict(response.json())
+
+    def wait_for_completion(
+        self,
+        job_id: str,
+        poll_interval: float = 2.0,
+        timeout: Optional[float] = None,
+        verbose: bool = True,
+        stream_output: bool = True,
+    ) -> JobResult:
+        """
+        Wait for a job to complete, optionally streaming output in real-time.
+
+        Polls the server until the job finishes (completed, failed, or cancelled).
+        By default, streams the job's stdout/stderr output as it runs.
+
+        Args:
+            job_id: The job ID to wait for (required)
+            poll_interval: Seconds between status checks (default: 2.0)
+            timeout: Maximum seconds to wait (None = wait forever)
+            verbose: Print status updates while waiting (default: True)
+            stream_output: Stream job output in real-time (default: True)
+
+        Returns:
+            Final JobResult
+
+        Raises:
+            ValueError: If job_id is empty
+            TimeoutError: If timeout is exceeded
+            KeyboardInterrupt: Re-raised after attempting to cancel pending jobs
+        """
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        start_time = time.time()
+        last_status = None
+        output_offset = 0
+        output_fetch_failed = False
+
+        try:
+            while True:
+                result = self.get_status(job_id)
+
+                # Print status changes
+                if verbose and result.status != last_status:
+                    elapsed = time.time() - start_time
+                    print(f"\n[{elapsed:.1f}s] Job {job_id}: {result.status}")
+                    last_status = result.status
+
+                # Stream new output if job is running or just completed
+                if stream_output and result.status in ("running", "completed", "failed"):
+                    try:
+                        output_result = self.get_output(job_id, offset=output_offset)
+                        if output_result["output"]:
+                            print(output_result["output"], end="", flush=True)
+                        output_offset = output_result["line_count"]
+                    except Exception as e:
+                        if not output_fetch_failed:
+                            print(f"\n[WARNING] Failed to fetch job output: {e}")
+                            print("[WARNING] Check the worker terminal on the BF5 computer for output")
+                            output_fetch_failed = True
+
+                # Check if done
+                if result.is_done():
+                    # Fetch any remaining output
+                    if stream_output and not output_fetch_failed:
+                        try:
+                            output_result = self.get_output(job_id, offset=output_offset)
+                            if output_result["output"]:
+                                print(output_result["output"], end="", flush=True)
+                        except Exception:
+                            pass
+
+                    if verbose:
+                        if result.is_successful():
+                            print(f"\nJob completed! Data: {result.data_file_path}")
+                        else:
+                            print(f"\nJob {result.status}: {result.error_message or 'No details'}")
+                    return result
+
+                # Check timeout
+                if timeout and (time.time() - start_time) > timeout:
+                    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+
+                time.sleep(poll_interval)
+
+        except KeyboardInterrupt:
+            # User interrupted - try to cancel the job if it's still pending
+            print(f"\n[INTERRUPT] Keyboard interrupt received for job {job_id}")
+            result = self.get_status(job_id)
+
+            if result.status == "pending":
+                print(f"[INTERRUPT] Job is pending, cancelling...")
+                try:
+                    self.cancel_job(job_id)
+                    print(f"[INTERRUPT] Job {job_id} cancelled successfully")
+                except Exception as e:
+                    print(f"[INTERRUPT] Failed to cancel job: {e}")
+            elif result.status == "running":
+                print(f"[INTERRUPT] ERROR: Job is currently running on worker")
+                print(f"[INTERRUPT] Cannot interrupt running jobs remotely")
+                print(f"[INTERRUPT] The job will continue running until completion")
+                print(f"[INTERRUPT] Check status later with: client.get_status('{job_id}')")
+            else:
+                print(f"[INTERRUPT] Job already in terminal state: {result.status}")
+
+            # Re-raise the interrupt
+            raise
+
+    def list_queue(self) -> dict:
+        """
+        List all pending and running jobs.
+
+        Returns:
+            Dict with 'pending_jobs', 'running_job', 'total_pending'
+        """
+        response = self._request("GET", "/jobs/queue")
+        response.raise_for_status()
+        return response.json()
+
+    def print_queue(self):
+        """Print the current queue status in a readable format."""
+        queue = self.list_queue()
+
+        print("\n=== Job Queue ===")
+
+        if queue.get("running_job"):
+            job = queue["running_job"]
+            print(f"\nRunning: {job['job_id']}")
+            print(f"  User: {job['user']}")
+            print(f"  Experiment: {job['experiment_class']}")
+            print(f"  Started: {job.get('started_at', 'Unknown')}")
+        else:
+            print("\nNo job currently running")
+
+        print(f"\nPending: {queue['total_pending']} jobs")
+        for i, job in enumerate(queue.get("pending_jobs", [])[:10], 1):
+            print(f"  {i}. {job['job_id']} - {job['experiment_class']} (user: {job['user']}, priority: {job['priority']})")
+
+        if queue["total_pending"] > 10:
+            print(f"  ... and {queue['total_pending'] - 10} more")
+
+        print()
+
+    def cancel_job(self, job_id: str) -> bool:
+        """
+        Cancel a pending job.
+
+        Only pending jobs can be cancelled. Running jobs cannot be interrupted.
+
+        Args:
+            job_id: The job ID to cancel (required)
+
+        Returns:
+            True if cancelled successfully
+
+        Raises:
+            ValueError: If job_id is empty
+            requests.HTTPError: If job not found or cannot be cancelled
+        """
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        response = self._request("DELETE", f"/jobs/{job_id}")
+        response.raise_for_status()
+        print(f"Job {job_id} cancelled")
+        return True
+
+    def get_history(
+        self,
+        limit: int = 50,
+        user: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[dict]:
+        """
+        Get recent job history.
+
+        Args:
+            limit: Maximum number of jobs to return
+            user: Filter by username (optional)
+            status: Filter by status (optional)
+
+        Returns:
+            List of job dicts
+        """
+        params = {"limit": limit}
+        if user:
+            params["user"] = user
+        if status:
+            params["status"] = status
+
+        response = self._request("GET", "/jobs/history", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def get_output(
+        self,
+        job_id: str,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Get output from a running or completed job.
+
+        Args:
+            job_id: The job ID (required)
+            offset: Line number to start from (for incremental fetching)
+
+        Returns:
+            Dict with 'output', 'line_count', 'is_complete', 'offset'
+
+        Raises:
+            ValueError: If job_id is empty
+        """
+        if not job_id:
+            raise ValueError("job_id is required")
+
+        response = self._request("GET", f"/jobs/{job_id}/output", params={"offset": offset})
+        response.raise_for_status()
+        return response.json()

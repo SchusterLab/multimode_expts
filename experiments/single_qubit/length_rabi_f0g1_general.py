@@ -184,9 +184,34 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
         if data is None:
             data = self.data
 
-        # Delegate to the newer implementation in fit_display_classes
+        station = kwargs.pop('station', None)
+
+        # Detect 2D sweep data (from SweepRunner)
+        # 2D data has 'freq_sweep' key and avgi is a 2D array
+        is_2d = (
+            'freq_sweep' in data
+            and 'avgi' in data
+            and hasattr(data['avgi'], 'ndim')
+            and data['avgi'].ndim == 2
+        )
+
+        if is_2d:
+            from fitting.fit_display_classes import ChevronFitting
+            # Extract time axis - handle both 1D and 2D xpts
+            time = data['xpts'][0] if data['xpts'].ndim > 1 else data['xpts']
+            analysis = ChevronFitting(
+                frequencies=data['freq_sweep'],
+                time=time,
+                response_matrix=data['avgi'],
+                config=self.cfg,
+                station=station,
+            )
+            analysis.analyze()
+            self._chevron_analysis = analysis
+            return data
+
+        # Original 1D case - delegate to LengthRabiFitting
         from fitting.fit_display_classes import LengthRabiFitting
-        station=kwargs.pop('station', None)
         analysis = LengthRabiFitting(data, fit=fit, fitparams=fitparams, config=self.cfg, station=station)
         analysis.analyze()
 
@@ -199,14 +224,22 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
         if data is None:
             data = self.data
 
-        # Delegate to the newer implementation in fit_display_classes
-        # Use the analysis object created in analyze() if available
+        # 2D case - use ChevronFitting's display_results
+        if hasattr(self, '_chevron_analysis'):
+            # Note: ChevronFitting uses display_results() not display()
+            self._chevron_analysis.display_results(
+                save_fig=kwargs.get('save_fig', False),
+                title=title_str,
+            )
+            return
+
+        # Original 1D case - delegate to LengthRabiFitting
         if hasattr(self, '_length_rabi_analysis'):
             self._length_rabi_analysis.display(title_str=title_str, **kwargs)
         else:
             # Fallback: create a new analysis object
             from fitting.fit_display_classes import LengthRabiFitting
-            station=kwargs.pop('station', None)
+            station = kwargs.pop('station', None)
             analysis = LengthRabiFitting(data, config=self.cfg, station=station)
             analysis.display(title_str=title_str, **kwargs)
 

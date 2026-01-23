@@ -11,6 +11,10 @@ Just modify the include and exclude lists therein to control which directories c
 
 ## TODO
 
+- [x] Experiment name should be passed from client instead of always using the worker default
+- [ ] Add function to interrupt an executing job 
+- [x] Versioned cfg files and the job database should be git ignored and synced to S drive
+- [ ] Consider SSH forwarding so we can run things from our own desktops (and move log files to S)
 - [ ] Delete the binary files that don't belong in git. hdf5 data, images etc. Move them to the data/log folder accompanying each experiment.
 - [ ] The few `slab` files are simply vendored in their original cursed state. If we straighten up the Experiment class and allow say proper file-reading functionalities, we can actually easily use the `analyze` functions in each child class to do the analysis instead of collecting everything in `fitting_display_classes` or such.
 - [ ] Migrate to tProcv2 at some point

@@ -12,6 +12,7 @@ include = [
   "experiments*",
   "fitting*",
   "slab*",
+  "job_server*",
 ]
 exclude = [ ]
 
@@ -44,6 +45,9 @@ numpy = "<2.0"
 qick = { path = "../qick", editable = true }
 # slab = { path = "../slab", editable = true }
 multimode_expts = { path = ".", editable = true }
+fastapi = ">=0.115.0"
+pydantic = ">=2.0"
+uvicorn = {extras = ["standard"], version = ">=0.30.0"}
 
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes

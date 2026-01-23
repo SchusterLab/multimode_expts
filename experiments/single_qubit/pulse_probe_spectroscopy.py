@@ -24,14 +24,9 @@ class PulseProbeSpectroscopyProgram(MMRAveragerProgram):
         cfg=AttrDict(self.cfg)
         self.MM_base_initialize()
         qTest = 0
-
-        print("pulssing on channel: ", self.qubit_chs[qTest])
-
-       
         ## Initialize the register and page
         self.q_rp=self.ch_page(self.qubit_chs[qTest]) # get register page for qubit_ch
         self.r_freq=self.sreg(gen_ch=self.qubit_chs[qTest], name = "freq") # get frequency register for qubit_ch  
-        print(f"qubit register page: {self.q_rp}, frequency register: {self.r_freq}")
         self.f_start = self.freq2reg(cfg.expt.start, gen_ch=self.qubit_chs[qTest]) # get start/step frequencies
         self.f_step = self.freq2reg(cfg.expt.step, gen_ch=self.qubit_chs[qTest])
 
