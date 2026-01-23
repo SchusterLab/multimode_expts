@@ -370,7 +370,7 @@ class WignerTomography1ModeExperiment(Experiment):
 
         return data
 
-    def display(self, data=None, mode_state_num=None, initial_state=None, rotate=None, state_label='', debug_components=False, **kwargs):
+    def display(self, data=None, mode_state_num=None, initial_state=None, rotate=None, state_label='', debug_components=False, station=None, save_fig=False, **kwargs):
         """
         Display using WignerAnalysis reconstruction pipeline.
 
@@ -380,6 +380,8 @@ class WignerTomography1ModeExperiment(Experiment):
         - rotate: whether to rotate the Wigner frame (default from cfg.expt.display_rotate or False)
         - state_label: optional label for the plotted state
         - debug_components: when True and pulse correction data are available, plot pe_plus/minus and parity_plus/minus vs |alpha|
+        - station: MultimodeStation instance for saving plots (optional)
+        - save_fig: if True and station is provided, save the figure using station.save_plot()
         """
         if data is None:
             data = self.data
@@ -403,7 +405,7 @@ class WignerTomography1ModeExperiment(Experiment):
             initial_state = qt.fock(mode_state_num, 0).unit()
 
         # Build analysis and plot
-        wigner_analysis = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num, alphas=alphas)
+        wigner_analysis = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num, alphas=alphas, station=station)
         results = wigner_analysis.wigner_analysis_results(parity, initial_state=initial_state, rotate=rotate)
         fig = wigner_analysis.plot_wigner_reconstruction_results(results, initial_state=initial_state, state_label=state_label)
 
@@ -449,6 +451,14 @@ class WignerTomography1ModeExperiment(Experiment):
                     print(f"Debug components plot skipped due to: {e}")
             else:
                 print("Debug components requested, but pe+/pe- or parity+/parity- not found in data.")
+
+        # Save figure if requested
+        if save_fig and station is not None:
+            filename = f"wigner_{state_label}.png" if state_label else "wigner_reconstruction.png"
+            station.save_plot(fig, filename=filename)
+        elif save_fig and station is None:
+            print("Warning: save_fig=True but no station provided. Plot not saved.")
+
         return fig
 
     def save_data(self, data=None):

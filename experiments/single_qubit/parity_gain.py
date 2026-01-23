@@ -203,14 +203,8 @@ class ParityGainExperiment(Experiment):
 
         # check if scale is in kwargs
         scale = kwargs.get('scale', False)
-
-        # fitparams=[y-offset, amp, x-offset, decay rate]
-        # Remove the last point from fit in case weird edge measurements
-        # data['fit_amps'], data['fit_err_amps'] = fitter.fitexp(data['xpts'][:-1], data['amps'][:-1], fitparams=None)
-        # data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
-        # data['fit_avgq'], data['fit_err_avgq'] = fitter.fitexp(data['xpts'][:-1], data['avgq'][:-1], fitparams=None)
-
         plot = kwargs.get('plot', True)
+        print('plot:', plot)
         if 'pulse_correction' in self.cfg.expt and self.cfg.expt.pulse_correction:
             data_minus = {}
             data_plus = {}
@@ -272,7 +266,7 @@ class ParityGainExperiment(Experiment):
         if fit:
             p = data['fit_avgi']
             pCov = data['fit_err_avgi']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgi [us]: {data["fit_avgi"][3]}')
@@ -281,7 +275,7 @@ class ParityGainExperiment(Experiment):
         if fit:
             p = data['fit_avgq']
             pCov = data['fit_err_avgq']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgq"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')

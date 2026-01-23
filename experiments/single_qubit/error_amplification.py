@@ -9,6 +9,7 @@ from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
 from experiments.MM_base import MMRAveragerProgram
+from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 
 
 class ErrorAmplificationProgram(MMRAveragerProgram):
@@ -30,9 +31,14 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # what pulse do we want to calibrate?
         # use the pre_pulse_creator to define pulse parameters
         # I should add user define pulse later for more flexibility
+
+        print("cfg", StorageManSwapDataset(cfg.device.storage.storage_man_file).df['pi (mus)'][0])
+
+
         self.pulse_to_test = self.get_prepulse_creator([cfg.expt.pulse_type], cfg=cfg).pulse.tolist()
         # flatten the list
         self.pulse_to_test = [item for sublist in self.pulse_to_test for item in sublist]
+        print("pulse_to_test:", self.pulse_to_test)
         # add the pulse to test to the channel
         if self.pulse_to_test[5] == 'gauss' and self.pulse_to_test[6] > 0:
             _sigma = self.us2cycles(self.pulse_to_test[6], gen_ch=self.pulse_to_test[4])
@@ -84,6 +90,11 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # initializations as necessary TBD 
         self.reset_and_sync()
 
+        if cfg.expt.pulse_type[0] in ['storage']:
+            # get the qubit start state for storage expt, this is to calibrate chi for a given swap amplitude (i.e. taking into account Stark shift)
+            qubit_start_storage = cfg.expt.get('qubit_state_start', 'g')
+            print("qubit_start_storage:", qubit_start_storage)
+
         # set the prepulse sequence depending on the pulse to calibrate 
         # TO DO: replace everything with the multiphoton def 
         if cfg.expt.pulse_type[0] == 'qubit':
@@ -103,10 +114,17 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         elif cfg.expt.pulse_type[0] in ['storage', 'floquet']:
             man_idx = cfg.expt.pulse_type[1][1]
+
+            pulse_list = [['qubit', 'ge', 'pi', 0],
+                            ['qubit', 'ef', 'pi', 0], 
+                            ['man', f'M{man_idx}', 'pi', 0]]
+            
+            if qubit_start_storage == 'e':
+                # add ['multiphoton', 'g1-e1', 'pi', 0] at the start
+                pulse_list = pulse_list + [['multiphoton', 'g1-e1', 'pi', 0]]
+            
             self.creator = self.get_prepulse_creator(
-                [['qubit', 'ge', 'pi', 0],
-                 ['qubit', 'ef', 'pi', 0],
-                 ['man', f'M{man_idx}', 'pi', 0]]
+                pulse_list
             )
             self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
 
@@ -227,10 +245,11 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 post_pulse = self.creator.pulse.tolist() # ge
                 self.custom_pulse(cfg, post_pulse, prefix='post_')
         elif cfg.expt.pulse_type[0] in ('man', 'storage', 'floquet'):
-            post_pulse = self.creator.pulse.tolist() # ef 
-            # Reverse the order of the prepulses, skipping the last g-e qubit pulse
-            last_pulse = [sublist[:0:-1] for sublist in  self.creator.pulse.tolist()]
-            self.custom_pulse(cfg, last_pulse, prefix='post_')
+            pulse_list = self.creator.pulse.tolist()
+            # reverse the pulse sequence
+            post_pulse = [sublist[:0:-1] for sublist in pulse_list]
+            # when qubit starts in e, it plays g1-e1 which is not ideal since photon can be in storage, but I dont know how to do better for now
+            self.custom_pulse(cfg, post_pulse, prefix='post_')
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             qubit_state_start = cfg.expt.pulse_type[1][0]
             if qubit_state_start == 'g':

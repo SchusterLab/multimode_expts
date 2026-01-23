@@ -9,15 +9,11 @@ slab code that is actively used in this repo is now vendored inside slab as a mo
 Just modify the include and exclude lists therein to control which directories contain code that is allowed to be imported.
 
 
-## Development Notes
-
-### Windows Compatibility
-**IMPORTANT for Claude Code**: On Windows, `nul` is a reserved device name. When running bash commands, use `> nul 2>&1` (not `> /dev/nul` or `> ./nul`) to discard output. Using paths with `nul` creates a problematic file. To manually delete: `rm ./nul` (Git Bash) or `del \\?\D:\python\multimode_expts\nul` (cmd)
-
 ## TODO
 
-- [ ] Experiment name should be passed from client instead of always using the worker default
-- [ ] Versioned cfg files and the job database should be moved to S drive
+- [x] Experiment name should be passed from client instead of always using the worker default
+- [ ] Add function to interrupt an executing job 
+- [x] Versioned cfg files and the job database should be git ignored and synced to S drive
 - [ ] Consider SSH forwarding so we can run things from our own desktops (and move log files to S)
 - [ ] Delete the binary files that don't belong in git. hdf5 data, images etc. Move them to the data/log folder accompanying each experiment.
 - [ ] The few `slab` files are simply vendored in their original cursed state. If we straighten up the Experiment class and allow say proper file-reading functionalities, we can actually easily use the `analyze` functions in each child class to do the analysis instead of collecting everything in `fitting_display_classes` or such.

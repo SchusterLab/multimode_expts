@@ -35,7 +35,7 @@ class GeneralFitting:
         bins it into counts_g and counts_e
         '''
         temp_data = self.data
-        rounds = self.cfg['expt']['rounds']
+        rounds = self.cfg['expt'].get('rounds', 1)
         reps = self.cfg['expt']['reps']
         expts = self.cfg['expt']['expts']
         threshold = self.cfg.device.readout.threshold[0]
@@ -385,9 +385,12 @@ class RamseyFitting(GeneralFitting):
         plt.tight_layout()
         plt.show()
 
-        #make filename same as titlestr
-        filename = title_str.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig, filename=filename)
+        #make filename same as titlestr - only save if station is available
+        if self.station is not None:
+            filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+            self.save_plot(fig, filename=filename)
+
+        
 
 
 class CavityRamseyGainSweepFitting(RamseyFitting):
@@ -786,7 +789,7 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
             ax4.text(0.05, 0.95, text, transform=ax4.transAxes, fontsize=12,
                      verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
 
-            ax4.set_xlabel(r'$|\\alpha|^2$')
+            ax4.set_xlabel(f'$|\\alpha|^2$')
             ax4.set_ylabel('frequency [MHz]')
             ax4.legend(loc='center')
 

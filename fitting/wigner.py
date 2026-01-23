@@ -17,9 +17,11 @@ import matplotlib.pyplot as plt
 import qutip as qt
 
 class WignerAnalysis(GeneralFitting):
-    def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5):
+    def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5, station=None):
         if data is not None:
-            super().__init__(data, readout_per_round, threshold, config)
+            super().__init__(data, readout_per_round, threshold, config, station)
+        else:
+            self.station = station
         self.alphas = alphas
         self.m = mode_state_num
         if self.m is not None:
@@ -95,8 +97,8 @@ class WignerAnalysis(GeneralFitting):
         plt.title(title)
         plt.grid(True)
         plt.show()
-        filename = title.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig, filename=filename)
+        # filename = title.replace(' ', '_').replace(':', '') + '.png'
+        # self.save_plot(fig, filename=filename)
 
     def W_vacuum(self, alpha):
         '''
@@ -381,7 +383,7 @@ class WignerAnalysis(GeneralFitting):
         # cbar1.set_label('')
         ticks = np.linspace(vmin, vmax, 5)
         cbar1.set_ticks(ticks)
-        cbar1.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+        cbar1.set_ticklabels([r'$-2/\pi$', r'$-1/\pi$', '0', r'$1/\pi$', r'$2/\pi$'])
         ax[0, 0].set_title('Direct (reverse order)')
 
         c = ax[0, 1].pcolormesh(np.arange(mode_state_num), np.arange(mode_state_num), np.abs(rho), cmap='viridis', vmin=0, vmax=1)
@@ -389,42 +391,38 @@ class WignerAnalysis(GeneralFitting):
         ax[0, 1].set_xlabel('m')
         # colorbar for the pcolormesh
         cbar2 = fig.colorbar(ax[0, 1].collections[0], ax=ax[0, 1], fraction=0.045, pad=0.04)
-        cbar2.set_label(r'$|ρ_{nm}|$')
+        cbar2.set_label(r'$|\rho_{nm}|$')
         cbar2.set_ticks([0, 0.5, 1])
         cbar2.set_ticklabels(['0', '1/2', '1'])
         ax[0, 1].set_title('Density matrix fock basis')
 
         ax[1, 0].set_aspect('equal')
         ax[1, 0].pcolormesh(x_vec, x_vec, W_fit, cmap='RdBu_r', vmin=vmin, vmax=vmax)
-        ax[1, 0].set_xlabel('Re(α)')
-        ax[1, 0].set_ylabel('Im(α)')
+        ax[1, 0].set_xlabel(r'Re($\alpha$)')
+        ax[1, 0].set_ylabel(r'Im($\alpha$)')
         ax[1, 0].set_title('Wigner function fit')
         # colorbar for the Wigner function
         cbar3 = fig.colorbar(ax[1, 0].collections[0], ax=ax[1, 0], fraction=0.045, pad=0.04)
         cbar3.set_label('')
         cbar3.set_ticks(ticks)
-        cbar3.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+        cbar3.set_ticklabels([r'$-2/\pi$', r'$-1/\pi$', '0', r'$1/\pi$', r'$2/\pi$'])
 
         if initial_state is not None:
 
             ax[1, 1].set_aspect('equal')
             ax[1, 1].pcolormesh(x_vec, x_vec, W_ideal, cmap='RdBu_r', vmin=vmin, vmax=vmax)
-            ax[1, 1].set_xlabel('Re(α)')
-            ax[1, 1].set_ylabel('Im(α)')
+            ax[1, 1].set_xlabel(r'Re($\alpha$)')
+            ax[1, 1].set_ylabel(r'Im($\alpha$)')
             ax[1, 1].set_title('Wigner function ideal state')
             # colorbar for the Wigner function
             cbar4 = fig.colorbar(ax[1, 1].collections[0], ax=ax[1, 1], fraction=0.045, pad=0.04)
             cbar4.set_label('')
             cbar4.set_ticks(ticks)
-            cbar4.set_ticklabels(['-2/π', '-1/π', '0', '1/π', '2/π'])
+            cbar4.set_ticklabels([r'$-2/\pi$', r'$-1/\pi$', '0', r'$1/\pi$', r'$2/\pi$'])
 
         fig.suptitle(f'Wigner Tomography Results\nFidelity: {fidelity:.4f}', fontsize=16)
         fig.subplots_adjust(top=0.9, hspace=0.3, wspace=0.3)
         fig.tight_layout()
-
-        title = state_label if state_label is not None else 'Wigner Reconstruction Results'
-        filename = title.replace(' ', '_').replace(':', '') + '.png'
-        self.save_plot(fig, filename=filename)
 
         return fig
     
@@ -522,10 +520,9 @@ class OptimalDisplacementGeneration():
         samples = truncnorm.rvs(a, b, loc=0, scale=1, size=(self.n_disps, 2))
 
         init_disps = samples
-
-
-        # init_disps[0] = init_disps[self.n_disps] = 0
-        ret = minimize(self.wrap_cost, init_disps, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6))
+        print('init disps:', init_disps)
+        x0 = np.concatenate([init_disps[:, 0], init_disps[:, 1]])
+        ret = minimize(self.wrap_cost, x0, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6))
         new_disps = ret.x[:self.n_disps] + 1j*ret.x[self.n_disps:]
         new_disps = np.concatenate(([0], new_disps))
         save_path = None
