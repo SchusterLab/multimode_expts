@@ -12,7 +12,7 @@ This enables multi-user scheduling and hardware exclusivity. For direct local
 execution (bypassing the queue), use run_local().
 
 Usage (Queued Mode - Default):
-    from multimode_expts.job_server.client import JobClient
+    from job_server.client import JobClient
     from experiments.station import MultimodeStation
     from experiments.sweep_runner import SweepRunner
     import experiments as meas
@@ -68,7 +68,7 @@ from slab import AttrDict
 
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
-    from multimode_expts.job_server.client import JobClient, JobResult
+    from job_server.client import JobClient, JobResult
 
 
 def default_preprocessor(station, default_expt_cfg, **kwargs):

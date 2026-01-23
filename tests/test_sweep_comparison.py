@@ -10,7 +10,6 @@ Usage:
     pixi run python test_sweep_comparison.py [--method old|new|both]
 """
 
-import sys
 import argparse
 from pathlib import Path
 from copy import deepcopy
@@ -18,13 +17,12 @@ from datetime import datetime
 import numpy as np
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent / 'measurement_notebooks'))
-
 from slab import AttrDict
 from slab.datamanagement import SlabFile
 import experiments as meas
 from fitting.fit_display_classes import ChevronFitting
-from meas_utils import MultimodeStation, SweepRunner
+from experiments.station import MultimodeStation
+from experiments.sweep_runner import SweepRunner
 from experiments.sequential_experiment_classes import man_f0g1_class
 
 

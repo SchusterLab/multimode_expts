@@ -9,7 +9,7 @@ This module provides a simple interface for users to:
 - Cancel pending jobs
 
 Usage in notebooks:
-    from multimode_expts.job_server.client import JobClient
+    from job_server.client import JobClient
 
     client = JobClient()
 

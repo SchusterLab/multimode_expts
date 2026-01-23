@@ -87,9 +87,6 @@ import os
 from copy import deepcopy
 from unittest.mock import patch
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from slab import AttrDict, Experiment
 
 # Import SweepRunner from the new location

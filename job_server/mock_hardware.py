@@ -20,10 +20,6 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from copy import deepcopy
 import yaml
-import sys
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from slab.datamanagement import AttrDict
 
