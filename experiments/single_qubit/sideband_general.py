@@ -114,7 +114,7 @@ class SidebandGeneralExperiment(Experiment):
         lengths = self.cfg.expt["start"] + \
             self.cfg.expt["step"] * np.arange(self.cfg.expt["expts"])
 
-        data = {"xpts": [], "idata": [], "qdata": [], "avgi": [], "avgq": []}
+        data = {"xpts": [], "idata": [], "qdata": [], "avgi": [], "avgq": [], "amps": []}
 
         read_num = 1
         if self.cfg.expt.active_reset: read_num = 4
@@ -142,6 +142,7 @@ class SidebandGeneralExperiment(Experiment):
             data["xpts"].append(length)
             data["avgi"].append(avgi)
             data["avgq"].append(avgq)
+            data["amps"].append(np.mean(np.abs(idata + 1j*qdata)))  # mean amplitude
             if self.cfg.expt.active_reset:
                 data["idata"].append(idata)
                 data["qdata"].append(qdata)
@@ -153,7 +154,7 @@ class SidebandGeneralExperiment(Experiment):
 
         return data
 
-    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=False, fitparams=None, **kwargs):
         if data is None:
             data = self.data
         if fit:

@@ -62,6 +62,7 @@ Usage (Local Mode - Direct Execution):
 
 from copy import deepcopy
 from typing import Optional, Callable, TYPE_CHECKING, Any
+import json
 
 import numpy as np
 from slab import AttrDict
@@ -136,6 +137,70 @@ class SweepRunner:
         self.use_queue = use_queue
         self.last_job_ids = []  # Stores list of job IDs from most recent run()
 
+    def _serialize_station_config(self) -> str:
+        """
+        Serialize the station's current config state to JSON.
+
+        This captures the exact config that should be used for the experiment,
+        including any updates made by previous postprocessors.
+
+        Returns:
+            JSON string containing hardware_cfg, multimode_cfg, and CSV data
+        """
+        # Convert hardware_cfg to a plain dict recursively, excluding non-serializable dataset objects
+        def to_serializable_dict(obj, exclude_keys=None):
+            """Recursively convert AttrDict/dict to plain dict, excluding specified keys."""
+            if exclude_keys is None:
+                exclude_keys = set()
+            if isinstance(obj, dict):
+                return {
+                    k: to_serializable_dict(v, exclude_keys)
+                    for k, v in obj.items()
+                    if k not in exclude_keys
+                }
+            elif isinstance(obj, list):
+                return [to_serializable_dict(item, exclude_keys) for item in obj]
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
+            else:
+                return obj
+
+        hardware_cfg_dict = to_serializable_dict(
+            self.station.hardware_cfg,
+            exclude_keys={'_ds_storage', '_ds_floquet'}
+        )
+
+        station_data = {
+            "experiment_name": self.station.experiment_name,
+            "hardware_cfg": hardware_cfg_dict,
+            "hardware_config_file": str(self.station.hardware_config_file),
+        }
+
+        # Include multiphoton config if available
+        if hasattr(self.station, 'multimode_cfg') and hasattr(self.station, 'multiphoton_config_file'):
+            station_data["multimode_cfg"] = dict(self.station.multimode_cfg)
+            station_data["multiphoton_config_file"] = str(self.station.multiphoton_config_file)
+
+        # Include CSV dataframes as JSON-serializable data
+        # Convert datetime columns (last_update) to strings for JSON serialization
+        if hasattr(self.station, 'ds_storage'):
+            df = self.station.ds_storage.df.copy()
+            if 'last_update' in df.columns:
+                df['last_update'] = df['last_update'].astype(str)
+            station_data["storage_man_data"] = df.to_dict(orient='records')
+            station_data["storage_man_file"] = self.station.storage_man_file
+
+        if hasattr(self.station, 'ds_floquet') and self.station.ds_floquet is not None:
+            df = self.station.ds_floquet.df.copy()
+            if 'last_update' in df.columns:
+                df['last_update'] = df['last_update'].astype(str)
+            station_data["floquet_data"] = df.to_dict(orient='records')
+            station_data["floquet_file"] = self.station.floquet_file
+
+        return json.dumps(station_data)
+
     def _convert_to_arrays(self, data_dict: dict) -> dict:
         """Convert all list values to numpy arrays."""
         return {key: np.array(val) for key, val in data_dict.items()}
@@ -179,7 +244,6 @@ class SweepRunner:
         priority: int = 0,
         poll_interval: float = 2.0,
         timeout: Optional[float] = None,
-        incremental_save: bool = True,
         **kwargs
     ):
         """
@@ -233,6 +297,7 @@ class SweepRunner:
             config_file=self.station.hardware_config_file,
         )
         mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+        mother_expt.cfg.expt = base_expt_cfg
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
@@ -256,17 +321,29 @@ class SweepRunner:
             if hasattr(expt_config, 'relax_delay'):
                 expt_config['_relax_delay'] = expt_config.relax_delay
 
-            # Convert to dict for JSON serialization
-            if hasattr(expt_config, "to_dict"):
-                expt_config_dict = dict(expt_config)
-            else:
-                expt_config_dict = dict(expt_config)
+            # Convert to dict for JSON serialization, handling numpy types
+            def convert_numpy(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_numpy(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy(item) for item in obj]
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, (np.integer, np.floating)):
+                    return obj.item()
+                return obj
+
+            expt_config_dict = convert_numpy(dict(expt_config))
+
+            # Serialize station config to pass with job
+            station_config_json = self._serialize_station_config()
 
             # Submit job
             job_id = self.job_client.submit_job(
                 experiment_class=experiment_class,
                 experiment_module=experiment_module,
                 expt_config=expt_config_dict,
+                station_config=station_config_json,
                 user=self.station.user,
                 priority=priority,
             )
@@ -296,13 +373,6 @@ class SweepRunner:
                     mother_expt.data[data_key] = []
                 mother_expt.data[data_key].append(data_val)
 
-            # Incremental save
-            if incremental_save:
-                mother_expt.save_data()
-                print(f'[{job_id}] saved')
-            else:
-                print(f'[{job_id}]')
-
         # Store all job IDs from this sweep for reference
         self.last_job_ids = [r.job_id for r in self.job_results]
 
@@ -317,8 +387,8 @@ class SweepRunner:
 
         # Run final analysis and display
         try:
-            mother_expt.analyze(station=self.station)
-            mother_expt.display()
+            # mother_expt.analyze(station=self.station)
+            # mother_expt.display() # No display with job scheduler
 
             if postprocess and self.postprocessor is not None:
                 self.postprocessor(self.station, mother_expt)

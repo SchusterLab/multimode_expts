@@ -50,6 +50,7 @@ from dataclasses import dataclass
 from typing import Optional, Callable, Protocol, TYPE_CHECKING, Any, Union
 import json
 
+import numpy as np
 from slab import AttrDict
 from slab.experiment import Experiment
 
@@ -194,6 +195,10 @@ class CharacterizationRunner:
                 }
             elif isinstance(obj, list):
                 return [to_serializable_dict(item, exclude_keys) for item in obj]
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
             else:
                 return obj
 
@@ -273,11 +278,19 @@ class CharacterizationRunner:
         # Run preprocessor to get final config
         expt_config = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
-        # Convert AttrDict to regular dict for JSON serialization
-        if hasattr(expt_config, "to_dict"):
-            expt_config_dict = dict(expt_config)
-        else:
-            expt_config_dict = dict(expt_config)
+        # Convert to dict for JSON serialization, handling numpy types
+        def convert_numpy(obj):
+            if isinstance(obj, dict):
+                return {k: convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(item) for item in obj]
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
+            return obj
+
+        expt_config_dict = convert_numpy(dict(expt_config))
 
         # Serialize station config to pass with job
         station_config_json = self._serialize_station_config()

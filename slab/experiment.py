@@ -30,6 +30,25 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
+
+def _filter_serializable(obj, exclude_prefixes=('_ds_',)):
+    """
+    Recursively filter out non-serializable objects from a dict.
+
+    Removes keys starting with exclude_prefixes (e.g., '_ds_storage', '_ds_floquet')
+    which contain dataset objects that can't be JSON serialized.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: _filter_serializable(v, exclude_prefixes)
+            for k, v in obj.items()
+            if not any(k.startswith(prefix) for prefix in exclude_prefixes)
+        }
+    elif isinstance(obj, list):
+        return [_filter_serializable(item, exclude_prefixes) for item in obj]
+    else:
+        return obj
+
 class Experiment:
     """Base class for all experiments"""
 
@@ -108,9 +127,10 @@ class Experiment:
 
     def save_config(self):
         if self.config_file[:-3] != '.h5':
+            cfg_filtered = _filter_serializable(self.cfg)
             with open(self.config_file, 'w') as fid:
-                json.dump(self.cfg, fid, cls=NpEncoder), 
-            self.datafile().attrs['config'] = json.dumps(self.cfg, cls=NpEncoder)
+                json.dump(cfg_filtered, fid, cls=NpEncoder),
+            self.datafile().attrs['config'] = json.dumps(cfg_filtered, cls=NpEncoder)
 
     def datafile(self, group=None, remote=False, data_file = None, swmr=False):
         """returns a SlabFile instance
@@ -128,7 +148,9 @@ class Experiment:
             f = f.require_group(group)
         if 'config' not in f.attrs:
             try:
-                f.attrs['config'] = json.dumps(self.cfg, cls=NpEncoder)
+                # Filter out non-serializable objects (e.g., _ds_storage, _ds_floquet)
+                cfg_filtered = _filter_serializable(self.cfg)
+                f.attrs['config'] = json.dumps(cfg_filtered, cls=NpEncoder)
             except TypeError as err:
                 print(('Error in saving cfg into datafile (experiment.py):', err))
 
