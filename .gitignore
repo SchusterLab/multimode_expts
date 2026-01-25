@@ -1,6 +1,7 @@
 # User defined stuff here:
 
 pixi.lock
+.claude/
 
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
