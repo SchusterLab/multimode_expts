@@ -98,7 +98,7 @@ class CavityRamseyExcursionProgramMixin:
         return aligned_length, tProc_length
 
 
-class CavityRamseyExcursionProgram(MMRAveragerProgram, 
+class CavityRamseyExcursionProgram(MMRAveragerProgram,
                                    CavityRamseyExcursionProgramMixin):
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
@@ -234,12 +234,18 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         self.excursion_sigma = self.us2cycles(cfg.expt.excursion_sigma,
                                      gen_ch = self.flux_low_ch[qTest])
         self.excursion_gain = self.cfg.expt.excursion_gain
-        self.excursion_length, self.excursion_length_tproc = self.align_fabric_to_tproc(4 * self.excursion_sigma)
-        self.excursion_length_tproc *= 2
+        # self.excursion_length, self.excursion_length_tproc = self.align_fabric_to_tproc(4 * self.excursion_sigma)
+        # self.excursion_length_tproc *= 2
+        self.excursion_length_gen_ch = self.us2cycles(cfg.expt.excursion_sigma, 
+                                                      gen_ch = self.flux_low_ch[qTest]) * 4
+        
+        self.excursion_length_tproc = self.us2cycles(cfg.expt.excursion_sigma) * 8 #pulse length into tProc
+        
         self.add_bipolar_gauss(ch = self.flux_low_ch[qTest],
                                name = 'flux_excursion',
                                sigma = self.excursion_sigma,
-                               length = self.excursion_length)
+                               length = self.excursion_length_gen_ch)
+                            #    length = self.excursion_length)
         self.safe_regwi(self.excursion_page[qTest], 
                         self.r_wait, 
                         self.excursion_length_tproc)
@@ -352,7 +358,7 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
                              freq= 0,
                              phase=0,
                              gain=self.excursion_gain,
-                             length=self.excursion_length * 2,
+                             length=self.excursion_length_gen_ch * 2,
                              waveform="flux_excursion",
                              mode = "periodic") # periodic bipolar gaussian pulse
         # self.sync(self.phase_update_page[qTest], self.r_wait)
@@ -383,7 +389,7 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
         # self.sync_all(self.us2cycles(0.01))
         
-        # commented out the original sync all and used synci with the length of excursion
+        # commented out the original sync 
         # to ensure the displacement pulse right after the bipolar guassian pulse in the flux low line
         if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
             self.pulse(ch=self.flux_ch[qTest])
@@ -599,7 +605,7 @@ class CavityRamseyExcursionExperiment(Experiment):
         return self.fname
 
 
-class CavityRamseyGainSweepExperiment(Experiment):
+class CavityRamseyExcursionGainSweepExperiment(Experiment): #To Be Added
     def __init__(self, soccfg=None, path="", prefix="CavityRamseyGainSweep", config_file=None, progress=None):
         super().__init__(soccfg=soccfg,
                         path=path,
