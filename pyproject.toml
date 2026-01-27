@@ -50,6 +50,11 @@ qick = { path = "../qick", editable = true }
 # slab = { path = "../slab", editable = true }
 multimode_expts = { path = ".", editable = true }
 
+[tool.pixi.tasks]
+nameserver = "python start_nameserver.py"
+server = "python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000"
+worker = "python -u -m job_server.worker"
+
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes
 
