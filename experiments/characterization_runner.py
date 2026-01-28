@@ -158,7 +158,6 @@ class CharacterizationRunner:
             postprocessor: Function to extract results and update station.hardware_cfg
             ExptProgram: for QsimBaseExperiment, this is the program class to use
             job_client: JobClient instance for submitting to job queue (required for run())
-            user: Username for job submission (default: "anonymous")
             use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
         """
         self.station = station
@@ -168,8 +167,8 @@ class CharacterizationRunner:
         self.postprocessor = postprocessor or default_postprocessor
         self.program = ExptProgram
         self.job_client = job_client
-        self.use_queue = use_queue
         self.last_job_result = None  # Stores JobResult from most recent run()
+        self.use_queue = use_queue
 
     def _serialize_station_config(self) -> str:
         """

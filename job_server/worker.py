@@ -27,17 +27,19 @@ import signal
 import sys
 import time
 import traceback
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
+import pandas as pd
 
-from job_server.database import get_database
-from job_server.models import Job, JobStatus, JobOutput
-from job_server.id_generator import IDGenerator
+from experiments.station import MultimodeStation
 from job_server.config_versioning import ConfigVersionManager
+from job_server.database import get_database
+from job_server.id_generator import IDGenerator
+from job_server.models import Job, JobOutput, JobStatus
 from job_server.output_capture import OutputCapture
 from slab.datamanagement import AttrDict
-from copy import deepcopy
 
 # Patch tqdm_notebook to use regular tqdm (tqdm_notebook uses IPython widgets, not stdout)
 # This must happen before experiment modules are imported
@@ -199,12 +201,11 @@ class JobWorker:
 
         # Initialize station with hardware connections
         # Config will be updated per-job from serialized notebook config
-        if self.mock_mode:
-            from job_server.mock_hardware import MockStation
-            self.station = MockStation(experiment_name=self.experiment_name)
-        else:
-            from experiments.station import MultimodeStation
-            self.station = MultimodeStation(experiment_name=self.experiment_name)
+        # Uses unified MultimodeStation with mock parameter
+        self.station = MultimodeStation(
+            experiment_name=self.experiment_name,
+            mock=self.mock_mode,
+        )
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -230,14 +231,13 @@ class JobWorker:
         Args:
             station_config_json: JSON string containing station config data
         """
-        import pandas as pd
 
         station_data = json.loads(station_config_json)
 
         # Update experiment_name and reinitialize output paths if provided
         if "experiment_name" in station_data:
             self.station.experiment_name = station_data["experiment_name"]
-            self.station._initialize_output_paths()
+            self.station._initialize_output_paths()  # Routes internally based on mock mode
 
         # Update station's hardware_cfg
         self.station.hardware_cfg = AttrDict(station_data["hardware_cfg"])
