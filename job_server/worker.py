@@ -412,10 +412,20 @@ class JobWorker:
         # Clear cached modules to get fresh code (like autoreload)
         importlib.invalidate_caches()
 
-        # Remove the experiment module and any multimode_expts modules that might have changed
+        # Remove the experiment module and any modules that might have changed.
+        # - multimode_expts.*: worker infrastructure (job_server, database, etc.)
+        # - experiments.* submodules: experiment classes and base classes (MM_base, etc.)
+        #
+        # We preserve specific modules where objects persist in self.station:
+        # - experiments.dataset: station.ds_storage is a StorageManSwapDataset instance
+        # - experiments.station: the Station class itself
+        # Clearing these would cause pickle identity errors (class object mismatch)
+        preserved_modules = {'experiments', 'experiments.dataset', 'experiments.station'}
         modules_to_remove = [
             name for name in list(sys.modules.keys())
-            if name == module_path or name.startswith('multimode_expts.')
+            if name == module_path
+            or name.startswith('multimode_expts.')
+            or (name.startswith('experiments.') and name not in preserved_modules)
         ]
         for name in modules_to_remove:
             del sys.modules[name]
