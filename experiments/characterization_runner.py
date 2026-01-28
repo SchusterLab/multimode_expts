@@ -370,7 +370,7 @@ class CharacterizationRunner:
         # Setup config
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
 
-        # Pass dataset objects from station (live in-memory data) - required, never read from disk
+        # Pass dataset objects via expt.cfg since Program classes cannot access station
         expt.cfg.device.storage._ds_storage = self.station.ds_storage
         expt.cfg.device.storage._ds_floquet = self.station.ds_floquet
 

@@ -162,10 +162,7 @@ class MM_base:
         if cfg is None:
             cfg = self.cfg
 
-        if 'floquet_man_stor_file' not in cfg.device.storage:
-            cfg.device.storage.floquet_man_stor_file = None
-
-        creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file, cfg.device.storage.floquet_man_stor_file)
+        creator = prepulse_creator2(cfg)
         # creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
             for pulse_idx, pulse in enumerate(sweep_pulse):
@@ -1185,7 +1182,7 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
 
 class prepulse_creator2:
-    def __init__(self, cfg, storage_man_file=None, floquet_man_stor_file=None):
+    def __init__(self, cfg):
         '''
         Takes pulse param of form
             [name of transition of cavity name like 'ge', 'ef' or 'M1', 'M1-S1',

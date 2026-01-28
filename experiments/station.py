@@ -364,27 +364,50 @@ class MultimodeStation:
         else:
             return attrdict
 
-    def recursive_compare(self, d1, d2, path=""):
+    def recursive_compare(self, d1, d2, path="", exclude_keys=None):
         """Recursively compare two dictionaries and print differences."""
+        if exclude_keys is None:
+            exclude_keys = {'_ds_storage', '_ds_floquet', 'storage_man_file', 'floquet_man_stor_file'}
         for key in d1.keys():
+            if key in exclude_keys:
+                continue
             current_path = f"{path}.{key}" if path else key
             if key not in d2:
                 print(f"Key '{current_path}' is missing in config2.")
             elif isinstance(d1[key], dict) and isinstance(d2[key], dict):
-                self.recursive_compare(d1[key], d2[key], current_path)
+                self.recursive_compare(d1[key], d2[key], current_path, exclude_keys)
             elif d1[key] != d2[key]:
                 print(f"Key '{current_path}' differs:")
                 print(f"  Old value (config1): {d1[key]}")
                 print(f"  New value (config2): {d2[key]}")
         for key in d2.keys():
+            if key in exclude_keys:
+                continue
             current_path = f"{path}.{key}" if path else key
             if key not in d1:
                 print(f"Key '{current_path}' is missing in config1.")
 
     def _sanitize_config_fields(self):
-        """Clean up config before saving."""
+        """Clean up config before saving (in-place, only for non-essential fields)."""
         if "expt" in self.hardware_cfg:
             self.hardware_cfg.pop("expt")
+
+    def _get_sanitized_config_copy(self, config):
+        """Return a deep copy of config with dataset objects and vestigial fields removed for YAML serialization."""
+        import copy
+        sanitized = copy.deepcopy(config)
+        if hasattr(sanitized, 'device') and hasattr(sanitized.device, 'storage'):
+            # Remove runtime dataset objects (not serializable)
+            if '_ds_storage' in sanitized.device.storage:
+                sanitized.device.storage.pop('_ds_storage')
+            if '_ds_floquet' in sanitized.device.storage:
+                sanitized.device.storage.pop('_ds_floquet')
+            # Remove vestigial file path fields (Station handles loading via versioning system)
+            if 'storage_man_file' in sanitized.device.storage:
+                sanitized.device.storage.pop('storage_man_file')
+            if 'floquet_man_stor_file' in sanitized.device.storage:
+                sanitized.device.storage.pop('floquet_man_stor_file')
+        return sanitized
 
     def preview_config_update(self):
         """Compare parent and current config to view updates."""
@@ -435,10 +458,11 @@ class MultimodeStation:
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
         self._sanitize_config_fields()
+        sanitized_cfg = self._get_sanitized_config_copy(self.hardware_cfg)
 
         with db.session() as session:
             version_id, _ = config_manager._snapshot_dict_as_yaml(
-                config_dict=self.hardware_cfg,
+                config_dict=sanitized_cfg,
                 config_type=ConfigType.HARDWARE_CONFIG,
                 original_filename=self.hardware_config_file.name,
                 session=session,
@@ -487,7 +511,8 @@ class MultimodeStation:
 
     def snapshot_man1_storage_swap(self, update_main: bool = False) -> str:
         """
-        Create a snapshot of the current man1 storage swap CSV and optionally set as main.
+        Create a snapshot of the current man1 storage swap CSV (ds_storage)
+        and optionally set as main.
 
         Args:
             update_main: If True, set the new snapshot as the main version

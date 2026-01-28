@@ -202,8 +202,8 @@ class ParityGainExperiment(Experiment):
             data=self.data
 
         # check if scale is in kwargs
-        scale = kwargs.get('scale', False)
-        plot = kwargs.get('plot', True)
+        scale = kwargs.get('scale', self.cfg.expt.scaling_amplitude)
+        plot = kwargs.get('plot', False)
         print('plot:', plot)
         if 'pulse_correction' in self.cfg.expt and self.cfg.expt.pulse_correction:
             data_minus = {}

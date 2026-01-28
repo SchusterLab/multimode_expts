@@ -317,10 +317,6 @@ class SweepRunner:
             expt_config = deepcopy(base_expt_cfg)
             expt_config[self.sweep_param] = sweep_val
 
-            # Handle relax_delay if present (worker needs this in config)
-            if hasattr(expt_config, 'relax_delay'):
-                expt_config['_relax_delay'] = expt_config.relax_delay
-
             # Convert to dict for JSON serialization, handling numpy types
             def convert_numpy(obj):
                 if isinstance(obj, dict):
@@ -382,8 +378,6 @@ class SweepRunner:
 
         # Convert to arrays for final analysis
         mother_expt.data = self._convert_to_arrays(mother_expt.data)
-        mother_expt.data['_filename'] = mother_expt.fname
-        mother_expt.data['_config'] = expt.cfg
 
         # Run final analysis and display
         try:
