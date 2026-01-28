@@ -253,17 +253,19 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         self.execute_gaussian = self.cfg.expt.execute_gaussian
         if self.execute_gaussian != True:
             self.r_wait_sine = 4
-            self.r_wait_sine_gen = 5
+            # self.r_wait_sine_gen = 5
             self.sine_freq = self.cfg.expt.sine_freq
+            self.sine_freq_reg = self.freq2reg(self.sine_freq,
+                                               gen_ch = self.flux_low_ch[qTest])
             self.number_per_cycle = self.cfg.expt.number_per_cycle
             self.time_step = 1/self.sine_freq * self.number_per_cycle # in us
             self.safe_regwi(self.excursion_page[qTest], 
                             self.r_wait_sine, 
                             self.us2cycles(self.time_step))
-            self.safe_regwi(self.excursion_page[qTest], 
-                            self.r_wait_sine_gen, 
-                            self.us2cycles(self.time_step,
-                                           gen_ch = self.flux_low_ch[qTest]))
+            # self.safe_regwi(self.excursion_page[qTest], 
+            #                 self.r_wait_sine_gen, 
+            #                 self.us2cycles(self.time_step,
+            #                                gen_ch = self.flux_low_ch[qTest]))
 
         # for kerr engineering, drive a tone near the qubit
         if "qubit_drive_pulse" in cfg.expt and cfg.expt.qubit_drive_pulse[0]:
@@ -390,26 +392,31 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         else:
             self.set_pulse_register(ch=self.flux_low_ch[qTest],
                                     style="const",
-                                    length = 60000,
-                                    freq= self.sine_freq,
+                                    length = 400,
+                                    freq= self.sine_freq_reg,
                                     phase=0,
-                                    gain=self.excursion_gain)
+                                    gain=self.excursion_gain,
+                                    mode = "periodic")
             self.pulse(ch=self.flux_low_ch[qTest],
                        t = 0)
-            self.set_pulse_registers(ch = ch=self.flux_low_ch[qTest],
-                                     length = 4,
-                                     freq = self.sine_freq,
-                                     gain = 0)
+            self.sync(self.excursion_page[qTest], 
+                      self.r_wait_sine)
+            self.setup_and_pulse(ch=self.flux_low_ch[qTest],
+                                 t = 0,
+                                 length = 4,
+                                 freq = self.sine_freq_reg,
+                                 gain = 0)
             
-            _r_t = self.sreg(ch = self.flux_low_ch[qTest],
-                            "t")
-            self.mathi(self.excursion_page,
-                       _r_t,
-                       self.r_wait_sine,
-                       "+",
-                       0)
-            self.pulse(ch = self.flux_low_ch[qTest],
-                       t = None)
+            
+            # _r_t = self.sreg(ch = self.flux_low_ch[qTest],
+            #                 "t")
+            # self.mathi(self.excursion_page,
+            #            _r_t,
+            #            self.r_wait_sine,
+            #            "+",
+            #            0)
+            # self.pulse(ch = self.flux_low_ch[qTest],
+            #            t = None)
             # self.mathi(self.excursion_page, 
             #            self.r_length_sine,
             #            self.r_wait_sine,
@@ -533,12 +540,12 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
                        self.r_wait_sine, 
                        '+', 
                        self.us2cycles(self.time_step))
-            self.mathi(self.excursion_page[qTest], 
-                       self.r_wait_sine_gen, 
-                       self.r_wait_sine_gen, 
-                       '+', 
-                       self.us2cycles(self.time_step,
-                                      gen_ch = self.flux_low_ch[qTest]))
+            # self.mathi(self.excursion_page[qTest], 
+            #            self.r_wait_sine_gen, 
+            #            self.r_wait_sine_gen, 
+            #            '+', 
+            #            self.us2cycles(self.time_step,
+            #                           gen_ch = self.flux_low_ch[qTest]))
         self.sync_all(self.us2cycles(0.01))
         # if self.cfg.expt.storage_ramsey[0]:
         #     self.mathi(self.flux_rps, self.r_wait_flux, self.r_wait_flux, '+', self.us2cycles(self.cfg.expt.step))
