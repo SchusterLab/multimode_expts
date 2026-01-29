@@ -249,22 +249,24 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         self.excursion_gain = self.cfg.expt.excursion_gain
         # self.excursion_length, self.excursion_length_timing = self.align_fabric_to_timing(4 * self.excursion_sigma)
         # self.excursion_length_timing *= 2
-        self.excursion_length_gen_ch = self.us2cycles(cfg.expt.excursion_sigma, 
-                                                      gen_ch = self.flux_low_ch[qTest]) * 4
-        
-        self.excursion_length_timing = self.us2cycles(cfg.expt.excursion_sigma) * 8 #pulse length into tProc
-        
-        self.add_bipolar_gauss(ch = self.flux_low_ch[qTest],
-                               name = 'flux_excursion',
-                               sigma = self.excursion_sigma,
-                               length = self.excursion_length_gen_ch)
-                            #    length = self.excursion_length)
-        self.safe_regwi(self.excursion_page[qTest], 
-                        self.r_wait, 
-                        self.excursion_length_timing)
-        #For Sine waves
         self.execute_gaussian = self.cfg.expt.execute_gaussian
-        if self.execute_gaussian != True:
+        if self.execute_gaussian == True:
+            self.excursion_length_gen_ch = self.us2cycles(cfg.expt.excursion_sigma, 
+                                                        gen_ch = self.flux_low_ch[qTest]) * 4
+            
+            self.excursion_length_timing = self.us2cycles(cfg.expt.excursion_sigma) * 8 #pulse length into tProc
+            
+            self.add_bipolar_gauss(ch = self.flux_low_ch[qTest],
+                                name = 'flux_excursion',
+                                sigma = self.excursion_sigma,
+                                length = self.excursion_length_gen_ch)
+                                #    length = self.excursion_length)
+            self.safe_regwi(self.excursion_page[qTest], 
+                            self.r_wait, 
+                            self.excursion_length_timing)
+            
+        #For Sine waves
+        elif self.execute_gaussian != True:
             self.r_wait_sine = 4
             # self.r_wait_sine_gen = 5
             self.sine_freq = self.cfg.expt.sine_freq
@@ -517,7 +519,10 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         qTest = self.qubits[0]
 
         # update the phase of the LO for the second π/2 pulse
-        phase_step_deg = 360 * self.cfg.expt.ramsey_freq *  self.cycles2us(self.excursion_length_timing)
+        if self.execute_gaussian == True:
+            phase_step_deg = 360 * self.cfg.expt.ramsey_freq *  self.cycles2us(self.excursion_length_timing)
+        elif self.execute_gaussian != True:
+            phase_step_deg = 360 * self.cfg.expt.ramsey_freq *  (self.time_step)
         phase_step_deg = phase_step_deg % 360 # make sure it is between 0 and 360
         if phase_step_deg < 0: # given the wrapping statement above, this should never be true
             if phase_step_deg < -180:  # between -360 and -180
