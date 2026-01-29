@@ -109,6 +109,19 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         self.cfg.rounds = cfg.expt.rounds
         
         super().__init__(soccfg, self.cfg)
+        if self.execute_gaussian == True:
+            _start_us = self.cycles2us(self.excursion_length_timing)
+            _step_us = self.cycles2us(self.excursion_length_timing)
+        else:
+            _start_us = self.cycles2us(self.us2cycles(self.time_step))
+            _step_us = self.cycles2us(self.us2cycles(self.time_step))
+            
+        self.cfg.start = _start_us
+        self.cfg.step = _step_us
+        self.cfg.expt.start = _start_us
+        self.cfg.expt.step = _step_us
+
+
 
     def initialize(self):
         cfg = AttrDict(self.cfg)
@@ -379,7 +392,7 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
                                 mode = "periodic") # periodic bipolar gaussian pulse
             # self.sync(self.phase_update_page[qTest], self.r_wait)
             self.sync(self.excursion_page[qTest], self.r_wait)
-            self.reset_timestamp()
+            self.reset_timestamps()
             self.setup_and_pulse(ch=self.flux_low_ch[qTest],
                                 t =0,
                                 style="const",
@@ -390,19 +403,22 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
                                 #  waveform="flux_excursion",
                                 mode = "oneshot")
         else:
-            self.set_pulse_register(ch=self.flux_low_ch[qTest],
-                                    style="const",
-                                    length = 400,
-                                    freq= self.sine_freq_reg,
-                                    phase=0,
-                                    gain=self.excursion_gain,
-                                    mode = "periodic")
+            self.set_pulse_registers(ch=self.flux_low_ch[qTest],
+                                     style="const",
+                                     length = 400,
+                                     freq= self.sine_freq_reg,
+                                     phase=0,
+                                     gain=self.excursion_gain,
+                                     mode = "periodic")
             self.pulse(ch=self.flux_low_ch[qTest],
                        t = 0)
             self.sync(self.excursion_page[qTest], 
                       self.r_wait_sine)
+            self.reset_timestamps()
             self.setup_and_pulse(ch=self.flux_low_ch[qTest],
+                                 style = 'const',
                                  t = 0,
+                                 phase = 0,
                                  length = 4,
                                  freq = self.sine_freq_reg,
                                  gain = 0)
