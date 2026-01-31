@@ -46,6 +46,41 @@ class QsimBaseProgram(MMAveragerProgram):
         self.m1s_wf_name = ["pi_m1si_low"]*4 + ["pi_m1si_high"]*3
 
 
+    def displace_man(self, alpha=None, setup=False, play=False):
+        # This function must be called first with setup before calling it with play
+        if setup:
+            self.gain2alpha = self.cfg.device.manipulate.gain_to_alpha[self.man_mode_idx]
+            self.f_man = self.freq2reg(
+                self.cfg.device.manipulate.f_ge[self.man_mode_idx],
+                gen_ch=self.man_ch[self.man_mode_idx]
+                )
+
+            self.displace_sigma = self.us2cycles(
+                self.cfg.device.manipulate.displace_sigma[self.man_mode_idx],
+                gen_ch=self.man_ch[self.man_mode_idx]
+                )
+            self.add_gauss(
+                ch=self.man_ch[self.man_mode_idx],
+                name="displace",
+                sigma=self.displace_sigma,
+                length=self.displace_sigma*4
+                )
+            
+        if play:
+            assert alpha is not None
+
+            _alpha = np.conj(alpha) # convert to conjugate to respect qick convention
+            gain =  int(np.abs(_alpha)/self.gain2alpha)
+            phase = np.angle(_alpha)/np.pi*180 - 90 # 90 is needed since da/dt = -i*drive
+            self.setup_and_pulse(
+                ch=self.man_ch[self.man_mode_idx],
+                style="arb",
+                freq=self.f_man,
+                phase=self.deg2reg(phase, gen_ch=self.man_ch[self.man_mode_idx]),
+                gain=gain,
+                waveform="displace")
+
+
     def initialize(self):
         """
         MM_base_init to pull basic info 
@@ -63,6 +98,7 @@ class QsimBaseProgram(MMAveragerProgram):
             self.swap_ds = self.cfg.expt.ds_floquet
         self.retrieve_swap_parameters()
 
+        self.man_mode_idx = 1
         self.m1s_kwargs = [{
                 'ch': self.m1s_ch[stor],
                 'style': 'flat_top',
@@ -72,6 +108,9 @@ class QsimBaseProgram(MMAveragerProgram):
                 'length': self.m1s_length[stor],
                 'waveform': self.m1s_wf_name[stor],
         } for stor in range(7)]
+
+        if self.cfg.expt.perform_wigner:
+            self.displace_man(setup=True, play=False)
 
         self.sync_all(200)
 
@@ -84,7 +123,7 @@ class QsimBaseProgram(MMAveragerProgram):
         # eg:
         # self.setup_and_pulse(**self.m1s_kwargs[0])
         self.sync_all(self.us2cycles(0.1))
-
+    
 
     def body(self):
         cfg=AttrDict(self.cfg)
@@ -103,44 +142,79 @@ class QsimBaseProgram(MMAveragerProgram):
         # prepulse: ge -> ef -> f0g1
         # TODO: make this overridable from cfg
         if cfg.expt.prepulse:
-            if type(init_stor) is list:
-                prepulse_cfg = []
 
+            if type(init_stor) is int:
+                init_stor = [init_stor]
+            if type(init_stor) is not list:
+                raise ValueError("init_stor must be int or list of int")
+
+            if cfg.expt.init_fock:
+
+                prepulse_cfg = []
                 for each_init_stor in init_stor:
                     prepulse_cfg += [
                         ['qubit', 'ge', 'pi', 0,],
-                        ['qubit', 'ef', 'pi', 0,],
-                        ['man', 'M1', 'pi', 0,],
+                        ['qubit', 'ef', 'pi', 0,], # qubit in f
+                        ['man', 'M1', 'pi', 0,], # f0-g1 --> man in 1
                     ]
                     if each_init_stor > 0:
                         prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
-            elif type(init_stor) is int:
-                prepulse_cfg = [
-                    ['qubit', 'ge', 'pi', 0,],
-                    ['qubit', 'ef', 'pi', 0,],
-                    ['man', 'M1', 'pi', 0,],
-                ]
-                if init_stor > 0:
-                    prepulse_cfg.append(['storage', f'M1-S{init_stor}', 'pi', 0,])
-            else:
-                raise ValueError("init_stor must be int or list of int")
 
-            pulse_creator = self.get_prepulse_creator(prepulse_cfg)
-            self.sync_all(self.us2cycles(0.1))
-            self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
-            self.sync_all(self.us2cycles(0.1))
+                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                self.sync_all()
+                self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
+                self.sync_all()
+
+
+            else: # init in coherent state
+
+                assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
+
+                for each_init_stor in init_stor:
+                    self.displace_man(
+                        alpha=cfg.expt.init_alpha,
+                        setup=False,
+                        play=True,
+                    ) 
+            
+                    if each_init_stor > 0:
+                        prepulse_cfg = ['storage', f'M1-S{each_init_stor}', 'pi', 0,]
+
+                        pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                        self.sync_all()
+                        self.custom_pulse(cfg, pulse_creator.pulse, prefix=f'pre_{each_init_stor}_')
+                        self.sync_all()
 
         # core pulses: override the method to define your own expeirment
         self.core_pulses()
 
         # postpulse
         if cfg.expt.postpulse:
+
+            # Move ro_stor to man
             postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
-            postpulse_cfg.append(['man', 'M1', 'pi', 0,],)
+
+            if not self.cfg.expt.perform_wigner:
+                # Move man to qubit for population measurement
+                postpulse_cfg.append(['man', 'M1', 'pi', 0,],)
+
             pulse_creator = self.get_prepulse_creator(postpulse_cfg)
-            self.sync_all(self.us2cycles(0.1))
+            self.sync_all()
             self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
-            self.sync_all(self.us2cycles(0.1))
+            self.sync_all()
+
+            if self.cfg.expt.perform_wigner:
+                # Population is still in man, perform displacement + parity measurement
+
+                # Displacement
+                self.displace_man(
+                    alpha=cfg.expt.wigner_alpha,
+                    setup=False,
+                    play=True,
+                    )
+                
+                # Parity pulse on qubit
+                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
 
         self.measure_wrapper()
 
