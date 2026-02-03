@@ -89,13 +89,7 @@ class QsimBaseProgram(MMAveragerProgram):
         self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
         #TODO: this should use a config key to determine whether
         # to use floquet or gate (pi or pi/2) datasets
-        if "ds_floquet" not in self.cfg.expt:
-            if 'floquet_dataset_filename' in self.cfg.expt:
-                self.swap_ds = FloquetStorageSwapDataset(self.cfg.expt.floquet_dataset_filename)
-            else:
-                self.swap_ds = FloquetStorageSwapDataset()
-        else:
-            self.swap_ds = self.cfg.expt.ds_floquet
+        self.swap_ds = self.cfg.device.storage._ds_floquet
         self.retrieve_swap_parameters()
 
         self.man_mode_idx = 1
@@ -196,7 +190,7 @@ class QsimBaseProgram(MMAveragerProgram):
 
             if not self.cfg.expt.perform_wigner:
                 # Move man to qubit for population measurement
-                postpulse_cfg.append(['man', 'M1', 'pi', 0,],)
+                postpulse_cfg.append(['man', 'M1', 'pi', 0,])
 
             pulse_creator = self.get_prepulse_creator(postpulse_cfg)
             self.sync_all()
@@ -243,14 +237,42 @@ class QsimBaseExperiment(Experiment):
                  config_file=None, expt_params=None,
                  program=None, progress=None, **kwargs):
         """
-        program is the qick program class (the class you imported, not the str name)
+        program can be:
+        - A class object (the class you imported, not an instance)
+        - A tuple of (module_path, class_name) strings
+        - None (defaults to QsimBaseProgram)
         """
         if not prefix:
             prefix = self.__class__.__name__
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress, **kwargs)
         self.cfg.expt = AttrDict(expt_params)
-        self.ProgramClass = program or QsimBaseProgram
-        self.cfg.expt.QickProgramName = self.ProgramClass.__name__
+
+        # Store program class info as strings (pickle-safe)
+        if program is None:
+            # Default to QsimBaseProgram
+            self.program_module = QsimBaseProgram.__module__
+            self.program_class = QsimBaseProgram.__name__
+        elif isinstance(program, tuple) and len(program) == 2:
+            # Program passed as (module, class_name) tuple
+            self.program_module, self.program_class = program
+        else:
+            # Program passed as class object - extract module and name
+            self.program_module = program.__module__
+            self.program_class = program.__name__
+
+        self.cfg.expt.QickProgramName = self.program_class
+
+        # ProgramClass is loaded lazily when needed
+        self._ProgramClass = None
+
+    @property
+    def ProgramClass(self):
+        """Lazy load the program class when first accessed."""
+        if self._ProgramClass is None:
+            import importlib
+            module = importlib.import_module(self.program_module)
+            self._ProgramClass = getattr(module, self.program_class)
+        return self._ProgramClass
 
 
     def acquire(self, progress=False, debug=False):
@@ -260,6 +282,9 @@ class QsimBaseExperiment(Experiment):
 
         assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
         sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+
+        if 'perform_wigner' not in self.cfg.expt:
+            self.cfg.expt.perform_wigner = False
 
         outer_param = self.cfg.expt.swept_params[0]
         outer_params = self.cfg.expt[outer_param+'s']

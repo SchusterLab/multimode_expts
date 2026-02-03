@@ -68,6 +68,8 @@ class JobSubmission(BaseModel):
     station_config: str  # JSON-serialized station config (required)
     user: str  # Username of submitter
     priority: int = 0  # Higher priority = runs sooner (default 0)
+    program_class: Optional[str] = None  # e.g., "FloquetChevronProgram" (for QsimBaseExperiment)
+    program_module: Optional[str] = None  # e.g., "experiments.qsim.floquet_chevron"
 
     class Config:
         json_schema_extra = {
@@ -225,6 +227,8 @@ async def submit_job(submission: JobSubmission, session: Session = Depends(get_d
         station_config=submission.station_config,
         status=JobStatus.PENDING,
         priority=submission.priority,
+        program_class=submission.program_class,
+        program_module=submission.program_module,
     )
 
     session.add(job)

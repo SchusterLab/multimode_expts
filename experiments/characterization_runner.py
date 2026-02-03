@@ -275,6 +275,13 @@ class CharacterizationRunner:
         experiment_module = self.ExptClass.__module__
         experiment_class = self.ExptClass.__name__
 
+        # Get program module and class if provided
+        program_module = None
+        program_class = None
+        if self.program is not None:
+            program_module = self.program.__module__
+            program_class = self.program.__name__
+
         # Run preprocessor to get final config
         expt_config = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
@@ -303,6 +310,8 @@ class CharacterizationRunner:
             station_config=station_config_json,
             user=self.station.user,
             priority=priority,
+            program_class=program_class,
+            program_module=program_module,
         )
 
         # Wait for completion

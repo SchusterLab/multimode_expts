@@ -164,11 +164,13 @@ class JobClient:
         station_config: str,
         user: str,
         priority: int = 0,
+        program_class: Optional[str] = None,
+        program_module: Optional[str] = None,
     ) -> str:
         """
         Submit an experiment job to the queue.
 
-        All parameters except priority are required.
+        All parameters except priority, program_class, and program_module are required.
 
         Args:
             experiment_class: Name of experiment class (e.g., "AmplitudeRabiExperiment")
@@ -177,6 +179,8 @@ class JobClient:
             station_config: JSON-serialized station config (required for config propagation)
             user: Username of submitter (required)
             priority: Job priority (higher = runs sooner, default 0)
+            program_class: Optional program class name (e.g., "FloquetChevronProgram")
+            program_module: Optional program module path (e.g., "experiments.qsim.floquet_chevron")
 
         Returns:
             Unique job_id string
@@ -214,17 +218,25 @@ class JobClient:
         if not isinstance(expt_config, dict):
             raise ValueError("expt_config must be a dict")
 
+        payload = {
+            "experiment_class": experiment_class,
+            "experiment_module": experiment_module,
+            "expt_config": expt_config,
+            "station_config": station_config,
+            "user": user,
+            "priority": priority,
+        }
+
+        # Add optional program class info if provided
+        if program_class is not None:
+            payload["program_class"] = program_class
+        if program_module is not None:
+            payload["program_module"] = program_module
+
         response = self._request(
             "POST",
             "/jobs/submit",
-            json={
-                "experiment_class": experiment_class,
-                "experiment_module": experiment_module,
-                "expt_config": expt_config,
-                "station_config": station_config,
-                "user": user,
-                "priority": priority,
-            },
+            json=payload,
         )
         response.raise_for_status()
         data = response.json()

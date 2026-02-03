@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import matplotlib.pyplot as plt
 from experiments.qsim.qsim_base import QsimBaseProgram
+from slab import AttrDict, Experiment
 from fitting.wigner import WignerAnalysis
 import qutip as qt
 import numpy as np

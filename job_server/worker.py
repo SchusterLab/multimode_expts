@@ -211,13 +211,34 @@ class JobWorker:
             self.station = MultimodeStation(experiment_name=self.experiment_name)
 
         # Setup signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self._handle_shutdown)
+        self._interrupt_count = 0
+        signal.signal(signal.SIGINT, self._handle_interrupt)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
         # Clean up any jobs left in RUNNING state from previous crashes
         self._cleanup_incomplete_jobs()
 
         print(f"[WORKER] Initialized in {'MOCK' if mock_mode else 'REAL'} mode")
+
+    def _handle_interrupt(self, signum, frame):
+        """Handle Ctrl+C to kill current job immediately."""
+        self._interrupt_count += 1
+
+        if self._interrupt_count >= 2:
+            # Second Ctrl+C: force exit immediately
+            print("\n[WORKER] Second Ctrl+C received, forcing exit...")
+            sys.exit(1)
+
+        if self.current_job:
+            # First Ctrl+C while job is running: cancel current job but keep worker running
+            print(f"\n[WORKER] Ctrl+C received, cancelling current job {self.current_job.job_id}...")
+            print("[WORKER] Worker will continue processing queue. Press Ctrl+C again to stop worker.")
+            # Raise KeyboardInterrupt to stop the current experiment
+            raise KeyboardInterrupt("Job cancelled by user")
+        else:
+            # First Ctrl+C while idle: just stop gracefully
+            print("\n[WORKER] Ctrl+C received, shutting down...")
+            self.running = False
 
     def _handle_shutdown(self, signum, frame):
         """Handle shutdown signals gracefully."""
@@ -262,7 +283,7 @@ class JobWorker:
         Continuously polls for jobs and executes them until shutdown.
         """
         print(f"[WORKER] Starting main loop (poll interval: {self.poll_interval}s)")
-        print("[WORKER] Press Ctrl+C to stop gracefully")
+        print("[WORKER] Press Ctrl+C to cancel current job (worker continues), or Ctrl+C while idle to stop")
 
         while self.running:
             job = self._fetch_next_job()
@@ -359,6 +380,14 @@ class JobWorker:
             print(f"[WORKER] Job completed: {job.job_id}")
             print(f"[WORKER]   Data saved to: {data_file_path}")
             print(f"[WORKER]   Expt object saved to: {expt_pickle_path}")
+
+        except KeyboardInterrupt as e:
+            # Job was cancelled by user via Ctrl+C
+            error_msg = f"Job cancelled by user (Ctrl+C)"
+            self._update_job_failed(job.job_id, error_msg)
+            print(f"[WORKER] Job cancelled: {job.job_id}")
+            # Reset interrupt count so user can Ctrl+C again for next job or to exit
+            self._interrupt_count = 0
 
         except Exception as e:
             # Update job as failed
@@ -467,14 +496,30 @@ class JobWorker:
         print(f"[WORKER] Creating experiment instance")
         print(f"[WORKER]   Data file: {data_filename}")
 
+        # Pass program info as tuple (module, class_name) if specified
+        # The experiment will lazily load it when needed, avoiding pickle issues
+        program = None
+        if job.program_module and job.program_class:
+            print(f"[WORKER]   Program: {job.program_class} from {job.program_module}")
+            program = (job.program_module, job.program_class)
+
         # Create experiment instance
         # Note: In mock mode, this will use MockQickConfig
-        expt = ExptClass(
-            soccfg=self.station.soc,
-            path=str(self.station.data_path),
-            prefix=job.job_id,
-            config_file=str(self.station.hardware_config_file),
-        )
+        if program is not None:
+            expt = ExptClass(
+                soccfg=self.station.soc,
+                path=str(self.station.data_path),
+                prefix=job.job_id,
+                config_file=str(self.station.hardware_config_file),
+                program=program,
+            )
+        else:
+            expt = ExptClass(
+                soccfg=self.station.soc,
+                path=str(self.station.data_path),
+                prefix=job.job_id,
+                config_file=str(self.station.hardware_config_file),
+            )
 
         # Setup configuration (following CharacterizationRunner pattern)
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))

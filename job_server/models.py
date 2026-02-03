@@ -65,6 +65,10 @@ class Job(Base):
     experiment_config = Column(Text, nullable=False)  # JSON
     station_config = Column(Text, nullable=True)  # JSON-serialized station configs (hardware_cfg, etc.)
 
+    # Optional program class for QsimBaseExperiment and similar
+    program_class = Column(String(200), nullable=True)
+    program_module = Column(String(300), nullable=True)
+
     # Config version references
     hardware_config_version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=True)
     multiphoton_config_version_id = Column(String(50), ForeignKey("config_versions.version_id"), nullable=True)
@@ -115,6 +119,8 @@ class Job(Base):
             "user": self.user,
             "experiment_class": self.experiment_class,
             "experiment_module": self.experiment_module,
+            "program_class": self.program_class,
+            "program_module": self.program_module,
             "status": self.status.value,
             "priority": self.priority,
             "created_at": self.created_at.isoformat() if self.created_at else None,
