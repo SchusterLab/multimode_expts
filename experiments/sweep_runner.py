@@ -133,8 +133,8 @@ class SweepRunner:
         self.postprocessor = postprocessor
         self.live_plot = live_plot
         self.job_client = job_client
-        self.use_queue = use_queue
         self.last_job_ids = []  # Stores list of job IDs from most recent run()
+        self.use_queue = use_queue
 
     def _convert_to_arrays(self, data_dict: dict) -> dict:
         """Convert all list values to numpy arrays."""
