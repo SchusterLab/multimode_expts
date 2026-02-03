@@ -196,6 +196,10 @@ class MockYokogawa:
         print(f"[MOCK] {self.name}.output_off()")
         self._output_enabled = False
 
+    def ramp_current(self, current: float, sweeprate: float=0.001, channel: int=1):
+        print(f"[MOCK] {self.name}.ramp_current({current})")
+        self._current = current
+
 
 class MockStation:
     """

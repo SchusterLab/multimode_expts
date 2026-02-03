@@ -481,6 +481,17 @@ class JobWorker:
 
         print(f"[WORKER] Running experiment...")
 
+        if hasattr(expt.cfg.expt, "coupler_current"):
+            coupler_current = expt.cfg.expt.coupler_current
+            coupler_current_source = 'expt.cfg'
+        else:
+            coupler_current = self.station.hardware_cfg.hw.yoko_coupler.current
+            coupler_current_source = 'hardware_cfg yaml'
+        assert abs(coupler_current) < 5e-3, f"[WORKER] Coupler {coupler_current*1e3}mA sounds really high! Are you sure about the unit?"
+        print(f"[WORKER] Setting coupler yoko current to {coupler_current*1e3}mA according to {coupler_current_source}...")
+        self.station.yoko_coupler.ramp_current(coupler_current, sweeprate=1e-4)
+        print("[WORKER] Done setting coupler current")
+
         # Run experiment
         # In mock mode, this will generate simulated data
         expt.go(
