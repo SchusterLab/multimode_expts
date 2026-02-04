@@ -163,15 +163,24 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
             data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
 
+        self.cfg.expt['expts'] = len(data["alpha"]) # this is necessary because of general fitting bin_ss_data which expects the first dimension to come from cfg.expt.expts
+
         self.data=data
         return data
 
 
     def analyze(self, data=None, **kwargs):
+        pass
+
+    def analyze_wigner(self, data=None, **kwargs):
         if data is None:
             data = self.data
 
         mode_state_num = kwargs.get('mode_state_num', 10)
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
         read_num = 1
         if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
@@ -183,14 +192,14 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         idx_step = read_num
 
         wigner_outputs = dict(
-            parity=np.zeros((len(self.outer_params), len(self.inner_params))),
+            parity=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
         )
         if self.pulse_correction:
             wigner_outputs.update(dict(
-                pe_plus=np.zeros((len(self.outer_params), len(self.inner_params))),
-                pe_minus=np.zeros((len(self.outer_params), len(self.inner_params))),
-                parity_plus=np.zeros((len(self.outer_params), len(self.inner_params))),
-                parity_minus=np.zeros((len(self.outer_params), len(self.inner_params))),
+                pe_plus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                pe_minus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                parity_plus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                parity_minus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
             ))
         else:
             wigner_outputs.update(dict(
@@ -199,7 +208,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
         for i_outer, outer_param_val in enumerate(self.outer_params):
             for i_inner, inner_param_val in enumerate(self.inner_params):
-
+                print(outer_param_val, inner_param_val)
                 if self.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
                     data_minus = {}
                     data_plus = {}
@@ -208,6 +217,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     data_minus['qdata'] = data['qdata'][i_outer, i_inner, :, 0, idx_start::idx_step]
                     data_plus['idata'] = data['idata'][i_outer, i_inner, :, 1, idx_start::idx_step]
                     data_plus['qdata'] = data['qdata'][i_outer, i_inner, :, 1, idx_start::idx_step]
+                    print("shape", data_plus['idata'].shape)
 
                     if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
                         assert False, "post_select_pre_pulse with pulse_correction not implemented yet"
@@ -228,6 +238,9 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     parity_plus = (1 - pe_plus) - pe_plus
                     parity_minus = (1 - pe_minus) - pe_minus
                     parity = (parity_minus - parity_plus) / 2
+
+                    # print('pe_plus', pe_plus)
+                    # print('parity', parity)
 
                     # apply scale 
                     scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
