@@ -9,6 +9,8 @@ job_server/worker.lock
 
 plots/
 .vscode/
+.idea/
+.claude/
 *.code-workspace
 node_modules/
 analysis_notebooks/bosonic/outcmaes/
