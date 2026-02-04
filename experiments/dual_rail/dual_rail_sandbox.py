@@ -460,7 +460,8 @@ class DualRailSandboxExperiment(Experiment):
                 ax.set_ylabel('Population')
                 ax.set_xlabel('Measured State')
                 total_time = repeat * wait
-                ax.set_title(f'|{prepared_state}> r={repeat} w={wait} (t={total_time}us)\n'
+                total_time_ms = total_time / 1000  # convert us to ms
+                ax.set_title(f'|{prepared_state}> r={repeat} w={wait} (t={total_time_ms:.3g}ms)\n'
                             f'post-sel: {post_count}/{total_reps}')
                 ax.set_ylim([0, 1])
 
@@ -537,10 +538,10 @@ class DualRailSandboxExperiment(Experiment):
 
                 # For each measured state (00, 10, 01, 11), collect data points
                 for measured_state in bar_labels:
-                    data_points = []  # (total_time, population)
+                    data_points = []  # (total_time_ms, population)
                     for repeat in repeat_list:
                         for wait in wait_list:
-                            total_time = repeat * wait
+                            total_time_ms = (repeat * wait) / 1000  # convert us to ms
                             key = f'{prepared_state}_r{repeat}_w{wait}'
                             pops_raw = data.get(f'pop_{key}', {})
 
@@ -553,7 +554,7 @@ class DualRailSandboxExperiment(Experiment):
                                 pop = pops_raw[meas_idx]
                             else:
                                 pop = 0
-                            data_points.append((total_time, pop))
+                            data_points.append((total_time_ms, pop))
 
                     # Sort by time for clean line plot
                     data_points.sort(key=lambda x: x[0])
@@ -564,7 +565,7 @@ class DualRailSandboxExperiment(Experiment):
                                color=self.STATE_COLORS[measured_state],
                                markersize=6)
 
-                ax.set_xlabel(r'Total idle time ($\mu$s)')
+                ax.set_xlabel('Total idle time (ms)')
                 ax.set_ylabel('Population')
                 ax.set_title(r'Prepared: $|%s\rangle$' % prepared_state)
                 ax.legend()
@@ -589,12 +590,12 @@ class DualRailSandboxExperiment(Experiment):
                 ax = axes_log[state_idx]
 
                 # Collect logical population data points
-                p0_data = []  # (total_time, p_0)
-                p1_data = []  # (total_time, p_1)
+                p0_data = []  # (total_time_ms, p_0)
+                p1_data = []  # (total_time_ms, p_1)
 
                 for repeat in repeat_list:
                     for wait in wait_list:
-                        total_time = repeat * wait
+                        total_time_ms = (repeat * wait) / 1000  # convert us to ms
                         key = f'{prepared_state}_r{repeat}_w{wait}'
                         pops_raw = data.get(f'pop_{key}', {})
 
@@ -619,8 +620,8 @@ class DualRailSandboxExperiment(Experiment):
                             p_0 = 0
                             p_1 = 0
 
-                        p0_data.append((total_time, p_0))
-                        p1_data.append((total_time, p_1))
+                        p0_data.append((total_time_ms, p_0))
+                        p1_data.append((total_time_ms, p_1))
 
                 # Sort by time
                 p0_data.sort(key=lambda x: x[0])
@@ -635,17 +636,17 @@ class DualRailSandboxExperiment(Experiment):
                     ax.plot(times, p0_vals, 'o', label=r'$p_0$',
                            color=self.STATE_COLORS['01'], markersize=6)
 
-                    # Exponential fit for p0
+                    # Exponential fit for p0 (times in ms)
                     if len(times) >= 3 and np.max(times) > 0:
                         try:
                             pOpt_p0, pCov_p0 = fitexp(times, p0_vals)
-                            T_p0 = pOpt_p0[3]  # decay parameter is the lifetime
+                            T_p0 = pOpt_p0[3]  # decay parameter (lifetime in ms)
                             T_p0_err = np.sqrt(pCov_p0[3, 3]) if pCov_p0[3, 3] < np.inf else 0
                             # Plot fit curve
                             t_fit = np.linspace(np.min(times), np.max(times), 100)
                             ax.plot(t_fit, expfunc(t_fit, *pOpt_p0), '--',
                                    color=self.STATE_COLORS['01'], linewidth=2)
-                            fit_text.append(r'$T_{p_0}=%.1f \pm %.1f$ $\mu$s' % (T_p0, T_p0_err))
+                            fit_text.append(r'$T_{p_0}=%.3g \pm %.3g$ ms' % (T_p0, T_p0_err))
                         except Exception as e:
                             print(f"p0 fit failed for {prepared_state}: {e}")
 
@@ -656,21 +657,21 @@ class DualRailSandboxExperiment(Experiment):
                     ax.plot(times, p1_vals, 's', label=r'$p_1$',
                            color=self.STATE_COLORS['10'], markersize=6)
 
-                    # Exponential fit for p1
+                    # Exponential fit for p1 (times in ms)
                     if len(times) >= 3 and np.max(times) > 0:
                         try:
                             pOpt_p1, pCov_p1 = fitexp(times, p1_vals)
-                            T_p1 = pOpt_p1[3]  # decay parameter is the lifetime
+                            T_p1 = pOpt_p1[3]  # decay parameter (lifetime in ms)
                             T_p1_err = np.sqrt(pCov_p1[3, 3]) if pCov_p1[3, 3] < np.inf else 0
                             # Plot fit curve
                             t_fit = np.linspace(np.min(times), np.max(times), 100)
                             ax.plot(t_fit, expfunc(t_fit, *pOpt_p1), '--',
                                    color=self.STATE_COLORS['10'], linewidth=2)
-                            fit_text.append(r'$T_{p_1}=%.1f \pm %.1f$ $\mu$s' % (T_p1, T_p1_err))
+                            fit_text.append(r'$T_{p_1}=%.3g \pm %.3g$ ms' % (T_p1, T_p1_err))
                         except Exception as e:
                             print(f"p1 fit failed for {prepared_state}: {e}")
 
-                ax.set_xlabel(r'Total idle time ($\mu$s)')
+                ax.set_xlabel('Total idle time (ms)')
                 ax.set_ylabel('Logical Population')
                 title = r'Prepared: $|%s\rangle$ (Logical Subspace)' % prepared_state
                 if fit_text:
