@@ -4,7 +4,7 @@ pixi.lock
 
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
-job_server/jobs.db
+job_server/jobs.db*
 job_server/worker.lock
 
 plots/
