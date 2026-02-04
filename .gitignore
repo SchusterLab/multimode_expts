@@ -1,21 +1,21 @@
 # User defined stuff here:
 
 pixi.lock
-.claude/
+analysis_notebooks/bosonic/outcmaes/
+analysis_notebooks/bosonic/*.png
+plots/
 
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
 job_server/jobs.db*
 job_server/worker.lock
 
-plots/
+# tooling
 .vscode/
 .idea/
 .claude/
 *.code-workspace
 node_modules/
-analysis_notebooks/bosonic/outcmaes/
-analysis_notebooks/bosonic/*.png
 .jupyter_ystore.db
 .fileid.db
 

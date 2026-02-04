@@ -12,6 +12,16 @@ timeout /t 2 /nobreak >nul
 REM Start FastAPI server
 start "" "C:\Program Files\Git\git-bash.exe" -c "cd '%~dp0' && pixi run python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000; read -p 'Press Enter to close...'"
 
+echo.
+echo ============================================================
+echo   Pyro nameserver and job server are starting...
+echo.
+echo   Please start the Pyro instrument daemon on the RFSoC
+echo   and click enter after Qick101 registers with the nameserver.
+echo ============================================================
+echo.
+pause
+
 REM Start worker
 start "" "C:\Program Files\Git\git-bash.exe" -c "cd '%~dp0' && pixi run python -u -m job_server.worker; read -p 'Press Enter to close...'"
 
