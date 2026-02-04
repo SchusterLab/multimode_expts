@@ -16,18 +16,15 @@ Requirements:
     - Config files must exist in expected locations
 """
 
-import sys
 from pathlib import Path
 import numpy as np
 from copy import deepcopy
 
-# Add measurement_notebooks to path
-sys.path.insert(0, str(Path(__file__).parent / 'measurement_notebooks'))
-
 from slab import AttrDict
 import experiments as meas
 from fitting.fit_display_classes import ChevronFitting
-from meas_utils import MultimodeStation, SweepRunner
+from experiments.station import MultimodeStation
+from experiments.sweep_runner import SweepRunner
 
 
 def test_sweep_runner_minimal():

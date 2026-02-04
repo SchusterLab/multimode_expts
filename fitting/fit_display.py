@@ -10,9 +10,6 @@ from numpy.linalg import inv
 import matplotlib.pyplot as plt
 plt.rcParams['figure.figsize'] = [10,6]
 plt.rcParams.update({'font.size': 14})
-import sys
-sys.path.append('/home/xilinx/jupyter_notebooks/')
-sys.path.append('C:\\_Lib\\python\\rfsoc\\rfsoc_multimode\\example_expts')
 
 from qick import *
 from slab.instruments import *

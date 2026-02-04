@@ -27,21 +27,19 @@ import signal
 import sys
 import time
 import traceback
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
+import pandas as pd
 
-# Add parent directories to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from multimode_expts.job_server.database import get_database
-from multimode_expts.job_server.models import Job, JobStatus, JobOutput
-from multimode_expts.job_server.id_generator import IDGenerator
-from multimode_expts.job_server.config_versioning import ConfigVersionManager
-from multimode_expts.job_server.output_capture import OutputCapture
+from experiments.station import MultimodeStation
+from job_server.config_versioning import ConfigVersionManager
+from job_server.database import get_database
+from job_server.id_generator import IDGenerator
+from job_server.models import Job, JobOutput, JobStatus
+from job_server.output_capture import OutputCapture
 from slab.datamanagement import AttrDict
-from copy import deepcopy
 
 # Patch tqdm_notebook to use regular tqdm (tqdm_notebook uses IPython widgets, not stdout)
 # This must happen before experiment modules are imported
@@ -203,12 +201,11 @@ class JobWorker:
 
         # Initialize station with hardware connections
         # Config will be updated per-job from serialized notebook config
-        if self.mock_mode:
-            from multimode_expts.job_server.mock_hardware import MockStation
-            self.station = MockStation(experiment_name=self.experiment_name)
-        else:
-            from multimode_expts.experiments.station import MultimodeStation
-            self.station = MultimodeStation(experiment_name=self.experiment_name)
+        # Uses unified MultimodeStation with mock parameter
+        self.station = MultimodeStation(
+            experiment_name=self.experiment_name,
+            mock=self.mock_mode,
+        )
 
         # Setup signal handlers for graceful shutdown
         self._interrupt_count = 0
@@ -255,14 +252,13 @@ class JobWorker:
         Args:
             station_config_json: JSON string containing station config data
         """
-        import pandas as pd
 
         station_data = json.loads(station_config_json)
 
         # Update experiment_name and reinitialize output paths if provided
         if "experiment_name" in station_data:
             self.station.experiment_name = station_data["experiment_name"]
-            self.station._initialize_output_paths()
+            self.station._initialize_output_paths()  # Routes internally based on mock mode
 
         # Update station's hardware_cfg
         self.station.hardware_cfg = AttrDict(station_data["hardware_cfg"])
@@ -539,6 +535,17 @@ class JobWorker:
             expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
 
         print(f"[WORKER] Running experiment...")
+
+        if hasattr(expt.cfg.expt, "coupler_current"):
+            coupler_current = expt.cfg.expt.coupler_current
+            coupler_current_source = 'expt.cfg'
+        else:
+            coupler_current = self.station.hardware_cfg.hw.yoko_coupler.current
+            coupler_current_source = 'hardware_cfg yaml'
+        assert abs(coupler_current) < 5e-3, f"[WORKER] Coupler {coupler_current*1e3}mA sounds really high! Are you sure about the unit?"
+        print(f"[WORKER] Setting coupler yoko current to {coupler_current*1e3}mA according to {coupler_current_source}...")
+        self.station.yoko_coupler.ramp_current(coupler_current, sweeprate=1e-4)
+        print("[WORKER] Done setting coupler current")
 
         # Run experiment
         # In mock mode, this will generate simulated data

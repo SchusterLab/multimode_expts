@@ -9,10 +9,10 @@ version = "0.0.1"
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
-  "experiments*",
-  "fitting*",
-  "slab*",
-  "job_server*",
+  "experiments",
+  "fitting",
+  "slab",
+  "job_server",
 ]
 exclude = [ ]
 
@@ -40,20 +40,22 @@ gymnasium = ">=1.2.2,<2"
 pyvisa = ">=1.15.0,<2"
 pyserial = ">=3.5,<4"
 numpy = "<2.0"
+sqlalchemy = ">=2.0.46,<3"
+fastapi = ">=0.115.0"
+pydantic = ">=2.0"
+uvicorn = ">=0.40.0,<0.41"
+pytest = ">=9.0.2,<10"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
 # slab = { path = "../slab", editable = true }
 multimode_expts = { path = ".", editable = true }
-fastapi = ">=0.115.0"
-pydantic = ">=2.0"
-uvicorn = {extras = ["standard"], version = ">=0.30.0"}
+
+[tool.pixi.tasks]
+nameserver = "python start_nameserver.py"
+server = "python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000"
+worker = "python -u -m job_server.worker"
 
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes
-
-# [tool.pyright]
-# executionEnvironments = [
-#   { root = ".", extraPaths = ["../"] }
-# ]
 

@@ -7,34 +7,61 @@ This module provides the MultimodeStation class which manages:
 - Data paths and output directories
 - Storage-manipulate swap dataset
 
+Supports both real hardware and mock modes:
+- Real hardware: Connects to actual instruments (production on BF5)
+- Mock mode: Uses simulated hardware for testing/development
+
 Usage:
     from experiments.station import MultimodeStation
 
+    # Auto-detect mode based on machine (mock on dev, real on BF5)
     station = MultimodeStation(experiment_name="241215_calibration")
+
+    # Force mock mode for testing
+    station = MultimodeStation(mock=True)
+
+    # Force real hardware on dev machine
+    station = MultimodeStation(mock=False)
+
     # Access hardware: station.soc, station.im
     # Access config: station.hardware_cfg, station.hardware_cfg
     # Access paths: station.data_path, station.plot_path
+    # Check mode: station.is_mock
 """
 
 import json
 import os
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import socket
 
 import numpy as np
 import yaml
-from qick import QickConfig
 
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
-from slab.instruments import InstrumentManager
-from slab.instruments.voltsource import YokogawaGS200
 
 from job_server.database import get_database
 from job_server.config_versioning import ConfigVersionManager, ConfigType
+
+BF5_HOSTNAME = 'DESKTOP-GONKTN3'
+
+def detect_mock_mode() -> bool:
+    """
+    Auto-detect mock mode based on machine identity.
+
+    Returns:
+        True for mock mode (dev machine), False for real hardware (BF5 production)
+
+    Detection logic:
+        - 'DESKTOP-GONKTN3' is the production host name on BF5
+        - If host name matches, use real hardware
+        - Otherwise, default to mock mode for safety
+    """
+    hostname = socket.gethostname()
+    return hostname != BF5_HOSTNAME
 
 # YAML representers for numpy types
 def _np_float_representer(dumper, data):
@@ -65,14 +92,19 @@ class MultimodeStation:
         - Output paths for data/plots/logs
         - Yokogawa sources for JPA and coupler flux (optional)
 
+    Supports both real hardware and mock modes:
+        - Real hardware: Uses database for config versioning, connects to instruments
+        - Mock mode: Loads configs directly from YAML files, uses simulated hardware
+
     Attributes:
-        soc: QickConfig object for FPGA control
-        im: InstrumentManager for hardware access
+        soc: QickConfig object for FPGA control (or MockQickConfig in mock mode)
+        im: InstrumentManager for hardware access (or MockInstrumentManager in mock mode)
         hardware_cfg: AttrDict of current hardware configuration
         ds_storage: StorageManSwapDataset for this run
         data_path: Path to data directory
         plot_path: Path to plots directory
         log_path: Path to logs directory
+        is_mock: Whether station connects to real or mock hardware
     """
 
     def __init__(
@@ -84,6 +116,7 @@ class MultimodeStation:
         storage_man_file: Optional[str] = None,
         floquet_file: Optional[str] = None,
         qubit_i: int = 0,
+        mock: Optional[bool] = None,
     ):
         """
         Initialize the measurement station.
@@ -95,6 +128,7 @@ class MultimodeStation:
             multiphoton_config: Filename or version ID (e.g., CFG-MP-20260115-00001). If None, loads from main version in database.
             storage_man_file: Filename or version ID (e.g., CFG-M1-20260115-00001). If None, loads from main version in database.
             qubit_i: Qubit index to use.
+            mock: If None, auto-detect based on machine identity. If True, force mock mode. If False, force real hardware.
         """
         self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
@@ -103,11 +137,25 @@ class MultimodeStation:
         self.qubit_i = qubit_i
         self.user = user
 
+        # Determine mock mode
+        if mock is None:
+            self._is_mock = detect_mock_mode()
+        else:
+            self._is_mock = mock
+
+        # Config loading always uses database/versioning (same for mock and real)
         self._initialize_configs(hardware_config, multiphoton_config, storage_man_file, floquet_file)
+
+        # Output paths and hardware - routing handled internally based on mock mode
         self._initialize_output_paths()
         self._initialize_hardware()
 
         self.print()
+
+    @property
+    def is_mock(self) -> bool:
+        """Whether the station is running in mock mode."""
+        return self._is_mock
 
     def _initialize_configs(self, hardware_config, multiphoton_config, storage_man_file, floquet_file):
         """Load configuration files from paths, version IDs, or main versions."""
@@ -167,7 +215,7 @@ class MultimodeStation:
         config_manager: ConfigVersionManager,
         session,
         required: bool = False
-    ) -> Path:
+    ) -> Optional[Path]:
         """
         Resolve a config specification to an actual file path.
 
@@ -222,7 +270,14 @@ class MultimodeStation:
 
 
     def _initialize_output_paths(self):
-        """Create output directories if needed."""
+        """Initialize output paths - routes to real or mock based on mode."""
+        if self._is_mock:
+            self._initialize_output_paths_mock()
+        else:
+            self._initialize_output_paths_real()
+
+    def _initialize_output_paths_real(self):
+        """Create output directories for real hardware mode."""
         self.output_root = Path(self.hardware_cfg.data_management.output_root)
         if not self.output_root.exists():
             raise FileNotFoundError(
@@ -252,18 +307,79 @@ class MultimodeStation:
                 print("Directory created at:", subpath)
 
     def _initialize_hardware(self):
-        """Connect to hardware."""
+        """Initialize hardware - routes to real or mock based on mode."""
+        if self._is_mock:
+            self._initialize_hardware_mock()
+        else:
+            self._initialize_hardware_real()
+
+    def _initialize_hardware_real(self):
+        """Connect to real hardware."""
+        from qick import QickConfig
+        from slab.instruments import InstrumentManager
+        from slab.instruments.voltsource import YokogawaGS200
+
         self.im = InstrumentManager(ns_address="192.168.137.25")
         self.soc = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
 
+    def _initialize_output_paths_mock(self):
+        """Create output directories for mock mode."""
+        self.output_root = self.repo_root / "mock_data"
+
+        # Create directories (real directories for data file testing)
+        self.experiment_path = self.output_root / self.experiment_name
+        self.data_path = self.experiment_path / "data"
+        self.expt_objs_path = self.experiment_path / "expt_objs"
+        self.plot_path = self.experiment_path / "plots"
+        self.log_path = self.experiment_path / "logs"
+        self.autocalib_path = (
+            self.plot_path / f'autocalibration_{datetime.now().strftime("%Y-%m-%d")}'
+        )
+
+        for subpath in [
+            self.experiment_path,
+            self.data_path,
+            self.expt_objs_path,
+            self.plot_path,
+            self.log_path,
+            self.autocalib_path,
+        ]:
+            subpath.mkdir(parents=True, exist_ok=True)
+
+        print(f"[MOCK STATION] Output paths created at: {self.experiment_path}")
+
+    def _initialize_hardware_mock(self):
+        """Initialize mock hardware objects."""
+        from experiments.mock_hardware import (
+            MockInstrumentManager,
+            MockQickConfig,
+            MockYokogawa,
+        )
+
+        self.im = MockInstrumentManager()
+        self.soc = MockQickConfig()
+        self.yoko_coupler = MockYokogawa(
+            name="yoko_coupler", address="mock://192.168.137.148"
+        )
+        self.yoko_jpa = MockYokogawa(
+            name="yoko_jpa", address="mock://192.168.137.149"
+        )
+        print("[MOCK STATION] Mock hardware initialized")
+
     def print(self):
         """Print station information."""
-        print("Data, plots, logs will be stored in:", self.experiment_path)
-        print("Hardware configs will be read from", self.hardware_config_file)
-        print(self.im.keys())
-        print(self.soc)
+        if self._is_mock:
+            print(f"[MOCK STATION] Data path: {self.data_path}")
+            print(f"[MOCK STATION] Config file: {self.hardware_config_file}")
+            print(f"[MOCK STATION] Instruments: {list(self.im.keys())}")
+            print(f"[MOCK STATION] SOC: {self.soc}")
+        else:
+            print("Data, plots, logs will be stored in:", self.experiment_path)
+            print("Hardware configs will be read from", self.hardware_config_file)
+            print(self.im.keys())
+            print(self.soc)
 
     def load_data(self, filename: Optional[str] = None, prefix: Optional[str] = None):
         """Load data from HDF5 file."""

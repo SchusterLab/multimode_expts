@@ -516,6 +516,8 @@ hw:
             cavity_out:
                 ch:
                 - 1
+    yoko_coupler:
+        current: 0.5e-3
 aliases:
     soc: Qick101
 data_management:

@@ -6,6 +6,24 @@ This module provides:
 2. Tests for the new "mother experiment" pattern where analyze/display
    methods detect 2D data and delegate to appropriate fitting classes
 
+Note on Mock Hardware:
+    This test file uses lightweight, self-contained mocks (MockExperiment, MockStation)
+    designed specifically for unit testing without any file system dependencies.
+
+    For integration testing or manual development, use the centralized mock hardware
+    in experiments/mock_hardware.py via MultimodeStation(mock=True). The centralized
+    mocks are more realistic and load actual config files from disk.
+
+    Test mocks (this file):
+    - MockStation: Minimal, creates temp directories, no real config files
+    - MockExperiment: Generates synthetic data, no QICK dependencies
+
+    Centralized mocks (experiments/mock_hardware.py):
+    - MockQickConfig, MockQickSoc: Realistic QICK hardware simulation
+    - MockInstrumentManager: Simulates instrument access
+    - MockYokogawa: Mock voltage source
+    - Used by MultimodeStation when mock=True
+
 Usage:
     # Quick unit test with mock data
     python -m pytest tests/test_sweep_runner.py -v
@@ -86,9 +104,6 @@ import tempfile
 import os
 from copy import deepcopy
 from unittest.mock import patch
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from slab import AttrDict, Experiment
 
@@ -306,8 +321,11 @@ class MockStation:
         # Mock SoC
         self.soc = MagicMock()
 
-        # Config that experiments will read
-        self.config_thisrun = AttrDict({
+        # Mock mode flag (test mock station is always mock)
+        self._is_mock = True
+
+        # Config that experiments will read (hardware_cfg is the standard name)
+        self.hardware_cfg = AttrDict({
             'device': {
                 'readout': {'relax_delay': [1000]},
                 'qubit': {'f_ge': [5000]},
@@ -321,6 +339,11 @@ class MockStation:
         self.ds_thisrun = MagicMock()
         self.ds_thisrun.get_freq = MagicMock(return_value=5000)
         self.ds_thisrun.get_gain = MagicMock(return_value=8000)
+
+    @property
+    def is_mock(self) -> bool:
+        """Test mock station is always in mock mode."""
+        return self._is_mock
 
     def cleanup(self):
         """Remove temporary files."""
@@ -362,8 +385,8 @@ def test_sweep_runner_basic():
         sweep_param='freq',
     )
 
-    # Run sweep
-    result = runner.run(
+    # Run sweep (using run_local since we have mock station without job client)
+    result = runner.run_local(
         sweep_start=4990,
         sweep_stop=5010,
         sweep_npts=11,
@@ -412,7 +435,7 @@ def test_sweep_runner_2d_detection():
         sweep_param='freq',
     )
 
-    result = runner.run(
+    result = runner.run_local(
         sweep_start=4995,
         sweep_stop=5005,
         sweep_npts=5,
@@ -471,7 +494,7 @@ def test_sweep_runner_postprocessor():
         postprocessor=my_postproc,
     )
 
-    result = runner.run(
+    result = runner.run_local(
         sweep_start=4995,
         sweep_stop=5005,
         sweep_npts=5,
@@ -518,7 +541,7 @@ def test_sweep_runner_live_plot():
             live_plot=True,
         )
 
-        result = runner.run(
+        result = runner.run_local(
             sweep_start=4998,
             sweep_stop=5002,
             sweep_npts=5,
@@ -566,7 +589,7 @@ def test_sweep_runner_incremental_save():
             sweep_param='freq',
         )
 
-        result = runner.run(
+        result = runner.run_local(
             sweep_start=4998,
             sweep_stop=5002,
             sweep_npts=5,
@@ -609,7 +632,7 @@ def test_data_structure():
         sweep_param='freq',
     )
 
-    result = runner.run(
+    result = runner.run_local(
         sweep_start=4990,
         sweep_stop=5010,
         sweep_npts=11,

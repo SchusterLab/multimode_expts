@@ -15,23 +15,14 @@ mcp = FastMCP()
 
 def setup_paths():
     """
-    Modifies the Python module search path (sys.path) by appending and inserting specific directories.
+    Legacy function for path setup - now a no-op.
 
-    - Appends '/home/xilinx/jupyter_notebooks/' and 'C:\\_Lib\\python\\rfsoc\\rfsoc_multimode\\example_expts' to sys.path.
-    - Inserts 'C:\\_Lib\\python\\multimode_expts' at the highest priority (beginning) of sys.path.
-    - Prints confirmation messages and the updated sys.path.
-    
+    Modules are discovered via pyproject.toml package configuration.
+
     Returns:
-        sys (module): The sys module with the updated path.
+        sys (module): The sys module.
     """
     import sys
-    sys.path.append('/home/xilinx/jupyter_notebooks/')
-    sys.path.append('C:\\_Lib\\python\\rfsoc\\rfsoc_multimode\\example_expts')
-    # sys.path.append('C:\\_Lib\\python\\multimode')
-    expts_path = 'C:\\_Lib\\python\\multimode_expts'
-    sys.path.insert(0, expts_path)
-    print('Path added at highest priority')
-    print(sys.path)
     return sys
 
 def setup_plotting():

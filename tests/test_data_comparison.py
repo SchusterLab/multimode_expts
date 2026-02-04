@@ -3,17 +3,15 @@ Run old and new methods with identical parameters, no analysis/plotting.
 Just save HDF5 files for manual comparison.
 """
 
-import sys
 from pathlib import Path
 from copy import deepcopy
 import numpy as np
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent / 'measurement_notebooks'))
-
 from slab import AttrDict
 import experiments as meas
-from meas_utils import MultimodeStation, SweepRunner
+from experiments.station import MultimodeStation
+from experiments.sweep_runner import SweepRunner
 from experiments.sequential_experiment_classes import man_f0g1_class
 
 
