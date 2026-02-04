@@ -1,13 +1,16 @@
 from datetime import datetime
 from fractions import Fraction
+import json
 from numbers import Rational
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import warnings
+
+import numpy as np
+import pandas as pd
 
 from job_server.database import get_database
 from job_server.config_versioning import ConfigVersionManager, ConfigType
-
-import pandas as pd
 
 
 class mm_dataset:
@@ -54,9 +57,11 @@ class MMDataset:
             self.create_new_df()
         self.indexing_row_name = self.get_columns()[0]
         # The first column is the name of each row, this variable stores the name for the name of each row
-        if self.get_columns()[-1] == 'last_update':
+        if 'last_update' in self.get_columns():
             self.add_timestamp = True
-        
+        else:
+            self.add_timestamp = False
+
         self.config_type = ConfigType.MM_DATASET_BASE
 
     def create_new_df(self):
@@ -261,6 +266,19 @@ class StorageManSwapDataset(MMDataset):
     def __init__(self, filename='man1_storage_swap_dataset.csv', parent_path='configs'):
         super().__init__(filename=filename, parent_path=parent_path)
         self.config_type = ConfigType.MAN1_STORAGE_SWAP
+        self._ensure_polynomial_columns()
+
+    def _ensure_polynomial_columns(self):
+        """Add polynomial coefficient columns if they don't exist (for backward compatibility)."""
+        poly_cols = [
+            'bs_rate_coeffs_g', 'bs_rate_coeffs_e',
+            'freq_coeffs_g', 'freq_coeffs_e',
+            'gain_range_g', 'gain_range_e',
+            'joint_parity'
+        ]
+        for col in poly_cols:
+            if col not in self.df.columns:
+                self.df[col] = ''
 
     def create_new_df(self):
         column_names = [
@@ -270,6 +288,14 @@ class StorageManSwapDataset(MMDataset):
             'pi (mus)',
             'h_pi (mus)',
             'gain (DAC units)',
+            # Polynomial fit coefficients (JSON-encoded arrays)
+            'bs_rate_coeffs_g',
+            'bs_rate_coeffs_e',
+            'freq_coeffs_g',
+            'freq_coeffs_e',
+            # Valid gain range for polynomial fits [min, max]
+            'gain_range_g',
+            'gain_range_e',
         ]
 
         rows = []
@@ -281,6 +307,12 @@ class StorageManSwapDataset(MMDataset):
                 'pi (mus)': -1,
                 'h_pi (mus)': -1,
                 'gain (DAC units)': -1,
+                'bs_rate_coeffs_g': '',
+                'bs_rate_coeffs_e': '',
+                'freq_coeffs_g': '',
+                'freq_coeffs_e': '',
+                'gain_range_g': '',
+                'gain_range_e': '',
             }
             rows.append(row)
 
@@ -292,6 +324,12 @@ class StorageManSwapDataset(MMDataset):
             'pi (mus)': -1,
             'h_pi (mus)': -1,
             'gain (DAC units)': -1,
+            'bs_rate_coeffs_g': '',
+            'bs_rate_coeffs_e': '',
+            'freq_coeffs_g': '',
+            'freq_coeffs_e': '',
+            'gain_range_g': '',
+            'gain_range_e': '',
         }
         rows.append(row)
         self.create_new_df_from_labels(column_names, rows, add_timestamp=True)
@@ -329,6 +367,224 @@ class StorageManSwapDataset(MMDataset):
     def update_gain(self, stor_name, gain):
         self.update_value(stor_name, 'gain (DAC units)', int(gain))
         # self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
+
+    # Polynomial coefficient accessors
+    def get_bs_rate_coeffs(self, stor_name: str, qubit_state: str = 'g') -> np.ndarray | None:
+        """
+        Get beamsplitter rate vs gain polynomial coefficients.
+
+        Args:
+            stor_name: Storage mode name (e.g., 'M1-S1')
+            qubit_state: 'g' or 'e' qubit state
+
+        Returns:
+            numpy array of coefficients [c_n, ..., c_1, c_0] compatible with np.polyval,
+            or None if not set
+        """
+        col_name = f'bs_rate_coeffs_{qubit_state}'
+        value = self.get_value(stor_name, col_name)
+        if value is None or value == '' or value == '[]':
+            return None
+        return np.array(json.loads(value))
+
+    def get_freq_coeffs(self, stor_name: str, qubit_state: str = 'g') -> np.ndarray | None:
+        """Get frequency vs gain polynomial coefficients."""
+        col_name = f'freq_coeffs_{qubit_state}'
+        value = self.get_value(stor_name, col_name)
+        if value is None or value == '' or value == '[]':
+            return None
+        return np.array(json.loads(value))
+
+    def update_bs_rate_coeffs(self, stor_name: str, coeffs: np.ndarray, qubit_state: str = 'g'):
+        """
+        Store beamsplitter rate vs gain polynomial coefficients.
+
+        Args:
+            stor_name: Storage mode name
+            coeffs: numpy array of coefficients in np.polyfit output order [c_n, ..., c_1, c_0]
+            qubit_state: 'g' or 'e'
+        """
+        col_name = f'bs_rate_coeffs_{qubit_state}'
+        json_str = json.dumps(coeffs.tolist())
+        self.update_value(stor_name, col_name, json_str)
+
+    def update_freq_coeffs(self, stor_name: str, coeffs: np.ndarray, qubit_state: str = 'g'):
+        """Store frequency vs gain polynomial coefficients."""
+        col_name = f'freq_coeffs_{qubit_state}'
+        json_str = json.dumps(coeffs.tolist())
+        self.update_value(stor_name, col_name, json_str)
+
+    def get_gain_range(self, stor_name: str, qubit_state: str = 'g') -> Tuple[float, float] | None:
+        """
+        Get the valid gain range for polynomial fits.
+
+        Returns:
+            Tuple (gain_min, gain_max) or None if not set
+        """
+        col_name = f'gain_range_{qubit_state}'
+        value = self.get_value(stor_name, col_name)
+        if value is None or value == '' or value == '[]':
+            return None
+        range_list = json.loads(value)
+        return (float(range_list[0]), float(range_list[1]))
+
+    def update_gain_range(self, stor_name: str, gain_min: float, gain_max: float, qubit_state: str = 'g'):
+        """
+        Store the valid gain range for polynomial fits.
+
+        Args:
+            stor_name: Storage mode name
+            gain_min: Minimum gain value used for fitting
+            gain_max: Maximum gain value used for fitting
+            qubit_state: 'g' or 'e'
+        """
+        col_name = f'gain_range_{qubit_state}'
+        json_str = json.dumps([float(gain_min), float(gain_max)])
+        self.update_value(stor_name, col_name, json_str)
+
+    def _check_gain_range(self, stor_name: str, gain: float, qubit_state: str):
+        """Check if gain is within valid range and warn if not."""
+        gain_range = self.get_gain_range(stor_name, qubit_state)
+        if gain_range is not None:
+            gain_min, gain_max = gain_range
+            if gain < gain_min or gain > gain_max:
+                warnings.warn(
+                    f"Gain {gain} is outside valid range [{gain_min}, {gain_max}] "
+                    f"for {stor_name} ({qubit_state} state)",
+                    UserWarning
+                )
+
+    def get_bs_rate_at_gain(self, stor_name: str, gain: float, qubit_state: str = 'g') -> float | None:
+        """Evaluate beamsplitter rate polynomial at given gain. Warns if gain is outside valid range."""
+        coeffs = self.get_bs_rate_coeffs(stor_name, qubit_state)
+        if coeffs is None:
+            return None
+        self._check_gain_range(stor_name, gain, qubit_state)
+        return float(np.polyval(coeffs, gain))
+
+    def get_freq_at_gain(self, stor_name: str, gain: float, qubit_state: str = 'g') -> float | None:
+        """Evaluate frequency polynomial at given gain. Warns if gain is outside valid range."""
+        coeffs = self.get_freq_coeffs(stor_name, qubit_state)
+        if coeffs is None:
+            return None
+        self._check_gain_range(stor_name, gain, qubit_state)
+        return float(np.polyval(coeffs, gain))
+
+    def _find_gain_from_poly(
+        self, coeffs: np.ndarray, target_value: float, stor_name: str, qubit_state: str
+    ) -> float | None:
+        """
+        Find gain value that produces the target value from a polynomial.
+        Solves: poly(gain) = target_value
+
+        Returns the real root within the valid gain range, or None if not found.
+        """
+        # Subtract target from polynomial: poly(x) - target = 0
+        shifted_coeffs = coeffs.copy()
+        shifted_coeffs[-1] -= target_value
+
+        # Find roots
+        roots = np.roots(shifted_coeffs)
+
+        # Filter for real roots (small imaginary part)
+        real_roots = roots[np.abs(roots.imag) < 1e-10].real
+
+        if len(real_roots) == 0:
+            warnings.warn(
+                f"No real solution found for target value {target_value} for {stor_name} ({qubit_state} state)",
+                UserWarning
+            )
+            return None
+
+        # Filter roots within valid gain range if available
+        gain_range = self.get_gain_range(stor_name, qubit_state)
+        if gain_range is not None:
+            gain_min, gain_max = gain_range
+            valid_roots = real_roots[(real_roots >= gain_min) & (real_roots <= gain_max)]
+            if len(valid_roots) == 0:
+                # Return closest root but warn
+                closest_root = real_roots[np.argmin(np.abs(real_roots - (gain_min + gain_max) / 2))]
+                warnings.warn(
+                    f"No solution within valid gain range [{gain_min}, {gain_max}] for {stor_name} ({qubit_state} state). "
+                    f"Returning closest root: {closest_root:.1f}",
+                    UserWarning
+                )
+                return float(closest_root)
+            return float(valid_roots[0])
+
+        # No gain range defined, return first positive root if any
+        positive_roots = real_roots[real_roots > 0]
+        if len(positive_roots) > 0:
+            return float(positive_roots[0])
+        return float(real_roots[0])
+
+    def get_gain_at_bs_rate(self, stor_name: str, bs_rate: float, qubit_state: str = 'g') -> int | None:
+        """
+        Find the gain that produces a given beamsplitter rate.
+
+        Args:
+            stor_name: Storage mode name (e.g., 'M1-S1')
+            bs_rate: Target beamsplitter rate (MHz)
+            qubit_state: 'g' or 'e' qubit state
+
+        Returns:
+            Gain value (integer), or None if coefficients not set
+        """
+        coeffs = self.get_bs_rate_coeffs(stor_name, qubit_state)
+        if coeffs is None:
+            return None
+        gain = self._find_gain_from_poly(coeffs, bs_rate, stor_name, qubit_state)
+        return int(round(gain)) if gain is not None else None
+
+    def get_gain_at_freq(self, stor_name: str, freq: float, qubit_state: str = 'g') -> int | None:
+        """
+        Find the gain that produces a given frequency.
+
+        Args:
+            stor_name: Storage mode name (e.g., 'M1-S1')
+            freq: Target frequency (MHz)
+            qubit_state: 'g' or 'e' qubit state
+
+        Returns:
+            Gain value (integer), or None if coefficients not set
+        """
+        coeffs = self.get_freq_coeffs(stor_name, qubit_state)
+        if coeffs is None:
+            return None
+        gain = self._find_gain_from_poly(coeffs, freq, stor_name, qubit_state)
+        return int(round(gain)) if gain is not None else None
+
+    def get_joint_parity(self, stor_name: str) -> List[float] | None:
+        """
+        Get joint parity pulse parameters for a storage mode.
+
+        Args:
+            stor_name: Storage mode name (e.g., 'M1-S1')
+
+        Returns:
+            List [freq_bs, gain, pi_length*2, wait_time] or None if not set
+        """
+        value = self.get_value(stor_name, 'joint_parity')
+        if value is None or value == '' or value == '[]':
+            return None
+        return json.loads(value)
+
+    def update_joint_parity(
+        self, stor_name: str, freq_bs: float, gain: int, length: float, wait_time: float
+    ):
+        """
+        Store joint parity pulse parameters.
+
+        Args:
+            stor_name: Storage mode name (e.g., 'M1-S1')
+            freq_bs: Beam splitter frequency (MHz)
+            gain: Gain (DAC units)
+            length: Pulse length, typically pi_length*2 (us)
+            wait_time: Wait time after pulse (us)
+        """
+        params = [float(freq_bs), int(gain), float(length), float(wait_time)]
+        json_str = json.dumps(params)
+        self.update_value(stor_name, 'joint_parity', json_str)
 
 
 class FloquetStorageSwapDataset(MMDataset):
