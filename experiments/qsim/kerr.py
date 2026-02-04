@@ -60,6 +60,10 @@ class KerrStarkProgram(KerrEngBaseProgram):
     def body(self):
         pass
 
+class KerrWaitProgram(QsimBaseProgram):
+    def core_pulses(self):
+        self.sync_all(self.us2cycles(self.cfg.expt.wait_us_time))
+
 
 class KerrCavityRamseyProgram(KerrEngBaseProgram):
     def __init__(self, soccfg, cfg):

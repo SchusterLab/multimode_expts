@@ -3,7 +3,7 @@ import os
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimBaseExperiment
 from slab import AttrDict, Experiment
 from fitting.wigner import WignerAnalysis
 import qutip as qt
@@ -16,7 +16,7 @@ from experiments.qsim.utils import (
 )
 from slab.datamanagement import AttrDict
 
-class QsimWignerBaseExperiment(Experiment):
+class QsimWignerBaseExperiment(QsimBaseExperiment):
     """
     Sweep 1 or 2 parameters in cfg.expt
     Experimental Config:
@@ -46,19 +46,6 @@ class QsimWignerBaseExperiment(Experiment):
     Consider doing NDAverager or RAverager if there's speed advantage.
     See notebook for usage.
     """
-    def __init__(self, soccfg=None, path='', prefix=None,
-                 config_file=None, expt_params=None,
-                 program=None, progress=None, **kwargs):
-        """
-        program is the qick program class (the class you imported, not the str name)
-        """
-        if not prefix:
-            prefix = self.__class__.__name__
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress, **kwargs)
-        self.cfg.expt = AttrDict(expt_params)
-        self.ProgramClass = program or QsimBaseProgram
-        self.cfg.expt.QickProgramName = self.ProgramClass.__name__
-
 
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
