@@ -8,7 +8,9 @@ plots/
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
 job_server/jobs.db*
+# lockfiles
 job_server/worker.lock
+*.ffs_lock
 
 # tooling
 .vscode/

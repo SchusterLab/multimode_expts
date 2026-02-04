@@ -196,7 +196,7 @@ class HistogramExperiment(Experiment):
         return data
 
     def display(
-        self, station, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs
+        self, station=None, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs
     ):
         if data is None:
             data = self.data
