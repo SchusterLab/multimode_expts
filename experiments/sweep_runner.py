@@ -108,6 +108,7 @@ class SweepRunner:
         sweep_param: str = 'freq',
         preprocessor: Optional[Callable] = None,
         postprocessor: Optional[Callable] = None,
+        ExptProgram: Optional[type] = None,
         live_plot: bool = False,
         job_client: Optional["JobClient"] = None,
         use_queue: bool = True,
@@ -122,6 +123,7 @@ class SweepRunner:
             sweep_param: Parameter to sweep (e.g., 'freq', 'gain')
             preprocessor: Optional function(station, default_cfg, **kwargs) -> expt_cfg
             postprocessor: Optional function(station, mother_expt) called after sweep
+            ExptProgram: For QsimBaseExperiment, this is the program class to use
             live_plot: If True, show live analysis plot after each sweep point
             job_client: JobClient instance for submitting to job queue (required for run())
             use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
@@ -132,6 +134,7 @@ class SweepRunner:
         self.sweep_param = sweep_param
         self.preprocessor = preprocessor or default_preprocessor
         self.postprocessor = postprocessor
+        self.program = ExptProgram
         self.live_plot = live_plot
         self.job_client = job_client
         self.use_queue = use_queue
@@ -283,6 +286,13 @@ class SweepRunner:
         experiment_module = self.ExptClass.__module__
         experiment_class = self.ExptClass.__name__
 
+        # Get program module and class if provided
+        program_module = None
+        program_class = None
+        if self.program is not None:
+            program_module = self.program.__module__
+            program_class = self.program.__name__
+
         # Generate sweep values
         sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
 
@@ -290,12 +300,21 @@ class SweepRunner:
         base_expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
         # Create "mother" experiment to hold accumulated 2D data
-        mother_expt = self.ExptClass(
-            soccfg=self.station.soc,
-            path=self.station.data_path,
-            prefix=f'{self.ExptClass.__name__}_sweep',
-            config_file=self.station.hardware_config_file,
-        )
+        if self.program is not None:
+            mother_expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=f'{self.ExptClass.__name__}_sweep',
+                config_file=self.station.hardware_config_file,
+                program=self.program,
+            )
+        else:
+            mother_expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=f'{self.ExptClass.__name__}_sweep',
+                config_file=self.station.hardware_config_file,
+            )
         mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
         mother_expt.cfg.expt = base_expt_cfg
 
@@ -342,6 +361,8 @@ class SweepRunner:
                 station_config=station_config_json,
                 user=self.station.user,
                 priority=priority,
+                program_class=program_class,
+                program_module=program_module,
             )
 
             # Wait for completion
@@ -432,13 +453,26 @@ class SweepRunner:
         expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
         # Create "mother" experiment to hold accumulated 2D data
-        mother_expt = self.ExptClass(
-            soccfg=self.station.soc,
-            path=self.station.data_path,
-            prefix=f'{self.ExptClass.__name__}_sweep',
-            config_file=self.station.hardware_config_file,
-        )
+        if self.program is not None:
+            mother_expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=f'{self.ExptClass.__name__}_sweep',
+                config_file=self.station.hardware_config_file,
+                program=self.program,
+            )
+        else:
+            mother_expt = self.ExptClass(
+                soccfg=self.station.soc,
+                path=self.station.data_path,
+                prefix=f'{self.ExptClass.__name__}_sweep',
+                config_file=self.station.hardware_config_file,
+            )
         mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+
+        # Pass dataset objects via expt.cfg since Program classes cannot access station
+        mother_expt.cfg.device.storage._ds_storage = self.station.ds_storage
+        mother_expt.cfg.device.storage._ds_floquet = self.station.ds_floquet
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
@@ -452,15 +486,29 @@ class SweepRunner:
             print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end='')
 
             # Create individual experiment for this sweep point
-            expt = self.ExptClass(
-                soccfg=self.station.soc,
-                path=self.station.data_path,
-                prefix=self.ExptClass.__name__,
-                config_file=self.station.hardware_config_file,
-            )
+            if self.program is not None:
+                expt = self.ExptClass(
+                    soccfg=self.station.soc,
+                    path=self.station.data_path,
+                    prefix=self.ExptClass.__name__,
+                    config_file=self.station.hardware_config_file,
+                    program=self.program,
+                )
+            else:
+                expt = self.ExptClass(
+                    soccfg=self.station.soc,
+                    path=self.station.data_path,
+                    prefix=self.ExptClass.__name__,
+                    config_file=self.station.hardware_config_file,
+                )
 
             # Setup config
             expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+
+            # Pass dataset objects via expt.cfg since Program classes cannot access station
+            expt.cfg.device.storage._ds_storage = self.station.ds_storage
+            expt.cfg.device.storage._ds_floquet = self.station.ds_floquet
+
             expt.cfg.expt = AttrDict(deepcopy(expt_cfg))
             expt.cfg.expt[self.sweep_param] = sweep_val
 

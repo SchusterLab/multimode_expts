@@ -92,7 +92,9 @@ class QsimBaseProgram(MMAveragerProgram):
         self.swap_ds = self.cfg.device.storage._ds_floquet
         self.retrieve_swap_parameters()
 
-        self.man_mode_idx = 1
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
         self.m1s_kwargs = [{
                 'ch': self.m1s_ch[stor],
                 'style': 'flat_top',

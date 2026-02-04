@@ -29,6 +29,12 @@ class SidebandGeneralProgram(MMAveragerProgram):
         self.MM_base_initialize()
 
         self.rf_ch = self.flux_low_ch if self.cfg.expt.flux_drive[0] == 'low' else self.flux_high_ch
+        print('Using RF channel:', self.rf_ch[qTest])
+
+        if "freq" in self.cfg.expt:
+            self.cfg.expt.flux_drive[1] = self.cfg.expt.freq
+        if "gain" in self.cfg.expt:
+            self.cfg.expt.flux_drive[2] = self.cfg.expt.gain
 
         self.test_pulse_str = [
             [self.cfg.expt.flux_drive[1]], # freq (MHz)

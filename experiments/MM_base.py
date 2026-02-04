@@ -166,6 +166,7 @@ class MM_base:
         # creator = prepulse_creator2(cfg, cfg.device.storage.storage_man_file)
         if sweep_pulse is not None:
             for pulse_idx, pulse in enumerate(sweep_pulse):
+                print(pulse)
                 # for each pulse
                 pulse_param = list(pulse[1:])
                 channel_name = pulse[0]
@@ -810,7 +811,40 @@ class MM_base:
         self.custom_pulse(self.cfg, creator.pulse, prefix='Coupler')
         self.sync_all(self.us2cycles(0.2)) # without this sideband rabi of storage mode 7 has kinks
 
-    def parity_active_reset(self, name='parity_reset', register_label='base', play_parity=True):
+    def prep_dual_rail_state(self, state_str, stor_name_1, stor_name_2):
+        '''
+        Create pulse sequence for dual rail state preparation.
+
+        Args:
+            state_str: '00', '10', '01', or '11'
+            stor_name_1: First storage mode name, e.g., 'M1-S1'
+            stor_name_2: Second storage mode name, e.g., 'M1-S2'
+
+        Returns:
+            Pulse sequence list for get_prepulse_creator(), or None for '00'
+
+        State encoding:
+            - First digit: photon in stor_name_1 (0 or 1)
+            - Second digit: photon in stor_name_2 (0 or 1)
+        '''
+        if state_str == '00':
+            return None
+
+        state_prep_sequence = []
+
+        # Second digit = stor_name_2
+        if state_str[1] == '1':
+            state_prep_sequence += self.prep_man_photon(1)
+            state_prep_sequence.append(['storage', stor_name_2, 'pi', 0])
+
+        # First digit = stor_name_1
+        if state_str[0] == '1':
+            state_prep_sequence += self.prep_man_photon(1)
+            state_prep_sequence.append(['storage', stor_name_1, 'pi', 0])
+
+        return state_prep_sequence if state_prep_sequence else None
+
+    def parity_active_reset(self, name='parity_reset', register_label='base', play_parity=True, man_idx=1, final_sync=False):
         '''
         Perform a parity measurement and if the qubit end up in e do a pi pulse reset
         '''
@@ -821,18 +855,27 @@ class MM_base:
         self.r_read_q = 9
         self.r_thresh_q = 11 
         self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
+        # check if final sync is needed (only if last readout)
+        if final_sync:
+            final_sync_delay = self.us2cycles(self.cfg.device.readout.relax_delay[qTest])
+        else: 
+            print("needs a pretty long sync here I should be smatter with parity pulse timing")
+            final_sync_delay = self.us2cycles(1)
 
         # parity pulses, for now I will do something hacky, 
         # i.e. will only load the waveform once, should rewrite custom_pulse to be more general
         if play_parity: 
-            parity_str = self.get_parity_str(1, return_pulse=True, second_phase=180, fast=False)
+            parity_str = self.get_parity_str(man_idx, return_pulse=True, second_phase=180, fast=False)
             self.custom_pulse(cfg, parity_str, prefix=name)
 
-        # measurement
-        self.measure(pulse_ch=self.res_chs[qTest],
+        # # measurement
+        self.sync_all(self.us2cycles(0.1))
+        self.measure(
+            pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],
             adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                t='auto', wait=True)
+            t='auto',
+            wait=True)
         # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
         self.wait_all(self.us2cycles(0.10))        
         # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
@@ -848,10 +891,70 @@ class MM_base:
                                  waveform='pi_qubit_ge')
         self.pulse(ch=self.qubit_chs[qTest])
         self.label(register_label)  # location to be jumped to
-        print("needs a pretty long sync here I should be smatter with parity pulse timing")
-        self.sync_all(self.us2cycles(1))
+        self.sync_all(final_sync_delay)
 
 
+    def measure_dual_rail(self, storage_idx, measure_parity=True, reset_before=True, reset_after=True, man_idx=1, final_sync=False):
+        '''
+        Measure dual rail qubit by mapping to manipulate mode and measuring qubit
+        storage_idx: index of the two storage modes used for dual rail
+        reset_before: if True, perform active reset before measurement (only g/e levels)
+        reset_after: if True, perform active reset after measurement (only g/e levels)
+        The pulse sequence is:
+        1) (optional) active reset of qubit
+        2) swap storage 1 to manipulate mode
+        3) Parity measurement of manipulate mode if measure_parity=True or pi pulse resonant on |1> otherwise
+        4) swap manipulate mode to storage 1
+        5) swap storage 2 to manipulate mode
+        6) Parity measurement of manipulate mode if measure_parity=True or pi pulse resonant on |1> otherwise
+        7) swap manipulate mode to storage 2
+        8) (optional) active reset of qubit
+        '''
+        cfg=AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+        storage_1, storage_2 = storage_idx
+        if reset_before:
+            self.active_reset(pre_selection_reset=False, ef_reset=False, prefix='pre_dual_rail_')
+
+        # Measure storage 1
+        m_s1 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_1), 'pi', 0], ]
+        print("Playing swap pulse for storage ", storage_1)
+        creator = self.get_prepulse_creator(m_s1)
+        self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_1) + 'ToMan')
+
+        if measure_parity:
+            print("Performing parity measurement for storage ", storage_1)
+            self.parity_active_reset(name='dual_rail_stor' + str(storage_1) + '_reset',
+                                     register_label='dual_rail_stor' + str(storage_1) + '_label',
+                                     man_idx=man_idx, 
+                                     )
+        else:
+            raise NotImplementedError("Non parity measurement not implemented yet")
+        
+        # # Swap back to storage 1
+        print("Playing swap back pulse for storage ", storage_1)
+        self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_1))
+
+        # Measure storage 2
+        m_s2 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_2), 'pi', 0], ]
+        print("Playing swap pulse for storage ", storage_2)
+        creator = self.get_prepulse_creator(m_s2)
+        self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_2) + 'ToMan')
+        if measure_parity:
+            print("Performing parity measurement for storage ", storage_2)
+            self.parity_active_reset(name='dual_rail_stor' + str(storage_2) + '_reset',
+                                     register_label='dual_rail_stor' + str(storage_2) + '_label',
+                                     man_idx=man_idx, 
+                                     final_sync=final_sync)
+        else:
+            raise NotImplementedError("Non parity measurement not implemented yet")
+        # Swap back to storage 2
+        print("Playing swap back pulse for storage ", storage_2)
+        self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_2))
+
+        if reset_after:
+            self.active_reset(pre_selection_reset=False, ef_reset=False, prefix='post_dual_rail_')
+            
 
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
                       ef_reset = True, pre_selection_reset = True, prefix = 'base'):
@@ -990,8 +1093,13 @@ class MM_base:
         '''
         Create parity pulse
         '''
+
+        parity_wait = self.cfg.device.manipulate.revival_time[man_mode_no-1]
+
+
         parity_str = [['qubit', 'ge', 'hpi', 0],
-                    ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
+                    # ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
+                    ['wait', parity_wait],
                     ['qubit', 'ge', 'hpi', second_phase]]
         if fast:
             # take the AC stark phase
@@ -999,10 +1107,11 @@ class MM_base:
             revival_time = self.cfg.device.manipulate.revival_time[man_mode_no-1]
             theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
             theta_2 = theta_2 % 360
+            parity_wait = self.cfg.device.manipulate.revival_time_fast[man_mode_no-1]
 
             parity_str = [
                     ['multiphoton', 'g0-e0', 'hpi', 0],
-                    ['qubit', 'ge', 'parity_M' + str(man_mode_no), 0],
+                    ['wait', parity_wait],
                     ['multiphoton', 'g0-e0', 'hpi', theta_2]
                     ]
         if return_pulse:
@@ -1015,11 +1124,14 @@ class MM_base:
 
     def play_parity_pulse(self, man_mode_no, qubit_no=0, second_phase=180, fast=False):
         '''
-        Play parity pulse
+        Play parity pulses (pi/2, wait chi * t_calibrated, pi/2) to map man parity to qubit state
         '''
         cfg=AttrDict(self.cfg)
         qTest = self.cfg.expt.qubits[qubit_no] 
-        revival_time = cfg.device.manipulate.revival_time[man_mode_no]
+        if fast:
+            revival_time = cfg.device.manipulate.revival_time_fast[man_mode_no]
+        else:
+            revival_time = cfg.device.manipulate.revival_time[man_mode_no]
         revival_cycles = self.us2cycles(revival_time)
         reg_page = self.ch_page(self.qubit_chs[qTest])
         reg_phase =self.sreg(self.qubit_chs[qTest], "phase")
@@ -1051,6 +1163,127 @@ class MM_base:
         # here we can just update the phase of the waveform
         self.safe_regwi(reg_page, reg_phase, self.deg2reg(theta_2))
         self.pulse(ch=self.qubit_chs[qTest])
+
+    def play_joint_parity_pulse(self, stor_pair_name, qubit_no=0, second_phase=0, fast=False):
+        '''
+        Play joint parity pulse sequence for a storage pair (beamsplitter-based).
+        Uses calibrated joint_parity parameters from cfg.device.storage._ds_storage
+
+        Sequence:
+        1. hpi pulse on qubit (phase=0) - uses fast multiphoton if fast=True
+        2. Joint parity flux pulse (flat_top style via beamsplitter)
+        3. Wait for calibrated time
+        4. hpi pulse on qubit (with second_phase, default=0)
+
+        Args:
+            stor_pair_name: e.g., 'S1-S2' - the storage pair for joint parity
+            qubit_no: qubit index (default 0)
+            second_phase: phase of second hpi pulse (default 0)
+            fast: if True, use fast multiphoton hpi pulses (default False)
+        '''
+        cfg = AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[qubit_no]
+
+        # Get joint parity params from _ds_storage object stored in config (loaded at experiment start)
+        ds_storage = cfg.device.storage.get('_ds_storage')
+        if ds_storage is None:
+            raise ValueError("ds_storage not found in cfg.device.storage._ds_storage")
+
+        jp_params = ds_storage.get_joint_parity(stor_pair_name)
+        if jp_params is None:
+            raise ValueError(f"Joint parity parameters not found for {stor_pair_name}")
+        freq_bs, gain, length, wait_time = jp_params
+
+        # Auto-select flux channel
+        flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
+        flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
+        flux_ch = flux_low_ch if freq_bs < 1000 else flux_high_ch
+        ramp_sigma = cfg.device.storage.ramp_sigma
+
+        # Get register info for phase update
+        reg_page = self.ch_page(self.qubit_chs[qTest])
+        reg_phase = self.sreg(self.qubit_chs[qTest], "phase")
+
+        # Select pulse parameters based on fast flag
+        if fast:
+            freq_hpi = self.f_ge_hpi_fast
+            gain_hpi = self.hpi_ge_gain_fast
+            waveform_hpi = 'hpi_qubit_ge_fast'
+            # AC Stark correction for fast mode (if applicable)
+            # freq_AC = cfg.device.manipulate.revival_stark_shift[...]
+            # theta_2 = second_phase + 2*np.pi*freq_AC * wait_time * 180/np.pi
+            theta_2 = second_phase  # TODO: add AC Stark correction if needed
+        else:
+            freq_hpi = self.f_ge_reg[qTest]
+            gain_hpi = self.hpi_ge_gain
+            waveform_hpi = 'hpi_qubit_ge'
+            theta_2 = second_phase
+
+        # First hpi
+        self.set_pulse_registers(ch=self.qubit_chs[qTest], style="arb",
+                                 freq=freq_hpi, phase=self.deg2reg(0),
+                                 gain=gain_hpi, waveform=waveform_hpi)
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.sync_all()
+
+        # Joint parity flux pulse
+        jp_pulse = [[freq_bs], [int(gain)], [length], [0], [flux_ch], ['flat_top'], [ramp_sigma]]
+        self.custom_pulse(cfg, jp_pulse, prefix='jp_flux_')
+
+        # Wait
+        self.sync_all(self.us2cycles(wait_time))
+
+        # Second hpi - just update the phase in the register like play_parity_pulse
+        self.safe_regwi(reg_page, reg_phase, self.deg2reg(theta_2))
+        self.pulse(ch=self.qubit_chs[qTest])
+
+    def joint_parity_active_reset(self, stor_pair_name, name='jp_reset',
+                                   register_label='jp_label', second_phase=0, fast=False):
+        '''
+        Play joint parity pulse + measurement + conditional reset.
+        Adds 1 readout to the measurement buffer.
+
+        WARNING: This method includes a 1us sync at the end for timing stability.
+                 This delay should be checked/optimized for your specific use case.
+
+        Args:
+            stor_pair_name: e.g., 'S1-S2' - the storage pair for joint parity
+            name: prefix for pulse names (unused but kept for consistency)
+            register_label: label for conditional jump
+            second_phase: phase of second hpi pulse (default 0)
+            fast: if True, use fast multiphoton hpi pulses (default False)
+        '''
+        cfg = AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+
+        # Setup threshold register
+        self.r_read_q = 9
+        self.r_thresh_q = 11
+        self.safe_regwi(0, self.r_thresh_q,
+                        int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
+
+        # Play joint parity pulse
+        self.play_joint_parity_pulse(stor_pair_name, second_phase=second_phase, fast=fast)
+
+        # Measurement
+        self.measure(pulse_ch=self.res_chs[qTest],
+                     adcs=[self.adc_chs[qTest]],
+                     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                     t='auto', wait=True)
+        self.wait_all(self.us2cycles(0.10))
+
+        # Conditional reset
+        self.read(0, 0, "lower", self.r_read_q)
+        self.condj(0, self.r_read_q, "<", self.r_thresh_q, register_label)
+        self.set_pulse_registers(ch=self.qubit_chs[qTest], freq=self.f_ge_reg[qTest],
+                                 style="arb", phase=self.deg2reg(0),
+                                 gain=self.pi_ge_gain, waveform='pi_qubit_ge')
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.label(register_label)
+
+        # WARNING: 1us sync for timing stability - should be checked/optimized
+        print("WARNING: joint_parity_active_reset has 1us sync at end - verify this is appropriate")
+        self.sync_all(self.us2cycles(1))
 
 
     def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None, plot=False):

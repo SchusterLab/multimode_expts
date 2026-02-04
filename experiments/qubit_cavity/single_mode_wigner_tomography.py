@@ -82,7 +82,7 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
             else: 
-                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_', sync_zero_const=True)
 
 
         if "opt_pulse" in cfg.expt and cfg.expt.opt_pulse:
@@ -178,7 +178,13 @@ class WignerTomography1ModeExperiment(Experiment):
             read_num += 1
 
         # extract displacement list from file path
-        alpha_list = np.load(self.cfg.expt["displacement_path"])
+        if 'alpha_list' in self.cfg.expt:
+            alpha_2d = self.cfg.expt.alpha_list  # 2d list 
+            # convert list to array 
+            alpha_2d = np.array(alpha_2d)
+            alpha_list = alpha_2d[:, 0] + 1j * alpha_2d[:, 1]
+        else:
+            alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
 
         if 'man_mode_no' in self.cfg.expt:
             man_mode_no = self.cfg.expt.man_mode_no
@@ -187,15 +193,13 @@ class WignerTomography1ModeExperiment(Experiment):
 
         self.man_mode_idx = man_mode_no -1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[self.man_mode_idx] 
-        displace_sigma = self.cfg.device.manipulate.displace_sigma[self.man_mode_idx]
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
 
         for alpha in tqdm(alpha_list, disable=not progress):
             self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse
-            scale =  displace_sigma# parity gain calibration Gaussian pulse length here (in unit of us)
             _alpha = np.conj(alpha) # convert to conjugate to respect qick convention
-            self.cfg.expt.amp_placeholder =  int(np.abs(_alpha)/gain2alpha*scale/self.cfg.expt.displace_length) # scaled, reference is a Gaussian pulse
+            self.cfg.expt.amp_placeholder =  int(np.abs(_alpha)/gain2alpha) # assumes you calibrated the gain2alpha with the same displace_sigma as will be played here... it really should be!
             self.cfg.expt.phase_placeholder = np.angle(_alpha)/np.pi*180 - 90 # 90 is needed since da/dt = -i*drive
             wigner = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = wigner
@@ -234,8 +238,6 @@ class WignerTomography1ModeExperiment(Experiment):
 
         self.cfg.expt['expts'] = len(data["alpha"])
 
-          
-        
         for k, a in data.items():
             data[k]=np.array(a)
 
@@ -415,6 +417,7 @@ class WignerTomography1ModeExperiment(Experiment):
         data['W_fit'] = results['W_fit']
         data['W_ideal'] = results['W_ideal']
         data['alpha_wigner'] = results['x_vec']
+        data['theta_opt'] = results['theta_max']
         data['target_state'] = initial_state
 
         # Optional debug components plot (requires pulse-correction products)
@@ -671,7 +674,15 @@ class ProcessTomographyExperiment(Experiment):
         self.pulse_correction = bool(self.cfg.expt.get('pulse_correction', False))
         self.parity_fast = bool(self.cfg.expt.get('parity_fast', False))
         # Displacements
-        alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
+
+        # extract displacement list from file path
+        if 'alpha_list' in self.cfg.expt:
+            alpha_2d = self.cfg.expt.alpha_list  # 2d list 
+            # convert list to array 
+            alpha_2d = np.array(alpha_2d)
+            alpha_list = alpha_2d[:, 0] + 1j * alpha_2d[:, 1]
+        else:
+            alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
 
 
         if 'man_mode_no' in self.cfg.expt:

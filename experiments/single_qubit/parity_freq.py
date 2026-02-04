@@ -32,12 +32,16 @@ class ParityFreqProgram(MMAveragerProgram):
         self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         qTest = 0
+        if 'parity_fast' in self.cfg.expt:
+            parity_fast = self.cfg.expt.parity_fast
+        else:
+            parity_fast = False
         # cavity pulse param
         self.f_cavity = self.freq2reg(cfg.expt.cav_freq, gen_ch = self.man_ch[qTest ])
         if cfg.expt.displace[0]:
             self.displace_sigma = self.us2cycles(cfg.expt.displace[1], gen_ch=self.man_ch[qTest ])
             self.add_gauss(ch=self.man_ch[qTest ], name="displace", sigma=self.displace_sigma, length=self.displace_sigma*4)
-        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0 )
+        self.parity_pulse_for_custom_pulse = self.get_parity_str(man_mode_no = 1, return_pulse = True, second_phase = 0, fast=parity_fast)
 
         self.sync_all(200)
 

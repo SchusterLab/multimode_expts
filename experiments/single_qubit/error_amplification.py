@@ -88,7 +88,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         # initializations as necessary TBD 
         self.reset_and_sync()
 
-        if cfg.expt.pulse_type[0] in ['storage']:
+        if cfg.expt.pulse_type[0] in ['storage', 'floquet']:
             # get the qubit start state for storage expt, this is to calibrate chi for a given swap amplitude (i.e. taking into account Stark shift)
             qubit_start_storage = cfg.expt.get('qubit_state_start', 'g')
             print("qubit_start_storage:", qubit_start_storage)
@@ -154,7 +154,6 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             pulse_style = "flat_top"
         else:
             raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
-
 
         _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
         if self.pulse_to_test[5] == "gauss":

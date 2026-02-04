@@ -263,10 +263,7 @@ class MockStation:
                 "device": {
                     "qubit": {"f_ge": [5000], "T1": [100]},
                     "readout": {"frequency": [7000], "relax_delay": [1000]},
-                    "storage": {
-                        "storage_man_file": "man1_storage_swap_dataset.csv",
-                        "floquet_man_stor_file": "floquet_storage_swap_dataset.csv",
-                    },
+                    "storage": {},
                     "multiphoton_config": {"file": "multiphoton_config.yml"},
                 },
                 "aliases": {"soc": "Qick101"},
@@ -292,7 +289,7 @@ class MockStation:
         # Mock dataset (don't actually load CSV)
         self.ds_storage = None
         self.ds_floquet = None
-        self.storage_man_file = self.yaml_cfg.device.storage.storage_man_file
+        self.storage_man_file = "man1_storage_swap_dataset.csv"  # Mock default
         print(f"[MOCK] Configs initialized (storage dataset mocked)")
 
     def _initialize_output_paths(self):

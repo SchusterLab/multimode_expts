@@ -371,7 +371,13 @@ class AmplitudeRabiExperiment(Experiment):
             data=self.data
 
         plt.figure(figsize=(10,10))
-        plt.subplot(211, title=f"Amplitude Rabi (Pulse Length {self.cfg.expt.sigma_test})", ylabel="I [ADC units]")
+        if self.cfg.expt.pulse_type.lower() == "gauss":
+            plt.subplot(211, title=f"Amplitude Rabi (Gauss Pulse Length {self.cfg.expt.sigma_test} us)", ylabel="I [ADC units]")
+        elif self.cfg.expt.pulse_type.lower() == "flat_top":
+            plt.subplot(211, title=f"Amplitude Rabi (Flat Top Pulse Length {self.cfg.expt.flat_length} us, Sigma {self.cfg.expt.sigma_test} us)", ylabel="I [ADC units]")
+        else:
+            plt.subplot(211, title=f"Amplitude Rabi (Pulse Length {self.cfg.expt.sigma_test})", ylabel="I [ADC units]")
+
         plt.plot(data["xpts"][1:-1], data["avgi"][1:-1],'o-')
         if fit:
             p = data['fit_avgi']

@@ -218,6 +218,21 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
         # Store results in self for access by postprocessor
         self._length_rabi_analysis = analysis
 
+        # add the pi and pi/2 lengths to the experiment config for easy access
+        p_fit = analysis.results.get('fit_avgi', None)
+        if p_fit is not None:
+            if p_fit[2] > 180:
+                p_fit[2] = p_fit[2] - 360
+            elif p_fit[2] < -180:
+                p_fit[2] = p_fit[2] + 360
+            if p_fit[2] < 0:
+                pi_length = (1/2 - p_fit[2]/180)/2/p_fit[1]
+            else:
+                pi_length = (3/2 - p_fit[2]/180)/2/p_fit[1]
+            pi2_length = pi_length/2
+            self._length_rabi_analysis.results['pi_length'] = pi_length
+            self._length_rabi_analysis.results['pi2_length'] = pi2_length
+
         return data
 
     def display(self, data=None, fit=True, title_str='Length Rabi General F0g1', **kwargs):
