@@ -384,7 +384,7 @@ class MM_base:
                      cfg, # not used but in order not to break old API
                      pulse_data: Optional[Union[List[List[float]], np.ndarray]]=None,
                      advance_qubit_phase: float=0,
-                     sync_zero_const: bool=False,
+                     sync_zero_const: bool=True,
                      waveform_preload: Optional[List[str]]=None,
                      prefix: str='pre'):
         '''
@@ -766,9 +766,9 @@ class MM_base:
 
         self.sideband_sigma_high = self.us2cycles(0.005, gen_ch=self.flux_high_ch[qTest])
         self.add_gauss(ch=self.flux_high_ch[qTest],
-                       name="ramp_high",# + str(man_idx),
-                       sigma=self.sideband_sigma_high,
-                       length=self.sideband_sigma_high*4)
+                    name="ramp_high",# + str(man_idx),
+                    sigma=self.sideband_sigma_high,
+                    length=self.sideband_sigma_high*4)
         # self.wait_all(self.us2cycles(0.1))
         self.sync_all(self.us2cycles(0.1))
 
@@ -788,7 +788,6 @@ class MM_base:
                 self.sync_all(self.us2cycles(0.025))
         # self.wait_all(self.us2cycles(0.25))
         self.sync_all(self.us2cycles(2))
-
 
     def man_stor_swap(self, man_idx: int, stor_idx: int):
         '''
@@ -1131,7 +1130,7 @@ class MM_base:
         # post selection
         # ======================================================
         if pre_selection_reset:
-            self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
+            # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
             self.measure(pulse_ch=self.res_chs[qTest],
                         adcs=[self.adc_chs[qTest]],
                         adc_trig_offset=cfg.device.readout.trig_offset[qTest],
@@ -1140,7 +1139,7 @@ class MM_base:
             self.sync_all(self.us2cycles(0.2))
 
 
-    def get_parity_str(self, man_mode_no, return_pulse=False, second_phase = 0, fast = False):
+    def get_parity_str(self, man_mode_no=1, return_pulse=False, second_phase = 0, fast = False):
         '''
         Create parity pulse
         '''
@@ -1685,7 +1684,7 @@ class prepulse_creator2:
         freq = self.dataset.get_freq(stor_name)
         flux_low_ch = self.cfg.hw.soc.dacs.flux_low.ch[0]
         flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
-        ch = flux_low_ch if freq<1000 else flux_high_ch
+        ch = flux_low_ch if freq<1800 else flux_high_ch
 
         storage_pulse = np.array([[self.dataset.get_freq(stor_name)],
                 [self.dataset.get_gain(stor_name)],
