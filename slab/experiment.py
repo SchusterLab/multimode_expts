@@ -20,12 +20,16 @@ from slab import (
 
 
 class NpEncoder(json.JSONEncoder):
-    """ Ensure json dump can handle np arrays """
+    """ Ensure json dump can handle np arrays and complex numbers """
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
             return float(obj)
+        if isinstance(obj, np.complexfloating):
+            return {"__complex__": True, "real": float(obj.real), "imag": float(obj.imag)}
+        if isinstance(obj, complex):
+            return {"__complex__": True, "real": obj.real, "imag": obj.imag}
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
