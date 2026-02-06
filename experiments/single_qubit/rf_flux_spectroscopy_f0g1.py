@@ -34,12 +34,16 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         self.MM_base_initialize()
 
+        print('flux drive:', self.cfg.expt.flux_drive)
         if self.cfg.expt.flux_drive[0] == 'low':
             self.rf_ch = cfg.hw.soc.dacs.flux_low.ch
             self.rf_ch_types = cfg.hw.soc.dacs.flux_low.type
-        else:
+        elif self.cfg.expt.flux_drive[0] == 'high':
             self.rf_ch = cfg.hw.soc.dacs.flux_high.ch
             self.rf_ch_types = cfg.hw.soc.dacs.flux_high.type
+        else:
+            raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high'.")
+
 
         # get register page for qubit_chs
         self.q_rps = [self.ch_page(ch) for ch in self.qubit_chs]
@@ -109,13 +113,13 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         self.frequency = cfg.expt.frequency
 
         if self.cfg.expt.flux_drive[0] == 'low':
-            self.rf_ch = cfg.hw.soc.dacs.flux_low.ch
             self.declare_gen(ch=self.rf_ch[0], nqz=cfg.hw.soc.dacs.flux_low.nyquist[0], mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=self.rf_ch[0])
-            self.freqreg = self.freq2reg(self.frequency, gen_ch=self.rf_ch[0])
-        else:
-            self.rf_ch = cfg.hw.soc.dacs.flux_high.ch
+        elif self.cfg.expt.flux_drive[0] == 'high':
             self.declare_gen(ch=self.rf_ch[0], nqz=cfg.hw.soc.dacs.flux_high.nyquist[0], mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=self.rf_ch[0])
-            self.freqreg = self.freq2reg(self.frequency, gen_ch=self.rf_ch[0])
+        else:
+            raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high'.")
+        self.freqreg = self.freq2reg(self.frequency, gen_ch=self.rf_ch[0])
+
 
         # add qubit pulses to respective channels
         self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test_ramp", sigma=self.pi_test_ramp,
@@ -162,6 +166,9 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre')
         self.sync_all()
         # RF flux modulation
+
+        print(f'Playing flux drive at frequency {self.frequency} MHz with gain {self.rf_gain_test}')
+        print('channel', self.rf_ch[0])
 
         self.setup_and_pulse(ch=self.rf_ch[0],
                              style="const",
