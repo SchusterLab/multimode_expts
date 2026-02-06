@@ -44,13 +44,19 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
     skip writing new expeirment classes or at least acquire() while doing 
     more general sweeps than just a qick register, incl nonlinear steps.
     Consider doing NDAverager or RAverager if there's speed advantage.
-    See notebook for usage.
+
+    Usage: if you want to sweep cfg.expt.paramName, 
+    include paramName here in this list 
+    AND include cfg.expt.paramNames (note the s) as a list of values to step thru.
+    (You want a list instead of numpy array for better yaml export.)
+    Currently handles 1D and 2D sweeps and plots only.
+    For 2D, order is [outer (y), inner (x)].
     """
 
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
 
-        self.pulse_correction = self.cfg.expt.get('pulse_correction', False)
+        self.cfg.expt.pulse_correction = self.cfg.expt.get('pulse_correction', False)
         self.cfg.expt.parity_fast = self.cfg.expt.get('parity_fast', False)
         self.cfg.expt.post_select_pre_pulse = self.cfg.expt.get('post_select_pre_pulse', False)
         self.cfg.expt.active_reset = self.cfg.expt.get('active_reset', False)
@@ -126,7 +132,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     data['idata'].append(idata)
                     data['qdata'].append(qdata)
 
-                    if self.pulse_correction:
+                    if self.cfg.expt.pulse_correction:
                         self.cfg.expt.phase_second_pulse = 0
                         wigner = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
                         avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc],
@@ -149,7 +155,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         for key in 'avgi avgq amps phases idata qdata'.split():
             data[key] = np.array(data[key])
             dims = [len(outer_params), len(inner_params), len(alpha_list)] # forcing this shape regardless of if len(inner_params)==1
-            if self.pulse_correction:
+            if self.cfg.expt.pulse_correction:
                 dims.append(2)
             if key in ['idata', 'qdata']:
                 dims.append(-1)
@@ -176,6 +182,18 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         if data is None:
             data = self.data
 
+        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+        outer_param = self.cfg.expt.swept_params[0]
+        outer_params = self.cfg.expt[outer_param+'s']
+        if sweep_dim == 2:
+            inner_param = self.cfg.expt.swept_params[1]
+            inner_params = self.cfg.expt[inner_param+'s']
+        else:
+            inner_param = 'dummy'
+            inner_params = [None]  # Dummy value for single parameter sweep
+        self.outer_param, self.inner_param = outer_param, inner_param
+        self.outer_params, self.inner_params = outer_params, inner_params
+
         mode_state_num = kwargs.get('mode_state_num', 10)
 
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
@@ -194,7 +212,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         wigner_outputs = dict(
             parity=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
         )
-        if self.pulse_correction:
+        if self.cfg.expt.pulse_correction:
             wigner_outputs.update(dict(
                 pe_plus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
                 pe_minus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
@@ -209,7 +227,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         for i_outer, outer_param_val in enumerate(self.outer_params):
             for i_inner, inner_param_val in enumerate(self.inner_params):
                 print(outer_param_val, inner_param_val)
-                if self.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
+                if self.cfg.expt.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
                     data_minus = {}
                     data_plus = {}
 
@@ -339,6 +357,11 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         # do we really need to ovrride this?
         # TODO: at least make this save line-by-line
         temp_cfg = deepcopy(self.cfg)
+        if "alpha_list" in self.cfg.expt:
+            # Json cannot save complex
+            self.cfg.expt.alpha_list_re = np.real(self.cfg.expt.alpha_list)
+            self.cfg.expt.alpha_list_im = np.imag(self.cfg.expt.alpha_list)
+            self.cfg.expt.pop("alpha_list")
         if "ds_floquet" in self.cfg:
             self.cfg.pop('ds_floquet')  # remove the dataset object from cfg before saving otherwise json gets mad
         if "ds_floquet" in self.cfg.expt:

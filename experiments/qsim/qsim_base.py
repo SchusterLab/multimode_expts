@@ -233,7 +233,13 @@ class QsimBaseExperiment(Experiment):
     skip writing new expeirment classes or at least acquire() while doing 
     more general sweeps than just a qick register, incl nonlinear steps.
     Consider doing NDAverager or RAverager if there's speed advantage.
-    See notebook for usage.
+
+    Usage: if you want to sweep cfg.expt.paramName, 
+    include paramName here in this list 
+    AND include cfg.expt.paramNames (note the s) as a list of values to step thru.
+    (You want a list instead of numpy array for better yaml export.)
+    Currently handles 1D and 2D sweeps and plots only.
+    For 2D, order is [outer (y), inner (x)].
     """
     def __init__(self, soccfg=None, path='', prefix=None,
                  config_file=None, expt_params=None,
