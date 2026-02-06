@@ -661,6 +661,8 @@ class DualRailSandboxExperiment(Experiment):
                     if len(times) >= 3 and np.max(times) > 0:
                         try:
                             pOpt_p1, pCov_p1 = fitexp(times, p1_vals)
+                            print(f"p1 fit params for {prepared_state}: {pOpt_p1}")
+                            print(f"p1 fit cov for {prepared_state}: {pCov_p1}")
                             T_p1 = pOpt_p1[3]  # decay parameter (lifetime in ms)
                             T_p1_err = np.sqrt(pCov_p1[3, 3]) if pCov_p1[3, 3] < np.inf else 0
                             # Plot fit curve
