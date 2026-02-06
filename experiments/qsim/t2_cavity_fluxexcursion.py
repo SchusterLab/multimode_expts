@@ -88,15 +88,17 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
                 f=f_initial,
                 scale=dict(value=1, min=0.1, max=1.2),
                 offset=dict(value=0, min=-0.1, max=0.5))
+            try:
+                # Perform fit
+                result = model.fit(line, params, x=x)
 
-            # Perform fit
-            result = model.fit(line, params, x=x)
-
-            # Collect best-fit parameters
-            alpha2_fits.append(result.params['alpha2'].value)
-            f_fits.append(result.params['f'].value)
-            fit_results.append(result)
-            z_fits.append(result.best_fit)
+                # Collect best-fit parameters
+                alpha2_fits.append(result.params['alpha2'].value)
+                f_fits.append(result.params['f'].value)
+                fit_results.append(result)
+                z_fits.append(result.best_fit)
+            except:
+                None
 
         f_fits = np.array(f_fits)
         alpha2_fits = np.array(alpha2_fits)
@@ -114,26 +116,33 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
         alpha2_array = np.array(filtered_alpha2)
         f_array = np.array(filtered_f) - virtual_freq
         z_smooths = np.array(z_smooths)
+        try:
+            # Create linear model: w = kc * alpha2 + delta
+            linear_model = Model(self.fit_func, independent_vars=['x'])
+            linear_params = linear_model.make_params(kc=1.0, delta=0.0)
+            linear_result = linear_model.fit(f_array, linear_params, x=alpha2_array)
 
-        # Create linear model: w = kc * alpha2 + delta
-        linear_model = Model(self.fit_func, independent_vars=['x'])
-        linear_params = linear_model.make_params(kc=1.0, delta=0.0)
-        linear_result = linear_model.fit(f_array, linear_params, x=alpha2_array)
-
-        # Store results
-        self.fit_results = {
-            'alpha2': alpha2_array,
-            'f': f_array,
-            'results': fit_results,
-            'z_fits': np.array(z_fits),
-            'kc': linear_result.params['kc'].value,
-            'delta': linear_result.params['delta'].value,
-            'linear_fit_result': linear_result,
-            'z_smooths': z_smooths,
-            'fit_good': fit_good,
-            'kerr_gain': kerr_gain,
-        }
-
+            # Store results
+            self.fit_results = {
+                'alpha2': alpha2_array,
+                'f': f_array,
+                'results': fit_results,
+                'z_fits': np.array(z_fits),
+                'kc': linear_result.params['kc'].value,
+                'delta': linear_result.params['delta'].value,
+                'linear_fit_result': linear_result,
+                'z_smooths': z_smooths,
+                'fit_good': fit_good,
+                'kerr_gain': kerr_gain,
+            }
+        except:
+            self.fit_results = {
+                'alpha2': alpha2_array,
+                'f': f_array,
+                'kc': np.nan,
+                'delta': np.nan,
+                'linear_fit_result': None,
+            }
 
 
 

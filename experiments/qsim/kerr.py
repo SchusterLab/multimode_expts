@@ -82,7 +82,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.MM_base_initialize()
         qTest = 0 # only one qubit for now
 
-        self.swap_ds = self.cfg.expt.ds_thisrun
+        self.swap_ds = self.expt.cfg.device.storage._ds_storage
         # choose the channel on which ramsey will run
         if cfg.expt.user_defined_pulse[5] == 1:
             self.cavity_ch = self.flux_low_ch
