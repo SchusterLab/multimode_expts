@@ -52,6 +52,7 @@ class HistogramProgram(MMAveragerProgram):
             self.active_reset(
                 man_reset=self.cfg.expt.man_reset,
                 storage_reset=self.cfg.expt.storage_reset,
+                use_qubit_man_reset = self.cfg.expt.use_qubit_man_reset
             )
 
         if self.cfg.expt.pulse_e or self.cfg.expt.pulse_f:

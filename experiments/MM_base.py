@@ -745,11 +745,13 @@ class MM_base:
         return [waveform_cav, waveform_qb]
 
 
-    def man_reset(self, man_idx, chi_dressed = True ):
+
+    def man_reset(self, man_idx, chi_dressed=True):
         '''
         Reset manipulate mode by swapping it to lossy mode
 
         chi_dressed: if man freq shifted due to pop in qubit e, f states.
+        using_qubit: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found 
         '''
         qTest = 0
         cfg=AttrDict(self.cfg)
@@ -956,10 +958,11 @@ class MM_base:
             
 
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
-                      ef_reset = True, pre_selection_reset = True, prefix = 'base'):
+                      ef_reset = True, pre_selection_reset = True, prefix = 'base', use_qubit_man_reset = False):
         '''
         Performs active reset on g,e,f as well as man/storage modes
         Includes post selection measurement
+        use_qubit_man_reset: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found 
         '''
         cfg = self.cfg
         qTest = 0
@@ -968,6 +971,7 @@ class MM_base:
         ## ALL ACTIVE RESET REQUIREMENTS
         # read val definition
         self.r_read_q = 9  # ge active reset register
+        self.r_read_man = 8  # ge active reset register
         self.r_read_q_ef = 10   # ef active reset register
         self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
         self.safe_regwi(0, self.r_read_q_ef, 0)  # init read val to be 0
@@ -987,9 +991,10 @@ class MM_base:
 
         # First Reset Manipulate Modes
         # =====================================
-        if man_reset:
-            # self.man_reset(0)
-            self.man_reset(1)
+        if not use_qubit_man_reset:
+            if man_reset:
+                # self.man_reset(0)
+                self.man_reset(1)
 
         # Reset ge level
         # ======================================================
@@ -1060,6 +1065,53 @@ class MM_base:
             self.label(prefix + "LABEL_2")  # location to be jumped to
             # self.wait_all(self.us2cycles(0.05))
             self.sync_all(self.us2cycles(0.25))
+
+        
+        # Reset man if using qubit for reset
+        # ======================================================
+
+        if use_qubit_man_reset:
+            if man_reset:
+                print('ok')
+                self.sync_all(self.us2cycles(1.0))
+                
+                pulse_seq = [
+                    ['multiphoton', 'f0-g1', 'pi', 0],
+                    ['qubit', 'ef', 'pi', 0],
+                    # ['qubit', 'ge', 'pi', 0],
+                ]
+                creator = self.get_prepulse_creator(pulse_seq)
+                self.custom_pulse(self.cfg, creator.pulse, prefix='man_reset_qubit')
+
+            
+                self.measure(pulse_ch=self.res_chs[qTest],
+                    adcs=[self.adc_chs[qTest]],
+                    adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+                    t='auto', wait=True, syncdelay=self.us2cycles(2.0))
+                    # t='auto', wait=True)
+
+                self.wait_all(self.us2cycles(0.25))  # to allow the read to be complete might be reduced
+
+                self.read(0, 0, "lower", self.r_read_man)  # read data from I buffer, QA, and store
+                # self.wait_all(self.us2cycles(0.05))  # to allow the read to be complete might be reduced
+                self.sync_all(self.us2cycles(0.05)) # EG: this is not doing anything
+
+                # perform Qubit active reset comparison, jump if condition is true to the label1 location
+                self.condj(0, self.r_read_man, "<", self.r_thresh_q,
+                        prefix + "LABEL_3")  # compare the value recorded above to the value stored in threshold.
+
+                self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                        freq=self.f_ge_reg[qTest],
+                                        style="arb",
+                                        phase=self.deg2reg(0),
+                                        gain=self.pi_ge_gain,
+                                        waveform='pi_qubit_ge')
+                self.pulse(ch=self.qubit_chs[qTest])
+                self.label(prefix + "LABEL_3")  # location to be jumped to
+                # self.wait_all(self.us2cycles(0.05))
+                # self.sync_all(self.us2cycles(0.25))
+                self.sync_all(self.us2cycles(0.25))
+
 
         # Dump storage population to manipulate, then to lossy mode
         # ======================================================
