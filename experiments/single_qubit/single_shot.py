@@ -31,6 +31,20 @@ class HistogramProgram(MMAveragerProgram):
     #         gen_t0 = self.gen_delays
     #     super().sync_all(t=t, gen_t0=gen_t0)
 
+    def collect_shots(self, read_num=1):
+        """
+        Collect raw shots from buffer. Returns ALL measurements (active reset + final).
+        The Histogram class will handle filtering via filter_data_IQ() using readout_per_round.
+        """
+        qTest = 0
+
+        # Return raw buffer - do NOT slice/filter here
+        # Histogram.filter_data_IQ() expects the full buffer with all measurements
+        shots_i0 = self.di_buf[0] / self.readout_lengths_adc[qTest]
+        shots_q0 = self.dq_buf[0] / self.readout_lengths_adc[qTest]
+
+        return shots_i0, shots_q0
+
     def body(self):
         cfg = AttrDict(self.cfg)
         qTest = 0
@@ -49,10 +63,14 @@ class HistogramProgram(MMAveragerProgram):
 
         # do the active reset
         if cfg.expt.active_reset:
+            print('doing active reset')
             self.active_reset(
-                man_reset=self.cfg.expt.man_reset,
-                storage_reset=self.cfg.expt.storage_reset,
-                use_qubit_man_reset = self.cfg.expt.use_qubit_man_reset
+                man_reset=cfg.expt.get('man_reset', False),
+                storage_reset=cfg.expt.get('storage_reset', False),
+                coupler_reset=cfg.expt.get('coupler_reset', False),
+                ef_reset=cfg.expt.get('ef_reset', True),
+                pre_selection_reset=cfg.expt.get('pre_selection_reset', True),
+                use_qubit_man_reset=cfg.expt.get('use_qubit_man_reset', False),
             )
 
         if self.cfg.expt.pulse_e or self.cfg.expt.pulse_f:
@@ -120,7 +138,18 @@ class HistogramExperiment(Experiment):
 
         read_num = 1
         if self.cfg.expt.active_reset:
-            read_num = 4
+            read_num += MMAveragerProgram.active_reset_read_num(
+                man_reset=self.cfg.expt.get('man_reset', False),
+                storage_reset=self.cfg.expt.get('storage_reset', False),
+                coupler_reset=self.cfg.expt.get('coupler_reset', False),
+                ef_reset=self.cfg.expt.get('ef_reset', True),
+                pre_selection_reset=self.cfg.expt.get('pre_selection_reset', True),
+                use_qubit_man_reset=self.cfg.expt.get('use_qubit_man_reset', False),
+        )
+        # read_num = 1
+        # # if self.cfg.expt.active_reset:
+        # #     read_num = 4
+        print('read num:', read_num)
 
         # Ground state shots
         cfg = self.cfg
@@ -135,6 +164,8 @@ class HistogramExperiment(Experiment):
             readouts_per_experiment=read_num,
         )
         data["Ig"], data["Qg"] = histpro.collect_shots()
+        print('collected ground shots')
+        print('number of shots collected:', len(data["Ig"]))
 
         # Excited state shots
         if "check_e" not in self.cfg.expt:
@@ -154,6 +185,8 @@ class HistogramExperiment(Experiment):
                 readouts_per_experiment=read_num,
             )
             data["Ie"], data["Qe"] = histpro.collect_shots()
+            print('collected excited e shots')
+            print('number of shots collected:', len(data["Ie"]))
         self.prog = histpro
 
         # Excited state shots
@@ -180,12 +213,25 @@ class HistogramExperiment(Experiment):
         if data is None:
             data = self.data
 
+        # Calculate read_num to pass to Histogram for proper filtering
+        read_num = 1
+        if self.cfg.expt.active_reset:
+            read_num += MMAveragerProgram.active_reset_read_num(
+                man_reset=self.cfg.expt.get('man_reset', False),
+                storage_reset=self.cfg.expt.get('storage_reset', False),
+                coupler_reset=self.cfg.expt.get('coupler_reset', False),
+                ef_reset=self.cfg.expt.get('ef_reset', True),
+                pre_selection_reset=self.cfg.expt.get('pre_selection_reset', True),
+                use_qubit_man_reset=self.cfg.expt.get('use_qubit_man_reset', False),
+            )
+
         hist_fitter = Histogram(
             data=data,
             span=span,
             verbose=verbose,
             config=self.cfg,
             station=kwargs.pop("station", None),
+            readout_per_round=read_num,
         )
         hist_fitter.analyze(plot=False, subdir=kwargs.pop("subdir", None))
 
@@ -202,8 +248,21 @@ class HistogramExperiment(Experiment):
         if data is None:
             data = self.data
 
+        # Calculate read_num to pass to Histogram for proper filtering
+        read_num = 1
+        if self.cfg.expt.active_reset:
+            read_num += MMAveragerProgram.active_reset_read_num(
+                man_reset=self.cfg.expt.get('man_reset', False),
+                storage_reset=self.cfg.expt.get('storage_reset', False),
+                coupler_reset=self.cfg.expt.get('coupler_reset', False),
+                ef_reset=self.cfg.expt.get('ef_reset', True),
+                pre_selection_reset=self.cfg.expt.get('pre_selection_reset', True),
+                use_qubit_man_reset=self.cfg.expt.get('use_qubit_man_reset', False),
+            )
+
         hist_fitter = Histogram(
-            data=data, span=span, verbose=verbose, config=self.cfg, station=station
+            data=data, span=span, verbose=verbose, config=self.cfg, station=station,
+            readout_per_round=read_num,
         )
         hist_fitter.analyze(plot=True)
 

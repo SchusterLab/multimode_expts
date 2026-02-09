@@ -42,10 +42,14 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
             # Convert frequency to period
             estimated_period = 1 / dominant_freq if dominant_freq != 0 else np.inf
             return estimated_period
+    # @staticmethod
+    # def fit_model(x, alpha2, f, scale, offset):
+    #     """Fitting model: exp(2*alpha2*(-cos(2*pi*f*x)-1))"""
+    #     return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi   * f * x) - 1)) + offset
     @staticmethod
-    def fit_model(x, alpha2, f, scale, offset):
-        """Fitting model: exp(2*alpha2*(-cos(2*pi*f*x)-1))"""
-        return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi * f * x) - 1)) + offset
+    def fit_model(x, alpha2, f, tphi, scale, offset):
+        return scale * np.exp(-2.0*alpha2*(1.0 + np.exp(-x/tphi)*np.cos(2.0*np.pi*f*x))) + offset
+
     @staticmethod
     def fit_func(x, kc, delta):
         return  kc * x + delta
@@ -54,11 +58,10 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
         Ig = self.cfg.device.readout.Ig[0]
         Ie = self.cfg.device.readout.Ie[0]
         return (z - Ig) / (Ie - Ig)
-
+    def test_if_replaced(self):
+        return None
     def analyze(self, data=None, **kwargs):
 
-
-        
         x, y, z = self.data['xpts'], self.data['ypts'], self.normalize(self.data['avgi'])
 
         # Lists to collect fit results
@@ -82,12 +85,19 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
             model = Model(self.fit_model)
 
             # Set initial parameters
+            # params = model.make_params(
+            #     # alpha2 = dict(value=alpha_guess**2, min=alpha_guess**2/2, max=alpha_guess**2*2),
+            #     alpha2 = dict(value=alpha_guess**2, vary=False),
+            #     f=f_initial,
+            #     scale=dict(value=1, min=0.1, max=1.2),
+            #     offset=dict(value=0, min=-0.1, max=0.5))
             params = model.make_params(
-                # alpha2 = dict(value=alpha_guess**2, min=alpha_guess**2/2, max=alpha_guess**2*2),
-                alpha2 = dict(value=alpha_guess**2, vary=False),
+                alpha2=dict(value=alpha_guess**2, vary=False),
                 f=f_initial,
+                tphi=dict(value=0.5*(x[-1]-x[0]), min=(x[1]-x[0]), max=1e6),  # 단위는 x와 동일
                 scale=dict(value=1, min=0.1, max=1.2),
-                offset=dict(value=0, min=-0.1, max=0.5))
+                offset=dict(value=0, min=-0.1, max=0.5),
+                )
             try:
                 # Perform fit
                 result = model.fit(line, params, x=x)
