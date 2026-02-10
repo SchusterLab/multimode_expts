@@ -21,9 +21,12 @@ import fitting.fitting as fitter
 from experiments.MM_base import *
 from experiments.MM_dual_rail_base import *
 from fitting.wigner import WignerAnalysis
+from fitting.fit_display_classes import GeneralFitting
 
 
 class ParityGainProgram(MMRAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -163,19 +166,43 @@ class ParityGainExperiment(Experiment):
 
         x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
                                         #   debug=debug,
-                                            readouts_per_experiment=read_num)        
+                                            readouts_per_experiment=read_num)
 
-        avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
-        avgq = avgq[0][-1]
-        amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
-        phases = np.angle(avgi+1j*avgq) # Calculating the phase
+        data['idata'], data['qdata'] = prog.collect_shots()
+
+        if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
+            # Reshape raw data to (expts, rounds * reps * read_num) for per-point filtering
+            rounds = self.cfg.expt.rounds
+            reps = self.cfg.expt.reps
+            expts = self.cfg.expt.expts
+            I_reshaped = np.reshape(np.transpose(
+                np.reshape(data['idata'], (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                (expts, rounds * reps * read_num))
+            Q_reshaped = np.reshape(np.transpose(
+                np.reshape(data['qdata'], (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                (expts, rounds * reps * read_num))
+            threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
+            avgi_list, avgq_list = [], []
+            for ii in range(expts):
+                mi, mq = GeneralFitting.filter_shots_per_point(
+                    I_reshaped[ii], Q_reshaped[ii], read_num,
+                    threshold=threshold, pre_selection=True)
+                avgi_list.append(mi)
+                avgq_list.append(mq)
+            avgi = np.array(avgi_list)
+            avgq = np.array(avgq_list)
+        else:
+            avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+            avgq = avgq[0][-1]
+
+        amps = np.abs(avgi+1j*avgq)
+        phases = np.angle(avgi+1j*avgq)
 
         data['xpts'] = x_pts
         data['avgi'] = avgi
         data['avgq'] = avgq
         data['amps'] = amps
         data['phases'] = phases
-        data['idata'], data['qdata'] = prog.collect_shots()
 
         if self.pulse_correction:
             self.cfg.expt.phase_second_pulse = 0 # reset the phase of the second pulse
@@ -183,8 +210,33 @@ class ParityGainExperiment(Experiment):
             x_pts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress,
                                             # debug=debug,
                                             readouts_per_experiment=read_num)
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+
+            _idata, _qdata = prog.collect_shots()
+
+            if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
+                rounds = self.cfg.expt.rounds
+                reps = self.cfg.expt.reps
+                expts = self.cfg.expt.expts
+                I_reshaped = np.reshape(np.transpose(
+                    np.reshape(_idata, (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                    (expts, rounds * reps * read_num))
+                Q_reshaped = np.reshape(np.transpose(
+                    np.reshape(_qdata, (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                    (expts, rounds * reps * read_num))
+                threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
+                avgi_list, avgq_list = [], []
+                for ii in range(expts):
+                    mi, mq = GeneralFitting.filter_shots_per_point(
+                        I_reshaped[ii], Q_reshaped[ii], read_num,
+                        threshold=threshold, pre_selection=True)
+                    avgi_list.append(mi)
+                    avgq_list.append(mq)
+                avgi = np.array(avgi_list)
+                avgq = np.array(avgq_list)
+            else:
+                avgi = avgi[0][0]
+                avgq = avgq[0][0]
+
             amps = np.abs(avgi+1j*avgq)
             phases = np.angle(avgi+1j*avgq)
             data['xpts'] = np.append(data['xpts'], x_pts)
@@ -193,7 +245,6 @@ class ParityGainExperiment(Experiment):
             data['amps'] = np.append(data['amps'], amps)
             data['phases'] = np.append(data['phases'], phases)
 
-            _idata, _qdata = prog.collect_shots()
             data['idata'] = np.append(data['idata'], _idata)
             data['qdata'] = np.append(data['qdata'], _qdata)
 

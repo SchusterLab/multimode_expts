@@ -5,6 +5,8 @@ from fitting.fit_display_classes import Histogram
 # TODO: add gef analysis and rotation/threshold for g vs f
 
 class HistogramProgram(MMAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)

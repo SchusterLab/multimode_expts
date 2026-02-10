@@ -30,6 +30,8 @@ from experiments.MM_base import *
 
 
 class DualRailSandboxProgram(MMAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -81,7 +83,7 @@ class DualRailSandboxProgram(MMAveragerProgram):
 
         # 3. State preparation
         if self.state_prep_pulse is not None:
-            print(f"Preparing dual rail state |{self.state_start}>")
+            # print(f"Preparing dual rail state |{self.state_start}>")
             self.custom_pulse(cfg, self.state_prep_pulse, prefix='state_prep_')
 
         # 4. Repeat loop: (wait + optional joint_parity)
@@ -97,7 +99,7 @@ class DualRailSandboxProgram(MMAveragerProgram):
 
             # Joint parity measurement (if enabled)
             if cfg.expt.get('parity_flag', False):
-                print("Performing joint parity measurement")
+                # print("Performing joint parity measurement")
                 self.joint_parity_active_reset(
                     stor_pair_name=self.stor_pair_name,
                     name=f'jp_rep{rep_idx}',
@@ -312,6 +314,13 @@ class DualRailSandboxExperiment(Experiment):
                     self.cfg.expt.wait_time = wait
                     indices = self._get_shot_indices()
 
+                    # Pre-selection mask: discard shots where active_reset pre_selection failed
+                    if 'ar_pre_selection' in indices:
+                        pre_sel_idx = indices['ar_pre_selection']
+                        pre_sel_mask = i0_reshaped[:, pre_sel_idx] < threshold
+                        i0_reshaped = i0_reshaped[pre_sel_mask]
+                        data[f'pre_select_count_{key}'] = np.sum(pre_sel_mask)
+
                     # Post-selection mask: keep trajectories where all JP shots are g (< threshold)
                     if post_select and parity_flag and 'jp' in indices:
                         jp_indices = indices['jp']
@@ -322,7 +331,7 @@ class DualRailSandboxExperiment(Experiment):
                         data[f'post_select_count_{key}'] = np.sum(post_select_mask)
                     else:
                         i0_filtered = i0_reshaped
-                        data[f'post_select_count_{key}'] = reps
+                        data[f'post_select_count_{key}'] = len(i0_reshaped)
 
                     # Bin final dual rail measurements
                     pops, counts = self._bin_dual_rail_shots(i0_filtered, indices, threshold)
@@ -338,8 +347,11 @@ class DualRailSandboxExperiment(Experiment):
         indices = {}
 
         if cfg.expt.get('active_reset', False):
-            indices['ar_ge'] = idx
-            idx += 1
+            params = MM_base.get_active_reset_params(cfg)
+            ar_read_num = MMAveragerProgram.active_reset_read_num(**params)
+            if params.get('pre_selection_reset', False):
+                indices['ar_pre_selection'] = idx + ar_read_num - 1
+            idx += ar_read_num
 
         if cfg.expt.get('parity_flag', False):
             repeat_count = int(cfg.expt.get('repeat_count', 1))
@@ -382,7 +394,7 @@ class DualRailSandboxExperiment(Experiment):
         pops = {k: v / n_shots for k, v in counts.items()}
         return pops, counts
 
-    def display(self, data=None, show_iq=False, show_histograms=True, **kwargs):
+    def display(self, data=None, show_iq=False, show_histograms=True, log_scale=False, **kwargs):
         """
         Display dual rail results.
 
@@ -457,7 +469,7 @@ class DualRailSandboxExperiment(Experiment):
                     pop_values = [0, 0, 0, 0]
                 bar_colors = [self.STATE_COLORS[label] for label in bar_labels]
 
-                bars = ax.bar(bar_labels, pop_values, color=bar_colors)
+                bars = ax.bar(bar_labels, pop_values, color=bar_colors, alpha=0.7)
                 ax.set_ylabel('Population')
                 ax.set_xlabel('Measured State')
                 total_time = repeat * wait
@@ -465,6 +477,9 @@ class DualRailSandboxExperiment(Experiment):
                 ax.set_title(f'|{prepared_state}> r={repeat} w={wait} (t={total_time_ms:.3g}ms)\n'
                             f'post-sel: {post_count}/{total_reps}')
                 ax.set_ylim([0, 1])
+                if log_scale:
+                    ax.set_yscale('log')
+                    ax.set_ylim([5e-4, 1.5])  # Set lower limit for log scale
 
                 # Add probability counts on top of each bar
                 for bar, pop in zip(bars, pop_values):
@@ -475,8 +490,8 @@ class DualRailSandboxExperiment(Experiment):
                 # Highlight expected state
                 if prepared_state in bar_labels:
                     expected_idx = bar_labels.index(prepared_state)
-                    bars[expected_idx].set_edgecolor('black')
-                    bars[expected_idx].set_linewidth(2)
+                    bars[expected_idx].set_edgecolor(color='black')
+                    bars[expected_idx].set_linewidth(1)
 
                 # I/Q scatter plot (if show_iq)
                 if show_iq:

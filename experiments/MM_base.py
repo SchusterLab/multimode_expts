@@ -854,13 +854,17 @@ class MM_base:
         qTest = self.cfg.expt.qubits[0]
         self.r_read_q = 9
         self.r_thresh_q = 11 
+        wait_after_readout = 0.10 # in us
+        wait_after_reset = 2.0
+
+        self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
         self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
         # check if final sync is needed (only if last readout)
         if final_sync:
             final_sync_delay = self.us2cycles(self.cfg.device.readout.relax_delay[qTest])
         else: 
-            print("needs a pretty long sync here I should be smatter with parity pulse timing")
-            final_sync_delay = self.us2cycles(1)
+            print("needs a pretty long sync here due to the measurement")
+            final_sync_delay = self.us2cycles(wait_after_reset)
 
         # parity pulses, for now I will do something hacky, 
         # i.e. will only load the waveform once, should rewrite custom_pulse to be more general
@@ -869,7 +873,7 @@ class MM_base:
             self.custom_pulse(cfg, parity_str, prefix=name)
 
         # # measurement
-        self.sync_all(self.us2cycles(0.1))
+        # self.sync_all(self.us2cycles(0.1))
         self.measure(
             pulse_ch=self.res_chs[qTest],
             adcs=[self.adc_chs[qTest]],
@@ -877,7 +881,7 @@ class MM_base:
             t='auto',
             wait=True)
         # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
-        self.wait_all(self.us2cycles(0.10))        
+        self.wait_all(self.us2cycles(wait_after_readout))        
         # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
         self.read(0, 0, "lower", self.r_read_q) # stores I in (0,0) into r_read_q
         # # first if 
@@ -914,16 +918,17 @@ class MM_base:
         qTest = self.cfg.expt.qubits[0]
         storage_1, storage_2 = storage_idx
         if reset_before:
+            #only eg reset 
             self.active_reset(pre_selection_reset=False, ef_reset=False, prefix='pre_dual_rail_')
 
         # Measure storage 1
         m_s1 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_1), 'pi', 0], ]
-        print("Playing swap pulse for storage ", storage_1)
+        # print("Playing swap pulse for storage ", storage_1)
         creator = self.get_prepulse_creator(m_s1)
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_1) + 'ToMan')
 
         if measure_parity:
-            print("Performing parity measurement for storage ", storage_1)
+            # print("Performing parity measurement for storage ", storage_1)
             self.parity_active_reset(name='dual_rail_stor' + str(storage_1) + '_reset',
                                      register_label='dual_rail_stor' + str(storage_1) + '_label',
                                      man_idx=man_idx, 
@@ -932,16 +937,16 @@ class MM_base:
             raise NotImplementedError("Non parity measurement not implemented yet")
         
         # # Swap back to storage 1
-        print("Playing swap back pulse for storage ", storage_1)
+        # print("Playing swap back pulse for storage ", storage_1)
         self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_1))
 
         # Measure storage 2
         m_s2 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_2), 'pi', 0], ]
-        print("Playing swap pulse for storage ", storage_2)
+        # print("Playing swap pulse for storage ", storage_2)
         creator = self.get_prepulse_creator(m_s2)
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_2) + 'ToMan')
         if measure_parity:
-            print("Performing parity measurement for storage ", storage_2)
+            # print("Performing parity measurement for storage ", storage_2)
             self.parity_active_reset(name='dual_rail_stor' + str(storage_2) + '_reset',
                                      register_label='dual_rail_stor' + str(storage_2) + '_label',
                                      man_idx=man_idx, 
@@ -949,7 +954,7 @@ class MM_base:
         else:
             raise NotImplementedError("Non parity measurement not implemented yet")
         # Swap back to storage 2
-        print("Playing swap back pulse for storage ", storage_2)
+        # print("Playing swap back pulse for storage ", storage_2)
         self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_2))
 
         if reset_after:
@@ -1016,15 +1021,24 @@ class MM_base:
         wait_after_readout = 0.10
         qTest = 0
         cfg=AttrDict(self.cfg)
-        print('man_reset:', man_reset)
-        print('storage_reset:', storage_reset)
-        print('coupler_reset:', coupler_reset)
-        print('ef_reset:', ef_reset)
-        print('pre_selection_reset:', pre_selection_reset)
-        print('use_qubit_man_reset:', use_qubit_man_reset)
-        print('pre_selection_parity:', pre_selection_parity)
-        print('man_idx:', man_idx)
-        print('parity_fast:', parity_fast)
+        # print('man_reset:', man_reset)
+        # print('storage_reset:', storage_reset)
+        # print('coupler_reset:', coupler_reset)
+        # print('ef_reset:', ef_reset)
+        # print('pre_selection_reset:', pre_selection_reset)
+        # print('use_qubit_man_reset:', use_qubit_man_reset)
+        # print('pre_selection_parity:', pre_selection_parity)
+        # print('man_idx:', man_idx)
+        # print('parity_fast:', parity_fast)
+        if pre_selection_reset and not getattr(self, '_pre_selection_filtering', False):
+            import warnings
+            warnings.warn(
+                "pre_selection_reset=True but this experiment has not implemented "
+                "per-shot pre_selection filtering. The measurement is recorded but "
+                "filtering is NOT applied to avgi/avgq. "
+                "Set _pre_selection_filtering = True on your Program class to suppress this.",
+                stacklevel=2
+            )
 
         # Prepare Active Reset
         ## ALL ACTIVE RESET REQUIREMENTS

@@ -8,8 +8,11 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import * 
+from fitting.fit_display_classes import GeneralFitting
+from experiments.MM_base import *
 class ParityDelayProgram(MMAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -135,13 +138,21 @@ class ParityDelayExperiment(Experiment):
             idata, qdata = lengthrabi.collect_shots()
             data["idata"].append(idata)
             data["qdata"].append(qdata)
-            avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
-            avgq = avgq[0][-1]
-            amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
-            phase = np.angle(avgi+1j*avgq) # Calculating the phase
+
+            if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
+                avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                    idata, qdata, read_num,
+                    threshold=self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]],
+                    pre_selection=True)
+            else:
+                avgi_val = avgi[0][-1]
+                avgq_val = avgq[0][-1]
+
+            amp = np.abs(avgi_val+1j*avgq_val)
+            phase = np.angle(avgi_val+1j*avgq_val)
             data["xpts"].append(length)
-            data["avgi"].append(avgi)
-            data["avgq"].append(avgq)
+            data["avgi"].append(avgi_val)
+            data["avgq"].append(avgq_val)
             data["amps"].append(amp)
             data["phases"].append(phase)                             
 

@@ -10,12 +10,14 @@ from tqdm import tqdm_notebook as tqdm
 import fitting.fitting as fitter
 from fitting.fit_display_classes import GeneralFitting
 from fitting.wigner import WignerAnalysis
-from experiments.MM_base import MMAveragerProgram
+from experiments.MM_base import MMAveragerProgram, MM_base
 
 # from scipy.sepcial import erf
 
 
 class WignerTomography1ModeProgram(MMAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg, loaded_pulses=None):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -161,7 +163,8 @@ class WignerTomography1ModeExperiment(Experiment):
         if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
-            read_num += 1
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         # extract displacement list from file path
         if 'alpha_list' in self.cfg.expt:
@@ -182,6 +185,11 @@ class WignerTomography1ModeExperiment(Experiment):
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
 
+        pre_selection = ('active_reset' in self.cfg.expt and self.cfg.expt.active_reset
+                         and self.cfg.expt.get('pre_selection_reset', False))
+        if pre_selection:
+            threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
+
         for alpha in tqdm(alpha_list, disable=not progress):
             self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse
             _alpha = np.conj(alpha) # convert to conjugate to respect qick convention
@@ -192,18 +200,25 @@ class WignerTomography1ModeExperiment(Experiment):
             avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False,
                                         readouts_per_experiment=read_num,
                                             #  debug=debug
-                                             )  
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+                                             )
+            # collect single shots
+            i0, q0 = wigner.collect_shots()
+
+            if pre_selection:
+                avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                    i0.flatten(), q0.flatten(), read_num,
+                    threshold=threshold, pre_selection=True)
+            else:
+                avgi_val = avgi[0][-1]
+                avgq_val = avgq[0][-1]
+
             amp = np.abs(alpha) # Calculating the magnitude
             phase = np.angle(alpha) # Calculating the phase
             data["alpha"].append(alpha)
-            data["avgi"].append(avgi)
-            data["avgq"].append(avgq)
+            data["avgi"].append(avgi_val)
+            data["avgq"].append(avgq_val)
             data["amps"].append(amp)
             data["phases"].append(phase)
-            # collect single shots
-            i0, q0 = wigner.collect_shots()
             data["i0"].append(i0)
             data["q0"].append(q0)
 
@@ -214,11 +229,18 @@ class WignerTomography1ModeExperiment(Experiment):
                                             readouts_per_experiment=read_num,
                                                 #  debug=debug
                                                 )
-                avgi = avgi[0][0]
-                avgq = avgq[0][0]
                 i0, q0 = wigner.collect_shots()
-                data["avgi"].append(avgi)
-                data["avgq"].append(avgq)
+
+                if pre_selection:
+                    avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                        i0.flatten(), q0.flatten(), read_num,
+                        threshold=threshold, pre_selection=True)
+                else:
+                    avgi_val = avgi[0][-1]
+                    avgq_val = avgq[0][-1]
+
+                data["avgi"].append(avgi_val)
+                data["avgq"].append(avgq_val)
                 data["i0"].append(i0)
                 data["q0"].append(q0)
 
@@ -249,11 +271,12 @@ class WignerTomography1ModeExperiment(Experiment):
         if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
-            read_num += 1
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         idx_start = read_num - 1
         idx_step = read_num
-        idx_post_select = 0 
+        idx_post_select = 0
         if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
             idx_post_select += 1
 

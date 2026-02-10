@@ -37,10 +37,13 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
+from fitting.fit_display_classes import GeneralFitting
 from experiments.MM_base import *
 
 
 class ParityPhaseProgram(MMRAveragerProgram):
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -317,6 +320,11 @@ class ParityPhaseExperiment(Experiment):
             'Ie': self.Ie,
         }
 
+        pre_selection = (self.cfg.expt.active_reset
+                         and self.cfg.expt.get('pre_selection_reset', False))
+        if pre_selection:
+            threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
+
         for state in tqdm(state_list, desc="States", disable=not progress):
             print(f"\n=== Running state_start='{state}' ===")
             # Update config for this state
@@ -332,8 +340,38 @@ class ParityPhaseExperiment(Experiment):
                 readouts_per_experiment=read_num
             )
 
-            avgi = avgi[0][-1]
-            avgq = avgq[0][-1]
+            # Collect single shot data
+            try:
+                idata, qdata = prog.collect_shots()
+                data[f'idata_{state}'] = idata
+                data[f'qdata_{state}'] = qdata
+            except:
+                idata = None
+
+            if pre_selection and idata is not None:
+                # Reshape raw data to (expts, rounds * reps * read_num) for per-point filtering
+                rounds = self.cfg.expt.rounds
+                reps = self.cfg.expt.reps
+                expts = self.cfg.expt.expts
+                I_reshaped = np.reshape(np.transpose(
+                    np.reshape(idata, (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                    (expts, rounds * reps * read_num))
+                Q_reshaped = np.reshape(np.transpose(
+                    np.reshape(qdata, (rounds, expts, reps, read_num)), (1, 0, 2, 3)),
+                    (expts, rounds * reps * read_num))
+                avgi_list, avgq_list = [], []
+                for ii in range(expts):
+                    mi, mq = GeneralFitting.filter_shots_per_point(
+                        I_reshaped[ii], Q_reshaped[ii], read_num,
+                        threshold=threshold, pre_selection=True)
+                    avgi_list.append(mi)
+                    avgq_list.append(mq)
+                avgi = np.array(avgi_list)
+                avgq = np.array(avgq_list)
+            else:
+                avgi = avgi[0][-1]
+                avgq = avgq[0][-1]
+
             amps = np.abs(avgi + 1j*avgq)
             phases = np.angle(avgi + 1j*avgq)
 
@@ -346,14 +384,6 @@ class ParityPhaseExperiment(Experiment):
             data[f'avgq_{state}'] = avgq
             data[f'amps_{state}'] = amps
             data[f'phases_{state}'] = phases
-
-            # Collect single shot data if available
-            try:
-                idata, qdata = prog.collect_shots()
-                data[f'idata_{state}'] = idata
-                data[f'qdata_{state}'] = qdata
-            except:
-                pass
 
         self.data = data
         return data

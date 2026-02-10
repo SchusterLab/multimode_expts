@@ -53,14 +53,38 @@ class GeneralFitting:
                 Q_data = temp_data['q0']
             
 
+        # Determine read_num for active_reset
+        read_num = 1
+        if self.cfg['expt'].get('active_reset', False):
+            from experiments.MM_base import MM_base, MMAveragerProgram
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        pre_selection = self.cfg['expt'].get('active_reset', False) and self.cfg['expt'].get('pre_selection_reset', False)
+
         # reshape data into (rounds * reps x expts)
-        '''
-        Averager returns data in (rounds, reps) and if you do for looping 
-        returns in (expts, rounds, reps)
-        Here I assume you have done looping !
-        '''
-        I_data = np.reshape(np.transpose(np.reshape(I_data, ( expts,rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
-        Q_data = np.reshape(np.transpose(np.reshape(Q_data, ( expts,rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
+        expected_size_raw = rounds * expts * reps * read_num
+        if read_num > 1 and I_data.size == expected_size_raw:
+            # Raw data includes active_reset readouts
+            # RAverager raw ordering: (rounds, expts, reps, read_num)
+            I_4d = np.reshape(I_data, (rounds, expts, reps, read_num))
+            Q_4d = np.reshape(Q_data, (rounds, expts, reps, read_num))
+
+            if pre_selection:
+                # Keep shots where pre_selection readout (second-to-last) < threshold
+                pre_sel_mask = I_4d[:, :, :, -2] < threshold
+                pre_sel_mask = np.reshape(np.transpose(pre_sel_mask, (0, 2, 1)), (rounds * reps, expts))
+                if filter_map is not None:
+                    filter_map = filter_map & pre_sel_mask
+                else:
+                    filter_map = pre_sel_mask
+
+            # Extract final readout only
+            I_data = np.reshape(np.transpose(I_4d[:, :, :, -1], (0, 2, 1)), (rounds * reps, expts))
+            Q_data = np.reshape(np.transpose(Q_4d[:, :, :, -1], (0, 2, 1)), (rounds * reps, expts))
+        else:
+            # Data already pre-filtered or no active_reset
+            I_data = np.reshape(np.transpose(np.reshape(I_data.flatten(), (expts, rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
+            Q_data = np.reshape(np.transpose(np.reshape(Q_data.flatten(), (expts, rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
 
        
         # threshold data
@@ -207,6 +231,44 @@ class GeneralFitting:
                 result_Ie.append(IQ[index_final])
 
         return np.array(result_Ig), np.array(result_Ie)
+
+    @staticmethod
+    def filter_shots_per_point(idata, qdata, readout_per_round, threshold=None, pre_selection=False):
+        """
+        Filter raw shots for a single experiment point.
+        Extracts the final measurement from each group of readout_per_round shots.
+        If pre_selection=True, only keeps shots where the pre-selection measurement
+        (second-to-last) is below threshold.
+
+        Args:
+            idata: raw I data array of shape (reps * readout_per_round,)
+            qdata: raw Q data array of shape (reps * readout_per_round,)
+            readout_per_round: number of readouts per shot (active_reset measurements + final)
+            threshold: threshold for pre-selection filtering
+            pre_selection: if True, apply threshold filtering on pre-selection measurement
+
+        Returns:
+            (mean_I, mean_Q) averaged over kept shots
+        """
+        n_shots = len(idata) // readout_per_round
+        final_I, final_Q = [], []
+
+        for k in range(n_shots):
+            idx_final = readout_per_round * k + readout_per_round - 1
+            if idx_final >= len(idata):
+                break
+            if pre_selection:
+                idx_pre = readout_per_round * k + readout_per_round - 2
+                if idata[idx_pre] < threshold:
+                    final_I.append(idata[idx_final])
+                    final_Q.append(qdata[idx_final])
+            else:
+                final_I.append(idata[idx_final])
+                final_Q.append(qdata[idx_final])
+
+        if len(final_I) == 0:
+            return np.nan, np.nan
+        return np.mean(final_I), np.mean(final_Q)
 
     def post_select_raverager_data(self, temp_data):
         read_num = self.readout_per_round
