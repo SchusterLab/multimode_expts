@@ -76,8 +76,8 @@ class DualRailSandboxProgram(MMAveragerProgram):
         # 2. Active reset (if enabled)
         if cfg.expt.get('active_reset', False):
             # print("Performing active reset at start")
-            self.active_reset(man_reset=False, storage_reset=False,
-                              ef_reset=False, pre_selection_reset=False)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         # 3. State preparation
         if self.state_prep_pulse is not None:
@@ -131,9 +131,10 @@ class DualRailSandboxProgram(MMAveragerProgram):
         cfg = self.cfg
         read_num = 0
 
-        # Active reset adds 1 measurement (ge level only since ef_reset=False)
+        # Active reset adds measurements based on active_reset configuration
         if cfg.expt.get('active_reset', False):
-            read_num += 1
+            params = MM_base.get_active_reset_params(cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         # Joint parity measurements during repeat loop
         if cfg.expt.get('parity_flag', False):

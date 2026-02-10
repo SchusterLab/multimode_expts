@@ -177,9 +177,10 @@ class CavityRamseyProgram(MMRAveragerProgram):
         # reset and sync all channels
         self.reset_and_sync()
 
-        # active reset 
-        if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        # active reset
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         # pre pulse
         if cfg.expt.prepulse:
@@ -392,10 +393,13 @@ class CavityRamseyExperiment(Experiment):
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
 
+        # Calculate read_num to account for active_reset measurements
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
-        
+
         ramsey = CavityRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
         # print('inide t2 cavity acquire')
 
@@ -408,8 +412,8 @@ class CavityRamseyExperiment(Experiment):
                                             # debug=debug,
                                             readouts_per_experiment=read_num)        
  
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+        avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase
 
@@ -471,8 +475,11 @@ class CavityRamseyGainSweepExperiment(Experiment):
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
 
+        # Calculate read_num to account for active_reset measurements
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         gain_start = self.cfg.expt.gain_start
         gain_step = self.cfg.expt.gain_step

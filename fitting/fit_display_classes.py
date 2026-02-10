@@ -191,6 +191,22 @@ class GeneralFitting:
 
         return np.array(result_Ig), np.array(result_Ie)
 
+    def extract_final_measurement(self, II, IQ):
+        """
+        Extract only the final measurement from each shot when active_reset is enabled
+        but pre_selection_reset is False. No threshold filtering applied.
+        """
+        result_Ig = []
+        result_Ie = []
+
+        for k in range(len(II) // self.readout_per_round):
+            index_final = self.readout_per_round * k + self.readout_per_round - 1
+
+            if index_final < len(II):
+                result_Ig.append(II[index_final])
+                result_Ie.append(IQ[index_final])
+
+        return np.array(result_Ig), np.array(result_Ie)
 
     def post_select_raverager_data(self, temp_data):
         read_num = self.readout_per_round
@@ -205,11 +221,21 @@ class GeneralFitting:
         I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds * reps * read_num))
         Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds * reps * read_num))
 
+        # Check if we should use pre-selection filtering
+        pre_selection_enabled = False
+        if hasattr(self.cfg, 'expt') and self.cfg.expt.get('active_reset', False):
+            pre_selection_enabled = self.cfg.expt.get('pre_selection_reset', False)
+
         Ilist = []
         Qlist = []
         # for ii in range(len(I_data) - 1): # why was this done???
         for ii in range(len(I_data)):
-            Ig, Qg = self.filter_data_IQ(I_data[ii], Q_data[ii], self.threshold)
+            if pre_selection_enabled:
+                Ig, Qg = self.filter_data_IQ(I_data[ii], Q_data[ii], self.threshold)
+            elif self.cfg.expt.get('active_reset', False):
+                Ig, Qg = self.extract_final_measurement(I_data[ii], Q_data[ii])
+            else:
+                Ig, Qg = I_data[ii], Q_data[ii]
             Ilist.append(np.mean(Ig))
             Qlist.append(np.mean(Qg))
 
@@ -938,13 +964,25 @@ class Histogram(GeneralFitting):
         self.results = {}
 
     def analyze(self, plot=True, subdir = None):
-        if self.active_reset:
-            print('Active reset is enabled')
+        # Check if pre_selection is enabled (not just active_reset)
+        pre_selection_enabled = False
+        if self.active_reset and hasattr(self.cfg, 'expt'):
+            pre_selection_enabled = self.cfg.expt.get('pre_selection_reset', False)
+
+        if pre_selection_enabled:
+            print('Active reset with pre-selection is enabled')
             Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.threshold)
             Ie, Qe = self.filter_data_IQ(self.data['Ie'], self.data['Qe'], self.threshold)
             plot_f = 'If' in self.data.keys()
             if plot_f:
                 If, Qf = self.filter_data_IQ(self.data['If'], self.data['Qf'], self.threshold)
+        elif self.active_reset:
+            print('Active reset is enabled (no pre-selection filtering)')
+            Ig, Qg = self.extract_final_measurement(self.data['Ig'], self.data['Qg'])
+            Ie, Qe = self.extract_final_measurement(self.data['Ie'], self.data['Qe'])
+            plot_f = 'If' in self.data.keys()
+            if plot_f:
+                If, Qf = self.extract_final_measurement(self.data['If'], self.data['Qf'])
         else:
             Ig, Qg = self.data['Ig'], self.data['Qg']
             Ie, Qe = self.data['Ie'], self.data['Qe']

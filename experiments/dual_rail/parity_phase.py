@@ -171,7 +171,8 @@ class ParityPhaseProgram(MMRAveragerProgram):
 
         # Active reset
         if cfg.expt.active_reset:
-            self.active_reset(man_reset=cfg.expt.man_reset, storage_reset=cfg.expt.storage_reset)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         self.sync_all(self.us2cycles(0.2))
 
@@ -298,9 +299,11 @@ class ParityPhaseExperiment(Experiment):
         if isinstance(state_list, str):
             state_list = [state_list]
 
+        # Calculate read_num to account for active_reset measurements
         read_num = 1
         if self.cfg.expt.active_reset:
-            read_num = 4
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         # Store Ig, Ie for E/G scaling (from config)
         self.Ig = self.cfg.device.readout.Ig[0] if hasattr(self.cfg.device.readout, 'Ig') else None
@@ -329,8 +332,8 @@ class ParityPhaseExperiment(Experiment):
                 readouts_per_experiment=read_num
             )
 
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            avgi = avgi[0][-1]
+            avgq = avgq[0][-1]
             amps = np.abs(avgi + 1j*avgq)
             phases = np.angle(avgi + 1j*avgq)
 

@@ -66,15 +66,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.reset_and_sync()
 
         if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            man_reset = False
-            storage_reset = False
-            coupler_reset = False
-            pre_selection_reset = False
-            ef_reset = False
-            self.active_reset(man_reset=man_reset, storage_reset=storage_reset,
-                              coupler_reset=coupler_reset,
-                              pre_selection_reset=pre_selection_reset,
-                              ef_reset=ef_reset)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         #  prepulse
         if cfg.expt.prepulse:
@@ -93,16 +86,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
 
             # do the eg/ef measurement after the custom pulse, before the tomography
-            man_reset = False
-            storage_reset = False
-            coupler_reset = False
-            pre_selection_reset = False
-            ef_reset = False
-
-            self.active_reset(man_reset=man_reset, storage_reset=storage_reset,
-                              coupler_reset=coupler_reset,
-                              pre_selection_reset=pre_selection_reset,
-                              ef_reset=ef_reset)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
 
         self.setup_and_pulse(ch=self.man_ch[self.man_mode_idx], style="arb", freq=self.f_cavity, 
@@ -122,7 +107,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         cfg = self.cfg
         read_num = 1
         if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            read_num += 1
+            params = MM_base.get_active_reset_params(cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
         if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
             read_num += 1
 
@@ -540,10 +526,8 @@ class ProcessTomographyProgram(MMAveragerProgram):
 
         # Optional active reset
         if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            self.active_reset(
-                man_reset=False, storage_reset=False, coupler_reset=False,
-                pre_selection_reset=False, ef_reset=False
-            )
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         # State preparation
         if 'state_prep' in cfg.expt and cfg.expt.state_prep:
@@ -598,7 +582,8 @@ class ProcessTomographyProgram(MMAveragerProgram):
         cfg = self.cfg
         read_num = 1
         if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            read_num += 1
+            params = MM_base.get_active_reset_params(cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
         if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
             read_num += 1
 

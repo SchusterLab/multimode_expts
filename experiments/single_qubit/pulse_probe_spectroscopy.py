@@ -89,13 +89,19 @@ class PulseProbeSpectroscopyExperiment(Experiment):
 
     def acquire(self, progress=False, debug=False):
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.format_config_before_experiment( num_qubits_sample)                          
+        self.format_config_before_experiment( num_qubits_sample)
+
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         qspec = PulseProbeSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
         self.prog = qspec
-        xpts, avgi, avgq = qspec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress)        
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+        xpts, avgi, avgq = qspec.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, readouts_per_experiment=read_num)
+        avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq)
         phases = np.angle(avgi+1j*avgq) # Calculating the phase        
         

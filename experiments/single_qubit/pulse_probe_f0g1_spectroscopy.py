@@ -109,13 +109,18 @@ class PulseProbeF0g1SpectroscopyExperiment(Experiment):
                                 value2.update({key3: [value3]*num_qubits_sample})                                
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
-        read_num = 1                             
+
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         qspec_ef=PulseProbeF0g1SpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
-        x_pts, avgi, avgq = qspec_ef.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)        
+        x_pts, avgi, avgq = qspec_ef.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug, readouts_per_experiment=read_num)
 
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+        avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase        
 
@@ -186,8 +191,14 @@ class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
                             if isinstance(value3, list):
-                                value2.update({key3: value3[q_ind]})                                
-       
+                                value2.update({key3: value3[q_ind]})
+
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+
         data={"fpts":[], "gainpts":[], "avgi":[], "avgq":[], "amps":[], "phases":[]}
         for gain in tqdm(gainpts):
             self.cfg.expt.gain = gain
@@ -196,9 +207,9 @@ class PulseProbeEFPowerSweepSpectroscopyExperiment(Experiment):
             self.cfg.expt.expts = self.cfg.expt.expts_f
             spec = PulseProbeEFSpectroscopyProgram(soccfg=self.soccfg, cfg=self.cfg)
             self.prog = spec
-            x_pts, avgi, avgq = spec.acquire(self.im[self.cfg.aliases.soc], load_pulses=True, progress=False)
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            x_pts, avgi, avgq = spec.acquire(self.im[self.cfg.aliases.soc], load_pulses=True, progress=False, readouts_per_experiment=read_num)
+            avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+            avgq = avgq[0][-1]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
             phase = np.angle(avgi+1j*avgq) # Calculating the phase
 

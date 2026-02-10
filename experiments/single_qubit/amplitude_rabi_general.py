@@ -264,19 +264,25 @@ class AmplitudeRabiGeneralExperiment(Experiment):
         if 'sigma_test' not in self.cfg.expt:
             self.cfg.expt.sigma_test = self.cfg.device.qubit.pulses.pi_ge.sigma[qTest]
             # else: self.cfg.expt.sigma_test = self.cfg.device.qubit.pulses.pi_Q1_ZZ.sigma[qA]
-        
+
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+
         amprabi = AmplitudeRabiGeneralProgram(soccfg=self.soccfg, cfg=self.cfg)
-        
-        xpts, avgi, avgq = amprabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug)
+
+        xpts, avgi, avgq = amprabi.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=progress, debug=debug, readouts_per_experiment=read_num)
         
         # shots_i = amprabi.di_buf[adc_ch].reshape((self.cfg.expt.expts, self.cfg.expt.reps)) / amprabi.readout_length_adc
         # shots_i = np.average(shots_i, axis=1)
         # print(len(shots_i), self.cfg.expt.expts)
         # shots_q = amprabi.dq_buf[adc_ch] / amprabi.readout_length_adc
         # print(np.std(shots_i), np.std(shots_q))
-        
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+
+        avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+        avgq = avgq[0][-1]
         amps = np.abs(avgi+1j*avgq) # Calculating the magnitude
         phases = np.angle(avgi+1j*avgq) # Calculating the phase        
         

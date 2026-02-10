@@ -215,7 +215,11 @@ class FluxSpectroscopyF0g1Experiment(Experiment):
     def acquire(self, progress=False, debug=False):
         xpts=self.cfg.expt["start"] + self.cfg.expt["step"]*np.arange(self.cfg.expt["expts"])
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):

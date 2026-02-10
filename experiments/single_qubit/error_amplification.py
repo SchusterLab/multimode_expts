@@ -330,15 +330,21 @@ class ErrorAmplificationExperiment(Experiment):
         adc_ch = cfg.hw.soc.adcs.readout.ch
         n_start = 1 if "n_start" not in cfg.expt else cfg.expt.n_start
         n_step = 1 if "n_step" not in cfg.expt else cfg.expt.n_step
-        n_pts = np.arange(n_start, cfg.expt.n_pulses + n_step, n_step) 
-        
+        n_pts = np.arange(n_start, cfg.expt.n_pulses + n_step, n_step)
+
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if cfg.expt.get('active_reset', False):
+            params = MM_base.get_active_reset_params(cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+
         data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amp":[], "phase":[]}
         for pt in tqdm(n_pts):
             cfg.expt.n_pulses = pt
             prog = ErrorAmplificationProgram(soccfg=self.soccfg, cfg=cfg)
-            xpts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug)
-            avgi = avgi[adc_ch[0]][0]
-            avgq = avgq[adc_ch[0]][0]
+            xpts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug, readouts_per_experiment=read_num)
+            avgi = avgi[adc_ch[0]][-1]  # Get last readout (actual measurement after active_reset)
+            avgq = avgq[adc_ch[0]][-1]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
             phase = np.angle(avgi+1j*avgq) # Calculating the phase        
 

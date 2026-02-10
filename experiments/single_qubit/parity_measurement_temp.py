@@ -162,9 +162,9 @@ class ParityTempProgram(MMRAveragerProgram):
         # initializations as necessary
         self.reset_and_sync()
 
-        if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset, 
-                              coupler_reset=False)
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
         
         #prepulse : 
         # self.wait_all(self.us2cycles(0.1))

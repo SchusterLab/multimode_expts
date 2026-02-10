@@ -112,8 +112,9 @@ class RamseyProgram(MMRAveragerProgram):
             else: 
                 self.custom_pulse(cfg, cfg.expt.pre_active_reset_sweep_pulse, prefix = 'pre_ar_')
 
-        if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         #prepulse : 
         self.sync_all(self.us2cycles(0.1))
@@ -221,7 +222,11 @@ class RamseyExperiment(Experiment):
 
         self.format_config_before_experiment( num_qubits_sample)
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        # Calculate read_num to account for active_reset measurements
+        read_num = 1
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         ramsey = RamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
 

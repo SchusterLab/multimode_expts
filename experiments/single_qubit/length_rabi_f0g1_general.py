@@ -45,7 +45,8 @@ class LengthRabiF0g1GeneralProgram(MMAveragerProgram):
 
         # Active Reset
         if cfg.expt.active_reset:
-            self.active_reset(man_reset = True, storage_reset = True)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         #  prepulse
         if cfg.expt.prepulse:
@@ -140,8 +141,11 @@ class LengthRabiGeneralF0g1Experiment(Experiment):
 
         data = {"xpts": [], "idata": [], "qdata": [], "avgi": [], "avgq": []}
 
+        # Calculate read_num to account for active_reset measurements
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         if self.cfg.expt.check_man_reset[0]: read_num = 1
 

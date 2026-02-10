@@ -267,7 +267,8 @@ class HistogramPrepulseDualRailProgram(MMRBAveragerProgram):
 
         # Active Reset
         if cfg.expt.active_reset:
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         # Prepulse 
         if cfg.expt.prepulse:

@@ -201,9 +201,10 @@ class SidebandT1GeneralProgram(MMAveragerProgram):
         cfg = AttrDict(self.cfg)
         qTest = self.qubits[0]
 
-        # actiev reset 
+        # actiev reset
         if self.cfg.expt.active_reset:
-            self.active_reset(man_reset=self.cfg.expt.man_reset, storage_reset=self.cfg.expt.storage_reset)
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
 
         #  prepulse
         if cfg.expt.prepulse:
@@ -277,8 +278,12 @@ class SidebandT1GeneralExperiment(Experiment):
             self.cfg.expt["step"] * np.arange(self.cfg.expt["expts"])
 
         data = {"xpts": [], "avgi": [], "avgq": [], "amps": [], "phases": []}
+
+        # Calculate read_num to account for active_reset measurements
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         for length in tqdm(lengths, disable=not progress):
             self.cfg.expt.length_placeholder = float(length)
@@ -288,8 +293,8 @@ class SidebandT1GeneralExperiment(Experiment):
             avgi, avgq = lengthrabi.acquire(
                 self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug,
                   readouts_per_experiment=read_num)
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            avgi = avgi[0][-1]  # Get last readout (actual measurement after active_reset)
+            avgq = avgq[0][-1]
             amp = np.abs(avgi+1j*avgq)  # Calculating the magnitude
             phase = np.angle(avgi+1j*avgq)  # Calculating the phase
             idata, qdata = lengthrabi.collect_shots()

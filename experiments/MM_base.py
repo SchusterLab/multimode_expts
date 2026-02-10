@@ -957,9 +957,36 @@ class MM_base:
             
 
     @staticmethod
+    def get_active_reset_params(cfg):
+        '''
+        Get active_reset parameters from config with sensible defaults.
+        Per-experiment overrides via cfg.expt take precedence.
+
+        Default values:
+        - ef_reset=True, man_reset=True, storage_reset=True
+        - coupler_reset=False, pre_selection_reset=False, use_qubit_man_reset=False, pre_selection_parity=False
+        - man_idx=1, parity_fast=False
+        '''
+        defaults = {
+            'ef_reset': True,
+            'man_reset': True,
+            'storage_reset': True,
+            'coupler_reset': False,
+            'pre_selection_reset': False,
+            'use_qubit_man_reset': False,
+            'pre_selection_parity': False,
+            'man_idx': 1,
+            'parity_fast': False,
+        }
+
+        # Allow per-experiment override via cfg.expt
+        return {key: cfg.expt.get(key, default) for key, default in defaults.items()}
+
+    @staticmethod
     def active_reset_read_num(man_reset=False, storage_reset=False, coupler_reset=False,
                                ef_reset=True, pre_selection_reset=True, prefix='base',
-                               use_qubit_man_reset=False):
+                               use_qubit_man_reset=False, pre_selection_parity=False,
+                               man_idx=1, parity_fast=False):
         '''
         Count the number of measure() calls that active_reset() will make with given parameters.
         Accepts the same signature as active_reset() so the same kwargs can be passed to both.
@@ -971,16 +998,21 @@ class MM_base:
             read_num += 1
         if pre_selection_reset:
             read_num += 1
+        # pre_selection_parity doesn't add extra measurements, just plays parity before pre_selection measurement
         return read_num
 
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
-                      ef_reset = True, pre_selection_reset = True, prefix = 'base', use_qubit_man_reset = False):
+                      ef_reset = True, pre_selection_reset = True, prefix = 'base', use_qubit_man_reset = False,
+                      pre_selection_parity = False, man_idx = 1, parity_fast = False):
         '''
         Performs active reset on g,e,f as well as man/storage modes
         Includes post selection measurement
-        use_qubit_man_reset: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found 
+        use_qubit_man_reset: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found
+        pre_selection_parity: if True, play parity pulse before pre_selection measurement
+        man_idx: manipulate mode index for parity pulse (default 1)
+        parity_fast: if True, use fast parity pulse (default False)
         '''
-        wait_fin = 1.
+        wait_fin = 2.0
         wait_after_readout = 0.10
         qTest = 0
         cfg=AttrDict(self.cfg)
@@ -990,6 +1022,9 @@ class MM_base:
         print('ef_reset:', ef_reset)
         print('pre_selection_reset:', pre_selection_reset)
         print('use_qubit_man_reset:', use_qubit_man_reset)
+        print('pre_selection_parity:', pre_selection_parity)
+        print('man_idx:', man_idx)
+        print('parity_fast:', parity_fast)
 
         # Prepare Active Reset
         ## ALL ACTIVE RESET REQUIREMENTS
@@ -1043,8 +1078,7 @@ class MM_base:
         
         # Reset ef level
         # ======================================================
-        if  ef_reset:
-
+        if ef_reset:
 
             self.set_pulse_registers(ch=self.qubit_chs[qTest],
                                                 freq=self.f_ef_reg[qTest],
@@ -1075,13 +1109,15 @@ class MM_base:
                                     waveform='pi_qubit_ge')
             self.pulse(ch=self.qubit_chs[qTest])
             self.label(prefix + "LABEL_2") 
-            self.wait_all(self.us2cycles(0.05))
+            # self.wait_all(self.us2cycles(0.05))
             self.sync_all(self.us2cycles(wait_fin))
         # Reset man if using qubit for reset
         # ======================================================
 
         if use_qubit_man_reset:
             if man_reset:
+                # self.sync_all(self.us2cycles(wait_fin*10))
+                # print('carefull long wait before the manipulate reset')
                 pulse_seq = [
                     ['multiphoton', 'f0-g1', 'pi', 0],
                     ['qubit', 'ef', 'pi', 0],
@@ -1109,7 +1145,7 @@ class MM_base:
                                         waveform='pi_qubit_ge')
                 self.pulse(ch=self.qubit_chs[qTest])
                 self.label(prefix + "LABEL_3")  # location to be jumped to
-                self.sync_all(self.us2cycles(wait_fin))
+                self.sync_all(self.us2cycles(wait_fin))#for some reason needs to wait a bit more for the following pulse to work 2.0us
 
 
         # # Dump storage population to manipulate, then to lossy mode
@@ -1130,14 +1166,16 @@ class MM_base:
         # # post selection
         # # ======================================================
         if pre_selection_reset:
-            # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
+            # Play parity pulse before pre-selection measurement if requested
+            if pre_selection_parity:
+                parity_str = self.get_parity_str(man_idx, return_pulse=True, second_phase=180, fast=parity_fast)
+                self.custom_pulse(cfg, parity_str, prefix=prefix + 'pre_select_parity_')
+
             self.measure(pulse_ch=self.res_chs[qTest],
                         adcs=[self.adc_chs[qTest]],
                         adc_trig_offset=cfg.device.readout.trig_offset[qTest],
                         t='auto', wait=True,
-                        #   syncdelay=self.us2cycles(2.0)
-                        )  # self.us2cycles(1))
-            # self.sync_all(self.us2cycles(self.cfg.device.active_reset.relax_delay[0]))
+                        ) 
             self.sync_all(self.us2cycles(wait_fin))
 
 
