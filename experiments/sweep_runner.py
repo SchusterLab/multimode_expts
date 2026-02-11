@@ -247,6 +247,7 @@ class SweepRunner:
         priority: int = 0,
         poll_interval: float = 2.0,
         timeout: Optional[float] = None,
+        batch: bool = False,
         **kwargs
     ):
         """
@@ -264,7 +265,8 @@ class SweepRunner:
             priority: Job priority (higher = runs sooner, default 0)
             poll_interval: Seconds between status checks while waiting
             timeout: Maximum seconds to wait per job (None = wait forever)
-            incremental_save: If True, save mother expt after each point
+            batch: If True, submit all sweep jobs at once then wait for results.
+                   If False (default), submit and wait for each job sequentially.
             **kwargs: Passed to preprocessor
 
         Returns:
@@ -328,67 +330,115 @@ class SweepRunner:
         # Store job results for reference
         self.job_results = []
 
-        # Run sweep - one job per point
-        for idx, sweep_val in enumerate(sweep_vals):
-            print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
+        # Helper to convert numpy types for JSON serialization
+        def convert_numpy(obj):
+            if isinstance(obj, dict):
+                return {k: convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(item) for item in obj]
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, (np.integer, np.floating)):
+                return obj.item()
+            return obj
 
-            # Create config for this sweep point
-            expt_config = deepcopy(base_expt_cfg)
-            expt_config[self.sweep_param] = sweep_val
+        # Serialize station config once (same for all sweep points)
+        station_config_json = self._serialize_station_config()
 
-            # Convert to dict for JSON serialization, handling numpy types
-            def convert_numpy(obj):
-                if isinstance(obj, dict):
-                    return {k: convert_numpy(v) for k, v in obj.items()}
-                elif isinstance(obj, list):
-                    return [convert_numpy(item) for item in obj]
-                elif isinstance(obj, np.ndarray):
-                    return obj.tolist()
-                elif isinstance(obj, (np.integer, np.floating)):
-                    return obj.item()
-                return obj
+        if batch:
+            # --- Batch mode: submit all jobs first, then wait for results ---
+            job_ids = []
+            print(f'  Submitting {len(sweep_vals)} jobs...')
+            for idx, sweep_val in enumerate(sweep_vals):
+                expt_config = deepcopy(base_expt_cfg)
+                expt_config[self.sweep_param] = sweep_val
+                expt_config_dict = convert_numpy(dict(expt_config))
 
-            expt_config_dict = convert_numpy(dict(expt_config))
+                job_id = self.job_client.submit_job(
+                    experiment_class=experiment_class,
+                    experiment_module=experiment_module,
+                    expt_config=expt_config_dict,
+                    station_config=station_config_json,
+                    user=self.station.user,
+                    priority=priority,
+                    program_class=program_class,
+                    program_module=program_module,
+                )
+                job_ids.append(job_id)
 
-            # Serialize station config to pass with job
-            station_config_json = self._serialize_station_config()
+            print(f'  All {len(job_ids)} jobs submitted. Waiting for results...')
 
-            # Submit job
-            job_id = self.job_client.submit_job(
-                experiment_class=experiment_class,
-                experiment_module=experiment_module,
-                expt_config=expt_config_dict,
-                station_config=station_config_json,
-                user=self.station.user,
-                priority=priority,
-                program_class=program_class,
-                program_module=program_module,
-            )
+            # Wait for each job in order and accumulate results
+            for idx, (sweep_val, job_id) in enumerate(zip(sweep_vals, job_ids)):
+                print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
 
-            # Wait for completion
-            result = self.job_client.wait_for_completion(
-                job_id,
-                poll_interval=poll_interval,
-                timeout=timeout,
-                verbose=False,
-            )
-            self.job_results.append(result)
+                result = self.job_client.wait_for_completion(
+                    job_id,
+                    poll_interval=poll_interval,
+                    timeout=timeout,
+                    verbose=False,
+                )
+                self.job_results.append(result)
 
-            # Check for failure
-            if not result.is_successful():
-                print(f'FAILED: {result.error_message}')
-                raise RuntimeError(
-                    f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                if not result.is_successful():
+                    print(f'FAILED: {result.error_message}')
+                    # Cancel remaining pending jobs
+                    for remaining_id in job_ids[idx+1:]:
+                        try:
+                            self.job_client.cancel_job(remaining_id)
+                        except Exception:
+                            pass
+                    raise RuntimeError(
+                        f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                    )
+
+                expt = result.load_expt()
+                mother_expt.data[sweep_key].append(sweep_val)
+                for data_key, data_val in expt.data.items():
+                    if data_key not in mother_expt.data:
+                        mother_expt.data[data_key] = []
+                    mother_expt.data[data_key].append(data_val)
+
+        else:
+            # --- Sequential mode: submit one job, wait, then submit next ---
+            for idx, sweep_val in enumerate(sweep_vals):
+                print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
+
+                expt_config = deepcopy(base_expt_cfg)
+                expt_config[self.sweep_param] = sweep_val
+                expt_config_dict = convert_numpy(dict(expt_config))
+
+                job_id = self.job_client.submit_job(
+                    experiment_class=experiment_class,
+                    experiment_module=experiment_module,
+                    expt_config=expt_config_dict,
+                    station_config=station_config_json,
+                    user=self.station.user,
+                    priority=priority,
+                    program_class=program_class,
+                    program_module=program_module,
                 )
 
-            # Load expt and accumulate data
-            expt = result.load_expt()
+                result = self.job_client.wait_for_completion(
+                    job_id,
+                    poll_interval=poll_interval,
+                    timeout=timeout,
+                    verbose=False,
+                )
+                self.job_results.append(result)
 
-            mother_expt.data[sweep_key].append(sweep_val)
-            for data_key, data_val in expt.data.items():
-                if data_key not in mother_expt.data:
-                    mother_expt.data[data_key] = []
-                mother_expt.data[data_key].append(data_val)
+                if not result.is_successful():
+                    print(f'FAILED: {result.error_message}')
+                    raise RuntimeError(
+                        f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                    )
+
+                expt = result.load_expt()
+                mother_expt.data[sweep_key].append(sweep_val)
+                for data_key, data_val in expt.data.items():
+                    if data_key not in mother_expt.data:
+                        mother_expt.data[data_key] = []
+                    mother_expt.data[data_key].append(data_val)
 
         # Store all job IDs from this sweep for reference
         self.last_job_ids = [r.job_id for r in self.job_results]

@@ -1,4 +1,10 @@
+import sys
+import time
+
+from IPython.display import clear_output
 from job_server import JobClient
+
+limit = int(sys.argv[1]) if len(sys.argv) > 1 else 10
 
 client = JobClient()
 
@@ -14,13 +20,10 @@ client.print_queue()
 
 # Monitor recent job history
 
-import time
-from IPython.display import clear_output
-
 prev_output = ''
 
 while True:
-    history = client.get_history(limit=10)
+    history = client.get_history(limit=limit)
 
     output = ''
 
