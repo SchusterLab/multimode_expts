@@ -6,7 +6,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import MMRAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram
 
 from fitting.fit_utils import guess_sinusoidal_params
 from fitting.fit_display_classes import RamseyFitting
