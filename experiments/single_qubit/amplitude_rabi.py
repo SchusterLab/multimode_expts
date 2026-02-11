@@ -142,8 +142,10 @@ class AmplitudeRabiProgram(MMRAveragerProgram):
     def update(self):
         if self.cfg.expt.checkZZ: qA, qTest = self.qubits
         else: qTest = self.qubits[0]
-
         step = self.cfg.expt.step
+        if self.cfg.expt.pulse_type == "flat_top":
+            step = step//2
+
         if self.qubit_ch_types[qTest] == 'int4': step = step << 16
         self.mathi(self.q_rps[qTest], self.r_gain3, self.r_gain3, '+', step) # update test gain
 
