@@ -756,10 +756,8 @@ class MM_base:
         qTest = 0
         cfg=AttrDict(self.cfg)
 
-        assert man_idx==1, "only supports resetting man1 now"
-
-        M1D1_freq = self.dataset.get_freq('M1-D1')
-        M1D1_gain = self.dataset.get_gain('M1-D1')
+        MiDj_freq = self.dataset.get_freq(f'M{man_idx}-D{dump_mode_idx}')
+        MiDj_gain = self.dataset.get_gain(f'M{man_idx}-D{dump_mode_idx}')
         N = 2 if chi_dressed else 0
         chi_ge = cfg.device.manipulate.chi_ge[qTest]
         chi_ef = cfg.device.manipulate.chi_ef[qTest]
@@ -774,15 +772,15 @@ class MM_base:
 
         chis = [chi_ge, chi_ge+chi_ef] if chi_dressed else [0]
         ch = self.flux_high_ch[qTest]
-        for n in range(0, N+1): # works when M1D1 freq goes down (chi<0, bare freq+chi*n)
+        for n in range(0, N+1): # works when MiDj freq goes down (chi<0, bare freq+chi*n)
             for chi in chis:
-                freq_chi_shifted = M1D1_freq + (n * chi)
+                freq_chi_shifted = MiDj_freq + (n * chi)
                 self.set_pulse_registers(ch=ch,
                                         freq=self.freq2reg(freq_chi_shifted,gen_ch=ch),
                                         style="flat_top",
                                         phase=self.deg2reg(0),
                                         length=self.us2cycles(10, gen_ch=ch),
-                                        gain=M1D1_gain,
+                                        gain=MiDj_gain,
                                         waveform="ramp_high" )
                 self.pulse(ch=ch)
                 self.sync_all(self.us2cycles(0.025))
