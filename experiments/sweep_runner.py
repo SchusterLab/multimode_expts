@@ -369,35 +369,50 @@ class SweepRunner:
             print(f'  All {len(job_ids)} jobs submitted. Waiting for results...')
 
             # Wait for each job in order and accumulate results
-            for idx, (sweep_val, job_id) in enumerate(zip(sweep_vals, job_ids)):
-                print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
+            remaining_job_ids = list(job_ids)
+            try:
+                for idx, (sweep_val, job_id) in enumerate(zip(sweep_vals, job_ids)):
+                    print(f'  [{idx+1}/{len(sweep_vals)}] {self.sweep_param}={sweep_val:.4f}', end=' ')
 
-                result = self.job_client.wait_for_completion(
-                    job_id,
-                    poll_interval=poll_interval,
-                    timeout=timeout,
-                    verbose=False,
-                )
-                self.job_results.append(result)
-
-                if not result.is_successful():
-                    print(f'FAILED: {result.error_message}')
-                    # Cancel remaining pending jobs
-                    for remaining_id in job_ids[idx+1:]:
-                        try:
-                            self.job_client.cancel_job(remaining_id)
-                        except Exception:
-                            pass
-                    raise RuntimeError(
-                        f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                    result = self.job_client.wait_for_completion(
+                        job_id,
+                        poll_interval=poll_interval,
+                        timeout=timeout,
+                        verbose=False,
                     )
+                    remaining_job_ids.pop(0)
+                    self.job_results.append(result)
 
-                expt = result.load_expt()
-                mother_expt.data[sweep_key].append(sweep_val)
-                for data_key, data_val in expt.data.items():
-                    if data_key not in mother_expt.data:
-                        mother_expt.data[data_key] = []
-                    mother_expt.data[data_key].append(data_val)
+                    if not result.is_successful():
+                        print(f'FAILED: {result.error_message}')
+                        # Cancel remaining pending jobs
+                        for remaining_id in remaining_job_ids:
+                            try:
+                                self.job_client.cancel_job(remaining_id)
+                            except Exception:
+                                pass
+                        raise RuntimeError(
+                            f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
+                        )
+
+                    expt = result.load_expt()
+                    mother_expt.data[sweep_key].append(sweep_val)
+                    for data_key, data_val in expt.data.items():
+                        if data_key not in mother_expt.data:
+                            mother_expt.data[data_key] = []
+                        mother_expt.data[data_key].append(data_val)
+
+            except KeyboardInterrupt:
+                # Cancel all remaining pending jobs in the batch
+                cancelled = 0
+                for remaining_id in remaining_job_ids:
+                    try:
+                        self.job_client.cancel_job(remaining_id)
+                        cancelled += 1
+                    except Exception:
+                        pass  # Job may already be running/completed
+                print(f'\n[INTERRUPT] Cancelled {cancelled} pending jobs from batch')
+                raise
 
         else:
             # --- Sequential mode: submit one job, wait, then submit next ---
