@@ -176,9 +176,6 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
 
     def analyze(self, data=None, **kwargs):
-        pass
-
-    def analyze_wigner(self, data=None, **kwargs):
         if data is None:
             data = self.data
 
@@ -195,6 +192,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         self.outer_params, self.inner_params = outer_params, inner_params
 
         mode_state_num = kwargs.get('mode_state_num', 10)
+        debug = kwargs.get('debug', False)
 
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
@@ -226,7 +224,8 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
         for i_outer, outer_param_val in enumerate(self.outer_params):
             for i_inner, inner_param_val in enumerate(self.inner_params):
-                print(outer_param_val, inner_param_val)
+                if debug:
+                    print(outer_param_val, inner_param_val)
                 if self.cfg.expt.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
                     data_minus = {}
                     data_plus = {}
@@ -235,14 +234,15 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     data_minus['qdata'] = data['qdata'][i_outer, i_inner, :, 0, idx_start::idx_step]
                     data_plus['idata'] = data['idata'][i_outer, i_inner, :, 1, idx_start::idx_step]
                     data_plus['qdata'] = data['qdata'][i_outer, i_inner, :, 1, idx_start::idx_step]
-                    print("shape", data_plus['idata'].shape)
+                    if debug:
+                        print("shape", data_plus['idata'].shape)
 
                     if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
                         assert False, "post_select_pre_pulse with pulse_correction not implemented yet"
-                    
-                    
+
+
                     wigner_analysis_minus = WignerAnalysis(data=data_minus,
-                                                           config=self.cfg, 
+                                                           config=self.cfg,
                                                             mode_state_num=mode_state_num,
                                                             alphas=data["alpha"])
 
@@ -250,27 +250,24 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                                                           config=self.cfg,
                                                           mode_state_num=mode_state_num,
                                                           alphas=data["alpha"])
-            
+
                     pe_plus = wigner_analysis_plus.bin_ss_data()
                     pe_minus = wigner_analysis_minus.bin_ss_data()
                     parity_plus = (1 - pe_plus) - pe_plus
                     parity_minus = (1 - pe_minus) - pe_minus
                     parity = (parity_minus - parity_plus) / 2
 
-                    # print('pe_plus', pe_plus)
-                    # print('parity', parity)
-
-                    # apply scale 
+                    # apply scale
                     scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
-                    # print('scale parity:', scale_parity )
-            
+
                     wigner_outputs["pe_plus"][i_outer, i_inner] = pe_plus
                     wigner_outputs["pe_minus"][i_outer, i_inner] = pe_minus
                     wigner_outputs["parity_plus"][i_outer, i_inner] = parity_plus
                     wigner_outputs["parity_minus"][i_outer, i_inner] = parity_minus
                     wigner_outputs["parity"][i_outer, i_inner] = parity / (scale_parity)
-                    print('max parity:', np.max(wigner_outputs["parity"]))
-                    print('max parity before scaling:', np.max(parity))
+                    if debug:
+                        print('max parity:', np.max(wigner_outputs["parity"]))
+                        print('max parity before scaling:', np.max(parity))
 
 
                 else:
@@ -281,7 +278,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     data_wigner["qdata"] = data["qdata"][i_outer, i_inner, :, idx_start::idx_step]
 
                     wigner_analysis = WignerAnalysis(data=data_wigner,
-                                                      config=self.cfg, 
+                                                      config=self.cfg,
                                                       mode_state_num=mode_state_num,
                                                       alphas=data["alpha"])
                     pe = wigner_analysis.bin_ss_data()
@@ -289,33 +286,20 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     wigner_outputs["parity"][i_outer, i_inner] = (1 - pe) - pe
 
         data['wigner_outputs'] = wigner_outputs
-        return data
 
-
-    def display(self, data=None, mode_state_num=None, initial_state=None, rotate=None, state_label='', debug_components=False, station=None, save_fig=False, **kwargs):
-        if data is None:
-            data = self.data
-
-        # Defaults
+        # --- State reconstruction ---
+        initial_state = kwargs.get('initial_state', None)
+        rotate = kwargs.get('rotate', bool(getattr(self.cfg.expt, 'display_rotate', False)))
         if mode_state_num is None:
             mode_state_num = int(getattr(self.cfg.expt, 'display_mode_state_num', 5))
-        if rotate is None:
-            rotate = bool(getattr(self.cfg.expt, 'display_rotate', False))
-        
-        wigner_outputs = data['wigner_outputs']
+        station = kwargs.get('station', None)
 
-        # Basic validation
-        if 'parity' not in wigner_outputs or 'alpha' not in data:
-            raise ValueError('Expected keys "parity" and "alpha" in data for Wigner display.')
         parity = wigner_outputs['parity']
         alphas = data['alpha']
-        if len(parity[0][0]) != len(alphas):
-            raise ValueError(f'Length mismatch: parity ({len(parity[0][0])}) vs alpha ({len(alphas)}).')
 
-        # Default initial state if not provided
         if initial_state is None:
             initial_state = qt.fock(mode_state_num, 0).unit()
-        
+
         wigner_outputs.update(dict(
             rho=[],
             rho_rotated=[],
@@ -327,8 +311,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             target_state=initial_state,
         ))
 
-        # Build analysis and plot
-        wigner_analysis = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num, alphas=alphas, station=station)
+        wigner_analysis_recon = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num, alphas=alphas, station=station)
         for i_outer, outer_param_val in enumerate(self.outer_params):
             wigner_outputs['rho'].append([])
             wigner_outputs['rho_rotated'].append([])
@@ -338,11 +321,10 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             wigner_outputs['alpha_wigner'].append([])
             wigner_outputs['theta_opt'].append([])
             for i_inner, inner_param_val in enumerate(self.inner_params):
-                
-                print(f'Analyzing for {self.outer_param}={outer_param_val}, {self.inner_param}={inner_param_val}')
+                if debug:
+                    print(f'Reconstructing for {self.outer_param}={outer_param_val}, {self.inner_param}={inner_param_val}')
 
-                results = wigner_analysis.wigner_analysis_results(parity[i_outer, i_inner], initial_state=initial_state, rotate=rotate)
-                fig = wigner_analysis.plot_wigner_reconstruction_results(results, initial_state=initial_state, state_label=state_label)
+                results = wigner_analysis_recon.wigner_analysis_results(parity[i_outer, i_inner], initial_state=initial_state, rotate=rotate)
 
                 wigner_outputs['rho'][-1].append(results['rho'])
                 wigner_outputs['rho_rotated'][-1].append(results['rho_rotated'])
@@ -351,6 +333,55 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                 wigner_outputs['W_ideal'][-1].append(results['W_ideal'])
                 wigner_outputs['alpha_wigner'][-1].append(results['x_vec'])
                 wigner_outputs['theta_opt'][-1].append(results['theta_max'])
+
+        self.data = data
+        return data
+
+    def analyze_wigner(self, data=None, **kwargs):
+        """Backwards-compatible alias for analyze()."""
+        return self.analyze(data, **kwargs)
+
+
+    def display(self, data=None, state_label='', station=None, save_fig=False, **kwargs):
+        if any(k in kwargs for k in ('mode_state_num', 'initial_state', 'rotate')):
+            raise TypeError(
+                "mode_state_num, initial_state, and rotate are now arguments to analyze(), not display(). "
+                "Usage:\n"
+                "  expt.analyze(mode_state_num=N, initial_state=state, rotate=True)\n"
+                "  expt.display()"
+            )
+
+        if data is None:
+            data = self.data
+
+        wigner_outputs = data['wigner_outputs']
+
+        if 'rho' not in wigner_outputs:
+            raise ValueError(
+                "No reconstruction data found. Run analyze() before display().\n"
+                "Usage:\n"
+                "  expt.analyze(mode_state_num=N, initial_state=state, rotate=True)\n"
+                "  expt.display()"
+            )
+
+        initial_state = wigner_outputs.get('target_state', None)
+
+        wigner_analysis = WignerAnalysis(data=data, config=self.cfg, mode_state_num=None, alphas=data['alpha'], station=station)
+        for i_outer, outer_param_val in enumerate(self.outer_params):
+            for i_inner, inner_param_val in enumerate(self.inner_params):
+                print(f'Displaying for {self.outer_param}={outer_param_val}, {self.inner_param}={inner_param_val}')
+
+                results = dict(
+                    rho=wigner_outputs['rho'][i_outer][i_inner],
+                    rho_rotated=wigner_outputs['rho_rotated'][i_outer][i_inner],
+                    fidelity=wigner_outputs['fidelity'][i_outer][i_inner],
+                    W_fit=wigner_outputs['W_fit'][i_outer][i_inner],
+                    W_ideal=wigner_outputs['W_ideal'][i_outer][i_inner],
+                    x_vec=wigner_outputs['alpha_wigner'][i_outer][i_inner],
+                    theta_max=wigner_outputs['theta_opt'][i_outer][i_inner],
+                )
+
+                fig = wigner_analysis.plot_wigner_reconstruction_results(results, initial_state=initial_state, state_label=state_label)
 
 
     def save_data(self, data=None):
