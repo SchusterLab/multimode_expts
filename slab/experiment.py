@@ -206,10 +206,10 @@ class Experiment:
     @classmethod
     def from_h5file(cls, fname):
         """
-        Alternative constructor method building returning a object
+        Alternative constructor building and returning an object
         that only has data and config read from the hdf5 file.
         Mostly used for loading measured data and running the
-        analysis/display methods of its corresponding experiment.
+        analysis/display methods of its corresponding Experiment.
         Note that this bypasses the normal Experiment.__init__
         """
         assert Path(fname).exists(), f"Path {fname} does not exist"
@@ -218,7 +218,10 @@ class Experiment:
 
         with SlabFile(fname, 'r') as f:
             self.load_data(f)
-            self.cfg = AttrDict(yaml.safe_load(self.data['attrs']['config']))
+            try:
+                self.cfg = AttrDict(yaml.safe_load(self.data['attrs']['config']))
+            except KeyError as e:
+                print(f'{e} key not found, self.cfg not available')
 
         return self
 
