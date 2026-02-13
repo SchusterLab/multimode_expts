@@ -1221,38 +1221,38 @@ class Spectroscopy(GeneralFitting):
 
 
     def analyze(self, fit=True):
-        xdata = self.data['xpts'][1:-1]
+        xdata = self.data['xpts']
         if fit:
-            self.data['fit_amps'], self.data['fit_err_amps'] = fitter.fitlor(xdata, self.signs[0] * self.data['amps'][1:-1])
-            self.data['fit_avgi'], self.data['fit_err_avgi'] = fitter.fitlor(xdata, self.signs[1] * self.data['avgi'][1:-1])
-            self.data['fit_avgq'], self.data['fit_err_avgq'] = fitter.fitlor(xdata, self.signs[2] * self.data['avgq'][1:-1])
+            self.data['fit_amps'], self.data['fit_err_amps'] = fitter.fitlor(xdata, self.signs[0] * self.data['amps'])
+            self.data['fit_avgi'], self.data['fit_err_avgi'] = fitter.fitlor(xdata, self.signs[1] * self.data['avgi'])
+            self.data['fit_avgq'], self.data['fit_err_avgq'] = fitter.fitlor(xdata, self.signs[2] * self.data['avgq'])
 
     def display(self, title='Qubit Spectroscopy', vlines=None, fit=True):
-        xpts = self.data['xpts'][1:-1]
+        xpts = self.data['xpts']
 
         plt.figure(figsize=(9, 11))
         plt.subplot(311, title=title, ylabel="Amplitude [ADC units]")
-        plt.plot(xpts, self.data["amps"][1:-1], 'o-')
+        plt.plot(xpts, self.data["amps"], 'o-')
         if fit and 'fit_amps' in self.data:
-            plt.plot(xpts, self.signs[0] * fitter.lorfunc(self.data["xpts"][1:-1], *self.data["fit_amps"]))
+            plt.plot(xpts, self.signs[0] * fitter.lorfunc(self.data["xpts"], *self.data["fit_amps"]))
             print(f'Found peak in amps at [MHz] {self.data["fit_amps"][2]}, HWHM {self.data["fit_amps"][3]}')
         if vlines:
             for vline in vlines:
                 plt.axvline(vline, c='k', ls='--')
 
         plt.subplot(312, ylabel="I [ADC units]")
-        plt.plot(xpts, self.data["avgi"][1:-1], 'o-')
+        plt.plot(xpts, self.data["avgi"], 'o-')
         if fit and 'fit_avgi' in self.data:
-            plt.plot(xpts, self.signs[1] * fitter.lorfunc(self.data["xpts"][1:-1], *self.data["fit_avgi"]))
+            plt.plot(xpts, self.signs[1] * fitter.lorfunc(self.data["xpts"], *self.data["fit_avgi"]))
             print(f'Found peak in I at [MHz] {self.data["fit_avgi"][2]}, HWHM {self.data["fit_avgi"][3]}')
         if vlines:
             for vline in vlines:
                 plt.axvline(vline, c='k', ls='--')
 
         plt.subplot(313, xlabel="Pulse Frequency (MHz)", ylabel="Q [ADC units]")
-        plt.plot(xpts, self.data["avgq"][1:-1], 'o-')
+        plt.plot(xpts, self.data["avgq"], 'o-')
         if fit and 'fit_avgq' in self.data:
-            plt.plot(xpts, self.signs[2] * fitter.lorfunc(self.data["xpts"][1:-1], *self.data["fit_avgq"]))
+            plt.plot(xpts, self.signs[2] * fitter.lorfunc(self.data["xpts"], *self.data["fit_avgq"]))
             print(f'Found peak in Q at [MHz] {self.data["fit_avgq"][2]}, HWHM {self.data["fit_avgq"][3]}')
         if vlines:
             for vline in vlines:
@@ -1576,6 +1576,8 @@ class ChevronFitting(GeneralFitting):
         self.frequencies = frequencies
         self.time = time
         self.response_matrix = response_matrix
+        self.lmfit_results = []
+        self.invalid_lines = []
         self.results = {}
 
     @staticmethod
@@ -1653,8 +1655,6 @@ class ChevronFitting(GeneralFitting):
                 print("seems every line in this dataset failed to fit?")
                 return 0
 
-        self.lmfit_results = []
-        self.invalid_lines = []
         for idx, response in enumerate(self.response_matrix):
             result = ChevronFitting.fit_slice(self.time, response)
             self.lmfit_results.append(result)
