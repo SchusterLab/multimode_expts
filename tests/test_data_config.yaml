@@ -1,0 +1,20 @@
+# lmfit migration regression tests — data file configuration
+#
+# Fill in paths to real HDF5 experiment files for each fitting class.
+# Tests will SKIP any entry that is null or points to a missing file.
+#
+# Interface 1 (priority): fit_display_classes models
+# These load raw data from HDF5 and pass it to the fitting class directly.
+fit_display_classes:
+  RamseyFitting: null          # needs: xpts, avgi, avgq + config with ramsey_freq, qubits, checkEF
+  AmplitudeRabiFitting: null   # needs: xpts, avgi, avgq, amps + config with sigma_test
+  Spectroscopy: null           # needs: xpts, avgi, avgq, amps
+  LengthRabiFitting: null      # needs: xpts, avgi, avgq
+
+# Interface 2: Experiment.from_h5file() -> analyze()
+# These load via the experiment class constructor and run the full pipeline.
+experiments:
+  T1Experiment: null           # exercises fitexp
+  T2RamseyExperiment: null     # exercises fitdecaysin
+  AmplitudeRabiExperiment: null
+  PulseProbeSpectroscopyExperiment: null  # exercises fitlor

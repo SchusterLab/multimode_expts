@@ -1,45 +1,60 @@
-# from audioop import avg
-import cmath
+"""
+Fitting functions for qubit experiments.
+
+All fit* functions now use lmfit internally and return FitResult objects.
+These are backward-compatible: ``p, pCov = fitdecaysin(...)`` still works.
+
+For the new named-parameter API, see fitting.models and docs/lmfit_migration.md.
+"""
 
 import numpy as np
-import scipy as sp
+
+from fitting.models import (
+    PARAM_ORDER,
+    DecaySineDualRailModel,
+    DecaySineModel,
+    ExponentialModel,
+    FitResult,
+    GaussianPeakModel,
+    HangerS21SlopedModel,
+    LorentzianModel,
+    RBModel,
+    SineModel,
+    TwoFreqDecaySineModel,
+    _apply_user_guesses,
+    _ensure_within_bounds,
+)
 
 # ====================================================== #
+# Utility: pick best fit across measurement channels
+# ====================================================== #
 
-"""
-Compare the fit between the check_measures (amps, avgi, and avgq by default) in data, using the compare_param_i-th parameter to do the comparison. Pick the best method of measurement out of the check_measures, and return the fit, fit_err, and any other get_best_data_params corresponding to that measurement.
-
-If fitfunc is specified, uses R^2 to determine best fit.
-"""
 def get_best_fit(data, fitfunc=None, prefixes=['fit'], check_measures=('amps', 'avgi', 'avgq'), get_best_data_params=(), override=None):
+    """Compare fits between check_measures channels and pick the best one.
+
+    If fitfunc is specified, uses R^2 to determine best fit.
+    """
     fit_errs = [data[f'{prefix}_err_{check}'] for check in check_measures for prefix in prefixes]
 
     # fix the error matrix so "0" error is adjusted to inf
     for fit_err_check in fit_errs:
         for i, fit_err in enumerate(np.diag(fit_err_check)):
-            if fit_err == 0: fit_err_check[i][i] = np.inf
+            if fit_err == 0:
+                fit_err_check[i][i] = np.inf
 
     fits = [data[f'{prefix}_{check}'] for check in check_measures for prefix in prefixes]
 
     if override is not None and override in check_measures:
         i_best = np.argwhere(np.array(check_measures) == override)[0][0]
-        print(i_best)
     else:
         if fitfunc is not None:
-            ydata = [data[check] for check in check_measures]  # need to figure out how to make this support multiple qubits readout
+            ydata = [data[check] for check in check_measures]
             xdata = data['xpts']
-
-            # residual sum of squares
             ss_res_checks = np.array([np.sum((fitfunc(xdata, *fit_check) - ydata_check)**2) for fit_check, ydata_check in zip(fits, ydata)])
-            # total sum of squares
             ss_tot_checks = np.array([np.sum((np.mean(ydata_check) - ydata_check)**2) for ydata_check in ydata])
-            # R^2 value
-            r2 = 1- ss_res_checks / ss_tot_checks
+            r2 = 1 - ss_res_checks / ss_tot_checks
             i_best = np.argmin(r2)
-            
         else:
-            # i_best = np.argmin([np.sqrt(np.abs(fit_err[compare_param_i][compare_param_i])) for fit, fit_err in zip(fits, fit_errs)])
-            # i_best = np.argmin([np.sqrt(np.abs(fit_err[compare_param_i][compare_param_i] / fit[compare_param_i])) for fit, fit_err in zip(fits, fit_errs)])
             i_best = np.argmin([np.average(np.sqrt(np.abs(np.diag(fit_err) / fit))) for fit, fit_err in zip(fits, fit_errs)])
 
     best_data = [fits[i_best], fit_errs[i_best]]
@@ -49,47 +64,36 @@ def get_best_fit(data, fitfunc=None, prefixes=['fit'], check_measures=('amps', '
         best_data.append(data[f'{param}_{best_meas}'])
     return best_data
 
+
+# ====================================================== #
+# Bare model functions (kept for backward-compatible evaluation)
+#   Usage: fitter.decaysin(xdata, *p)
 # ====================================================== #
 
 def expfunc(x, *p):
     y0, yscale, x0, decay = p
-    return y0 + yscale*np.exp(-(x-x0)/decay)
+    return y0 + yscale * np.exp(-(x - x0) / decay)
 
-def fitexp(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*4
-    if fitparams[0] is None: fitparams[0] = ydata[-1]
-    if fitparams[1] is None: fitparams[1] = ydata[0]-ydata[-1]
-    if fitparams[2] is None: fitparams[2] = xdata[0]
-    if fitparams[3] is None: fitparams[3] = (xdata[-1]-xdata[0])/5
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(expfunc, xdata, ydata, p0=fitparams, maxfev=200000)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
+def expfunc1(x, *p):
+    y0, yscale, decay = p
+    return y0 + yscale * np.exp(-x / decay)
 
-def expfunc_y0fixed(x, y0, *p):
-    yscale, x0, decay = p
-    return y0 + yscale*np.exp(-(x-x0)/decay)
+def sinfunc(x, *p):
+    yscale, freq, phase_deg, y0 = p
+    return yscale * np.sin(2 * np.pi * freq * x + phase_deg * np.pi / 180) + y0
 
-def fitexp_y0fixed(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*4
-    #if fitparams[0] is None: fitparams[0] = ydata[-1]
-    if fitparams[1] is None: fitparams[0] = ydata[0]-ydata[-1]
-    if fitparams[2] is None: fitparams[1] = xdata[0]
-    if fitparams[3] is None: fitparams[2] = (xdata[-1]-xdata[0])/5
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(expfunc, xdata, ydata, p0=fitparams, maxfev=200000)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
+def decaysin(x, *p):
+    yscale, freq, phase_deg, decay, y0, x0 = p
+    return yscale * np.sin(2 * np.pi * freq * x + phase_deg * np.pi / 180) * np.exp(-(x - x0) / decay) + y0
+
+def decaysin1(x, *p):
+    yscale, freq, phase_deg, decay, y0 = p
+    return yscale * np.sin(2 * np.pi * freq * x + phase_deg * np.pi / 180) * np.exp(-x / decay) + y0
+
+def decaysin_dualrail(x, *p):
+    yscale, freq, phase_deg, decay, decay_phi, y0, x0_kappa, x0_phi = p
+    return (yscale * (1 + np.sin(2 * np.pi * freq * x + phase_deg * np.pi / 180)
+            * np.exp(-(x - x0_phi) / decay_phi)) * np.exp(-(x - x0_kappa) / decay) + y0)
 
 def twofreq_decaysin(x, *p):
     yscale0, freq0, phase_deg0, decay0, yscale1, freq1, phase_deg1, y0 = p
@@ -98,382 +102,170 @@ def twofreq_decaysin(x, *p):
         + yscale1 * np.sin(2 * np.pi * freq1 * x + phase_deg1 * np.pi / 180)
     )
 
-
-def fittwofreq_decaysin(xdata, ydata, fitparams=None):
-    if fitparams is None:
-        fitparams = [None] * 10
-    else:
-        fitparams = np.copy(fitparams)
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1] - xdata[0])
-    fft_phases = np.angle(fourier)
-    sorted_fourier = np.sort(fourier)
-    max_ind = np.argwhere(fourier == sorted_fourier[-1])[0][0]
-    if max_ind == 0:
-        max_ind = np.argwhere(fourier == sorted_fourier[-2])[0][0]
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None:
-        fitparams[0] = max(ydata) - min(ydata)  # yscale0
-    if fitparams[1] is None:
-        fitparams[1] = max_freq  # freq0
-    # if fitparams[2] is None: fitparams[2]=0
-    if fitparams[2] is None:
-        fitparams[2] = max_phase * 180 / np.pi  # phase_deg0
-    if fitparams[3] is None:
-        fitparams[3] = max(xdata) - min(xdata)  # exp decay
-    if fitparams[4] is None:
-        fitparams[4] = 0.1  # yscale1
-    if fitparams[5] is None:
-        fitparams[5] = 0.5  # MHz
-    if fitparams[6] is None:
-        fitparams[6] = 0  # phase_deg1
-    if fitparams[7] is None:
-        fitparams[7] = np.mean(ydata)  # y0
-    bounds = (
-        [
-            0.75 * fitparams[0],
-            0.1 / (max(xdata) - min(xdata)),
-            -360,
-            0.1 * (max(xdata) - min(xdata)),
-            0.001,
-            0.01,
-            -360,
-            np.min(ydata),
-        ],
-        [1.25 * fitparams[0], 30 / (max(xdata) - min(xdata)), 360, np.inf, 0.5, 10, 360, np.max(ydata)],
-    )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(
-                f"Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}"
-            )
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(twofreq_decaysin, xdata, ydata, p0=fitparams, bounds=bounds)
-        # return pOpt, pCov
-    except RuntimeError:
-        print("Warning: fit failed!")
-        # return 0, 0
-    return pOpt, pCov
-
-def expfunc1(x, *p):
-    y0, yscale, decay = p
-    return y0 + yscale*np.exp(x/decay/-1)
-
-def fitexp1(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*3
-    if fitparams[0] is None: fitparams[0] = ydata[-1]
-    if fitparams[1] is None: fitparams[1] = ydata[0]-ydata[-1]
-    if fitparams[2] is None: fitparams[2] = (xdata[-1]-xdata[0])/5
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(expfunc1, xdata, ydata, p0=fitparams)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-# ====================================================== #
-
-def lorfunc(x, *p):
-    y0, yscale, x0, xscale = p
-    return y0 + yscale/(1+(x-x0)**2/xscale**2)
-
-def fitlor(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*4
-    if fitparams[0] is None: fitparams[0] = (ydata[0] + ydata[-1])/2
-    if fitparams[1] is None: fitparams[1] = max(ydata) - min(ydata)
-    if fitparams[2] is None: fitparams[2] = xdata[np.argmax(abs(ydata - fitparams[0]))]
-    if fitparams[3] is None: fitparams[3] = (max(xdata)-min(xdata))/10
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(lorfunc, xdata, ydata, p0=fitparams)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-# ====================================================== #
-
-def sinfunc(x, *p):
-    yscale, freq, phase_deg, y0 = p
-    return yscale*np.sin(2*np.pi*freq*x + phase_deg*np.pi/180) + y0
-
-def fitsin(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*4
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
-    fft_phases = np.angle(fourier)
-    max_ind = np.argmax(np.abs(fourier[1:])) + 1
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
-    if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
-    if fitparams[3] is None: fitparams[3]=np.mean(ydata)
-    bounds = (
-        [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, np.min(ydata)],
-        [2*fitparams[0], 10/(max(xdata)-min(xdata)), 360, np.max(ydata)]
-        )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(sinfunc, xdata, ydata, p0=fitparams, bounds=bounds)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-# ====================================================== #
-
-def decaysin(x, *p):
-    yscale, freq, phase_deg, decay, y0, x0 = p
-    return yscale*np.sin(2*np.pi*freq*x + phase_deg*np.pi/180) * np.exp(-(x-x0)/decay) + y0
-
-def decaysin1(x, *p):
-    yscale, freq, phase_deg, decay, y0 = p
-    return yscale*np.sin(2*np.pi*freq*x + phase_deg*np.pi/180) * np.exp(-x/decay) + y0
-
-def decaysin_dualrail(x, *p):
-    yscale, freq, phase_deg, decay, decay_phi, y0, x0_kappa, x0_phi = p
-    return yscale* (1 + np.sin(2*np.pi*freq*x + phase_deg*np.pi/180) * np.exp(-(x-x0_phi)/decay_phi)) * np.exp(-(x-x0_kappa)/decay)  + y0
-
-def fitdecaysin_dualrail(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*8
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
-    fft_phases = np.angle(fourier)
-    sorted_fourier = np.sort(fourier)
-    max_ind = np.argwhere(fourier == sorted_fourier[-1])[0][0]
-    if max_ind == 0:
-        max_ind = np.argwhere(fourier == sorted_fourier[-2])[0][0]
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
-    # if fitparams[2] is None: fitparams[2]=0
-    if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
-    if fitparams[3] is None: fitparams[3]=max(xdata) - min(xdata)
-    if fitparams[4] is None: fitparams[4]=max(xdata) - min(xdata)
-    if fitparams[5] is None: fitparams[5]=np.mean(ydata)
-    if fitparams[6] is None: fitparams[6]=xdata[0]
-    if fitparams[7] is None: fitparams[7]=xdata[0]
-    bounds = (
-        [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, 0.3*(max(xdata)-min(xdata)), 0.3*(max(xdata)-min(xdata)), np.min(ydata), xdata[0]-(xdata[-1]-xdata[0]), xdata[0]-(xdata[-1]-xdata[0])],
-        [1.5*fitparams[0], 15/(max(xdata)-min(xdata)), 360, np.inf, np.inf, np.max(ydata), xdata[-1]+(xdata[-1]-xdata[0]), xdata[-1]+(xdata[-1]-xdata[0])]
-        )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(decaysin_dualrail, xdata, ydata, p0=fitparams, bounds=bounds)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-def fitdecaysin1(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*6
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
-    fft_phases = np.angle(fourier)
-    sorted_fourier = np.sort(fourier)
-    max_ind = np.argwhere(fourier == sorted_fourier[-1])[0][0]
-    if max_ind == 0:
-        max_ind = np.argwhere(fourier == sorted_fourier[-2])[0][0]
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
-    # if fitparams[2] is None: fitparams[2]=0
-    if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
-    if fitparams[3] is None: fitparams[3]=max(xdata) - min(xdata)
-    if fitparams[4] is None: fitparams[4]=np.mean(ydata)
-    if fitparams[5] is None: fitparams[5]=xdata[0]
-
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(decaysin, xdata, ydata, p0=fitparams)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-def fitdecaysin(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*6
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
-    fft_phases = np.angle(fourier)
-    sorted_fourier = np.sort(fourier)
-    max_ind = np.argwhere(fourier == sorted_fourier[-1])[0][0]
-    if max_ind == 0:
-        max_ind = np.argwhere(fourier == sorted_fourier[-2])[0][0]
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
-    # if fitparams[2] is None: fitparams[2]=0
-    if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
-    if fitparams[3] is None: fitparams[3]=max(xdata) - min(xdata)
-    if fitparams[4] is None: fitparams[4]=np.mean(ydata)
-    if fitparams[5] is None: fitparams[5]=xdata[0]
-    bounds = (
-        [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, 0.3*(max(xdata)-min(xdata)), np.min(ydata), xdata[0]-(xdata[-1]-xdata[0])],
-        [1.5*fitparams[0], 50/(max(xdata)-min(xdata)), 360, np.inf, np.max(ydata), xdata[-1]+(xdata[-1]-xdata[0])]
-        )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(decaysin, xdata, ydata, p0=fitparams, bounds=bounds)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-
-
-
 def gaussianfunc(x, *p):
     y0, yscale, x0, sigma = p
     return y0 + yscale * np.exp(-((x - x0) / sigma) ** 2)
 
-def fitgaussian(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*4
-    if fitparams[0] is None: fitparams[0]=np.min(ydata)
-    if fitparams[1] is None: fitparams[1]=np.max(ydata)-np.min(ydata)
-    if fitparams[2] is None: fitparams[2]=xdata[np.argmax(ydata)]
-    if fitparams[3] is None: fitparams[3]= (max(xdata)-min(xdata))/10
+def lorfunc(x, *p):
+    y0, yscale, x0, xscale = p
+    return y0 + yscale / (1 + (x - x0) ** 2 / xscale ** 2)
 
-    # bounds = (
-    #     [np.min(ydata), 0, np.min(xdata), 0],
-    #     [np.max(ydata), np.inf, np.max(xdata), np.inf]
-    # )
-    # for i, param in enumerate(fitparams):
-    #     if not (bounds[0][i] < param < bounds[1][i]):
-    #         fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-    #         print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        print('fitparams', fitparams)
-        pOpt, pCov = sp.optimize.curve_fit(gaussianfunc, xdata, ydata, p0=fitparams)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
-
-# ====================================================== #
-    
 def hangerfunc(x, *p):
     f0, Qi, Qe, phi, scale, a0 = p
-    Q0 = 1 / (1/Qi + np.real(1/Qe))
-    return scale * (1 - Q0/Qe * np.exp(1j*phi)/(1 + 2j*Q0*(x-f0)/f0))
+    Q0 = 1 / (1 / Qi + np.real(1 / Qe))
+    return scale * (1 - Q0 / Qe * np.exp(1j * phi) / (1 + 2j * Q0 * (x - f0) / f0))
 
 def hangerS21func(x, *p):
     f0, Qi, Qe, phi, scale, a0 = p
-    Q0 = 1 / (1/Qi + np.real(1/Qe))
-    return a0 + np.abs(hangerfunc(x, *p)) - scale*(1-Q0/Qe)
+    Q0 = 1 / (1 / Qi + np.real(1 / Qe))
+    return a0 + np.abs(hangerfunc(x, *p)) - scale * (1 - Q0 / Qe)
 
 def hangerS21func_sloped(x, *p):
     f0, Qi, Qe, phi, scale, a0, slope = p
-    return hangerS21func(x, f0, Qi, Qe, phi, scale, a0) + slope*(x-f0)
+    return hangerS21func(x, f0, Qi, Qe, phi, scale, a0) + slope * (x - f0)
 
 def hangerphasefunc(x, *p):
     return np.angle(hangerfunc(x, *p))
 
-def fithanger(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*7
-    if fitparams[0] is None: fitparams[0]=np.average(xdata)
-    if fitparams[1] is None: fitparams[1]=5000
-    if fitparams[2] is None: fitparams[2]=1000
-    if fitparams[3] is None: fitparams[3]=0
-    if fitparams[4] is None: fitparams[4]=max(ydata)-min(ydata)
-    if fitparams[5] is None: fitparams[5]=np.average(ydata)
-    if fitparams[6] is None: fitparams[6]=(ydata[-1] - ydata[0]) / (xdata[-1] - xdata[0])
+def rb_func(depth, p, a, b):
+    return a * p ** depth + b
 
-    print(fitparams)
-
-    # bounds = (
-    #     [np.min(xdata), -1e9, -1e9, -2*np.pi, (max(np.abs(ydata))-min(np.abs(ydata)))/10, -np.max(np.abs(ydata))],
-    #     [np.max(xdata), 1e9, 1e9, 2*np.pi, (max(np.abs(ydata))-min(np.abs(ydata)))*10, np.max(np.abs(ydata))]
-    #     )
-    bounds = (
-        [np.min(xdata), -np.inf, -np.inf, -np.inf, 0, min(ydata), -np.inf],
-        [np.max(xdata), np.inf, np.inf, np.inf, np.inf, max(ydata), np.inf],
-        )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(hangerS21func_sloped, xdata, ydata, p0=fitparams) #, bounds=bounds)
-        print(pOpt)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
 
 # ====================================================== #
+# RB utilities (unchanged)
+# ====================================================== #
 
-def rb_func(depth, p, a, b):
-    return a*p**depth + b
+def rb_error(p, d):
+    """Average error rate over all gates. d = dim of system = 2^(number of qubits)."""
+    return 1 - (p + (1 - p) / d)
 
-# Gives the average error rate over all gates in sequence
-def rb_error(p, d): # d = dim of system = 2^(number of qubits)
-    return 1 - (p + (1-p)/d)
-
-# Run both regular RB and interleaved RB to calculate this
 def rb_gate_fidelity(p_rb, p_irb, d):
-    return 1 - (d-1)*(1-p_irb/p_rb) / d
+    """Gate fidelity from regular RB and interleaved RB."""
+    return 1 - (d - 1) * (1 - p_irb / p_rb) / d
+
+
+# ====================================================== #
+# Fit functions (lmfit-backed, returning FitResult)
+# ====================================================== #
+
+def _do_fit(model, data, params, independent_var='x', xdata=None, **fit_kwargs):
+    """Run an lmfit fit with graceful failure handling."""
+    _ensure_within_bounds(params)
+    kwargs = {independent_var: xdata}
+    kwargs.update(fit_kwargs)
+    try:
+        result = model.fit(data, params, **kwargs)
+    except Exception:
+        print('Warning: fit failed!')
+        # Return a result with the initial guess values
+        result = model.fit(data, params, **kwargs, fit_kws={'maxfev': 1})
+    return result
+
+
+def fitexp(xdata, ydata, fitparams=None):
+    model = ExponentialModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['exp'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata, max_nfev=200000)
+    return FitResult(result, PARAM_ORDER['exp'])
+
+
+def fitexp1(xdata, ydata, fitparams=None):
+    """Fit exponential with x0 fixed at 0 (3-parameter version)."""
+    model = ExponentialModel()
+    params = model.guess(ydata, x=xdata)
+    params['x0'].set(value=0, vary=False)
+    if fitparams is not None:
+        # fitexp1 legacy: [y0, yscale, decay] — 3 params, no x0
+        # Map to ExponentialModel's 4 params: y0=0, yscale=1, x0=skip, decay=2
+        expanded = [
+            fitparams[0] if len(fitparams) > 0 else None,
+            fitparams[1] if len(fitparams) > 1 else None,
+            None,  # x0 is fixed
+            fitparams[2] if len(fitparams) > 2 else None,
+        ]
+        params = _apply_user_guesses(params, PARAM_ORDER['exp'], expanded)
+        params['x0'].set(value=0, vary=False)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    # Return with exp1 param order for backward compat
+    return FitResult(result, PARAM_ORDER['exp1'])
+
+
+def fitsin(xdata, ydata, fitparams=None):
+    model = SineModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['sin'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['sin'])
+
+
+def fitdecaysin(xdata, ydata, fitparams=None):
+    model = DecaySineModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['decaysin'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['decaysin'])
+
+
+def fitdecaysin1(xdata, ydata, fitparams=None):
+    """Fit decaying sine with x0 fixed at 0."""
+    model = DecaySineModel()
+    params = model.guess(ydata, x=xdata)
+    params['x0'].set(value=0, vary=False)
+    params = _apply_user_guesses(params, PARAM_ORDER['decaysin'], fitparams)
+    params['x0'].set(value=0, vary=False)  # re-fix after user guesses
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['decaysin'])
+
+
+def fitdecaysin_dualrail(xdata, ydata, fitparams=None):
+    model = DecaySineDualRailModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['decaysin_dr'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['decaysin_dr'])
+
+
+def fittwofreq_decaysin(xdata, ydata, fitparams=None):
+    model = TwoFreqDecaySineModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['twofreq'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['twofreq'])
+
+
+def fitlor(xdata, ydata, fitparams=None):
+    model = LorentzianModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['lor'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['lor'])
+
+
+def fitgaussian(xdata, ydata, fitparams=None):
+    model = GaussianPeakModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['gaussian'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['gaussian'])
+
+
+def fithanger(xdata, ydata, fitparams=None):
+    model = HangerS21SlopedModel()
+    params = model.guess(ydata, x=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['hanger'], fitparams)
+    result = _do_fit(model, ydata, params, xdata=xdata)
+    return FitResult(result, PARAM_ORDER['hanger'])
+
 
 def fitrb(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*3
-    if fitparams[0] is None: fitparams[0]=0.9
-    if fitparams[1] is None: fitparams[1]=np.max(ydata) - np.min(ydata)
-    if fitparams[2] is None: fitparams[2]=np.min(ydata)
-    bounds = (
-        [-1, -1,-1],
-        [0.99999, 1, 1]
-        )
-    for i, param in enumerate(fitparams):
-        if not (bounds[0][i] < param < bounds[1][i]):
-            fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    # try:
-    pOpt, pCov = sp.optimize.curve_fit(rb_func, xdata, ydata, p0=fitparams, method='trf', max_nfev=30000) #, bounds=bounds)
-        # return pOpt, pCov
-    # except RuntimeError: 
-    #     print('Warning: fit failed!')
-    #     # return 0, 0
-    return pOpt, pCov
+    model = RBModel()
+    params = model.guess(ydata, depth=xdata)
+    params = _apply_user_guesses(params, PARAM_ORDER['rb'], fitparams)
+    _ensure_within_bounds(params)
+    try:
+        result = model.fit(ydata, params, depth=xdata, method='least_squares', max_nfev=30000)
+    except Exception:
+        print('Warning: fit failed!')
+        result = model.fit(ydata, params, depth=xdata, fit_kws={'maxfev': 1})
+    return FitResult(result, PARAM_ORDER['rb'])
