@@ -746,7 +746,7 @@ class MM_base:
 
 
 
-    def man_reset(self, man_idx, chi_dressed=True):
+    def man_reset(self, man_idx=1, dump_mode_idx=2, chi_dressed=True):
         '''
         Reset manipulate mode by swapping it to lossy mode
 
@@ -758,11 +758,12 @@ class MM_base:
 
         MiDj_freq = self.dataset.get_freq(f'M{man_idx}-D{dump_mode_idx}')
         MiDj_gain = self.dataset.get_gain(f'M{man_idx}-D{dump_mode_idx}')
+        MiDj_length = self.dataset.get_pi(f'M{man_idx}-D{dump_mode_idx}')
         N = 2 if chi_dressed else 0
         chi_ge = cfg.device.manipulate.chi_ge[qTest]
         chi_ef = cfg.device.manipulate.chi_ef[qTest]
 
-        self.sideband_sigma_high = self.us2cycles(0.005, gen_ch=self.flux_high_ch[qTest])
+        self.sideband_sigma_high = self.us2cycles(self.cfg.device.storage.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
         self.add_gauss(ch=self.flux_high_ch[qTest],
                     name="ramp_high",# + str(man_idx),
                     sigma=self.sideband_sigma_high,
@@ -775,15 +776,19 @@ class MM_base:
         for n in range(0, N+1): # works when MiDj freq goes down (chi<0, bare freq+chi*n)
             for chi in chis:
                 freq_chi_shifted = MiDj_freq + (n * chi)
-                self.set_pulse_registers(ch=ch,
-                                        freq=self.freq2reg(freq_chi_shifted,gen_ch=ch),
-                                        style="flat_top",
-                                        phase=self.deg2reg(0),
-                                        length=self.us2cycles(10, gen_ch=ch),
-                                        gain=MiDj_gain,
-                                        waveform="ramp_high" )
+                print(ch, freq_chi_shifted, MiDj_length, MiDj_gain)
+                self.set_pulse_registers(
+                    ch=ch,
+                    freq=self.freq2reg(freq_chi_shifted, gen_ch=ch),
+                    style="flat_top",
+                    phase=self.deg2reg(0),
+                    length=self.us2cycles(MiDj_length, gen_ch=ch),
+                    gain=MiDj_gain,
+                    waveform="ramp_high"
+                    )
                 self.pulse(ch=ch)
-                self.sync_all(self.us2cycles(0.025))
+                self.sync_all()
+                # self.sync_all(self.us2cycles(0.025))
         # self.wait_all(self.us2cycles(0.25))
         self.sync_all(self.us2cycles(2))
 
@@ -839,6 +844,10 @@ class MM_base:
         if state_str[0] == '1':
             state_prep_sequence += self.prep_man_photon(1)
             state_prep_sequence.append(['storage', stor_name_1, 'pi', 0])
+        
+        print(
+            'prepulse seq:', state_prep_sequence
+        )
 
         return state_prep_sequence if state_prep_sequence else None
 
@@ -895,6 +904,72 @@ class MM_base:
         self.label(register_label)  # location to be jumped to
         self.sync_all(final_sync_delay)
 
+    def slow_ge_pulse_active_reset(self, name='slow_ge_reset', register_label='base', qubit_idx=0, final_sync=False):
+
+        '''
+        Perform a slow pi pulse so that the qubit flips only if manipulate mode is in |0>
+        Then measure and reset if needed. 
+        '''
+
+        print("doing parity with a slow pi pulse")
+
+        # import the config and set qubit number, by default 0 since we have only one, but should be done better
+        cfg=AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[qubit_idx]
+        self.r_read_q = 9
+        self.r_thresh_q = 11 
+        wait_after_readout = 0.10 # in us
+        wait_after_reset = 2.0
+
+        self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
+        self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
+        # check if final sync is needed (only if last readout)
+        if final_sync:
+            final_sync_delay = self.us2cycles(self.cfg.device.readout.relax_delay[qTest])
+        else: 
+            print("needs a pretty long sync here due to the measurement")
+            final_sync_delay = self.us2cycles(wait_after_reset)
+
+        # load the slow pulse parameters:
+        gain = cfg.device.qubit.pulses.very_slow_pi_ge.gain[qTest]
+        length = cfg.device.qubit.pulses.very_slow_pi_ge.length[qTest]
+        sigma = cfg.device.qubit.pulses.very_slow_pi_ge.sigma[qTest]
+        print(f"slow ge pulse params: gain {gain}, length {length} us, sigma {sigma} us")
+
+        pulse_data = [
+            [cfg.device.qubit.f_ge[qTest]],   # frequency
+            [gain],                             # gain
+            [length],                           # length (us)
+            [0],                                # phase
+            [self.qubit_chs[qTest]],            # drive channel
+            ["flat_top"],                       # shape
+            [sigma],                            # ramp sigma
+        ]
+        self.custom_pulse(cfg, pulse_data, prefix='slow_ge_reset')
+
+        self.measure(
+            pulse_ch=self.res_chs[qTest],
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+            t='auto',
+            wait=True)
+        # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
+        self.wait_all(self.us2cycles(wait_after_readout))        
+        # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
+        self.read(0, 0, "lower", self.r_read_q) # stores I in (0,0) into r_read_q
+        # # first if 
+        self.condj(0, self.r_read_q, "<", self.r_thresh_q,
+                   register_label)  # compare the value recorded above to the value stored in threshold.
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=self.f_ge_reg[qTest],
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=self.pi_ge_gain,
+                                 waveform='pi_qubit_ge')
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.label(register_label)  # location to be jumped to
+        self.sync_all(final_sync_delay)
+            
 
     def measure_dual_rail(self, storage_idx, measure_parity=True, reset_before=True, reset_after=True, man_idx=1, final_sync=False):
         '''
@@ -921,38 +996,44 @@ class MM_base:
 
         # Measure storage 1
         m_s1 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_1), 'pi', 0], ]
-        # print("Playing swap pulse for storage ", storage_1)
+        print("Playing swap pulse for storage ", storage_1)
         creator = self.get_prepulse_creator(m_s1)
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_1) + 'ToMan')
 
         if measure_parity:
-            # print("Performing parity measurement for storage ", storage_1)
+            print("Performing parity measurement for storage ", storage_1)
             self.parity_active_reset(name='dual_rail_stor' + str(storage_1) + '_reset',
                                      register_label='dual_rail_stor' + str(storage_1) + '_label',
                                      man_idx=man_idx, 
                                      )
         else:
-            raise NotImplementedError("Non parity measurement not implemented yet")
+            # raise NotImplementedError("Non parity measurement not implemented yet")
+            self.slow_ge_pulse_active_reset(name='dual_rail_stor' + str(storage_1) + '_reset',
+                                     register_label='dual_rail_stor' + str(storage_1) + '_label',
+                                     )
         
         # # Swap back to storage 1
-        # print("Playing swap back pulse for storage ", storage_1)
         self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_1))
+        ("Playing swap back pulse for storage ", storage_1)
+        
 
         # Measure storage 2
         m_s2 = [['storage', 'M'+ str(man_idx) + '-' + 'S' + str(storage_2), 'pi', 0], ]
-        # print("Playing swap pulse for storage ", storage_2)
+        print("Playing swap pulse for storage ", storage_2)
         creator = self.get_prepulse_creator(m_s2)
         self.custom_pulse(self.cfg, creator.pulse, prefix='Storage' + str(storage_2) + 'ToMan')
         if measure_parity:
-            # print("Performing parity measurement for storage ", storage_2)
+            print("Performing parity measurement for storage ", storage_2)
             self.parity_active_reset(name='dual_rail_stor' + str(storage_2) + '_reset',
                                      register_label='dual_rail_stor' + str(storage_2) + '_label',
                                      man_idx=man_idx, 
                                      final_sync=final_sync)
         else:
-            raise NotImplementedError("Non parity measurement not implemented yet")
+            self.slow_ge_pulse_active_reset(name='dual_rail_stor' + str(storage_2) + '_reset',
+                                        register_label='dual_rail_stor' + str(storage_2) + '_label',
+                                        final_sync=final_sync)
         # Swap back to storage 2
-        # print("Playing swap back pulse for storage ", storage_2)
+        print("Playing swap back pulse for storage ", storage_2)
         self.custom_pulse(self.cfg, creator.pulse, prefix='ManToStorage' + str(storage_2))
 
         if reset_after:
@@ -1062,7 +1143,7 @@ class MM_base:
         if not use_qubit_man_reset:
             if man_reset:
                 # self.man_reset(0)
-                self.man_reset(1)
+                self.man_reset()
 
         # Reset ge level
         # ======================================================
@@ -1160,20 +1241,20 @@ class MM_base:
                 self.sync_all(self.us2cycles(wait_fin))#for some reason needs to wait a bit more for the following pulse to work 2.0us
 
 
-        # # Dump storage population to manipulate, then to lossy mode
-        # # ======================================================
-        # if storage_reset:
-        #     for ii in range(7):
-        #         man_idx = 0
-        #         stor_idx = ii
-        #         self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
-        #         # self.man_reset(0, chi_dressed = False)
-        #         self.man_reset(1, chi_dressed = False)
+        # Dump storage population to manipulate, then to lossy mode
+        # ======================================================
+        if storage_reset:
+            for ii in range(7):
+                man_idx = 0
+                stor_idx = ii
+                self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
+                # self.man_reset(0, chi_dressed = False)
+                self.man_reset(1, chi_dressed = False)
 
-        # if coupler_reset:
-        #     self.coup_stor_swap(man_idx=1) # M1
-        #     self.man_reset(0, chi_dressed = False)
-        #     self.man_reset(1, chi_dressed = False)
+        if coupler_reset:
+            self.coup_stor_swap(man_idx=1) # M1
+            self.man_reset(0, chi_dressed = False)
+            self.man_reset(1, chi_dressed = False)
 
         # # post selection
         # # ======================================================
@@ -1680,7 +1761,7 @@ class prepulse_creator2:
                         [0],
                         [self.cfg.device.manipulate.revival_time[man_idx] ], # parity delay experiment doesn't involve 10 ns syncs
                         [phase],
-                        [2],
+                        [self.cfg.hw.soc.dacs.qubit.ch],
                         ['const'],
                         [0.0]], dtype = object)
                 self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
@@ -1703,7 +1784,7 @@ class prepulse_creator2:
                 [ self.dataset.get_gain(cav_name)],
                 [length],
                 [phase],
-                [0], # f0g1 pulse
+                [self.cfg.hw.soc.dacs.sideband.ch],
                 ['flat_top'],
                 [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 

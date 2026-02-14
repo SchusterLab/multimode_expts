@@ -23,7 +23,8 @@ import numpy as np
 from qick import *
 
 from slab import Experiment, AttrDict
-from fitting.fitting import expfunc, fitexp
+from fitting.fitting import expfunc1
+from scipy.optimize import curve_fit
 from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import *
@@ -112,7 +113,7 @@ class DualRailSandboxProgram(MMAveragerProgram):
         # print("Performing final dual rail measurement")
         self.measure_dual_rail(
             storage_idx=(cfg.expt.storage_1, cfg.expt.storage_2),
-            measure_parity=True,
+            measure_parity=cfg.expt.get('measure_parity', True),
             reset_before=cfg.expt.get('reset_before_dual_rail', False),
             reset_after=cfg.expt.get('reset_after_dual_rail', False),
             man_idx=cfg.expt.manipulate, 
@@ -334,7 +335,7 @@ class DualRailSandboxExperiment(Experiment):
                         data[f'post_select_count_{key}'] = len(i0_reshaped)
 
                     # Bin final dual rail measurements
-                    pops, counts = self._bin_dual_rail_shots(i0_filtered, indices, threshold)
+                    pops, counts = self._bin_dual_rail_shots(i0_filtered, indices, threshold, self.cfg.expt.get('measure_parity', True))
                     data[f'pop_{key}'] = pops
                     data[f'counts_{key}'] = counts
 
@@ -371,9 +372,10 @@ class DualRailSandboxExperiment(Experiment):
 
         return indices
 
-    def _bin_dual_rail_shots(self, i0_filtered, indices, threshold):
+    def _bin_dual_rail_shots(self, i0_filtered, indices, threshold, measure_parity=True):
         """
         Bin dual rail shots into 00, 10, 01, 11 populations.
+        if measure_parity False we use a slow pi pulse centered on 0 so the mapping e/g to 0/1 is reversed
         """
         n_shots = len(i0_filtered)
         if n_shots == 0:
@@ -383,8 +385,13 @@ class DualRailSandboxExperiment(Experiment):
         stor2_shots = i0_filtered[:, indices['dr_stor2']]  
 
         # Threshold: > threshold = qubit in |e> = odd parity = 1 photon
-        stor1_state = (stor1_shots > threshold).astype(int)
-        stor2_state = (stor2_shots > threshold).astype(int)  
+        if measure_parity:
+            stor1_state = (stor1_shots > threshold).astype(int)
+            stor2_state = (stor2_shots > threshold).astype(int)  
+        else: 
+            stor1_state = (stor1_shots < threshold).astype(int)
+            stor2_state = (stor2_shots < threshold).astype(int)  
+
 
         counts = {'00': 0, '01': 0, '10': 0, '11': 0}
         for s1, s2 in zip(stor1_state, stor2_state):  
@@ -430,6 +437,7 @@ class DualRailSandboxExperiment(Experiment):
         threshold = data.get('threshold', 0)
         bar_labels = ['00', '10', '01', '11']
         total_reps = self.cfg.expt.reps
+        stor_pair = f'S{self.cfg.expt.storage_1}-S{self.cfg.expt.storage_2}'
 
         # Build list of all combinations
         combos = []
@@ -474,7 +482,7 @@ class DualRailSandboxExperiment(Experiment):
                 ax.set_xlabel('Measured State')
                 total_time = repeat * wait
                 total_time_ms = total_time / 1000  # convert us to ms
-                ax.set_title(f'|{prepared_state}> r={repeat} w={wait} (t={total_time_ms:.3g}ms)\n'
+                ax.set_title(f'|{prepared_state}> [{stor_pair}] r={repeat} w={wait} (t={total_time_ms:.3g}ms)\n'
                             f'post-sel: {post_count}/{total_reps}')
                 ax.set_ylim([0, 1])
                 if log_scale:
@@ -576,14 +584,34 @@ class DualRailSandboxExperiment(Experiment):
                     data_points.sort(key=lambda x: x[0])
                     if data_points:
                         times, pops = zip(*data_points)
+
+                        # if state is 10 / 01 we fit the probability to stay in 10 / 01 to get the leakage rate 
+                        if prepared_state == measured_state and prepared_state in ['10', '01']:
+                            # Exponential fit for population decay: y0 + yscale*exp(-x/decay)
+                            try:
+                                times_arr, pops_arr = np.array(times), np.array(pops)
+                                p0 = [0.5, pops_arr[0], (times_arr[-1] - times_arr[0]) / 5]
+                                print(f"Fitting {prepared_state} measured as {measured_state}: initial guess p0={p0}"   )
+                                bounds = ([0., 0.5, 0], [0.8, 1.1, np.inf])
+                                pOpt, pCov = curve_fit(expfunc1, times_arr, pops_arr, p0=p0, bounds=bounds, maxfev=200000)
+                                T = pOpt[2]  # decay parameter (lifetime in ms)
+                                T_err = np.sqrt(pCov[2, 2]) if pCov[2, 2] < np.inf else 0
+                                t_fit = np.linspace(np.min(times), np.max(times), 100)
+                                ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
+                                       color=self.STATE_COLORS[measured_state], linewidth=2,
+                                       label=f'{measured_state} fit: $T={T:.3g}\pm{T_err:.3g}$ ms')
+                            except Exception as e:
+                                print(f"Fit failed for {prepared_state} measured as {measured_state}: {e}")
+
                         ax.plot(times, pops, 'o-',
                                label=r'$|%s\rangle$' % measured_state,
                                color=self.STATE_COLORS[measured_state],
                                markersize=6)
+                    
 
                 ax.set_xlabel('Total idle time (ms)')
                 ax.set_ylabel('Population')
-                ax.set_title(r'Prepared: $|%s\rangle$' % prepared_state)
+                ax.set_title(r'Prepared: $|%s\rangle$ [%s]' % (prepared_state, stor_pair))
                 ax.legend()
                 ax.grid(True, alpha=0.3)
                 ax.set_ylim([0, 1.05])
@@ -652,15 +680,16 @@ class DualRailSandboxExperiment(Experiment):
                     ax.plot(times, p0_vals, 'o', label=r'$p_0$',
                            color=self.STATE_COLORS['01'], markersize=6)
 
-                    # Exponential fit for p0 (times in ms)
+                    # Exponential fit for p0: y0 + yscale*exp(-x/decay)
                     if len(times) >= 3 and np.max(times) > 0:
                         try:
-                            pOpt_p0, pCov_p0 = fitexp(times, p0_vals)
-                            T_p0 = pOpt_p0[3]  # decay parameter (lifetime in ms)
-                            T_p0_err = np.sqrt(pCov_p0[3, 3]) if pCov_p0[3, 3] < np.inf else 0
-                            # Plot fit curve
+                            p0 = [0.5, p0_vals[0] - 0.5, (times[-1] - times[0]) / 5]
+                            bounds = ([0, -2, 0], [1, 2, np.inf])
+                            pOpt_p0, pCov_p0 = curve_fit(expfunc1, times, p0_vals, p0=p0, bounds=bounds, maxfev=200000)
+                            T_p0 = pOpt_p0[2]  # decay parameter (lifetime in ms)
+                            T_p0_err = np.sqrt(pCov_p0[2, 2]) if pCov_p0[2, 2] < np.inf else 0
                             t_fit = np.linspace(np.min(times), np.max(times), 100)
-                            ax.plot(t_fit, expfunc(t_fit, *pOpt_p0), '--',
+                            ax.plot(t_fit, expfunc1(t_fit, *pOpt_p0), '--',
                                    color=self.STATE_COLORS['01'], linewidth=2)
                             fit_text.append(r'$T_{p_0}=%.3g \pm %.3g$ ms' % (T_p0, T_p0_err))
                         except Exception as e:
@@ -673,17 +702,16 @@ class DualRailSandboxExperiment(Experiment):
                     ax.plot(times, p1_vals, 's', label=r'$p_1$',
                            color=self.STATE_COLORS['10'], markersize=6)
 
-                    # Exponential fit for p1 (times in ms)
+                    # Exponential fit for p1: y0 + yscale*exp(-x/decay)
                     if len(times) >= 3 and np.max(times) > 0:
                         try:
-                            pOpt_p1, pCov_p1 = fitexp(times, p1_vals)
-                            print(f"p1 fit params for {prepared_state}: {pOpt_p1}")
-                            print(f"p1 fit cov for {prepared_state}: {pCov_p1}")
-                            T_p1 = pOpt_p1[3]  # decay parameter (lifetime in ms)
-                            T_p1_err = np.sqrt(pCov_p1[3, 3]) if pCov_p1[3, 3] < np.inf else 0
-                            # Plot fit curve
+                            p0 = [0.5, p1_vals[0] - 0.5, (times[-1] - times[0]) / 5]
+                            bounds = ([0, -2, 0], [1, 2, np.inf])
+                            pOpt_p1, pCov_p1 = curve_fit(expfunc1, times, p1_vals, p0=p0, bounds=bounds, maxfev=200000)
+                            T_p1 = pOpt_p1[2]  # decay parameter (lifetime in ms)
+                            T_p1_err = np.sqrt(pCov_p1[2, 2]) if pCov_p1[2, 2] < np.inf else 0
                             t_fit = np.linspace(np.min(times), np.max(times), 100)
-                            ax.plot(t_fit, expfunc(t_fit, *pOpt_p1), '--',
+                            ax.plot(t_fit, expfunc1(t_fit, *pOpt_p1), '--',
                                    color=self.STATE_COLORS['10'], linewidth=2)
                             fit_text.append(r'$T_{p_1}=%.3g \pm %.3g$ ms' % (T_p1, T_p1_err))
                         except Exception as e:
@@ -691,7 +719,7 @@ class DualRailSandboxExperiment(Experiment):
 
                 ax.set_xlabel('Total idle time (ms)')
                 ax.set_ylabel('Logical Population')
-                title = r'Prepared: $|%s\rangle$ (Logical Subspace)' % prepared_state
+                title = r'Prepared: $|%s\rangle$ [%s] (Logical Subspace)' % (prepared_state, stor_pair)
                 if fit_text:
                     title += '\n' + ', '.join(fit_text)
                 ax.set_title(title)
