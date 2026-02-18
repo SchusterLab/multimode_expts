@@ -45,6 +45,7 @@ fastapi = ">=0.115.0"
 pydantic = ">=2.0"
 uvicorn = ">=0.40.0,<0.41"
 pytest = ">=9.0.2,<10"
+nbdime = ">=4.0.4,<5"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
