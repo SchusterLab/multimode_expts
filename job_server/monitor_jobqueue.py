@@ -27,7 +27,9 @@ while True:
     for job in history:
         job_id = job['job_id']
         result = client.get_status(job_id)
-        output += f"{job_id} {job['user']}\t{job['status']:10s}  {job['experiment_class']}\t{result.data_file_path}\n"
+        created = result.created_at.strftime('%Y-%m-%d %H:%M:%S') if result.created_at else 'N/A'
+        completed = result.completed_at.strftime('%H:%M:%S') if result.completed_at else '...'
+        output += f"{job_id} {job['user']}\t{job['status']:10s}  {created} -> {completed}  {job['experiment_class']}\t{result.data_file_path}\n"
 
     if output != prev_output:
         clear_output(wait=True)
