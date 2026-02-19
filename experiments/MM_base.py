@@ -1272,10 +1272,9 @@ class MM_base:
         # ======================================================
         if storage_reset:
             # for ii in range(7):
-            storage_reset = np.arange(7) if storage_reset == True else storage_reset
+            storage_reset = np.arange(1, 8) if storage_reset == True else storage_reset
             print("resetting stor modes", storage_reset)
-            for ii in storage_reset:
-                stor_idx = ii + 1
+            for stor_idx in storage_reset:
                 self.man_stor_swap(man_idx=man_idx, stor_idx=stor_idx) #self.man_stor_swap(1, ii+1)
                 # self.man_reset(0, chi_dressed = False)
                 self.man_reset(man_idx=man_idx, chi_dressed=False)

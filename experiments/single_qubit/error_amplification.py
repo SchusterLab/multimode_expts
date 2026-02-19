@@ -8,7 +8,7 @@ from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import MMRAveragerProgram
+from experiments.MM_base import *
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 
 
@@ -83,193 +83,154 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             # define phase register to update it later for pi, -pi pulses
             self.r_phase= self.sreg(self.pulse_to_test[4], "phase")
 
-        self.sync_all(200)
+        # --- Precompute body parameters ---
 
+        # Pulse style mapping
+        if self.pulse_to_test[5] == 'gauss':
+            self.pulse_style = "arb"
+        elif self.pulse_to_test[5] == 'flat_top':
+            self.pulse_style = "flat_top"
+        else:
+            raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
 
-    def body(self):
+        # Precompute freq and length for set_pulse_registers
+        self._freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
+        if self.pulse_to_test[5] == "flat_top":
+            self._length = self.us2cycles(self.pulse_to_test[2], gen_ch=self.pulse_to_test[4])
 
-        cfg=AttrDict(self.cfg)
+        # n_pulses and pi_frac
+        self.n_pulses = cfg.expt.get('n_pulses', 1)
 
-        # initializations as necessary TBD 
-        self.reset_and_sync()
+        if cfg.expt.pulse_type[2] == 'pi':
+            self.pi_frac = 1
+        elif cfg.expt.pulse_type[2] == 'hpi':
+            self.pi_frac = 2
+        elif cfg.expt.pulse_type[2][2] == '/': # pi/pi_frac
+            self.pi_frac = int(cfg.expt.pulse_type[2][3:])
+        else:
+            assert False, "Invalid pulse type. Must be 'pi', 'hpi' or 'pi/pi_frac'."
 
-        if cfg.expt.pulse_type[0] in ['storage', 'floquet']:
-            # get the qubit start state for storage expt, this is to calibrate chi for a given swap amplitude (i.e. taking into account Stark shift)
-            qubit_start_storage = cfg.expt.get('qubit_state_start', 'g')
-            print("qubit_start_storage:", qubit_start_storage)
-
-        # set the prepulse sequence depending on the pulse to calibrate 
-        # TO DO: replace everything with the multiphoton def 
+        # Prepulse list
         if cfg.expt.pulse_type[0] == 'qubit':
-            if self.pulse_to_test[1] =='ef':
-                self.creator = self.get_prepulse_creator(
-                    [['qubit', 'ge', 'pi', 0]]
-                )
-                self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
+            if self.pulse_to_test[1] == 'ef':
+                self.pre_creator = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]])
+                self.pre_pulse_list = self.pre_creator.pulse.tolist()
+            else:
+                self.pre_pulse_list = None
 
-        # this will be deleted once we replace everything with the multiphoton def
         elif cfg.expt.pulse_type[0] == 'man':
-            self.creator = self.get_prepulse_creator(
-                    [['qubit', 'ge', 'pi', 0],
-                     ['qubit', 'ef', 'pi', 0]]
-                )
-            self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
+            self.pre_creator = self.get_prepulse_creator(
+                [['qubit', 'ge', 'pi', 0], ['qubit', 'ef', 'pi', 0]])
+            self.pre_pulse_list = self.pre_creator.pulse.tolist()
 
         elif cfg.expt.pulse_type[0] in ['storage', 'floquet']:
             man_idx = cfg.expt.pulse_type[1][1]
-
+            qubit_start_storage = cfg.expt.get('qubit_state_start', 'g')
             pulse_list = [['qubit', 'ge', 'pi', 0],
-                            ['qubit', 'ef', 'pi', 0], 
-                            ['man', f'M{man_idx}', 'pi', 0]]
-            
+                          ['qubit', 'ef', 'pi', 0],
+                          ['man', f'M{man_idx}', 'pi', 0]]
             if qubit_start_storage == 'e':
-                # add ['multiphoton', 'g1-e1', 'pi', 0] at the start
                 pulse_list = pulse_list + [['multiphoton', 'g1-e1', 'pi', 0]]
-            
-            self.creator = self.get_prepulse_creator(
-                pulse_list
-            )
-            self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
+            self.pre_creator = self.get_prepulse_creator(pulse_list)
+            self.pre_pulse_list = self.pre_creator.pulse.tolist()
 
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             photon_no = int(cfg.expt.pulse_type[1][1])
             qubit_state_start = cfg.expt.pulse_type[1][0]
             prep_pulses = self.prep_man_photon(photon_no)
-            if qubit_state_start == 'g':
-                prep_pulses += []
-            elif qubit_state_start == 'e':
-                prep_pulses += [['multiphoton', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
+            if qubit_state_start == 'e':
+                prep_pulses += [['multiphoton', f'g{photon_no}-e{photon_no}', 'pi', 0]]
             elif qubit_state_start == 'f':
-                prep_pulses += [['multiphoton', 'g' + str(photon_no) + '-e' + str(photon_no), 'pi', 0]]
-                prep_pulses += [['multiphoton', 'e' + str(photon_no) + '-f' + str(photon_no), 'pi', 0]]
-            else :
+                prep_pulses += [['multiphoton', f'g{photon_no}-e{photon_no}', 'pi', 0]]
+                prep_pulses += [['multiphoton', f'e{photon_no}-f{photon_no}', 'pi', 0]]
+            elif qubit_state_start != 'g':
                 raise ValueError("Invalid qubit state start. Must be 'g', 'e' or 'f'.")
-            # print("prep_pulses:", prep_pulses)
-            self.creator = self.get_prepulse_creator(prep_pulses)
-            self.custom_pulse(cfg, self.creator.pulse.tolist(), prefix='pre_')
+            self.pre_creator = self.get_prepulse_creator(prep_pulses)
+            self.pre_pulse_list = self.pre_creator.pulse.tolist()
 
         else:
             raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
 
-
-        # set the pulse register to test 
-        if self.pulse_to_test[5] == 'gauss':
-            pulse_style = "arb"
-        elif self.pulse_to_test[5] == 'flat_top':
-            pulse_style = "flat_top"
-        else:
-            raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
-
-        _freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
-        if self.pulse_to_test[5] == "gauss":
-            self.set_pulse_registers(
-                ch=self.pulse_to_test[4],
-                style = pulse_style,
-                freq=_freq,
-                phase = 0,
-                gain = int(self.pulse_to_test[1]),
-                waveform = "pulse_to_test",
-            )
-        elif self.pulse_to_test[5] == "flat_top":
-            _length = self.us2cycles(self.pulse_to_test[2], gen_ch=self.pulse_to_test[4])
-            self.set_pulse_registers(
-                ch=self.pulse_to_test[4],
-                style = pulse_style,
-                freq=_freq,
-                length = _length,
-                phase = 0,
-                gain = int(self.pulse_to_test[1]),
-                waveform = "pulse_to_test",
-            )
-        if cfg.expt.parameter_to_test == 'frequency':    
-            self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
-        elif cfg.expt.parameter_to_test == 'gain':
-            self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", 0) # the arb part
-            if self.pulse_to_test[5] == "flat_top":
-                self.mathi(self.channel_page, self.r_gain2, self.r_gain4, "+", 0) #  the const part is renamed to gain2
-        else:
-            raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
-
-
-        # set the number of pulse to be played and start playing
-        n_pulses = 1
-        if "n_pulses" in cfg.expt:
-            n_pulses = cfg.expt.n_pulses
-
-
-
-        if cfg.expt.pulse_type[2] == 'pi':
-            pi_frac = 1
-        elif cfg.expt.pulse_type[2] == 'hpi':
-            pi_frac = 2
-        elif cfg.expt.pulse_type[2][2] == '/': # pi/pi_frac
-            pi_frac = int(cfg.expt.pulse_type[2][3:])
-        else:
-            pi_frac = 0 # this should not happen
-            assert False, "Invalid pulse type. Must be 'pi', 'hpi' or 'pi/pi_frac'."
-
-
-        if cfg.expt.parameter_to_test == 'gain':
-            for i in range((n_pulses * 2) * pi_frac):
-                self.pulse(ch = self.pulse_to_test[4])
-
-        elif cfg.expt.parameter_to_test == 'frequency':
-            # set the phase register to the initial value
-            phase = self.pulse_to_test[3]
-            for i in range(n_pulses):
-                # for p in range(2):
-                #     # play the pulse
-                #     self.pulse(ch = self.pulse_to_test[4])
-                #     # update the phase modulo 360
-                #     phase += 180
-                #     phase = phase % 360
-                #     _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
-                #     self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
-
-                for repeat in range(2):
-                    for p in range(pi_frac):
-                        # play the pulse
-                        self.pulse(ch = self.pulse_to_test[4])
-
-                    # update the phase modulo 360
-                    phase += 180
-                    phase = phase % 360
-                    _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
-                    self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
-
-
-        self.sync_all()
-
-        # post pulse sequence 
-
+        # Post-pulse list
         if cfg.expt.pulse_type[0] == 'qubit':
             if self.pulse_to_test[1] == 'ef':
-                post_pulse = self.creator.pulse.tolist() # ge
-                self.custom_pulse(cfg, post_pulse, prefix='post_')
+                self.post_pulse_list = self.pre_creator.pulse.tolist()
+            else:
+                self.post_pulse_list = None
         elif cfg.expt.pulse_type[0] in ('man', 'storage', 'floquet'):
-            pulse_list = self.creator.pulse.tolist()
             # reverse the pulse sequence
-            post_pulse = [sublist[:0:-1] for sublist in pulse_list]
             # when qubit starts in e, it plays g1-e1 which is not ideal since photon can be in storage, but I dont know how to do better for now
-            self.custom_pulse(cfg, post_pulse, prefix='post_')
+            self.post_pulse_list = [sublist[:0:-1] for sublist in self.pre_creator.pulse.tolist()]
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             qubit_state_start = cfg.expt.pulse_type[1][0]
             if qubit_state_start == 'g':
-                post_pulse = []
-            if qubit_state_start == 'e':
-                last_pulse = [[sublist[-1]] for sublist in  self.creator.pulse.tolist()]
-                print("post_pulse:", last_pulse)
-                self.custom_pulse(cfg, last_pulse, prefix='post_')
-            elif qubit_state_start == 'f':
-                print("post_pulse:", self.creator.pulse.tolist())
-                last_pulse = [[sublist[-1]] for sublist in  self.creator.pulse.tolist()]
-                # print("post_pulse:", last_pulse)
-                self.custom_pulse(cfg, last_pulse, prefix='post_')
+                self.post_pulse_list = None
+            else:  # 'e' or 'f'
+                self.post_pulse_list = [[sublist[-1]] for sublist in self.pre_creator.pulse.tolist()]
+
+        self.sync_all(200)
+
+
+    def body(self):
+        cfg = AttrDict(self.cfg)
+
+        self.reset_and_sync()
+
+        # Active reset
+        if cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
+
+        self.sync_all(self.us2cycles(0.2))
+
+        # play prepulse
+        if self.pre_pulse_list is not None:
+            self.custom_pulse(cfg, self.pre_pulse_list, prefix='pre_')
+
+        # set pulse registers (must be in body — prepulse may use same channel)
+        if self.pulse_to_test[5] == "flat_top":
+            self.set_pulse_registers(
+                ch=self.pulse_to_test[4], style=self.pulse_style,
+                freq=self._freq, length=self._length, phase=0,
+                gain=int(self.pulse_to_test[1]), waveform="pulse_to_test")
         else:
-            raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', 'floquet', or 'multiphoton'.")
+            self.set_pulse_registers(
+                ch=self.pulse_to_test[4], style=self.pulse_style,
+                freq=self._freq, phase=0,
+                gain=int(self.pulse_to_test[1]), waveform="pulse_to_test")
+
+        # override swept parameter from register
+        if cfg.expt.parameter_to_test == 'gain':
+            self.mathi(self.channel_page, self.r_gain, self.r_gain3, "+", 0)
+            if self.pulse_to_test[5] == "flat_top":
+                self.mathi(self.channel_page, self.r_gain2, self.r_gain4, "+", 0)
+        elif cfg.expt.parameter_to_test == 'frequency':
+            self.mathi(self.channel_page, self.r_freq, self.r_freq2, "+", 0)
+        else:
+            raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
+
+        # play test pulse(s)
+        if cfg.expt.parameter_to_test == 'gain':
+            for i in range((self.n_pulses * 2) * self.pi_frac):
+                self.pulse(ch=self.pulse_to_test[4])
+
+        elif cfg.expt.parameter_to_test == 'frequency':
+            phase = self.pulse_to_test[3]
+            for i in range(self.n_pulses):
+                for repeat in range(2):
+                    for p in range(self.pi_frac):
+                        self.pulse(ch=self.pulse_to_test[4])
+                    phase = (phase + 180) % 360
+                    _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
+                    self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
 
         self.sync_all()
-        # align channel and measure
+
+        # play postpulse
+        if self.post_pulse_list is not None:
+            self.custom_pulse(cfg, self.post_pulse_list, prefix='post_')
+
+        self.sync_all()
         self.measure_wrapper()
  
     def update(self):
