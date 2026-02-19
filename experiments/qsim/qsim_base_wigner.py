@@ -371,14 +371,22 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             for i_inner, inner_param_val in enumerate(self.inner_params):
                 print(f'Displaying for {self.outer_param}={outer_param_val}, {self.inner_param}={inner_param_val}')
 
+                parity = wigner_outputs['parity'][i_outer, i_inner]
+                rho = wigner_outputs['rho'][i_outer][i_inner]
+                mode_state_num = rho.shape[0]
                 results = dict(
-                    rho=wigner_outputs['rho'][i_outer][i_inner],
+                    rho=rho,
                     rho_rotated=wigner_outputs['rho_rotated'][i_outer][i_inner],
+                    rho_ideal=qt.ket2dm(initial_state).unit() if initial_state is not None else None,
                     fidelity=wigner_outputs['fidelity'][i_outer][i_inner],
                     W_fit=wigner_outputs['W_fit'][i_outer][i_inner],
                     W_ideal=wigner_outputs['W_ideal'][i_outer][i_inner],
                     x_vec=wigner_outputs['alpha_wigner'][i_outer][i_inner],
                     theta_max=wigner_outputs['theta_opt'][i_outer][i_inner],
+                    alpha_list=data['alpha'],
+                    allocated_readout=2 / np.pi * parity,
+                    alphas2=np.arange(-np.sqrt(mode_state_num) / np.sqrt(1) + 0.1, np.sqrt(mode_state_num) / np.sqrt(1), 0.1),
+                    wigner_analysis=wigner_analysis,
                 )
 
                 fig = wigner_analysis.plot_wigner_reconstruction_results(results, initial_state=initial_state, state_label=state_label)
