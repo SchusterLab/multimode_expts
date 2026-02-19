@@ -28,7 +28,7 @@ import sys
 import time
 import traceback
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 import pandas as pd
@@ -314,7 +314,7 @@ class JobWorker:
             if job:
                 # Claim the job by setting status to RUNNING
                 job.status = JobStatus.RUNNING
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now()
                 session.flush()
 
                 # Detach job from session for use outside
@@ -580,7 +580,7 @@ class JobWorker:
             job = session.query(Job).filter_by(job_id=job_id).first()
             if job:
                 job.status = JobStatus.COMPLETED
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now()
                 job.data_file_path = data_file_path
                 job.expt_pickle_path = expt_pickle_path
 
@@ -602,7 +602,7 @@ class JobWorker:
             job = session.query(Job).filter_by(job_id=job_id).first()
             if job:
                 job.status = JobStatus.FAILED
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now()
                 job.error_message = error_message
 
     def _update_job_log_path(self, job_id: str, log_path: str):
@@ -629,7 +629,7 @@ class JobWorker:
             running_jobs = session.query(Job).filter_by(status=JobStatus.RUNNING).all()
             for job in running_jobs:
                 job.status = JobStatus.FAILED
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now()
                 job.error_message = "Worker crashed or was restarted during execution"
 
                 # Also mark output as complete

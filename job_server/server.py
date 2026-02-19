@@ -425,7 +425,7 @@ async def cancel_job(job_id: str, session: Session = Depends(get_db)):
         )
 
     job.status = JobStatus.CANCELLED
-    job.completed_at = datetime.utcnow()
+    job.completed_at = datetime.now()
     session.flush()
 
     print(f"[SERVER] Job cancelled: {job_id}")
