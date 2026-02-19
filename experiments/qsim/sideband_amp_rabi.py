@@ -8,6 +8,7 @@ from tqdm import tqdm_notebook as tqdm
 import fitting.fitting as fitter
 from experiments.dataset import StorageManSwapDataset
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.utils import (
     ensure_list_in_cfg,
     post_select_raverager_data,
@@ -49,7 +50,10 @@ class SidebandAmpRabiExperiment(QsimBaseExperiment):
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         data = {
             'xpts': self.cfg.expt.gains,

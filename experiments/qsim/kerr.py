@@ -8,6 +8,7 @@ from scipy.ndimage import gaussian_filter1d
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.MM_base import MMAveragerProgram
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 
 """
@@ -62,6 +63,10 @@ class KerrStarkProgram(KerrEngBaseProgram):
 
 class KerrWaitProgram(QsimBaseProgram):
     def core_pulses(self):
+        # print("Adding man-dump pulse")
+        # self.man_reset(man_idx=1, dump_mode_idx=2, chi_dressed=True)
+
+        print("No man-dump pulse, just wait")
         self.sync_all(self.us2cycles(self.cfg.expt.wait_us_time))
 
 
@@ -82,7 +87,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.MM_base_initialize()
         qTest = 0 # only one qubit for now
 
-        self.swap_ds = self.expt.cfg.device.storage._ds_storage
+        self.swap_ds = self.cfg.device.storage._ds_storage
         # choose the channel on which ramsey will run
         if cfg.expt.user_defined_pulse[5] == 1:
             self.cavity_ch = self.flux_low_ch
@@ -187,7 +192,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         # self.safe_regwi(self.phase_update_page[qTest], self.r_phase4 , 0)
 
         self.sync_all(200)
-        self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast = False)
+        self.parity_meas_pulse = self.get_parity_str(self.cfg.expt.man_mode_no, return_pulse=True, second_phase=180, fast=False)
 
 
     def body(self):
@@ -198,8 +203,9 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.reset_and_sync()
 
         # active reset
-        if self.cfg.expt.active_reset:
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
         # pre pulse
         if cfg.expt.prepulse:
@@ -256,7 +262,8 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.sync_all(self.us2cycles(0.01))
         # self.sync(self.phase_update_page[qTest], self.r_wait)
         ecfg = self.cfg.expt
-        if ecfg.drive_coupler:
+        kerr_drive_type = self.cfg.expt.get('kerr_drive_type', 'man-coupler')
+        if kerr_drive_type == 'man-coupler':
             kerr_pulse = [
                 [self.swap_ds.get_freq('M1-C') + ecfg.kerr_detune],
                 [ecfg.kerr_gain],
@@ -266,7 +273,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 ['flat_top'],
                 [0.005],
             ]
-        else:
+        elif kerr_drive_type == 'qubit':
             kerr_pulse = [
                 [self.cfg.device.qubit.f_ge[qTest] + ecfg.kerr_detune],
                 [ecfg.kerr_gain],
@@ -276,6 +283,18 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 ['flat_top'],
                 [self.cfg.device.qubit.ramp_sigma[qTest]],
             ]
+        elif kerr_drive_type == 'man-qubit':
+            kerr_pulse = [
+                [self.cfg.device.storage._ds_storage.get_freq('M1') + ecfg.kerr_detune],
+                [ecfg.kerr_gain],
+                [ecfg.kerr_length],
+                [0], # phase
+                [self.f0g1_ch],
+                ['flat_top'],
+                [self.cfg.device.qubit.ramp_sigma[qTest]],
+            ]
+        else:
+            assert False, f"invalid kerr drive type {kerr_drive_type}"
         self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
         self.sync_all(self.us2cycles(0.01))
 

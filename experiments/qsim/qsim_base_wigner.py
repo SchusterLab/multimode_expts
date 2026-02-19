@@ -4,8 +4,10 @@ from copy import deepcopy
 
 import matplotlib.pyplot as plt
 from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.MM_base import MMAveragerProgram
 from slab import AttrDict, Experiment
 from fitting.wigner import WignerAnalysis
+from fitting.fit_display_classes import GeneralFitting
 import qutip as qt
 import numpy as np
 from tqdm import tqdm_notebook as tqdm
@@ -31,7 +33,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         init_alpha: if init_fock is False, the coherent (complex) state alpha to initialize the mode into
 
         ro_stor: storage to readout the photon from (0-7)
-        active_reset, man_reset, storage_reset: bool
+        active_reset: bool (uses get_active_reset_params for ef_reset, man_reset, storage_reset, etc.)
         swept_params: list of parameters to sweep, e.g. ['detune', 'gain']
 
         wigner parameters:
@@ -67,7 +69,8 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if self.cfg.expt.active_reset:
-            read_num += 3 # ge reset always, ef_reset=True by default, pre_selection_reset=True by default
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         # Perform the tomography at different displacements
 
@@ -107,6 +110,11 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             data['xpts'] = outer_params
         self.outer_params, self.inner_params = outer_params, inner_params
 
+        pre_selection = ('active_reset' in self.cfg.expt and self.cfg.expt.active_reset
+                         and self.cfg.expt.get('pre_selection_reset', False))
+        if pre_selection:
+            threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
+
         for self.cfg.expt[outer_param] in tqdm(outer_params, disable=not progress):
             for self.cfg.expt[inner_param] in inner_params:
                 for alpha in tqdm(alpha_list, disable=not progress):
@@ -122,15 +130,23 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                                                     progress=False,
                                                     debug=debug,
                                                     readouts_per_experiment=read_num)
-                    avgi, avgq = avgi[0][-1], avgq[0][-1]
-                    data['avgi'].append(avgi)
-                    data['avgq'].append(avgq)
-                    data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
-                    data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
 
                     idata, qdata = wigner.collect_shots()
                     data['idata'].append(idata)
                     data['qdata'].append(qdata)
+
+                    if pre_selection:
+                        avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                            idata.flatten(), qdata.flatten(), read_num,
+                            threshold=threshold, pre_selection=True)
+                    else:
+                        avgi_val = avgi[0][-1]
+                        avgq_val = avgq[0][-1]
+                    data['avgi'].append(avgi_val)
+                    data['avgq'].append(avgq_val)
+                    data['amps'].append(np.abs(avgi_val+1j*avgq_val)) # Calculating the magnitude
+                    data['phases'].append(np.angle(avgi_val+1j*avgq_val)) # Calculating the phase
+
 
                     if self.cfg.expt.pulse_correction:
                         self.cfg.expt.phase_second_pulse = 0
@@ -142,15 +158,22 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                                                     readouts_per_experiment=read_num,
                                                     #  debug=debug
                                                     )
-                        avgi, avgq = avgi[0][-1], avgq[0][-1]
-                        data['avgi'].append(avgi)
-                        data['avgq'].append(avgq)
-                        data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
-                        data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
-
                         idata, qdata = wigner.collect_shots()
                         data['idata'].append(idata)
                         data['qdata'].append(qdata)
+
+                        if pre_selection:
+                            avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                                idata.flatten(), qdata.flatten(), read_num,
+                                threshold=threshold, pre_selection=True)
+                        else:
+                            avgi_val = avgi[0][-1]
+                            avgq_val = avgq[0][-1]
+                        data['avgi'].append(avgi_val)
+                        data['avgq'].append(avgq_val)
+                        data['amps'].append(np.abs(avgi_val+1j*avgq_val)) # Calculating the magnitude
+                        data['phases'].append(np.angle(avgi_val+1j*avgq_val)) # Calculating the phase
+
 
         for key in 'avgi avgq amps phases idata qdata'.split():
             data[key] = np.array(data[key])
@@ -203,7 +226,8 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if self.cfg.expt.active_reset:
-            read_num += 3 # ge reset always, ef_reset=True by default, pre_selection_reset=True by default
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         # Calculate the stepping for the final readout
         idx_start = read_num - 1
@@ -357,11 +381,6 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         # do we really need to ovrride this?
         # TODO: at least make this save line-by-line
         temp_cfg = deepcopy(self.cfg)
-        if "alpha_list" in self.cfg.expt:
-            # Json cannot save complex
-            self.cfg.expt.alpha_list_re = np.real(self.cfg.expt.alpha_list)
-            self.cfg.expt.alpha_list_im = np.imag(self.cfg.expt.alpha_list)
-            self.cfg.expt.pop("alpha_list")
         if "ds_floquet" in self.cfg:
             self.cfg.pop('ds_floquet')  # remove the dataset object from cfg before saving otherwise json gets mad
         if "ds_floquet" in self.cfg.expt:

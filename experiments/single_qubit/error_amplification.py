@@ -47,10 +47,15 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                            )
         elif self.pulse_to_test[5] == 'flat_top' and  self.pulse_to_test[6] > 0: 
             _sigma = self.us2cycles(self.pulse_to_test[6], gen_ch=self.pulse_to_test[4])
+            if self.pulse_to_test[4] == 0 or self.pulse_to_test[4] == 1 or self.pulse_to_test[4] == 3: # for f0g1
+                n_sigma = 6
+            else: 
+                n_sigma = 4
+
             self.add_gauss(ch=self.pulse_to_test[4],
                               name="pulse_to_test",
                               sigma=_sigma,
-                              length=_sigma*4, # take 4 sigma cutoff
+                              length=_sigma*n_sigma, 
                               )
 
         # initialize registers

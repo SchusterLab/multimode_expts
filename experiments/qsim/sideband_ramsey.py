@@ -69,10 +69,9 @@ class SidebandRamseyProgram(MMRAveragerProgram):
         # initializations as necessary
         self.reset_and_sync()
 
-        if self.cfg.expt.active_reset: 
-            self.active_reset(
-                man_reset=self.cfg.expt.man_reset,
-                storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.get('active_reset', False):
+            params = MMRAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
         # prepulse: ge -> ef -> f0g1
         prepules_cfg = [
@@ -176,7 +175,10 @@ class SidebandRamseyExperiment(Experiment):
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MMRAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMRAveragerProgram.active_reset_read_num(**params)
 
         ramsey = SidebandRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
         self.qick_program = ramsey
@@ -333,7 +335,10 @@ class SidebandChevronExperiment(SidebandRamseyExperiment):
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MMRAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMRAveragerProgram.active_reset_read_num(**params)
 
         y_pts = np.linspace(-1,1,51)
 

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from qick import QickConfig
 from qick.helpers import gauss
+from fitting.fit_display_classes import GeneralFitting
 from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
@@ -25,6 +26,8 @@ class QsimBaseProgram(MMAveragerProgram):
     Then do whatever in the core_pulses() that you override
     Finally swap ro_stor back into man and then man into qb and readout
     """
+    _pre_selection_filtering = True
+
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
         super().__init__(soccfg, cfg)
 
@@ -127,10 +130,9 @@ class QsimBaseProgram(MMAveragerProgram):
         # initializations as necessary
         self.reset_and_sync()
 
-        if self.cfg.expt.active_reset: 
-            self.active_reset(
-                man_reset=self.cfg.expt.man_reset,
-                storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
         init_stor = self.cfg.expt.init_stor
         ro_stor = self.cfg.expt.ro_stor
@@ -226,7 +228,7 @@ class QsimBaseExperiment(Experiment):
         qubits: this is just 0 for the purpose of the currrent multimode sample
         init_stor: storage to initialize the photon into (0-7)
         ro_stor: storage to readout the photon from (0-7)
-        active_reset, man_reset, storage_reset: bool
+        active_reset: bool (uses get_active_reset_params for ef_reset, man_reset, storage_reset, etc.)
         swept_params: list of parameters to sweep, e.g. ['detune', 'gain']
     )
     In principle this overlaps with qick.NDAveragerProgram, but this allows you to
@@ -286,7 +288,10 @@ class QsimBaseExperiment(Experiment):
     def acquire(self, progress=False, debug=False):
         ensure_list_in_cfg(self.cfg)
 
-        read_num = 4 if self.cfg.expt.active_reset else 1
+        read_num = 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
         sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
@@ -325,15 +330,26 @@ class QsimBaseExperiment(Experiment):
                                                 progress=False,
                                                 debug=debug,
                                                 readouts_per_experiment=read_num)
-                avgi, avgq = avgi[0][-1], avgq[0][-1]
+
+                idata, qdata = self.prog.collect_shots()
+                data['idata'].append(idata)
+                data['qdata'].append(qdata)
+
+                if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
+                    avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                        idata, qdata, read_num,
+                        threshold=self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]],
+                        pre_selection=True)
+                else:
+                    avgi_val = avgi[0][-1]
+                    avgq_val = avgq[0][-1]
+
+                avgi, avgq = avgi_val, avgq_val
                 data['avgi'].append(avgi)
                 data['avgq'].append(avgq)
                 data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
                 data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
 
-                idata, qdata = self.prog.collect_shots()
-                data['idata'].append(idata)
-                data['qdata'].append(qdata)
         for key in 'avgi avgq amps phases'.split():
             data[key] = np.array(data[key])
             if sweep_dim == 2:

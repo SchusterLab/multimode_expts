@@ -48,7 +48,8 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
     #     return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi   * f * x) - 1)) + offset
     @staticmethod
     def fit_model(x, alpha2, f, tphi, scale, offset):
-        return scale * np.exp(-2.0*alpha2*(1.0 + np.exp(-x/tphi)*np.cos(2.0*np.pi*f*x))) + offset
+        return scale * np.exp(-2.0*alpha2*(1.0 + np.cos(2.0*np.pi*f*x))) + offset
+        # return scale * np.exp(-2.0*alpha2*(1.0 + np.exp(-x/tphi)*np.cos(2.0*np.pi*f*x))) + offset
 
     @staticmethod
     def fit_func(x, kc, delta):
@@ -94,7 +95,7 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
             params = model.make_params(
                 alpha2=dict(value=alpha_guess**2, vary=False),
                 f=f_initial,
-                tphi=dict(value=0.5*(x[-1]-x[0]), min=(x[1]-x[0]), max=1e6),  # 단위는 x와 동일
+                tphi=dict(value=100*(x[-1]-x[0]), min=10*(x[-1]-x[0]), max=1e6),  # 단위는 x와 동일
                 scale=dict(value=1, min=0.1, max=1.2),
                 offset=dict(value=0, min=-0.1, max=0.5),
                 )
@@ -475,15 +476,16 @@ class CavityRamseyExcursionProgram(MMRAveragerProgram,
         # reset and sync all channels
         self.reset_and_sync()
 
-        # active reset 
-        if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        # active reset
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
         # pre pulse
         if cfg.expt.prepulse:
             print('pre pulse')
             # print(cfg.expt.pre_sweep_pulse)
-            if cfg.expt.gate_based: 
+            if cfg.expt.gate_based:
                 print('gate based prepulse')
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
@@ -782,9 +784,11 @@ class CavityRamseyExcursionExperiment(Experiment):
                     subcfg.update({key: [value]*num_qubits_sample})
 
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
-        
+
         ramsey = CavityRamseyExcursionProgram(soccfg=self.soccfg, cfg=self.cfg)
         # print('inide t2 cavity acquire')
         
@@ -862,7 +866,9 @@ class CavityRamseyExcursionGainSweepExperiment(Experiment): #To Be Added
                     subcfg.update({key: [value]*num_qubits_sample})
 
         read_num = 1
-        if self.cfg.expt.active_reset: read_num = 4
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
 
         gain_start = self.cfg.expt.gain_start
         gain_step = self.cfg.expt.gain_step
@@ -1063,10 +1069,11 @@ class CavityRamseyExcursionQsimProgram(QsimBaseProgram):
 
 
     def core_pulses(self):
-        qTest = self.qubits[0] 
+        qTest = self.qubits[0]
         cfg = self.cfg
-        if self.cfg.expt.active_reset: 
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
 
         # play the prepulse for kerr experiment (displacement of manipulate)
@@ -1113,7 +1120,7 @@ class CavityRamseyExcursionQsimProgram(QsimBaseProgram):
         #                      length = 4,
         #                      freq = self.sine_freq_reg,
         #                      gain = 0)
-
+        self.sync_all(self.us2cycles(0.01)) #REDUNDANT I THINK
         self.sync_all()
         # commented out to ensure the displacement pulse right after the bipolar guassian pulse in the flux low line
 
@@ -1316,8 +1323,9 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
         self.reset_and_sync()
 
         # active reset
-        if self.cfg.expt.active_reset:
-            self.active_reset( man_reset= self.cfg.expt.man_reset, storage_reset= self.cfg.expt.storage_reset)
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
 
         # pre pulse
         if cfg.expt.prepulse:
@@ -1403,7 +1411,9 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
                 ['flat_top'],
                 [self.cfg.device.qubit.ramp_sigma[qTest]],
             ]
+        self.sync_all()
         self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
+        self.sync_all()
         self.sync_all(self.us2cycles(0.01))
 
         # echoes

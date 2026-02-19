@@ -767,7 +767,7 @@ class MM_base:
         self.add_gauss(ch=self.flux_high_ch[qTest],
                     name="ramp_high",# + str(man_idx),
                     sigma=self.sideband_sigma_high,
-                    length=self.sideband_sigma_high*4)
+                    length=self.sideband_sigma_high*6) # M1-x flat tops use 6 sigma
         # self.wait_all(self.us2cycles(0.1))
         self.sync_all(self.us2cycles(0.1))
 
@@ -1085,6 +1085,33 @@ class MM_base:
         # pre_selection_parity doesn't add extra measurements, just plays parity before pre_selection measurement
         return read_num
 
+    def post_selection_measure(self, parity=False, man_idx=1, parity_fast=False, prefix='ps'):
+        '''
+        Perform a bare qubit measurement for post-selection (no conditional reset).
+        Optionally plays a parity pulse before measuring.
+        Adds 1 readout to the measurement buffer.
+
+        Args:
+            parity: if True, play parity pulse before measurement
+            man_idx: manipulate mode index for parity pulse (default 1)
+            parity_fast: if True, use fast multiphoton hpi pulses for parity
+            prefix: prefix for pulse names
+        '''
+        cfg = AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+
+        if parity:
+            parity_str = self.get_parity_str(man_idx, return_pulse=True, second_phase=180, fast=parity_fast)
+            self.custom_pulse(cfg, parity_str, prefix=prefix + '_parity_')
+
+        self.measure(
+            pulse_ch=self.res_chs[qTest],
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+            t='auto', wait=True,
+        )
+        self.sync_all(self.us2cycles(2.0))
+
     def active_reset(self, man_reset = False, storage_reset = False, coupler_reset = False,
                       ef_reset = True, pre_selection_reset = True, prefix = 'base', use_qubit_man_reset = False,
                       pre_selection_parity = False, man_idx = 1, parity_fast = False):
@@ -1244,12 +1271,14 @@ class MM_base:
         # Dump storage population to manipulate, then to lossy mode
         # ======================================================
         if storage_reset:
-            for ii in range(7):
-                man_idx = 0
-                stor_idx = ii
-                self.man_stor_swap(man_idx=man_idx+1, stor_idx=stor_idx+1) #self.man_stor_swap(1, ii+1)
+            # for ii in range(7):
+            storage_reset = np.arange(7) if storage_reset == True else storage_reset
+            print("resetting stor modes", storage_reset)
+            for ii in storage_reset:
+                stor_idx = ii + 1
+                self.man_stor_swap(man_idx=man_idx, stor_idx=stor_idx) #self.man_stor_swap(1, ii+1)
                 # self.man_reset(0, chi_dressed = False)
-                self.man_reset(1, chi_dressed = False)
+                self.man_reset(man_idx=man_idx, chi_dressed=False)
 
         if coupler_reset:
             self.coup_stor_swap(man_idx=1) # M1
@@ -1259,18 +1288,140 @@ class MM_base:
         # # post selection
         # # ======================================================
         if pre_selection_reset:
-            # Play parity pulse before pre-selection measurement if requested
-            if pre_selection_parity:
-                parity_str = self.get_parity_str(man_idx, return_pulse=True, second_phase=180, fast=parity_fast)
-                self.custom_pulse(cfg, parity_str, prefix=prefix + 'pre_select_parity_')
+            self.post_selection_measure(
+                parity=pre_selection_parity,
+                man_idx=man_idx,
+                parity_fast=parity_fast,
+                prefix=prefix + 'pre_select'
+            )
 
-            self.measure(pulse_ch=self.res_chs[qTest],
-                        adcs=[self.adc_chs[qTest]],
-                        adc_trig_offset=cfg.device.readout.trig_offset[qTest],
-                        t='auto', wait=True,
-                        ) 
-            self.sync_all(self.us2cycles(wait_fin))
 
+    # --- State preparation helpers ---
+
+    def prep_storage_cardinal(self, state, mode_no):
+        """
+        Build a gate-based pulse string to prepare a cardinal state in a
+        storage mode.
+
+        Args:
+            state: Which cardinal state to prepare.
+                '0'  → |0> (vacuum, returns empty list)
+                '1'  → |1>
+                '+'  → |0> + |1>
+                '-'  → |0> - |1>
+                '+i' → |0> + i|1>
+                '-i' → |0> - i|1>
+            mode_no: Storage mode index (e.g. 1 for S1).
+
+        Returns:
+            List of gate-string descriptors suitable for get_prepulse_creator().
+        """
+        STATE_PHASE = {
+            '0': None,  # no pulse needed
+            '1': None,  # full pi
+            '+': 0,
+            '-': 180,
+            '+i': 90,
+            '-i': -90,
+        }
+        if state not in STATE_PHASE:
+            raise ValueError(
+                f"Unknown state '{state}'. "
+                f"Use one of: {list(STATE_PHASE.keys())}")
+
+        if state == '0':
+            return []
+
+        qubit_ef = [['qubit', 'ef', 'pi', 0]]
+        man_pi = [['man', 'M1', 'pi', 0]]
+        storage_pi = [['storage', f'M1-S{mode_no}', 'pi', 0]]
+
+        pulse_str = []
+        if state == '1':
+            pulse_str += [['qubit', 'ge', 'pi', 0]]
+        else:
+            pulse_str += [['qubit', 'ge', 'hpi', STATE_PHASE[state]]]
+
+        pulse_str += qubit_ef + man_pi + storage_pi
+        return pulse_str
+
+    def prep_man_fock_state(self, man_no, state, broadband=False):
+        """
+        Build a gate-based pulse string to prepare a Fock state (or
+        superposition of two adjacent Fock states) in the manipulate mode.
+
+        Args:
+            man_no: Manipulate mode number.
+            state: Which state to prepare.
+                '0'  → |0> (vacuum, returns empty list)
+                '1'  → |1>
+                '+'  → |0> + |1>
+                '-'  → |0> - |1>
+                '+i' → |0> + i|1>
+                '-i' → |0> - i|1>
+            broadband: If True, use broadband preparation (drives through
+                g0-e0 transition for all steps).
+
+        Returns:
+            List of gate-string descriptors suitable for get_prepulse_creator().
+        """
+        STATE_MAP = {
+            '0': (None, None),   # (fock_n, phase) — no pulse
+            '1': (1, None),      # single Fock |1>
+            '+': ([0, 1], 0),    # |0> + |1>
+            '-': ([0, 1], 180),  # |0> - |1>
+            '+i': ([0, 1], 90),  # |0> + i|1>
+            '-i': ([0, 1], -90), # |0> - i|1>
+        }
+        if state not in STATE_MAP:
+            raise ValueError(
+                f"Unknown state '{state}'. "
+                f"Use one of: {list(STATE_MAP.keys())}")
+
+        if state == '0':
+            return []
+
+        fock_spec, phase = STATE_MAP[state]
+
+        # Single Fock state |n>
+        if isinstance(fock_spec, int):
+            pulse_seq = []
+            for i in range(fock_spec):
+                pulse_seq += [['multiphoton', f'g{i}-e{i}', 'pi', 0]]
+                pulse_seq += [['multiphoton', f'e{i}-f{i}', 'pi', 0]]
+                pulse_seq += [['multiphoton', f'f{i}-g{i + 1}', 'pi', 0]]
+            return pulse_seq
+
+        # Superposition |n> + e^(i*phase)|m>
+        state_1, state_2 = fock_spec
+        pulse_seq = []
+        for i in range(state_1):
+            pulse_seq += [['multiphoton', f'g{i}-e{i}', 'pi', 0]]
+            pulse_seq += [['multiphoton', f'e{i}-f{i}', 'pi', 0]]
+            pulse_seq += [['multiphoton', f'f{i}-g{i + 1}', 'pi', 0]]
+
+        start_idx = 0 if broadband else state_1
+        pulse_seq += [
+            ['multiphoton', f'g{start_idx}-e{start_idx}', 'hpi', phase]
+        ]
+
+        diff = state_2 - state_1
+        shelving = 0
+        for k in range(diff):
+            n = state_1 + k
+            pulse_seq += [['multiphoton', f'e{n}-f{n}', 'pi', 0]]
+            if shelving < diff - 1:
+                pulse_seq += [
+                    ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]
+                ]
+            pulse_seq += [['multiphoton', f'f{n}-g{n + 1}', 'pi', 0]]
+            if shelving < diff - 1:
+                pulse_seq += [
+                    ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]
+                ]
+            shelving += 1
+
+        return pulse_seq
 
     def get_parity_str(self, man_mode_no=1, return_pulse=False, second_phase = 0, fast = False):
         '''
