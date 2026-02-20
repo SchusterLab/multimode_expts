@@ -73,27 +73,19 @@ class ParityPhaseProgram(MMRAveragerProgram):
         if jp_params is None:
             raise ValueError(f"Joint parity parameters not found for {stor_parity_name}")
         freq_bs, gain, length, wait_time = jp_params
-        print('CAREFULL - setting gain to 0 for testing purposes')
 
         # Auto-select flux channel based on frequency
         flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
         flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        flux_ch = flux_low_ch if freq_bs < 1000 else flux_high_ch
+        flux_ch = flux_low_ch if freq_bs < 1800 else flux_high_ch
 
         # Build joint parity pulse for custom_pulse
         ramp_sigma = cfg.device.storage.ramp_sigma
         self.joint_parity_pulse = [
             [freq_bs], [int(gain)], [length], [0], [flux_ch], ['flat_top'], [ramp_sigma]
         ]
-        # self.joint_parity_pulse = [
-            # [freq_bs], [int(0)], [length], [0], [flux_ch], ['flat_top'], [ramp_sigma]
-        # ]
-        # print('CAREFULL SETTING GAIN TO ZERO FOR JP')
-
         # Build wait pulse
-        # self.wait_pulse = self.get_prepulse_creator([['wait', wait_time]]).pulse.tolist()
         self.wait_time = wait_time
-        # print('CAREFULL REDUCING WAIT TIME BY 10 PERCENT')
 
         # Build swap pulse
         self.swap_pulse = self.get_prepulse_creator(

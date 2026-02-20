@@ -13,7 +13,7 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks
 
 import fitting.fitting as fitter
-from fitting.fit_utils import guess_sinusoidal_params
+from fitting.fit_utils import guess_sinusoidal_params, guess_decaysin_params
 
 
 class GeneralFitting:
@@ -362,13 +362,15 @@ class RamseyFitting(GeneralFitting):
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             if fitparams is None:
-                freq, amp, offset = guess_sinusoidal_params(xpts, data['avgi'])
-                fitparams_i=[amp, freq, 90, xpts[-1]/2, offset, None]
+                amp, freq, phase, decay, offset = guess_decaysin_params(
+                    xpts, data['avgi'])
+                fitparams_i = [amp, freq, phase, decay, offset, None]
             p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams_i)
 
             if fitparams is None:
-                freq, amp, offset = guess_sinusoidal_params(xpts, data['avgq'])
-                fitparams_q=[amp, freq, 90, xpts[-1]/2, offset, None]
+                amp, freq, phase, decay, offset = guess_decaysin_params(
+                    xpts, data['avgq'])
+                fitparams_q = [amp, freq, phase, decay, offset, None]
             p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams_q)
 
             data['fit_avgi'] = p_avgi

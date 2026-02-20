@@ -87,6 +87,15 @@ class DualRailSandboxProgram(MMAveragerProgram):
             # print(f"Preparing dual rail state |{self.state_start}>")
             self.custom_pulse(cfg, self.state_prep_pulse, prefix='state_prep_')
 
+        # 3b. State prep post-selection measurement
+        if cfg.expt.get('state_prep_postselect', False):
+            self.post_selection_measure(
+                parity=cfg.expt.get('state_prep_ps_parity', False),
+                man_idx=cfg.expt.manipulate,
+                parity_fast=cfg.expt.get('parity_fast', False),
+                prefix='state_prep_ps'
+            )
+
         # 4. Repeat loop: (wait + optional joint_parity)
         repeat_count = int(cfg.expt.get('repeat_count', 1))
         wait_time = cfg.expt.get('wait_time', 0) or 0
@@ -138,6 +147,10 @@ class DualRailSandboxProgram(MMAveragerProgram):
         if cfg.expt.get('active_reset', False):
             params = MM_base.get_active_reset_params(cfg)
             read_num += MMAveragerProgram.active_reset_read_num(**params)
+
+        # State prep post-selection measurement
+        if cfg.expt.get('state_prep_postselect', False):
+            read_num += 1
 
         # Joint parity measurements during repeat loop
         if cfg.expt.get('parity_flag', False):
@@ -322,6 +335,13 @@ class DualRailSandboxExperiment(Experiment):
                         i0_reshaped = i0_reshaped[pre_sel_mask]
                         data[f'pre_select_count_{key}'] = np.sum(pre_sel_mask)
 
+                    # State-prep post-selection: discard shots where qubit was not in |g>
+                    if post_select and 'state_prep_ps' in indices:
+                        sp_ps_idx = indices['state_prep_ps']
+                        sp_ps_mask = i0_reshaped[:, sp_ps_idx] < threshold
+                        data[f'state_prep_ps_count_{key}'] = np.sum(sp_ps_mask)
+                        i0_reshaped = i0_reshaped[sp_ps_mask]
+
                     # Post-selection mask: keep trajectories where all JP shots are g (< threshold)
                     if post_select and parity_flag and 'jp' in indices:
                         jp_indices = indices['jp']
@@ -353,6 +373,10 @@ class DualRailSandboxExperiment(Experiment):
             if params.get('pre_selection_reset', False):
                 indices['ar_pre_selection'] = idx + ar_read_num - 1
             idx += ar_read_num
+
+        if cfg.expt.get('state_prep_postselect', False):
+            indices['state_prep_ps'] = idx
+            idx += 1
 
         if cfg.expt.get('parity_flag', False):
             repeat_count = int(cfg.expt.get('repeat_count', 1))
@@ -467,6 +491,7 @@ class DualRailSandboxExperiment(Experiment):
 
                 pops_raw = data.get(f'pop_{key}', {})
                 post_count = data.get(f'post_select_count_{key}', total_reps)
+                sp_ps_count = data.get(f'state_prep_ps_count_{key}', None)
 
                 # Handle both dict format (in-memory) and array format (loaded from HDF5)
                 if isinstance(pops_raw, dict):
@@ -482,8 +507,12 @@ class DualRailSandboxExperiment(Experiment):
                 ax.set_xlabel('Measured State')
                 total_time = repeat * wait
                 total_time_ms = total_time / 1000  # convert us to ms
+                if sp_ps_count is not None:
+                    ps_info = f'sp-ps: {sp_ps_count}/{total_reps}, jp-ps: {post_count}/{sp_ps_count}'
+                else:
+                    ps_info = f'post-sel: {post_count}/{total_reps}'
                 ax.set_title(f'|{prepared_state}> [{stor_pair}] r={repeat} w={wait} (t={total_time_ms:.3g}ms)\n'
-                            f'post-sel: {post_count}/{total_reps}')
+                            f'{ps_info}')
                 ax.set_ylim([0, 1])
                 if log_scale:
                     ax.set_yscale('log')

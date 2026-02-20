@@ -174,7 +174,7 @@ class JointParityCalibrator:
         cfg = self.station.hardware_cfg
         flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
         flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        ch = flux_low_ch if freq < 1000 else flux_high_ch
+        ch = flux_low_ch if freq < 1800 else flux_high_ch
 
         return freq, gain, pi_len, h_pi_len, ch
 
@@ -364,6 +364,9 @@ class JointParityCalibrator:
         """
         self._log(f"  Running error amp for qubit in |{qubit_state}>...")
 
+        print(f"    Temporarily setting storage parameters: freq={freq_guess:.4f} MHz, gain={gain}, pi_length={length_bs:.4f} us")
+        print("storage is: ", stor_name)
+
         # Temporarily update storage parameters
         original_freq = self.station.ds_storage.get_freq(stor_name)
         original_gain = self.station.ds_storage.get_gain(stor_name)
@@ -417,6 +420,254 @@ class JointParityCalibrator:
 
         self._log(f"    Optimal frequency: {optimal_freq:.4f} MHz")
         return optimal_freq, expt
+
+    def _run_error_amp_general(self, stor_name, freq, gain, length_bs, qubit_state,
+                               parameter_to_test='frequency',
+                               man_mode_no=1, stor_mode_no=1,
+                               reps=100, n_pulses=10, n_step=3,
+                               span=None, restore_params=False):
+        """
+        Run error amplification for frequency or gain.
+
+        Sets dataset params before running so the preprocessor reads them.
+        Does NOT restore dataset params unless restore_params=True.
+
+        Parameters
+        ----------
+        stor_name : str
+            Storage mode name (e.g., 'M1-S1')
+        freq : float
+            Frequency to set in dataset before running
+        gain : float
+            Gain to set in dataset before running
+        length_bs : float
+            Pi length to set in dataset before running
+        qubit_state : str
+            'g' or 'e'
+        parameter_to_test : str
+            'frequency' or 'gain'
+        span : float or None
+            Sweep span. Defaults: 0.2 MHz for frequency, 35% of gain for gain
+        restore_params : bool
+            If True, save and restore original dataset params around the run
+
+        Returns
+        -------
+        optimal_value : float
+            Optimized frequency or gain
+        expt : Experiment
+            The experiment object
+        """
+        self._log(f"  Running error amp ({parameter_to_test}) for qubit in |{qubit_state}>...")
+
+        # Optionally save original params
+        if restore_params:
+            original_freq = self.station.ds_storage.get_freq(stor_name)
+            original_gain = self.station.ds_storage.get_gain(stor_name)
+            original_pi = self.station.ds_storage.get_pi(stor_name)
+
+        # Set dataset params so the preprocessor reads them
+        self.station.ds_storage.update_pi(stor_name, length_bs)
+        self.station.ds_storage.update_gain(stor_name, int(gain))
+        self.station.ds_storage.update_freq(stor_name, freq)
+
+        # Compute span and sweep params
+        if parameter_to_test == 'frequency':
+            if span is None:
+                span = 0.2
+            start = freq - span / 2
+        elif parameter_to_test == 'gain':
+            if span is None:
+                span = int(gain * 0.35)
+            start = int(gain - span / 2)
+        else:
+            raise ValueError(f"Unknown parameter_to_test: {parameter_to_test}")
+
+        def error_amp_preproc(station, default_expt_cfg, **kwargs):
+            expt_cfg = deepcopy(default_expt_cfg)
+            expt_cfg.update(kwargs)
+            expt_cfg.pulse_type = ['storage', stor_name, 'pi', 0]
+            expt_cfg.parameter_to_test = parameter_to_test
+            expt_cfg.start = start
+            expt_cfg.step = (span / (expt_cfg.expts - 1) if parameter_to_test == 'frequency'
+                             else int(span / (expt_cfg.expts - 1)))
+            return expt_cfg
+
+        runner = CharacterizationRunner(
+            station=self.station,
+            ExptClass=meas.ErrorAmplificationExperiment,
+            default_expt_cfg=self.error_amp_defaults,
+            preprocessor=error_amp_preproc,
+            job_client=self.client,
+            use_queue=self.use_queue,
+        )
+
+        expt = runner.execute(
+            man_mode_no=man_mode_no,
+            stor_mode_no=stor_mode_no,
+            parameter_to_test=parameter_to_test,
+            span=span,
+            n_step=n_step,
+            n_pulses=n_pulses,
+            reps=reps,
+            qubit_state_start=qubit_state,
+            analyze=False,
+            display=False,
+        )
+
+        expt.analyze(state_fin='e')
+        if self.debug:
+            expt.display()
+        optimal_value = expt.data['fit_avgi'][2]
+
+        # Optionally restore original params
+        if restore_params:
+            self.station.ds_storage.update_pi(stor_name, original_pi)
+            self.station.ds_storage.update_gain(stor_name, original_gain)
+            self.station.ds_storage.update_freq(stor_name, original_freq)
+
+        self._log(f"    Optimal {parameter_to_test}: {optimal_value:.4f}")
+        return optimal_value, expt
+
+    def _build_gain_sweep_vectors(self, man_mode_no=1, stor_mode_no=1,
+                                  num_pts=20, length_range_frac=(0.3, 1.2)):
+        """
+        Build sweep vectors for the BS rate lookup table calibration.
+
+        Computes gain/length/frequency arrays from current dataset parameters.
+        Length and gain are inversely proportional (constant gain*length product).
+
+        Parameters
+        ----------
+        man_mode_no : int
+            Manipulate mode number
+        stor_mode_no : int
+            Storage mode number
+        num_pts : int
+            Number of sweep points
+        length_range_frac : tuple of float
+            (min, max) fraction of pi_length for the sweep range
+
+        Returns
+        -------
+        dict with keys:
+            'gain_vectors': dict {'g': array, 'e': array}
+            'length_vectors': dict {'g': array, 'e': array}
+            'freq_vectors': dict {'g': array, 'e': array}
+            'original_freq': float
+            'original_gain': float
+            'original_pi_len': float
+            'stor_name': str
+        """
+        freq, gain, pi_len, _, _ = self._get_storage_mode_parameters(man_mode_no, stor_mode_no)
+        chi_ge = self.station.hardware_cfg.device.manipulate.chi_ge[man_mode_no - 1]
+
+        len_min = pi_len * length_range_frac[0]
+        len_max = pi_len * length_range_frac[1]
+        gain_min = gain * pi_len / len_max
+        gain_max = gain * pi_len / len_min
+
+        gain_vectors = {}
+        length_vectors = {}
+        freq_vectors = {}
+
+        for qs in ['g', 'e']:
+            gain_vectors[qs] = np.linspace(gain_min, gain_max, num=num_pts)
+            length_vectors[qs] = pi_len * gain / gain_vectors[qs]
+            freq_vectors[qs] = np.full(num_pts, freq)
+            if qs == 'e':
+                freq_vectors[qs] = freq_vectors[qs] + chi_ge
+
+        stor_name = f'M{man_mode_no}-S{stor_mode_no}'
+
+        self._log(f"  Gain range: {gain_min:.1f} to {gain_max:.1f}")
+        self._log(f"  Length range: {len_min:.4f} to {len_max:.4f} us")
+
+        return {
+            'gain_vectors': gain_vectors,
+            'length_vectors': length_vectors,
+            'freq_vectors': freq_vectors,
+            'original_freq': freq,
+            'original_gain': gain,
+            'original_pi_len': pi_len,
+            'stor_name': stor_name,
+        }
+
+    def _calibrate_at_gain_point(self, stor_name, freq_guess, gain, length_bs, qubit_state,
+                                 man_mode_no=1, stor_mode_no=1,
+                                 reps=100, n_pulses=10, n_step=3,
+                                 freq_span_initial=0.2, gain_span_frac=0.35,
+                                 freq_span_final=0.1):
+        """
+        Run the 3-step error amp sequence at one gain/length point.
+
+        Sequence: freq error amp -> gain error amp -> freq error amp (refined).
+        Does NOT save/restore dataset params; the caller is responsible.
+
+        Parameters
+        ----------
+        stor_name : str
+            Storage mode name
+        freq_guess : float
+            Initial frequency guess
+        gain : float
+            Gain at this sweep point
+        length_bs : float
+            Pi length at this sweep point
+        qubit_state : str
+            'g' or 'e'
+        freq_span_initial : float
+            Frequency span in MHz for the first freq sweep (default: 0.2)
+        gain_span_frac : float
+            Gain span as fraction of current gain (default: 0.35)
+        freq_span_final : float
+            Frequency span for the final refined freq sweep (default: 0.1)
+
+        Returns
+        -------
+        dict with keys: 'freq', 'gain', 'length', 'experiments'
+        """
+        experiments = {}
+
+        # Step 1: Frequency optimization
+        self._log(f"    Step 1/3: Frequency error amp")
+        optimal_freq, experiments['error_amp_freq_1'] = self._run_error_amp_general(
+            stor_name, freq_guess, gain, length_bs, qubit_state,
+            parameter_to_test='frequency',
+            man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+            reps=reps, n_pulses=n_pulses, n_step=n_step,
+            span=freq_span_initial, restore_params=False,
+        )
+        self.station.ds_storage.update_freq(stor_name, optimal_freq)
+
+        # Step 2: Gain optimization
+        self._log(f"    Step 2/3: Gain error amp")
+        optimal_gain, experiments['error_amp_gain'] = self._run_error_amp_general(
+            stor_name, optimal_freq, gain, length_bs, qubit_state,
+            parameter_to_test='gain',
+            man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+            reps=reps, n_pulses=n_pulses, n_step=n_step,
+            span=int(gain * gain_span_frac), restore_params=False,
+        )
+        self.station.ds_storage.update_gain(stor_name, int(optimal_gain))
+
+        # Step 3: Final frequency optimization (refined, narrower span)
+        self._log(f"    Step 3/3: Frequency error amp (refined)")
+        optimal_freq_final, experiments['error_amp_freq_2'] = self._run_error_amp_general(
+            stor_name, optimal_freq, int(optimal_gain), length_bs, qubit_state,
+            parameter_to_test='frequency',
+            man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+            reps=reps, n_pulses=n_pulses, n_step=n_step,
+            span=freq_span_final, restore_params=False,
+        )
+        self.station.ds_storage.update_freq(stor_name, optimal_freq_final)
+
+        return {
+            'freq': optimal_freq_final,
+            'gain': optimal_gain,
+            'length': length_bs,
+            'experiments': experiments,
+        }
 
     def _extract_pi_length_from_fit(self, fit_params):
         """
@@ -489,7 +740,7 @@ class JointParityCalibrator:
         def sideband_preproc(station, default_expt_cfg, **kwargs):
             expt_cfg = deepcopy(default_expt_cfg)
             expt_cfg.update(kwargs)
-            expt_cfg.flux_drive = [ch[0], freq_bs, gain, 0]
+            expt_cfg.flux_drive = ['low', freq_bs, gain, 0]
             return expt_cfg
 
         runner = CharacterizationRunner(
@@ -702,13 +953,281 @@ class JointParityCalibrator:
         self._log(f"    Theta: {theta * 180 / np.pi:.2f} deg")
         return theta, expt
 
+    def fit_bs_rate_lookup_table(self, lookup_data, degree_rate=2, degree_freq=10,
+                                store=True, skip_indices=None):
+        """
+        Fit polynomial lookup tables from calibration data and optionally store to dataset.
+
+        Can be called independently to refit with different polynomial degrees
+        without re-running experiments.
+
+        Parameters
+        ----------
+        lookup_data : dict
+            Calibration data returned by calibrate_bs_rate_lookup_table().
+            Must contain: 'gain_vectors', 'length_vectors', 'freq_vectors', 'stor_name'
+        degree_rate : int
+            Polynomial degree for bs_rate vs gain fit (default: 2)
+        degree_freq : int
+            Polynomial degree for freq vs gain fit (default: 10)
+        store : bool
+            If True, store coefficients and gain ranges to dataset (default: True)
+        skip_indices : list of int or dict, optional
+            Indices of points to exclude from the fit.
+            If a list, the same indices are skipped for all qubit states.
+            If a dict, keys are qubit states ('g', 'e') mapping to lists of indices.
+
+        Returns
+        -------
+        dict with keys:
+            'bs_coeffs': dict {'g': array, 'e': array}
+            'freq_coeffs': dict {'g': array, 'e': array}
+            'bs_rates': dict {'g': array, 'e': array}
+        """
+        gain_vectors = lookup_data['gain_vectors']
+        length_vectors = lookup_data['length_vectors']
+        freq_vectors = lookup_data['freq_vectors']
+        stor_name = lookup_data['stor_name']
+
+        # Compute beam splitter rates from pi lengths
+        bs_rates = {}
+        bs_coeffs = {}
+        freq_coeffs = {}
+
+        for qs in gain_vectors.keys():
+            bs_rates[qs] = 0.25 / length_vectors[qs]
+
+            # Determine which indices to skip for this qubit state
+            if skip_indices is None:
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+            elif isinstance(skip_indices, dict):
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+                mask[skip_indices.get(qs, [])] = False
+            else:
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+                mask[skip_indices] = False
+
+            n_skipped = np.sum(~mask)
+            if n_skipped > 0:
+                self._log(f"  Skipping {n_skipped} points for |{qs}>: indices {list(np.where(~mask)[0])}")
+
+            bs_coeffs[qs] = np.polyfit(gain_vectors[qs][mask], bs_rates[qs][mask], deg=degree_rate)
+            freq_coeffs[qs] = np.polyfit(gain_vectors[qs][mask], freq_vectors[qs][mask], deg=degree_freq)
+
+        # Store to dataset
+        if store:
+            for qs in gain_vectors.keys():
+                self.station.ds_storage.update_bs_rate_coeffs(stor_name, bs_coeffs[qs], qubit_state=qs)
+                self.station.ds_storage.update_freq_coeffs(stor_name, freq_coeffs[qs], qubit_state=qs)
+                gains = gain_vectors[qs]
+                self.station.ds_storage.update_gain_range(stor_name, gains.min(), gains.max(), qubit_state=qs)
+            self._log(f"  Stored polynomial coefficients and gain ranges for {stor_name}")
+
+        # Plot results
+        for qs in gain_vectors.keys():
+            if skip_indices is None:
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+            elif isinstance(skip_indices, dict):
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+                mask[skip_indices.get(qs, [])] = False
+            else:
+                mask = np.ones(len(gain_vectors[qs]), dtype=bool)
+                mask[skip_indices] = False
+
+            gain_fit_range = np.linspace(gain_vectors[qs].min(), gain_vectors[qs].max(), 100)
+            bs_fit = np.polyval(bs_coeffs[qs], gain_fit_range)
+            freq_fit = np.polyval(freq_coeffs[qs], gain_fit_range)
+
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+            color = 'tab:blue' if qs == 'g' else 'tab:red'
+
+            axes[0].plot(gain_vectors[qs][mask], bs_rates[qs][mask], 'o', color=color,
+                        label=f'Data (|{qs}>)')
+            axes[0].plot(gain_vectors[qs][~mask], bs_rates[qs][~mask], 'x', color='gray',
+                        markersize=10, label='Skipped')
+            axes[0].plot(gain_fit_range, bs_fit, '--', color='black',
+                        label=f'Fit (deg {degree_rate})')
+            axes[0].set_xlabel('Gain')
+            axes[0].set_ylabel('Beam Splitter Rate (MHz)')
+            axes[0].set_title(f'BS Rate vs Gain — qubit in |{qs}>')
+            axes[0].legend()
+
+            axes[1].plot(gain_vectors[qs][mask], freq_vectors[qs][mask], 'o', color=color,
+                        label=f'Data (|{qs}>)')
+            axes[1].plot(gain_vectors[qs][~mask], freq_vectors[qs][~mask], 'x', color='gray',
+                        markersize=10, label='Skipped')
+            axes[1].plot(gain_fit_range, freq_fit, '--', color='black',
+                        label=f'Fit (deg {degree_freq})')
+            axes[1].set_xlabel('Gain')
+            axes[1].set_ylabel('Frequency (MHz)')
+            axes[1].set_title(f'Frequency vs Gain — qubit in |{qs}>')
+            axes[1].legend()
+
+            plt.tight_layout()
+            plt.show()
+
+        self._log(f"  BS rate fit (degree {degree_rate}), freq fit (degree {degree_freq})")
+
+        return {
+            'bs_coeffs': bs_coeffs,
+            'freq_coeffs': freq_coeffs,
+            'bs_rates': bs_rates,
+        }
+
+    def calibrate_bs_rate_lookup_table(self, man_mode_no=1, stor_mode_no=1,
+                                       qubit_states=('g', 'e'), num_pts=20,
+                                       length_range_frac=(0.3, 1.2),
+                                       reps=100, n_pulses=10, n_step=3,
+                                       freq_span_initial=0.2, gain_span_frac=0.35,
+                                       freq_span_final=0.1,
+                                       degree_rate=2, degree_freq=10):
+        """
+        Build beam splitter rate lookup table by sweeping gain points.
+
+        For each qubit state, sweeps over gain values (derived from a range of
+        pi_lengths), runs a 3-step error amplification (freq -> gain -> freq) at
+        each point, then fits polynomial models for bs_rate(gain) and freq(gain).
+
+        The resulting polynomials are stored in the dataset and used by
+        calibrate_beam_splitter_rate() to look up gain and frequency for a
+        desired beam splitter rate.
+
+        To refit with different polynomial degrees without re-running experiments:
+            calibrator.fit_bs_rate_lookup_table(result, degree_rate=3, degree_freq=5)
+
+        Parameters
+        ----------
+        man_mode_no : int
+            Manipulate mode number (default: 1)
+        stor_mode_no : int
+            Storage mode number (default: 1)
+        qubit_states : tuple of str
+            Which qubit states to calibrate, e.g. ('g', 'e') or ('e',)
+        num_pts : int
+            Number of gain points to sweep (default: 20)
+        length_range_frac : tuple of float
+            (min, max) fraction of pi_length for sweep range (default: (0.3, 1.2))
+        reps : int
+            Repetitions per error amp measurement (default: 100)
+        n_pulses : int
+            Number of pulses in error amplification (default: 10)
+        n_step : int
+            Step size for n_pulses in error amp (default: 3)
+        freq_span_initial : float
+            Frequency span in MHz for the first freq error amp (default: 0.2)
+        gain_span_frac : float
+            Gain span as fraction of current gain (default: 0.35)
+        freq_span_final : float
+            Frequency span for final freq error amp (default: 0.1)
+        degree_rate : int
+            Polynomial degree for bs_rate vs gain fit (default: 2)
+        degree_freq : int
+            Polynomial degree for freq vs gain fit (default: 10)
+
+        Returns
+        -------
+        dict with keys:
+            'gain_vectors', 'length_vectors', 'freq_vectors': dict by qubit state
+            'stor_name': str
+            'bs_coeffs', 'freq_coeffs', 'bs_rates': from fit_bs_rate_lookup_table
+            'experiments': nested dict of all experiment objects
+        """
+        self._log(f"=== Building BS rate lookup table ===")
+
+        # Build sweep vectors
+        vectors = self._build_gain_sweep_vectors(
+            man_mode_no, stor_mode_no, num_pts, length_range_frac
+        )
+        stor_name = vectors['stor_name']
+        gain_vectors = vectors['gain_vectors']
+        length_vectors = vectors['length_vectors']
+        freq_vectors = vectors['freq_vectors']
+
+        # Save original dataset params
+        original_freq = vectors['original_freq']
+        original_gain = vectors['original_gain']
+        original_pi_len = vectors['original_pi_len']
+
+        all_experiments = {}
+
+        try:
+            for qs in qubit_states:
+                self._log(f"\n--- Calibrating for qubit in |{qs}> ({num_pts} points) ---")
+                all_experiments[qs] = {}
+
+                for idx in range(num_pts):
+                    gain_pt = gain_vectors[qs][idx]
+                    len_pt = length_vectors[qs][idx]
+
+                    # Warm-start: use previous point's freq for guess (except first point)
+                    if idx == 0:
+                        freq_guess = freq_vectors[qs][0]
+                    else:
+                        freq_guess = freq_vectors[qs][idx - 1]
+
+                    self._log(f"\n  Point {idx+1}/{num_pts}: gain={gain_pt:.1f}, "
+                              f"length={len_pt:.4f} us, freq_guess={freq_guess:.4f} MHz")
+
+                    try:
+                        result = self._calibrate_at_gain_point(
+                            stor_name, freq_guess, gain_pt, len_pt, qs,
+                            man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                            reps=reps, n_pulses=n_pulses, n_step=n_step,
+                            freq_span_initial=freq_span_initial,
+                            gain_span_frac=gain_span_frac,
+                            freq_span_final=freq_span_final,
+                        )
+
+                        # Update vectors with calibrated values
+                        freq_vectors[qs][idx] = result['freq']
+                        gain_vectors[qs][idx] = result['gain']
+                        all_experiments[qs][idx] = result['experiments']
+
+                        self._log(f"  -> freq={result['freq']:.4f}, gain={result['gain']:.1f}")
+
+                    except Exception as e:
+                        self._log(f"  ERROR at point {idx+1}: {e}")
+                        # Keep the initial guess values for this point
+                        all_experiments[qs][idx] = None
+
+        finally:
+            # Always restore original dataset params
+            self.station.ds_storage.update_pi(stor_name, original_pi_len)
+            self.station.ds_storage.update_gain(stor_name, int(original_gain))
+            self.station.ds_storage.update_freq(stor_name, original_freq)
+            self._log(f"\n  Restored original dataset params for {stor_name}")
+
+        # Build the lookup data dict
+        lookup_data = {
+            'gain_vectors': gain_vectors,
+            'length_vectors': length_vectors,
+            'freq_vectors': freq_vectors,
+            'stor_name': stor_name,
+            'experiments': all_experiments,
+        }
+
+        # Store for later refitting
+        self.last_lookup_data = lookup_data
+
+        # Fit and store polynomials
+        fit_result = self.fit_bs_rate_lookup_table(
+            lookup_data, degree_rate=degree_rate, degree_freq=degree_freq
+        )
+
+        # Merge fit results into the return dict
+        lookup_data.update(fit_result)
+
+        self._log(f"\n=== BS rate lookup table complete ===")
+        return lookup_data
+
     def calibrate_beam_splitter_rate(self, g_bs, man_mode_no=1, stor_mode_no=1,
                                       alpha_amplitude=1.0,
                                       reps_error_amp=50, reps_rabi=100, reps_wigner=100,
                                       error_amp_span=0.05, n_pulses=15,
                                       run_both_rabi_states=False,
                                       rabi_start=None, rabi_stop=None, rabi_expts=None,
-                                      wigner_n_points=100):
+                                      wigner_n_points=100,
+                                      f_bs_g_override=None, f_bs_e_override=None):
         """
         ALICE: Calibrate at a given beam splitter rate (WITH storage swap).
 
@@ -737,12 +1256,12 @@ class JointParityCalibrator:
         gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'e')
         gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'g')
         gain = int((gain_e + gain_g) / 2)
-        f_bs_g_guess = self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'g')
-        f_bs_e_guess = self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'e')
+        f_bs_g_guess = f_bs_g_override if f_bs_g_override is not None else self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'g')
+        f_bs_e_guess = f_bs_e_override if f_bs_e_override is not None else self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'e')
         length_bs = 0.25 / g_bs
 
         self._log(f"  Initial: gain={gain}, length_bs={length_bs:.4f} us")
-        self._log(f"  Freq guesses: f_bs_g={f_bs_g_guess:.4f}, f_bs_e={f_bs_e_guess:.4f}")
+        self._log(f"  Freq guesses: f_bs_g={f_bs_g_guess:.4f}, f_bs_e={f_bs_e_guess:.4f} (override={'yes' if f_bs_g_override is not None else 'no'})")
 
         experiments = {}
 
@@ -802,8 +1321,254 @@ class JointParityCalibrator:
             'experiments': experiments,
         }
 
+    def fit_rate_sweep(self, sweep_data, fit_degree=1, target_phase_diff=1.0,
+                       target_phase_tol=0.1, skip_indices=None):
+        """
+        Fit phase difference vs beam splitter rate from sweep data.
+
+        Can be called independently to refit with different polynomial degrees
+        or skip outlier points without re-running experiments.
+
+        Parameters
+        ----------
+        sweep_data : dict
+            Sweep data returned by sweep_beam_splitter_rate().
+            Must contain 'results' key with list of per-rate calibration dicts.
+        fit_degree : int
+            Degree of polynomial fit (default: 1 for linear)
+        target_phase_diff : float
+            Target phase difference in units of pi (default: 1.0)
+        target_phase_tol : float
+            Tolerance on phase difference in units of pi (default: 0.1)
+        skip_indices : list of int, optional
+            Indices of successful points to exclude from the fit.
+
+        Returns
+        -------
+        dict with keys:
+            'fit_params': polynomial coefficients from np.polyfit (highest degree first)
+            'fit_degree': degree of polynomial used
+            'fitted_optimal_rate': rate estimated from polynomial fit
+            'fit_figure': matplotlib figure of the fit
+            'optimal_idx': index of best measured rate in full results list
+            'optimal_rate': best measured rate
+            'optimal_result': calibration result for best measured rate
+            'converged': whether best measured rate is within tolerance
+        """
+        results = sweep_data['results']
+        successful = [r for r in results if r.get('success', False)]
+
+        if not successful:
+            self._log("No successful calibrations to fit!")
+            return {
+                'fit_params': None,
+                'fit_degree': fit_degree,
+                'fitted_optimal_rate': None,
+                'fit_figure': None,
+                'optimal_idx': None,
+                'optimal_rate': None,
+                'optimal_result': None,
+                'converged': False,
+            }
+
+        # Extract data
+        rates = np.array([r['g_bs'] for r in successful])
+        phase_diffs = np.array([r['phase_diff_pi'] for r in successful])
+
+        # Apply skip mask
+        if skip_indices is None:
+            mask = np.ones(len(successful), dtype=bool)
+        else:
+            mask = np.ones(len(successful), dtype=bool)
+            mask[skip_indices] = False
+
+        n_skipped = np.sum(~mask)
+        if n_skipped > 0:
+            self._log(f"  Skipping {n_skipped} points: indices {list(np.where(~mask)[0])}")
+
+        # Find best measured result (among non-skipped points)
+        masked_errors = np.full(len(successful), np.inf)
+        masked_errors[mask] = np.abs(phase_diffs[mask] - target_phase_diff)
+        optimal_idx = np.argmin(masked_errors)
+        converged = masked_errors[optimal_idx] <= target_phase_tol
+        original_idx = results.index(successful[optimal_idx])
+
+        self._log(f"Best measured rate: {rates[optimal_idx]:.4f} MHz "
+                  f"(phase_diff={phase_diffs[optimal_idx]:.4f} pi)")
+
+        # Polynomial fit
+        fit_params = None
+        fitted_optimal_rate = None
+        fit_figure = None
+
+        min_points_needed = fit_degree + 1
+        n_fit_points = np.sum(mask)
+        if n_fit_points >= min_points_needed:
+            try:
+                fit_params = np.polyfit(rates[mask], phase_diffs[mask], fit_degree)
+
+                # Find rate where phase_diff = target_phase_diff
+                root_coeffs = fit_params.copy()
+                root_coeffs[-1] -= target_phase_diff
+
+                roots = np.roots(root_coeffs)
+
+                # Filter for real roots within a reasonable range of the data
+                rate_min, rate_max = min(rates[mask]), max(rates[mask])
+                rate_margin = (rate_max - rate_min) * 0.5
+                valid_roots = []
+                for root in roots:
+                    if np.isreal(root):
+                        root_real = np.real(root)
+                        if (rate_min - rate_margin) <= root_real <= (rate_max + rate_margin):
+                            valid_roots.append(root_real)
+
+                if valid_roots:
+                    rate_center = (rate_min + rate_max) / 2
+                    fitted_optimal_rate = min(valid_roots, key=lambda x: abs(x - rate_center))
+
+                    if fit_degree == 1:
+                        self._log(f"Linear fit: phase_diff = {fit_params[0]:.4f} * rate + {fit_params[1]:.4f}")
+                    else:
+                        self._log(f"Polynomial fit (degree {fit_degree}): coeffs = {fit_params}")
+                    self._log(f"Fitted optimal rate: {fitted_optimal_rate:.4f} MHz")
+
+                    fit_figure = self._plot_rate_sweep_fit(
+                        rates, phase_diffs, fit_params, fitted_optimal_rate,
+                        target_phase_diff, target_phase_tol, fit_degree
+                    )
+                else:
+                    self._log("WARNING: No valid root found in data range, cannot estimate optimal rate")
+
+            except Exception as e:
+                self._log(f"ERROR during polynomial fit: {e}")
+
+        else:
+            self._log(f"WARNING: Not enough non-skipped points for degree-{fit_degree} fit "
+                      f"(have {n_fit_points}, need >= {min_points_needed})")
+
+        return {
+            'fit_params': fit_params,
+            'fit_degree': fit_degree,
+            'fitted_optimal_rate': fitted_optimal_rate,
+            'fit_figure': fit_figure,
+            'optimal_idx': original_idx,
+            'optimal_rate': rates[optimal_idx],
+            'optimal_result': successful[optimal_idx],
+            'converged': converged,
+        }
+
+    def calibrate_at_fitted_rate(self, sweep_data, fitted_optimal_rate,
+                                man_mode_no=1, stor_mode_no=1,
+                                reps_error_amp=50, n_pulses=15, error_amp_span=0.05,
+                                reps_rabi=100, run_both_rabi_states=False,
+                                rabi_start=None, rabi_stop=None, rabi_expts=None):
+        """
+        Run error amplification and Rabi at a fitted optimal beam splitter rate.
+
+        Can be called independently after fit_rate_sweep() to calibrate at a
+        new fitted rate without re-running the full sweep.
+
+        Parameters
+        ----------
+        sweep_data : dict
+            Sweep data from sweep_beam_splitter_rate(), must contain 'results'.
+        fitted_optimal_rate : float
+            Beam splitter rate (MHz) at which to run calibration.
+        man_mode_no : int
+            Manipulate mode number (default: 1)
+        stor_mode_no : int
+            Storage mode number (default: 1)
+        reps_error_amp : int
+            Repetitions for error amplification (default: 50)
+        n_pulses : int
+            Number of pulses in error amplification (default: 15)
+        error_amp_span : float
+            Frequency span for error amplification (default: 0.05)
+        reps_rabi : int
+            Repetitions for Rabi measurement (default: 100)
+        run_both_rabi_states : bool
+            Whether to run Rabi for both qubit states (default: False)
+        rabi_start : float, optional
+            Start of Rabi sweep range
+        rabi_stop : float, optional
+            End of Rabi sweep range
+        rabi_expts : int, optional
+            Number of Rabi experiments
+
+        Returns
+        -------
+        dict with calibration results:
+            'g_bs', 'freq_bs', 'f_bs_g', 'f_bs_e', 'gain', 'length_bs',
+            'pi_length', 'man_mode_no', 'stor_mode_no', 'experiments'
+        Returns None if calibration fails.
+        """
+        self._log(f"\n=== Calibrating at fitted optimal rate: {fitted_optimal_rate:.4f} MHz ===")
+        stor_name = f'M{man_mode_no}-S{stor_mode_no}'
+
+        try:
+            # Get gain and length for the fitted rate
+            gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'e')
+            gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'g')
+            gain = int((gain_e + gain_g) / 2)
+            length_bs = 0.25 / fitted_optimal_rate
+
+            # Use frequencies from the closest swept point as initial guess
+            results = sweep_data['results']
+            successful = [r for r in results if r.get('success', False)]
+            rates = np.array([r['g_bs'] for r in successful])
+            closest_idx = np.argmin(np.abs(rates - fitted_optimal_rate))
+            f_bs_g_guess = successful[closest_idx]['f_bs_g']
+            f_bs_e_guess = successful[closest_idx]['f_bs_e']
+            self._log(f"  Using freq guess from closest sweep point (g_bs={rates[closest_idx]:.4f} MHz): "
+                      f"f_bs_g={f_bs_g_guess:.4f}, f_bs_e={f_bs_e_guess:.4f}")
+
+            self._log(f"  Initial: gain={gain}, length_bs={length_bs:.4f} us")
+
+            fitted_experiments = {}
+
+            # Error amplification for both states
+            f_bs_g, fitted_experiments['error_amp_g'] = self._run_error_amp(
+                stor_name, f_bs_g_guess, gain, length_bs, 'g',
+                man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
+            )
+            f_bs_e, fitted_experiments['error_amp_e'] = self._run_error_amp(
+                stor_name, f_bs_e_guess, gain, length_bs, 'e',
+                man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
+            )
+            freq_bs = (f_bs_g + f_bs_e) / 2
+            self._log(f"  Calibrated freq_bs={freq_bs:.4f} MHz")
+
+            # Rabi confirmation
+            pi_length, fitted_experiments['rabi_g'], fitted_experiments['rabi_e'] = self._run_rabi(
+                freq_bs, gain, length_bs, man_mode_no, stor_mode_no,
+                reps=reps_rabi*3, run_both_states=run_both_rabi_states,
+                start=rabi_start, stop=rabi_stop, expts=rabi_expts
+            )
+            self._log(f"  Calibrated pi_length={pi_length:.4f} us")
+
+            return {
+                'g_bs': fitted_optimal_rate,
+                'freq_bs': freq_bs,
+                'f_bs_g': f_bs_g,
+                'f_bs_e': f_bs_e,
+                'gain': gain,
+                'length_bs': length_bs,
+                'pi_length': pi_length,
+                'man_mode_no': man_mode_no,
+                'stor_mode_no': stor_mode_no,
+                'experiments': fitted_experiments,
+            }
+
+        except Exception as e:
+            self._log(f"ERROR during fitted calibration: {e}")
+            return None
+
     def sweep_beam_splitter_rate(self, rate_list, target_phase_diff=1.0,
-                                  target_phase_tol=0.1, fit_degree=1, **kwargs):
+                                  target_phase_tol=0.1, fit_degree=1,
+                                  f_bs_g_guess=None, f_bs_e_guess=None, **kwargs):
         """
         ALICE: Sweep beam splitter rates to find optimal one.
 
@@ -821,6 +1586,12 @@ class JointParityCalibrator:
             Tolerance on phase difference in units of pi (default: 0.1)
         fit_degree : int
             Degree of polynomial fit (default: 1 for linear)
+        f_bs_g_guess : float, optional
+            Initial frequency guess for |g> state for the first sweep point.
+            If None, uses the lookup table.
+        f_bs_e_guess : float, optional
+            Initial frequency guess for |e> state for the first sweep point.
+            If None, uses the lookup table.
 
         Returns
         -------
@@ -857,180 +1628,52 @@ class JointParityCalibrator:
         wigner_n_points = kwargs.get('wigner_n_points', 100)
 
         results = []
+        prev_f_bs_g = f_bs_g_guess
+        prev_f_bs_e = f_bs_e_guess
         for i, g_bs in enumerate(rate_list):
             self._log(f"\nRate {i+1}/{len(rate_list)}: g_bs={g_bs:.4f} MHz")
             try:
-                result = self.calibrate_beam_splitter_rate(g_bs, **kwargs)
+                result = self.calibrate_beam_splitter_rate(
+                    g_bs, f_bs_g_override=prev_f_bs_g, f_bs_e_override=prev_f_bs_e, **kwargs
+                )
                 results.append(result)
+                # Use fitted frequencies as guess for the next rate point
+                if result.get('success', False):
+                    prev_f_bs_g = result['f_bs_g']
+                    prev_f_bs_e = result['f_bs_e']
             except Exception as e:
                 self._log(f"  ERROR: {e}")
                 results.append({'g_bs': g_bs, 'success': False, 'error': str(e)})
 
-        # Find best result among successful ones
-        successful = [r for r in results if r.get('success', False)]
-        if not successful:
-            self._log("No successful calibrations!")
-            return {
-                'results': results,
-                'optimal_idx': None,
-                'optimal_rate': None,
-                'optimal_result': None,
-                'converged': False,
-                'fit_params': None,
-                'fit_degree': fit_degree,
-                'fitted_optimal_rate': None,
-                'fitted_calibration': None,
-                'fit_figure': None,
-            }
+        # Build sweep data and store for later refitting
+        sweep_data = {'results': results}
+        self.last_rate_sweep_data = sweep_data
 
-        # Extract data for fitting
-        rates = np.array([r['g_bs'] for r in successful])
-        phase_diffs = np.array([r['phase_diff_pi'] for r in successful])
+        # Fit phase_diff vs rate using the refittable method
+        fit_result = self.fit_rate_sweep(
+            sweep_data, fit_degree=fit_degree,
+            target_phase_diff=target_phase_diff,
+            target_phase_tol=target_phase_tol,
+        )
 
-        # Find best measured result
-        errors = [abs(pd - target_phase_diff) for pd in phase_diffs]
-        optimal_idx = np.argmin(errors)
-        converged = errors[optimal_idx] <= target_phase_tol
-        original_idx = results.index(successful[optimal_idx])
+        # Merge fit results into return dict
+        sweep_data.update(fit_result)
 
-        self._log(f"\nBest measured rate: {rates[optimal_idx]:.4f} MHz "
-                  f"(phase_diff={phase_diffs[optimal_idx]:.4f} pi)")
-
-        # Fit phase_diff vs rate to polynomial
-        fit_params = None
-        fitted_optimal_rate = None
+        # Run error amplification and Rabi at the fitted optimal rate (if found)
         fitted_calibration = None
-        fit_figure = None
+        fitted_optimal_rate = fit_result.get('fitted_optimal_rate')
+        if fitted_optimal_rate is not None:
+            fitted_calibration = self.calibrate_at_fitted_rate(
+                sweep_data, fitted_optimal_rate,
+                man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                reps_error_amp=reps_error_amp, n_pulses=n_pulses,
+                error_amp_span=error_amp_span, reps_rabi=reps_rabi,
+                run_both_rabi_states=run_both_rabi_states,
+                rabi_start=rabi_start, rabi_stop=rabi_stop, rabi_expts=rabi_expts,
+            )
 
-        min_points_needed = fit_degree + 1
-        if len(successful) >= min_points_needed:
-            try:
-                # Polynomial fit: phase_diff = poly(rate)
-                fit_params = np.polyfit(rates, phase_diffs, fit_degree)
-
-                # Find rate where phase_diff = target_phase_diff
-                # Solve: poly(rate) - target = 0
-                root_coeffs = fit_params.copy()
-                root_coeffs[-1] -= target_phase_diff  # Subtract target from constant term
-
-                # Find roots
-                roots = np.roots(root_coeffs)
-
-                # Filter for real roots within a reasonable range of the data
-                rate_min, rate_max = min(rates), max(rates)
-                rate_margin = (rate_max - rate_min) * 0.5
-                valid_roots = []
-                for root in roots:
-                    if np.isreal(root):
-                        root_real = np.real(root)
-                        if (rate_min - rate_margin) <= root_real <= (rate_max + rate_margin):
-                            valid_roots.append(root_real)
-
-                if valid_roots:
-                    # Pick the root closest to the center of the data range
-                    rate_center = (rate_min + rate_max) / 2
-                    fitted_optimal_rate = min(valid_roots, key=lambda x: abs(x - rate_center))
-
-                    # Log fit info
-                    if fit_degree == 1:
-                        self._log(f"\nLinear fit: phase_diff = {fit_params[0]:.4f} * rate + {fit_params[1]:.4f}")
-                    else:
-                        self._log(f"\nPolynomial fit (degree {fit_degree}): coeffs = {fit_params}")
-                    self._log(f"Fitted optimal rate: {fitted_optimal_rate:.4f} MHz")
-
-                    # Create fit plot
-                    fit_figure = self._plot_rate_sweep_fit(
-                        rates, phase_diffs, fit_params, fitted_optimal_rate,
-                        target_phase_diff, target_phase_tol, fit_degree
-                    )
-
-                    # Run error amplification and Rabi at the fitted optimal rate
-                    self._log(f"\n=== Calibrating at fitted optimal rate: {fitted_optimal_rate:.4f} MHz ===")
-                    stor_name = f'M{man_mode_no}-S{stor_mode_no}'
-
-                    # Get gain and length for the fitted rate
-                    gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'e')
-                    gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'g')
-                    gain = int((gain_e + gain_g) / 2)
-                    f_bs_g_guess = self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'g')
-                    f_bs_e_guess = self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'e')
-                    length_bs = 0.25 / fitted_optimal_rate
-
-                    self._log(f"  Initial: gain={gain}, length_bs={length_bs:.4f} us")
-
-                    fitted_experiments = {}
-
-                    # Error amplification for both states
-                    f_bs_g, fitted_experiments['error_amp_g'] = self._run_error_amp(
-                        stor_name, f_bs_g_guess, gain, length_bs, 'g',
-                        man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
-                        reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
-                    )
-                    f_bs_e, fitted_experiments['error_amp_e'] = self._run_error_amp(
-                        stor_name, f_bs_e_guess, gain, length_bs, 'e',
-                        man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
-                        reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
-                    )
-                    freq_bs = (f_bs_g + f_bs_e) / 2
-                    self._log(f"  Calibrated freq_bs={freq_bs:.4f} MHz")
-
-                    # Rabi confirmation
-                    pi_length, fitted_experiments['rabi_g'], fitted_experiments['rabi_e'] = self._run_rabi(
-                        freq_bs, gain, length_bs, man_mode_no, stor_mode_no,
-                        reps=reps_rabi, run_both_states=run_both_rabi_states,
-                        start=rabi_start, stop=rabi_stop, expts=rabi_expts
-                    )
-                    self._log(f"  Calibrated pi_length={pi_length:.4f} us")
-
-                    # check phase difference at fitted rate
-                    # theta_g, fitted_experiments['wigner_g'] = self._run_wigner_alice(
-                    #     freq_bs, gain, pi_length, 'g', alpha_amplitude=alpha_amplitude,
-                    #     man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
-                    #     reps=reps_wigner, n_points=wigner_n_points,
-                    # )
-                    # theta_e, fitted_experiments['wigner_e'] = self._run_wigner_alice(
-                    #     freq_bs, gain, pi_length, 'e', alpha_amplitude=alpha_amplitude,
-                    #     man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
-                    #     reps=reps_wigner, n_points=wigner_n_points,
-                    # )
-                    # phase_diff_pi = np.abs(theta_e - theta_g) / np.pi
-                    # self._log(f"  theta_g={theta_g*180/np.pi:.2f} deg, theta_e={theta_e*180/np.pi:.2f} deg")
-                    # self._log(f"  Phase difference at fitted rate: {phase_diff_pi:.4f} pi")
-
-
-                    fitted_calibration = {
-                        'g_bs': fitted_optimal_rate,
-                        'freq_bs': freq_bs,
-                        'f_bs_g': f_bs_g,
-                        'f_bs_e': f_bs_e,
-                        'gain': gain,
-                        'length_bs': length_bs,
-                        'pi_length': pi_length,
-                        'man_mode_no': man_mode_no,
-                        'stor_mode_no': stor_mode_no,
-                        'experiments': fitted_experiments,
-                    }
-                else:
-                    self._log("WARNING: No valid root found in data range, cannot estimate optimal rate")
-
-            except Exception as e:
-                self._log(f"ERROR during polynomial fit or fitted calibration: {e}")
-
-        else:
-            self._log(f"WARNING: Not enough successful points for degree-{fit_degree} fit (need >= {min_points_needed})")
-
-        return {
-            'results': results,
-            'optimal_idx': original_idx,
-            'optimal_rate': rates[optimal_idx],
-            'optimal_result': successful[optimal_idx],
-            'converged': converged,
-            'fit_params': fit_params,
-            'fit_degree': fit_degree,
-            'fitted_optimal_rate': fitted_optimal_rate,
-            'fitted_calibration': fitted_calibration,
-            'fit_figure': fit_figure,
-        }
+        sweep_data['fitted_calibration'] = fitted_calibration
+        return sweep_data
 
     def _plot_rate_sweep_fit(self, rates, phase_diffs, fit_params, fitted_optimal_rate,
                               target_phase_diff, target_phase_tol, fit_degree=1):
@@ -1174,6 +1817,128 @@ class JointParityCalibrator:
 
         return fig
 
+    def fit_wait_time(self, sweep_data, fit_degree=1, target_phase_diff=1.0,
+                      target_phase_tol=0.1, skip_indices=None):
+        """
+        Fit phase difference vs wait time from sweep data.
+
+        Can be called independently to refit with different polynomial degrees
+        or skip outlier points without re-running experiments.
+
+        Parameters
+        ----------
+        sweep_data : dict
+            Sweep data returned by calibrate_wait_time().
+            Must contain 'results' key with list of per-wait-time dicts.
+        fit_degree : int
+            Degree of polynomial fit (default: 1 for linear)
+        target_phase_diff : float
+            Target phase difference in units of pi (default: 1.0)
+        target_phase_tol : float
+            Tolerance on phase difference in units of pi (default: 0.1)
+        skip_indices : list of int, optional
+            Indices of points to exclude from the fit.
+
+        Returns
+        -------
+        dict with keys:
+            'fit_params': polynomial coefficients from np.polyfit (highest degree first)
+            'fit_degree': degree of polynomial used
+            'fitted_optimal_wait': wait time estimated from polynomial fit
+            'fit_figure': matplotlib figure of the fit
+            'optimal_idx': index of best measured wait time
+            'optimal_wait': best measured wait time
+            'optimal_phase_diff': phase difference at best measured wait time
+            'converged': whether best measured wait time is within tolerance
+        """
+        results = sweep_data['results']
+
+        # Extract data
+        wait_times = np.array([r['wait_time'] for r in results])
+        phase_diffs = np.array([r['phase_diff_pi'] for r in results])
+
+        # Apply skip mask
+        if skip_indices is None:
+            mask = np.ones(len(results), dtype=bool)
+        else:
+            mask = np.ones(len(results), dtype=bool)
+            mask[skip_indices] = False
+
+        n_skipped = np.sum(~mask)
+        if n_skipped > 0:
+            self._log(f"  Skipping {n_skipped} points: indices {list(np.where(~mask)[0])}")
+
+        # Find best measured result (among non-skipped points)
+        masked_errors = np.full(len(results), np.inf)
+        masked_errors[mask] = np.abs(phase_diffs[mask] - target_phase_diff)
+        optimal_idx = int(np.argmin(masked_errors))
+        converged = masked_errors[optimal_idx] <= target_phase_tol
+
+        self._log(f"Best measured wait: {wait_times[optimal_idx]:.3f} us "
+                  f"(phase_diff={phase_diffs[optimal_idx]:.4f} pi)")
+
+        # Polynomial fit
+        fit_params = None
+        fitted_optimal_wait = None
+        fit_figure = None
+
+        min_points_needed = fit_degree + 1
+        n_fit_points = np.sum(mask)
+        if n_fit_points >= min_points_needed:
+            try:
+                fit_params = np.polyfit(wait_times[mask], phase_diffs[mask], fit_degree)
+
+                # Find wait_time where phase_diff = target_phase_diff
+                root_coeffs = fit_params.copy()
+                root_coeffs[-1] -= target_phase_diff
+
+                roots = np.roots(root_coeffs)
+
+                # Filter for real roots within a reasonable range of the data
+                wait_min, wait_max = min(wait_times[mask]), max(wait_times[mask])
+                wait_margin = (wait_max - wait_min) * 0.5
+                valid_roots = []
+                for root in roots:
+                    if np.isreal(root):
+                        root_real = np.real(root)
+                        if (wait_min - wait_margin) <= root_real <= (wait_max + wait_margin):
+                            valid_roots.append(root_real)
+
+                if valid_roots:
+                    wait_center = (wait_min + wait_max) / 2
+                    fitted_optimal_wait = min(valid_roots, key=lambda x: abs(x - wait_center))
+
+                    if fit_degree == 1:
+                        self._log(f"Linear fit: phase_diff = {fit_params[0]:.4f} * wait + {fit_params[1]:.4f}")
+                    else:
+                        self._log(f"Polynomial fit (degree {fit_degree}): coeffs = {fit_params}")
+                    self._log(f"Fitted optimal wait: {fitted_optimal_wait:.4f} us")
+
+                    fit_figure = self._plot_wait_sweep_fit(
+                        wait_times, phase_diffs, fit_params, fitted_optimal_wait,
+                        target_phase_diff, target_phase_tol, fit_degree
+                    )
+                else:
+                    self._log("WARNING: No valid root found in data range, cannot estimate optimal wait time")
+
+            except Exception as e:
+                self._log(f"ERROR during polynomial fit: {e}")
+
+        else:
+            self._log(f"WARNING: Not enough non-skipped points for degree-{fit_degree} fit "
+                      f"(have {n_fit_points}, need >= {min_points_needed})")
+
+        return {
+            'fit_params': fit_params,
+            'fit_degree': fit_degree,
+            'fitted_optimal_wait': fitted_optimal_wait,
+            'fit_figure': fit_figure,
+            'optimal_idx': optimal_idx,
+            'optimal_wait': wait_times[optimal_idx],
+            'optimal_phase_diff': phase_diffs[optimal_idx],
+            'converged': converged,
+        }
+
     def calibrate_wait_time(self, wait_time_list, fixed_params,
                             target_phase_diff=1.0, target_phase_tol=0.1,
                             fit_degree=1, alpha_amplitude=None, reps=100,
@@ -1252,87 +2017,25 @@ class JointParityCalibrator:
                 'phase_diff_pi': phase_diff,
             })
 
-        # Extract data for fitting
-        wait_times = np.array([r['wait_time'] for r in results])
-        phase_diffs = np.array([r['phase_diff_pi'] for r in results])
+        # Build sweep data and store for later refitting
+        sweep_data = {'results': results}
+        self.last_wait_time_data = sweep_data
 
-        # Find best measured result
-        errors = [abs(pd - target_phase_diff) for pd in phase_diffs]
-        optimal_idx = np.argmin(errors)
-        converged = errors[optimal_idx] <= target_phase_tol
+        # Fit phase_diff vs wait_time using the refittable method
+        fit_result = self.fit_wait_time(
+            sweep_data, fit_degree=fit_degree,
+            target_phase_diff=target_phase_diff,
+            target_phase_tol=target_phase_tol,
+        )
 
-        self._log(f"\nBest measured wait: {wait_times[optimal_idx]:.3f} us "
-                  f"(phase_diff={phase_diffs[optimal_idx]:.4f} pi)")
+        # Merge fit results into return dict
+        sweep_data.update(fit_result)
 
-        # Fit phase_diff vs wait_time to polynomial
-        fit_params = None
-        fitted_optimal_wait = None
-        fit_figure = None
+        self._log(f"\nOptimal wait: {fit_result['optimal_wait']:.3f} us "
+                  f"(phase_diff={fit_result['optimal_phase_diff']:.4f} pi, "
+                  f"converged={fit_result['converged']})")
 
-        min_points_needed = fit_degree + 1
-        if len(results) >= min_points_needed:
-            try:
-                # Polynomial fit: phase_diff = poly(wait_time)
-                fit_params = np.polyfit(wait_times, phase_diffs, fit_degree)
-
-                # Find wait_time where phase_diff = target_phase_diff
-                # Solve: poly(wait_time) - target = 0
-                root_coeffs = fit_params.copy()
-                root_coeffs[-1] -= target_phase_diff  # Subtract target from constant term
-
-                # Find roots
-                roots = np.roots(root_coeffs)
-
-                # Filter for real roots within a reasonable range of the data
-                wait_min, wait_max = min(wait_times), max(wait_times)
-                wait_margin = (wait_max - wait_min) * 0.5
-                valid_roots = []
-                for root in roots:
-                    if np.isreal(root):
-                        root_real = np.real(root)
-                        if (wait_min - wait_margin) <= root_real <= (wait_max + wait_margin):
-                            valid_roots.append(root_real)
-
-                if valid_roots:
-                    # Pick the root closest to the center of the data range
-                    wait_center = (wait_min + wait_max) / 2
-                    fitted_optimal_wait = min(valid_roots, key=lambda x: abs(x - wait_center))
-
-                    # Log fit info
-                    if fit_degree == 1:
-                        self._log(f"\nLinear fit: phase_diff = {fit_params[0]:.4f} * wait + {fit_params[1]:.4f}")
-                    else:
-                        self._log(f"\nPolynomial fit (degree {fit_degree}): coeffs = {fit_params}")
-                    self._log(f"Fitted optimal wait: {fitted_optimal_wait:.4f} us")
-
-                    # Create fit plot
-                    fit_figure = self._plot_wait_sweep_fit(
-                        wait_times, phase_diffs, fit_params, fitted_optimal_wait,
-                        target_phase_diff, target_phase_tol, fit_degree
-                    )
-                else:
-                    self._log("WARNING: No valid root found in data range, cannot estimate optimal wait time")
-
-            except Exception as e:
-                self._log(f"ERROR during polynomial fit: {e}")
-
-        else:
-            self._log(f"WARNING: Not enough points for degree-{fit_degree} fit (need >= {min_points_needed})")
-
-        self._log(f"\nOptimal wait: {wait_times[optimal_idx]:.3f} us "
-                  f"(phase_diff={results[optimal_idx]['phase_diff_pi']:.4f} pi, converged={converged})")
-
-        return {
-            'results': results,
-            'optimal_idx': optimal_idx,
-            'optimal_wait': wait_times[optimal_idx],
-            'optimal_phase_diff': results[optimal_idx]['phase_diff_pi'],
-            'converged': converged,
-            'fit_params': fit_params,
-            'fit_degree': fit_degree,
-            'fitted_optimal_wait': fitted_optimal_wait,
-            'fit_figure': fit_figure,
-        }
+        return sweep_data
 
     def plot_rate_sweep(self, sweep_result, title="ALICE: Beam Splitter Rate Sweep"):
         """Plot phase difference vs beam splitter rate."""

@@ -317,41 +317,123 @@ def fitdecaysin1(xdata, ydata, fitparams=None):
         # return 0, 0
     return pOpt, pCov
 
-def fitdecaysin(xdata, ydata, fitparams=None):
-    if fitparams is None: fitparams = [None]*6
-    fourier = np.fft.fft(ydata)
-    fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
-    fft_phases = np.angle(fourier)
-    sorted_fourier = np.sort(fourier)
-    max_ind = np.argwhere(fourier == sorted_fourier[-1])[0][0]
-    if max_ind == 0:
-        max_ind = np.argwhere(fourier == sorted_fourier[-2])[0][0]
-    max_freq = np.abs(fft_freqs[max_ind])
-    max_phase = fft_phases[max_ind]
-    if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
-    # if fitparams[2] is None: fitparams[2]=0
-    if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
-    if fitparams[3] is None: fitparams[3]=max(xdata) - min(xdata)
-    if fitparams[4] is None: fitparams[4]=np.mean(ydata)
-    if fitparams[5] is None: fitparams[5]=xdata[0]
-    bounds = (
-        [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, 0.3*(max(xdata)-min(xdata)), np.min(ydata), xdata[0]-(xdata[-1]-xdata[0])],
-        [1.5*fitparams[0], 50/(max(xdata)-min(xdata)), 360, np.inf, np.max(ydata), xdata[-1]+(xdata[-1]-xdata[0])]
-        )
+def _clamp_to_bounds(fitparams, bounds, verbose=True):
+    """Push any out-of-bounds initial params to the midpoint of their bounds."""
     for i, param in enumerate(fitparams):
         if not (bounds[0][i] < param < bounds[1][i]):
+            old = param
             fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-            print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-    pOpt = fitparams
-    pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
-    try:
-        pOpt, pCov = sp.optimize.curve_fit(decaysin, xdata, ydata, p0=fitparams, bounds=bounds)
-        # return pOpt, pCov
-    except RuntimeError: 
-        print('Warning: fit failed!')
-        # return 0, 0
-    return pOpt, pCov
+            if verbose:
+                print(f'Attempted to init fitparam {i} to {old}, '
+                      f'which is out of bounds {bounds[0][i]} to {bounds[1][i]}. '
+                      f'Instead init to {fitparams[i]}')
+    return fitparams
+
+
+def _residual_ss(model, xdata, ydata, params):
+    """Sum of squared residuals."""
+    return np.sum((model(xdata, *params) - ydata) ** 2)
+
+
+def fitdecaysin(xdata, ydata, fitparams=None, use_x0=True):
+    """Fit decaying sinusoid with multi-start for robustness.
+
+    Tries the primary initial guess first, then retries with shifted phases
+    (0, 90, 180, 270 offsets) if the primary fit fails or gives poor results.
+    If use_x0 model fails entirely, falls back to the simpler 5-param model.
+    """
+    from fitting.fit_utils import guess_decaysin_params
+
+    xdata = np.asarray(xdata, dtype=float)
+    ydata = np.asarray(ydata, dtype=float)
+
+    n_params = 6 if use_x0 else 5
+    model = decaysin if use_x0 else decaysin1
+
+    if fitparams is None:
+        fitparams = [None] * n_params
+
+    # --- Auto-guess any None params using improved estimator ---
+    has_nones = any(p is None for p in fitparams)
+    if has_nones:
+        amp_g, freq_g, phase_g, decay_g, offset_g = guess_decaysin_params(
+            xdata, ydata)
+        if fitparams[0] is None: fitparams[0] = amp_g
+        if fitparams[1] is None: fitparams[1] = freq_g
+        if fitparams[2] is None: fitparams[2] = phase_g
+        if fitparams[3] is None: fitparams[3] = decay_g
+        if fitparams[4] is None: fitparams[4] = offset_g
+        if use_x0 and fitparams[5] is None:
+            fitparams[5] = xdata[0]
+
+    xrange = max(xdata) - min(xdata)
+    ymin, ymax = np.min(ydata), np.max(ydata)
+    yptp = ymax - ymin
+    if yptp == 0:
+        yptp = 1e-10  # avoid zero-width bounds for flat data
+
+    if use_x0:
+        bounds = (
+            [0, 0.1/xrange, -360, 0.1*xrange, ymin - 0.1*yptp,
+             xdata[0] - xrange],
+            [1.5*yptp, 50/xrange, 360, np.inf, ymax + 0.1*yptp,
+             xdata[-1] + xrange]
+        )
+    else:
+        bounds = (
+            [0, 0.1/xrange, -360, 0.1*xrange, ymin - 0.1*yptp],
+            [1.5*yptp, 50/xrange, 360, np.inf, ymax + 0.1*yptp]
+        )
+
+    fitparams = list(fitparams)
+    fitparams = _clamp_to_bounds(fitparams, bounds)
+
+    # --- Multi-start: try primary guess + phase-shifted variants ---
+    phase_offsets = [0, 90, 180, 270]
+    best_pOpt = list(fitparams)
+    best_pCov = np.full((n_params, n_params), np.inf)
+    best_resid = np.inf
+
+    for dph in phase_offsets:
+        p0 = list(fitparams)
+        p0[2] = fitparams[2] + dph
+        # wrap phase into [-360, 360]
+        while p0[2] > 360: p0[2] -= 720
+        while p0[2] < -360: p0[2] += 720
+        p0 = _clamp_to_bounds(p0, bounds, verbose=False)
+        try:
+            pOpt, pCov = sp.optimize.curve_fit(
+                model, xdata, ydata, p0=p0, bounds=bounds, maxfev=20000)
+            resid = _residual_ss(model, xdata, ydata, pOpt)
+            if resid < best_resid:
+                best_resid = resid
+                best_pOpt = pOpt
+                best_pCov = pCov
+        except (RuntimeError, ValueError):
+            continue
+
+    # --- Fallback: try 5-param model if 6-param failed entirely ---
+    if use_x0 and best_resid == np.inf:
+        try:
+            p0_5 = list(fitparams[:5])
+            bounds_5 = (list(bounds[0][:5]), list(bounds[1][:5]))
+            p0_5 = _clamp_to_bounds(p0_5, bounds_5, verbose=False)
+            pOpt5, pCov5 = sp.optimize.curve_fit(
+                decaysin1, xdata, ydata, p0=p0_5, bounds=bounds_5,
+                maxfev=20000)
+            # pad to 6-param format for compatibility
+            best_pOpt = list(pOpt5) + [xdata[0]]
+            best_pCov_5 = np.full((6, 6), np.inf)
+            best_pCov_5[:5, :5] = pCov5
+            best_pCov = best_pCov_5
+            best_resid = _residual_ss(decaysin1, xdata, ydata, pOpt5)
+        except (RuntimeError, ValueError):
+            pass
+
+    if best_resid == np.inf:
+        print('Warning: fit failed (all starts)!')
+
+    return best_pOpt, best_pCov
 
 
 
@@ -360,31 +442,45 @@ def gaussianfunc(x, *p):
     y0, yscale, x0, sigma = p
     return y0 + yscale * np.exp(-((x - x0) / sigma) ** 2)
 
-def fitgaussian(xdata, ydata, fitparams=None):
+def fitgaussian(xdata, ydata, fitparams=None, periodic=True):
+    """Fit a Gaussian to data.
+
+    Args:
+        periodic: If True, handle wrap-around by rolling ydata so the peak
+            is centered before fitting, then shifting x0 back. Use this when
+            the x-axis is periodic (e.g. phase in degrees) and the peak may
+            straddle the sweep boundary.
+    """
     if fitparams is None: fitparams = [None]*4
+
+    n = len(ydata)
+    x_shift = 0.0
+    dx = (xdata[-1] - xdata[0]) / (n - 1) if n > 1 else 1.0
+
+    if periodic:
+        # Roll ydata so the maximum is near the center of the array
+        i_max = np.argmax(ydata)
+        shift = n // 2 - i_max
+        ydata = np.roll(ydata, shift)
+        x_shift = shift * dx
+
     if fitparams[0] is None: fitparams[0]=np.min(ydata)
     if fitparams[1] is None: fitparams[1]=np.max(ydata)-np.min(ydata)
     if fitparams[2] is None: fitparams[2]=xdata[np.argmax(ydata)]
     if fitparams[3] is None: fitparams[3]= (max(xdata)-min(xdata))/10
 
-    # bounds = (
-    #     [np.min(ydata), 0, np.min(xdata), 0],
-    #     [np.max(ydata), np.inf, np.max(xdata), np.inf]
-    # )
-    # for i, param in enumerate(fitparams):
-    #     if not (bounds[0][i] < param < bounds[1][i]):
-    #         fitparams[i] = np.mean((bounds[0][i], bounds[1][i]))
-    #         print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {fitparams[i]}')
-
     pOpt = fitparams
     pCov = np.full(shape=(len(fitparams), len(fitparams)), fill_value=np.inf)
     try:
-        print('fitparams', fitparams)
         pOpt, pCov = sp.optimize.curve_fit(gaussianfunc, xdata, ydata, p0=fitparams)
-        # return pOpt, pCov
-    except RuntimeError: 
+        if periodic and x_shift != 0:
+            pOpt = pOpt.copy()
+            pOpt[2] -= x_shift
+            # Wrap x0 back into the original x range
+            x_period = xdata[-1] - xdata[0] + dx
+            pOpt[2] = xdata[0] + (pOpt[2] - xdata[0]) % x_period
+    except RuntimeError:
         print('Warning: fit failed!')
-        # return 0, 0
     return pOpt, pCov
 
 # ====================================================== #
