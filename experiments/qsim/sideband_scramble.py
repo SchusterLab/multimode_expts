@@ -69,13 +69,27 @@ class SidebandScrambleProgram(QsimBaseProgram):
 
         swap_stors = self.cfg.expt.swap_stors
         swap_stor_phases = np.zeros(len(swap_stors))
+        self.cfg.expt.add_disorder = self.cfg.expt.get('add_disorder', False)
+        swap_stor_disorder = self.cfg.expt.get('swap_stor_disorder', np.zeros(len(swap_stors)))
+        if len(swap_stor_disorder)!= len(swap_stors):
+            # swap_stor_disorder = np.zeros(len(swap_stors))
+            print("disorder length doesn't match swap_stors; check the length of swap_stor_disorder")
+            # print("no disorder added; check the length of swap_stor_disorder")
         update_phases = self.cfg.expt.update_phases
         for kk in range(self.cfg.expt.floquet_cycle):
             for i_stor, stor in enumerate(swap_stors):
                 pulse_args = self.m1s_kwargs[stor - 1]
+                # print(f"Original frequency of {stor} : {self.reg2freq(pulse_args['freq'], gen_ch=pulse_args['ch'])} in {kk}th cycle\\n")
                 pulse_args['phase'] = self.deg2reg(swap_stor_phases[i_stor], gen_ch=pulse_args['ch'])
+                if self.cfg.expt.add_disorder:
+                    _temporary = pulse_args['freq']
+                    pulse_args['freq'] += self.freq2reg(swap_stor_disorder[i_stor], gen_ch=pulse_args['ch'])
+                # print(f"Detuned frequency  of {stor} : {self.reg2freq(pulse_args['freq'], gen_ch=pulse_args['ch'])} in {kk}th cycle\\n")
                 # print("phase on storage", stor, swap_stor_phases[i_stor])
                 self.setup_and_pulse(**pulse_args)
+                if self.cfg.expt.add_disorder:
+                    pulse_args['freq'] = _temporary
+                    
                 self.sync_all(10)
 
                 # Update the phases for all other swaps using the phases accumulated during this swap
