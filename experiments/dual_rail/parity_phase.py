@@ -420,19 +420,19 @@ class ParityPhaseExperiment(Experiment):
 
             try:
                 data[f'fit_avgi_{state}'], data[f'fit_err_avgi_{state}'] = fitter.fitsin(
-                    data['xpts'][:-1], data[avgi_key][:-1], fitparams=None)
+                    data['xpts'][:-1], data[avgi_key][:-1], fitparams=None, fixed_freq=1.0/360.0)
                 data[f'fit_avgq_{state}'], data[f'fit_err_avgq_{state}'] = fitter.fitsin(
-                    data['xpts'][:-1], data[avgq_key][:-1], fitparams=None)
+                    data['xpts'][:-1], data[avgq_key][:-1], fitparams=None, fixed_freq=1.0/360.0)
 
                 # Also fit rescaled P_e data
                 pe_data = self._rescale_to_pe(data[avgi_key])
                 data[f'pe_{state}'] = pe_data
                 data[f'fit_pe_{state}'], data[f'fit_err_pe_{state}'] = fitter.fitsin(
-                    data['xpts'][:-1], pe_data[:-1], fitparams=None)
+                    data['xpts'][:-1], pe_data[:-1], fitparams=None, fixed_freq=1.0/360.0)
 
                 # Extract fit parameters
                 p = data[f'fit_pe_{state}']
-                print(f"State '{state}': period={1/p[1]:.1f} deg, phase={p[2]:.1f} deg, amplitude={p[0]:.3f}, offset={p[3]:.3f}")
+                print(f"State '{state}': phase={p[2]:.1f} deg, amplitude={p[0]:.3f}, offset={p[3]:.3f}")
 
             except Exception as e:
                 print(f"Fitting failed for state '{state}': {e}")
