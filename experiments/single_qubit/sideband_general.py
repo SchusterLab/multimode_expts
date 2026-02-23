@@ -38,7 +38,6 @@ class SidebandGeneralProgram(MMAveragerProgram):
             raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high'.")
 
 
-        print('Using RF channel:', self.rf_ch[qTest])
 
         if "freq" in self.cfg.expt:
             self.cfg.expt.flux_drive[1] = self.cfg.expt.freq

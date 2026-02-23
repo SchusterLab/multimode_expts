@@ -7,9 +7,13 @@ Then `pixi run jupyter lab` or set up a Jupyter kernel to allow VS Code to execu
 
 ## Running
 
-On BF5, just double click `start_all.bat` and follow the instructions to start the Pyro nameserver, the job server and the worker
+On BF5:
 
-Alternatively, `pixi run [nameserver|server|worker]` to start these things individually.
+- Just double click `start_all.bat` and follow the instructions to start the Pyro nameserver, the job server and the worker.
+- Or go inside `job_server` and double click the `.sh` executables to start server/worker individually.
+
+On BF5 or your own machine:
+- `pixi run [nameserver|server|worker]` to start each of them individually.
 
 You can pass the `--mock` option to the worker to use mock mode (use mock QICK and Yoko instead of real hardware and gitignored local folders instead of real D drive locations on BF5).
 

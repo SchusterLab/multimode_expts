@@ -39,6 +39,8 @@ class GeneralFitting:
         reps = self.cfg['expt']['reps']
         expts = self.cfg['expt']['expts']
         threshold = self.cfg.device.readout.threshold[0]
+
+        # TODO: make this a different confusion matrix if active reset is applied!!
         conf_mat_wn_reset = self.cfg.device.readout.confusion_matrix_without_reset
 
         try:

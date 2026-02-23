@@ -66,7 +66,6 @@ class KerrWaitProgram(QsimBaseProgram):
         # print("Adding man-dump pulse")
         # self.man_reset(man_idx=1, dump_mode_idx=2, chi_dressed=True)
 
-        print("No man-dump pulse, just wait")
         self.sync_all(self.us2cycles(self.cfg.expt.wait_us_time))
 
 
@@ -536,7 +535,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         ax3.legend()
 
         # Add annotation with fit parameters
-        textstr = f'$K_c$ = {kc*1e3:.3f} kHz\n$\delta$ = {delta*1e3:.3f} kHz'
+        textstr = f'$K_c$ = {kc*1e3:.3f} kHz\n$\\delta$ = {delta*1e3:.3f} kHz'
         ax3.text(0.05, 0.95, textstr, transform=ax3.transAxes,
                 fontsize=12, verticalalignment='top',
                 bbox=dict(boxstyle='round', alpha=0.2))
