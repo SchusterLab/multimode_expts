@@ -58,38 +58,46 @@ class FloquetCalibrationProgram(QsimBaseProgram):
 
 class SidebandScrambleProgram(QsimBaseProgram):
     """
-    Scramble 1 photon via fractional beam splitters
+    Scramble photons via fractional beam splitters
 
     expt params:
-    swap_stors: list of storage modes to apply the floquet swaps to, will go in order of the list
-    update_phases: boolean of whether to update each subsequent swap with the calibrated stark shift phase
+        - swap_stors: list of storage modes to apply the floquet swaps to, will go in order of the list
+        - detunings: list of detunings of drives in the same order as above
+        - update_phases: boolean of whether to update each subsequent swap with the calibrated stark shift phase
+        - floquet_cycle: number of floquet cycles to apply
     """
     def core_pulses(self):
-        # pulse_args = deepcopy(self.m1s_kwargs[self.cfg.expt.init_stor-1])
 
+        # process expt params
         swap_stors = self.cfg.expt.swap_stors
-        swap_stor_phases = np.zeros(len(swap_stors))
-        self.cfg.expt.add_disorder = self.cfg.expt.get('add_disorder', False)
-        swap_stor_disorder = self.cfg.expt.get('swap_stor_disorder', np.zeros(len(swap_stors)))
-        if len(swap_stor_disorder)!= len(swap_stors):
-            # swap_stor_disorder = np.zeros(len(swap_stors))
-            print("disorder length doesn't match swap_stors; check the length of swap_stor_disorder")
-            # print("no disorder added; check the length of swap_stor_disorder")
+
+        if 'detunings' in self.cfg.expt and self.cfg.expt.detunings:
+            detunings = self.cfg.expt.detunings
+        else:
+            detunings = [0.0] * len(swap_stors)
+        assert len(detunings) == len(swap_stors), "length of detunings doesn't match that of swap_stors"
+
         update_phases = self.cfg.expt.update_phases
+        swap_stor_phases = [0.0] * len(swap_stors)
+
+        # deep copy floquet params and apply detunings if specified
+        all_pulse_args = []
+        for i_stor, stor in enumerate(swap_stors):
+            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
+            pulse_args['freq'] += self.freq2reg(detunings[i_stor], gen_ch=pulse_args['ch'])
+            all_pulse_args.append(pulse_args)
+
+        # start swapping
+        self.sync_all()
+        debug = self.cfg.expt.get('debug', False)
+        if debug:
+            print(all_pulse_args)
         for kk in range(self.cfg.expt.floquet_cycle):
             for i_stor, stor in enumerate(swap_stors):
-                pulse_args = self.m1s_kwargs[stor - 1]
-                # print(f"Original frequency of {stor} : {self.reg2freq(pulse_args['freq'], gen_ch=pulse_args['ch'])} in {kk}th cycle\\n")
+                pulse_args = all_pulse_args[i_stor]
                 pulse_args['phase'] = self.deg2reg(swap_stor_phases[i_stor], gen_ch=pulse_args['ch'])
-                if self.cfg.expt.add_disorder:
-                    _temporary = pulse_args['freq']
-                    pulse_args['freq'] += self.freq2reg(swap_stor_disorder[i_stor], gen_ch=pulse_args['ch'])
-                # print(f"Detuned frequency  of {stor} : {self.reg2freq(pulse_args['freq'], gen_ch=pulse_args['ch'])} in {kk}th cycle\\n")
-                # print("phase on storage", stor, swap_stor_phases[i_stor])
                 self.setup_and_pulse(**pulse_args)
-                if self.cfg.expt.add_disorder:
-                    pulse_args['freq'] = _temporary
-                    
+                # this sync has to 10 at minimum if using setup_and_pulse to allow instructions to finish!
                 self.sync_all(10)
 
                 # Update the phases for all other swaps using the phases accumulated during this swap
