@@ -37,16 +37,20 @@ class QsimBaseProgram(MMAveragerProgram):
         retrieve pulse parameters for the M1-Sx swap
         """
         qTest = self.qubits[0]
+
+        flux_high_threshold = 1800
+
         stor_names = [f'M1-S{stor_no}' for stor_no in range(1,8)]
         self.m1s_pi_fracs = [self.swap_ds.get_pi_frac(stor_name) for stor_name in stor_names]
         self.m1s_freq_MHz = [self.swap_ds.get_freq(stor_name) for stor_name in stor_names]
-        self.m1s_is_low_freq = [True]*4 + [False]*3
-        self.m1s_ch = [self.flux_low_ch[qTest]]*4 + [self.flux_high_ch[qTest]]*3
+        self.m1s_is_low_freq = [self.m1s_freq_MHz[i_stor] < flux_high_threshold for i_stor in range(7)]
+
+        self.m1s_ch = [self.flux_low_ch[qTest] if self.m1s_is_low_freq[i_stor] else self.flux_high_ch[qTest] for i_stor in range(7)]
         self.m1s_freq = [self.freq2reg(freq_MHz, gen_ch=ch) for freq_MHz, ch in zip(self.m1s_freq_MHz, self.m1s_ch)]
         self.m1s_length = [self.us2cycles(self.swap_ds.get_len(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
         self.m1s_gain = [self.swap_ds.get_gain(stor_name) for stor_name in stor_names]
-        self.m1s_wf_name = ["pi_m1si_low"]*4 + ["pi_m1si_high"]*3
+        self.m1s_wf_name = ["pi_m1si_low" if self.m1s_is_low_freq[i_stor] else "pi_m1si_high" for i_stor in range(7)]
 
 
     def displace_man(self, alpha=None, setup=False, play=False):
