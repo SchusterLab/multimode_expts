@@ -383,7 +383,7 @@ class StorageManSwapDataset(MMDataset):
         """
         col_name = f'bs_rate_coeffs_{qubit_state}'
         value = self.get_value(stor_name, col_name)
-        if value is None or value == '' or value == '[]':
+        if value is None or value == '' or value == '[]' or (isinstance(value, float) and np.isnan(value)):
             return None
         return np.array(json.loads(value))
 
@@ -391,7 +391,7 @@ class StorageManSwapDataset(MMDataset):
         """Get frequency vs gain polynomial coefficients."""
         col_name = f'freq_coeffs_{qubit_state}'
         value = self.get_value(stor_name, col_name)
-        if value is None or value == '' or value == '[]':
+        if value is None or value == '' or value == '[]' or (isinstance(value, float) and np.isnan(value)):
             return None
         return np.array(json.loads(value))
 
@@ -423,7 +423,7 @@ class StorageManSwapDataset(MMDataset):
         """
         col_name = f'gain_range_{qubit_state}'
         value = self.get_value(stor_name, col_name)
-        if value is None or value == '' or value == '[]':
+        if value is None or value == '' or value == '[]' or (isinstance(value, float) and np.isnan(value)):
             return None
         range_list = json.loads(value)
         return (float(range_list[0]), float(range_list[1]))
@@ -565,7 +565,7 @@ class StorageManSwapDataset(MMDataset):
             List [freq_bs, gain, pi_length*2, wait_time] or None if not set
         """
         value = self.get_value(stor_name, 'joint_parity')
-        if value is None or value == '' or value == '[]':
+        if value is None or value == '' or value == '[]' or (isinstance(value, float) and np.isnan(value)):
             return None
         return json.loads(value)
 
