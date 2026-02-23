@@ -62,7 +62,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             ]
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
-            self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
+            self.flux_ch = self.flux_low_ch if freq < 1800 else self.flux_high_ch
             # get register page for that channel 
             self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
 
@@ -78,7 +78,7 @@ class CavityRamseyProgram(MMRAveragerProgram):
             # decide which channel do we flux drive on 
             pulse_str = self.cfg.expt.custom_coupler_pulse
             freq = pulse_str[0][0]
-            self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
+            self.flux_ch = self.flux_low_ch if freq < 1800 else self.flux_high_ch
             # get register page for that channel 
             self.flux_rps = [self.ch_page(self.flux_ch[qTest])]
         # if self.cfg.expt.custom_coupler_pulse[0]:

@@ -1530,7 +1530,7 @@ class MM_base:
         # Auto-select flux channel
         flux_low_ch = cfg.hw.soc.dacs.flux_low.ch
         flux_high_ch = cfg.hw.soc.dacs.flux_high.ch
-        flux_ch = flux_low_ch if freq_bs < 1000 else flux_high_ch
+        flux_ch = flux_low_ch if freq_bs < 1800 else flux_high_ch
         ramp_sigma = cfg.device.storage.ramp_sigma
 
         # Get register info for phase update
@@ -1616,7 +1616,7 @@ class MM_base:
 
         # WARNING: 1us sync for timing stability - should be checked/optimized
         print("WARNING: joint_parity_active_reset has 1us sync at end - verify this is appropriate")
-        self.sync_all(self.us2cycles(1))
+        self.sync_all(self.us2cycles(2.0))
 
 
     def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None, plot=False):
