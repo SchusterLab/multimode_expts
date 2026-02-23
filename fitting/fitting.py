@@ -602,3 +602,62 @@ def fitrb(xdata, ydata, fitparams=None):
     #     print('Warning: fit failed!')
     #     # return 0, 0
     return pOpt, pCov
+
+def wigner_purity_calculation(wigner_expt,
+                              cutoff = 10,
+                              return_rho = False,
+                              return_sweep_param = False,
+                              plot_purity = False
+                              ):
+    
+    import qutip as qt
+    import matplotlib.pyplot as plt
+    if isinstance(wigner_expt, list):
+        return_list = []
+        for _ind_wig in wigner_expt:
+            return_list.append(wigner_purity_calculation(_ind_wig,
+                                                         cutoff = cutoff,
+                                                         return_rho = return_rho,
+                                                         return_sweep_param = return_sweep_param,
+                                                         plot_purity = plot_purity))
+        return return_list
+    ideal_state = (qt.coherent(cutoff, 1.0)).unit()
+    wigner_expt.analyze_wigner(cutoff=cutoff, debug=True)
+    wigner_expt.display(rotate=True, initial_state=ideal_state, mode_state_num=cutoff, station=None, save_fig=False)
+    plt.clf()
+    outer_param_array = wigner_expt.outer_params
+    inner_param_array = wigner_expt.inner_params
+    _n_outer = len(outer_param_array)
+    _n_inner = 1 if wigner_expt.inner_param == 'dummy' else len(inner_param_array)
+    purity_array = np.zeros((_n_outer,_n_inner), dtype = complex)
+    rho_array = wigner_expt.data["wigner_outputs"]['rho']
+    for i in range(_n_outer):
+        for j in range(_n_inner):
+            rho = rho_array[i][j]
+            purity_array[i,j] = np.trace(np.matmul(rho, rho))
+    # purity_list.append(purity_array)
+    plt.close('all')
+    if plot_purity == True:
+        if _n_inner != 1:
+            fig, ax = plt.subplots()
+            c = ax.pcolor(*np.meshgrid(outer_param_array,inner_param_array), 
+                          purity_array)
+            ax.set_xlabel(f'{wigner_expt.cfg.expt.swept_params[0]}')
+            ax.set_ylabel(f'{wigner_expt.cfg.expt.swept_params[1]}')
+            fig.colorbar(c,
+                         label = "Purity")
+        else:
+            fig, ax = plt.subplots()
+            ax.scatter(outer_param_array,
+                       purity_array)
+            ax.set_xlabel(f'{wigner_expt.cfg.expt.swept_params[0]}')
+            ax.set_ylabel("Purity")
+        plt.show()
+        
+    if return_rho == True:
+        if return_sweep_param == True:
+            return outer_param_array, inner_param_array, purity_array, rho_array
+        else:
+            return purity_array, rho_array
+    else:
+        return purity_array
