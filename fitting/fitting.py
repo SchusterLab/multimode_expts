@@ -206,7 +206,7 @@ def sinfunc(x, *p):
     yscale, freq, phase_deg, y0 = p
     return yscale*np.sin(2*np.pi*freq*x + phase_deg*np.pi/180) + y0
 
-def fitsin(xdata, ydata, fitparams=None):
+def fitsin(xdata, ydata, fitparams=None, fixed_freq=None):
     if fitparams is None: fitparams = [None]*4
     fourier = np.fft.fft(ydata)
     fft_freqs = np.fft.fftfreq(len(ydata), d=xdata[1]-xdata[0])
@@ -215,9 +215,38 @@ def fitsin(xdata, ydata, fitparams=None):
     max_freq = np.abs(fft_freqs[max_ind])
     max_phase = fft_phases[max_ind]
     if fitparams[0] is None: fitparams[0]=max(ydata)-min(ydata)
-    if fitparams[1] is None: fitparams[1]=max_freq
+    if fitparams[1] is None: fitparams[1]=max_freq if fixed_freq is None else fixed_freq
     if fitparams[2] is None: fitparams[2]=max_phase*180/np.pi
     if fitparams[3] is None: fitparams[3]=np.mean(ydata)
+
+    if fixed_freq is not None:
+        # 3-parameter fit with frequency fixed
+        reduced_params = [fitparams[0], fitparams[2], fitparams[3]]
+        bounds = (
+            [0.5*fitparams[0], -360, np.min(ydata)],
+            [2*fitparams[0], 360, np.max(ydata)]
+        )
+        for i, param in enumerate(reduced_params):
+            if not (bounds[0][i] < param < bounds[1][i]):
+                reduced_params[i] = np.mean((bounds[0][i], bounds[1][i]))
+                print(f'Attempted to init fitparam {i} to {param}, which is out of bounds {bounds[0][i]} to {bounds[1][i]}. Instead init to {reduced_params[i]}')
+        pOpt_reduced = reduced_params
+        pCov_reduced = np.full(shape=(3, 3), fill_value=np.inf)
+        def sinfunc_fixed(x, yscale, phase_deg, y0):
+            return sinfunc(x, yscale, fixed_freq, phase_deg, y0)
+        try:
+            pOpt_reduced, pCov_reduced = sp.optimize.curve_fit(
+                sinfunc_fixed, xdata, ydata, p0=reduced_params, bounds=bounds)
+        except RuntimeError:
+            print('Warning: fit failed!')
+        # Reconstruct full 4-element arrays for backward compatibility
+        pOpt = np.array([pOpt_reduced[0], fixed_freq, pOpt_reduced[1], pOpt_reduced[2]])
+        pCov = np.zeros((4, 4))
+        for i_r, i_f in enumerate([0, 2, 3]):
+            for j_r, j_f in enumerate([0, 2, 3]):
+                pCov[i_f, j_f] = pCov_reduced[i_r, j_r]
+        return pOpt, pCov
+
     bounds = (
         [0.5*fitparams[0], 0.1/(max(xdata)-min(xdata)), -360, np.min(ydata)],
         [2*fitparams[0], 10/(max(xdata)-min(xdata)), 360, np.max(ydata)]
@@ -231,7 +260,7 @@ def fitsin(xdata, ydata, fitparams=None):
     try:
         pOpt, pCov = sp.optimize.curve_fit(sinfunc, xdata, ydata, p0=fitparams, bounds=bounds)
         # return pOpt, pCov
-    except RuntimeError: 
+    except RuntimeError:
         print('Warning: fit failed!')
         # return 0, 0
     return pOpt, pCov
