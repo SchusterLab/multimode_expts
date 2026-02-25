@@ -1,7 +1,6 @@
 import sys
 import time
 
-from IPython.display import clear_output
 from job_server import JobClient
 
 limit = int(sys.argv[1]) if len(sys.argv) > 1 else 10
@@ -21,6 +20,7 @@ client.print_queue()
 # Monitor recent job history
 
 prev_output = ''
+prev_lines = 0
 
 while True:
     history = client.get_history(limit=limit)
@@ -33,9 +33,16 @@ while True:
         output += f"{job_id} {job['user']}\t{job['status']:10s}  {job['experiment_class']}\t{result.data_file_path}\n"
 
     if output != prev_output:
-        clear_output(wait=True)
-        print(f"Recent Job History (last change in status: {time.strftime('%Y-%m-%d %H:%M:%S')})")
-        print("-" * 80)
-        print(output)
+        # Move cursor up to overwrite previous output
+        if prev_lines > 0:
+            sys.stdout.write(f"\033[{prev_lines}A\033[J")
+
+        header = f"Recent Job History (last change in status: {time.strftime('%Y-%m-%d %H:%M:%S')})\n"
+        header += "-" * 80 + "\n"
+        full_output = header + output
+        sys.stdout.write(full_output)
+        sys.stdout.flush()
+
+        prev_lines = full_output.count('\n')
         prev_output = output
     time.sleep(5)
