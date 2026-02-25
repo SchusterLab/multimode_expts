@@ -30,6 +30,11 @@ class MM_base:
     such that child classes can directly use the waveforms (gaussians) added here.
     Also provides a more generic way to create custom pulses and many convenience functions.
     """
+    # Timing constants for measurement sequences (microseconds)
+    READOUT_SETTLE_TIME = 0.10   # wait_all after readout before conditional read
+    JP_RESET_SYNC_TIME = 2.0    # sync_all after JP conditional reset
+    CUSTOM_PULSE_SYNC = 0.01    # sync_all added by custom_pulse per element
+
     def __init__(self, cfg: AttrDict, soccfg: AttrDict):
         self.cfg = cfg
         self.soccfg = soccfg
@@ -851,6 +856,285 @@ class MM_base:
 
         return state_prep_sequence if state_prep_sequence else None
 
+    # --- Dual Rail Logical State Helpers ---
+
+    DUAL_RAIL_STATE_PHASE_MAP = {
+        '+': 0,
+        '-': 180,
+        '+i': 90,
+        '-i': -90,
+    }
+
+    DUAL_RAIL_GATE_MAP = {
+        'X':    ('pi',  0),
+        'Y':    ('pi',  90),
+        'X/2':  ('hpi', 0),
+        '-X/2': ('hpi', 180),
+        'Y/2':  ('hpi', 90),
+        '-Y/2': ('hpi', 270),
+    }
+
+    def prep_dual_rail_logical_state(self, state, stor_name_swap, stor_name_parity):
+        '''
+        Build pulse sequence for dual rail logical state preparation.
+
+        Extends prep_dual_rail_state to support logical basis states
+        including superpositions.
+
+        Args:
+            state: Logical state to prepare:
+                '0'  -> |0_L> = |01> (photon in storage_parity)
+                '1'  -> |1_L> = |10> (photon in storage_swap)
+                '+'  -> (|0> + |1>)/sqrt(2)
+                '-'  -> (|0> - |1>)/sqrt(2)
+                '+i' -> (|0> + i|1>)/sqrt(2)
+                '-i' -> (|0> - i|1>)/sqrt(2)
+            stor_name_swap: Storage mode name for logical |1>, e.g. 'M1-S1'
+            stor_name_parity: Storage mode name for logical |0>, e.g. 'M1-S2'
+
+        Returns:
+            Pulse sequence list for get_prepulse_creator(), or None if vacuum
+
+        Also supports physical Fock states outside the logical subspace:
+            '00' -> |00> (vacuum, no photons)
+            '11' -> |11> (one photon in each storage mode)
+            '01' -> alias for '0' (|0_L>)
+            '10' -> alias for '1' (|1_L>)
+
+        Superposition state prep:
+            1. Prepare |1> in manipulate via multiphoton transitions
+            2. Half swap M<->S_swap with phase phi (creates M/S_swap superposition)
+            3. Full swap M->S_parity (moves remaining M component)
+            Result: (|01> + e^{i*phi}|10>)/sqrt(2) = (|0_L> + e^{i*phi}|1_L>)/sqrt(2)
+
+        Phase convention matches prep_man_fock_state.
+        '''
+        # Physical Fock states: delegate to prep_dual_rail_state
+        if state in ('00', '10', '01', '11'):
+            return self.prep_dual_rail_state(state, stor_name_swap, stor_name_parity)
+
+        # Computational basis states: delegate to existing method
+        if state == '0':
+            return self.prep_dual_rail_state('01', stor_name_swap, stor_name_parity)
+        elif state == '1':
+            return self.prep_dual_rail_state('10', stor_name_swap, stor_name_parity)
+
+        # Superposition states
+        if state not in self.DUAL_RAIL_STATE_PHASE_MAP:
+            raise ValueError(
+                f"Unknown dual rail state '{state}'. "
+                f"Use one of: '0', '1', '+', '-', '+i', '-i'")
+
+        phase = self.DUAL_RAIL_STATE_PHASE_MAP[state]
+
+        pulse_seq = []
+        # 1. Prepare |1> in manipulate
+        pulse_seq += self.prep_man_photon(1)
+        # 2. Half swap M <-> S_swap with phase
+        pulse_seq.append(['storage', stor_name_swap, 'hpi', phase])
+        # 3. Full swap M -> S_parity
+        pulse_seq.append(['storage', stor_name_parity, 'pi', 0])
+
+        return pulse_seq
+
+    def dual_rail_gate_sequence(self, gate_name, stor_name_swap, stor_name_parity,
+                               phase_offset=0):
+        '''
+        Build pulse sequence for a dual rail gate operation.
+
+        The gate decomposes as three beamsplitter operations:
+            1. pi swap S_swap <-> M  (load S_swap content into manipulate)
+            2. middle op M <-> S_parity  (perform the rotation)
+            3. pi swap M <-> S_swap  (unload manipulate back to S_swap)
+
+        Args:
+            gate_name: Gate to apply:
+                'X'    -> pi rotation around X (bit flip, phase=0)
+                'Y'    -> pi rotation around Y (bit flip, phase=90)
+                'X/2'  -> pi/2 rotation around X (half swap, phase=0)
+                '-X/2' -> pi/2 rotation around -X (half swap, phase=180)
+                'Y/2'  -> pi/2 rotation around Y (half swap, phase=90)
+                '-Y/2' -> pi/2 rotation around -Y (half swap, phase=270)
+            stor_name_swap: e.g. 'M1-S1'
+            stor_name_parity: e.g. 'M1-S2'
+            phase_offset: Additional phase (degrees) added to the middle gate.
+                Used for phase tracking corrections. Default 0.
+
+        Returns:
+            Pulse sequence list for get_prepulse_creator()
+        '''
+        if gate_name not in self.DUAL_RAIL_GATE_MAP:
+            raise ValueError(
+                f"Unknown gate '{gate_name}'. "
+                f"Use one of: {list(self.DUAL_RAIL_GATE_MAP.keys())}")
+
+        pulse_type, phase = self.DUAL_RAIL_GATE_MAP[gate_name]
+
+        return [
+            ['storage', stor_name_swap, 'pi', 0],                          # swap in
+            ['storage', stor_name_parity, pulse_type, phase + phase_offset],  # middle gate
+            ['storage', stor_name_swap, 'pi', 0],                           # swap out
+        ]
+
+    @staticmethod
+    def compute_dr_phase_corrections(pulse_sequence, n_pairs, pair_names,
+                                      ac_stark_rates, jp_phase_matrix):
+        '''
+        Compute accumulated phase corrections for each gate in a dual rail
+        pulse sequence, due to idle rotation (AC Stark) during waits and
+        JP-induced phase shifts.
+
+        Follows the AC Stark phase pattern from get_parity_str() / play_parity_pulse():
+        accumulated phase is wrapped with % 360 after each update.
+
+        Args:
+            pulse_sequence: list of (op_name, arg) tuples from cfg.expt.pulse_sequence
+            n_pairs: number of dual rail pairs
+            pair_names: list of pair name strings (e.g., ['S1-S3', 'S2-S4', 'S6-S7'])
+            ac_stark_rates: list of float (MHz) per pair — idle rotation rates
+            jp_phase_matrix: dict of dicts —
+                jp_phase_matrix[affected_pair_name][source_pair_name] = degrees
+
+        Returns:
+            list aligned 1:1 with pulse_sequence. Gate entries contain
+            {pair_idx: correction_degrees}. Wait/JP entries are empty dicts.
+        '''
+        accumulated = [0.0] * n_pairs
+        corrections = []
+
+        for op_name, arg in pulse_sequence:
+            if op_name == 'wait':
+                wait_us = float(arg)
+                for i in range(n_pairs):
+                    accumulated[i] += 360.0 * ac_stark_rates[i] * wait_us
+                    accumulated[i] = accumulated[i] % 360
+                corrections.append({})
+
+            elif op_name == 'joint_parity':
+                jp_pair_idx = int(arg)
+                source_name = pair_names[jp_pair_idx]
+                for i in range(n_pairs):
+                    affected_name = pair_names[i]
+                    phase_dict = jp_phase_matrix.get(affected_name)
+                    if phase_dict is not None:
+                        accumulated[i] += phase_dict.get(source_name, 0.0)
+                        accumulated[i] = accumulated[i] % 360
+                corrections.append({})
+
+            elif op_name in MM_base.DUAL_RAIL_GATE_MAP:
+                pair_idx = int(arg)
+                corrections.append({pair_idx: accumulated[pair_idx] % 360})
+
+            else:
+                corrections.append({})
+
+        return corrections
+
+    @staticmethod
+    def load_dr_ac_stark_rates(ds_storage, pair_names, cfg_override=None):
+        '''
+        Load AC Stark idle rotation rates for dual rail pairs.
+
+        Reads from ds_storage by default.  Falls back to 0.0 with a warning
+        if a pair has no calibrated value.  An explicit list in cfg.expt
+        (passed as cfg_override) takes precedence.
+
+        Args:
+            ds_storage: StorageManSwapDataset instance
+            pair_names: list of pair name strings (e.g., ['S1-S3', 'S2-S4'])
+            cfg_override: optional list of floats from cfg.expt.ac_stark_rates
+
+        Returns:
+            list of float (MHz), one per pair
+        '''
+        if cfg_override is not None:
+            return list(cfg_override)
+
+        rates = []
+        for name in pair_names:
+            rate = ds_storage.get_dr_ac_stark_rate(name)
+            if rate is None:
+                import warnings
+                warnings.warn(
+                    f"dr_ac_stark_rate not calibrated for pair {name}, "
+                    f"defaulting to 0.0 MHz")
+                rate = 0.0
+            rates.append(rate)
+        return rates
+
+    @staticmethod
+    def load_dr_jp_phase_matrix(ds_storage, pair_names, cfg_override=None):
+        '''
+        Load JP-induced phase shift matrix for dual rail pairs.
+
+        Reads from ds_storage by default.  Falls back to all-zeros with a
+        warning if a pair has no calibrated value.  An explicit list-of-lists
+        in cfg.expt (passed as cfg_override) takes precedence and is converted
+        to the dict-of-dicts format keyed by pair name.
+
+        Args:
+            ds_storage: StorageManSwapDataset instance
+            pair_names: list of pair name strings
+            cfg_override: optional list-of-lists from cfg.expt.jp_phase_matrix
+                          (row i, col j = phase on pair i from JP on pair j)
+
+        Returns:
+            dict of dicts: matrix[affected_pair_name][source_pair_name] = degrees
+        '''
+        if cfg_override is not None:
+            matrix = cfg_override
+            result = {}
+            for i, affected in enumerate(pair_names):
+                result[affected] = {
+                    pair_names[j]: matrix[i][j]
+                    for j in range(len(pair_names))
+                }
+            return result
+
+        result = {}
+        for name in pair_names:
+            phase_dict = ds_storage.get_dr_jp_phase(name)
+            if phase_dict is None:
+                import warnings
+                warnings.warn(
+                    f"dr_jp_phase not calibrated for pair {name}, "
+                    f"defaulting to all zeros")
+                phase_dict = {pn: 0.0 for pn in pair_names}
+            result[name] = phase_dict
+        return result
+
+    def dual_rail_joint_parity(self, cfg, swap_pulse, stor_pair_name,
+                               parity_fast=False, op_idx=0):
+        '''
+        Execute swap + joint parity active reset + swap back for a dual rail pair.
+
+        Sequence:
+            1. Pi swap S_swap -> manipulate (via compiled swap_pulse)
+            2. Joint parity measurement + conditional reset on M-S_parity
+            3. Pi swap manipulate -> S_swap (same swap_pulse)
+
+        Args:
+            cfg: AttrDict config
+            swap_pulse: Compiled swap pulse array (from get_prepulse_creator().pulse.tolist())
+            stor_pair_name: e.g. 'M1-S2' for the beamsplitter target
+            parity_fast: If True, use fast multiphoton hpi pulses
+            op_idx: Unique index for register labels (must be unique per call)
+
+        Adds 1 readout to the measurement buffer.
+        '''
+        # Swap storage_swap -> manipulate
+        self.custom_pulse(cfg, swap_pulse, prefix=f'jp{op_idx}_swap_in_')
+        # Joint parity measurement + conditional reset
+        self.joint_parity_active_reset(
+            stor_pair_name=stor_pair_name,
+            name=f'jp_{op_idx}',
+            register_label=f'jp_lbl_{op_idx}',
+            second_phase=0,
+            fast=parity_fast,
+        )
+        # Swap back manipulate -> storage_swap
+        self.custom_pulse(cfg, swap_pulse, prefix=f'jp{op_idx}_swap_out_')
+
     def parity_active_reset(self, name='parity_reset', register_label='base', play_parity=True, man_idx=1, final_sync=False):
         '''
         Perform a parity measurement and if the qubit end up in e do a pi pulse reset
@@ -1603,7 +1887,7 @@ class MM_base:
                      adcs=[self.adc_chs[qTest]],
                      adc_trig_offset=cfg.device.readout.trig_offset[qTest],
                      t='auto', wait=True)
-        self.wait_all(self.us2cycles(0.10))
+        self.wait_all(self.us2cycles(self.READOUT_SETTLE_TIME))
 
         # Conditional reset
         self.read(0, 0, "lower", self.r_read_q)
@@ -1614,10 +1898,54 @@ class MM_base:
         self.pulse(ch=self.qubit_chs[qTest])
         self.label(register_label)
 
-        # WARNING: 1us sync for timing stability - should be checked/optimized
-        print("WARNING: joint_parity_active_reset has 1us sync at end - verify this is appropriate")
-        self.sync_all(self.us2cycles(2.0))
+        self.sync_all(self.us2cycles(self.JP_RESET_SYNC_TIME))
 
+    def get_jp_measurement_duration(self, stor_pair_name, fast=False):
+        """
+        Compute duration (us) of joint_parity_active_reset() sequence.
+
+        Includes: play_joint_parity_pulse + measurement + conditional reset
+        + final sync. Does NOT include swap operations (experiment-specific).
+
+        Args:
+            stor_pair_name: e.g. 'M1-S3' — storage pair for joint parity
+            fast: if True, use fast multiphoton hpi pulse sigmas
+
+        Returns: duration in microseconds
+        """
+        cfg = self.cfg
+
+        # HPI pulses (gaussian waveform duration = 4 * sigma)
+        if fast:
+            hpi_sigma_us = cfg.device.multiphoton.hpi['gn-en'].sigma[0]
+        else:
+            hpi_sigma_us = cfg.device.qubit.pulses.hpi_ge.sigma[0]
+        t_hpi = hpi_sigma_us * 4
+
+        # JP flux pulse from dataset (flat_top: 6*ramp_sigma + length)
+        ds_storage = cfg.device.storage._ds_storage
+        _, _, jp_length, jp_wait = ds_storage.get_joint_parity(stor_pair_name)
+        ramp_sigma = cfg.device.storage.ramp_sigma
+        t_jp_flux = ramp_sigma * 6 + jp_length + self.CUSTOM_PULSE_SYNC
+
+        # Readout
+        qTest = cfg.expt.qubits[0]
+        t_readout = cfg.device.readout.readout_length[qTest]
+
+        # Conditional reset pi pulse (worst case: always fires)
+        pi_sigma_us = cfg.device.qubit.pulses.pi_ge.sigma[0]
+        t_pi = pi_sigma_us * 4
+
+        return (
+            t_hpi +                      # first hpi
+            t_jp_flux +                  # JP flux pulse
+            jp_wait +                    # calibrated wait
+            t_hpi +                      # second hpi
+            t_readout +                  # measurement
+            self.READOUT_SETTLE_TIME +   # wait after readout
+            t_pi +                       # conditional reset
+            self.JP_RESET_SYNC_TIME      # final sync
+        )
 
     def get_gain_optimal_pulse(self, pulse=None, pulse_IQ=None, plot=False):
         if pulse is not None:

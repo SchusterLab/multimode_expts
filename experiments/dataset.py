@@ -274,7 +274,9 @@ class StorageManSwapDataset(MMDataset):
             'bs_rate_coeffs_g', 'bs_rate_coeffs_e',
             'freq_coeffs_g', 'freq_coeffs_e',
             'gain_range_g', 'gain_range_e',
-            'joint_parity'
+            'joint_parity',
+            'dr_ac_stark_rate',   # dual rail pair idle rotation rate (MHz)
+            'dr_jp_phase',        # dual rail JP-induced phase shifts (JSON dict, degrees)
         ]
         for col in poly_cols:
             if col not in self.df.columns:
@@ -348,8 +350,7 @@ class StorageManSwapDataset(MMDataset):
         return self.get_value(stor_name, 'h_pi (mus)')
 
     def get_gain(self, stor_name):
-        self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
-        return self.get_value(stor_name, 'gain (DAC units)')
+        return int(self.get_value(stor_name, 'gain (DAC units)'))
 
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
@@ -586,6 +587,91 @@ class StorageManSwapDataset(MMDataset):
         json_str = json.dumps(params)
         self.update_value(stor_name, 'joint_parity', json_str)
 
+    # --- Dual Rail Pair Phase Tracking ---
+
+    @staticmethod
+    def pair_name(swap_idx: int, parity_idx: int) -> str:
+        """Build canonical pair name from storage indices, e.g. pair_name(3, 1) -> 'S1-S3'.
+        Always sorted so S_i-S_j with i < j regardless of swap/parity assignment."""
+        lo, hi = sorted((swap_idx, parity_idx))
+        return f'S{lo}-S{hi}'
+
+    # Columns that store numeric values and need -1 defaults (not empty string)
+    NUMERIC_COLUMNS = {'freq (MHz)', 'precision (MHz)', 'pi (mus)', 'h_pi (mus)', 'gain (DAC units)'}
+
+    def ensure_pair_row(self, pair_name: str):
+        """Ensure a dual rail pair row exists (e.g., 'S1-S3'). Creates with defaults if missing."""
+        if pair_name not in self.df[self.indexing_row_name].values:
+            new_row = {}
+            for col in self.df.columns:
+                if col in self.NUMERIC_COLUMNS:
+                    new_row[col] = -1
+                else:
+                    new_row[col] = ''
+            new_row[self.indexing_row_name] = pair_name
+            self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
+
+    def get_dr_ac_stark_rate(self, pair_name: str) -> float | None:
+        """
+        Get the AC Stark idle rotation rate for a dual rail pair.
+
+        Args:
+            pair_name: Pair name (e.g., 'S1-S3')
+
+        Returns:
+            Rate in MHz, or None if not set
+        """
+        self.ensure_pair_row(pair_name)
+        value = self.get_value(pair_name, 'dr_ac_stark_rate')
+        if value is None or value == '' or (isinstance(value, float) and np.isnan(value)):
+            return None
+        return float(value)
+
+    def update_dr_ac_stark_rate(self, pair_name: str, rate: float):
+        """
+        Store the AC Stark idle rotation rate for a dual rail pair.
+
+        Args:
+            pair_name: Pair name (e.g., 'S1-S3')
+            rate: Rotation rate in MHz (e.g., -0.05)
+        """
+        self.ensure_pair_row(pair_name)
+        self.update_value(pair_name, 'dr_ac_stark_rate', float(rate))
+
+    def get_dr_jp_phase(self, pair_name: str) -> dict | None:
+        """
+        Get the JP-induced phase shift dictionary for a dual rail pair.
+
+        The dict maps source pair name -> phase shift in degrees that this
+        pair accumulates when a joint parity measurement is performed on the
+        source pair. Includes self-interaction.
+
+        Args:
+            pair_name: Pair name identifying the affected pair (e.g., 'S1-S3')
+
+        Returns:
+            Dict, e.g. {'S1-S3': 10.5, 'S2-S4': -3.2, 'S6-S7': 1.1},
+            or None if not set
+        """
+        self.ensure_pair_row(pair_name)
+        value = self.get_value(pair_name, 'dr_jp_phase')
+        if value is None or value == '' or value == '{}' or (isinstance(value, float) and np.isnan(value)):
+            return None
+        return json.loads(value)
+
+    def update_dr_jp_phase(self, pair_name: str, phase_dict: dict):
+        """
+        Store the JP-induced phase shift dictionary for a dual rail pair.
+
+        Args:
+            pair_name: Pair name identifying the affected pair (e.g., 'S1-S3')
+            phase_dict: Dict mapping source pair name -> phase shift in degrees
+                        e.g., {'S1-S3': 10.5, 'S2-S4': -3.2, 'S6-S7': 1.1}
+        """
+        self.ensure_pair_row(pair_name)
+        json_str = json.dumps(phase_dict)
+        self.update_value(pair_name, 'dr_jp_phase', json_str)
+
 
 class FloquetStorageSwapDataset(MMDataset):
     def __init__(self, filename='floquet_storage_swap_dataset.csv', parent_path='configs'):
@@ -633,8 +719,7 @@ class FloquetStorageSwapDataset(MMDataset):
         return self.get_value(stor_name, 'len (mus)')
 
     def get_gain(self, stor_name):
-        self.df['gain (DAC units)'] = self.df['gain (DAC units)'].astype(int)
-        return self.get_value(stor_name, 'gain (DAC units)')
+        return int(self.get_value(stor_name, 'gain (DAC units)'))
 
     def get_ramp_sigma(self, stor_name):
         return self.get_value(stor_name, 'ramp_sigma (mus)')

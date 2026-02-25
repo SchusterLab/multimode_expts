@@ -4,8 +4,8 @@ Prepares dual rail qubit states (00, 10, 01, 11), optionally waits and measures
 joint parity, then performs final dual rail measurement.
 
 State encoding:
-- First digit: photon in storage_1 (0 or 1)
-- Second digit: photon in storage_2 (0 or 1)
+- First digit: photon in storage_swap (0 or 1)
+- Second digit: photon in storage_parity (0 or 1)
 
 Pulse sequence:
 1. (Optional) Active reset
@@ -49,17 +49,22 @@ class DualRailSandboxProgram(MMAveragerProgram):
 
         # Build storage mode names
         man = cfg.expt.manipulate
-        s1 = cfg.expt.storage_1
-        s2 = cfg.expt.storage_2
-        self.stor_name_1 = f'M{man}-S{s1}'
-        self.stor_name_2 = f'M{man}-S{s2}'
-        self.stor_pair_name = f'S{s1}-S{s2}'  # For joint parity lookup
+        s_swap = cfg.expt.storage_swap
+        s_parity = cfg.expt.storage_parity
+        self.stor_name_swap = f'M{man}-S{s_swap}'
+        self.stor_name_parity = f'M{man}-S{s_parity}'
+        self.stor_pair_name = f'M{man}-S{s_parity}'  # For joint parity lookup
+
+        # Build swap pulse (storage_swap <-> manipulate, used around joint parity)
+        self.swap_pulse = self.get_prepulse_creator(
+            [['storage', self.stor_name_swap, 'pi', 0]]
+        ).pulse.tolist()
 
         # Build state preparation pulse
         state_start = cfg.expt.get('state_start', '00')
         self.state_start = state_start
 
-        state_prep_seq = self.prep_dual_rail_state(state_start, self.stor_name_1, self.stor_name_2)
+        state_prep_seq = self.prep_dual_rail_state(state_start, self.stor_name_swap, self.stor_name_parity)
         if state_prep_seq is not None:
             creator = self.get_prepulse_creator(state_prep_seq)
             self.state_prep_pulse = creator.pulse.tolist()
@@ -109,7 +114,9 @@ class DualRailSandboxProgram(MMAveragerProgram):
 
             # Joint parity measurement (if enabled)
             if cfg.expt.get('parity_flag', False):
-                # print("Performing joint parity measurement")
+                # Swap storage_swap → manipulate
+                self.custom_pulse(cfg, self.swap_pulse, prefix=f'jp_swap_in_{rep_idx}_')
+                # Joint parity measurement + conditional reset
                 self.joint_parity_active_reset(
                     stor_pair_name=self.stor_pair_name,
                     name=f'jp_rep{rep_idx}',
@@ -117,11 +124,13 @@ class DualRailSandboxProgram(MMAveragerProgram):
                     second_phase=0,
                     fast=cfg.expt.get('parity_fast', False)
                 )
+                # Swap back manipulate → storage_swap
+                self.custom_pulse(cfg, self.swap_pulse, prefix=f'jp_swap_out_{rep_idx}_')
 
         # 5. Final dual rail measurement
         # print("Performing final dual rail measurement")
         self.measure_dual_rail(
-            storage_idx=(cfg.expt.storage_1, cfg.expt.storage_2),
+            storage_idx=(cfg.expt.storage_swap, cfg.expt.storage_parity),
             measure_parity=cfg.expt.get('measure_parity', True),
             reset_before=cfg.expt.get('reset_before_dual_rail', False),
             reset_after=cfg.expt.get('reset_after_dual_rail', False),
@@ -181,8 +190,8 @@ class DualRailSandboxExperiment(Experiment):
         qubits: [0],
         reps: number of averages per state,
         rounds: number of rounds (default 1),
-        storage_1: first storage mode number (e.g., 1 for S1),
-        storage_2: second storage mode number (e.g., 2 for S2),
+        storage_swap: storage mode swapped to/from manipulate (e.g., 1 for S1),
+        storage_parity: storage mode probed by joint parity pulse (e.g., 3 for S3),
         manipulate: manipulate mode number (e.g., 1 for M1),
         state_start: str or list of str, initial state(s): '00', '10', '01', '11',
         wait_time: wait time in us (0 = skip wait),
@@ -342,6 +351,14 @@ class DualRailSandboxExperiment(Experiment):
                         data[f'state_prep_ps_count_{key}'] = np.sum(sp_ps_mask)
                         i0_reshaped = i0_reshaped[sp_ps_mask]
 
+                    # Compute joint parity measurement statistics (before post-selection)
+                    if parity_flag and 'jp' in indices:
+                        jp_indices = indices['jp']
+                        jp_shots = i0_reshaped[:, jp_indices]
+                        # g (below threshold) = even parity, e (above threshold) = odd parity
+                        jp_even_frac = np.mean(jp_shots < threshold, axis=0)  # shape: (n_repeats,)
+                        data[f'jp_even_frac_{key}'] = jp_even_frac
+
                     # Post-selection mask: keep trajectories where all JP shots are g (< threshold)
                     if post_select and parity_flag and 'jp' in indices:
                         jp_indices = indices['jp']
@@ -387,8 +404,8 @@ class DualRailSandboxExperiment(Experiment):
             indices['dr_reset_before'] = idx
             idx += 1
 
-        indices['dr_stor1'] = idx
-        indices['dr_stor2'] = idx + 1
+        indices['dr_stor_swap'] = idx
+        indices['dr_stor_parity'] = idx + 1
         idx += 2
 
         if cfg.expt.get('reset_after_dual_rail', False):
@@ -405,20 +422,20 @@ class DualRailSandboxExperiment(Experiment):
         if n_shots == 0:
             return {'00': 0, '01': 0, '10': 0, '11': 0}, {'00': 0, '01': 0, '10': 0, '11': 0}
 
-        stor1_shots = i0_filtered[:, indices['dr_stor1']]
-        stor2_shots = i0_filtered[:, indices['dr_stor2']]  
+        swap_shots = i0_filtered[:, indices['dr_stor_swap']]
+        parity_shots = i0_filtered[:, indices['dr_stor_parity']]
 
         # Threshold: > threshold = qubit in |e> = odd parity = 1 photon
         if measure_parity:
-            stor1_state = (stor1_shots > threshold).astype(int)
-            stor2_state = (stor2_shots > threshold).astype(int)  
-        else: 
-            stor1_state = (stor1_shots < threshold).astype(int)
-            stor2_state = (stor2_shots < threshold).astype(int)  
+            swap_state = (swap_shots > threshold).astype(int)
+            parity_state = (parity_shots > threshold).astype(int)
+        else:
+            swap_state = (swap_shots < threshold).astype(int)
+            parity_state = (parity_shots < threshold).astype(int)
 
 
         counts = {'00': 0, '01': 0, '10': 0, '11': 0}
-        for s1, s2 in zip(stor1_state, stor2_state):  
+        for s1, s2 in zip(swap_state, parity_state):  
             key = f'{s1}{s2}'
             counts[key] += 1
 
@@ -461,7 +478,7 @@ class DualRailSandboxExperiment(Experiment):
         threshold = data.get('threshold', 0)
         bar_labels = ['00', '10', '01', '11']
         total_reps = self.cfg.expt.reps
-        stor_pair = f'S{self.cfg.expt.storage_1}-S{self.cfg.expt.storage_2}'
+        stor_pair = f'S{self.cfg.expt.storage_swap}-S{self.cfg.expt.storage_parity}'
 
         # Build list of all combinations
         combos = []
@@ -547,14 +564,14 @@ class DualRailSandboxExperiment(Experiment):
                         self.cfg.expt.wait_time = wait
                         indices = self._get_shot_indices()
 
-                        # Plot storage 1 and storage 2 final measurements
-                        i_stor1 = i0_reshaped[:, indices['dr_stor1']]
-                        q_stor1 = q0_reshaped[:, indices['dr_stor1']]
-                        i_stor2 = i0_reshaped[:, indices['dr_stor2']]
-                        q_stor2 = q0_reshaped[:, indices['dr_stor2']]
+                        # Plot swap and parity storage final measurements
+                        i_swap = i0_reshaped[:, indices['dr_stor_swap']]
+                        q_swap = q0_reshaped[:, indices['dr_stor_swap']]
+                        i_parity = i0_reshaped[:, indices['dr_stor_parity']]
+                        q_parity = q0_reshaped[:, indices['dr_stor_parity']]
 
-                        ax_iq.scatter(i_stor1, q_stor1, alpha=0.3, s=10, label='Stor1')
-                        ax_iq.scatter(i_stor2, q_stor2, alpha=0.3, s=10, label='Stor2')
+                        ax_iq.scatter(i_swap, q_swap, alpha=0.3, s=10, label='Swap')
+                        ax_iq.scatter(i_parity, q_parity, alpha=0.3, s=10, label='Parity')
 
                         # Plot threshold line
                         ax_iq.axvline(x=threshold, color='red', linestyle='--', linewidth=2,
@@ -570,6 +587,70 @@ class DualRailSandboxExperiment(Experiment):
             total_used = n_combos * (2 if show_iq else 1)
             for idx in range(total_used, len(axes)):
                 axes[idx].set_visible(False)
+
+            plt.tight_layout()
+            plt.show()
+
+        # Joint parity measurement results
+        if data.get('parity_flag', False):
+            # Group combos by (repeat, wait) for summary plots
+            rw_combos = {}
+            for state, repeat, wait in combos:
+                rw_key = (repeat, wait)
+                if rw_key not in rw_combos:
+                    rw_combos[rw_key] = []
+                rw_combos[rw_key].append(state)
+
+            n_rw = len(rw_combos)
+            fig_jp, axes_jp = plt.subplots(1, n_rw, figsize=(6*n_rw, 4), squeeze=False)
+            axes_jp = axes_jp.flatten()
+
+            for rw_idx, ((repeat, wait), states_for_rw) in enumerate(rw_combos.items()):
+                ax = axes_jp[rw_idx]
+                n_states = len(states_for_rw)
+                repeat_count = int(repeat)
+
+                if repeat_count == 1:
+                    # Single repeat: grouped bar chart with even/odd per state
+                    x = np.arange(n_states)
+                    width = 0.35
+                    even_vals = []
+                    odd_vals = []
+                    for state in states_for_rw:
+                        key = f'{state}_r{repeat}_w{wait}'
+                        jp_even = data.get(f'jp_even_frac_{key}', np.array([0.5]))
+                        even_vals.append(jp_even[0])
+                        odd_vals.append(1 - jp_even[0])
+
+                    bars_e = ax.bar(x - width/2, even_vals, width, label='Even (g)',
+                                    color='tab:blue', alpha=0.7)
+                    bars_o = ax.bar(x + width/2, odd_vals, width, label='Odd (e)',
+                                    color='tab:red', alpha=0.7)
+                    ax.set_xticks(x)
+                    ax.set_xticklabels([f'|{s}>' for s in states_for_rw])
+                    ax.legend()
+
+                    for bar, val in zip(list(bars_e) + list(bars_o), even_vals + odd_vals):
+                        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02,
+                                f'{val:.3f}', ha='center', va='bottom', fontsize=9)
+                else:
+                    # Multiple repeats: line plot of even-parity fraction vs repeat index
+                    for state in states_for_rw:
+                        key = f'{state}_r{repeat}_w{wait}'
+                        jp_even = data.get(f'jp_even_frac_{key}', np.array([]))
+                        if len(jp_even) > 0:
+                            reps_x = np.arange(len(jp_even))
+                            ax.plot(reps_x, jp_even, 'o-', label=f'|{state}> P(even)',
+                                    color=self.STATE_COLORS[state], markersize=6)
+                    ax.set_xlabel('Repeat index')
+                    ax.legend(fontsize=8)
+
+                ax.set_ylabel('Fraction')
+                ax.set_title(f'Joint Parity Results [{stor_pair}]\nr={repeat} w={wait}')
+                ax.set_ylim([0, 1.15])
+
+            for idx in range(n_rw, len(axes_jp)):
+                axes_jp[idx].set_visible(False)
 
             plt.tight_layout()
             plt.show()

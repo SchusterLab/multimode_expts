@@ -56,7 +56,7 @@ class JointParityCalibrator:
         # Default experiment configs (can be overridden via kwargs)
         self.error_amp_defaults = AttrDict(dict(
             reps=50, rounds=1, qubit=0, qubits=[0],
-            n_start=0, n_step=3, n_pulses=15, expts=50,
+            n_start=0, n_step=3, n_pulses=15, expts=100,
             active_reset=False, man_reset=True, storage_reset=True,
             relax_delay=2500, qubit_state_start='g',
         ))
@@ -81,10 +81,31 @@ class JointParityCalibrator:
             prepulse=True,
         ))
 
+        self.parity_phase_defaults = AttrDict(dict(
+            start=0, step=3.6, expts=100,
+            reps=200, rounds=1, manipulate=1,
+            state_start='00', parity_fast=False,
+            active_reset=False, man_reset=False,
+            storage_reset=False, prepulse=False,
+            gate_based=False, qubits=[0], relax_delay=2500,
+        ))
+
     def _log(self, msg):
         """Print message if verbose mode is on."""
         if self.verbose:
             print(f"[JointParityCalibrator] {msg}")
+
+    @staticmethod
+    def _angular_diff_deg(phase1_deg, phase2_deg):
+        """
+        Compute signed angular difference (phase1 - phase2) in [-180, 180] degrees.
+
+        Handles wrapping for phases returned by fitsin (which are in [-360, 360]).
+        """
+        diff = (phase1_deg - phase2_deg) % 360
+        if diff > 180:
+            diff -= 360
+        return diff
 
     def _plot_rabi_fit(self, xpts, avgi, fit_params, state_label):
         """
@@ -761,6 +782,8 @@ class JointParityCalibrator:
             expts = 100
         step = (stop - start) / (expts - 1)
 
+        print('reps: ', reps)
+
         # Run for g state
         expt_g = runner.execute(
             freq=freq_bs, gain=gain,
@@ -952,6 +975,81 @@ class JointParityCalibrator:
             self._plot_wigner_fit(expt.data['phases'], expt.data['parity'], theta, qubit_state)
         self._log(f"    Theta: {theta * 180 / np.pi:.2f} deg")
         return theta, expt
+
+    def _run_parity_phase(self, storage_swap, storage_parity, state_start,
+                          man_mode_no=1, reps=200, parity_fast=False):
+        """
+        Run ParityPhaseExperiment and extract fitted phases.
+
+        Joint parity params must be pre-set in ds_storage for the storage_parity
+        mode before calling this method.
+
+        Parameters
+        ----------
+        storage_swap : int
+            Storage mode to swap to/from manipulate (e.g., 3 for M1-S3)
+        storage_parity : int
+            Storage mode for joint parity (e.g., 1 for M1-S1)
+        state_start : str or list of str
+            States to prepare, e.g. '00', '01', '10', ['00', '01']
+        man_mode_no : int
+            Manipulate mode number (default: 1)
+        reps : int
+            Number of repetitions (default: 200)
+        parity_fast : bool
+            Whether to use fast multiphoton hpi pulses (default: False)
+
+        Returns
+        -------
+        phases : dict
+            Mapping state -> fitted phase in degrees, e.g. {'00': 45.2, '01': -120.5}
+        expt : ParityPhaseExperiment
+            The experiment object
+        """
+        self._log(f"  Running ParityPhaseExperiment (states={state_start})...")
+
+        runner = CharacterizationRunner(
+            station=self.station,
+            ExptClass=meas.ParityPhaseExperiment,
+            default_expt_cfg=self.parity_phase_defaults,
+            job_client=self.client,
+            use_queue=self.use_queue,
+        )
+
+        expt = runner.execute(
+            storage_swap=storage_swap,
+            storage_parity=storage_parity,
+            manipulate=man_mode_no,
+            state_start=state_start,
+            reps=reps,
+            parity_fast=parity_fast,
+            go_kwargs=dict(analyze=True, display=False),
+        )
+
+        # Analyze locally if not already done
+        state_list = state_start if isinstance(state_start, list) else [state_start]
+        first_state = state_list[0]
+        if f'fit_pe_{first_state}' not in expt.data and f'fit_avgi_{first_state}' not in expt.data:
+            expt.analyze()
+
+        # Display locally (go_kwargs display runs on worker, not in notebook)
+        if self.debug:
+            expt.display()
+
+        # Extract phases for each state
+        phases = {}
+        for state in state_list:
+            # Prefer P_e fit, fall back to avgi fit
+            fit_key = f'fit_pe_{state}'
+            if fit_key not in expt.data:
+                fit_key = f'fit_avgi_{state}'
+            if fit_key in expt.data:
+                phases[state] = expt.data[fit_key][2]  # phase in degrees
+                self._log(f"    State '{state}': phase = {phases[state]:.1f} deg")
+            else:
+                self._log(f"    WARNING: No fit found for state '{state}'")
+
+        return phases, expt
 
     def fit_bs_rate_lookup_table(self, lookup_data, degree_rate=2, degree_freq=10,
                                 store=True, skip_indices=None):
@@ -1227,14 +1325,15 @@ class JointParityCalibrator:
                                       run_both_rabi_states=False,
                                       rabi_start=None, rabi_stop=None, rabi_expts=None,
                                       wigner_n_points=100,
-                                      f_bs_g_override=None, f_bs_e_override=None):
+                                      f_bs_g_override=None, f_bs_e_override=None,
+                                      gain_override=None):
         """
         ALICE: Calibrate at a given beam splitter rate (WITH storage swap).
 
         Parameters
         ----------
         g_bs : float
-            Beam splitter rate in MHz
+            Beam splitter rate in MHz (used for length_bs = 0.25 / g_bs)
         alpha_amplitude : float
             Displacement amplitude for Wigner circle
         run_both_rabi_states : bool
@@ -1243,6 +1342,8 @@ class JointParityCalibrator:
             Rabi sweep parameters (optional)
         wigner_n_points : int
             Number of points on the Wigner alpha circle (default: 100)
+        gain_override : int, optional
+            If provided, use this gain directly instead of looking it up from g_bs.
 
         Returns
         -------
@@ -1253,9 +1354,12 @@ class JointParityCalibrator:
         stor_name = f'M{man_mode_no}-S{stor_mode_no}'
 
         # Step 1: Setup - get gain/freq from lookup tables
-        gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'e')
-        gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'g')
-        gain = int((gain_e + gain_g) / 2)
+        if gain_override is not None:
+            gain = gain_override
+        else:
+            gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'e')
+            gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, g_bs, 'g')
+            gain = int((gain_e + gain_g) / 2)
         f_bs_g_guess = f_bs_g_override if f_bs_g_override is not None else self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'g')
         f_bs_e_guess = f_bs_e_override if f_bs_e_override is not None else self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'e')
         length_bs = 0.25 / g_bs
@@ -1321,10 +1425,10 @@ class JointParityCalibrator:
             'experiments': experiments,
         }
 
-    def fit_rate_sweep(self, sweep_data, fit_degree=1, target_phase_diff=1.0,
+    def fit_gain_sweep(self, sweep_data, fit_degree=1, target_phase_diff=1.0,
                        target_phase_tol=0.1, skip_indices=None):
         """
-        Fit phase difference vs beam splitter rate from sweep data.
+        Fit phase difference vs gain from sweep data.
 
         Can be called independently to refit with different polynomial degrees
         or skip outlier points without re-running experiments.
@@ -1333,7 +1437,8 @@ class JointParityCalibrator:
         ----------
         sweep_data : dict
             Sweep data returned by sweep_beam_splitter_rate().
-            Must contain 'results' key with list of per-rate calibration dicts.
+            Must contain 'results' key with list of per-gain calibration dicts,
+            and 'bs_coeffs' for the secondary rate axis on the plot.
         fit_degree : int
             Degree of polynomial fit (default: 1 for linear)
         target_phase_diff : float
@@ -1348,12 +1453,12 @@ class JointParityCalibrator:
         dict with keys:
             'fit_params': polynomial coefficients from np.polyfit (highest degree first)
             'fit_degree': degree of polynomial used
-            'fitted_optimal_rate': rate estimated from polynomial fit
+            'fitted_optimal_gain': gain estimated from polynomial fit (int)
             'fit_figure': matplotlib figure of the fit
-            'optimal_idx': index of best measured rate in full results list
-            'optimal_rate': best measured rate
-            'optimal_result': calibration result for best measured rate
-            'converged': whether best measured rate is within tolerance
+            'optimal_idx': index of best measured gain in full results list
+            'optimal_gain': best measured gain
+            'optimal_result': calibration result for best measured gain
+            'converged': whether best measured gain is within tolerance
         """
         results = sweep_data['results']
         successful = [r for r in results if r.get('success', False)]
@@ -1363,16 +1468,16 @@ class JointParityCalibrator:
             return {
                 'fit_params': None,
                 'fit_degree': fit_degree,
-                'fitted_optimal_rate': None,
+                'fitted_optimal_gain': None,
                 'fit_figure': None,
                 'optimal_idx': None,
-                'optimal_rate': None,
+                'optimal_gain': None,
                 'optimal_result': None,
                 'converged': False,
             }
 
-        # Extract data
-        rates = np.array([r['g_bs'] for r in successful])
+        # Extract data — fit in gain space
+        gains = np.array([r['gain'] for r in successful], dtype=float)
         phase_diffs = np.array([r['phase_diff_pi'] for r in successful])
 
         # Apply skip mask
@@ -1393,52 +1498,53 @@ class JointParityCalibrator:
         converged = masked_errors[optimal_idx] <= target_phase_tol
         original_idx = results.index(successful[optimal_idx])
 
-        self._log(f"Best measured rate: {rates[optimal_idx]:.4f} MHz "
+        self._log(f"Best measured gain: {gains[optimal_idx]:.0f} "
                   f"(phase_diff={phase_diffs[optimal_idx]:.4f} pi)")
 
-        # Polynomial fit
+        # Polynomial fit in gain space
         fit_params = None
-        fitted_optimal_rate = None
+        fitted_optimal_gain = None
         fit_figure = None
 
         min_points_needed = fit_degree + 1
         n_fit_points = np.sum(mask)
         if n_fit_points >= min_points_needed:
             try:
-                fit_params = np.polyfit(rates[mask], phase_diffs[mask], fit_degree)
+                fit_params = np.polyfit(gains[mask], phase_diffs[mask], fit_degree)
 
-                # Find rate where phase_diff = target_phase_diff
+                # Find gain where phase_diff = target_phase_diff
                 root_coeffs = fit_params.copy()
                 root_coeffs[-1] -= target_phase_diff
 
                 roots = np.roots(root_coeffs)
 
                 # Filter for real roots within a reasonable range of the data
-                rate_min, rate_max = min(rates[mask]), max(rates[mask])
-                rate_margin = (rate_max - rate_min) * 0.5
+                gain_min, gain_max = min(gains[mask]), max(gains[mask])
+                gain_margin = (gain_max - gain_min) * 0.5
                 valid_roots = []
                 for root in roots:
                     if np.isreal(root):
                         root_real = np.real(root)
-                        if (rate_min - rate_margin) <= root_real <= (rate_max + rate_margin):
+                        if (gain_min - gain_margin) <= root_real <= (gain_max + gain_margin):
                             valid_roots.append(root_real)
 
                 if valid_roots:
-                    rate_center = (rate_min + rate_max) / 2
-                    fitted_optimal_rate = min(valid_roots, key=lambda x: abs(x - rate_center))
+                    gain_center = (gain_min + gain_max) / 2
+                    fitted_optimal_gain = int(round(
+                        min(valid_roots, key=lambda x: abs(x - gain_center))
+                    ))
 
-                    if fit_degree == 1:
-                        self._log(f"Linear fit: phase_diff = {fit_params[0]:.4f} * rate + {fit_params[1]:.4f}")
-                    else:
-                        self._log(f"Polynomial fit (degree {fit_degree}): coeffs = {fit_params}")
-                    self._log(f"Fitted optimal rate: {fitted_optimal_rate:.4f} MHz")
+                    self._log(f"Polynomial fit (degree {fit_degree}): coeffs = {fit_params}")
+                    self._log(f"Fitted optimal gain: {fitted_optimal_gain}")
 
-                    fit_figure = self._plot_rate_sweep_fit(
-                        rates, phase_diffs, fit_params, fitted_optimal_rate,
-                        target_phase_diff, target_phase_tol, fit_degree
+                    bs_coeffs = sweep_data.get('bs_coeffs')
+                    fit_figure = self._plot_gain_sweep_fit(
+                        gains, phase_diffs, fit_params, fitted_optimal_gain,
+                        target_phase_diff, target_phase_tol, fit_degree,
+                        bs_coeffs=bs_coeffs
                     )
                 else:
-                    self._log("WARNING: No valid root found in data range, cannot estimate optimal rate")
+                    self._log("WARNING: No valid root found in data range, cannot estimate optimal gain")
 
             except Exception as e:
                 self._log(f"ERROR during polynomial fit: {e}")
@@ -1450,31 +1556,278 @@ class JointParityCalibrator:
         return {
             'fit_params': fit_params,
             'fit_degree': fit_degree,
-            'fitted_optimal_rate': fitted_optimal_rate,
+            'fitted_optimal_gain': fitted_optimal_gain,
             'fit_figure': fit_figure,
             'optimal_idx': original_idx,
-            'optimal_rate': rates[optimal_idx],
+            'optimal_gain': int(gains[optimal_idx]),
             'optimal_result': successful[optimal_idx],
             'converged': converged,
         }
 
-    def calibrate_at_fitted_rate(self, sweep_data, fitted_optimal_rate,
+    def fit_gain_sweep_parity(self, sweep_data, fit_degree=1,
+                              target_phase_diff_deg=180.0,
+                              target_phase_tol_deg=18.0,
+                              skip_indices=None):
+        """
+        Fit unwrapped phase difference vs gain from parity sweep data.
+
+        Unlike fit_gain_sweep() which works with wrapped phase_diff_pi in [0,1],
+        this method unwraps the raw phase differences so they are monotonic,
+        then fits a polynomial and finds where it crosses the target (180 deg).
+
+        Can be called independently to refit with different polynomial degrees
+        or skip outlier points without re-running experiments.
+
+        Parameters
+        ----------
+        sweep_data : dict
+            From sweep_beam_splitter_rate_parity(). Must have 'results' and
+            'phase_00_ref'.
+        fit_degree : int
+            Degree of polynomial fit (default: 1 for linear)
+        target_phase_diff_deg : float
+            Target phase difference in degrees (default: 180.0)
+        target_phase_tol_deg : float
+            Tolerance in degrees (default: 18.0, i.e. 0.1 pi)
+        skip_indices : list of int, optional
+            Indices of successful points to exclude from the fit.
+
+        Returns
+        -------
+        dict with keys matching fit_gain_sweep() output:
+            'fit_params', 'fit_degree', 'fitted_optimal_gain', 'fit_figure',
+            'optimal_idx', 'optimal_gain', 'optimal_result', 'converged',
+            'phase_01_optimal'
+        Also includes 'phase_01_optimal' (float, degrees): the predicted
+        phase_01 at the fitted optimal gain, computed from the polynomial fit
+        as phase_00_ref + polyval(fit_params, fitted_optimal_gain).
+        """
+        results = sweep_data['results']
+        phase_00_ref = sweep_data['phase_00_ref']
+        successful = [r for r in results if r.get('success', False)]
+
+        if not successful:
+            self._log("No successful calibrations to fit!")
+            return {
+                'fit_params': None, 'fit_degree': fit_degree,
+                'fitted_optimal_gain': None, 'fit_figure': None,
+                'optimal_idx': None, 'optimal_gain': None,
+                'optimal_result': None, 'converged': False,
+            }
+
+        # Extract gains and raw phase_01 values
+        gains = np.array([r['gain'] for r in successful], dtype=float)
+        phases_01_raw = np.array([r['phase_01'] for r in successful])
+
+        # Compute raw differences and unwrap to make monotonic
+        raw_diffs = phases_01_raw - phase_00_ref
+        unwrapped_diffs = np.rad2deg(np.unwrap(np.deg2rad(raw_diffs)))
+
+        # Determine sign: the unwrapped diff should approach +180 or -180
+        # Pick the target sign that matches the data trend
+        mean_diff = np.mean(unwrapped_diffs)
+        if mean_diff < 0:
+            target = -target_phase_diff_deg
+        else:
+            target = target_phase_diff_deg
+        # Also allow the target to be shifted by 360*k to match the data range
+        k = round((mean_diff - target) / 360)
+        target = target + 360 * k
+
+        self._log(f"  Unwrapped diffs range: [{unwrapped_diffs.min():.1f}, "
+                  f"{unwrapped_diffs.max():.1f}] deg, target={target:.1f} deg")
+
+        # Apply skip mask
+        if skip_indices is None:
+            mask = np.ones(len(successful), dtype=bool)
+        else:
+            mask = np.ones(len(successful), dtype=bool)
+            mask[skip_indices] = False
+
+        n_skipped = np.sum(~mask)
+        if n_skipped > 0:
+            self._log(f"  Skipping {n_skipped} points: indices {list(np.where(~mask)[0])}")
+
+        # Find best measured result (closest to target among non-skipped)
+        masked_errors = np.full(len(successful), np.inf)
+        masked_errors[mask] = np.abs(unwrapped_diffs[mask] - target)
+        optimal_idx = np.argmin(masked_errors)
+        converged = masked_errors[optimal_idx] <= target_phase_tol_deg
+        original_idx = results.index(successful[optimal_idx])
+
+        self._log(f"Best measured gain: {gains[optimal_idx]:.0f} "
+                  f"(unwrapped_diff={unwrapped_diffs[optimal_idx]:.1f} deg)")
+
+        # Polynomial fit on unwrapped differences
+        fit_params = None
+        fitted_optimal_gain = None
+        phase_01_optimal = None
+        fit_figure = None
+
+        min_points_needed = fit_degree + 1
+        n_fit_points = np.sum(mask)
+        if n_fit_points >= min_points_needed:
+            try:
+                fit_params = np.polyfit(gains[mask], unwrapped_diffs[mask], fit_degree)
+
+                # Find gain where unwrapped_diff = target
+                root_coeffs = fit_params.copy()
+                root_coeffs[-1] -= target
+
+                roots = np.roots(root_coeffs)
+
+                # Filter for real roots within a reasonable range
+                gain_min, gain_max = min(gains[mask]), max(gains[mask])
+                gain_margin = (gain_max - gain_min) * 0.5
+                valid_roots = []
+                for root in roots:
+                    if np.isreal(root):
+                        root_real = np.real(root)
+                        if (gain_min - gain_margin) <= root_real <= (gain_max + gain_margin):
+                            valid_roots.append(root_real)
+
+                if valid_roots:
+                    gain_center = (gain_min + gain_max) / 2
+                    fitted_optimal_gain = int(round(
+                        min(valid_roots, key=lambda x: abs(x - gain_center))
+                    ))
+
+                    # Compute predicted phase_01 at optimal gain from the fit
+                    fitted_phase_diff = np.polyval(fit_params, fitted_optimal_gain)
+                    phase_01_optimal = phase_00_ref + fitted_phase_diff
+                    # Wrap to [-180, 180]
+                    phase_01_optimal = ((phase_01_optimal + 180) % 360) - 180
+
+                    self._log(f"Polynomial fit (degree {fit_degree}): coeffs = {fit_params}")
+                    self._log(f"Fitted optimal gain: {fitted_optimal_gain}")
+                    self._log(f"Predicted phase_01 at optimal: {phase_01_optimal:.1f} deg "
+                              f"(phase_00_ref={phase_00_ref:.1f}, fitted_diff={fitted_phase_diff:.1f})")
+
+                    bs_coeffs = sweep_data.get('bs_coeffs')
+                    fit_figure = self._plot_gain_sweep_parity_fit(
+                        gains, unwrapped_diffs, fit_params, fitted_optimal_gain,
+                        target, target_phase_tol_deg, fit_degree,
+                        bs_coeffs=bs_coeffs
+                    )
+                else:
+                    self._log("WARNING: No valid root found in data range")
+
+            except Exception as e:
+                self._log(f"ERROR during polynomial fit: {e}")
+        else:
+            self._log(f"WARNING: Not enough non-skipped points for degree-{fit_degree} fit "
+                      f"(have {n_fit_points}, need >= {min_points_needed})")
+
+        return {
+            'fit_params': fit_params,
+            'fit_degree': fit_degree,
+            'fitted_optimal_gain': fitted_optimal_gain,
+            'fit_figure': fit_figure,
+            'optimal_idx': original_idx,
+            'optimal_gain': int(gains[optimal_idx]),
+            'optimal_result': successful[optimal_idx],
+            'converged': converged,
+            'phase_01_optimal': phase_01_optimal,
+        }
+
+    def _plot_gain_sweep_parity_fit(self, gains, unwrapped_diffs, fit_params,
+                                     fitted_optimal_gain, target_deg,
+                                     target_tol_deg, fit_degree=1,
+                                     bs_coeffs=None):
+        """
+        Plot unwrapped phase difference vs gain with polynomial fit.
+
+        Parameters
+        ----------
+        gains : array
+            Beam splitter gains
+        unwrapped_diffs : array
+            Unwrapped phase differences (degrees)
+        fit_params : array
+            Polynomial coefficients from np.polyfit
+        fitted_optimal_gain : int
+            Estimated optimal gain from fit
+        target_deg : float
+            Target phase difference (degrees, with sign)
+        target_tol_deg : float
+            Tolerance (degrees)
+        fit_degree : int
+            Degree of polynomial fit
+        bs_coeffs : array, optional
+            Polynomial coefficients for gain→rate lookup (secondary axis)
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        """
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plot data points
+        ax.plot(gains, unwrapped_diffs, 'o', markersize=10, label='Measured', zorder=5)
+
+        # Plot fit curve
+        gain_range = np.linspace(min(gains), max(gains), 100)
+        fit_line = np.polyval(fit_params, gain_range)
+        fit_label = f'Polynomial fit (degree {fit_degree})'
+        ax.plot(gain_range, fit_line, '-', color='blue', alpha=0.7, label=fit_label)
+
+        # Plot target line and tolerance band
+        ax.axhline(target_deg, color='r', linestyle='--',
+                   label=f'Target ({target_deg:.0f} deg)')
+        ax.axhspan(target_deg - target_tol_deg, target_deg + target_tol_deg,
+                   color='r', alpha=0.1, label=f'+/-{target_tol_deg:.0f} deg tolerance')
+
+        # Mark fitted optimal gain
+        if fitted_optimal_gain is not None:
+            fitted_phase = np.polyval(fit_params, fitted_optimal_gain)
+            ax.scatter([fitted_optimal_gain], [fitted_phase], color='green', s=200,
+                       marker='*', zorder=10,
+                       label=f'Fitted optimal gain: {fitted_optimal_gain}')
+            ax.axvline(fitted_optimal_gain, color='green', linestyle=':', alpha=0.5)
+
+        ax.set_xlabel('Gain', fontsize=12)
+        ax.set_ylabel('Phase Difference (degrees, unwrapped)', fontsize=12)
+        title = f'ALICE (parity): Gain Sweep (Degree-{fit_degree} Fit)'
+        ax.set_title(title, fontsize=14)
+        ax.legend(loc='best')
+        ax.grid(True, alpha=0.3)
+
+        # Add secondary x-axis showing theoretical beam splitter rate
+        if bs_coeffs is not None:
+            gains_sorted = np.sort(gains)
+            rates_sorted = np.polyval(bs_coeffs, gains_sorted)
+
+            def gain_to_rate(g):
+                return np.interp(g, gains_sorted, rates_sorted)
+
+            def rate_to_gain(r):
+                return np.interp(r, rates_sorted, gains_sorted)
+
+            ax2 = ax.secondary_xaxis('top', functions=(gain_to_rate, rate_to_gain))
+            ax2.set_xlabel('Theoretical Rate (MHz)', fontsize=12)
+
+        plt.tight_layout()
+        plt.show()
+
+        return fig
+
+    def calibrate_at_fitted_gain(self, sweep_data, fitted_optimal_gain,
                                 man_mode_no=1, stor_mode_no=1,
                                 reps_error_amp=50, n_pulses=15, error_amp_span=0.05,
                                 reps_rabi=100, run_both_rabi_states=False,
                                 rabi_start=None, rabi_stop=None, rabi_expts=None):
         """
-        Run error amplification and Rabi at a fitted optimal beam splitter rate.
+        Run error amplification and Rabi at a fitted optimal gain.
 
-        Can be called independently after fit_rate_sweep() to calibrate at a
-        new fitted rate without re-running the full sweep.
+        Can be called independently after fit_gain_sweep() to calibrate at a
+        new fitted gain without re-running the full sweep.
 
         Parameters
         ----------
         sweep_data : dict
             Sweep data from sweep_beam_splitter_rate(), must contain 'results'.
-        fitted_optimal_rate : float
-            Beam splitter rate (MHz) at which to run calibration.
+        fitted_optimal_gain : int
+            Gain at which to run calibration.
         man_mode_no : int
             Manipulate mode number (default: 1)
         stor_mode_no : int
@@ -1499,31 +1852,32 @@ class JointParityCalibrator:
         Returns
         -------
         dict with calibration results:
-            'g_bs', 'freq_bs', 'f_bs_g', 'f_bs_e', 'gain', 'length_bs',
+            'gain', 'freq_bs', 'f_bs_g', 'f_bs_e', 'g_bs', 'length_bs',
             'pi_length', 'man_mode_no', 'stor_mode_no', 'experiments'
         Returns None if calibration fails.
         """
-        self._log(f"\n=== Calibrating at fitted optimal rate: {fitted_optimal_rate:.4f} MHz ===")
+        self._log(f"\n=== Calibrating at fitted optimal gain: {fitted_optimal_gain} ===")
         stor_name = f'M{man_mode_no}-S{stor_mode_no}'
 
         try:
-            # Get gain and length for the fitted rate
-            gain_e = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'e')
-            gain_g = self.station.ds_storage.get_gain_at_bs_rate(stor_name, fitted_optimal_rate, 'g')
-            gain = int((gain_e + gain_g) / 2)
-            length_bs = 0.25 / fitted_optimal_rate
+            gain = fitted_optimal_gain
+
+            # Get theoretical rate and length from lookup table
+            rate_g = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'g')
+            rate_e = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'e')
+            g_bs = (rate_g + rate_e) / 2
+            length_bs = 0.25 / g_bs
+            self._log(f"  Theoretical rate: {g_bs:.4f} MHz, length_bs: {length_bs:.4f} us")
 
             # Use frequencies from the closest swept point as initial guess
             results = sweep_data['results']
             successful = [r for r in results if r.get('success', False)]
-            rates = np.array([r['g_bs'] for r in successful])
-            closest_idx = np.argmin(np.abs(rates - fitted_optimal_rate))
+            gains = np.array([r['gain'] for r in successful], dtype=float)
+            closest_idx = np.argmin(np.abs(gains - fitted_optimal_gain))
             f_bs_g_guess = successful[closest_idx]['f_bs_g']
             f_bs_e_guess = successful[closest_idx]['f_bs_e']
-            self._log(f"  Using freq guess from closest sweep point (g_bs={rates[closest_idx]:.4f} MHz): "
+            self._log(f"  Using freq guess from closest sweep point (gain={gains[closest_idx]:.0f}): "
                       f"f_bs_g={f_bs_g_guess:.4f}, f_bs_e={f_bs_e_guess:.4f}")
-
-            self._log(f"  Initial: gain={gain}, length_bs={length_bs:.4f} us")
 
             fitted_experiments = {}
 
@@ -1544,17 +1898,17 @@ class JointParityCalibrator:
             # Rabi confirmation
             pi_length, fitted_experiments['rabi_g'], fitted_experiments['rabi_e'] = self._run_rabi(
                 freq_bs, gain, length_bs, man_mode_no, stor_mode_no,
-                reps=reps_rabi*3, run_both_states=run_both_rabi_states,
+                reps=reps_rabi, run_both_states=run_both_rabi_states,
                 start=rabi_start, stop=rabi_stop, expts=rabi_expts
             )
             self._log(f"  Calibrated pi_length={pi_length:.4f} us")
 
             return {
-                'g_bs': fitted_optimal_rate,
+                'gain': gain,
+                'g_bs': g_bs,
                 'freq_bs': freq_bs,
                 'f_bs_g': f_bs_g,
                 'f_bs_e': f_bs_e,
-                'gain': gain,
                 'length_bs': length_bs,
                 'pi_length': pi_length,
                 'man_mode_no': man_mode_no,
@@ -1566,20 +1920,20 @@ class JointParityCalibrator:
             self._log(f"ERROR during fitted calibration: {e}")
             return None
 
-    def sweep_beam_splitter_rate(self, rate_list, target_phase_diff=1.0,
+    def sweep_beam_splitter_rate(self, gain_list, target_phase_diff=1.0,
                                   target_phase_tol=0.1, fit_degree=1,
                                   f_bs_g_guess=None, f_bs_e_guess=None, **kwargs):
         """
-        ALICE: Sweep beam splitter rates to find optimal one.
+        ALICE: Sweep beam splitter gains to find optimal one.
 
-        Performs a sweep over beam splitter rates, fits phase difference vs rate
-        to a polynomial, estimates the optimal rate from the fit, and runs
-        a final calibration (error amp + Rabi) at the fitted optimal rate.
+        Performs a sweep over gains, fits phase difference vs gain to a
+        polynomial, estimates the optimal gain from the fit, and runs a final
+        calibration (error amp + Rabi) at the fitted optimal gain.
 
         Parameters
         ----------
-        rate_list : array-like
-            List of beam splitter rates to test (MHz)
+        gain_list : array-like
+            List of gains to test (integer DAC values)
         target_phase_diff : float
             Target phase difference in units of pi (default: 1.0)
         target_phase_tol : float
@@ -1596,18 +1950,19 @@ class JointParityCalibrator:
         Returns
         -------
         dict with sweep results including:
-            - results: list of calibration results for each rate
-            - optimal_idx: index of best measured rate
-            - optimal_rate: best measured rate
-            - optimal_result: calibration result for best measured rate
-            - converged: whether best measured rate is within tolerance
+            - results: list of calibration results for each gain
+            - optimal_idx: index of best measured gain
+            - optimal_gain: best measured gain
+            - optimal_result: calibration result for best measured gain
+            - converged: whether best measured gain is within tolerance
             - fit_params: polynomial coefficients from np.polyfit (highest degree first)
             - fit_degree: degree of polynomial used
-            - fitted_optimal_rate: rate estimated from polynomial fit
-            - fitted_calibration: error amp + Rabi results at fitted rate
+            - fitted_optimal_gain: gain estimated from polynomial fit
+            - fitted_calibration: error amp + Rabi results at fitted gain
             - fit_figure: matplotlib figure of the fit
+            - bs_coeffs: lookup table coefficients for gain→rate mapping
         """
-        self._log(f"=== ALICE: Sweeping {len(rate_list)} beam splitter rates ===")
+        self._log(f"=== ALICE: Sweeping {len(gain_list)} gains ===")
 
         # Filter out class-level settings that shouldn't be passed to calibrate_beam_splitter_rate
         kwargs.pop('debug', None)
@@ -1623,34 +1978,46 @@ class JointParityCalibrator:
         rabi_start = kwargs.get('rabi_start', None)
         rabi_stop = kwargs.get('rabi_stop', None)
         rabi_expts = kwargs.get('rabi_expts', None)
-        alpha_amplitude = kwargs.get('alpha_amplitude', 1.0)
-        reps_wigner = kwargs.get('reps_wigner', 100)
-        wigner_n_points = kwargs.get('wigner_n_points', 100)
+
+        stor_name = f'M{man_mode_no}-S{stor_mode_no}'
+
+        # Get bs_coeffs for gain→rate mapping (used in plot secondary axis)
+        bs_coeffs = self.station.ds_storage.get_bs_rate_coeffs(stor_name, qubit_state='g')
 
         results = []
         prev_f_bs_g = f_bs_g_guess
         prev_f_bs_e = f_bs_e_guess
-        for i, g_bs in enumerate(rate_list):
-            self._log(f"\nRate {i+1}/{len(rate_list)}: g_bs={g_bs:.4f} MHz")
+        for i, gain in enumerate(gain_list):
+            gain = int(gain)
+
+            # Get theoretical rate from lookup table
+            rate_g = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'g')
+            rate_e = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'e')
+            g_bs = (rate_g + rate_e) / 2
+
+            self._log(f"\nGain {i+1}/{len(gain_list)}: gain={gain}, "
+                      f"theoretical rate={g_bs:.4f} MHz")
             try:
                 result = self.calibrate_beam_splitter_rate(
-                    g_bs, f_bs_g_override=prev_f_bs_g, f_bs_e_override=prev_f_bs_e, **kwargs
+                    g_bs, gain_override=gain,
+                    f_bs_g_override=prev_f_bs_g, f_bs_e_override=prev_f_bs_e,
+                    **kwargs
                 )
                 results.append(result)
-                # Use fitted frequencies as guess for the next rate point
+                # Use fitted frequencies as guess for the next point
                 if result.get('success', False):
                     prev_f_bs_g = result['f_bs_g']
                     prev_f_bs_e = result['f_bs_e']
             except Exception as e:
                 self._log(f"  ERROR: {e}")
-                results.append({'g_bs': g_bs, 'success': False, 'error': str(e)})
+                results.append({'gain': gain, 'g_bs': g_bs, 'success': False, 'error': str(e)})
 
         # Build sweep data and store for later refitting
-        sweep_data = {'results': results}
+        sweep_data = {'results': results, 'bs_coeffs': bs_coeffs}
         self.last_rate_sweep_data = sweep_data
 
-        # Fit phase_diff vs rate using the refittable method
-        fit_result = self.fit_rate_sweep(
+        # Fit phase_diff vs gain using the refittable method
+        fit_result = self.fit_gain_sweep(
             sweep_data, fit_degree=fit_degree,
             target_phase_diff=target_phase_diff,
             target_phase_tol=target_phase_tol,
@@ -1659,12 +2026,12 @@ class JointParityCalibrator:
         # Merge fit results into return dict
         sweep_data.update(fit_result)
 
-        # Run error amplification and Rabi at the fitted optimal rate (if found)
+        # Run error amplification and Rabi at the fitted optimal gain (if found)
         fitted_calibration = None
-        fitted_optimal_rate = fit_result.get('fitted_optimal_rate')
-        if fitted_optimal_rate is not None:
-            fitted_calibration = self.calibrate_at_fitted_rate(
-                sweep_data, fitted_optimal_rate,
+        fitted_optimal_gain = fit_result.get('fitted_optimal_gain')
+        if fitted_optimal_gain is not None:
+            fitted_calibration = self.calibrate_at_fitted_gain(
+                sweep_data, fitted_optimal_gain,
                 man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
                 reps_error_amp=reps_error_amp, n_pulses=n_pulses,
                 error_amp_span=error_amp_span, reps_rabi=reps_rabi,
@@ -1675,27 +2042,299 @@ class JointParityCalibrator:
         sweep_data['fitted_calibration'] = fitted_calibration
         return sweep_data
 
-    def _plot_rate_sweep_fit(self, rates, phase_diffs, fit_params, fitted_optimal_rate,
-                              target_phase_diff, target_phase_tol, fit_degree=1):
+    def sweep_beam_splitter_rate_parity(self, gain_list, storage_swap,
+                                        storage_parity=None,
+                                        target_phase_diff_deg=180.0,
+                                        target_phase_tol_deg=18.0,
+                                        fit_degree=1,
+                                        f_bs_g_guess=None, f_bs_e_guess=None,
+                                        **kwargs):
         """
-        Plot phase difference vs rate with polynomial fit.
+        ALICE (parity): Sweep beam splitter gains using ParityPhaseExperiment.
+
+        Alternative to sweep_beam_splitter_rate() that uses ParityPhaseExperiment
+        instead of Wigner tomography. Runs state '00' once as a fixed reference,
+        then sweeps '01' at each gain point to measure the phase difference.
+
+        The raw phase differences are unwrapped to produce a monotonic curve,
+        then fitted with a polynomial to find the gain where the phase difference
+        crosses 180 degrees (pi).
 
         Parameters
         ----------
-        rates : array
-            Beam splitter rates (MHz)
+        gain_list : array-like
+            List of gains to test (integer DAC values)
+        storage_swap : int
+            Storage mode to swap to/from manipulate in ParityPhaseExperiment
+        storage_parity : int, optional
+            Storage mode for joint parity. Defaults to stor_mode_no.
+        target_phase_diff_deg : float
+            Target phase difference in degrees (default: 180.0)
+        target_phase_tol_deg : float
+            Tolerance in degrees (default: 18.0, i.e. 0.1 pi)
+        fit_degree : int
+            Degree of polynomial fit (default: 1 for linear)
+        f_bs_g_guess : float, optional
+            Initial frequency guess for |g> state for the first sweep point.
+        f_bs_e_guess : float, optional
+            Initial frequency guess for |e> state for the first sweep point.
+
+        Keyword Arguments
+        -----------------
+        man_mode_no : int
+            Manipulate mode number (default: 1)
+        stor_mode_no : int
+            Storage mode number for BS calibration (default: 1)
+        reps_error_amp : int
+            Repetitions for error amplification (default: 50)
+        reps_rabi : int
+            Repetitions for Rabi (default: 100)
+        reps_parity : int
+            Repetitions for ParityPhaseExperiment (default: 200)
+        error_amp_span : float
+            Frequency sweep span for error amp (default: 0.05)
+        n_pulses : int
+            Number of pulses in error amp (default: 15)
+        run_both_rabi_states : bool
+            Run Rabi for both g and e states (default: False)
+        rabi_start, rabi_stop, rabi_expts : float, float, int
+            Rabi sweep parameters (optional)
+        parity_fast : bool
+            Use fast multiphoton hpi pulses (default: False)
+        parity_wait_time : float
+            Wait time in ParityPhaseExperiment (default: 0.0)
+
+        Returns
+        -------
+        dict with sweep results, same structure as sweep_beam_splitter_rate()
+        plus 'phase_01_optimal' (float, degrees) for use by calibrate_wait_time_parity()
+        """
+        self._log(f"=== ALICE (parity): Sweeping {len(gain_list)} gains ===")
+
+        # Extract kwargs
+        kwargs.pop('debug', None)
+        man_mode_no = kwargs.get('man_mode_no', 1)
+        stor_mode_no = kwargs.get('stor_mode_no', 1)
+        reps_error_amp = kwargs.get('reps_error_amp', 50)
+        reps_rabi = kwargs.get('reps_rabi', 100)
+        reps_parity = kwargs.get('reps_parity', 200)
+        error_amp_span = kwargs.get('error_amp_span', 0.05)
+        n_pulses = kwargs.get('n_pulses', 15)
+        run_both_rabi_states = kwargs.get('run_both_rabi_states', False)
+        rabi_start = kwargs.get('rabi_start', None)
+        rabi_stop = kwargs.get('rabi_stop', None)
+        rabi_expts = kwargs.get('rabi_expts', None)
+        parity_fast = kwargs.get('parity_fast', False)
+        parity_wait_time = kwargs.get('parity_wait_time', 0.0)
+
+        if storage_parity is None:
+            storage_parity = stor_mode_no
+
+        stor_name = f'M{man_mode_no}-S{stor_mode_no}'
+        stor_parity_name = f'M{man_mode_no}-S{storage_parity}'
+
+        # Get bs_coeffs for gain→rate mapping (used in plot secondary axis)
+        bs_coeffs = self.station.ds_storage.get_bs_rate_coeffs(stor_name, qubit_state='g')
+
+        # Save original joint parity params for restore
+        original_jp = self.station.ds_storage.get_joint_parity(stor_parity_name)
+
+        # If no joint parity params exist yet, initialize from the first gain point
+        if original_jp is None:
+            first_gain = int(gain_list[0])
+            rate_g = self.station.ds_storage.get_bs_rate_at_gain(stor_name, first_gain, 'g')
+            rate_e = self.station.ds_storage.get_bs_rate_at_gain(stor_name, first_gain, 'e')
+            g_bs_init = (rate_g + rate_e) / 2
+            length_init = 0.5 / g_bs_init  # 2 * pi_length
+            freq_init = self.station.ds_storage.get_freq_at_gain(stor_name, first_gain, 'g')
+            self.station.ds_storage.update_joint_parity(
+                stor_parity_name, freq_init, first_gain, length_init, parity_wait_time
+            )
+            self._log(f"  Initialized joint parity params for {stor_parity_name} "
+                      f"(freq={freq_init:.4f}, gain={first_gain}, length={length_init:.4f})")
+
+        results = []
+        phase_00_ref = None
+
+        try:
+            # --- Run '00' reference once (gain-independent) ---
+            # Use current ds_storage params for the reference measurement
+            self._log("Running '00' reference measurement...")
+            ref_phases, _ = self._run_parity_phase(
+                storage_swap=storage_swap, storage_parity=storage_parity,
+                state_start='00', man_mode_no=man_mode_no,
+                reps=reps_parity, parity_fast=parity_fast,
+            )
+            if '00' in ref_phases:
+                phase_00_ref = ref_phases['00']
+                self._log(f"  Reference phase_00 = {phase_00_ref:.1f} deg")
+            else:
+                raise RuntimeError("Failed to extract phase for '00' reference")
+
+            # --- Sweep gains, running only '01' at each point ---
+            prev_f_bs_g = f_bs_g_guess
+            prev_f_bs_e = f_bs_e_guess
+            for i, gain in enumerate(gain_list):
+                gain = int(gain)
+
+                # Get theoretical rate from lookup table
+                rate_g = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'g')
+                rate_e = self.station.ds_storage.get_bs_rate_at_gain(stor_name, gain, 'e')
+                g_bs = (rate_g + rate_e) / 2
+                length_bs = 0.25 / g_bs
+
+                self._log(f"\nGain {i+1}/{len(gain_list)}: gain={gain}, "
+                          f"theoretical rate={g_bs:.4f} MHz")
+
+                try:
+                    # Step 1: Error amplification for both states
+                    f_bs_g_init = prev_f_bs_g if prev_f_bs_g is not None else \
+                        self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'g')
+                    f_bs_e_init = prev_f_bs_e if prev_f_bs_e is not None else \
+                        self.station.ds_storage.get_freq_at_gain(stor_name, gain, 'e')
+
+                    f_bs_g, _ = self._run_error_amp(
+                        stor_name, f_bs_g_init, gain, length_bs, 'g',
+                        man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                        reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
+                    )
+                    f_bs_e, _ = self._run_error_amp(
+                        stor_name, f_bs_e_init, gain, length_bs, 'e',
+                        man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                        reps=reps_error_amp, n_pulses=n_pulses, span=error_amp_span
+                    )
+                    freq_bs = (f_bs_g + f_bs_e) / 2
+                    self._log(f"  Calibrated freq_bs={freq_bs:.4f} MHz")
+
+                    # Step 2: Rabi confirmation
+                    pi_length, _, _ = self._run_rabi(
+                        freq_bs, gain, length_bs, man_mode_no, stor_mode_no,
+                        reps=reps_rabi, run_both_states=run_both_rabi_states,
+                        start=rabi_start, stop=rabi_stop, expts=rabi_expts
+                    )
+                    self._log(f"  Calibrated pi_length={pi_length:.4f} us")
+
+                    # Step 3: Update joint parity params and run parity phase with '01'
+                    self.station.ds_storage.update_joint_parity(
+                        stor_parity_name, freq_bs, gain,
+                        pi_length * 2, parity_wait_time
+                    )
+
+                    phases, _ = self._run_parity_phase(
+                        storage_swap=storage_swap, storage_parity=storage_parity,
+                        state_start='01', man_mode_no=man_mode_no,
+                        reps=reps_parity, parity_fast=parity_fast,
+                    )
+                    phase_01 = phases['01']
+
+                    # Compute phase difference
+                    phase_diff_deg = self._angular_diff_deg(phase_01, phase_00_ref)
+                    phase_diff_pi = abs(phase_diff_deg) / 180.0
+                    self._log(f"  phase_01={phase_01:.1f} deg, "
+                              f"phase_diff={phase_diff_deg:.1f} deg = {phase_diff_pi:.4f} pi")
+
+                    results.append({
+                        'gain': gain,
+                        'g_bs': g_bs,
+                        'freq_bs': freq_bs,
+                        'f_bs_g': f_bs_g,
+                        'f_bs_e': f_bs_e,
+                        'pi_length': pi_length,
+                        'length_bs': length_bs,
+                        'phase_00_ref': phase_00_ref,
+                        'phase_01': phase_01,
+                        'phase_diff_deg': phase_diff_deg,
+                        'phase_diff_pi': phase_diff_pi,
+                        'alpha_amplitude': None,
+                        'man_mode_no': man_mode_no,
+                        'stor_mode_no': stor_mode_no,
+                        'success': True,
+                    })
+
+                    # Warm-start next point
+                    prev_f_bs_g = f_bs_g
+                    prev_f_bs_e = f_bs_e
+
+                except Exception as e:
+                    self._log(f"  ERROR: {e}")
+                    results.append({
+                        'gain': gain, 'g_bs': g_bs,
+                        'success': False, 'error': str(e),
+                    })
+
+        finally:
+            # Restore original joint parity params
+            if original_jp is not None:
+                self.station.ds_storage.update_joint_parity(
+                    stor_parity_name, *original_jp
+                )
+                self._log(f"  Restored original joint parity params for {stor_parity_name}")
+
+        # Build sweep data and store for later refitting
+        sweep_data = {
+            'results': results,
+            'bs_coeffs': bs_coeffs,
+            'storage_swap': storage_swap,
+            'phase_00_ref': phase_00_ref,
+        }
+        self.last_rate_sweep_parity_data = sweep_data
+
+        # Fit unwrapped phase diff vs gain
+        fit_result = self.fit_gain_sweep_parity(
+            sweep_data, fit_degree=fit_degree,
+            target_phase_diff_deg=target_phase_diff_deg,
+            target_phase_tol_deg=target_phase_tol_deg,
+        )
+        sweep_data.update(fit_result)
+
+        # Use phase_01_optimal from the fit (predicted from polynomial)
+        phase_01_optimal = fit_result.get('phase_01_optimal')
+
+        # Run error amplification and Rabi at the fitted optimal gain (if found)
+        fitted_calibration = None
+        fitted_optimal_gain = fit_result.get('fitted_optimal_gain')
+        if fitted_optimal_gain is not None:
+            fitted_calibration = self.calibrate_at_fitted_gain(
+                sweep_data, fitted_optimal_gain,
+                man_mode_no=man_mode_no, stor_mode_no=stor_mode_no,
+                reps_error_amp=reps_error_amp, n_pulses=n_pulses,
+                error_amp_span=error_amp_span, reps_rabi=reps_rabi,
+                run_both_rabi_states=run_both_rabi_states,
+                rabi_start=rabi_start, rabi_stop=rabi_stop, rabi_expts=rabi_expts,
+            )
+
+            if fitted_calibration is not None:
+                fitted_calibration['phase_01_optimal'] = phase_01_optimal
+                fitted_calibration['stor_mode_no'] = stor_mode_no
+
+        sweep_data['fitted_calibration'] = fitted_calibration
+        sweep_data['phase_01_optimal'] = phase_01_optimal
+        return sweep_data
+
+    def _plot_gain_sweep_fit(self, gains, phase_diffs, fit_params, fitted_optimal_gain,
+                              target_phase_diff, target_phase_tol, fit_degree=1,
+                              bs_coeffs=None):
+        """
+        Plot phase difference vs gain with polynomial fit and secondary rate axis.
+
+        Parameters
+        ----------
+        gains : array
+            Beam splitter gains
         phase_diffs : array
             Measured phase differences (units of pi)
         fit_params : array
             Polynomial coefficients from np.polyfit (highest degree first)
-        fitted_optimal_rate : float
-            Estimated optimal rate from fit
+        fitted_optimal_gain : int
+            Estimated optimal gain from fit
         target_phase_diff : float
             Target phase difference (units of pi)
         target_phase_tol : float
             Tolerance on phase difference (units of pi)
         fit_degree : int
             Degree of polynomial fit
+        bs_coeffs : array, optional
+            Polynomial coefficients for gain→rate lookup (for secondary axis)
 
         Returns
         -------
@@ -1705,41 +2344,46 @@ class JointParityCalibrator:
         fig, ax = plt.subplots(figsize=(10, 6))
 
         # Plot data points
-        ax.plot(rates, phase_diffs, 'o', markersize=10, label='Measured', zorder=5)
+        ax.plot(gains, phase_diffs, 'o', markersize=10, label='Measured', zorder=5)
 
         # Plot fit curve
-        rate_range = np.linspace(min(rates), max(rates), 100)
-        fit_line = np.polyval(fit_params, rate_range)
+        gain_range = np.linspace(min(gains), max(gains), 100)
+        fit_line = np.polyval(fit_params, gain_range)
 
-        # Build fit label
-        if fit_degree == 1:
-            fit_label = f'Fit: y = {fit_params[0]:.4f}x + {fit_params[1]:.4f}'
-        else:
-            fit_label = f'Polynomial fit (degree {fit_degree})'
-
-        ax.plot(rate_range, fit_line, '-', color='blue', alpha=0.7, label=fit_label)
+        fit_label = f'Polynomial fit (degree {fit_degree})'
+        ax.plot(gain_range, fit_line, '-', color='blue', alpha=0.7, label=fit_label)
 
         # Plot target line and tolerance band
         ax.axhline(target_phase_diff, color='r', linestyle='--', label=f'Target ({target_phase_diff} pi)')
         ax.axhspan(target_phase_diff - target_phase_tol, target_phase_diff + target_phase_tol,
                    color='r', alpha=0.1, label=f'+/-{target_phase_tol} pi tolerance')
 
-        # Mark fitted optimal rate
-        fitted_phase = np.polyval(fit_params, fitted_optimal_rate)
-        ax.scatter([fitted_optimal_rate], [fitted_phase], color='green', s=200,
-                   marker='*', zorder=10, label=f'Fitted optimal: {fitted_optimal_rate:.4f} MHz')
-        ax.axvline(fitted_optimal_rate, color='green', linestyle=':', alpha=0.5)
+        # Mark fitted optimal gain
+        fitted_phase = np.polyval(fit_params, fitted_optimal_gain)
+        ax.scatter([fitted_optimal_gain], [fitted_phase], color='green', s=200,
+                   marker='*', zorder=10, label=f'Fitted optimal gain: {fitted_optimal_gain}')
+        ax.axvline(fitted_optimal_gain, color='green', linestyle=':', alpha=0.5)
 
-        ax.set_xlabel('Beam Splitter Rate (MHz)', fontsize=12)
+        ax.set_xlabel('Gain', fontsize=12)
         ax.set_ylabel('Phase Difference (pi)', fontsize=12)
-        title = 'ALICE: Beam Splitter Rate Sweep'
-        if fit_degree == 1:
-            title += ' (Linear Fit)'
-        else:
-            title += f' (Degree-{fit_degree} Polynomial Fit)'
+        title = f'ALICE: Gain Sweep (Degree-{fit_degree} Fit)'
         ax.set_title(title, fontsize=14)
         ax.legend(loc='best')
         ax.grid(True, alpha=0.3)
+
+        # Add secondary x-axis showing theoretical beam splitter rate
+        if bs_coeffs is not None:
+            gains_sorted = np.sort(gains)
+            rates_sorted = np.polyval(bs_coeffs, gains_sorted)
+
+            def gain_to_rate(g):
+                return np.interp(g, gains_sorted, rates_sorted)
+
+            def rate_to_gain(r):
+                return np.interp(r, rates_sorted, gains_sorted)
+
+            ax2 = ax.secondary_xaxis('top', functions=(gain_to_rate, rate_to_gain))
+            ax2.set_xlabel('Theoretical Rate (MHz)', fontsize=12)
 
         plt.tight_layout()
         plt.show()
@@ -1804,6 +2448,74 @@ class JointParityCalibrator:
         ax.set_xlabel('Wait Time (us)', fontsize=12)
         ax.set_ylabel('Phase Difference (pi)', fontsize=12)
         title = 'BOB: Wait Time Sweep'
+        if fit_degree == 1:
+            title += ' (Linear Fit)'
+        else:
+            title += f' (Degree-{fit_degree} Polynomial Fit)'
+        ax.set_title(title, fontsize=14)
+        ax.legend(loc='best')
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+        return fig
+
+    def _plot_wait_sweep_parity_fit(self, wait_times, phases_deg, fit_params,
+                                     fitted_optimal_wait, target_phase,
+                                     target_phase_tol, fit_degree=1):
+        """
+        Plot phase_10 (degrees) vs wait time with polynomial fit.
+
+        Parameters
+        ----------
+        wait_times : array
+            Wait times (us)
+        phases_deg : array
+            Measured phase_10 values (degrees, unwrapped)
+        fit_params : array
+            Polynomial coefficients from np.polyfit
+        fitted_optimal_wait : float
+            Estimated optimal wait time from fit
+        target_phase : float
+            Target phase (degrees)
+        target_phase_tol : float
+            Tolerance on phase (degrees)
+        fit_degree : int
+            Degree of polynomial fit
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        """
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plot data points
+        ax.plot(wait_times, phases_deg, 'o', markersize=10, label='Measured (state 10)', zorder=5)
+
+        # Plot fit curve
+        wait_range = np.linspace(min(wait_times), max(wait_times), 100)
+        fit_line = np.polyval(fit_params, wait_range)
+        fit_label = f'Polynomial fit (degree {fit_degree})'
+        ax.plot(wait_range, fit_line, '-', color='blue', alpha=0.7, label=fit_label)
+
+        # Plot target line and tolerance band
+        ax.axhline(target_phase, color='r', linestyle='--',
+                   label=f'Target phase ({target_phase:.1f} deg)')
+        ax.axhspan(target_phase - target_phase_tol, target_phase + target_phase_tol,
+                   color='r', alpha=0.1, label=f'+/-{target_phase_tol:.1f} deg tolerance')
+
+        # Mark fitted optimal wait time
+        if fitted_optimal_wait is not None:
+            fitted_phase = np.polyval(fit_params, fitted_optimal_wait)
+            ax.scatter([fitted_optimal_wait], [fitted_phase], color='green', s=200,
+                       marker='*', zorder=10,
+                       label=f'Fitted optimal: {fitted_optimal_wait:.4f} us')
+            ax.axvline(fitted_optimal_wait, color='green', linestyle=':', alpha=0.5)
+
+        ax.set_xlabel('Wait Time (us)', fontsize=12)
+        ax.set_ylabel('Phase (degrees)', fontsize=12)
+        title = 'BOB (parity): Wait Time Sweep'
         if fit_degree == 1:
             title += ' (Linear Fit)'
         else:
@@ -1939,6 +2651,146 @@ class JointParityCalibrator:
             'converged': converged,
         }
 
+    def fit_wait_time_parity(self, sweep_data, fit_degree=1, target_phase=None,
+                             target_phase_tol=10.0, skip_indices=None):
+        """
+        Fit phase_10 (degrees) vs wait time from parity sweep data.
+
+        Can be called independently to refit with different polynomial degrees
+        or skip outlier points without re-running experiments.
+
+        Parameters
+        ----------
+        sweep_data : dict
+            From calibrate_wait_time_parity(). Must have 'results' and 'target_phase'.
+        fit_degree : int
+            Degree of polynomial fit (default: 1)
+        target_phase : float or None
+            Target phase in degrees. If None, uses sweep_data['target_phase'].
+        target_phase_tol : float
+            Tolerance in degrees (default: 10.0)
+        skip_indices : list of int, optional
+            Indices to exclude from fit.
+
+        Returns
+        -------
+        dict with keys:
+            'fit_params': polynomial coefficients
+            'fit_degree': degree used
+            'fitted_optimal_wait': wait time from fit
+            'fit_figure': matplotlib figure
+            'optimal_idx': index of best measured point
+            'optimal_wait': best measured wait time
+            'converged': whether within tolerance
+        """
+        results = sweep_data['results']
+        if target_phase is None:
+            target_phase = sweep_data['target_phase']
+
+        # Extract data
+        wait_times = np.array([r['wait_time'] for r in results])
+        phases_raw = np.array([r['phase_10_deg'] for r in results])
+
+        # Apply skip mask
+        if skip_indices is None:
+            mask = np.ones(len(results), dtype=bool)
+        else:
+            mask = np.ones(len(results), dtype=bool)
+            mask[skip_indices] = False
+
+        n_skipped = np.sum(~mask)
+        if n_skipped > 0:
+            self._log(f"  Skipping {n_skipped} points: indices {list(np.where(~mask)[0])}")
+
+        # Unwrap phases to handle wrapping
+        phases_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(phases_raw)))
+
+        # Unwrap target phase to match the data range
+        data_mean = np.mean(phases_unwrapped[mask])
+        target_unwrapped = target_phase
+        # Find closest unwrapped equivalent: target + 360*k
+        k = round((data_mean - target_phase) / 360)
+        target_unwrapped = target_phase + 360 * k
+
+        self._log(f"  Target phase: {target_phase:.1f} deg (unwrapped: {target_unwrapped:.1f} deg)")
+
+        # Find best measured result (among non-skipped points)
+        masked_errors = np.full(len(results), np.inf)
+        # Use angular difference for finding the best point
+        for idx in range(len(results)):
+            if mask[idx]:
+                masked_errors[idx] = abs(self._angular_diff_deg(
+                    phases_raw[idx], target_phase
+                ))
+        optimal_idx = int(np.argmin(masked_errors))
+        converged = masked_errors[optimal_idx] <= target_phase_tol
+
+        self._log(f"Best measured wait: {wait_times[optimal_idx]:.3f} us "
+                  f"(phase_10={phases_raw[optimal_idx]:.1f} deg, "
+                  f"error={masked_errors[optimal_idx]:.1f} deg)")
+
+        # Polynomial fit
+        fit_params = None
+        fitted_optimal_wait = None
+        fit_figure = None
+
+        min_points_needed = fit_degree + 1
+        n_fit_points = np.sum(mask)
+        if n_fit_points >= min_points_needed:
+            try:
+                fit_params = np.polyfit(
+                    wait_times[mask], phases_unwrapped[mask], fit_degree
+                )
+
+                # Find wait_time where phase = target_unwrapped
+                root_coeffs = fit_params.copy()
+                root_coeffs[-1] -= target_unwrapped
+
+                roots = np.roots(root_coeffs)
+
+                # Filter for real roots within a reasonable range
+                wait_min, wait_max = min(wait_times[mask]), max(wait_times[mask])
+                wait_margin = (wait_max - wait_min) * 0.5
+                valid_roots = []
+                for root in roots:
+                    if np.isreal(root):
+                        root_real = np.real(root)
+                        if (wait_min - wait_margin) <= root_real <= (wait_max + wait_margin):
+                            valid_roots.append(root_real)
+
+                if valid_roots:
+                    wait_center = (wait_min + wait_max) / 2
+                    fitted_optimal_wait = min(
+                        valid_roots, key=lambda x: abs(x - wait_center)
+                    )
+                    self._log(f"Fitted optimal wait: {fitted_optimal_wait:.4f} us")
+
+                    fit_figure = self._plot_wait_sweep_parity_fit(
+                        wait_times, phases_unwrapped, fit_params,
+                        fitted_optimal_wait, target_unwrapped,
+                        target_phase_tol, fit_degree
+                    )
+                else:
+                    self._log("WARNING: No valid root found in data range")
+
+            except Exception as e:
+                self._log(f"ERROR during polynomial fit: {e}")
+
+        else:
+            self._log(f"WARNING: Not enough non-skipped points for degree-{fit_degree} fit "
+                      f"(have {n_fit_points}, need >= {min_points_needed})")
+
+        return {
+            'fit_params': fit_params,
+            'fit_degree': fit_degree,
+            'fitted_optimal_wait': fitted_optimal_wait,
+            'fit_figure': fit_figure,
+            'optimal_idx': optimal_idx,
+            'optimal_wait': wait_times[optimal_idx],
+            'optimal_phase_10': phases_raw[optimal_idx],
+            'converged': converged,
+        }
+
     def calibrate_wait_time(self, wait_time_list, fixed_params,
                             target_phase_diff=1.0, target_phase_tol=0.1,
                             fit_degree=1, alpha_amplitude=None, reps=100,
@@ -2037,25 +2889,151 @@ class JointParityCalibrator:
 
         return sweep_data
 
-    def plot_rate_sweep(self, sweep_result, title="ALICE: Beam Splitter Rate Sweep"):
-        """Plot phase difference vs beam splitter rate."""
+    def calibrate_wait_time_parity(self, wait_time_list, fixed_params,
+                                    storage_swap, target_phase=None,
+                                    target_phase_tol=10.0, fit_degree=1,
+                                    reps=200, parity_fast=False):
+        """
+        BOB (parity): Sweep wait time using ParityPhaseExperiment with state '10'.
+
+        Alternative to calibrate_wait_time() that uses ParityPhaseExperiment
+        instead of Wigner tomography. Prepares state '10' (1 photon in
+        storage_swap) and sweeps wait time until the phase matches the
+        optimal '01' phase from sweep_beam_splitter_rate_parity().
+
+        Parameters
+        ----------
+        wait_time_list : array-like
+            List of wait times to test (microseconds)
+        fixed_params : dict
+            Must contain: freq_bs, gain, pi_length, stor_mode_no.
+            Typically from sweep_beam_splitter_rate_parity()['fitted_calibration'].
+        storage_swap : int
+            Storage mode to swap to/from manipulate
+        target_phase : float, optional
+            Target phase for state '10' in degrees.
+            If None, uses fixed_params['phase_01_optimal'].
+        target_phase_tol : float
+            Tolerance in degrees (default: 10.0)
+        fit_degree : int
+            Degree of polynomial fit (default: 1)
+        reps : int
+            Repetitions per ParityPhaseExperiment (default: 200)
+        parity_fast : bool
+            Use fast multiphoton hpi pulses (default: False)
+
+        Returns
+        -------
+        dict with wait time sweep results including:
+            - results: list of results for each wait time
+            - target_phase: target phase in degrees
+            - fit_params, fit_degree, fitted_optimal_wait, fit_figure
+            - optimal_idx, optimal_wait, converged
+        """
+        self._log(f"=== BOB (parity): Sweeping {len(wait_time_list)} wait times ===")
+
+        freq_bs = fixed_params['freq_bs']
+        gain = fixed_params['gain']
+        pi_length = fixed_params['pi_length']
+        man_mode_no = fixed_params.get('man_mode_no', 1)
+        stor_mode_no = fixed_params.get('stor_mode_no', 1)
+        stor_parity_name = f'M{man_mode_no}-S{stor_mode_no}'
+
+        if target_phase is None:
+            target_phase = fixed_params.get('phase_01_optimal')
+            if target_phase is None:
+                raise ValueError(
+                    "target_phase must be provided or present in "
+                    "fixed_params['phase_01_optimal']"
+                )
+
+        self._log(f"  Target phase: {target_phase:.1f} deg")
+
+        # Save original joint parity params for restore
+        original_jp = self.station.ds_storage.get_joint_parity(stor_parity_name)
+
+        results = []
+        try:
+            for i, wait_time in enumerate(wait_time_list):
+                self._log(f"\nWait time {i+1}/{len(wait_time_list)}: {wait_time:.3f} us")
+
+                # Update joint parity params with this wait time
+                self.station.ds_storage.update_joint_parity(
+                    stor_parity_name, freq_bs, gain,
+                    pi_length * 2, wait_time
+                )
+
+                # Run parity phase with state '10'
+                phases, _ = self._run_parity_phase(
+                    storage_swap=storage_swap, storage_parity=stor_mode_no,
+                    state_start='10', man_mode_no=man_mode_no,
+                    reps=reps, parity_fast=parity_fast,
+                )
+
+                phase_10 = phases.get('10')
+                if phase_10 is not None:
+                    phase_error = self._angular_diff_deg(phase_10, target_phase)
+                    self._log(f"  phase_10={phase_10:.1f} deg, "
+                              f"error={phase_error:.1f} deg")
+                else:
+                    self._log(f"  WARNING: Failed to extract phase for state '10'")
+                    phase_10 = np.nan
+
+                results.append({
+                    'wait_time': wait_time,
+                    'phase_10_deg': phase_10,
+                })
+
+        finally:
+            # Restore original joint parity params
+            if original_jp is not None:
+                self.station.ds_storage.update_joint_parity(
+                    stor_parity_name, *original_jp
+                )
+                self._log(f"  Restored original joint parity params for {stor_parity_name}")
+
+        # Build sweep data and store for later refitting
+        sweep_data = {
+            'results': results,
+            'target_phase': target_phase,
+        }
+        self.last_wait_time_parity_data = sweep_data
+
+        # Fit phase_10 vs wait_time
+        fit_result = self.fit_wait_time_parity(
+            sweep_data, fit_degree=fit_degree,
+            target_phase=target_phase,
+            target_phase_tol=target_phase_tol,
+        )
+
+        # Merge fit results into return dict
+        sweep_data.update(fit_result)
+
+        self._log(f"\nOptimal wait: {fit_result['optimal_wait']:.3f} us "
+                  f"(phase_10={fit_result['optimal_phase_10']:.1f} deg, "
+                  f"converged={fit_result['converged']})")
+
+        return sweep_data
+
+    def plot_rate_sweep(self, sweep_result, title="ALICE: Gain Sweep"):
+        """Plot phase difference vs gain."""
         successful = [r for r in sweep_result['results'] if r.get('success', False)]
-        rates = [r['g_bs'] for r in successful]
+        gains = [r['gain'] for r in successful]
         phase_diffs = [r['phase_diff_pi'] for r in successful]
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(rates, phase_diffs, 'o-', markersize=8)
+        ax.plot(gains, phase_diffs, 'o-', markersize=8)
         ax.axhline(1.0, color='r', linestyle='--', label='Target (pi)')
         ax.axhline(0.9, color='r', linestyle=':', alpha=0.5)
         ax.axhline(1.1, color='r', linestyle=':', alpha=0.5)
 
         if sweep_result['optimal_idx'] is not None:
-            opt_rate = sweep_result['optimal_rate']
+            opt_gain = sweep_result['optimal_gain']
             opt_phase = sweep_result['optimal_result']['phase_diff_pi']
-            ax.scatter([opt_rate], [opt_phase], color='green', s=150,
-                      zorder=5, label=f'Optimal ({opt_rate:.4f} MHz)')
+            ax.scatter([opt_gain], [opt_phase], color='green', s=150,
+                      zorder=5, label=f'Optimal (gain={opt_gain})')
 
-        ax.set_xlabel('Beam Splitter Rate (MHz)')
+        ax.set_xlabel('Gain')
         ax.set_ylabel('Phase Difference (pi)')
         ax.set_title(title)
         ax.legend()

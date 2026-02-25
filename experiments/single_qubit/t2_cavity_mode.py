@@ -106,11 +106,13 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         self.use_custom_prep = cfg.expt.get('prepulse', False)
         self.use_custom_post = cfg.expt.get('postpulse', False)
         if self.use_custom_prep:
-            print('WARNING: Using custom prepulse instead of automatic '
-                  f'state preparation for mode={mode}')
+            print("NOTE: adding extra custom prep! Auto state prep may or may not also be playing")
+            # print('WARNING: Using custom prepulse instead of automatic '
+            #       f'state preparation for mode={mode}')
         if self.use_custom_post:
-            print('WARNING: Using custom postpulse instead of automatic '
-                  f'state teardown for mode={mode}')
+            print("NOTE: adding extra custom post! Auto state teardown may or may not also be playing")
+            # print('WARNING: Using custom postpulse instead of automatic '
+            #       f'state teardown for mode={mode}')
 
         self.phase_update_page = self.ch_page(
             self.phase_update_channel[qTest])
@@ -163,17 +165,22 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             params = MM_base.get_active_reset_params(cfg)
             self.active_reset(**params)
 
-        # Pre-pulse: auto or custom
+        # Pre-pulse: custom
         if self.use_custom_prep:
             if cfg.expt.get('gate_based', True):
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(
                     cfg, creator.pulse.tolist(), prefix='pre_')
+                print("playing the custom pulse now!", creator.pulse.tolist())
             else:
                 self.custom_pulse(
                     cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
-        elif self.auto_prep_pulse is not None:
-            self.custom_pulse(cfg, self.auto_prep_pulse, prefix='auto_prep_')
+
+        # Pre-pulse: auto --> applies by default unless self.cfg.expt.use_auto_prep=False
+        if self.cfg.expt.get('use_auto_prep', True):
+            # I don't know how this can even be None tbh since the auto_prep_str is always calculated
+            if self.auto_prep_pulse is not None:
+                self.custom_pulse(cfg, self.auto_prep_pulse, prefix='auto_prep_')
 
         # First Ramsey half-pulse
         if self.mode in ('storage', 'manipulate'):
