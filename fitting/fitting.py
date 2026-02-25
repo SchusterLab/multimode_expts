@@ -622,8 +622,16 @@ def wigner_purity_calculation(wigner_expt,
                                                          plot_purity = plot_purity))
         return return_list
     ideal_state = (qt.coherent(cutoff, 1.0)).unit()
-    wigner_expt.analyze_wigner(cutoff=cutoff, debug=True)
-    wigner_expt.display(rotate=True, initial_state=ideal_state, mode_state_num=cutoff, station=None, save_fig=False)
+    # wigner_expt.analyze_wigner(cutoff=cutoff, debug=True)
+    wigner_expt.analyze(rotate=True, 
+                        initial_state=ideal_state, 
+                        mode_state_num=cutoff, 
+                        station=None, 
+                        save_fig=False, 
+                        cutoff=cutoff, 
+                        debug=True)
+    # wigner_expt.display(rotate=True, initial_state=ideal_state, mode_state_num=cutoff, station=None, save_fig=False)
+    wigner_expt.display()
     plt.clf()
     outer_param_array = wigner_expt.outer_params
     inner_param_array = wigner_expt.inner_params
