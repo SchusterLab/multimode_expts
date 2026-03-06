@@ -1,9 +1,16 @@
+import argparse
 import sys
 import time
 
 from job_server import JobClient
 
-limit = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+parser = argparse.ArgumentParser(description="Monitor the job queue")
+parser.add_argument("-n", "--lines", type=int, default=10, help="number of history entries to show (default: 10)")
+parser.add_argument("-u", "--user", type=str, default=None, help="filter history by user")
+args = parser.parse_args()
+
+limit = args.lines
+user = args.user
 
 client = JobClient()
 
@@ -23,7 +30,7 @@ prev_output = ''
 prev_lines = 0
 
 while True:
-    history = client.get_history(limit=limit)
+    history = client.get_history(limit=limit, user=user)
 
     output = ''
 

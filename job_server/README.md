@@ -180,6 +180,29 @@ pixi run python -m job_server.worker --mock
 pixi run python -m job_server.worker
 ```
 
+### 4. Monitor the Queue
+
+Live-monitor job history from the terminal:
+
+```bash
+pixi run monitor
+```
+
+Options:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-n`, `--lines` | Number of history entries to show | 10 |
+| `-u`, `--user` | Filter by username | (all users) |
+
+Examples:
+
+```bash
+pixi run monitor -n 20           # show 20 entries
+pixi run monitor -u guan         # only guan's jobs
+pixi run monitor -u guan -n 5    # combine both
+```
+
 ## Usage in Jupyter Notebooks
 
 ### Basic Example: Submit and Wait
