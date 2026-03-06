@@ -14,6 +14,7 @@ On BF5:
 
 On BF5 or your own machine:
 - `pixi run [nameserver|server|worker]` to start each of them individually.
+- `pixi run monitor` to live-monitor the job queue (`-n 20` for more entries, `-u alice` to filter by user).
 
 You can pass the `--mock` option to the worker to use mock mode (use mock QICK and Yoko instead of real hardware and gitignored local folders instead of real D drive locations on BF5).
 
