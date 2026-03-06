@@ -344,12 +344,12 @@ class JobWorker:
         print(f"[WORKER]   Experiment: {job.experiment_class}")
         print(f"[WORKER]   User: {job.user}")
 
-        # Create log directory for output capture
-        log_dir = self.station.experiment_path / "logs"
-
         try:
             # Update station config from job's serialized config
             self._update_station_from_job_config(job.station_config)
+
+            # Create log directory for output capture (after config update so experiment_path is current)
+            log_dir = self.station.experiment_path / "logs"
 
             # Capture all output during experiment execution
             with OutputCapture(job.job_id, self.db, log_dir) as capture:
