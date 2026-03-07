@@ -192,6 +192,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         self.outer_params, self.inner_params = outer_params, inner_params
 
         mode_state_num = kwargs.get('mode_state_num', 10)
+        scale_parity = kwargs.get('scale', False)
         debug = kwargs.get('debug', False)
 
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
@@ -258,7 +259,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     parity = (parity_minus - parity_plus) / 2
 
                     # apply scale
-                    scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
+                    scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx] if scale_parity else 1
 
                     wigner_outputs["pe_plus"][i_outer, i_inner] = pe_plus
                     wigner_outputs["pe_minus"][i_outer, i_inner] = pe_minus
