@@ -261,7 +261,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.sync_all(self.us2cycles(0.01))
         # self.sync(self.phase_update_page[qTest], self.r_wait)
         ecfg = self.cfg.expt
-        kerr_drive_type = self.cfg.expt.get('kerr_drive_type', 'man-coupler')
+        kerr_drive_type = self.cfg.expt.get('kerr_drive_type', None)
         if kerr_drive_type == 'man-coupler':
             kerr_pulse = [
                 [self.swap_ds.get_freq('M1-C') + ecfg.kerr_detune],
@@ -291,6 +291,16 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                 [self.f0g1_ch],
                 ['flat_top'],
                 [self.cfg.device.qubit.ramp_sigma[qTest]],
+            ]
+        elif kerr_drive_type is None:
+            kerr_pulse = [
+                [0],
+                [0],
+                [ecfg.kerr_length],
+                [0], # phase
+                [self.f0g1_ch],
+                ['const'],
+                [0],
             ]
         else:
             assert False, f"invalid kerr drive type {kerr_drive_type}"
