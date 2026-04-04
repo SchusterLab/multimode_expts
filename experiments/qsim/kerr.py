@@ -386,7 +386,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
 class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
-    def analyze(self, data=None, **kwargs):
+    def analyze(self, data=None, debug=False, **kwargs):
 
 
         def estimate_periodicity(y, sampling_rate=1.0):
@@ -405,10 +405,16 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             # Convert frequency to period
             estimated_period = 1 / dominant_freq if dominant_freq != 0 else np.inf
             return estimated_period
+        
+        def estimate_phase(y):
+            print("y[0]", y[0], "min", np.min(y), "max", np.max(y))
+            if np.abs(y[0] - np.min(y)) < np.abs(y[0] - np.max(y)):
+                return 0
+            return np.pi/2
 
-        def fit_model(x, alpha2, f, scale, offset):
+        def fit_model(x, alpha2, f, scale, offset, phase):
             """Fitting model: exp(2*alpha2*(-cos(2*pi*f*x)-1))"""
-            return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi * f * x) - 1)) + offset
+            return scale * np.exp(2 * alpha2 * (-np.cos(2 * np.pi * f * x - phase) - 1)) + offset
 
         def normalize(z):
             Ig = self.cfg.device.readout.Ig[0]
@@ -433,6 +439,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             z_smooths.append(signal_smooth)
 
             alpha_guess = y[lid]*self.cfg.device.manipulate.gain_to_alpha[0]
+            phase_guess = estimate_phase(line)
 
             # Create lmfit Model
             model = Model(fit_model)
@@ -443,7 +450,9 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
                 alpha2 = dict(value=alpha_guess**2, vary=False),
                 f=f_initial,
                 scale=dict(value=1, min=0.1, max=1.2),
-                offset=dict(value=0, min=-0.1, max=0.5))
+                offset=dict(value=0, min=-0.1, max=0.5),
+                phase=dict(value=phase_guess, min=-np.pi, max=np.pi)
+                )
 
             # Perform fit
             result = model.fit(line, params, x=x)
@@ -453,6 +462,18 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
             f_fits.append(result.params['f'].value)
             fit_results.append(result)
             z_fits.append(result.best_fit)
+
+            if debug:
+                fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
+                ax.plot(x, line, '.-', markersize=3, label='data')
+                ax.plot(x, result.best_fit, 'r-', label='fit')
+                ax.set_title(f'line {lid}: gain={y[lid]:.0f}, '
+                             f'f={result.params["f"].value:.4f}, '
+                             f'R²={result.rsquared:.3f}')
+                ax.set_xlabel('duration (us)')
+                ax.legend(fontsize=8)
+                plt.tight_layout()
+                plt.show()
 
         f_fits = np.array(f_fits)
         alpha2_fits = np.array(alpha2_fits)
