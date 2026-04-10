@@ -66,6 +66,8 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         self.cfg.expt.perform_wigner = True
 
         read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
         if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if self.cfg.expt.active_reset:
@@ -184,6 +186,11 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                 dims.append(-1)
             data[key] = np.reshape(data[key], tuple(dims))
 
+        if self.cfg.expt.get('parity_check', False):#must be modified if the active reset is also used; the slicing will not work when active_reset is True; 
+                                                    #if active_reset is ON, it should be [number_of_measurements_in_the_active_reset::read_num]
+            data['parity_idata'] = data['idata'][..., 0::read_num]
+            data['parity_qdata'] = data['qdata'][..., 0::read_num]
+
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
             g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
@@ -223,6 +230,8 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
         read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
         if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if self.cfg.expt.active_reset:
@@ -248,9 +257,55 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                 pe=np.zeros((len(self.outer_params), len(self.inner_params))),
             ))
 
+        # Build parity post-selection filter if requested
+        parity_post_select = (self.cfg.expt.get('parity_check', False)
+                              and kwargs.get('parity_post_select', self.cfg.expt.get('parity_post_select', False)))
+        if parity_post_select:
+            parity_threshold = self.cfg.device.readout.threshold[0]
+            rounds = self.cfg.expt.get('rounds', 1)
+
         for i_outer, outer_param_val in enumerate(self.outer_params):
             for i_inner, inner_param_val in enumerate(self.inner_params):
                 print(outer_param_val, inner_param_val)
+
+                # Construct parity filter_map for this (outer, inner) pair
+                parity_filter = None
+                if parity_post_select:
+                    # Parity check is the first readout in each read_num group
+                    # For non-pulse_correction: data["idata"] is 4D (outer, inner, alpha, shots)
+                    # For pulse_correction: data["idata"] is 5D (outer, inner, alpha, 2, shots)
+                    raw = data["idata"][i_outer, i_inner]  # (n_alpha, ..., total_shots)
+                    if raw.ndim == 2:
+                        parity_idata = raw[:, 0::idx_step]
+                    else:
+                        # pulse_correction: (n_alpha, 2, total_shots) — use first acquisition
+                        parity_idata = raw[:, 0, 0::idx_step] #selects the first parity measurement
+                        parity_idata_second = raw[:, 1, 0::idx_step] #selects the second parity measurement
+                    # parity_idata shape: (n_alpha, n_parity_shots)
+                    n_alpha = parity_idata.shape[0]
+                    # Apply same reshape as bin_ss_data: (expts, rounds*reps) -> (rounds*reps, expts)
+                    parity_reshaped = np.reshape(
+                        np.transpose(
+                            np.reshape(parity_idata, (n_alpha, rounds, -1)),
+                            (1, 2, 0)
+                        ),
+                        (-1, n_alpha)
+                    )
+                    parity_filter = parity_reshaped < parity_threshold  # keep |g> (even parity)
+                    if raw.ndim != 2:
+                        parity_reshaped_second = np.reshape(
+                            np.transpose(
+                                np.reshape(parity_idata_second, (n_alpha, rounds, -1)),
+                                (1, 2, 0)
+                            ),
+                            (-1, n_alpha)
+                        )
+                        parity_filter_second = parity_reshaped_second > parity_threshold
+                        parity_filter = parity_filter & parity_filter_second
+                    n_kept = np.sum(parity_filter)
+                    n_total = parity_filter.size
+                    print(f"  parity post-select: keeping {n_kept}/{n_total} shots ({100*n_kept/n_total:.1f}%)")
+
                 if self.cfg.expt.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
                     data_minus = {}
                     data_plus = {}

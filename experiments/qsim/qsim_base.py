@@ -140,6 +140,23 @@ class QsimBaseProgram(MMAveragerProgram):
 
         init_stor = self.cfg.expt.init_stor
         ro_stor = self.cfg.expt.ro_stor
+        if self.cfg.expt.get("parity_check", False):
+            self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+            qTest = self.cfg.expt.qubits[0]
+            self.sync_all(10)
+            self.measure(
+                pulse_ch=self.res_chs[qTest],
+                adcs=[self.adc_chs[qTest]],
+                adc_trig_offset=self.cfg.device.readout.trig_offset[qTest],
+                wait=True
+            )
+            if np.abs(self.cfg.expt.get("phase_second_pulse", 180))  <  90:
+                self.sync_all(self.us2cycles(2.0))
+                reset_pulse_creator = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]])
+                cfg = AttrDict(self.cfg)
+                self.custom_pulse(cfg, reset_pulse_creator.pulse, prefix = 'pre_parity_check_reset_')
+            self.sync_all(self.us2cycles(2.0))
+            self.reset_and_sync()
 
         # prepulse: ge -> ef -> f0g1
         # TODO: make this overridable from cfg
@@ -167,7 +184,22 @@ class QsimBaseProgram(MMAveragerProgram):
                 self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
                 self.sync_all()
 
-
+            elif "init_man_fock_state" in cfg.expt:
+                print("running")
+                _init_state = cfg.expt.init_man_fock_state
+                _man_no = getattr(cfg.expt, 'man_mode_no', 1) #currently not used
+                prepulse_cfg = []
+                for each_init_stor in init_stor:
+                    prepulse_cfg += self.prep_man_fock_state(_man_no,
+                                                             _init_state,
+                                                             broadband=False) #Check
+                    if each_init_stor > 0:
+                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
+                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                self.sync_all()
+                self.custom_pulse(cfg, pulse_creator.pulse, prefix = 'pre_')
+                self.sync_all()
+                
             else: # init in coherent state
 
                 assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
@@ -293,6 +325,8 @@ class QsimBaseExperiment(Experiment):
         ensure_list_in_cfg(self.cfg)
 
         read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
         if self.cfg.expt.get('active_reset', False):
             params = MMAveragerProgram.get_active_reset_params(self.cfg)
             read_num += MMAveragerProgram.active_reset_read_num(**params)
@@ -358,6 +392,12 @@ class QsimBaseExperiment(Experiment):
             data[key] = np.array(data[key])
             if sweep_dim == 2:
                 data[key] = np.reshape(data[key], (len(outer_params), len(inner_params)))
+
+        if self.cfg.expt.get('parity_check', False):
+            idata_all = np.array(data['idata'])
+            qdata_all = np.array(data['qdata'])
+            data['parity_idata'] = idata_all[:, 0::read_num]
+            data['parity_qdata'] = qdata_all[:, 0::read_num]
 
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib

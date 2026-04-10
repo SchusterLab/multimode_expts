@@ -51,6 +51,8 @@ class SidebandAmpRabiExperiment(QsimBaseExperiment):
         ensure_list_in_cfg(self.cfg)
 
         read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
         if self.cfg.expt.get('active_reset', False):
             params = MMAveragerProgram.get_active_reset_params(self.cfg)
             read_num += MMAveragerProgram.active_reset_read_num(**params)
@@ -87,6 +89,12 @@ class SidebandAmpRabiExperiment(QsimBaseExperiment):
                 data['qdata'].append(qdata)
         for key in 'avgi avgq amps phases'.split():
             data[key] = np.array(data[key]).reshape((len(self.cfg.expt.detunes), len(self.cfg.expt.gains)))
+
+        if self.cfg.expt.get('parity_check', False):
+            idata_all = np.array(data['idata'])
+            qdata_all = np.array(data['qdata'])
+            data['parity_idata'] = idata_all[:, 0::read_num]
+            data['parity_qdata'] = qdata_all[:, 0::read_num]
 
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib

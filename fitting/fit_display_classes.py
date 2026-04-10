@@ -55,8 +55,10 @@ class GeneralFitting:
                 Q_data = temp_data['q0']
             
 
-        # Determine read_num for active_reset
+        # Determine read_num for parity_check and active_reset
         read_num = 1
+        if self.cfg['expt'].get('parity_check', False):
+            read_num += 1
         if self.cfg['expt'].get('active_reset', False):
             from experiments.MM_base import MM_base, MMAveragerProgram
             params = MM_base.get_active_reset_params(self.cfg)
