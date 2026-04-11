@@ -1278,8 +1278,9 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
             # print('Running f0g1 ramsey')
             self.phase_update_channel = self.cavity_ch
         # print(f'phase update channel: {self.phase_update_channel}')
-        # self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
-        # self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")
+        # if (self.cfg.expt.storage_ramsey[0] and self.cfg.expt.storage_ramsey[2]) or self.cfg.expt.coupler_ramsey or (self.cfg.expt.user_defined_pulse[0] and self.cfg.expt.storage_ramsey[0]):
+        self.phase_update_page = [self.ch_page(self.phase_update_channel[qTest])]
+        self.r_phase = self.sreg(self.phase_update_channel[qTest], "phase")
 
         self.current_phase = 0   # in degree
 
@@ -1429,16 +1430,30 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
 
         # self.mathi(self.phase_update_page[qTest], self.r_phase, self.r_phase2, "+", 0)
         # self.sync_all(self.us2cycles(0.01))
-
         if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
+            if cfg.expt.storage_ramsey[0] and cfg.expt.storage_ramsey[2]:
+                phase_adv_deg = (cfg.expt.ramsey_freq * cfg.expt.kerr_length * 360) % 360
+                self.safe_regwi(
+                    self.phase_update_page[qTest],
+                    self.r_phase,
+                    self.deg2reg(phase_adv_deg, gen_ch=self.phase_update_channel[qTest]),
+                )
+
             self.pulse(ch=self.flux_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
+        # if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
+        #     self.pulse(ch=self.flux_ch[qTest])
+        #     self.sync_all(self.us2cycles(0.01))
         elif self.cfg.expt.man_ramsey[0]:
             self.pulse(ch=self.cavity_ch[qTest])
             self.sync_all(self.us2cycles(0.01))
 
         if self.cfg.user_defined_pulse[0]:
-            phase_adv = cfg.expt.ramsey_freq * cfg.expt.kerr_length *360 # in degree
+            if cfg.expt.storage_ramsey[0] and cfg.expt.storage_ramsey[2]:
+                phase_adv = 0 
+            else:
+                phase_adv = (cfg.expt.ramsey_freq * cfg.expt.kerr_length * 360) % 360
+            # phase_adv = cfg.expt.ramsey_freq * cfg.expt.kerr_length *360 # in degree
             if self.user_length == 0: # its a gaussian pulse
                 self.setup_and_pulse(ch=self.cavity_ch[qTest],
                                      style="arb",
@@ -1470,25 +1485,39 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
             if self.cfg.expt.parity_meas:
                 self.custom_pulse(self.cfg, self.parity_meas_pulse, prefix='ParityMeas')
         else:
-            _freq = cfg.device.qubit.f_ge[qTest]
-            _phase = 0
-            _gain = cfg.device.qubit.pulses.slow_pi_ge.gain[qTest]
-            _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
-            _length = cfg.device.qubit.pulses.slow_pi_ge.length[qTest]
-            _style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
-            freq_2_reg = self.freq2reg(_freq, gen_ch=self.qubit_chs[qTest])
-            _sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
-            _length_2_cycles = self.us2cycles(_length, gen_ch=self.qubit_chs[qTest])
-            phase_2_reg = self.deg2reg(_phase, gen_ch=self.qubit_chs[qTest])
+            # _freq = cfg.device.qubit.f_ge[qTest]
+            # _phase = 0
+            # _gain = cfg.device.qubit.pulses.slow_pi_ge.gain[qTest]
+            # _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
+            # _length = cfg.device.qubit.pulses.slow_pi_ge.length[qTest]
+            # _style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
+            # freq_2_reg = self.freq2reg(_freq, gen_ch=self.qubit_chs[qTest])
+            # _sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
+            # _length_2_cycles = self.us2cycles(_length, gen_ch=self.qubit_chs[qTest])
+            # phase_2_reg = self.deg2reg(_phase, gen_ch=self.qubit_chs[qTest])
             # print(f'_freq: {_freq}, _phase: {_phase}, _gain: {_gain}, _length: {_length}, _style: {_style}')
-
-            self.setup_and_pulse(ch=self.qubit_chs[qTest],
-                                 style=_style,
-                                 freq=freq_2_reg,
-                                 phase=phase_2_reg,
-                                 gain=_gain,
-                                 length=_length_2_cycles,
-                                 waveform="slow_pi_ge") # slow pi pulse for readout
+            gain = cfg.device.qubit.pulses.very_slow_pi_ge.gain[qTest]
+            length = cfg.device.qubit.pulses.slow_pi_ge.length[qTest]
+            style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
+            sigma = cfg.device.qubit.pulses.very_slow_pi_ge.sigma[qTest]
+            pulse_data = [
+                [cfg.device.qubit.f_ge[qTest]],     # frequency
+                [gain],                             # gain
+                [length],                           # length (us)
+                [0],                                # phase
+                [self.qubit_chs[qTest]],            # drive channel
+                [style],                            # shape
+                [sigma]
+            ]
+            self.custom_pulse(cfg, pulse_data, prefix='slow_ge_rabi')
+            self.sync_all()
+            # self.setup_and_pulse(ch=self.qubit_chs[qTest],
+            #                      style=_style,
+            #                      freq=freq_2_reg,
+            #                      phase=phase_2_reg,
+            #                      gain=_gain,
+            #                      length=_length_2_cycles,
+            #                      waveform="slow_pi_ge") # slow pi pulse for readout
 
         self.measure_wrapper()
 
@@ -1520,133 +1549,281 @@ class SlowLengthRabiProgram(QsimBaseProgram):
 
         super().__init__(soccfg, self.cfg)
 
-    def initialize(self):
-        super().initialize()
-        cfg = AttrDict(self.cfg)
-        self.MM_base_initialize()
-        qTest = 0
-
-        # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
-        self.pisigma_ge = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # default pi_ge value
-        self.f_ge_init_reg = self.f_ge_reg[qTest]
-        self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
-        # define pi2sigma as the pulse that we are calibrating with ramsey
-        self.pi_test_sigma = self.us2cycles(cfg.expt.sigma_test, gen_ch=self.qubit_chs[qTest])
-        self.flat_length = self.us2cycles(cfg.expt.flat_length, gen_ch=self.qubit_chs[qTest])
-        self.f_pi_test_reg = self.f_ge_reg[qTest] # freq we are trying to calibrate
-
-        if self.cfg.expt.checkEF:
-            self.f_pi_test_reg = self.f_ef_reg[qTest] # freq we are trying to calibrate
-
-        if cfg.expt.user_defined_freq[0]:
-            self.f_pi_test_reg = self.freq2reg(cfg.expt.user_defined_freq[1], gen_ch=self.qubit_chs[0])
-
-        # add qubit and readout pulses to respective channels
-        if cfg.expt.pulse_type.lower() == "gauss" and self.pi_test_sigma > 0:
-            self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test", sigma=self.pi_test_sigma, length=self.pi_test_sigma*4)
-        if cfg.expt.pulse_type.lower() == "flat_top" and self.pi_test_sigma > 0:
-            self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test", sigma=self.pi_test_sigma, length=self.pi_test_sigma*4)
-
-        if self.cfg.expt.checkEF:
-            self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pisigma_ge, length=self.pisigma_ge*4)
-
-        # # initialize registers
-        # if self.qubit_ch_types[qTest] == 'int4':
-        #     self.r_gain = self.sreg(self.qubit_chs[qTest], "addr") # get gain register for qubit_ch
-        # else:
-        #     if cfg.expt.pulse_type == "flat_top":
-        #         self.r_gain = self.sreg(self.qubit_chs[qTest], "gain") # get gain register for qubit_ch
-        #         self.r_gain2 = self.sreg(self.qubit_chs[qTest], "gain2") # get gain register for qubit_ch
-        #     else:
-        #         self.r_gain = self.sreg(self.qubit_chs[qTest], "gain") # get gain register for qubit_ch
-
-        # self.r_gain3 = 4
-        # self.safe_regwi(self.q_rps[qTest], self.r_gain3, self.cfg.expt.start)
-        self.r_length = self.sreg(self.qubit_chs[qTest], 
-                                  "mode")
-        self.r_length2 = 4
-        self.safe_regwi(self.q_rps[qTest], 
-                        self.r_length, 
-                        self.us2cycles(self.cfg.expt.start, 
-                        gen_ch = self.qubit_chs[qTest]))
-        
-        _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
-        sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
-        self.add_gauss(ch=self.qubit_chs[qTest], name="slow_pi_ge",
-                       sigma=sigma_2_cycles, length=sigma_2_cycles*4)
-        
-        self.sync_all(200)
-
-    def body(self):
+    def core_pulses(self):
         cfg=AttrDict(self.cfg)
 
         qTest = self.qubits[0]
 
-        # initializations as necessary
-        if self.cfg.expt.pulse_ge_init:
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
-            self.sync_all(0.05)
+        gain = cfg.device.qubit.pulses.very_slow_pi_ge.gain[qTest]
+        # length = cfg.device.qubit.pulses.very_slow_pi_ge.length[qTest]
+        # length = self.us2cycles(, gen_ch=self.qubit_chs[qTest])
+        length = self.cfg.length_to_sweep
+        style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
+        sigma = cfg.device.qubit.pulses.very_slow_pi_ge.sigma[qTest]
+        print(f"slow ge pulse params: gain {gain}, length {length} us, sigma {sigma} us")
 
-        # pre pulse
-        if cfg.expt.prepulse:
-            if cfg.expt.gate_based:
-                creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
-                self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
-            else:
-                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
-                
-        _freq = cfg.device.qubit.f_ge[qTest]
-        _phase = 0
-        _gain = cfg.device.qubit.pulses.slow_pi_ge.gain[qTest]
-        _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
-        _length = cfg.device.qubit.pulses.slow_pi_ge.length[qTest]
-        _style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
-        freq_2_reg = self.freq2reg(_freq, gen_ch=self.qubit_chs[qTest])
-        _sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
-        _length_2_cycles = self.us2cycles(self.cfg.length_to_sweep, gen_ch=self.qubit_chs[qTest])
-        phase_2_reg = self.deg2reg(_phase, gen_ch=self.qubit_chs[qTest])
-        # print(f'_freq: {_freq}, _phase: {_phase}, _gain: {_gain}, _length: {_length}, _style: {_style}')
-
-        self.set_pulse_registers(ch=self.qubit_chs[qTest],
-                                style=_style,
-                                freq=freq_2_reg,
-                                phase=phase_2_reg,
-                                gain=_gain,
-                                length=_length_2_cycles,
-                                waveform="slow_pi_ge") # slow pi pulse for readout
-        
-        self.mathi(self.qubit_chs[qTest], self.r_length, self.r_length2, "+", 0)
-        # if cfg.expt.pulse_type == "flat_top":
-        #     self.mathi(self.q_rps[qTest], self.r_gain2, self.r_gain3, "+", 0)
-        self.pulse(ch=self.qubit_chs[qTest])
+        pulse_data = [
+            [cfg.device.qubit.f_ge[qTest]],     # frequency
+            [gain],                             # gain
+            [length],                           # length (us)
+            [0],                                # phase
+            [self.qubit_chs[qTest]],            # drive channel
+            [style],                            # shape
+            [sigma],                            # ramp sigma
+        ]
+        self.custom_pulse(cfg, pulse_data, prefix='slow_ge_rabi')
+        self.sync_all()
         # self.sync_all()
 
-        # if self.checkEF: # map excited back to qubit ground state for measurement
-        #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
 
-        #postpulse :
-        self.sync_all()
-        if cfg.expt.postpulse:
-            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post')
+    # def collect_shots(self):
+    #     # collect shots for the relevant adc and I and Q channels
+    #     # print(np.average(self.di_buf[0]))
+    #     self.readout_length_adc = self.readout_lengths_adc[0]
+    #     shots_i0 = self.di_buf[0] / self.readout_length_adc
+    #     shots_q0 = self.dq_buf[0] / self.readout_length_adc
+    #     return shots_i0, shots_q0
+    #     return shots_i0[:5000], shots_q0[:5000]
 
-        if self.cfg.expt.pulse_ge_after:
-            self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
-            self.sync_all(0.05)
-        # align channels and measure
-        self.measure_wrapper()
+# class SlowLengthRabiProgram(QsimBaseProgram):
+#     def __init__(self, soccfg, cfg):
+#         self.cfg = AttrDict(cfg)
+#         self.cfg.update(self.cfg.expt)
 
-    def collect_shots(self):
-        # collect shots for the relevant adc and I and Q channels
-        # print(np.average(self.di_buf[0]))
-        self.readout_length_adc = self.readout_lengths_adc[0]
-        shots_i0 = self.di_buf[0] / self.readout_length_adc
-        shots_q0 = self.dq_buf[0] / self.readout_length_adc
-        return shots_i0, shots_q0
-        return shots_i0[:5000], shots_q0[:5000]
+#         # copy over parameters for the acquire method
+#         self.cfg.reps = cfg.expt.reps
+#         self.cfg.rounds = cfg.expt.rounds
 
-# ====================================================== #
+#         super().__init__(soccfg, self.cfg)
+
+#     def initialize(self):
+#         super().initialize()
+#         cfg = AttrDict(self.cfg)
+#         self.MM_base_initialize()
+#         qTest = 0
+
+#         # define pisigma_ge as the ge pulse for the qubit that we are calibrating the pulse on
+#         self.pisigma_ge = self.us2cycles(cfg.device.qubit.pulses.pi_ge.sigma[qTest], gen_ch=self.qubit_chs[qTest]) # default pi_ge value
+#         self.f_ge_init_reg = self.f_ge_reg[qTest]
+#         self.gain_ge_init = self.cfg.device.qubit.pulses.pi_ge.gain[qTest]
+#         # define pi2sigma as the pulse that we are calibrating with ramsey
+#         self.pi_test_sigma = self.us2cycles(cfg.expt.sigma_test, gen_ch=self.qubit_chs[qTest])
+#         self.flat_length = self.us2cycles(cfg.expt.flat_length, gen_ch=self.qubit_chs[qTest])
+#         self.f_pi_test_reg = self.f_ge_reg[qTest] # freq we are trying to calibrate
+
+#         if self.cfg.expt.checkEF:
+#             self.f_pi_test_reg = self.f_ef_reg[qTest] # freq we are trying to calibrate
+
+#         if cfg.expt.user_defined_freq[0]:
+#             self.f_pi_test_reg = self.freq2reg(cfg.expt.user_defined_freq[1], gen_ch=self.qubit_chs[0])
+
+#         # add qubit and readout pulses to respective channels
+#         if cfg.expt.pulse_type.lower() == "gauss" and self.pi_test_sigma > 0:
+#             self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test", sigma=self.pi_test_sigma, length=self.pi_test_sigma*4)
+#         if cfg.expt.pulse_type.lower() == "flat_top" and self.pi_test_sigma > 0:
+#             self.add_gauss(ch=self.qubit_chs[qTest], name="pi_test", sigma=self.pi_test_sigma, length=self.pi_test_sigma*4)
+
+#         if self.cfg.expt.checkEF:
+#             self.add_gauss(ch=self.qubit_chs[qTest], name="pi_qubit_ge", sigma=self.pisigma_ge, length=self.pisigma_ge*4)
+
+#         # # initialize registers
+#         # if self.qubit_ch_types[qTest] == 'int4':
+#         #     self.r_gain = self.sreg(self.qubit_chs[qTest], "addr") # get gain register for qubit_ch
+#         # else:
+#         #     if cfg.expt.pulse_type == "flat_top":
+#         #         self.r_gain = self.sreg(self.qubit_chs[qTest], "gain") # get gain register for qubit_ch
+#         #         self.r_gain2 = self.sreg(self.qubit_chs[qTest], "gain2") # get gain register for qubit_ch
+#         #     else:
+#         #         self.r_gain = self.sreg(self.qubit_chs[qTest], "gain") # get gain register for qubit_ch
+
+#         # self.r_gain3 = 4
+#         # self.safe_regwi(self.q_rps[qTest], self.r_gain3, self.cfg.expt.start)
+#         self.r_length = self.sreg(self.qubit_chs[qTest], 
+#                                   "mode")
+#         self.r_length2 = 4
+#         self.safe_regwi(self.q_rps[qTest], 
+#                         self.r_length, 
+#                         self.us2cycles(self.cfg.expt.start, 
+#                         gen_ch = self.qubit_chs[qTest]))
+        
+#         _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
+#         sigma_2_cycles = self.us2cycles(_sigma, gen_ch=self.qubit_chs[qTest])
+#         self.add_gauss(ch=self.qubit_chs[qTest], name="slow_pi_ge",
+#                        sigma=sigma_2_cycles, length=sigma_2_cycles*4)
+        
+#         self.sync_all(200)
+
+#     def body(self):
+#         cfg=AttrDict(self.cfg)
+
+#         qTest = self.qubits[0]
+
+#         # initializations as necessary
+#         if self.cfg.expt.pulse_ge_init:
+#             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
+#             self.sync_all(0.05)
+
+#         # pre pulse
+#         if cfg.expt.prepulse:
+#             if cfg.expt.gate_based:
+#                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+#                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
+#             else:
+#                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
+                
+#         _freq = cfg.device.qubit.f_ge[qTest]
+#         _phase = 0
+#         _gain = cfg.device.qubit.pulses.slow_pi_ge.gain[qTest]
+#         _sigma = cfg.device.qubit.pulses.slow_pi_ge.sigma[qTest]
+#         _style = cfg.device.qubit.pulses.slow_pi_ge.type[qTest]
+#         freq_2_reg = self.freq2reg(_freq, gen_ch=self.qubit_chs[qTest])
+#         _length_2_cycles = self.us2cycles(self.cfg.length_to_sweep, gen_ch=self.qubit_chs[qTest])
+#         phase_2_reg = self.deg2reg(_phase, gen_ch=self.qubit_chs[qTest])
+#         # print(f'_freq: {_freq}, _phase: {_phase}, _gain: {_gain}, _length: {_length}, _style: {_style}')
+
+#         self.set_pulse_registers(ch=self.qubit_chs[qTest],
+#                                 style=_style,
+#                                 freq=freq_2_reg,
+#                                 phase=phase_2_reg,
+#                                 gain=_gain,
+#                                 length=_length_2_cycles,
+#                                 waveform="slow_pi_ge") # slow pi pulse for readout
+        
+#         self.mathi(self.qubit_chs[qTest], self.r_length, self.r_length2, "+", 0)
+#         self.pulse(ch=self.qubit_chs[qTest])
+#         # self.sync_all()
+
+#         # if self.checkEF: # map excited back to qubit ground state for measurement
+#         #     self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_init_reg, phase=0, gain=self.gain_ge_init, waveform="pi_qubit_ge")
+
+#         #postpulse :
+#         self.sync_all()
+#         if cfg.expt.postpulse:
+#             self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post')
+
+#         if self.cfg.expt.pulse_ge_after:
+#             self.setup_and_pulse(ch=self.qubit_chs[qTest], style="arb", freq=self.f_ge_reg[0], phase=0, gain=self.pi_ge_gain, waveform="pi_qubit_ge")
+#             self.sync_all(0.05)
+#         # align channels and measure
+#         self.measure_wrapper()
+
+#     def collect_shots(self):
+#         # collect shots for the relevant adc and I and Q channels
+#         # print(np.average(self.di_buf[0]))
+#         self.readout_length_adc = self.readout_lengths_adc[0]
+#         shots_i0 = self.di_buf[0] / self.readout_length_adc
+#         shots_q0 = self.dq_buf[0] / self.readout_length_adc
+#         return shots_i0, shots_q0
+#         return shots_i0[:5000], shots_q0[:5000]
 
 class SlowLengthRabiQsimExperiment(QsimBaseExperiment):
     def __init__(self, *args, **kwargs):
         kwargs["program"] = SlowLengthRabiProgram
         super().__init__(*args, **kwargs)
+
+# ====================================================== #
+class ParityDebuggingProgram(QsimBaseProgram):
+    def core_pulses(self):
+        pulse_cfg = [
+            ['qubit', 'ge', 'pi', 0,],
+            ['man', 'M1', 'pi', 0]
+        ]
+        pulse = self.get_prepulse_creator(pulse_cfg)
+        self.sync_all()
+        cfg = AttrDict(self.cfg)
+        self.custom_pulse(cfg, pulse.pulse, prefix = 'test_')
+        self.sync_all()
+        # self.sync_all(self.us2cycles(20))
+        
+class ActiveResetVerificationProgram(QsimBaseProgram):
+    def initialize(self):
+        """
+        MM_base_init to pull basic info 
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
+        """
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        #TODO: this should use a config key to determine whether
+        # to use floquet or gate (pi or pi/2) datasets
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
+        self.m1s_kwargs = [{
+                'ch': self.m1s_ch[stor],
+                'style': 'flat_top',
+                'freq': self.m1s_freq[stor],
+                'phase': 0,
+                'gain': self.m1s_gain[stor],
+                'length': self.m1s_length[stor],
+                'waveform': self.m1s_wf_name[stor],
+        } for stor in range(7)]
+
+        if self.cfg.expt.perform_wigner:
+            self.displace_man(setup=True, play=False)
+
+        self.sync_all(200)
+    
+    def core_pulses(self):
+        pulse_cfg = self.prep_man_photon(1)
+        # pulse_cfg2 = [
+        #     ['man', 'M1', 'pi', 0]
+        # ]
+        pulse = self.get_prepulse_creator(pulse_cfg)
+        # pulse2 = self.get_prepulse_creator(pulse_cfg2)
+        self.sync_all()
+        # self.custom_pulse(AttrDict(self.cfg), pulse.pulse, prefix = 'prep_man_1')
+        # self.sync_all()
+        # self.custom_pulse(AttrDict(self.cfg), pulse2.pulse, prefix = 'prep_man_1_f0g1')
+        # self.sync_all()
+        
+class MActiveResetVerificationProgram(MMAveragerProgram):
+    def __init__(self, soccfg, cfg):
+        self.cfg = AttrDict(cfg)
+        self.cfg.update(self.cfg.expt)
+
+        # copy over parameters for the acquire method
+        self.cfg.reps = cfg.expt.reps
+
+        super().__init__(soccfg, self.cfg)
+        
+    def initialize(self):
+        """
+        MM_base_init to pull basic info 
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
+        """
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  
+
+        self.sync_all(200)
+        
+    def body(self):
+        cfg = AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+
+        # phase reset
+        self.reset_and_sync()
+        pulse_cfg = self.prep_man_photon(1)
+        pulse = self.get_prepulse_creator(pulse_cfg)
+        self.custom_pulse(AttrDict(self.cfg), pulse.pulse, prefix = 'prep_man_1_initializer')
+        self.sync_all()
+        #do the active reset
+        if cfg.expt.active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            self.active_reset(**params)
+
+        #  prepulse
+        if cfg.expt.prepulse:
+            self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre')
+
+        self.sync_all()  # align channels
+
+        if cfg.expt.postpulse:
+            self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix='post')
+        self.sync_all(self.us2cycles(0.05))
+        self.measure_wrapper()
+        
