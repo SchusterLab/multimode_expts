@@ -189,6 +189,8 @@ class CavityRamseyProgram(MMRAveragerProgram):
             if cfg.expt.gate_based: 
                 print('gate based prepulse')
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
+                print("playing prepulse")
+                print(creator.pulse.tolist())
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
             else:
                 self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_')
@@ -515,8 +517,8 @@ class CavityRamseyGainSweepExperiment(Experiment):
                                                 # debug=debug,
                                                 readouts_per_experiment=read_num)
 
-            avgi = avgi[0][0]
-            avgq = avgq[0][0]
+            avgi = avgi[0][-1]
+            avgq = avgq[0][-1]
             amps = np.abs(avgi + 1j * avgq)
             phases = np.angle(avgi + 1j * avgq)
 
@@ -534,8 +536,8 @@ class CavityRamseyGainSweepExperiment(Experiment):
                                                     # debug=debug,
                                                     readouts_per_experiment=read_num)
 
-                avgi = avgi[0][0]
-                avgq = avgq[0][0]
+                avgi = avgi[0][-1]
+                avgq = avgq[0][-1]
                 amps = np.abs(avgi + 1j * avgq)
                 phases = np.angle(avgi + 1j * avgq)
                 data['e_avgi'][i_gain] = avgi
@@ -586,8 +588,24 @@ class CavityRamseyGainSweepExperiment(Experiment):
             **{k: v for k, v in kwargs.items() if k != 'save_fig'}
         )
 
-
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
+        if data is None:
+            data = self.data
+
+        # time_peak_g and time_peak_e are lists of variable-length arrays
+        # (each gain slice can have a different number of peaks), so
+        # np.array() fails with an inhomogeneous shape error.
+        # Stash them before saving and restore afterward.
+        stashed = {}
+        for k in ['time_peak_g', 'time_peak_e']:
+            if k in data:
+                stashed[k] = data.pop(k)
+
         super().save_data(data=data)
+
+        data.update(stashed)
+    # def save_data(self, data=None):
+    #     print(f'Saving {self.fname}')
+    #     super().save_data(data=data)
 
