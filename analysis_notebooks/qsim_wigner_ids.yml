@@ -187,6 +187,11 @@ fine_nocalib:
     - JOB-20260303-00017_QsimWignerBaseExperiment.h5
     - JOB-20260303-00018_QsimWignerBaseExperiment.h5
     - JOB-20260303-00019_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00004_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00006_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00007_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00008_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00009_QsimWignerBaseExperiment.h5
 fine_withcalib:
   M1:
     - JOB-20260305-00003_QsimWignerBaseExperiment.h5
@@ -228,5 +233,228 @@ fine_withcalib:
     - JOB-20260308-00006_QsimWignerBaseExperiment.h5
     - JOB-20260308-00008_QsimWignerBaseExperiment.h5
     - JOB-20260308-00010_QsimWignerBaseExperiment.h5
-    - JOB-20260302-00002_QsimWignerBaseExperiment.h5
-    - JOB-20260302-00004_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00012_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00014_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00036_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00040_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00042_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00044_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00002_QsimWignerBaseExperiment.h5
+  S7:
+    - JOB-20260308-00020_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00021_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00022_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00023_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00024_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00028_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00029_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00030_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00031_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00032_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00034_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00035_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00036_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00037_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00038_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00040_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00041_QsimWignerBaseExperiment.h5
+    - JOB-20260308-00042_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00001_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00002_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00004_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00005_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00006_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00007_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00008_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00010_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00011_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00012_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00013_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00014_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00016_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00017_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00018_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00019_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00020_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00022_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00023_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00024_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00025_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00026_QsimWignerBaseExperiment.h5
+    - JOB-20260309-00028_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00010_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00012_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00013_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00014_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00015_QsimWignerBaseExperiment.h5
+linear:
+  M1:
+    - JOB-20260226-00083_expt.pkl
+    - JOB-20260226-00091_expt.pkl
+    - JOB-20260225-00074_expt.pkl
+    - JOB-20260225-00082_expt.pkl
+    - JOB-20260225-00094_expt.pkl
+    - JOB-20260225-00103_expt.pkl
+    - JOB-20260226-00008_expt.pkl
+    - JOB-20260226-00017_expt.pkl
+    - JOB-20260226-00023_expt.pkl
+    - JOB-20260226-00028_expt.pkl
+    - JOB-20260226-00033_expt.pkl
+    - JOB-20260226-00036_expt.pkl
+    - JOB-20260226-00040_expt.pkl
+    - JOB-20260226-00045_expt.pkl
+    - JOB-20260226-00048_expt.pkl
+    - JOB-20260226-00052_expt.pkl
+    - JOB-20260226-00057_expt.pkl
+    - JOB-20260226-00060_expt.pkl
+    - JOB-20260226-00064_expt.pkl
+    - JOB-20260226-00069_expt.pkl
+    - JOB-20260226-00074_expt.pkl
+  S1:
+    - JOB-20260226-00085_expt.pkl
+    - JOB-20260226-00096_expt.pkl
+    - JOB-20260225-00076_expt.pkl
+    - JOB-20260225-00087_expt.pkl
+    - JOB-20260225-00097_expt.pkl
+    - JOB-20260225-00106_expt.pkl
+    - JOB-20260226-00012_expt.pkl
+    - JOB-20260226-00019_expt.pkl
+    - JOB-20260226-00025_expt.pkl
+    - JOB-20260226-00030_expt.pkl
+    - JOB-20260226-00034_expt.pkl
+    - JOB-20260226-00037_expt.pkl
+    - JOB-20260226-00042_expt.pkl
+    - JOB-20260226-00046_expt.pkl
+    - JOB-20260226-00049_expt.pkl
+    - JOB-20260226-00054_expt.pkl
+    - JOB-20260226-00058_expt.pkl
+    - JOB-20260226-00061_expt.pkl
+    - JOB-20260226-00066_expt.pkl
+    - JOB-20260226-00070_expt.pkl
+    - JOB-20260226-00076_expt.pkl
+  S7:
+    - JOB-20260226-00087_expt.pkl
+    - JOB-20260226-00097_expt.pkl
+    - JOB-20260225-00078_expt.pkl
+    - JOB-20260225-00091_expt.pkl
+    - JOB-20260225-00100_expt.pkl
+    - JOB-20260226-00003_expt.pkl
+    - JOB-20260226-00015_expt.pkl
+    - JOB-20260226-00021_expt.pkl
+    - JOB-20260226-00026_expt.pkl
+    - JOB-20260226-00032_expt.pkl
+    - JOB-20260226-00035_expt.pkl
+    - JOB-20260226-00038_expt.pkl
+    - JOB-20260226-00044_expt.pkl
+    - JOB-20260226-00047_expt.pkl
+    - JOB-20260226-00050_expt.pkl
+    - JOB-20260226-00056_expt.pkl
+    - JOB-20260226-00059_expt.pkl
+    - JOB-20260226-00062_expt.pkl
+    - JOB-20260226-00068_expt.pkl
+    - JOB-20260226-00072_expt.pkl
+    - JOB-20260226-00078_expt.pkl
+alpha2_bad:
+  M1:
+    - JOB-20260310-00094_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00098_QsimWignerBaseExperiment.h5
+    - JOB-20260310-00100_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00002_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00004_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00006_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00007_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00009_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00010_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00013_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00015_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00017_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00019_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00021_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00022_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00024_QsimWignerBaseExperiment.h5
+  S1:
+    - JOB-20260311-00027_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00046_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00047_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00048_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00049_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00050_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00051_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00052_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00053_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00055_QsimWignerBaseExperiment.h5
+    - JOB-20260311-00056_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00001_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00002_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00003_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00004_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00005_QsimWignerBaseExperiment.h5
+  S7:
+    - JOB-20260312-00041_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00006_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00007_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00008_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00009_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00010_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00011_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00012_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00013_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00015_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00016_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00017_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00018_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00019_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00020_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00021_QsimWignerBaseExperiment.h5
+alpha2:
+  M1:
+    - JOB-20260314-00067_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00044_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00046_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00047_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00048_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00049_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00050_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00051_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00052_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00055_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00056_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00058_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00060_QsimWignerBaseExperiment.h5
+    - JOB-20260312-00062_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00001_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00003_QsimWignerBaseExperiment.h5
+  S1:
+    - JOB-20260314-00069_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00005_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00007_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00009_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00011_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00013_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00014_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00015_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00016_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00018_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00019_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00020_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00021_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00022_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00023_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00024_QsimWignerBaseExperiment.h5
+  S7:
+    - JOB-20260314-00071_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00025_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00026_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00028_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00030_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00032_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00034_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00036_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00038_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00042_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00044_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00045_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00046_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00047_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00048_QsimWignerBaseExperiment.h5
+    - JOB-20260313-00049_QsimWignerBaseExperiment.h5
