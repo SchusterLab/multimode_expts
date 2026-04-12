@@ -28,6 +28,12 @@ JP phase correction:
 AC Stark correction added to effective_ramsey_freq only when echo=0
 (echo refocuses the AC Stark shift).
 
+Spectator JP mode (jp_storage_swap / jp_storage_parity):
+  JP checks can target a DIFFERENT dual-rail pair to measure the
+  back-action of JP on pair B on the T2 of pair A.  In this mode
+  postselection on JP results is skipped (the JP outcome is not
+  relevant to the measured qubit's logical subspace).
+
 Config naming follows dual_rail_sandbox_v2 convention:
 - storage_swap: storage mode index for logical |1> (photon here = |1_L>)
 - storage_parity: storage mode index for logical |0> (photon here = |0_L>)
@@ -72,6 +78,44 @@ class DualRailRamseyProgram(MMRAveragerProgram):
 
         _ds = cfg.device.storage._ds_storage
 
+        # --- JP on another dual-rail pair (spectator JP) ---
+        # When jp_storage_swap / jp_storage_parity are set to a different pair,
+        # JP targets that pair instead of the measured one, to measure
+        # the back-action of JP on pair B on the T2 of pair A.
+        jp_s_swap = cfg.expt.get('jp_storage_swap')
+        jp_s_parity = cfg.expt.get('jp_storage_parity')
+        if (jp_s_swap is not None and jp_s_parity is not None
+                and (jp_s_swap != s_swap or jp_s_parity != s_parity)):
+            self.jp_on_other_pair = True
+            jp_stor_name_swap = f'M{man}-S{jp_s_swap}'
+            jp_stor_name_parity = f'M{man}-S{jp_s_parity}'
+            self.jp_stor_pair_name = jp_stor_name_parity
+            self.jp_pair_name = _ds.pair_name(jp_s_swap, jp_s_parity)
+            jp_swap_seq = [['storage', jp_stor_name_swap, 'pi', 0]]
+            self.jp_swap_pulse = self.get_prepulse_creator(
+                jp_swap_seq).pulse.tolist()
+
+            # Optional state prep on the JP pair (e.g. '1', '+')
+            jp_state = cfg.expt.get('jp_state_start')
+            if jp_state is not None:
+                jp_seq = self.prep_dual_rail_logical_state(
+                    jp_state, jp_stor_name_swap, jp_stor_name_parity)
+                self.jp_state_prep_pulse = (
+                    self.get_prepulse_creator(jp_seq).pulse.tolist()
+                    if jp_seq is not None else None)
+            else:
+                self.jp_state_prep_pulse = None
+
+            print(f"  JP on OTHER pair: {self.jp_pair_name} "
+                  f"(swap=S{jp_s_swap}, parity=S{jp_s_parity})"
+                  + (f", prep={jp_state}" if jp_state else ""))
+        else:
+            self.jp_on_other_pair = False
+            self.jp_stor_pair_name = self.stor_pair_name
+            self.jp_swap_pulse = None  # set after swap_pulse is compiled
+            self.jp_pair_name = None
+            self.jp_state_prep_pulse = None
+
         # --- Joint parity check configuration ---
         self.n_active_checks = int(cfg.expt.get('n_active_checks', 0))
 
@@ -100,13 +144,19 @@ class DualRailRamseyProgram(MMRAveragerProgram):
             self.ac_stark_rate = rates[0]
 
         # --- JP-induced phase correction ---
+        # When JP is on another pair, the correction is the cross-pair entry
+        # matrix[measured_pair][jp_source_pair].
         self.jp_phase_per_check = 0.0
+        jp_source_pair = (self.jp_pair_name if self.jp_on_other_pair
+                          else self.pair_name)
         if self.n_active_checks > 0 and self.phase_tracking:
+            pair_names_for_jp = list(
+                dict.fromkeys([self.pair_name, jp_source_pair]))
             jp_matrix = MM_base.load_dr_jp_phase_matrix(
-                _ds, [self.pair_name],
+                _ds, pair_names_for_jp,
                 cfg_override=cfg.expt.get('jp_phase_matrix'))
             self.jp_phase_per_check = jp_matrix.get(
-                self.pair_name, {}).get(self.pair_name, 0.0)
+                self.pair_name, {}).get(jp_source_pair, 0.0)
 
         # --- State preparation via prep_dual_rail_logical_state ---
         state_start = cfg.expt.get('state_start', '+')
@@ -123,6 +173,10 @@ class DualRailRamseyProgram(MMRAveragerProgram):
         # Swap in/out: pi on stor_swap (static, compiled once)
         swap_seq = [['storage', self.stor_name_swap, 'pi', 0]]
         self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+
+        # Fallback: when JP is on same pair, reuse main swap pulse
+        if self.jp_swap_pulse is None:
+            self.jp_swap_pulse = self.swap_pulse
 
         # Middle hpi on stor_parity (register-controlled for Ramsey phase)
         self.hpi_freq = _ds.get_freq(self.stor_name_parity)
@@ -224,6 +278,11 @@ class DualRailRamseyProgram(MMRAveragerProgram):
                 prefix='state_prep_ps'
             )
 
+        # 4b. State preparation on JP pair (spectator JP mode)
+        if self.jp_state_prep_pulse is not None:
+            self.custom_pulse(cfg, self.jp_state_prep_pulse,
+                              prefix='jp_state_prep_')
+
         if self.num_echoes == 1 and self.n_active_checks > 0:
             # === CPMG distributed: (wait→JP)×N → wait → echo → (wait→JP)×N → wait ===
 
@@ -232,14 +291,14 @@ class DualRailRamseyProgram(MMRAveragerProgram):
                 self.sync_all()
                 self.sync(self.flux_rp, self.r_wait)
                 self.sync_all()
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_in_{k}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_in_{k}_')
                 self.joint_parity_active_reset(
-                    stor_pair_name=self.stor_pair_name,
+                    stor_pair_name=self.jp_stor_pair_name,
                     name=f'jp_{k}',
                     register_label=f'jp_label_{k}',
                     second_phase=0,
                     fast=cfg.expt.get('parity_fast', False))
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_out_{k}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_out_{k}_')
 
             # Wait before echo
             self.sync_all()
@@ -256,14 +315,14 @@ class DualRailRamseyProgram(MMRAveragerProgram):
                 self.sync(self.flux_rp, self.r_wait)
                 self.sync_all()
                 idx = self.n_checks_before + k
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_in_{idx}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_in_{idx}_')
                 self.joint_parity_active_reset(
-                    stor_pair_name=self.stor_pair_name,
+                    stor_pair_name=self.jp_stor_pair_name,
                     name=f'jp_{idx}',
                     register_label=f'jp_label_{idx}',
                     second_phase=0,
                     fast=cfg.expt.get('parity_fast', False))
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_out_{idx}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_out_{idx}_')
 
             # Final wait
             self.sync_all()
@@ -276,14 +335,14 @@ class DualRailRamseyProgram(MMRAveragerProgram):
                 self.sync_all()
                 self.sync(self.flux_rp, self.r_wait)
                 self.sync_all()
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_in_{k}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_in_{k}_')
                 self.joint_parity_active_reset(
-                    stor_pair_name=self.stor_pair_name,
+                    stor_pair_name=self.jp_stor_pair_name,
                     name=f'jp_{k}',
                     register_label=f'jp_label_{k}',
                     second_phase=0,
                     fast=cfg.expt.get('parity_fast', False))
-                self.custom_pulse(cfg, self.swap_pulse, prefix=f'swap_out_{k}_')
+                self.custom_pulse(cfg, self.jp_swap_pulse, prefix=f'swap_out_{k}_')
 
             # Final wait
             self.sync_all()
@@ -446,6 +505,13 @@ class DualRailRamseyExperiment(Experiment):
         n_checks: number of distributed JP checks (0 = pure Ramsey, default 0),
             must be even when echoes=1,
         parity_fast: True/False (use fast multiphoton hpi for JP, default False),
+        jp_storage_swap: storage swap index of ANOTHER pair to JP (optional),
+        jp_storage_parity: storage parity index of ANOTHER pair to JP (optional),
+            When both are set and differ from storage_swap/storage_parity,
+            JP targets the other pair (spectator JP).  Postselection is
+            skipped since the JP outcome is not about the measured qubit.
+        jp_state_start: logical state to prepare on the JP pair (optional),
+            e.g. '1', '+', '0'.  Only used when jp_storage_swap/parity are set.
     )
     """
 
@@ -481,6 +547,14 @@ class DualRailRamseyExperiment(Experiment):
         # Compute full time array
         times = np.array([start + i * step for i in range(expts)])
 
+        # Detect JP on another pair
+        jp_s_swap = self.cfg.expt.get('jp_storage_swap')
+        jp_s_parity = self.cfg.expt.get('jp_storage_parity')
+        jp_on_other_pair = (
+            jp_s_swap is not None and jp_s_parity is not None
+            and (jp_s_swap != self.cfg.expt.storage_swap
+                 or jp_s_parity != self.cfg.expt.storage_parity))
+
         data = {
             'states': state_list,
             'threshold': self.cfg.device.readout.threshold[0],
@@ -489,7 +563,10 @@ class DualRailRamseyExperiment(Experiment):
             'reps': reps,
             'rounds': rounds,
             'step': step,
+            'jp_on_other_pair': jp_on_other_pair,
         }
+        if jp_on_other_pair:
+            data['jp_pair_str'] = f'S{jp_s_swap}-S{jp_s_parity}'
 
         num_echoes = int(self.cfg.expt.get('echoes', 0))
 
@@ -533,9 +610,9 @@ class DualRailRamseyExperiment(Experiment):
             # Compute overheads (once, from first program)
             if n_checks > 0 and 'jp_overhead' not in data:
                 swap_dur = prog.get_total_time(
-                    np.array(prog.swap_pulse, dtype=object))
+                    np.array(prog.jp_swap_pulse, dtype=object))
                 jp_meas_dur = prog.get_jp_measurement_duration(
-                    prog.stor_pair_name,
+                    prog.jp_stor_pair_name,
                     fast=self.cfg.expt.get('parity_fast', False))
                 data['jp_overhead'] = 2 * swap_dur + jp_meas_dur
                 print(f"  JP overhead: {data['jp_overhead']:.2f} us")
@@ -701,7 +778,10 @@ class DualRailRamseyExperiment(Experiment):
                             if n_checks > 0 else None)
 
             # === Pass 2: Post-selected populations ===
-            do_ps = post_select and n_checks > 0
+            # Skip PS when JP is on another pair (results are not relevant
+            # to the measured qubit's logical subspace)
+            jp_on_other = data.get('jp_on_other_pair', False)
+            do_ps = post_select and n_checks > 0 and not jp_on_other
             ps_pop_arrays = ({label: np.zeros(expts) for label in bar_labels}
                              if do_ps else None)
             ps_counts = np.zeros(expts) if do_ps else None
@@ -842,6 +922,8 @@ class DualRailRamseyExperiment(Experiment):
         bar_labels = ['00', '10', '01', '11']
         stor_pair = f'S{self.cfg.expt.storage_swap}-S{self.cfg.expt.storage_parity}'
         n_checks = int(data.get('n_checks', 0))
+        jp_on_other = data.get('jp_on_other_pair', False)
+        jp_pair_str = data.get('jp_pair_str', '')
 
         n_states = len(state_list)
         num_echoes = self.cfg.expt.get('echoes', 0)
@@ -861,6 +943,15 @@ class DualRailRamseyExperiment(Experiment):
         else:
             xpts_plot = xpts[:expts]
             x_label = 'Wait time [us]'
+
+        def _jp_str():
+            if n_checks == 0:
+                return ''
+            s = f' ({n_checks} JP checks'
+            if jp_on_other:
+                s += f' on {jp_pair_str}'
+            s += ')'
+            return s
 
         def _freq_str(state):
             eff_freq = data.get(f'effective_ramsey_freq_{state}')
@@ -889,8 +980,7 @@ class DualRailRamseyExperiment(Experiment):
             ax.set_ylabel('Population')
             title = f'Dual Rail {expt_type} [{stor_pair}]\n'
             title += f'Prepared: |{state}>, {_freq_str(state)}'
-            if n_checks > 0:
-                title += f' ({n_checks} JP checks)'
+            title += _jp_str()
             ax.set_title(title)
             ax.legend()
             ax.grid(True, alpha=0.3)
@@ -923,7 +1013,7 @@ class DualRailRamseyExperiment(Experiment):
 
             title_parts = [f'Dual Rail {expt_type} [{stor_pair}] (Logical Subspace)',
                            f'Prepared: |{state}>, {_freq_str(state)}'
-                           + (f' ({n_checks} JP checks)' if n_checks > 0 else '')]
+                           + _jp_str()]
 
             if fit:
                 self._display_fit_overlay(
@@ -995,7 +1085,7 @@ class DualRailRamseyExperiment(Experiment):
                 ax.set_ylabel('Population')
                 title = f'Post-selected: Dual Rail {expt_type} [{stor_pair}]\n'
                 title += f'Prepared: |{state}>, {_freq_str(state)}'
-                title += f' ({n_checks} JP checks)'
+                title += _jp_str()
                 ax.set_title(title)
                 ax.legend(fontsize=8)
                 ax.grid(True, alpha=0.3)
@@ -1039,7 +1129,7 @@ class DualRailRamseyExperiment(Experiment):
                 title_parts = [
                     f'PS Logical: Dual Rail {expt_type} [{stor_pair}]',
                     f'Prepared: |{state}>, {_freq_str(state)}'
-                    + f' ({n_checks} JP checks)']
+                    + _jp_str()]
 
                 if fit:
                     self._display_fit_overlay(
@@ -1089,8 +1179,10 @@ class DualRailRamseyExperiment(Experiment):
 
                 ax.set_xlabel(x_label)
                 ax.set_ylabel('JP Even Fraction')
-                ax.set_title(r'JP Results: $|%s\rangle$ [%s] (%d JP checks)'
-                             % (state, stor_pair, n_checks))
+                jp_title = (f'JP Results: $|{state}\\rangle$ '
+                            f'[{jp_pair_str if jp_on_other else stor_pair}]'
+                            + _jp_str())
+                ax.set_title(jp_title)
                 ax.legend(fontsize=8)
                 ax.grid(True, alpha=0.3)
                 ax.set_ylim([-0.05, 1.05])
@@ -1173,6 +1265,8 @@ class DualRailRamseyExperiment(Experiment):
                     save_data[key] = np.array(value, dtype='S')
                 else:
                     save_data[key] = value
+            elif isinstance(value, str):
+                save_data[key] = np.bytes_(value)
             elif value is None:
                 continue
             elif isinstance(value, dict):

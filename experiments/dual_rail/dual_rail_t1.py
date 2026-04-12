@@ -324,13 +324,19 @@ class DualRailT1Experiment(Experiment):
         self.data = data
         return data
 
-    def analyze(self, data=None, post_select=True):
+    def analyze(self, data=None, post_select=True, fit_type='linear'):
         """
         Analyze dual rail T1 data.
 
         Pass 1: Raw populations (pre-selection only, no JP post-selection).
         Pass 2: Post-selected populations (JP even parity filter).
                  Only runs when post_select=True and n_checks > 0.
+
+        Args:
+            fit_type: 'linear' (default) or 'exponential'. Linear fits
+                y = a + b*t and extracts T1 from the initial slope as
+                T1 = -(y(0) - y_offset) / b where y_offset is the
+                equilibrium value (0.5 for dual rail).
         """
         if data is None:
             data = self.data
@@ -355,6 +361,7 @@ class DualRailT1Experiment(Experiment):
         else:
             true_times = times.copy()
         data['true_times'] = true_times
+        data['fit_type'] = fit_type
 
         indices = self._get_shot_indices(n_checks)
         bar_labels = ['00', '10', '01', '11']
@@ -470,23 +477,49 @@ class DualRailT1Experiment(Experiment):
             data[f'p_0_{state}'] = np.where(valid, pop_01 / logical_total, 0)
             data[f'p_1_{state}'] = np.where(valid, pop_10 / logical_total, 0)
 
-            # Fit raw exponential decay (using true elapsed times)
+            # Fit raw decay (using true elapsed times)
             if state in ['10', '01']:
                 try:
                     times_ms = true_times / 1000
                     y = pop_arrays[state]
-                    p0 = [0.5, y[0] - 0.5,
-                          (times_ms[-1] - times_ms[0]) / 5]
-                    bounds = ([0, 0, 0], [1, 1.5, np.inf])
-                    pOpt, pCov = curve_fit(expfunc1, times_ms, y, p0=p0,
-                                           bounds=bounds, maxfev=200000)
-                    T1 = pOpt[2]
-                    T1_err = (np.sqrt(pCov[2, 2])
-                              if pCov[2, 2] < np.inf else 0)
-                    data[f'fit_{state}'] = pOpt
-                    data[f'fit_err_{state}'] = np.sqrt(np.diag(pCov))
-                    print(f"State |{state}> (raw): "
-                          f"T1 = {T1:.4g} +/- {T1_err:.4g} ms")
+                    if fit_type == 'linear':
+                        # Linear fit: y = a + b*t
+                        pOpt, pCov = curve_fit(
+                            lambda x, a, b: a + b * x,
+                            times_ms, y,
+                            p0=[y[0], (y[-1] - y[0]) / (times_ms[-1] - times_ms[0])],
+                            maxfev=200000)
+                        # Extract T1 from initial slope:
+                        # exp decay ~ y0 + yscale*(1 - t/T1) at short times
+                        # so slope = -yscale/T1, T1 = -(y(0)-0.5)/slope
+                        a, b = pOpt
+                        a_err, b_err = np.sqrt(np.diag(pCov))
+                        if b != 0:
+                            T1 = -(a - 0.5) / b
+                            # Error propagation
+                            T1_err = abs(T1) * np.sqrt(
+                                (a_err / (a - 0.5))**2 + (b_err / b)**2
+                            ) if (a - 0.5) != 0 else 0
+                        else:
+                            T1, T1_err = np.inf, 0
+                        data[f'fit_{state}'] = pOpt
+                        data[f'fit_err_{state}'] = np.sqrt(np.diag(pCov))
+                        print(f"State |{state}> (raw, linear): "
+                              f"T1 = {T1:.4g} +/- {T1_err:.4g} ms, "
+                              f"slope = {b:.4g} +/- {b_err:.4g} /ms")
+                    else:
+                        p0 = [0.5, y[0] - 0.5,
+                              (times_ms[-1] - times_ms[0]) / 5]
+                        bounds = ([0, 0, 0], [1, 1.5, np.inf])
+                        pOpt, pCov = curve_fit(expfunc1, times_ms, y, p0=p0,
+                                               bounds=bounds, maxfev=200000)
+                        T1 = pOpt[2]
+                        T1_err = (np.sqrt(pCov[2, 2])
+                                  if pCov[2, 2] < np.inf else 0)
+                        data[f'fit_{state}'] = pOpt
+                        data[f'fit_err_{state}'] = np.sqrt(np.diag(pCov))
+                        print(f"State |{state}> (raw): "
+                              f"T1 = {T1:.4g} +/- {T1_err:.4g} ms")
                 except Exception as e:
                     print(f"Fit failed for state |{state}> (raw): {e}")
 
@@ -510,20 +543,42 @@ class DualRailT1Experiment(Experiment):
                     try:
                         times_ms = true_times / 1000
                         y_ps = ps_pop_arrays[state]
-                        p0 = [0.5, y_ps[0] - 0.5,
-                              (times_ms[-1] - times_ms[0]) / 3]
-                        bounds = ([0, 0, 0], [1, 1.5, np.inf])
-                        pOpt_ps, pCov_ps = curve_fit(
-                            expfunc1, times_ms, y_ps, p0=p0,
-                            bounds=bounds, maxfev=200000)
-                        T1_ps = pOpt_ps[2]
-                        T1_ps_err = (np.sqrt(pCov_ps[2, 2])
-                                     if pCov_ps[2, 2] < np.inf else 0)
-                        data[f'fit_ps_{state}'] = pOpt_ps
-                        data[f'fit_err_ps_{state}'] = np.sqrt(
-                            np.diag(pCov_ps))
-                        print(f"State |{state}> (post-selected): "
-                              f"T1 = {T1_ps:.4g} +/- {T1_ps_err:.4g} ms")
+                        if fit_type == 'linear':
+                            pOpt_ps, pCov_ps = curve_fit(
+                                lambda x, a, b: a + b * x,
+                                times_ms, y_ps,
+                                p0=[y_ps[0], (y_ps[-1] - y_ps[0]) / (times_ms[-1] - times_ms[0])],
+                                maxfev=200000)
+                            a, b = pOpt_ps
+                            a_err, b_err = np.sqrt(np.diag(pCov_ps))
+                            if b != 0:
+                                T1_ps = -(a - 0.5) / b
+                                T1_ps_err = abs(T1_ps) * np.sqrt(
+                                    (a_err / (a - 0.5))**2 + (b_err / b)**2
+                                ) if (a - 0.5) != 0 else 0
+                            else:
+                                T1_ps, T1_ps_err = np.inf, 0
+                            data[f'fit_ps_{state}'] = pOpt_ps
+                            data[f'fit_err_ps_{state}'] = np.sqrt(
+                                np.diag(pCov_ps))
+                            print(f"State |{state}> (post-selected, linear): "
+                                  f"T1 = {T1_ps:.4g} +/- {T1_ps_err:.4g} ms, "
+                                  f"slope = {b:.4g} +/- {b_err:.4g} /ms")
+                        else:
+                            p0 = [0.5, y_ps[0] - 0.5,
+                                  (times_ms[-1] - times_ms[0]) / 3]
+                            bounds = ([0, 0, 0], [1, 1.5, np.inf])
+                            pOpt_ps, pCov_ps = curve_fit(
+                                expfunc1, times_ms, y_ps, p0=p0,
+                                bounds=bounds, maxfev=200000)
+                            T1_ps = pOpt_ps[2]
+                            T1_ps_err = (np.sqrt(pCov_ps[2, 2])
+                                         if pCov_ps[2, 2] < np.inf else 0)
+                            data[f'fit_ps_{state}'] = pOpt_ps
+                            data[f'fit_err_ps_{state}'] = np.sqrt(
+                                np.diag(pCov_ps))
+                            print(f"State |{state}> (post-selected): "
+                                  f"T1 = {T1_ps:.4g} +/- {T1_ps_err:.4g} ms")
                     except Exception as e:
                         print(f"PS fit failed for state |{state}>: {e}")
 
@@ -631,14 +686,18 @@ class DualRailT1Experiment(Experiment):
                 pops[label] = data[key]
         return pops if pops else None
 
-    def display(self, data=None, fit=True, **kwargs):
+    def display(self, data=None, fit=True, fit_max_time_ms=None, **kwargs):
         """Display dual rail T1 results.
 
         Plot 1: Raw population vs time
-        Plot 2: Raw logical subspace (p_0, p_1)
+        Plot 2: 3-panel logical subspace (survival pop, frac_01, delta frac_01)
         Plot 3 (if JP): Post-selected population
         Plot 4 (if JP): Post-selected logical
         Plot 5 (if JP): JP even fraction
+
+        Args:
+            fit_max_time_ms: If set, restrict fits in Plot 2 to times <= this
+                value (in ms). None means fit all data.
         """
         if data is None:
             data = self.data
@@ -648,7 +707,19 @@ class DualRailT1Experiment(Experiment):
         true_times = data.get('true_times', times)
         n_checks = int(data.get('n_checks', 0))
         jp_overhead = data.get('jp_overhead', 0)
+        fit_type = data.get('fit_type', 'linear')
+        if isinstance(fit_type, (bytes, np.bytes_)):
+            fit_type = fit_type.decode()
         times_ms = true_times / 1000
+
+        def _linear_func(x, a, b):
+            return a + b * x
+
+        def _t1_from_linear(a, b):
+            """Extract T1 from linear fit params (intercept a, slope b)."""
+            if b != 0:
+                return -(a - 0.5) / b
+            return np.inf
 
         if jp_overhead > 0 and n_checks > 0:
             x_label = 'Elapsed time (ms)'
@@ -691,13 +762,32 @@ class DualRailT1Experiment(Experiment):
                         markersize=4)
 
                 if (fit and prepared_state == measured_state
-                        and f'fit_{prepared_state}' in data):
-                    pOpt = data[f'fit_{prepared_state}']
-                    t_fit = np.linspace(times_ms[0], times_ms[-1], 200)
-                    ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
-                            color=self.STATE_COLORS[measured_state],
-                            linewidth=2,
-                            label=f'T1={pOpt[2]:.3g} ms (raw)')
+                        and prepared_state in ['10', '01']):
+                    try:
+                        if fit_max_time_ms is not None:
+                            fm = times_ms <= fit_max_time_ms
+                        else:
+                            fm = np.ones(len(times_ms), dtype=bool)
+                        y_fd = np.array(y)[fm]
+                        t_fd = times_ms[fm]
+                        p0 = [0.5, y_fd[0] - 0.5,
+                              (t_fd[-1] - t_fd[0]) / 5]
+                        bounds = ([0, 0, 0], [1, 1.5, np.inf])
+                        pOpt_raw, pCov_raw = curve_fit(
+                            expfunc1, t_fd, y_fd, p0=p0,
+                            bounds=bounds, maxfev=200000)
+                        T1_val = pOpt_raw[2]
+                        T1_err = (np.sqrt(pCov_raw[2, 2])
+                                  if pCov_raw[2, 2] < np.inf else 0)
+                        t_fit = np.linspace(times_ms[0], times_ms[-1],
+                                            200)
+                        ax.plot(t_fit, expfunc1(t_fit, *pOpt_raw), '--',
+                                color=self.STATE_COLORS[measured_state],
+                                linewidth=2,
+                                label=(f'T1={T1_val:.3g}'
+                                       f' +/- {T1_err:.3g} ms'))
+                    except Exception:
+                        pass
 
             ax.set_xlabel(x_label)
             ax.set_ylabel('Population')
@@ -714,72 +804,154 @@ class DualRailT1Experiment(Experiment):
         plt.tight_layout()
         plt.show()
 
-        # === Plot 2: Raw logical population ===
-        fig_log, axes_log = plt.subplots(nrows, ncols,
-                                          figsize=(8 * ncols, 5 * nrows),
-                                          squeeze=False)
-        axes_log_flat = axes_log.flatten()
+        # === Plot 2: 3-panel logical subspace ===
+        # Panel 1: survival population (exponential fit)
+        # Panel 2: individual frac_01 (linear fit, Gamma rates)
+        # Panel 3: delta frac_01 (linear fit, combined logical T1)
+        active_states = [s for s in state_list if s in ['10', '01']]
 
-        for state_idx, prepared_state in enumerate(state_list):
-            ax = axes_log_flat[state_idx]
+        if active_states:
+            if fit_max_time_ms is not None:
+                fit_mask = times_ms <= fit_max_time_ms
+            else:
+                fit_mask = np.ones(len(times_ms), dtype=bool)
+            t_fd = times_ms[fit_mask]
+            t_fit = np.linspace(times_ms[0], times_ms[-1], 200)
 
-            p_0 = data.get(f'p_0_{prepared_state}')
-            p_1 = data.get(f'p_1_{prepared_state}')
-            if p_0 is None or p_1 is None:
+            fig_log, axes_log = plt.subplots(
+                3, 1, figsize=(8, 10), sharex=True)
+
+            # --- Panel 1: survival population (always exponential) ---
+            for prepared_state in active_states:
                 pops = self._get_pops(data, prepared_state)
                 if pops is None:
                     continue
-                pop_10 = pops.get('10', np.zeros_like(times))
-                pop_01 = pops.get('01', np.zeros_like(times))
-                logical_total = pop_10 + pop_01
-                valid = logical_total > 0
-                p_0 = np.where(valid, pop_01 / logical_total, 0)
-                p_1 = np.where(valid, pop_10 / logical_total, 0)
-
-            ax.plot(times_ms, p_0, 'o', label=r'$p_0$',
-                    color=self.STATE_COLORS['01'], markersize=4)
-            ax.plot(times_ms, p_1, 's', label=r'$p_1$',
-                    color=self.STATE_COLORS['10'], markersize=4)
-
-            fit_text = []
-            for label, y_data, color in [
-                    ('p_0', p_0, self.STATE_COLORS['01']),
-                    ('p_1', p_1, self.STATE_COLORS['10'])]:
-                if fit and len(times_ms) >= 3 and np.max(times_ms) > 0:
+                y = np.array(pops.get(prepared_state, []))
+                if y.size == 0:
+                    continue
+                c = self.STATE_COLORS[prepared_state]
+                axes_log[0].plot(times_ms, y, 'o', color=c,
+                                 markersize=4, alpha=0.7)
+                if fit and len(t_fd) >= 3:
                     try:
-                        p0 = [0.5, y_data[0] - 0.5,
-                              (times_ms[-1] - times_ms[0]) / 5]
-                        bounds = ([0, -2, 0], [1, 2, np.inf])
-                        pOpt, pCov = curve_fit(expfunc1, times_ms, y_data,
-                                               p0=p0, bounds=bounds,
-                                               maxfev=200000)
-                        T = pOpt[2]
-                        T_err = (np.sqrt(pCov[2, 2])
-                                 if pCov[2, 2] < np.inf else 0)
-                        t_fit = np.linspace(times_ms[0], times_ms[-1], 200)
-                        ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
-                                color=color, linewidth=2)
-                        fit_text.append(
-                            r'$T_{%s}=%.3g \pm %.3g$ ms'
-                            % (label, T, T_err))
-                    except Exception:
-                        pass
+                        y_fd = y[fit_mask]
+                        p0 = [0.5, y_fd[0],
+                              (t_fd[-1] - t_fd[0]) / 5]
+                        bounds = ([0., 0.5, 0], [0.8, 1.1, np.inf])
+                        pOpt, pCov = curve_fit(
+                            expfunc1, t_fd, y_fd, p0=p0,
+                            bounds=bounds, maxfev=200000)
+                        T1_val = pOpt[2]
+                        T1_err = (np.sqrt(pCov[2, 2])
+                                  if pCov[2, 2] < np.inf else 0)
+                        axes_log[0].plot(
+                            t_fit, expfunc1(t_fit, *pOpt), '-',
+                            color=c, linewidth=1.8,
+                            label=(rf'$|{prepared_state}\rangle$  '
+                                   rf'$T_1 = {T1_val:.2f}'
+                                   rf' \pm {T1_err:.2f}$ ms'))
+                    except Exception as e:
+                        print(f"Survival fit failed for "
+                              f"|{prepared_state}>: {e}")
+                        axes_log[0].plot(
+                            [], [], '-', color=c,
+                            label=rf'$|{prepared_state}\rangle$')
 
-            title = (r'Raw Logical: $|%s\rangle$ [%s]'
-                     % (prepared_state, stor_pair))
-            if fit_text:
-                title += '\n' + ', '.join(fit_text)
-            ax.set_title(title)
-            ax.set_xlabel(x_label)
-            ax.set_ylabel('Logical Population')
-            ax.legend(fontsize=8)
-            ax.grid(True, alpha=0.3)
-            ax.set_ylim([0, 1.05])
+            axes_log[0].set_ylabel(r'$p_{|1\rangle}$')
+            axes_log[0].legend(loc='upper right', fontsize=8)
+            axes_log[0].grid(True, alpha=0.3)
 
-        for idx in range(n_states, len(axes_log_flat)):
-            axes_log_flat[idx].set_visible(False)
-        plt.tight_layout()
-        plt.show()
+            # --- Panel 2: individual frac_01 (always linear) ---
+            frac_01_by_state = {}
+            for prepared_state in active_states:
+                pops = self._get_pops(data, prepared_state)
+                if pops is None:
+                    continue
+                p10 = np.array(pops.get('10', []))
+                p01 = np.array(pops.get('01', []))
+                if p10.size == 0 or p01.size == 0:
+                    continue
+                logical_total = p10 + p01
+                valid = logical_total > 0
+                frac_01 = np.where(valid, p01 / logical_total, 0)
+                frac_01_by_state[prepared_state] = frac_01
+
+                c = self.STATE_COLORS[prepared_state]
+                axes_log[1].plot(times_ms, frac_01, 'o', color=c,
+                                 markersize=4, alpha=0.7)
+                if fit and len(t_fd) >= 3:
+                    try:
+                        z_fd = frac_01[fit_mask]
+                        coeffs, cov = np.polyfit(
+                            t_fd, z_fd, 1, cov=True)
+                        slope, intercept = coeffs
+                        slope_err = np.sqrt(cov[0, 0])
+                        T1_eff = 1 / abs(slope)
+                        T1_eff_err = slope_err / slope**2
+                        other = '01' if prepared_state == '10' else '10'
+                        axes_log[1].plot(
+                            t_fit, np.polyval(coeffs, t_fit), '-',
+                            color=c, linewidth=1.8,
+                            label=(rf'$1/\Gamma_{{{prepared_state}'
+                                   rf' \to {other}}}$'
+                                   rf' $= {T1_eff:.2f}'
+                                   rf' \pm {T1_eff_err:.2f}$ ms'))
+                    except Exception as e:
+                        print(f"frac_01 fit failed for "
+                              f"|{prepared_state}>: {e}")
+
+            axes_log[1].set_ylabel(r'$p_{|1\rangle}$')
+            axes_log[1].legend(loc='upper right', fontsize=8)
+            axes_log[1].set_ylim([0, 1.01])
+            axes_log[1].axhline(0, color='gray', linestyle=':',
+                                linewidth=0.8)
+            axes_log[1].grid(True, alpha=0.3)
+
+            # --- Panel 3: delta frac_01 (combined logical T1) ---
+            if '10' in frac_01_by_state and '01' in frac_01_by_state:
+                delta_f01 = (frac_01_by_state['01']
+                             - frac_01_by_state['10'])
+                axes_log[2].plot(times_ms, delta_f01, 's',
+                                 color='tab:purple', markersize=5,
+                                 alpha=0.8)
+                if fit and len(t_fd) >= 3:
+                    try:
+                        dz_fd = delta_f01[fit_mask]
+                        coeffs, cov = np.polyfit(
+                            t_fd, dz_fd, 1, cov=True)
+                        slope, intercept = coeffs
+                        slope_err = np.sqrt(cov[0, 0])
+                        T1_log = 1 / abs(slope)
+                        T1_log_err = slope_err / slope**2
+                        axes_log[2].plot(
+                            t_fit, np.polyval(coeffs, t_fit), '-',
+                            color='tab:purple', linewidth=2)
+                        axes_log[2].plot(
+                            [], [], ' ',
+                            label=(rf'$T_1 = {T1_log:.2f}'
+                                   rf' \pm {T1_log_err:.2f}$ ms'))
+                    except Exception as e:
+                        print(f"Delta frac_01 fit failed: {e}")
+            else:
+                axes_log[2].text(
+                    0.5, 0.5,
+                    'Need both |10> and |01> states',
+                    transform=axes_log[2].transAxes,
+                    ha='center', va='center', fontsize=10)
+
+            axes_log[2].set_xlabel(x_label)
+            axes_log[2].set_ylabel(r'$\Delta p_{|1\rangle}$')
+            axes_log[2].legend(loc='upper right', fontsize=8)
+            axes_log[2].set_ylim([0.5, 1.05])
+            axes_log[2].axhline(0, color='gray', linestyle=':',
+                                linewidth=0.8)
+            axes_log[2].grid(True, alpha=0.3)
+
+            fig_log.suptitle(
+                rf'Dual Rail $T_1$ - {stor_pair} (Logical)',
+                fontsize=12, y=1.01)
+            plt.tight_layout()
+            plt.show()
 
         # === Plot 3: Post-selected population ===
         if has_ps:
@@ -813,10 +985,17 @@ class DualRailT1Experiment(Experiment):
                         and f'fit_ps_{prepared_state}' in data):
                     pOpt_ps = data[f'fit_ps_{prepared_state}']
                     t_fit = np.linspace(times_ms[0], times_ms[-1], 200)
-                    ax.plot(t_fit, expfunc1(t_fit, *pOpt_ps), '--',
-                            color=self.STATE_COLORS[prepared_state],
-                            linewidth=2,
-                            label=f'PS T1={pOpt_ps[2]:.3g} ms')
+                    if fit_type == 'linear':
+                        T1_val = _t1_from_linear(*pOpt_ps)
+                        ax.plot(t_fit, _linear_func(t_fit, *pOpt_ps), '--',
+                                color=self.STATE_COLORS[prepared_state],
+                                linewidth=2,
+                                label=f'PS T1={T1_val:.3g} ms (linear)')
+                    else:
+                        ax.plot(t_fit, expfunc1(t_fit, *pOpt_ps), '--',
+                                color=self.STATE_COLORS[prepared_state],
+                                linewidth=2,
+                                label=f'PS T1={pOpt_ps[2]:.3g} ms')
 
                 # Annotations: ps_count / raw_count
                 ps_counts = data.get(f'ps_counts_{prepared_state}')
@@ -888,19 +1067,33 @@ class DualRailT1Experiment(Experiment):
                         if y_ps is None:
                             continue
                         try:
-                            p0 = [0.5, y_ps[0] - 0.5,
-                                  (times_ms[-1] - times_ms[0]) / 3]
-                            bounds = ([0, -2, 0], [1, 2, np.inf])
-                            pOpt, pCov = curve_fit(
-                                expfunc1, times_ms, y_ps, p0=p0,
-                                bounds=bounds, maxfev=200000)
-                            T = pOpt[2]
-                            T_err = (np.sqrt(pCov[2, 2])
-                                     if pCov[2, 2] < np.inf else 0)
                             t_fit = np.linspace(
                                 times_ms[0], times_ms[-1], 200)
-                            ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
-                                    color=color, linewidth=2)
+                            if fit_type == 'linear':
+                                pOpt, pCov = curve_fit(
+                                    _linear_func, times_ms, y_ps,
+                                    p0=[y_ps[0], (y_ps[-1] - y_ps[0]) / (times_ms[-1] - times_ms[0])],
+                                    maxfev=200000)
+                                T = _t1_from_linear(*pOpt)
+                                b_err = np.sqrt(pCov[1, 1])
+                                a_err = np.sqrt(pCov[0, 0])
+                                T_err = abs(T) * np.sqrt(
+                                    (a_err / (pOpt[0] - 0.5))**2 + (b_err / pOpt[1])**2
+                                ) if (pOpt[0] - 0.5) != 0 and pOpt[1] != 0 else 0
+                                ax.plot(t_fit, _linear_func(t_fit, *pOpt),
+                                        '--', color=color, linewidth=2)
+                            else:
+                                p0 = [0.5, y_ps[0] - 0.5,
+                                      (times_ms[-1] - times_ms[0]) / 3]
+                                bounds = ([0, -2, 0], [1, 2, np.inf])
+                                pOpt, pCov = curve_fit(
+                                    expfunc1, times_ms, y_ps, p0=p0,
+                                    bounds=bounds, maxfev=200000)
+                                T = pOpt[2]
+                                T_err = (np.sqrt(pCov[2, 2])
+                                         if pCov[2, 2] < np.inf else 0)
+                                ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
+                                        color=color, linewidth=2)
                             fit_text.append(
                                 r'$T_{%s}=%.3g \pm %.3g$ ms'
                                 % (label, T, T_err))
@@ -969,6 +1162,8 @@ class DualRailT1Experiment(Experiment):
                     save_data[key] = np.array(value, dtype='S')
                 else:
                     save_data[key] = value
+            elif isinstance(value, str):
+                save_data[key] = np.bytes_(value)
             elif value is None:
                 continue
             elif isinstance(value, dict):
