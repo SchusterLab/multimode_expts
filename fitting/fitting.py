@@ -607,7 +607,8 @@ def wigner_purity_calculation(wigner_expt,
                               cutoff = 10,
                               return_rho = False,
                               return_sweep_param = False,
-                              plot_purity = False
+                              plot_purity = False,
+                              num_shots_sample = None
                               ):
     
     import qutip as qt
@@ -622,7 +623,10 @@ def wigner_purity_calculation(wigner_expt,
                                                          plot_purity = plot_purity))
         return return_list
     ideal_state = (qt.coherent(cutoff, 1.0)).unit()
-    wigner_expt.analyze_wigner(cutoff=cutoff, debug=True)
+    if num_shots_sample == None:
+        wigner_expt.analyze_wigner(cutoff=cutoff, debug=True)
+    else:
+        wigner_expt.analyze_wigner_temp(num_shots_sample=num_shots_sample, debug=True)
     wigner_expt.display(rotate=True, initial_state=ideal_state, mode_state_num=cutoff, station=None, save_fig=False)
     plt.clf()
     outer_param_array = wigner_expt.outer_params
