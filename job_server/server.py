@@ -9,7 +9,7 @@ This server provides HTTP endpoints for:
 
 Run with:
     cd /path/to/multimode_expts
-    pixi run python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000
+    pixi run python -m uvicorn job_server.server:app --host 127.0.0.1 --port 8000
 
 Or for development with auto-reload:
     pixi run python -m uvicorn job_server.server:app --reload --port 8000
@@ -536,4 +536,4 @@ if __name__ == "__main__":
 
     print("Starting Multimode Experiment Job Server...")
     print("API docs available at: http://localhost:8000/docs")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
