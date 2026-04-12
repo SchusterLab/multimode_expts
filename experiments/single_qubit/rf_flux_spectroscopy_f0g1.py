@@ -34,7 +34,8 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         self.MM_base_initialize()
 
-        print('flux drive:', self.cfg.expt.flux_drive)
+        if cfg.expt.get("debug", False):
+            print('flux drive:', self.cfg.expt.flux_drive)
         if self.cfg.expt.flux_drive[0] == 'low':
             self.rf_ch = cfg.hw.soc.dacs.flux_low.ch
             self.rf_ch_types = cfg.hw.soc.dacs.flux_low.type
@@ -167,8 +168,9 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         self.sync_all()
         # RF flux modulation
 
-        print(f'Playing flux drive at frequency {self.frequency} MHz with gain {self.rf_gain_test}')
-        print('channel', self.rf_ch[0])
+        if cfg.expt.get("debug", False):
+            print(f'Playing flux drive at frequency {self.frequency} MHz with gain {self.rf_gain_test}')
+            print('channel', self.rf_ch[0])
 
         self.setup_and_pulse(ch=self.rf_ch[0],
                              style="const",
