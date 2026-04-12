@@ -781,7 +781,8 @@ class MM_base:
         for n in range(0, N+1): # works when MiDj freq goes down (chi<0, bare freq+chi*n)
             for chi in chis:
                 freq_chi_shifted = MiDj_freq + (n * chi)
-                print(ch, freq_chi_shifted, MiDj_length, MiDj_gain)
+                # if cfg.expt.get("man_reset_print", True):
+                #     print(ch, freq_chi_shifted, MiDj_length, MiDj_gain)
                 self.set_pulse_registers(
                     ch=ch,
                     freq=self.freq2reg(freq_chi_shifted, gen_ch=ch),
@@ -1624,6 +1625,9 @@ class MM_base:
             pulse_str += [['qubit', 'ge', 'pi', 0]]
         else:
             pulse_str += [['qubit', 'ge', 'hpi', STATE_PHASE[state]]]
+
+        print("Preparing storage mode cardinal state with pulse sequence:")
+        print(pulse_str)
 
         pulse_str += qubit_ef + man_pi + storage_pi
         return pulse_str
