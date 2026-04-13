@@ -517,6 +517,8 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         debug = kwargs.get('debug', False)
         track_peaks = kwargs.get('track_peaks', True)
         guide_window_frac = kwargs.get('guide_window_frac', 0.35)  # fraction of previous spacing
+        release_constraint = kwargs.get('release_constraint', False)
+        
         if debug:
             print(f"[analyze] debug=True, track_peaks={track_peaks}, guide_window_frac={guide_window_frac}")
 
@@ -582,8 +584,11 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                 if i_gain == 0 or last_peak_distance_idx[i_pop] is None:
                     peak_distance = None
                 else:
+                    if release_constraint:
+                        peak_distance = None
+                    else:
                     # be a bit permissive to allow slow drift
-                    peak_distance = max(1, int(np.round(0.8 * last_peak_distance_idx[i_pop])))
+                        peak_distance = max(1, int(np.round(0.8 * last_peak_distance_idx[i_pop])))
 
                 # Find peaks (unguided)
                 peaks, props = find_peaks(
@@ -874,7 +879,8 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                 detuning_g_err = data['detuning_g_err']
                 deltaf_g = omega_vec/2/np.pi - self.cfg.expt.ramsey_freq
                 ax4.plot(alpha_list**2, deltaf_g, 'o', label='Ground State')
-                deltaf_g_th = detuning_g - 2*Kerr * alpha_list**2
+                # deltaf_g_th = detuning_g - 2*Kerr * alpha_list**2
+                deltaf_g_th = detuning_g - Kerr * alpha_list**2
                 ax4.plot(alpha_list**2, deltaf_g_th, '-', label='Ground State Theory')
                 text = f'$K_c$: {Kerr*1e3:.3f} +/- {Kerr_err*1e3:.3f} kHz\n' \
                         f'$\\Delta$: {detuning_g*1e3:.3f} +/- {detuning_g_err*1e3:.3f} kHz'
