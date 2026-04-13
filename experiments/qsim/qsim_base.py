@@ -231,6 +231,8 @@ class QsimBaseProgram(MMAveragerProgram):
             if not self.cfg.expt.perform_wigner:
                 # Move man to qubit for population measurement
                 postpulse_cfg.append(['man', 'M1', 'pi', 0,])
+                if self.cfg.expt.get('map_to_qubit_ge', False):
+                    postpulse_cfg.append(['qubit', 'ef', 'pi', 0,])
 
             pulse_creator = self.get_prepulse_creator(postpulse_cfg)
             self.sync_all()
