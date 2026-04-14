@@ -33,7 +33,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import socket
 
 import numpy as np
@@ -524,6 +524,133 @@ class MultimodeStation:
             if 'floquet_man_stor_file' in sanitized.device.storage:
                 sanitized.device.storage.pop('floquet_man_stor_file')
         return sanitized
+
+    # Default fields that are shared across all operating points
+    DEFAULT_SHARED_FIELDS = [
+        'device.readout',
+        'hw.soc',
+        'aliases',
+        'data_management',
+    ]
+
+    @staticmethod
+    def _get_nested(d, dot_path):
+        """Get a value from a nested dict by dot-separated path. Returns (value, found)."""
+        keys = dot_path.split('.')
+        current = d
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                return None, False
+        return current, True
+
+    @staticmethod
+    def _set_nested(d, dot_path, value):
+        """Set a value in a nested dict by dot-separated path, creating intermediate dicts if needed."""
+        keys = dot_path.split('.')
+        current = d
+        for key in keys[:-1]:
+            if key not in current or not isinstance(current[key], dict):
+                current[key] = {}
+            current = current[key]
+        current[keys[-1]] = value
+
+    def import_shared_params(
+        self,
+        from_config: Optional[str] = None,
+        from_version: Optional[str] = None,
+        fields: Optional[List[str]] = None,
+        dry_run: bool = False,
+    ):
+        """
+        Import shared parameters from another config into the current station.
+
+        Pulls specified fields from a source config and overwrites them in the
+        current hardware_cfg. Useful for syncing shared calibration values
+        (e.g., readout parameters) from another user's config without disturbing
+        operating-point-dependent fields (e.g., manipulate frequencies).
+
+        Args:
+            from_config: Source config filename (e.g., "hardware_config.yml") or None.
+            from_version: Source config version ID (e.g., "CFG-HW-20260414-00032") or None.
+                If both from_config and from_version are None, pulls from the current main version.
+            fields: List of dot-separated field paths to import.
+                Defaults to DEFAULT_SHARED_FIELDS if None.
+            dry_run: If True, only print what would change without applying.
+
+        Returns:
+            Dict of changed fields: {field_path: (old_value, new_value)}
+
+        Example:
+            # Import readout params from main config
+            station.import_shared_params()
+
+            # Import from a specific version
+            station.import_shared_params(from_version="CFG-HW-20260414-00032")
+
+            # Import specific fields
+            station.import_shared_params(fields=['device.readout', 'device.active_reset'])
+
+            # Preview changes without applying
+            station.import_shared_params(dry_run=True)
+        """
+        if fields is None:
+            fields = self.DEFAULT_SHARED_FIELDS
+
+        # Resolve source config
+        config_spec = from_version or from_config
+        db = get_database()
+        config_manager = ConfigVersionManager(self.config_dir)
+
+        with db.session() as session:
+            source_path = self._resolve_config_path(
+                config_spec, ConfigType.HARDWARE_CONFIG, config_manager, session, required=True
+            )
+
+        with source_path.open("r") as f:
+            source_cfg = yaml.safe_load(f)
+
+        print(f"[IMPORT] Source: {source_path.name}")
+
+        # Import each field
+        changes = {}
+        for field_path in fields:
+            new_value, found = self._get_nested(source_cfg, field_path)
+            if not found:
+                print(f"[IMPORT]   {field_path}: not found in source, skipping")
+                continue
+
+            old_value, had_old = self._get_nested(self.hardware_cfg, field_path)
+
+            if had_old and old_value == new_value:
+                print(f"[IMPORT]   {field_path}: unchanged")
+                continue
+
+            changes[field_path] = (old_value if had_old else '<missing>', new_value)
+
+            if dry_run:
+                print(f"[IMPORT]   {field_path}: would update")
+            else:
+                self._set_nested(self.hardware_cfg, field_path, new_value)
+                print(f"[IMPORT]   {field_path}: updated")
+
+            # Print sub-field diffs for dict values
+            if isinstance(new_value, dict) and isinstance(old_value, dict):
+                self.recursive_compare(old_value, new_value, path=field_path)
+            elif old_value != new_value:
+                print(f"            old: {old_value}")
+                print(f"            new: {new_value}")
+
+        if not changes:
+            print("[IMPORT] All fields already up to date.")
+        elif dry_run:
+            print(f"[IMPORT] Dry run: {len(changes)} field(s) would be updated. "
+                  "Re-run without dry_run=True to apply.")
+        else:
+            print(f"[IMPORT] {len(changes)} field(s) updated.")
+
+        return changes
 
     def preview_config_update(self):
         """Compare parent and current config to view updates."""
