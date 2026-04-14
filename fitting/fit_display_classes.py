@@ -787,6 +787,8 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
         x = data['xpts'][0]
         y = data['gain_list']
+        
+        _legend_loc = kwargs.get('legend_loc', 'center')
 
         if not self.cfg.expt.do_g_and_e:
             z = data['g_avgi']
@@ -831,8 +833,14 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
                     [ax[1].plot(time_peak_e[i][j], y_plot_e[i], 'ro', markerfacecolor='white',
                         markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_e[i]))]
                 else:
-                    [ax.plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
-                        markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
+                    for peaks_g, yval_g in zip(time_peak_g, y_plot_g):
+                        for t in peaks_g:
+                            ax.plot(t, yval_g, 'ro',
+                                    markerfacecolor='white',
+                                    markeredgecolor='black', 
+                                    alpha=0.7)
+                    # [ax.plot(time_peak_g[i][j], y_plot_g[i], 'ro', markerfacecolor='white',
+                    #     markeredgecolor='black', alpha=0.7) for j in range(len(time_peak_g[i]))]
             
             fig4, ax4 = plt.subplots(1, 1, figsize=(5, 5))
             if self.cfg.expt.do_g_and_e:
@@ -891,7 +899,7 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
 
             ax4.set_xlabel(f'$|\\alpha|^2$')
             ax4.set_ylabel('frequency [MHz]')
-            ax4.legend(loc='center')
+            ax4.legend(loc=_legend_loc)
 
             if save_fig:
                 filename = title_str.replace(' ', '_').replace(':', '') + '.png'
