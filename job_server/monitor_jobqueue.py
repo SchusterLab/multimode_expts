@@ -39,7 +39,10 @@ while True:
         result = client.get_status(job_id)
         created = result.created_at.strftime('%Y-%m-%d %H:%M:%S') if result.created_at else 'N/A'
         completed = result.completed_at.strftime('%H:%M:%S') if result.completed_at else '...'
-        output += f"{job['user']}\t{job['status']:10s}  {created} -> {completed}  {result.data_file_path}\n"
+        expt_class = result.experiment_class or 'N/A'
+        output += f"{job['user']}\t{job['status']:10s}  {created} -> {completed}  {expt_class}\n"
+        if result.data_file_path:
+            output += f"\t  {result.data_file_path}\n"
 
     if output != prev_output:
         # Move cursor up to overwrite previous output
