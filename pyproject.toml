@@ -22,7 +22,7 @@ channels = ["conda-forge"]
 platforms = ["win-64", "osx-arm64"]
 
 [tool.pixi.activation]
-env = { PYTHONNOUSERSITE = "1" }
+env = { PYTHONNOUSERSITE = "1", PYTHONUTF8 = "1" }
 
 [tool.pixi.dependencies]
 python = "3.12.*"
