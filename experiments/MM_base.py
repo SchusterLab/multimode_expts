@@ -1455,7 +1455,8 @@ class MM_base:
         if not use_qubit_man_reset:
             if man_reset:
                 # self.man_reset(0)
-                self.man_reset()
+                _dump_idx_to_use = self.cfg.expt.get('reset_dump_mode', 2)
+                self.man_reset(dump_mode_idx= _dump_idx_to_use)
 
         # Reset ge level
         # ======================================================
