@@ -398,8 +398,13 @@ class QsimBaseExperiment(Experiment):
         if self.cfg.expt.get('parity_check', False):
             idata_all = np.array(data['idata'])
             qdata_all = np.array(data['qdata'])
-            data['parity_idata'] = idata_all[:, 0::read_num]
-            data['parity_qdata'] = qdata_all[:, 0::read_num]
+            _parity_start_idx= 0  
+            if self.cfg.expt.get('active_reset', False):
+                params = MMAveragerProgram.get_active_reset_params(self.cfg)
+                _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
+            
+            data['parity_idata'] = idata_all[..., _parity_start_idx::read_num]
+            data['parity_qdata'] = qdata_all[..., _parity_start_idx::read_num]
 
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib

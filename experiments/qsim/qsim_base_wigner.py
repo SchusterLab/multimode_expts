@@ -188,8 +188,13 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
         if self.cfg.expt.get('parity_check', False):#must be modified if the active reset is also used; the slicing will not work when active_reset is True; 
                                                     #if active_reset is ON, it should be [number_of_measurements_in_the_active_reset::read_num]
-            data['parity_idata'] = data['idata'][..., 0::read_num]
-            data['parity_qdata'] = data['qdata'][..., 0::read_num]
+            _parity_start_idx= 0  
+            if self.cfg.expt.get('active_reset', False):
+                params = MMAveragerProgram.get_active_reset_params(self.cfg)
+                _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
+            
+            data['parity_idata'] = data['idata'][..., _parity_start_idx::read_num]
+            data['parity_qdata'] = data['qdata'][..., _parity_start_idx::read_num]
 
         if self.cfg.expt.normalize:
             from experiments.single_qubit.normalize import normalize_calib
@@ -275,12 +280,16 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     # For non-pulse_correction: data["idata"] is 4D (outer, inner, alpha, shots)
                     # For pulse_correction: data["idata"] is 5D (outer, inner, alpha, 2, shots)
                     raw = data["idata"][i_outer, i_inner]  # (n_alpha, ..., total_shots)
+                    _parity_start_idx= 0  
+                    if self.cfg.expt.get('active_reset', False):
+                        params = MMAveragerProgram.get_active_reset_params(self.cfg)
+                        _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
                     if raw.ndim == 2:
-                        parity_idata = raw[:, 0::idx_step]
+                        parity_idata = raw[:, _parity_start_idx::idx_step]
                     else:
                         # pulse_correction: (n_alpha, 2, total_shots) — use first acquisition
-                        parity_idata = raw[:, 0, 0::idx_step] #selects the first parity measurement
-                        parity_idata_second = raw[:, 1, 0::idx_step] #selects the second parity measurement
+                        parity_idata = raw[:, 0, _parity_start_idx::idx_step] #selects the first parity measurement
+                        parity_idata_second = raw[:, 1, _parity_start_idx::idx_step] #selects the second parity measurement
                     # parity_idata shape: (n_alpha, n_parity_shots)
                     n_alpha = parity_idata.shape[0]
                     # Apply same reshape as bin_ss_data: (expts, rounds*reps) -> (rounds*reps, expts)
