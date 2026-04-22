@@ -240,6 +240,19 @@ class MM_base:
                     ch=self.qubit_chs[q], nqz=cfg.hw.soc.dacs.qubit.nyquist[q], mixer_freq=mixer_freq)
                 gen_chs.append(self.qubit_chs[q])
 
+        # Declare auxiliary full-type DAC channels so their Nyquist zone is
+        # set explicitly at program load rather than inherited from whatever
+        # state was left on the RFSoC hardware by a previous program (or the
+        # bitstream default). All of these are 'full' type in the hardware
+        # config, so nqz is the only parameter needed.
+        for dac_path in ('manipulate_in', 'storage_in', 'sideband', 'flux_low', 'flux_high'):
+            dac_cfg = cfg.hw.soc.dacs[dac_path]
+            aux_ch = dac_cfg.ch[qTest]
+            aux_nqz = dac_cfg.nyquist[qTest]
+            if aux_ch not in gen_chs:
+                self.declare_gen(ch=aux_ch, nqz=aux_nqz)
+                gen_chs.append(aux_ch)
+
         # -------add gaussian envelopes------
         self.initialize_waveforms()
 
