@@ -12,17 +12,22 @@ T1 on the coupler, driven via the manipulate channel.
 
 Sequence
 --------
-  1. Prepare manipulate mode (default M1) in Fock |1>.
-  2. Play the calibrated coupler pi pulse on the manipulate DAC to drive the
-     coupler g -> e. Supports 'const' (default) and 'gauss' envelopes.
-  3. Wait variable tau (register-stepped).
-  4. Swap manipulate |1> back to qubit |e> (f0-g1 pi + e0-f0 pi).
-  5. Dispersive readout.
+  1. Play the calibrated coupler pi pulse on the manipulate DAC to drive the
+     coupler g -> e. Supports 'const' and 'gauss' envelopes.
+  2. Wait variable tau (register-stepped).
+  3. Coupler-state-selective readout on the qubit:
+       g0-e0 pi  (qubit g -> e)
+       e0-f0 pi  (qubit e -> f)
+       f0-g{man_no} pi  (on-res if coupler in g -> qubit |g>;
+                         detuned by chi if coupler in e -> qubit stays |f>)
+       e0-f0 pi  (remap |f> -> |e> so g/e readout applies)
+  4. Dispersive readout.
 
-The coupler's |e>-population decay shows up as an exponential in the readout
-signal versus tau, from which T1 is fit. Pulse params come from the
-calibrated `device.coupler.pulses.pi_ge` entry in the hardware config (created
-via station.snapshot_hardware_config); cfg.expt overrides win ad-hoc.
+M1 is kept empty throughout so it does not chi-shift the coupler or decay
+during the wait. The coupler's g-e population shows up as an exponential in
+the readout signal versus tau, from which T1 is fit. Pulse params for the
+coupler pi come from `device.coupler.pulses.pi_ge` (via
+station.snapshot_hardware_config); cfg.expt overrides win ad-hoc.
 """
 
 
@@ -42,14 +47,16 @@ class T1CouplerProgram(MMRAveragerProgram):
         qTest = cfg.expt.qubits[0]
         man_no = int(cfg.expt.get('man_mode_no', 1))
 
-        prep_seq = self.prep_man_fock_state(man_no, '1')
-        self.prep_pulse = self.get_prepulse_creator(prep_seq).pulse.tolist()
-
-        swap_seq = [
+        # Coupler-state-selective readout prep: prepare qubit |f>, then play
+        # f0-g{man_no} pi (on-res if coupler |g>, detuned if coupler |e>),
+        # then remap |f> -> |e> for the standard g/e readout.
+        readout_seq = [
+            ['multiphoton', 'g0-e0', 'pi', 0],
+            ['multiphoton', 'e0-f0', 'pi', 0],
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         # Coupler pi pulse params from device.coupler.pulses.pi_ge (calibrated).
         # cfg.expt.{freq, length, sigma, gain, pulse_type} optionally override ad-hoc.
@@ -121,11 +128,7 @@ class T1CouplerProgram(MMRAveragerProgram):
         if cfg.expt.get('prepulse', False):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
 
-        # Step 1: prepare manipulate |1>.
-        self.custom_pulse(cfg, self.prep_pulse, prefix='prep_man_')
-        self.sync_all()
-
-        # Step 2: coupler pi pulse.
+        # Step 1: coupler pi pulse.
         if self.pulse_type == 'gauss':
             self.setup_and_pulse(
                 ch=self.man_ch[qTest],
@@ -147,15 +150,16 @@ class T1CouplerProgram(MMRAveragerProgram):
         else:
             raise ValueError(f"unreachable: pulse_type={self.pulse_type!r}")
 
-        # Step 3: variable wait.
+        # Step 2: variable wait for coupler T1 decay.
         self.sync_all()
         self.sync(self.man_rp, self.r_wait)
         self.sync_all(self.us2cycles(0.05))
 
-        # Step 4: swap manipulate |1> -> qubit |e>.
+        # Step 3: coupler-state-selective readout prep
+        # (g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi).
         self.custom_pulse(cfg, self.swap_pulse, prefix='swap_')
 
-        # Step 5: readout.
+        # Step 4: readout.
         self.sync_all(self.us2cycles(0.05))
         self.measure(
             pulse_ch=self.res_chs[qTest],
@@ -183,8 +187,9 @@ class T1CouplerExperiment(Experiment):
         reps:         averages per wait-time point
         rounds:       sweep repetitions
         qubits:       list, e.g. [0]
-        man_mode_no:  (optional, default 1) manipulate mode index used
-                      for Fock-|1> prep and swap-out
+        man_mode_no:  (optional, default 1) manipulate mode index whose
+                      f0-g{man_no} transition is used for coupler-state
+                      selective readout. M1 stays empty throughout.
         pulse_type:   (optional) pulse envelope. Resolution priority:
                       cfg.expt.pulse_type > pi_ge.type[0] > 'const'.
                       Supported: 'const' (uses length),
