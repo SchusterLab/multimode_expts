@@ -17,14 +17,16 @@ Length (time) Rabi on the coupler, driven via the manipulate channel.
 
 Sequence
 --------
-  1. Prepare manipulate mode (default M1) in Fock |1>.
-  2. Play a pulse on the manipulate DAC at a fixed drive frequency and
+  1. Play a pulse on the manipulate DAC at a fixed drive frequency and
      gain, sweeping the pulse duration (the rabi knob).
-  3. Swap manipulate |1> back to qubit |e> (f0-g1 pi + e0-f0 pi).
-  4. Dispersive readout.
+  2. Coupler-state-selective readout prep on the qubit:
+       g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi.
+     Coupler |g> -> qubit |g>; coupler |e> -> qubit |e>.
+  3. Dispersive readout.
 
 Uses the same Python-level length loop pattern as length_rabi_f0g1_general:
 each point is its own compiled program, driven by `cfg.expt.length_placeholder`.
+M1 is kept empty throughout.
 
 Drive frequency and pulse gain default to cfg.device.coupler.pulses.hpi,
 matching amplitude_rabi_coupler / ramsey_coupler; cfg.expt overrides win.
@@ -50,14 +52,16 @@ class LengthRabiCouplerProgram(MMAveragerProgram):
         _validate_pulse_type(pulse_type)
         self.pulse_type = pulse_type
 
-        prep_seq = self.prep_man_fock_state(man_no, '1')
-        self.prep_pulse = self.get_prepulse_creator(prep_seq).pulse.tolist()
-
-        swap_seq = [
+        # Coupler-state-selective readout prep: prepare qubit |f>, then play
+        # f0-g{man_no} pi (on-res if coupler |g>, detuned if coupler |e>),
+        # then remap |f> -> |e> for the standard g/e readout.
+        readout_seq = [
+            ['multiphoton', 'g0-e0', 'pi', 0],
+            ['multiphoton', 'e0-f0', 'pi', 0],
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         freq_MHz, gain = _resolve_pulse_params(cfg, names=('freq', 'gain'))
         self.drive_gain = gain
@@ -91,9 +95,6 @@ class LengthRabiCouplerProgram(MMAveragerProgram):
 
         if cfg.expt.get('prepulse', False):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
-
-        self.custom_pulse(cfg, self.prep_pulse, prefix='prep_man_')
-        self.sync_all()
 
         # Skip the drive at length=0 (identity point -> baseline readout).
         if self.length_us > 0:
@@ -135,10 +136,12 @@ class LengthRabiCouplerExperiment(Experiment):
     """
     Length (time) Rabi on the coupler, driven via the manipulate channel.
 
-    Prepares |1> in the manipulate mode, plays a pulse on the manipulate
-    DAC at a fixed drive frequency and gain with swept duration, then
-    swaps |1> -> |e> on the qubit for readout. Length is swept in a
-    Python-level loop (one compiled QICK program per length point).
+    Plays a pulse on the manipulate DAC at a fixed drive frequency and gain
+    with swept duration, then does a coupler-state-selective readout prep
+    (g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi) that maps coupler
+    |g> -> qubit |g> and coupler |e> -> qubit |e>. M1 stays empty
+    throughout. Length is swept in a Python-level loop (one compiled QICK
+    program per length point).
 
     Experimental Config:
     expt = dict(
@@ -148,8 +151,9 @@ class LengthRabiCouplerExperiment(Experiment):
         reps:         averages per length point
         rounds:       sweep repetitions
         qubits:       list, e.g. [0]
-        man_mode_no:  (optional, default 1) manipulate mode index used
-                      for Fock-|1> prep and swap-out
+        man_mode_no:  (optional, default 1) manipulate mode index whose
+                      f0-g{man_no} transition is used for coupler-state
+                      selective readout. M1 stays empty throughout.
         pulse_type:   (optional, default 'const') pulse envelope. Supported:
                       'const' (flat pulse of swept duration),
                       'gauss' (sigma = length/4; total length = length).

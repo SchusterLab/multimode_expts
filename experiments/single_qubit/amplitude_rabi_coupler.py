@@ -16,13 +16,15 @@ Amplitude Rabi on the coupler, driven via the manipulate channel.
 
 Sequence
 --------
-  1. Prepare manipulate mode (default M1) in Fock |1>.
-  2. Play a pulse on the manipulate DAC at a fixed drive frequency,
+  1. Play a pulse on the manipulate DAC at a fixed drive frequency,
      sweeping the pulse gain (the rabi knob). Pulse shape defaults to
      'gauss' and is validated up front - any other shape raises.
-  3. Swap manipulate |1> back to qubit |e> (f0-g1 pi + e0-f0 pi).
-  4. Dispersive readout.
+  2. Coupler-state-selective readout prep on the qubit:
+       g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi.
+     Coupler |g> -> qubit |g>; coupler |e> -> qubit |e>.
+  3. Dispersive readout.
 
+M1 is kept empty throughout so it does not chi-shift the coupler drive.
 Drive frequency and pulse sigma default to cfg.device.coupler.pulses.hpi
 (same hardware entry used by ramsey_coupler), so once the Ramsey calibrates
 the drive, the same settings flow into this rabi. cfg.expt.{freq, sigma}
@@ -50,14 +52,16 @@ class AmplitudeRabiCouplerProgram(MMRAveragerProgram):
         _validate_pulse_type(pulse_type)
         self.pulse_type = pulse_type
 
-        prep_seq = self.prep_man_fock_state(man_no, '1')
-        self.prep_pulse = self.get_prepulse_creator(prep_seq).pulse.tolist()
-
-        swap_seq = [
+        # Coupler-state-selective readout prep: prepare qubit |f>, then play
+        # f0-g{man_no} pi (on-res if coupler |g>, detuned if coupler |e>),
+        # then remap |f> -> |e> for the standard g/e readout.
+        readout_seq = [
+            ['multiphoton', 'g0-e0', 'pi', 0],
+            ['multiphoton', 'e0-f0', 'pi', 0],
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         if pulse_type == 'gauss':
             freq_MHz, sigma_us = _resolve_pulse_params(cfg, names=('freq', 'sigma'))
@@ -91,9 +95,6 @@ class AmplitudeRabiCouplerProgram(MMRAveragerProgram):
 
         if cfg.expt.get('prepulse', False):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
-
-        self.custom_pulse(cfg, self.prep_pulse, prefix='prep_man_')
-        self.sync_all()
 
         if self.pulse_type == 'gauss':
             self.set_pulse_registers(
@@ -139,9 +140,11 @@ class AmplitudeRabiCouplerExperiment(Experiment):
     """
     Amplitude Rabi on the coupler, driven via the manipulate channel.
 
-    Prepares |1> in the manipulate mode, plays a pulse on the manipulate
-    DAC at a fixed drive frequency with swept gain, then swaps
-    |1> -> |e> on the qubit for readout.
+    Plays a pulse on the manipulate DAC at a fixed drive frequency with
+    swept gain, then does a coupler-state-selective readout prep
+    (g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi) that maps
+    coupler |g> -> qubit |g> and coupler |e> -> qubit |e>.
+    M1 is kept empty throughout.
 
     Experimental Config:
     expt = dict(
@@ -151,8 +154,9 @@ class AmplitudeRabiCouplerExperiment(Experiment):
         reps:         averages per gain point
         rounds:       sweep repetitions
         qubits:       list, e.g. [0]
-        man_mode_no:  (optional, default 1) manipulate mode index used
-                      for Fock-|1> prep and swap-out
+        man_mode_no:  (optional, default 1) manipulate mode index whose
+                      f0-g{man_no} transition is used for coupler-state
+                      selective readout. M1 stays empty throughout.
         pulse_type:   (optional, default 'gauss') pulse envelope. Supported:
                       'gauss' (uses sigma; length = sigma*4),
                       'const' (uses length).

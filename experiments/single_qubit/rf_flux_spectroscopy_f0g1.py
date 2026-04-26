@@ -42,8 +42,10 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
         elif self.cfg.expt.flux_drive[0] == 'high':
             self.rf_ch = cfg.hw.soc.dacs.flux_high.ch
             self.rf_ch_types = cfg.hw.soc.dacs.flux_high.type
+        elif isinstance(self.cfg.expt.flux_drive[0], int):
+            self.rf_ch = [self.cfg.expt.flux_drive[0]]
         else:
-            raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high'.")
+            raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high' or an integer.")
 
 
         # get register page for qubit_chs
@@ -117,6 +119,8 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
             self.declare_gen(ch=self.rf_ch[0], nqz=cfg.hw.soc.dacs.flux_low.nyquist[0], mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=self.rf_ch[0])
         elif self.cfg.expt.flux_drive[0] == 'high':
             self.declare_gen(ch=self.rf_ch[0], nqz=cfg.hw.soc.dacs.flux_high.nyquist[0], mixer_freq=mixer_freq, mux_freqs=mux_freqs, mux_gains=mux_gains, ro_ch=self.rf_ch[0])
+        elif isinstance(self.cfg.expt.flux_drive[0], int):
+            self.declare_gen(ch=self.rf_ch[0], nqz=1)
         else:
             raise ValueError(f"Invalid flux drive option {self.cfg.expt.flux_drive[0]}. Must be 'low' or 'high'.")
         self.freqreg = self.freq2reg(self.frequency, gen_ch=self.rf_ch[0])
@@ -164,6 +168,8 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         self.sync_all()
         if cfg.expt.prepulse:
+            if cfg.expt.get("debug", False):
+                print('prepulse: ', cfg.expt.pre_sweep_pulse)
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre')
         self.sync_all()
         # RF flux modulation
@@ -183,6 +189,8 @@ class FluxSpectroscopyF0g1Program(MMAveragerProgram):
 
         # post pulse
         if cfg.expt.postpulse:
+            if cfg.expt.get("debug", False):
+                print('postpulse: ', cfg.expt.post_sweep_pulse)
             self.custom_pulse(cfg, cfg.expt.post_sweep_pulse, prefix = 'post')
 
         # align channels and wait 50ns and measure

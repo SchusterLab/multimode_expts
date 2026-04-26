@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 from qick import AveragerProgram, QickProgram, RAveragerProgram
+from qick.helpers import gauss as _qick_gauss
 from slab import AttrDict
 
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
@@ -243,9 +244,12 @@ class MM_base:
         # Declare auxiliary full-type DAC channels so their Nyquist zone is
         # set explicitly at program load rather than inherited from whatever
         # state was left on the RFSoC hardware by a previous program (or the
-        # bitstream default). All of these are 'full' type in the hardware
-        # config, so nqz is the only parameter needed.
-        for dac_path in ('manipulate_in', 'storage_in', 'sideband', 'flux_low', 'flux_high'):
+        # bitstream default). storage_in (ch=6) is intentionally excluded:
+        # its firmware block is actually axis_sg_mux4_v2 (has mixer + mux),
+        # which declare_gen rejects without mixer_freq/mux_freqs. Nothing
+        # active currently drives ch=6; any experiment that does needs to
+        # declare it itself with the proper args.
+        for dac_path in ('manipulate_in', 'sideband', 'flux_low', 'flux_high'):
             dac_cfg = cfg.hw.soc.dacs[dac_path]
             aux_ch = dac_cfg.ch[qTest]
             aux_nqz = dac_cfg.nyquist[qTest]
@@ -586,6 +590,136 @@ class MM_base:
                 self.sync_all(self.us2cycles(0.01))
             else:
                 sync_all_flag=True
+
+    # ------------------------------------------------------------------
+    # Long constant-amplitude pulse helpers (arb rise + const chunks + arb fall)
+    # ------------------------------------------------------------------
+    # Motivation: QICK's flat_top and const pulse lengths are packed into a
+    # 16-bit field (<= 65535 fabric cycles, ~200 us on full-speed gens). For
+    # long constant-amplitude drives we chain multiple back-to-back const
+    # pulses (with identical freq/gain/phase — no envelope dip between them)
+    # sandwiched between arb Gaussian rise and fall envelopes.
+    #
+    # Gain scaling: arb (outsel='product') carries an implicit factor-of-2
+    # versus const (outsel='dds'). To keep the envelope flat across the
+    # rise -> const -> fall transitions we use `gain` for arb and `gain//2`
+    # for const — exactly how QICK's own flat_top internally sets gain2.
+
+    LONG_PULSE_MAX_CHUNK_CYCLES = 65000  # margin below 2**16
+
+    def register_long_pulse(self, ch, freq_MHz, gain, rise_time_us,
+                            name='long_pulse'):
+        """Register the rise/fall arb envelopes for a long continuous pulse.
+
+        Parameters
+        ----------
+        ch : int
+            Generator channel (e.g. ``self.man_ch[qTest]``).
+        freq_MHz : float
+            Carrier frequency in MHz.
+        gain : int
+            DAC gain for the arb rise/fall. The const middle uses ``gain // 2``
+            internally to match QICK's flat_top scaling.
+        rise_time_us : float
+            Per-edge ramp duration in us; internal Gaussian sigma is
+            ``rise_time_us / 2``, so full ramp up = 2 * sigma = rise_time_us.
+        name : str, optional
+            Prefix for the two registered waveforms (``name + '_rise'`` /
+            ``'_fall'``). Must be unique if multiple long pulses coexist.
+
+        Returns
+        -------
+        AttrDict
+            Handle to pass to ``play_long_pulse_*`` helpers. Contains
+            ``ch``, ``freq_reg``, ``gain_arb``, ``gain_const``,
+            ``rise_name``, ``fall_name``, ``rise_time_us``, ``sigma_us``.
+        """
+        sigma_us = rise_time_us / 2.0
+        sigma_cyc = self.us2cycles(sigma_us, gen_ch=ch)
+        assert sigma_cyc >= 1, (
+            f"rise_time too small: sigma={sigma_cyc} fabric cycles "
+            "(need >= 1)")
+
+        samps_per_clk = self.soccfg['gens'][ch]['samps_per_clk']
+        ramp_len_cyc = 4 * sigma_cyc
+        ramp_len_samps = int(ramp_len_cyc * samps_per_clk)
+        sigma_samps = sigma_cyc * samps_per_clk
+        maxv = self.soccfg.get_maxv(ch)
+
+        gauss_samps = _qick_gauss(
+            mu=ramp_len_samps / 2 - 0.5,
+            si=sigma_samps,
+            length=ramp_len_samps,
+            maxv=maxv)
+        half = ramp_len_samps // 2
+        rise_name = f'{name}_rise'
+        fall_name = f'{name}_fall'
+        self.add_pulse(ch=ch, name=rise_name, idata=gauss_samps[:half])
+        self.add_pulse(ch=ch, name=fall_name, idata=gauss_samps[half:])
+
+        return AttrDict({
+            'ch': ch,
+            'freq_reg': self.freq2reg(freq_MHz, gen_ch=ch),
+            'gain_arb': int(gain),
+            'gain_const': int(gain) // 2,
+            'rise_name': rise_name,
+            'fall_name': fall_name,
+            'rise_time_us': float(rise_time_us),
+            'sigma_us': float(sigma_us),
+        })
+
+    def _long_pulse_chunk_cycles(self, handle, total_us):
+        """Split ``total_us`` into back-to-back const chunk lengths (cycles)."""
+        cyc_total = int(self.us2cycles(total_us, gen_ch=handle.ch))
+        if cyc_total <= 0:
+            return []
+        max_chunk = self.LONG_PULSE_MAX_CHUNK_CYCLES
+        n = max(1, int(np.ceil(cyc_total / max_chunk)))
+        base = cyc_total // n
+        remainder = cyc_total - base * n
+        chunks = [base] * (n - 1) + [base + remainder]
+        assert min(chunks) >= 3, (
+            f"per-chunk const length ({min(chunks)} cycles) below "
+            "QICK minimum of 3")
+        assert max(chunks) < 2**16, (
+            f"per-chunk const length ({max(chunks)} cycles) exceeds "
+            "16-bit limit")
+        return chunks
+
+    def play_long_pulse_rise(self, handle):
+        """Play the Gaussian rise (0 -> peak). Duration = 2 * sigma_us."""
+        self.setup_and_pulse(
+            ch=handle.ch, style='arb',
+            freq=handle.freq_reg, phase=0,
+            gain=handle.gain_arb,
+            waveform=handle.rise_name)
+
+    def play_long_pulse_const(self, handle, total_us):
+        """Play chained const pulses totaling (approximately) ``total_us``.
+
+        The const middle keeps full amplitude throughout — same-parameter
+        back-to-back const pulses do not dip between chunks.
+        """
+        for length_cyc in self._long_pulse_chunk_cycles(handle, total_us):
+            self.setup_and_pulse(
+                ch=handle.ch, style='const',
+                freq=handle.freq_reg, phase=0,
+                gain=handle.gain_const,
+                length=int(length_cyc))
+
+    def play_long_pulse_fall(self, handle):
+        """Play the Gaussian fall (peak -> 0). Duration = 2 * sigma_us."""
+        self.setup_and_pulse(
+            ch=handle.ch, style='arb',
+            freq=handle.freq_reg, phase=0,
+            gain=handle.gain_arb,
+            waveform=handle.fall_name)
+
+    def play_long_pulse(self, handle, total_flat_us):
+        """Rise + const(``total_flat_us``) + fall, back-to-back."""
+        self.play_long_pulse_rise(handle)
+        self.play_long_pulse_const(handle, total_flat_us)
+        self.play_long_pulse_fall(handle)
 
     def custom_pulse_with_preloaded_wfm(self, cfg, pulse_data, advance_qubit_phase = None, sync_zero_const = False, prefix='pre',
                                         same_storage = False, same_qubit_pulse = False, storage_no=1):

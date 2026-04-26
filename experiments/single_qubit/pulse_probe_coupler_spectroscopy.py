@@ -14,17 +14,21 @@ Pulse-probe coupler spectroscopy.
 
 Sequence
 --------
-  1. Prepare manipulate mode (default M1) in Fock |1>.
-  2. Play a frequency-swept const probe pulse on the manipulate DAC channel.
-  3. Swap the manipulate |1> back to qubit |e> (f0-g1 pi + e0-f0 pi).
-  4. Dispersive readout.
+  1. Play a frequency-swept const probe pulse on the manipulate DAC channel.
+  2. Coupler-state-selective readout prep on the qubit:
+       g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi.
+     Coupler |g> -> qubit |g>; coupler |e> -> qubit |e>.
+  3. Dispersive readout.
 
-The probe tone is currently emitted through the manipulate DAC as a
-hardware convenience - it is the path already wired up and calibrated.
-The physics target is the coupler (or any feature that couples to the
-populated manipulate mode), not the manipulate transition itself. To
-retarget this to a dedicated coupler drive channel in the future, only
-the `ch=self.man_ch[qTest]` line on the probe pulse needs to change.
+M1 is kept empty throughout so the probe is not chi-shifted by a manipulate
+photon and M1 decay does not contaminate the spectrum.
+
+The probe tone is emitted through the manipulate DAC as a hardware
+convenience - it is the path already wired up and calibrated. The physics
+target is the coupler (or any feature that couples to the coupler), not
+the manipulate transition itself. To retarget this to a dedicated coupler
+drive channel in the future, only the `ch=self.man_ch[qTest]` line on the
+probe pulse needs to change.
 """
 
 
@@ -44,17 +48,17 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
         qTest = cfg.expt.qubits[0]
         man_no = int(cfg.expt.get('man_mode_no', 1))
 
-        # Pre-build the Fock-|1> prep pulse table and the swap-out pulse table.
-        # Both are static across the frequency sweep, so we build them once.
-        prep_seq = self.prep_man_fock_state(man_no, '1')
-        self.prep_pulse = self.get_prepulse_creator(prep_seq).pulse.tolist()
-
-        # Swap manipulate |1> -> qubit |e>: reverse of the last two prep steps.
-        swap_seq = [
+        # Coupler-state-selective readout prep: prepare qubit |f>, then play
+        # f0-g{man_no} pi (on-res if coupler |g>, detuned if coupler |e>),
+        # then remap |f> -> |e> for the standard g/e readout. Static across
+        # the frequency sweep, so built once.
+        readout_seq = [
+            ['multiphoton', 'g0-e0', 'pi', 0],
+            ['multiphoton', 'e0-f0', 'pi', 0],
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         # Optional coupler g->e pi pulse so the probe hits the e-f transition.
         # Mirrors the `qubit_f` flag in pulse_probe_ef_spectroscopy. Params come
@@ -100,10 +104,6 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
         if cfg.expt.get('prepulse', False):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
 
-        # Step 1: prepare manipulate |1>.
-        self.custom_pulse(cfg, self.prep_pulse, prefix='prep_man_')
-        self.sync_all()
-
         # Optional: drive the coupler g->e before the probe so the sweep
         # targets the e-f transition (analog of qubit_f in the qubit EF probe).
         if self.coupler_f:
@@ -117,13 +117,13 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
             )
             self.sync_all()
 
-        # Step 2: probe pulse on manipulate channel, frequency swept via register.
+        # Step 1: probe pulse on manipulate channel, frequency swept via register.
         self.set_pulse_registers(
             ch=self.man_ch[qTest],
             style="const",
             freq=0,
             phase=0,
-            gain=cfg.expt.gain,
+            gain=int(cfg.expt.gain),
             length=self.us2cycles(cfg.expt.length, gen_ch=self.man_ch[qTest]),
         )
         self.mathi(self.q_rp, self.r_freq, self.r_freq2, "+", 0)
@@ -131,9 +131,7 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
         self.sync_all()
 
         # Second coupler g-e pi (symmetric to the pre-probe one). Maps
-        # coupler |e> -> |g> (off-resonance case) and leaves |f> untouched,
-        # so the probe resonance shows up as |g> vs |f> at readout rather
-        # than |e> vs |f> (which would be ambiguous for the ancilla).
+        # coupler |e> -> |g> (off-resonance case) and leaves |f> untouched.
         if self.coupler_f:
             self.setup_and_pulse(
                 ch=self.man_ch[qTest],
@@ -145,10 +143,11 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
             )
             self.sync_all()
 
-        # Step 3: swap manipulate |1> -> qubit |e>.
+        # Step 2: coupler-state-selective readout prep
+        # (g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi).
         self.custom_pulse(cfg, self.swap_pulse, prefix='swap_')
 
-        # Step 4: readout.
+        # Step 3: readout.
         self.sync_all(self.us2cycles(0.05))
         self.measure(
             pulse_ch=self.res_chs[qTest],
@@ -167,8 +166,10 @@ class PulseProbeCouplerSpectroscopyExperiment(Experiment):
     Pulse-probe coupler spectroscopy.
 
     Probes coupler features by driving the manipulate channel at various
-    frequencies while the manipulate mode is populated with a single photon,
-    then reading out via the qubit after swapping |1> -> |e>.
+    frequencies, then reading out the coupler state via the qubit using a
+    coupler-state-selective readout prep (g0-e0 pi + e0-f0 pi +
+    f0-g{man_no} pi + e0-f0 pi). Coupler |g> -> qubit |g>; coupler |e> ->
+    qubit |e>. M1 is kept empty throughout.
 
     Experimental Config:
     expt = dict(
@@ -180,8 +181,9 @@ class PulseProbeCouplerSpectroscopyExperiment(Experiment):
         length:       probe const pulse length [us]
         gain:         probe const pulse gain [DAC units]
         qubits:       list, e.g. [0]
-        man_mode_no:  (optional, default 1) manipulate mode index used
-                      for the Fock-|1> prep and swap-out
+        man_mode_no:  (optional, default 1) manipulate mode index whose
+                      f0-g{man_no} transition is used for coupler-state
+                      selective readout. M1 stays empty throughout.
         prepulse:     (optional) bool, play cfg.expt.pre_sweep_pulse first
         pre_sweep_pulse: (optional) gate-list spec for the custom prepulse
         coupler_f:    (optional, default False) drive the coupler g->e with

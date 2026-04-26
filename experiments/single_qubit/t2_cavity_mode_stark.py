@@ -28,7 +28,6 @@ in the Experiment class to ensure a non-negative flat plateau.
 
 import numpy as np
 from qick import *
-from qick.helpers import gauss as _qick_gauss
 from slab import AttrDict, Experiment
 from tqdm.notebook import tqdm
 
@@ -144,75 +143,23 @@ class CavityModeStarkProgram(MMAveragerProgram):
             self.first_half_pulse = first_pulse
             self.second_half_pulse = second_pulse
 
-        # --- Build the Stark drive: arb rise -> N const chunks -> arb fall ---
-        # QICK's flat-top length is 16-bit-limited (<=65535 fabric cycles),
-        # so for long drives we emit the plateau as a chain of back-to-back
-        # `const` pulses (same freq/gain/phase) with separate arb rise/fall
-        # envelopes so the middle never dips. const uses `outsel='dds'` and
-        # arb uses `outsel='product'`, which carries an implicit factor-of-2
-        # scaling — matched here the same way flat_top does it internally:
-        # arb uses drive_gain, const uses drive_gain // 2.
+        # --- Build the Stark drive via the MM_base long-pulse helpers ---
+        # The drive is played as arb rise -> N back-to-back const chunks ->
+        # arb fall on the manipulate DAC during each wait segment.
         n_wait_segments = 1 + self.num_echoes
         wait_per_seg_us = cfg.expt.wait_time / n_wait_segments
         rise_total_us = 2 * cfg.expt.rise_time  # = 4 * sigma_us, full ramps
-        flat_us = wait_per_seg_us - rise_total_us
-        assert flat_us >= 0, (
+        self.stark_flat_us = wait_per_seg_us - rise_total_us
+        assert self.stark_flat_us >= 0, (
             f"wait_time per segment ({wait_per_seg_us} us) must be >= "
             f"2*rise_time ({rise_total_us} us)")
-        sigma_us = cfg.expt.rise_time / 2.0
 
-        self.stark_ch = self.man_ch[qTest]
-        self.stark_gain_arb = int(cfg.expt.drive_gain)
-        self.stark_gain_const = int(cfg.expt.drive_gain) // 2
-        self.stark_freq_reg = self.freq2reg(
-            cfg.expt.drive_freq, gen_ch=self.stark_ch)
-
-        # Build rise and fall waveforms: slice a symmetric 4*sigma Gaussian
-        # (built in DAC samples) at the midpoint. First half rises 0 -> peak,
-        # second half falls peak -> 0.
-        sigma_cyc = self.us2cycles(sigma_us, gen_ch=self.stark_ch)
-        assert sigma_cyc >= 1, (
-            f"rise_time too small: sigma = {sigma_cyc} fabric cycles "
-            "(need >= 1 cycle)")
-        samps_per_clk = self.soccfg['gens'][self.stark_ch]['samps_per_clk']
-        ramp_len_cyc = 4 * sigma_cyc  # total symmetric-Gaussian length
-        ramp_len_samps = int(ramp_len_cyc * samps_per_clk)
-        sigma_samps = sigma_cyc * samps_per_clk
-        maxv = self.soccfg.get_maxv(self.stark_ch)
-        gauss_samps = _qick_gauss(
-            mu=ramp_len_samps / 2 - 0.5,
-            si=sigma_samps,
-            length=ramp_len_samps,
-            maxv=maxv)
-        half = ramp_len_samps // 2
-        self.add_pulse(
-            ch=self.stark_ch, name='stark_rise',
-            idata=gauss_samps[:half])
-        self.add_pulse(
-            ch=self.stark_ch, name='stark_fall',
-            idata=gauss_samps[half:])
-
-        # Chunk the const middle so every chunk fits the 16-bit length field.
-        MAX_CONST_CYCLES = 65000  # margin below 2**16
-        flat_cyc_total = int(self.us2cycles(
-            flat_us, gen_ch=self.stark_ch))
-        if flat_cyc_total <= 0:
-            self.stark_chunk_cycles = []
-        else:
-            n_chunks = max(
-                1, int(np.ceil(flat_cyc_total / MAX_CONST_CYCLES)))
-            base = flat_cyc_total // n_chunks
-            remainder = flat_cyc_total - base * n_chunks
-            # Put the (small) remainder on the last chunk so total cycles
-            # match flat_cyc_total exactly.
-            self.stark_chunk_cycles = [base] * (n_chunks - 1) + [
-                base + remainder]
-            assert min(self.stark_chunk_cycles) >= 3, (
-                f"per-chunk const length ({min(self.stark_chunk_cycles)} "
-                "cycles) below QICK minimum of 3")
-            assert max(self.stark_chunk_cycles) < 2**16, (
-                f"per-chunk const length ({max(self.stark_chunk_cycles)} "
-                "cycles) exceeds 16-bit limit")
+        self.stark_handle = self.register_long_pulse(
+            ch=self.man_ch[qTest],
+            freq_MHz=cfg.expt.drive_freq,
+            gain=cfg.expt.drive_gain,
+            rise_time_us=cfg.expt.rise_time,
+            name='stark_drive')
 
         # --- Parity measurement pulse ---
         man_mode_no = cfg.expt.get('man_mode_no', 1)
@@ -249,13 +196,13 @@ class CavityModeStarkProgram(MMAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         # Stark drive — segment 1 (replaces the first sync-wait)
-        self._play_stark_drive()
+        self.play_long_pulse(self.stark_handle, self.stark_flat_us)
 
         # Echo pulses, each followed by another stark drive segment
         if self.num_echoes > 0:
             for i in range(self.num_echoes):
                 self.custom_pulse(cfg, self.echo_pulse, prefix=f'echo_{i}_')
-                self._play_stark_drive()
+                self.play_long_pulse(self.stark_handle, self.stark_flat_us)
 
         # Second Ramsey half-pulse (phase = ramsey_phase)
         self.custom_pulse(cfg, self.second_half_pulse,
@@ -278,30 +225,6 @@ class CavityModeStarkProgram(MMAveragerProgram):
                 cfg, self.parity_meas_pulse, prefix='parity_')
 
         self.measure_wrapper()
-
-    def _play_stark_drive(self):
-        """arb rise -> N const chunks -> arb fall; continuous at `drive_gain`.
-
-        Uses drive_gain for arb (outsel='product') and drive_gain//2 for const
-        (outsel='dds') to match the internal QICK amplitude scaling at both
-        boundaries, matching how flat_top sets its own gain2=gain//2 flat.
-        """
-        # Rise
-        self.setup_and_pulse(
-            ch=self.stark_ch, style='arb',
-            freq=self.stark_freq_reg, phase=0,
-            gain=self.stark_gain_arb, waveform='stark_rise')
-        # Const middle (N back-to-back, no dip between them)
-        for length_cyc in self.stark_chunk_cycles:
-            self.setup_and_pulse(
-                ch=self.stark_ch, style='const',
-                freq=self.stark_freq_reg, phase=0,
-                gain=self.stark_gain_const, length=int(length_cyc))
-        # Fall
-        self.setup_and_pulse(
-            ch=self.stark_ch, style='arb',
-            freq=self.stark_freq_reg, phase=0,
-            gain=self.stark_gain_arb, waveform='stark_fall')
 
 
 class CavityModeStarkExperiment(Experiment):

@@ -155,26 +155,32 @@ class MMDataset:
             self.update_value(args[0], column, args[i])
         self.update_last_update(args[0])
 
-    def append_dataset(self, *args, add_timestamp=True):
+    def append_dataset(self, row_name, **kwargs):
         """
-        Append a new row to the DataFrame with the provided values.
+        Append a new row to the DataFrame. Only the row name is required;
+        all other columns can be passed as keyword arguments and default to NaN.
+
         Args:
-            *args: A tuple containing the values to append in the order of the columns.
-                   The first value should be the row_name, followed by values for each column, excluding the time stamp which will be added automatically.
+            row_name (str): The name for the new row (value for the indexing column).
+            **kwargs: Column name/value pairs for any columns you want to set.
         """
-        if len(args) != len(self.df.columns):
+        if (self.df[self.indexing_row_name] == row_name).any():
             raise ValueError(
-                f"Number of arguments must match the columns in the DataFrame: {self.df.columns.tolist()}"
+                f"Row '{row_name}' already exists. Use update_value() to modify it."
             )
-        new_row = dict()
-        for i, column in enumerate(self.df.columns):
-            if (
-                i == len(self.df.columns.tolist()) - 1 and add_timestamp
-            ):  # last column is timestamp
-                new_row[column] = datetime.now()
-            else:
-                new_row[column] = args[i]
-        self.df = self.df.append(new_row, ignore_index=True)
+        new_row = {col: np.nan for col in self.df.columns}
+        new_row[self.indexing_row_name] = row_name
+        if self.add_timestamp:
+            new_row['last_update'] = datetime.now()
+        for key, value in kwargs.items():
+            if key not in self.df.columns:
+                raise ValueError(
+                    f"Unknown column '{key}'. Valid columns: {self.df.columns.tolist()}"
+                )
+            new_row[key] = value
+        self.df = pd.concat(
+            [self.df, pd.DataFrame([new_row])], ignore_index=True
+        )
 
     # check whether the data is up-to-date
     def is_up_to_date(self, row_name, max_time_diff=7200):

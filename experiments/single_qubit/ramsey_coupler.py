@@ -11,18 +11,18 @@ Ramsey on the coupler, driven via the manipulate channel.
 
 Sequence
 --------
-  1. Prepare manipulate mode (default M1) in Fock |1>.
-  2. First pi/2 gaussian pulse on the manipulate DAC at the coupler drive freq.
-  3. Variable wait tau (with register-stepped phase advance).
-  4. Second pi/2 gaussian pulse on the manipulate DAC with phase = 360 * ramsey_freq * tau.
-  5. Swap manipulate |1> back to qubit |e> (f0-g1 pi + e0-f0 pi).
-  6. Dispersive readout.
+  1. First pi/2 pulse on the manipulate DAC at the coupler drive freq.
+  2. Variable wait tau (with register-stepped phase advance).
+  3. Second pi/2 pulse on the manipulate DAC with phase = 360 * ramsey_freq * tau.
+  4. Coupler-state-selective readout prep on the qubit:
+       g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi.
+     Coupler |g> -> qubit |g>; coupler |e> -> qubit |e>.
+  5. Dispersive readout.
 
-Like pulse_probe_coupler_spectroscopy, the Ramsey tones ride the manipulate
-DAC because that is the path already wired and calibrated. The pi/2 pulse
-parameters (freq, sigma, gain) default to cfg.device.coupler.pulses.hpi
-- added to the versioned hardware config via station.snapshot_hardware_config -
-and can be overridden ad-hoc from cfg.expt during bringup.
+M1 is kept empty throughout so it does not chi-shift the coupler or decay
+during the wait. The pi/2 pulse parameters (freq, sigma/length, gain) default
+to cfg.device.coupler.pulses.hpi (added to the versioned hardware config via
+station.snapshot_hardware_config); cfg.expt overrides win ad-hoc.
 """
 
 
@@ -85,14 +85,16 @@ class RamseyCouplerProgram(MMRAveragerProgram):
         qTest = cfg.expt.qubits[0]
         man_no = int(cfg.expt.get('man_mode_no', 1))
 
-        prep_seq = self.prep_man_fock_state(man_no, '1')
-        self.prep_pulse = self.get_prepulse_creator(prep_seq).pulse.tolist()
-
-        swap_seq = [
+        # Coupler-state-selective readout prep: prepare qubit |f>, then play
+        # f0-g{man_no} pi (on-res if coupler |g>, detuned if coupler |e>),
+        # then remap |f> -> |e> for the standard g/e readout.
+        readout_seq = [
+            ['multiphoton', 'g0-e0', 'pi', 0],
+            ['multiphoton', 'e0-f0', 'pi', 0],
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(swap_seq).pulse.tolist()
+        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         pulse_type = cfg.expt.get('pulse_type', 'const')
         _validate_pulse_type(pulse_type)
@@ -138,9 +140,6 @@ class RamseyCouplerProgram(MMRAveragerProgram):
 
         if cfg.expt.get('prepulse', False):
             self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_')
-
-        self.custom_pulse(cfg, self.prep_pulse, prefix='prep_man_')
-        self.sync_all()
 
         if self.pulse_type == 'gauss':
             self.setup_and_pulse(
@@ -223,9 +222,11 @@ class RamseyCouplerExperiment(Experiment):
     """
     Ramsey on the coupler, driven via the manipulate channel.
 
-    Prepares |1> in the manipulate mode, plays a two-pi/2-pulse Ramsey
-    sequence on the manipulate DAC at a fixed drive frequency, sweeps the
-    wait time tau, then swaps |1> -> |e> on the qubit for readout.
+    Plays a two-pi/2-pulse Ramsey sequence on the manipulate DAC at a fixed
+    drive frequency, sweeps the wait time tau, then does a coupler-state-
+    selective readout prep (g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0
+    pi) that maps coupler |g> -> qubit |g> and coupler |e> -> qubit |e>.
+    M1 is kept empty throughout.
 
     Experimental Config:
     expt = dict(
@@ -236,8 +237,9 @@ class RamseyCouplerExperiment(Experiment):
         reps:         averages per wait-time point
         rounds:       sweep repetitions
         qubits:       list, e.g. [0]
-        man_mode_no:  (optional, default 1) manipulate mode index used
-                      for Fock-|1> prep and swap-out
+        man_mode_no:  (optional, default 1) manipulate mode index whose
+                      f0-g{man_no} transition is used for coupler-state
+                      selective readout. M1 stays empty throughout.
         pulse_type:   (optional, default 'const') pulse envelope. Supported:
                       'gauss' (uses sigma; length = sigma*4),
                       'const' (uses length).
