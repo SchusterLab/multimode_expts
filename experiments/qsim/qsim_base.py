@@ -143,7 +143,7 @@ class QsimBaseProgram(MMAveragerProgram):
         if self.cfg.expt.get("parity_check", False):
             self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
             qTest = self.cfg.expt.qubits[0]
-            self.sync_all(10)
+            self.sync_all()
             self.measure(
                 pulse_ch=self.res_chs[qTest],
                 adcs=[self.adc_chs[qTest]],
@@ -428,7 +428,7 @@ class QsimBaseExperiment(Experiment):
         if data is None:
             data=self.data
 
-        title = self.fname.split(os.path.sep)[-1]
+        title = self.fname.split(os.path.sep)[-1] if isinstance(self.fname, str) else self.fname.name
 
         if 'ypts' in data.keys(): # guess if this is 2D or 1D
             fig, axs = plt.subplots(2, 1, figsize=(10, 9))
