@@ -1,12 +1,6 @@
 import json
 import os
 
-import matplotlib.pyplot as plt
-import numpy as np
-from lmfit import Model
-from scipy.ndimage import gaussian_filter1d
-from slab import AttrDict
-
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.MM_base import MMAveragerProgram
 from experiments.MM_dual_rail_base import MM_dual_rail_base
@@ -16,9 +10,12 @@ cooling
 """
 
 class CoolingSpectroscopyProgram(QsimBaseProgram):
+    DRIVE_CHANNEL = 3 # bad hard coded :( change me to a cfg value
+
     def initialize(self):
         super().initialize()
-        self.declare_gen(ch=4, nqz=2) # bad hard coded :(
+        # self.declare_gen(ch=self.DRIVE_CHANNEL, nqz=2, mixer_freq=7000, mux_freqs=[0]) # bad hard coded :(
+        self.declare_gen(ch=self.DRIVE_CHANNEL, nqz=2) # bad hard coded :(
 
     def core_pulses(self):
         qTest = 0
@@ -28,7 +25,7 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
             [ecfg.cooling_gain],
             [ecfg.cooling_length],
             [0],
-            [4], # bad hard coded :( change me to a cfg value
+            [self.DRIVE_CHANNEL],
             ['flat_top'],
             [self.cfg.device.storage.ramp_sigma],
         ]
@@ -36,4 +33,5 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
         # [[frequency], [gain], [length (us)], [phases],
         # [drive channel], [shape], [ramp sigma]]
 
+        self.sync_all(self.us2cycles(1))
 
