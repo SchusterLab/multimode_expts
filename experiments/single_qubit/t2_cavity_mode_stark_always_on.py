@@ -76,6 +76,28 @@ class CavityModeStarkAlwaysOnProgram(MMAveragerProgram):
         self.mode = mode
         self.num_echoes = cfg.expt.get('echoes', 0)
 
+        # Handle f0g1_freq override (e.g., for per-current calibration).
+        # The override must be active for *every* compilation that touches the
+        # f0-g1 sideband (auto prep, ramsey half-pulse, echo, post), so we
+        # install it once at the top of initialize() and restore in a
+        # try/finally that wraps the rest of the method.
+        f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+        self._f0g1_freq_override = f0g1_freq_override
+        _f0g1_saved = None
+        if f0g1_freq_override is not None and mode == 'manipulate':
+            print(f"f0g1_freq_override: {f0g1_freq_override}")
+            mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+            _f0g1_saved = mp_entry['frequency'][0]
+            mp_entry['frequency'][0] = float(f0g1_freq_override)
+
+        try:
+            self._initialize_body(cfg, qTest, mode)
+        finally:
+            if _f0g1_saved is not None:
+                cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] = (
+                    _f0g1_saved)
+
+    def _initialize_body(self, cfg, qTest, mode):
         # --- Build state prep, Ramsey pulse, and determine channels ---
         # (Identical to CavityModeStarkProgram; reproduced here.)
         if mode == 'storage':

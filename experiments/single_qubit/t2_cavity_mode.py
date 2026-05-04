@@ -50,6 +50,7 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             gen_ch=None,
             label=f"step/(1+echoes={self.num_echoes})",
         )
+        print('Config expt:', cfg.expt)
 
         # --- Build state prep, Ramsey pulse, and determine channels ---
         if mode == 'storage':
@@ -79,7 +80,23 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             ramsey_str = [full_prep[-1]]
             self.auto_post_str = self.auto_prep_str[::-1]
 
-            self.creator = self.get_prepulse_creator(ramsey_str)
+            # Handle f0g1_freq override (e.g., for per-current calibration).
+            # NB: this override must be active for *all* compilations that
+            # touch the f0-g1 sideband, including the echo pulse below.
+            f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+            print(f"f0g1_freq_override: {f0g1_freq_override}")
+            self._f0g1_freq_override = f0g1_freq_override
+            if f0g1_freq_override is not None:
+                mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+                _saved_f0g1 = mp_entry['frequency'][0]
+                mp_entry['frequency'][0] = float(f0g1_freq_override)
+                try:
+                    self.creator = self.get_prepulse_creator(ramsey_str)
+                finally:
+                    mp_entry['frequency'][0] = _saved_f0g1
+            else:
+                self.creator = self.get_prepulse_creator(ramsey_str)
+            print(f"Ramsey pulse: {self.creator.pulse}")
             self.phase_update_channel = self.f0g1_ch
 
         elif mode == 'coupler':
@@ -130,10 +147,26 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             if mode == 'coupler':
                 raise ValueError(
                     f"Echoes not supported for mode '{mode}'")
-            # full_prep is defined for 'storage' and 'manipulate' above
+            # full_prep is defined for 'storage' and 'manipulate' above.
+            # The echo string contains the f0-g1 sideband (twice for
+            # 'manipulate'), so we must apply the same f0g1_freq override
+            # that was used for the Ramsey pulse — otherwise the echo pi
+            # is off-resonant at any current away from the nominal
+            # calibration point.
             echo_str = full_prep[::-1] + full_prep
-            self.echo_pulse = self.get_prepulse_creator(
-                echo_str).pulse.tolist()
+            f0g1_freq_override = getattr(self, '_f0g1_freq_override', None)
+            if mode == 'manipulate' and f0g1_freq_override is not None:
+                mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+                _saved_f0g1 = mp_entry['frequency'][0]
+                mp_entry['frequency'][0] = float(f0g1_freq_override)
+                try:
+                    self.echo_pulse = self.get_prepulse_creator(
+                        echo_str).pulse.tolist()
+                finally:
+                    mp_entry['frequency'][0] = _saved_f0g1
+            else:
+                self.echo_pulse = self.get_prepulse_creator(
+                    echo_str).pulse.tolist()
 
         # --- Sweep registers ---
         self.r_wait = 3

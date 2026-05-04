@@ -96,7 +96,17 @@ class RamseyCouplerProgram(MMRAveragerProgram):
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+        f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+        if f0g1_freq_override is not None:
+            mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+            _saved_f0g1 = mp_entry['frequency'][0]
+            mp_entry['frequency'][0] = float(f0g1_freq_override)
+            try:
+                self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+            finally:
+                mp_entry['frequency'][0] = _saved_f0g1
+        else:
+            self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         pulse_type = cfg.expt.get('pulse_type', 'const')
         _validate_pulse_type(pulse_type)
@@ -252,6 +262,10 @@ class RamseyCouplerExperiment(Experiment):
         length:       (optional, pulse_type='const') override
                       cfg.device.coupler.pulses.hpi.length[0] [us]
         gain:         (optional) override cfg.device.coupler.pulses.hpi.gain[0]   [DAC]
+        f0g1_freq:    (optional) override cfg.device.multiphoton['pi']['fn-gn+1'].frequency[0]
+                      [MHz] for the readout swap pulse only. Used when characterizing the
+                      coupler at a flux current where the calibrated f0g1 readout pulse
+                      differs from the cfg-default value.
         advance_phase:   (optional, default 0) extra phase on pi/2 #2 [deg]
         prepulse:        (optional) bool, play cfg.expt.pre_sweep_pulse first
         pre_sweep_pulse: (optional) gate-list spec for the custom prepulse

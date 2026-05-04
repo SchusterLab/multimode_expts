@@ -58,7 +58,17 @@ class T1CouplerProgram(MMRAveragerProgram):
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+        f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+        if f0g1_freq_override is not None:
+            mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+            _saved_f0g1 = mp_entry['frequency'][0]
+            mp_entry['frequency'][0] = float(f0g1_freq_override)
+            try:
+                self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+            finally:
+                mp_entry['frequency'][0] = _saved_f0g1
+        else:
+            self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         # Coupler pi pulse params from device.coupler.pulses.pi_ge (calibrated).
         # cfg.expt.{freq, length, sigma, gain, pulse_type} optionally override ad-hoc.
@@ -203,6 +213,10 @@ class T1CouplerExperiment(Experiment):
         sigma:        (optional, pulse_type='gauss') override
                       cfg.device.coupler.pulses.pi_ge.sigma[0]  [us]
         gain:         (optional) override cfg.device.coupler.pulses.pi_ge.gain[0]   [DAC]
+        f0g1_freq:    (optional) override cfg.device.multiphoton['pi']['fn-gn+1'].frequency[0]
+                      [MHz] for the readout swap pulse only. Used when characterizing the
+                      coupler at a flux current where the calibrated f0g1 readout pulse
+                      differs from the cfg-default value.
         prepulse:        (optional) bool, play cfg.expt.pre_sweep_pulse first
         pre_sweep_pulse: (optional) gate-list spec for the custom prepulse
         active_reset:    (optional) bool, run active reset at start of body
