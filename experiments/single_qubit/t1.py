@@ -8,6 +8,7 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
+from experiments.MM_base import warn_step_subcycle
 
 class T1Program(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -23,7 +24,9 @@ class T1Program(RAveragerProgram):
     def initialize(self):
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
-        
+        warn_step_subcycle(self.soccfg, cfg.expt.step,
+                           gen_ch=None, label="t1 step")
+
         self.adc_ch = cfg.hw.soc.adcs.readout.ch
         self.res_ch = cfg.hw.soc.dacs.readout.ch
         self.res_ch_type = cfg.hw.soc.dacs.readout.type

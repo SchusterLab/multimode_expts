@@ -22,7 +22,7 @@ import numpy as np
 from qick import *
 from slab import AttrDict, Experiment
 
-from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import RamseyFitting
 
 
@@ -42,6 +42,14 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         mode = cfg.expt.mode  # 'storage', 'manipulate', or 'coupler'
         self.mode = mode
         self.num_echoes = cfg.expt.get('echoes', 0)
+        # update() quantizes step / (1 + num_echoes); warn against the
+        # effective per-segment step (no gen_ch — matches the call site).
+        warn_step_subcycle(
+            self.soccfg,
+            cfg.expt.step / (1 + self.num_echoes),
+            gen_ch=None,
+            label=f"step/(1+echoes={self.num_echoes})",
+        )
 
         # --- Build state prep, Ramsey pulse, and determine channels ---
         if mode == 'storage':

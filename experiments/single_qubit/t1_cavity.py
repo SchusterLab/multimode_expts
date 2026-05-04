@@ -8,6 +8,7 @@ from slab import Experiment, AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
+from experiments.MM_base import warn_step_subcycle
 
 class T1CavityProgram(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -24,6 +25,8 @@ class T1CavityProgram(RAveragerProgram):
         print('This experiment is very broken and needs an update')
         cfg = AttrDict(self.cfg)
         self.cfg.update(cfg.expt)
+        warn_step_subcycle(self.soccfg, cfg.expt.step,
+                           gen_ch=None, label="t1 step")
 
         self.adc_ch = cfg.hw.soc.adcs.readout.ch
         self.res_ch = cfg.hw.soc.dacs.readout.ch
@@ -65,10 +68,11 @@ class T1CavityProgram(RAveragerProgram):
             self.f0g1_sigma = self.us2cycles(cfg.expt.f0g1_param[3], gen_ch=self.f0g1_ch)
         else:
             print("Using multiphoton pi-gain and f0g1 parameters")
-            self.pif0g1_gain = cfg.device.multiphoton.pi['fn-gn+1'].gain[0]
-            self.f0g1 = self.freq2reg(cfg.device.multiphoton.pi['fn-gn+1'].freq[0], gen_ch=self.f0g1_ch)
-            self.f0g1_length = self.us2cycles(cfg.device.multiphoton.pi['fn-gn+1'].length[0], gen_ch=self.f0g1_ch)
-            self.f0g1_sigma = self.us2cycles(cfg.device.multiphoton.pi['fn-gn+1'].sigma[0], gen_ch=self.f0g1_ch)
+            pulse_param = cfg.device.multiphoton.pi['fn-gn+1']
+            self.pif0g1_gain = pulse_param['gain'][0]
+            self.f0g1 = self.freq2reg(pulse_param['frequency'][0], gen_ch=self.f0g1_ch)
+            self.f0g1_length = self.us2cycles(pulse_param['length'][0], gen_ch=self.f0g1_ch)
+            self.f0g1_sigma = self.us2cycles(pulse_param['sigma'][0], gen_ch=self.f0g1_ch)
 
         if cfg.expt.cavity > 0:
             ii = 0

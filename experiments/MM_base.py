@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import List, Optional, Union
 import yaml
 from pathlib import Path
@@ -21,6 +22,33 @@ def print_debug():
     print(inspect.getfile(QickProgram))
     print(inspect.getfile(AveragerProgram))
     print(inspect.getfile(RAveragerProgram))
+
+
+def warn_step_subcycle(soccfg, step_us, gen_ch=None, label="step"):
+    # Warn when a Ramsey/T1-style sweep step is below the fabric-clock period.
+    # us2cycles rounds to 0 in that regime, so the wait register stops
+    # advancing while host-side phase keeps progressing — produces an
+    # undamped Ramsey or flat T1 sweep with the displayed x-axis miscalibrated
+    # against the real wait time. See memory/hardware_qick_fabric_clock.md.
+    if step_us is None or step_us == 0:
+        return
+    try:
+        T_cyc_us = soccfg.cycles2us(1, gen_ch=gen_ch) if gen_ch is not None \
+            else soccfg.cycles2us(1)
+    except Exception:
+        return
+    if abs(step_us) < T_cyc_us:
+        ch_label = f"gen_ch={gen_ch}" if gen_ch is not None \
+            else "default tProc fabric"
+        warnings.warn(
+            f"[clock-quantization] {label}={step_us*1e3:.4f} ns is smaller "
+            f"than the {ch_label} fabric cycle ({T_cyc_us*1e3:.4f} ns). "
+            f"us2cycles will round to 0; the wait register will not advance "
+            f"between sweep points — expect undamped/aliased artifacts and "
+            f"miscalibrated x-axis. Snap step to an integer multiple of "
+            f"{T_cyc_us*1e3:.4f} ns.",
+            RuntimeWarning, stacklevel=2,
+        )
 
 
 class MM_base:

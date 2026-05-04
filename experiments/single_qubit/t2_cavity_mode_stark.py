@@ -31,7 +31,7 @@ from qick import *
 from slab import AttrDict, Experiment
 from tqdm.notebook import tqdm
 
-from experiments.MM_base import MM_base, MMAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import RamseyFitting
 
 
@@ -299,6 +299,14 @@ class CavityModeStarkExperiment(Experiment):
 
         # Guard: flat plateau per segment must be non-negative
         n_wait_segments = 1 + self.cfg.expt.get('echoes', 0)
+        # Each program quantizes wait_per_seg via sync_all(us2cycles(...));
+        # warn against the per-segment step using the default tProc fabric.
+        warn_step_subcycle(
+            self.soccfg,
+            self.cfg.expt.step / n_wait_segments,
+            gen_ch=None,
+            label=f"step/(1+echoes={self.cfg.expt.get('echoes', 0)})",
+        )
         min_wait = 2 * self.cfg.expt.rise_time * n_wait_segments
         if np.min(xpts) < min_wait:
             raise AssertionError(

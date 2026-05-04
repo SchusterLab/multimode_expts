@@ -30,7 +30,7 @@ from qick import *
 from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
 
-from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting, RamseyFitting
 
 # Channel name → (channel attribute, channel type attribute)
@@ -56,6 +56,9 @@ class CavityDisplacementRamseyProgram(MMRAveragerProgram):
         self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         qTest = self.qubits[0]
+        # update() calls us2cycles(step) without gen_ch — match here.
+        warn_step_subcycle(self.soccfg, cfg.expt.step,
+                           gen_ch=None, label="ramsey step")
 
         # --- Resolve displacement channel from name ---
         channel_name = cfg.expt.channel

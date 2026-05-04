@@ -6,7 +6,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 
 from fitting.fit_utils import guess_sinusoidal_params
 from fitting.fit_display_classes import RamseyFitting
@@ -30,6 +30,8 @@ class RamseyProgram(MMRAveragerProgram):
 
         # self.num_qubits_sample = len(self.cfg.device.qubit.f_ge_idle)
         qTest = self.qubits[0]
+        warn_step_subcycle(self.soccfg, cfg.expt.step,
+                           gen_ch=self.qubit_chs[qTest], label="ramsey step")
 
         # declare registers for phase incrementing
         self.r_wait = 3

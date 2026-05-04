@@ -212,6 +212,12 @@ class DualRailRamseyProgram(MMRAveragerProgram):
         # Universal formula: all cases use distributed equal waits
         n_wait_segments = self.n_active_checks + 1 + self.num_echoes
         self.n_wait_segments = n_wait_segments
+        warn_step_subcycle(
+            self.soccfg,
+            cfg.expt.step / n_wait_segments,
+            gen_ch=None,
+            label=f"step/n_wait_segments={n_wait_segments}",
+        )
         self.safe_regwi(self.flux_rp, self.r_wait,
                         self.us2cycles(cfg.expt.start / n_wait_segments))
 

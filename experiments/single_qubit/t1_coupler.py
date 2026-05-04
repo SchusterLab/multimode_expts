@@ -4,7 +4,7 @@ from qick import *
 from slab import Experiment, AttrDict
 
 import fitting.fitting as fitter
-from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram
+from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 from experiments.single_qubit.ramsey_coupler import _validate_pulse_type
 
 """
@@ -45,6 +45,8 @@ class T1CouplerProgram(MMRAveragerProgram):
         self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         qTest = cfg.expt.qubits[0]
+        warn_step_subcycle(self.soccfg, cfg.expt.step,
+                           gen_ch=self.man_ch[qTest], label="t1 step")
         man_no = int(cfg.expt.get('man_mode_no', 1))
 
         # Coupler-state-selective readout prep: prepare qubit |f>, then play
