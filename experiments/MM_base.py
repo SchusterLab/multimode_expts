@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 from qick import AveragerProgram, QickProgram, RAveragerProgram
+from qick.averager_program import NDAveragerProgram
 from qick.helpers import gauss as _qick_gauss
 from slab import AttrDict
 
@@ -2251,6 +2252,35 @@ class MMRAveragerProgram(RAveragerProgram, MM_base):
         """
         return super().acquire(soc=soc, threshold=threshold,load_pulses=load_pulses,
                                progress=progress, readouts_per_experiment=readouts_per_experiment)
+
+
+class MMNDAveragerProgram(NDAveragerProgram, MM_base):
+    """
+    MM_base mixin on top of qick.NDAveragerProgram. Use this when one or more
+    inner sweep axes are register sweeps registered via add_sweep(); the
+    initialize() of a child class is the right place to call MM_base_initialize()
+    and self.add_sweep(QickSweep(...)).
+    """
+    def __init__(self, soccfg, cfg):
+        NDAveragerProgram.__init__(self, soccfg, cfg)
+
+    def acquire(self, soc, threshold=None, angle=None, load_pulses=True,
+                readouts_per_experiment=None, save_experiments=None,
+                start_src="internal", progress=False, remove_offset=True):
+        """
+        Acquire data from the device. Returns (expt_pts, avg_di, avg_dq)
+        like the underlying NDAveragerProgram.
+
+        note the soc object is proxy soc not QickConfig soc
+        """
+        return super().acquire(
+            soc=soc, threshold=threshold, angle=angle,
+            load_pulses=load_pulses,
+            readouts_per_experiment=readouts_per_experiment,
+            save_experiments=save_experiments,
+            start_src=start_src, progress=progress,
+            remove_offset=remove_offset,
+        )
 
 
 # prepulse_creator2(self.cfg, self.cfg.device.storage.storage_man_file, multiphoton_cfg)
