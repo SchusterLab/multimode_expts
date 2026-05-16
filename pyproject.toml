@@ -51,6 +51,7 @@ pytest = ">=9.0.2,<10"
 nbdime = ">=4.0.4,<5"
 jupyterlab-git = ">=0.51.4,<0.52"
 jupyter-lsp = ">=2.3.0,<3"
+ipympl = ">=0.10.0,<0.11"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
