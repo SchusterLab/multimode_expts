@@ -5,6 +5,7 @@ analysis_notebooks/bosonic/outcmaes/
 analysis_notebooks/bosonic/*.png
 plots/
 .tmp/
+*.pkl
 
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
