@@ -141,6 +141,51 @@ class CouplerRabiFreqsweepProgram(MMNDAveragerProgram):
         self.measure_wrapper()
 
 
+def _display_freqsweep(data, *, title, xlabel, ylabel):
+    """Plot avgi/avgq. If either axis has a single point, fall back to a
+    1D line plot vs the other axis; otherwise do the 2D pcolormesh."""
+    xpts = np.asarray(data['xpts'])
+    ypts = np.asarray(data['ypts'])
+    avgi = np.asarray(data['avgi'])
+    avgq = np.asarray(data['avgq'])
+
+    if ypts.size == 1:
+        fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+        axs[0].set_title(f'{title} ({ylabel} = {ypts.item():g})')
+        axs[0].plot(xpts, avgi.reshape(-1), '.-')
+        axs[0].set_ylabel('I [ADC level]')
+        axs[1].plot(xpts, avgq.reshape(-1), '.-')
+        axs[1].set_ylabel('Q [ADC level]')
+        axs[1].set_xlabel(xlabel)
+        plt.tight_layout()
+        plt.show()
+        return
+
+    if xpts.size == 1:
+        fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+        axs[0].set_title(f'{title} ({xlabel} = {xpts.item():g})')
+        axs[0].plot(ypts, avgi.reshape(-1), '.-')
+        axs[0].set_ylabel('I [ADC level]')
+        axs[1].plot(ypts, avgq.reshape(-1), '.-')
+        axs[1].set_ylabel('Q [ADC level]')
+        axs[1].set_xlabel(ylabel)
+        plt.tight_layout()
+        plt.show()
+        return
+
+    fig, axs = plt.subplots(2, 1, figsize=(10, 9))
+    axs[0].set_title(title)
+    mesh = axs[0].pcolormesh(xpts, ypts, avgi, shading='auto')
+    fig.colorbar(mesh, ax=axs[0], label='I [ADC level]')
+    mesh = axs[1].pcolormesh(xpts, ypts, avgq, shading='auto')
+    fig.colorbar(mesh, ax=axs[1], label='Q [ADC level]')
+    for ax in axs:
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+    plt.tight_layout()
+    plt.show()
+
+
 def _broadcast_device_cfg(cfg):
     """Broadcast scalar device entries into per-qubit lists (mirrors the
     boilerplate at the top of LengthRabiCouplerExperiment.acquire)."""
@@ -238,19 +283,12 @@ class AmplitudeRabiCouplerFreqsweepExperiment(Experiment):
     def display(self, data=None, **kwargs):
         if data is None:
             data = self.data
-        fig, axs = plt.subplots(2, 1, figsize=(10, 9))
-        axs[0].set_title('Coupler amplitude/freq chevron')
-        mesh = axs[0].pcolormesh(data['xpts'], data['ypts'], data['avgi'],
-                                 shading='auto')
-        fig.colorbar(mesh, ax=axs[0], label='I [ADC level]')
-        mesh = axs[1].pcolormesh(data['xpts'], data['ypts'], data['avgq'],
-                                 shading='auto')
-        fig.colorbar(mesh, ax=axs[1], label='Q [ADC level]')
-        for ax in axs:
-            ax.set_xlabel('Drive freq [MHz]')
-            ax.set_ylabel('Gain [DAC]')
-        plt.tight_layout()
-        plt.show()
+        _display_freqsweep(
+            data,
+            title='Coupler amplitude/freq chevron',
+            xlabel='Drive freq [MHz]',
+            ylabel='Gain [DAC]',
+        )
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
@@ -321,19 +359,12 @@ class LengthRabiCouplerFreqsweepExperiment(Experiment):
     def display(self, data=None, **kwargs):
         if data is None:
             data = self.data
-        fig, axs = plt.subplots(2, 1, figsize=(10, 9))
-        axs[0].set_title('Coupler length/freq chevron')
-        mesh = axs[0].pcolormesh(data['xpts'], data['ypts'], data['avgi'],
-                                 shading='auto')
-        fig.colorbar(mesh, ax=axs[0], label='I [ADC level]')
-        mesh = axs[1].pcolormesh(data['xpts'], data['ypts'], data['avgq'],
-                                 shading='auto')
-        fig.colorbar(mesh, ax=axs[1], label='Q [ADC level]')
-        for ax in axs:
-            ax.set_xlabel('Drive freq [MHz]')
-            ax.set_ylabel('Flat length [us]')
-        plt.tight_layout()
-        plt.show()
+        _display_freqsweep(
+            data,
+            title='Coupler length/freq chevron',
+            xlabel='Drive freq [MHz]',
+            ylabel='Flat length [us]',
+        )
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
