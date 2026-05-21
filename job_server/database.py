@@ -14,10 +14,26 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator, Optional
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 
 from .models import Base
+
+
+def _enable_sqlite_concurrency(dbapi_connection, connection_record):
+    """Set WAL + busy_timeout on every new SQLite connection.
+
+    WAL lets readers and one writer proceed without blocking each other;
+    busy_timeout makes SQLite itself retry on lock for up to 10s before
+    raising OperationalError. Together these eliminate the "database is
+    locked" errors that hit when the server, worker output flush, and
+    closed-loop service all touch jobs.db concurrently.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=10000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 # Default database path (relative to this file's location)
 DEFAULT_DB_PATH = Path(__file__).parent / "jobs.db"
@@ -53,6 +69,7 @@ class Database:
             connect_args={"check_same_thread": False},  # Allow multi-thread access
             echo=False,  # Set to True for SQL debugging
         )
+        event.listen(self.engine, "connect", _enable_sqlite_concurrency)
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
