@@ -17,12 +17,18 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
 
     def initialize(self):
         super().initialize()
-        self.declare_gen(ch=self.FLUX_CHANNEL, nqz=2) # 2.5GHz < fs/2
+        self.declare_gen(ch=self.FLUX_CHANNEL, nqz=1) # 2.5GHz < fs/2
         self.declare_gen(ch=self.CHARGE_CHANNEL, nqz=2)
         # self.declare_gen(ch=self.DRIVE_CHANNEL, nqz=2) # bad hard coded :(
         # self.declare_gen(ch=self.FLUX_CHANNEL, nqz=2, mixer_freq=7000, mux_freqs=[0])
+
+        ramp_sigma = self.cfg.expt.get('ramp_sigma', 0.005)
+        flux_ramp_sigma = self.us2cycles(ramp_sigma, gen_ch=self.FLUX_CHANNEL)
+        charge_ramp_sigma = self.us2cycles(ramp_sigma, gen_ch=self.CHARGE_CHANNEL)
         self.add_gauss(ch=self.CHARGE_CHANNEL, name="cooling_charge",
-                       sigma=self.pi_m1_sigma_low, length=self.pi_m1_sigma_low*6)
+                       sigma=charge_ramp_sigma, length=charge_ramp_sigma*6)
+        self.add_gauss(ch=self.FLUX_CHANNEL, name="cooling_flux",
+                       sigma=flux_ramp_sigma, length=flux_ramp_sigma*6)
 
     def core_pulses(self):
         qTest = 0
@@ -46,7 +52,7 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
             freq=self.freq2reg(ecfg.cooling_freq, gen_ch=self.FLUX_CHANNEL),
             phase=0, gain=ecfg.cooling_gain,
             length=self.us2cycles(ecfg.cooling_length, gen_ch=self.FLUX_CHANNEL),
-            waveform="pi_m1si_low",
+            waveform="cooling_flux",
         )
 
         self.set_pulse_registers(
