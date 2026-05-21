@@ -92,8 +92,14 @@ class IDGenerator:
         """
         Get the next counter value for a prefix, creating if necessary.
 
-        This method is thread-safe and uses database transactions
-        to ensure uniqueness even with concurrent access.
+        Commits the counter row inside the threading lock so the new value
+        is visible to other sessions before the lock is released. Without
+        the commit, WAL-mode SQLite lets a concurrent caller read the
+        pre-increment snapshot, compute the same counter value, and
+        collide on the jobs.job_id UNIQUE constraint at INSERT time.
+
+        Callers must invoke this before staging any other changes on
+        ``session`` — the commit here will flush whatever else is pending.
 
         Args:
             session: SQLAlchemy session
@@ -103,20 +109,17 @@ class IDGenerator:
             Next counter value (1-indexed)
         """
         with cls._lock:
-            # Try to find existing counter
             counter_row = session.query(IDCounter).filter_by(prefix=prefix).first()
 
             if counter_row is None:
-                # Create new counter starting at 1
                 counter_row = IDCounter(prefix=prefix, counter=1)
                 session.add(counter_row)
-                session.flush()  # Ensure it's written
-                return 1
             else:
-                # Increment existing counter
                 counter_row.counter += 1
-                session.flush()
-                return counter_row.counter
+
+            new_val = counter_row.counter
+            session.commit()
+            return new_val
 
     @classmethod
     def _get_type_abbreviation(cls, config_type: ConfigType) -> str:
