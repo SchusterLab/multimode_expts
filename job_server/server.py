@@ -232,7 +232,11 @@ async def submit_job(submission: JobSubmission, session: Session = Depends(get_d
     )
 
     session.add(job)
-    session.flush()
+    session.commit()
+    # Commit before returning: get_db's post-yield commit runs AFTER the
+    # response is sent (FastAPI puts it on the outer request_stack), and
+    # with WAL the polling reader can take a snapshot before that commit
+    # lands, producing a 404 on the immediate GET /jobs/{job_id}.
 
     # Calculate queue position
     queue_position = (
