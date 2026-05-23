@@ -235,12 +235,70 @@ class CharacterizationRunner:
 
         return json.dumps(station_data)
 
+    def _maybe_log_measurement(self, experiment, log: Optional[bool], render_display: bool):
+        """Log the experiment to the lab-notebook vault if enabled.
+
+        log=True forces logging. log=False forces skip. log=None (default)
+        defers to `station.log_measurements` — a per-session opt-in toggle
+        which itself defaults to False, so the vault stays silent for users
+        who haven't opted in. log_measurement is itself a no-op if vault_root
+        is not configured. If render_display=True, calls experiment.display()
+        in this process to produce a fig (queue path).
+        """
+        if log is False:
+            return
+        if log is None and not getattr(self.station, "log_measurements", False):
+            return
+        try:
+            returned = None
+            captured_fig = None
+            if render_display:
+                try:
+                    import inspect
+                    import matplotlib.pyplot as plt
+                    # Snapshot existing figures so we only consider those newly
+                    # created by display() (avoids grabbing a stale fig from
+                    # an earlier cell when display() itself raises).
+                    fignums_before = set(plt.get_fignums())
+                    # Patch plt.show to a no-op so the new fig stays in
+                    # plt.get_fignums() after display() runs (Jupyter's inline
+                    # backend removes figs from tracking when show() is called).
+                    _orig_show = plt.show
+                    plt.show = lambda *a, **k: None
+                    try:
+                        # Some experiments' display() requires station=
+                        # (e.g. HistogramExperiment for the Histogram fitter).
+                        sig = inspect.signature(experiment.display)
+                        if "station" in sig.parameters:
+                            returned = experiment.display(station=self.station)
+                        else:
+                            returned = experiment.display()
+                    finally:
+                        plt.show = _orig_show
+                    new_fignums = sorted(set(plt.get_fignums()) - fignums_before)
+                    if new_fignums:
+                        captured_fig = [plt.figure(n) for n in new_fignums]
+                    # Now actually render so the cell still shows the plot.
+                    plt.show()
+                except Exception as exc:
+                    print(f"[runner] experiment.display() failed during logging: {exc}")
+            # Prefer display()'s return only if it's a single Figure; otherwise
+            # fall back to the list of new figs we captured (multi-panel case).
+            if returned is not None and hasattr(returned, "savefig"):
+                fig = returned
+            else:
+                fig = captured_fig
+            self.station.log_measurement(experiment, fig=fig)
+        except Exception as exc:
+            print(f"[runner] log_measurement failed: {exc}")
+
     def run(
         self,
         postprocess: bool = True,
         priority: int = 0,
         poll_interval: float = 2.0,
         timeout: Optional[float] = None,
+        log: Optional[bool] = None,
         **kwargs
     ) -> Experiment:
         """
@@ -337,10 +395,18 @@ class CharacterizationRunner:
         if postprocess:
             self.postprocessor(self.station, expt)
 
+        # Log to lab-notebook vault (no-op if vault_root unset or log=False)
+        # Queue path: render display() in this process to produce a fig.
+        self._maybe_log_measurement(expt, log=log, render_display=True)
+
         return expt
 
     def run_local(
-        self, postprocess: bool = True, go_kwargs: Optional[dict] = None, **kwargs
+        self,
+        postprocess: bool = True,
+        go_kwargs: Optional[dict] = None,
+        log: Optional[bool] = None,
+        **kwargs,
     ) -> Experiment:
         """
         Run the experiment locally, bypassing the job queue.
@@ -396,6 +462,11 @@ class CharacterizationRunner:
         # Run postprocessor
         if postprocess:
             self.postprocessor(self.station, expt)
+
+        # Log to lab-notebook vault (no-op if vault_root unset or log=False).
+        # Local path: go(display=True) already drew the fig, so just capture it.
+        render = not bool(go_defaults.get("display", True))
+        self._maybe_log_measurement(expt, log=log, render_display=render)
 
         return expt
 
