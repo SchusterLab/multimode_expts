@@ -10,7 +10,7 @@ REM Wait a moment for nameserver to initialize
 timeout /t 2 /nobreak >nul
 
 REM Start FastAPI server
-start "" "C:\Program Files\Git\git-bash.exe" -c "cd '%~dp0' && pixi run python -m uvicorn job_server.server:app --host 0.0.0.0 --port 8000; read -p 'Press Enter to close...'"
+start "" "C:\Program Files\Git\git-bash.exe" -c "cd '%~dp0' && pixi run python -m uvicorn job_server.server:app --host 127.0.0.1 --port 8000; read -p 'Press Enter to close...'"
 
 echo.
 echo ============================================================
