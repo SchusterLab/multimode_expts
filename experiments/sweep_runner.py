@@ -332,6 +332,17 @@ class SweepRunner:
             timeout: Maximum seconds to wait per job (None = wait forever)
             batch: If True, submit all sweep jobs at once then wait for results.
                    If False (default), submit and wait for each job sequentially.
+            sweep_vals: Optional explicit array-like of sweep points; overrides
+                       np.linspace(sweep_start, sweep_stop, sweep_npts). Useful
+                       for non-uniform sweeps (e.g. log-spaced CPMG N values
+                       [1, 2, 4, 8, 16]). sweep_start/stop/npts are still
+                       recorded in mother_expt.cfg.expt.sweep for metadata.
+            per_point_cfg: Optional callable f(sweep_val, current_cfg) -> dict
+                           returning a patch dict that is merged into the
+                           per-point cfg AFTER sweep_param is set. Useful when
+                           one cfg field (e.g. ramsey_freq) needs different
+                           values for different sweep points (e.g. N=0 Ramsey
+                           vs N>=1 CPMG). Patch dict keys overwrite cfg keys.
             **kwargs: Passed to preprocessor
 
         Returns:
@@ -360,8 +371,11 @@ class SweepRunner:
             program_module = self.program.__module__
             program_class = self.program.__name__
 
-        # Generate sweep values
-        sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
+        # Generate sweep values (explicit list overrides linspace)
+        if sweep_vals is not None:
+            sweep_vals = np.asarray(sweep_vals)
+        else:
+            sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
 
         # Preprocess config
         base_expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
@@ -384,6 +398,12 @@ class SweepRunner:
             )
         mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
         mother_expt.cfg.expt = base_expt_cfg
+        mother_expt.cfg.expt['sweep'] = {
+            'param': self.sweep_param,
+            'start': float(sweep_start),
+            'stop': float(sweep_stop),
+            'npts': int(sweep_npts),
+        }
 
         # Initialize data structure
         sweep_key = f'{self.sweep_param}_sweep'
@@ -417,6 +437,9 @@ class SweepRunner:
             for idx, sweep_val in enumerate(sweep_vals):
                 expt_config = deepcopy(base_expt_cfg)
                 expt_config[self.sweep_param] = sweep_val
+                if per_point_cfg is not None:
+                    patch = per_point_cfg(sweep_val, expt_config) or {}
+                    expt_config.update(patch)
                 expt_config_dict = convert_numpy(dict(expt_config))
 
                 job_id = self.job_client.submit_job(
@@ -486,6 +509,9 @@ class SweepRunner:
 
                 expt_config = deepcopy(base_expt_cfg)
                 expt_config[self.sweep_param] = sweep_val
+                if per_point_cfg is not None:
+                    patch = per_point_cfg(sweep_val, expt_config) or {}
+                    expt_config.update(patch)
                 expt_config_dict = convert_numpy(dict(expt_config))
 
                 job_id = self.job_client.submit_job(
@@ -556,6 +582,9 @@ class SweepRunner:
         postprocess: bool = True,
         go_kwargs: Optional[dict] = None,
         incremental_save: bool = True,
+        log: Optional[bool] = None,
+        sweep_vals: Optional[Any] = None,
+        per_point_cfg: Optional[Callable] = None,
         **kwargs
     ):
         """
@@ -571,6 +600,9 @@ class SweepRunner:
             postprocess: Whether to run postprocessor after sweep
             go_kwargs: Dict passed to expt.go() (analyze, display, progress, save)
             incremental_save: If True, save after each point (safer but slower)
+            sweep_vals: Optional explicit array-like of sweep points; overrides
+                       np.linspace(sweep_start, sweep_stop, sweep_npts). Useful
+                       for non-uniform sweeps (e.g. log-spaced CPMG N values).
             **kwargs: Passed to preprocessor
 
         Returns:
@@ -580,8 +612,11 @@ class SweepRunner:
         """
         go_kwargs = go_kwargs or {}
 
-        # Generate sweep values (include endpoint)
-        sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
+        # Generate sweep values (explicit list overrides linspace)
+        if sweep_vals is not None:
+            sweep_vals = np.asarray(sweep_vals)
+        else:
+            sweep_vals = np.linspace(sweep_start, sweep_stop, sweep_npts)
 
         # Preprocess config
         expt_cfg = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
@@ -603,6 +638,13 @@ class SweepRunner:
                 config_file=self.station.hardware_config_file,
             )
         mother_expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
+        mother_expt.cfg.expt = expt_cfg
+        mother_expt.cfg.expt['sweep'] = {
+            'param': self.sweep_param,
+            'start': float(sweep_start),
+            'stop': float(sweep_stop),
+            'npts': int(sweep_npts),
+        }
 
         # Pass dataset objects via expt.cfg since Program classes cannot access station
         mother_expt.cfg.device.storage._ds_storage = self.station.ds_storage
@@ -645,6 +687,9 @@ class SweepRunner:
 
             expt.cfg.expt = AttrDict(deepcopy(expt_cfg))
             expt.cfg.expt[self.sweep_param] = sweep_val
+            if per_point_cfg is not None:
+                patch = per_point_cfg(sweep_val, expt.cfg.expt) or {}
+                expt.cfg.expt.update(patch)
 
             if hasattr(expt.cfg.expt, 'relax_delay'):
                 expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
