@@ -8,13 +8,13 @@ This module provides the MultimodeStation class which manages:
 - Storage-manipulate swap dataset
 
 Supports both real hardware and mock modes:
-- Real hardware: Connects to actual instruments (production on BF5)
+- Real hardware: Connects to actual instruments (production on Pippin)
 - Mock mode: Uses simulated hardware for testing/development
 
 Usage:
     from experiments.station import MultimodeStation
 
-    # Auto-detect mode based on machine (mock on dev, real on BF5)
+    # Auto-detect mode based on machine (mock on dev, real on Pippin)
     station = MultimodeStation(experiment_name="241215_calibration")
 
     # Force mock mode for testing
@@ -48,22 +48,22 @@ from slab.datamanagement import SlabFile
 from job_server.database import get_database
 from job_server.config_versioning import ConfigVersionManager, ConfigType
 
-BF5_HOSTNAME = 'DESKTOP-GONKTN3'
+PIPPIN_HOSTNAME = 'pippin-meas'
 
 def detect_mock_mode() -> bool:
     """
     Auto-detect mock mode based on machine identity.
 
     Returns:
-        True for mock mode (dev machine), False for real hardware (BF5 production)
+        True for mock mode (dev machine), False for real hardware (Pippin production)
 
     Detection logic:
-        - 'DESKTOP-GONKTN3' is the production host name on BF5
+        - 'pippin-meas' is the host name on the new Pippin meas PC (Lenovo Legion T7)
         - If host name matches, use real hardware
         - Otherwise, default to mock mode for safety
     """
     hostname = socket.gethostname()
-    return hostname != BF5_HOSTNAME
+    return hostname != PIPPIN_HOSTNAME
 
 # YAML representers for numpy types
 def _np_float_representer(dumper, data):
@@ -335,7 +335,7 @@ class MultimodeStation:
         from slab.instruments import InstrumentManager
         from slab.instruments.voltsource import YokogawaGS200
 
-        self.im = InstrumentManager(ns_address="192.168.137.25")
+        self.im = InstrumentManager(ns_address="192.168.137.26")
         self.soc = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
