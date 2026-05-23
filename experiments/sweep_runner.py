@@ -238,6 +238,68 @@ class SweepRunner:
         except Exception as e:
             print(f"    Live plot: {e}")
 
+    def _maybe_log_measurement(self, mother_expt, log: Optional[bool], render_display: bool):
+        """Log the sweep summary to the lab-notebook vault if enabled.
+
+        log=True forces logging. log=False forces skip. log=None (default)
+        defers to `station.log_measurements` — a per-session opt-in toggle
+        which itself defaults to False, so the vault stays silent for users
+        who haven't opted in. log_measurement is itself a no-op if vault_root
+        is not configured. If render_display=True, calls mother_expt.display()
+        in this process to produce a fig (queue path).
+        """
+        if log is False:
+            return
+        if log is None and not getattr(self.station, "log_measurements", False):
+            return
+        try:
+            returned = None
+            captured_fig = None
+            if render_display:
+                try:
+                    import inspect
+                    import matplotlib.pyplot as plt
+                    # Queued path skips analyze(), but display() relies on the
+                    # fitting attributes analyze() creates (e.g. _chevron_analysis
+                    # for 2D sweeps). Run it here so display() takes the right
+                    # branch. Failures are non-fatal — the postprocessor may have
+                    # already populated what's needed, or display may have a
+                    # working fallback.
+                    try:
+                        a_sig = inspect.signature(mother_expt.analyze)
+                        if "station" in a_sig.parameters:
+                            mother_expt.analyze(station=self.station)
+                        else:
+                            mother_expt.analyze()
+                    except Exception as a_exc:
+                        print(f"[sweep] mother_expt.analyze() failed during logging: {a_exc}")
+                    fignums_before = set(plt.get_fignums())
+                    _orig_show = plt.show
+                    plt.show = lambda *a, **k: None
+                    try:
+                        sig = inspect.signature(mother_expt.display)
+                        if "station" in sig.parameters:
+                            returned = mother_expt.display(station=self.station)
+                        else:
+                            returned = mother_expt.display()
+                    finally:
+                        plt.show = _orig_show
+                    new_fignums = sorted(set(plt.get_fignums()) - fignums_before)
+                    if new_fignums:
+                        captured_fig = [plt.figure(n) for n in new_fignums]
+                    plt.show()
+                except Exception as exc:
+                    print(f"[sweep] mother_expt.display() failed during logging: {exc}")
+            # Prefer display()'s return only if it's a single Figure; otherwise
+            # fall back to the list of new figs we captured (multi-panel case).
+            if returned is not None and hasattr(returned, "savefig"):
+                fig = returned
+            else:
+                fig = captured_fig
+            self.station.log_measurement(mother_expt, fig=fig)
+        except Exception as exc:
+            print(f"[sweep] log_measurement failed: {exc}")
+
     def run(
         self,
         sweep_start: float,
@@ -248,6 +310,9 @@ class SweepRunner:
         poll_interval: float = 2.0,
         timeout: Optional[float] = None,
         batch: bool = False,
+        log: Optional[bool] = None,
+        sweep_vals: Optional[Any] = None,
+        per_point_cfg: Optional[Callable] = None,
         **kwargs
     ):
         """
@@ -477,6 +542,10 @@ class SweepRunner:
             print(f'Analysis failed: {e}')
             print('Returning mother experiment with raw data')
 
+        # Log to lab-notebook vault (no-op if vault_root unset or log=False).
+        # Queue path: render mother_expt.display() in this process to produce a fig.
+        self._maybe_log_measurement(mother_expt, log=log, render_display=True)
+
         return mother_expt
 
     def run_local(
@@ -623,6 +692,10 @@ class SweepRunner:
         except Exception as e:
             print(f'Analysis failed: {e}')
             print('Returning mother experiment with raw data')
+
+        # Log to lab-notebook vault (no-op if vault_root unset or log=False).
+        # Local path: mother_expt.display() above already drew the fig.
+        self._maybe_log_measurement(mother_expt, log=log, render_display=False)
 
         return mother_expt
 

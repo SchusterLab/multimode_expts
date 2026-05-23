@@ -31,6 +31,8 @@ Usage:
 
 import json
 import os
+import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -117,6 +119,8 @@ class MultimodeStation:
         floquet_file: Optional[str] = None,
         qubit_i: int = 0,
         mock: Optional[bool] = None,
+        project: Optional[str] = None,
+        log_measurements: bool = False,
     ):
         """
         Initialize the measurement station.
@@ -136,6 +140,15 @@ class MultimodeStation:
         )
         self.qubit_i = qubit_i
         self.user = user
+        # Default project for lab-notebook entries. Settable post-init via
+        # station.project = '...'. None falls back to module inference.
+        self.project = project
+        # Opt-in toggle for runner-driven auto-logging. Default False so the
+        # vault stays silent for users who don't want lab-notebook entries.
+        # The user enables per session via `station.log_measurements = True`
+        # or via the `log_measurements=True` kwarg above. Per-call `log=True`
+        # on a runner.run/.run_local/.execute always overrides.
+        self.log_measurements = log_measurements
 
         # Determine mock mode
         if mock is None:
@@ -149,6 +162,9 @@ class MultimodeStation:
         # Output paths and hardware - routing handled internally based on mock mode
         self._initialize_output_paths()
         self._initialize_hardware()
+
+        # Optional Obsidian-style lab-notebook vault (no-op if vault_root absent from config)
+        self._initialize_vault_root()
 
         self.print()
 
@@ -413,6 +429,260 @@ class MultimodeStation:
         ds_floquet = FloquetStorageSwapDataset(filename, parent_path)
         ds_floquet_file_path = ds_floquet.file_path
         return ds_floquet, ds_floquet_file_path
+
+    def _initialize_vault_root(self):
+        """Read optional `data_management.vault_root` from hardware config.
+
+        Sets `self.vault_root: Optional[Path]`. When None, `log_measurement` no-ops.
+        """
+        vault_root: Optional[Path] = None
+        try:
+            data_mgmt = self.hardware_cfg.get("data_management") if hasattr(self.hardware_cfg, "get") else None
+            if data_mgmt is not None:
+                raw = data_mgmt.get("vault_root") if hasattr(data_mgmt, "get") else None
+                if raw:
+                    vault_root = Path(str(raw))
+        except Exception as exc:
+            print(f"[STATION] Could not read vault_root from config: {exc}")
+        self.vault_root = vault_root
+        if self.vault_root is None:
+            print("[STATION] vault_root not set in config; lab-notebook logging disabled.")
+        else:
+            print(f"[STATION] Lab-notebook vault: {self.vault_root}")
+
+    @staticmethod
+    def _safe_filename(s: str) -> str:
+        """Reduce a free-form string to a filesystem-safe slug."""
+        return re.sub(r"[^\w.\-]+", "_", str(s).strip()) or "untitled"
+
+    @staticmethod
+    def _infer_project(experiment) -> str:
+        """Infer project name from experiment.__module__.
+
+        e.g. 'experiments.qsim.kerr' -> 'qsim'. Falls back to 'misc' if the
+        module path doesn't fit the experiments/<project>/<file> layout.
+        """
+        module = getattr(experiment, "__module__", "") or ""
+        parts = module.split(".")
+        if len(parts) >= 3 and parts[0] == "experiments":
+            return parts[1]
+        return "misc"
+
+    def _to_plain(self, obj):
+        """Recursively convert AttrDict / numpy / Path to YAML-safe primitives."""
+        if obj is None:
+            return None
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        # Catch numpy scalars (np.float64, np.int64, np.bool_, etc.) BEFORE the
+        # primitive checks below: in numpy<2, np.float64 IS-A Python float so it
+        # would sneak past, but yaml.safe_dump dispatches by exact type and
+        # chokes on it ("cannot represent an object").
+        if isinstance(obj, np.generic):
+            return obj.item()
+        if isinstance(obj, (str, bool, int, float)):
+            return obj
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {str(k): self._to_plain(v) for k, v in obj.items() if not str(k).startswith("_")}
+        if isinstance(obj, (list, tuple, set)):
+            return [self._to_plain(item) for item in obj]
+        return str(obj)
+
+    def log_measurement(
+        self,
+        experiment=None,
+        fig=None,
+        title: Optional[str] = None,
+        project: Optional[str] = None,
+        parameters: Optional[dict] = None,
+        data_path=None,
+        notes: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> Optional[Path]:
+        """Append a measurement entry to the user's daily lab-notebook file in the vault.
+
+        Two calling modes:
+        - Mode A (`experiment` is a slab Experiment): title, project, parameters,
+          data_path are auto-derived from the experiment object.
+        - Mode B (`experiment=None`): pass `title`, `project`, `parameters`,
+          and optionally `data_path` explicitly. For manual sweeps and other
+          patterns where there is no single Experiment instance.
+
+        No-op (returns None) if `vault_root` is not configured.
+
+        Returns the path to the daily markdown file, or None if disabled.
+        """
+        if self.vault_root is None:
+            print(
+                "[log_measurement] vault_root not configured; skipping. "
+                "Add 'data_management.vault_root: <path>' to the hardware config."
+            )
+            return None
+
+        # Resolve project: explicit kwarg > station.project > module-infer (Mode A) > 'misc'
+        if project is None:
+            project = getattr(self, "project", None)
+        if project is None and experiment is not None:
+            project = self._infer_project(experiment)
+
+        # Resolve metadata (Mode A auto-fill, Mode B explicit)
+        if experiment is not None:
+            title = title or type(experiment).__name__
+            if parameters is None:
+                cfg_expt = getattr(getattr(experiment, "cfg", None), "expt", None)
+                parameters = self._to_plain(cfg_expt) if cfg_expt is not None else None
+            if data_path is None:
+                data_path = getattr(experiment, "fname", None)
+        else:
+            if title is None:
+                raise ValueError("title is required when experiment is None")
+            if project is None:
+                raise ValueError(
+                    "project is required when experiment is None "
+                    "(or set station.project once for the session)"
+                )
+            if parameters is not None:
+                parameters = self._to_plain(parameters)
+
+        project = project or "misc"
+        user = self.user or "unknown"
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        timestamp_iso = now.strftime("%Y-%m-%dT%H:%M:%S")
+        time_str = now.strftime("%H:%M:%S")
+        file_ts = now.strftime("%Y-%m-%d_%H-%M-%S")
+
+        # No fig auto-capture from pyplot here: the latest fignum may belong
+        # to a previous, unrelated cell, leading to wrong-fig embeds. Callers
+        # should pass `fig=` explicitly when they have one. The runners do this
+        # already after their own scoped, new-fignum-only capture.
+
+        target_dir = self.vault_root / "Lab" / user / project / now.strftime("%Y") / now.strftime("%m")
+        figures_dir = target_dir / "figures"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        figures_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save plot copies into the vault. `fig` may be a single Figure or a
+        # list of Figures; multi-fig case happens for displays that emit a 2D
+        # summary plus auxiliary panels (e.g. ChevronFitting.display_results).
+        figs: list = []
+        if fig is not None:
+            figs = list(fig) if isinstance(fig, (list, tuple)) else [fig]
+        plot_rels: List[str] = []
+        for idx, f in enumerate(figs):
+            suffix = f"_p{idx + 1}" if len(figs) > 1 else ""
+            plot_filename = f"{file_ts}_{self._safe_filename(title)}{suffix}.png"
+            plot_path = figures_dir / plot_filename
+            try:
+                f.savefig(plot_path, bbox_inches="tight")
+                plot_rels.append(f"figures/{plot_filename}")
+            except Exception as exc:
+                print(f"[log_measurement] Could not save figure {idx + 1}: {exc}")
+
+        # Build per-measurement section meta
+        section_meta: dict = {"timestamp": timestamp_iso}
+        if experiment is not None:
+            section_meta["experiment_class"] = type(experiment).__name__
+        if hasattr(self, "experiment_name") and self.experiment_name:
+            section_meta["experiment_name"] = self.experiment_name
+        if data_path is not None:
+            if isinstance(data_path, (list, tuple)):
+                section_meta["data_path"] = [str(p) for p in data_path]
+            else:
+                section_meta["data_path"] = str(data_path)
+        if plot_rels:
+            section_meta["plot_path"] = plot_rels[0] if len(plot_rels) == 1 else plot_rels
+        if experiment is not None:
+            qubit_i = None
+            cfg_expt = getattr(getattr(experiment, "cfg", None), "expt", None)
+            if cfg_expt is not None and hasattr(cfg_expt, "get"):
+                qubit_i = cfg_expt.get("qubit_i")
+            if qubit_i is None:
+                qubit_i = getattr(experiment, "qubit_i", None)
+            if qubit_i is not None:
+                section_meta["qubit_i"] = self._to_plain(qubit_i)
+        if parameters is not None:
+            section_meta["parameters"] = parameters
+        if tags:
+            section_meta["extra_tags"] = list(tags)
+
+        # Build the entry as a single string. If yaml.safe_dump throws here
+        # (e.g. unrepresentable type), nothing has been written yet — the file
+        # stays consistent.
+        # default_flow_style=None: compact inline form for short collections
+        # (`qubits: [0]` instead of `qubits:\n- 0`). Required because Obsidian's
+        # callout parser breaks code-fence rendering when it sees `- ` markers
+        # at the start of inner lines.
+        try:
+            section_yaml = yaml.safe_dump(
+                section_meta, default_flow_style=None, sort_keys=False, allow_unicode=True
+            )
+        except Exception as exc:
+            print(f"[log_measurement] Could not serialize parameters: {exc}")
+            section_yaml = (
+                f"timestamp: '{timestamp_iso}'\n"
+                f"# parameters omitted: {type(exc).__name__}: {exc}\n"
+            )
+
+        # Obsidian callout, default-collapsed via the trailing `-`. Each yaml
+        # line is prefixed with `> ` so the content stays inside the callout
+        # and Obsidian still parses the inner code fence as a yaml block.
+        # (HTML <details> doesn't reliably re-enter markdown for inner fences.)
+        yaml_lines = section_yaml.rstrip("\n").split("\n")
+        quoted_yaml = "\n".join(("> " + line) if line else ">" for line in yaml_lines)
+        entry_parts = [
+            f"## {time_str} \u2014 {title}\n\n",
+            "> [!note]- parameters\n",
+            "> ```yaml\n",
+            quoted_yaml + "\n",
+            "> ```\n\n",
+        ]
+        for rel in plot_rels:
+            entry_parts.append(f"![[{rel}]]\n\n")
+        entry_parts.append("### Notes\n\n")
+        # Avoid `<...>` which Obsidian's HTML-block parser may treat as an
+        # unclosed tag and let it consume subsequent content (breaking the
+        # next entry's rendering).
+        entry_parts.append((notes.rstrip() + "\n\n") if notes else "_add interpretation here_\n\n")
+        entry_parts.append("---\n\n")
+        entry_text = "".join(entry_parts)
+
+        # Top-of-file: write frontmatter + H1 only on first creation. Same
+        # buffer-then-write pattern, so a yaml failure can't leave a partial.
+        daily_file = target_dir / f"{today}.md"
+        if not daily_file.exists():
+            top_tags = ["lab", "measurement", project, user]
+            if tags:
+                top_tags.extend(t for t in tags if t not in top_tags)
+            top_meta = {
+                "date": today,
+                "user": user,
+                "project": project,
+                "tags": top_tags,
+            }
+            try:
+                top_yaml = yaml.safe_dump(
+                    top_meta, default_flow_style=False, sort_keys=False, allow_unicode=True
+                )
+            except Exception as exc:
+                print(f"[log_measurement] Could not serialize top frontmatter: {exc}")
+                top_yaml = f"date: '{today}'\nuser: {user}\nproject: {project}\n"
+            top_text = (
+                "---\n"
+                + top_yaml
+                + "---\n\n"
+                + f"# {today} \u2014 {user} / {project}\n\n"
+            )
+            daily_file.write_text(top_text, encoding="utf-8")
+
+        # Atomic single append of the fully-built entry
+        with daily_file.open("a", encoding="utf-8") as f:
+            f.write(entry_text)
+
+        print(f"[log_measurement] Appended section to {daily_file}")
+        return daily_file
 
     def save_plot(
         self, fig, filename: str = "plot.png", subdir: Optional[str | Path] = None
