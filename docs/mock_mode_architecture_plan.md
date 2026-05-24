@@ -1,139 +1,225 @@
-# Mock Mode Architecture Plan
+# Mock-mode refactor — plan
 
-## Problem Statement
+## Goal
 
-Currently, mock mode only partially works:
-- ✅ Station correctly creates mock hardware objects (`MockQickConfig`, `MockInstrumentManager`, etc.)
-- ✅ Station uses `mock_data/` paths instead of production paths
-- ✅ Job server framework (submission, queue, config versioning) works
-- ❌ Experiments crash because they inherit from real QICK classes (`RAveragerProgram`, etc.)
+One switch on `MultimodeStation` controls whether instrument calls go to real
+hardware or to in-process stubs. Everything else (configs, datasets, live
+in-memory state, `station.soc`) is identical in both modes. The switch can be
+flipped mid-session without re-creating the station, so a notebook can preserve
+accumulated fits and calibrations while iterating on a buggy QICK program.
 
-The crash happens because:
-1. Experiment classes (e.g., `PulseProbeSpectroscopyProgram`) inherit from `MMRAveragerProgram`
-2. `MMRAveragerProgram` inherits from real `qick.RAveragerProgram`
-3. Real QICK's `__init__` expects complete hardware config (e.g., `tproccfg['type']`)
-4. `MockQickConfig` doesn't have all required fields → `KeyError`
+## Motivation
 
-This affects both:
-- `run_local()` with mock station
-- Worker in mock mode
+Today, when a notebook hits a QICK programming bug (bad parameter, malformed
+pulse, channel mis-declared), the entire job-server round-trip fires before the
+qick library's own validators reach the failing line — ~1 minute of overhead to
+discover a five-character typo. The qick library actually catches almost all of
+these in pure Python during program construction, before any FPGA byte is sent.
+We exploit that by routing instrument calls to a stub during debug iterations.
 
-## Design Goals
+The existing `mock=True` mode in `experiments/station.py` was an earlier
+attempt at this. It never worked because `MockQickConfig` lacks fields the real
+qick library reads at program-init time, so experiments crash before reaching
+the stub's `acquire()`. This plan replaces that path with a working design.
 
-1. **Station owns mock routing** - Station decides mock vs real, not worker or experiments
-2. **Experiments unchanged** - Don't modify every experiment class
-3. **Both paths work** - `run_local()` and worker queue should work in mock mode
-4. **Testable** - Can test job server framework without hardware
+## Architecture decision
 
-## Proposed Solution: Module-Level QICK Mocking
+QICK's library cleanly separates three phases:
 
-### Approach
+1. **Build (Python only)** — `Program(soccfg, cfg).__init__()` calls user
+   `initialize()` and `body()`, builds `self.prog_list`. Reads `soccfg`. Where
+   most parameter-validation errors fire.
+2. **Compile (Python only)** — `program.compile()` turns `prog_list` into
+   `binprog`. Catches ASM-encoding errors.
+3. **FPGA** — `program.acquire(soc, ...)` → `config_all(soc)` → `soc.start_*`,
+   `soc.poll_data`. First time the `soc` object is touched.
 
-Station's `_initialize_hardware_mock()` patches `sys.modules` with mock QICK classes before experiments are imported.
+`soccfg` (a `QickConfig`) is a pure-Python dict wrapper describing the FPGA
+bitstream — portable, file-loadable, no hardware. `soc` (a `QickSoc`) is the
+hardware driver, normally reached from the PC over a Pyro4 RPC proxy via
+`InstrumentManager`. Replacing the Pyro4 proxy with a local no-op stub gives
+phases 1+2 unchanged validation behavior, with zero FPGA contact at phase 3.
 
-### Implementation Steps
+This is exactly the off-board mode the qick authors designed for. We are not
+inventing a parallel mock framework; we are using the existing PC-side split.
 
-1. **Create mock QICK base classes** in `experiments/mock_hardware.py`:
-   ```python
-   class MockQickProgram:
-       """Mock base that doesn't require real soccfg."""
-       def __init__(self, soccfg, cfg=None):
-           self.soccfg = soccfg
-           self.cfg = cfg
-           # No real QICK initialization
+## In scope
 
-   class MockRAveragerProgram(MockQickProgram):
-       """Mock RAveragerProgram that generates simulated data."""
-       def acquire(self, soc, **kwargs):
-           # Return simulated I/Q data
-           return self._generate_mock_data()
-   ```
+- New `MockQickSoc` class with the ~17-method stub surface the qick library
+  actually calls during `acquire()` / `acquire_decimated()` / `run_rounds()`.
+- `station.use_mock_instruments()` / `station.use_real_instruments()` for
+  mid-session swap, preserving all in-memory state.
+- `MultimodeStation(mock=True)` constructor flag retained; semantically
+  equivalent to constructing real then calling `use_mock_instruments()` once.
+  Worker `--mock` CLI flag continues to work without change.
+- Auto-redirect `data_path`/`plot_path`/`log_path` to `mock_data/...` whenever
+  mock instruments are active, so fake runs don't pollute real data dirs.
+- `SweepRunner` and `CharacterizationRunner` auto-default `use_queue=False`
+  when `station.is_mock_instruments` is True. Explicit override still works
+  (one-line warning if user explicitly passes `use_queue=True` in mock mode).
+- Delete `job_server/mock_hardware.py` (dead duplicate, no live importers).
 
-2. **Patch modules in station mock init**:
-   ```python
-   def _initialize_hardware_mock(self):
-       # Patch QICK modules BEFORE any experiment imports
-       import sys
-       from experiments.mock_hardware import MockRAveragerProgram, ...
+## Out of scope (deferred)
 
-       mock_qick = types.ModuleType('qick')
-       mock_qick.RAveragerProgram = MockRAveragerProgram
-       mock_qick.AveragerProgram = MockAveragerProgram
-       # ... etc
+- Laptop / non-prod-PC support. The config database and `D:/` paths aren't
+  reachable from a Mac; we don't promise the station can even be constructed
+  there. Auto-detect logic stays as is. Revisit if anyone actually needs it.
+- A captured `soccfg.json` snapshot in the repo. Not needed on the prod PC
+  since the live Pyro proxy provides `get_cfg()` once at station init, and
+  that's already cached into `station.soc`.
+- `closed_loop/service.py` compatibility. Service uses `MultimodeStation(mock=True)`
+  as a config-holder; under the new design its `data_path` will redirect into
+  `mock_data/`. If that breaks the service, it's downstream of the infra and
+  should be fixed there.
+- Renaming `station.soc` → `station.soccfg` for clarity. Worth doing, but
+  separate task — touches every experiment.
+- Improvements to the broader runner / Experiment scaffolding beyond the
+  one auto-default.
 
-       sys.modules['qick'] = mock_qick
-       sys.modules['qick.averager_program'] = mock_qick
-       # ... then initialize mock hardware objects
-   ```
+## File changes
 
-3. **Challenge: Import order**
-   - Experiments are often imported at module load time (e.g., `import experiments as meas`)
-   - Station is created AFTER imports
-   - Solution: Provide a `setup_mock_mode()` function to call BEFORE imports
+### `experiments/mock_hardware.py` — rewrite
 
-   ```python
-   # In notebook or worker:
-   from experiments.mock_hardware import setup_mock_mode
-   setup_mock_mode()  # Patches sys.modules
+- **Remove**: `MockQickConfig` (broken — incomplete cfg dict).
+- **Replace**: `MockQickSoc` — old version had hardcoded Rabi data in
+  `.acquire()`, which the real qick library never reaches. New version stubs
+  the ~17 methods qick's `AcquireMixin` actually calls on `soc`:
+  - No-ops: `start_src`, `stop_tproc`, `reload_mem`, `load_pulse_data`,
+    `set_nyquist`, `set_mixer_freq`, `config_mux_gen`, `configure_readout`,
+    `load_bin_program`, `config_avg`, `config_buf`, `start_tproc`,
+    `set_tproc_counter`.
+  - Stateful: `start_readout(total_count, counter_addr, ch_list, reads_per_shot)`
+    records args; `get_tproc_counter(addr)` returns `total_count` to exit
+    polling loops immediately.
+  - Shaped returns (strictly zeros, no noise — noise looks too much like real
+    data):
+    - `poll_data()` → `[(total_count, ([zeros((total_count*nr, 2), int64) for nr in reads_per_shot], {}))]`
+    - `get_decimated(ch, address, length)` → `np.zeros((length, 2))`
+    - `get_accumulated(ch, address, length)` → `np.zeros((length, 2))`
+- **Keep**: `MockYokogawa`, `MockInstrumentManager` unchanged in concept. The
+  `MockInstrumentManager` continues to be a dict subclass holding `MockQickSoc`
+  at the qick alias key.
 
-   import experiments as meas  # Now uses mock QICK
-   station = MultimodeStation(mock=True)
-   ```
+### `experiments/station.py`
 
-4. **Worker changes**:
-   ```python
-   def main():
-       if args.mock:
-           from experiments.mock_hardware import setup_mock_mode
-           setup_mock_mode()
-       # ... rest of worker init
-   ```
+- `_initialize_hardware_mock` rewritten:
+  - Build a real `QickConfig` for `self.soc`. On the prod PC, fetch from the
+    live Pyro proxy at construction time (same call as the real path uses).
+    If unavailable, raise — deliberately not falling back to a fake cfg dict,
+    since that path was the source of all the existing problems.
+  - Build `MockInstrumentManager` containing the new `MockQickSoc` at the qick
+    alias, `MockYokogawa` instances for the yokos.
+- New property `is_mock_instruments` (alias `is_mock` for back-compat).
+- New `use_mock_instruments(self)`:
+  - Cache real `im`, `yoko_coupler`, `yoko_jpa`, `data_path`, `plot_path`,
+    `log_path` to private attrs.
+  - Replace with stubs / `mock_data/...` paths.
+  - Set `_is_mock = True`.
+- New `use_real_instruments(self)`:
+  - Restore from caches. Raise if never swapped.
+  - Set `_is_mock = False`.
+- Both methods preserve `hardware_cfg`, `multimode_cfg`, `ds_storage`,
+  `ds_floquet`, `soc`, `experiment_name`, `user`.
 
-### Mock Data Generation
+### `experiments/sweep_runner.py` and `experiments/characterization_runner.py`
 
-The mock `acquire()` should generate realistic-looking data:
-- Simulated Rabi oscillations
-- Spectroscopy peaks
-- Appropriate noise levels
-
-This can be based on experiment type or just generic oscillation data.
-
-## Alternative: Minimal MockQickConfig
-
-Instead of patching modules, make `MockQickConfig` complete enough that real QICK doesn't crash:
+In both runners, `__init__` keeps `use_queue: bool = True` default. In
+`execute()`, before dispatching, add:
 
 ```python
-def _create_default_cfg(self) -> dict:
-    return {
-        "tprocs": [{"type": "axis_tproc64x32_x8", "f_time": 384.0, ...}],
-        "gens": [{"type": "axis_signal_gen_v6", ...} for _ in range(7)],
-        "readouts": [{"tproc_ctrl": 0, ...}],
-        # ... all fields QICK expects
-    }
+mode = use_queue if use_queue is not None else self.use_queue
+if mode and self.station.is_mock_instruments:
+    if use_queue is True:    # explicit override
+        warnings.warn("use_queue=True with mock instruments — worker may run "
+                      "against real hardware unless also in mock mode")
+    else:
+        mode = False         # auto-default
 ```
 
-**Pros:** Simpler, no module patching
-**Cons:** Fragile (breaks when QICK updates), still runs real QICK code paths
+### `job_server/mock_hardware.py` — delete
 
-## Recommendation
+374 lines, no live importers. The `MockStation` class it defines was
+superseded by `MultimodeStation(mock=True)`. Remove the file and update the
+one reference in `job_server/README.md`.
 
-Use **Module-Level Mocking** (main solution) because:
-- Clean separation of concerns
-- Experiments don't need changes
-- More robust to QICK library changes
-- Can evolve mock behavior independently
+### Tests
 
-## Files to Modify
+- `tests/test_mock_station.py`, `tests/test_sweep_runner.py`,
+  `tests/test_characterization_runner.py`: use in-file `MagicMock`-based local
+  mocks, don't depend on `experiments/mock_hardware.py`. Leave alone unless
+  they break.
+- New `tests/test_mock_qicksoc.py`: instantiate a real `MMRAveragerProgram`
+  (e.g., a small Rabi program) with a captured soccfg + `MockQickSoc`, call
+  `.acquire()`, assert it completes and returns shaped data without errors.
 
-1. `experiments/mock_hardware.py` - Add mock QICK classes and `setup_mock_mode()`
-2. `experiments/station.py` - Call setup in `_initialize_hardware_mock()` or document usage
-3. `job_server/worker.py` - Call `setup_mock_mode()` before imports when `--mock`
-4. `tests/test_mock_station.py` - Already does module patching, can reuse pattern
+## User-facing behavior
 
-## Testing
+### Typical debug flow on the prod PC
 
-After implementation:
-1. `pixi run python -m job_server.worker --mock` should start without errors
-2. Jobs submitted from notebook should complete with mock data
-3. `run_local()` with mock station should work
-4. Existing tests should still pass
+```python
+# normal day
+station = MultimodeStation(user=user, hardware_config=..., ...)
+# ... many cells of real measurements, fits accumulating in hardware_cfg ...
+
+# bug surfaces in a new qick program — flip to mock to iterate
+station.use_mock_instruments()
+runner.execute(...)                  # local, against MockQickSoc, writes to mock_data/
+
+# fix bugs, iterate
+
+# back to real
+station.use_real_instruments()
+runner.execute(...)                  # back to real FPGA, real paths, queue
+```
+
+### Worker
+
+`pixi run python -m job_server.worker --mock` continues to work; internally
+the worker's station is now in `use_mock_instruments` mode after construction.
+No CLI change. The worker cannot flip the switch mid-run because there's no
+interactive surface — that's fine, the CLI flag is the only way to set it for
+a worker process.
+
+### Constructor flag
+
+`MultimodeStation(mock=True)` retained as sugar. Semantically:
+
+```python
+station = MultimodeStation(mock=True)
+# is equivalent to:
+station = MultimodeStation(mock=False)
+station.use_mock_instruments()
+```
+
+## State preservation contract
+
+`use_mock_instruments()` / `use_real_instruments()` are the only two operations
+that change `self._is_mock`. They affect this set of attributes only:
+
+| Swapped | Preserved |
+|---|---|
+| `im` | `hardware_cfg` |
+| `yoko_coupler` | `multimode_cfg` |
+| `yoko_jpa` | `ds_storage` |
+| `data_path` | `ds_floquet` |
+| `plot_path` | `soc` |
+| `log_path` | `experiment_name` |
+| `_is_mock` flag | `user`, `project`, etc. |
+
+If a future attribute is added that needs to swap, it must be added to both
+methods explicitly. Any attribute not in this table is preserved across swap.
+
+## Open implementation questions (decide while coding)
+
+- Exact path layout under `mock_data/` (per-experiment subfolder vs flat).
+- Whether to commit the deletion of `job_server/mock_hardware.py` in the same
+  PR as the rewrite, or split for cleaner review.
+- Naming nits inside the new `MockQickSoc` (e.g., method-arg ordering of the
+  stateful methods).
+
+## Verification
+
+Smoke test by user before merge: pick a known-bug commit (or fabricate one,
+e.g., set a pulse length to 0), run with `station.use_mock_instruments()`
+active, confirm the failure raises at the same point a real FPGA run would
+have. Confirms the qick library validators are reached unchanged.

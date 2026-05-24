@@ -29,7 +29,7 @@ No `import multimode_expts` or `import .anything` or `sys.path` hacking!
 ## TODO
 
 - [ ] Switch jobs.db file read/write to interacting with the job server
-- [ ] Make a web interface for viewing and operating on queued and running jobs
+- [X] Make a web interface for viewing and operating on queued and running jobs
 - [ ] Delete the binary files that don't belong in git. hdf5 data, images etc. Move them to the data/log folder accompanying each experiment.
 - [ ] The few `slab` files are simply vendored in their original cursed state. If we straighten up the Experiment class and allow say proper file-reading functionalities, we can actually easily use the `analyze` functions in each child class to do the analysis instead of collecting everything in `fitting_display_classes` or such.
 - [ ] Deal with accumulated log files and old jobs.db entries
