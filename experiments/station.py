@@ -9,22 +9,27 @@ This module provides the MultimodeStation class which manages:
 
 Supports both real hardware and mock modes:
 - Real hardware: Connects to actual instruments (production on Pippin)
-- Mock mode: Uses simulated hardware for testing/development
+- Mock mode: Real qick.QickConfig + stub MockQickSoc (no FPGA bytes go out).
+  Used to validate qick programs without hardware overhead.
+  See docs/mock_mode_architecture_plan.md for the design.
 
 Usage:
     from experiments.station import MultimodeStation
 
-    # Auto-detect mode based on machine (mock on dev, real on Pippin)
+    # Default: connect to real hardware on the prod PC
     station = MultimodeStation(experiment_name="241215_calibration")
 
-    # Force mock mode for testing
+    # Force mock mode at construction (e.g., worker --mock)
     station = MultimodeStation(mock=True)
 
-    # Force real hardware on dev machine
-    station = MultimodeStation(mock=False)
+    # Mid-session swap (preserves all in-memory state — hardware_cfg fits,
+    # multimode_cfg, datasets, etc.). Output paths auto-redirect to mock_data/.
+    station.use_mock_instruments()
+    # ... iterate on a buggy qick program against the stub ...
+    station.use_real_instruments()
 
     # Access hardware: station.soc, station.im
-    # Access config: station.hardware_cfg, station.hardware_cfg
+    # Access config: station.hardware_cfg, station.multimode_cfg
     # Access paths: station.data_path, station.plot_path
     # Check mode: station.is_mock
 """
@@ -50,20 +55,14 @@ from job_server.config_versioning import ConfigVersionManager, ConfigType
 
 PIPPIN_HOSTNAME = 'pippin-meas'
 
-def detect_mock_mode() -> bool:
-    """
-    Auto-detect mock mode based on machine identity.
+def is_production_pc() -> bool:
+    """Whether we're running on the Pippin measurement PC.
 
-    Returns:
-        True for mock mode (dev machine), False for real hardware (Pippin production)
-
-    Detection logic:
-        - 'pippin-meas' is the host name on the new Pippin meas PC (Lenovo Legion T7)
-        - If host name matches, use real hardware
-        - Otherwise, default to mock mode for safety
+    Currently unused — kept for the eventual off-prod-PC support, which will
+    need a separate code path for config loading and won't share the
+    mock-instruments switch with the prod PC.
     """
-    hostname = socket.gethostname()
-    return hostname != PIPPIN_HOSTNAME
+    return socket.gethostname() == PIPPIN_HOSTNAME
 
 # YAML representers for numpy types
 def _np_float_representer(dumper, data):
@@ -132,7 +131,9 @@ class MultimodeStation:
             multiphoton_config: Filename or version ID (e.g., CFG-MP-20260115-00001). If None, loads from main version in database.
             storage_man_file: Filename or version ID (e.g., CFG-M1-20260115-00001). If None, loads from main version in database.
             qubit_i: Qubit index to use.
-            mock: If None, auto-detect based on machine identity. If True, force mock mode. If False, force real hardware.
+            mock: If True, install MockQickSoc + MockYokogawa stubs (no FPGA bytes go out).
+                  If False or None (default), connect to real hardware. See use_mock_instruments()
+                  for mid-session swap that preserves in-memory state.
         """
         self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
@@ -150,11 +151,9 @@ class MultimodeStation:
         # on a runner.run/.run_local/.execute always overrides.
         self.log_measurements = log_measurements
 
-        # Determine mock mode
-        if mock is None:
-            self._is_mock = detect_mock_mode()
-        else:
-            self._is_mock = mock
+        # Determine mock mode. Default to real (mock must be explicit) —
+        # off-prod-PC support will need its own code path, not the mock flag.
+        self._is_mock = bool(mock) if mock is not None else False
 
         # Config loading always uses database/versioning (same for mock and real)
         self._initialize_configs(hardware_config, multiphoton_config, storage_man_file, floquet_file)
@@ -170,7 +169,11 @@ class MultimodeStation:
 
     @property
     def is_mock(self) -> bool:
-        """Whether the station is running in mock mode."""
+        """Whether instrument calls currently route to mocks vs real hardware.
+
+        Reflects the current state: flipped by use_mock_instruments() /
+        use_real_instruments() in addition to the constructor flag.
+        """
         return self._is_mock
 
     def _initialize_configs(self, hardware_config, multiphoton_config, storage_man_file, floquet_file):
@@ -341,8 +344,13 @@ class MultimodeStation:
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
 
     def _initialize_output_paths_mock(self):
-        """Create output directories for mock mode."""
-        self.output_root = self.repo_root / "mock_data"
+        """Create output directories for mock mode.
+
+        Hardcoded to C:/experiments/mock_data on the prod PC. Off-prod-PC mode
+        will eventually need its own path resolution — flagged in
+        docs/mock_mode_architecture_plan.md.
+        """
+        self.output_root = Path("C:/experiments/mock_data")
 
         # Create directories (real directories for data file testing)
         self.experiment_path = self.output_root / self.experiment_name
@@ -367,22 +375,90 @@ class MultimodeStation:
         print(f"[MOCK STATION] Output paths created at: {self.experiment_path}")
 
     def _initialize_hardware_mock(self):
-        """Initialize mock hardware objects."""
-        from experiments.mock_hardware import (
-            MockInstrumentManager,
-            MockQickConfig,
-            MockYokogawa,
-        )
+        """Initialize for mock-only mode.
 
-        self.im = MockInstrumentManager()
-        self.soc = MockQickConfig()
-        self.yoko_coupler = MockYokogawa(
-            name="yoko_coupler", address="mock://192.168.137.148"
-        )
-        self.yoko_jpa = MockYokogawa(
-            name="yoko_jpa", address="mock://192.168.137.149"
-        )
-        print("[MOCK STATION] Mock hardware initialized")
+        Fetches a real QickConfig from the live Pyro proxy (required so the
+        qick library's program-init validators see a complete soccfg). Then
+        installs MockQickSoc + MockYokogawa stubs for instrument access. Does
+        not claim real yokos.
+
+        After this, use_real_instruments() will raise — reconstruct the
+        station with mock=False to switch to real mode.
+        """
+        from qick import QickConfig
+        from slab.instruments import InstrumentManager
+
+        try:
+            real_im = InstrumentManager(ns_address="192.168.137.26")
+            qick_alias = self.hardware_cfg["aliases"]["soc"]
+            self.soc = QickConfig(real_im[qick_alias].get_cfg())
+        except Exception as e:
+            raise RuntimeError(
+                f"Mock mode requires a reachable QICK Pyro proxy to fetch the "
+                f"real soccfg (got: {e!r}). Off-prod-PC mock mode is not yet "
+                f"supported — see docs/mock_mode_architecture_plan.md."
+            ) from e
+
+        self._install_mock_instruments()
+        print("[MOCK STATION] Mock hardware initialized (real soccfg + MockQickSoc)")
+
+    def _install_mock_instruments(self):
+        """Build mock im + yokos and assign to self. Does not touch soc/configs."""
+        from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
+        qick_alias = self.hardware_cfg["aliases"]["soc"]
+        self.im = MockInstrumentManager(qick_alias=qick_alias)
+        self.yoko_coupler = MockYokogawa(name="yoko_coupler", address="mock://192.168.137.148")
+        self.yoko_jpa = MockYokogawa(name="yoko_jpa", address="mock://192.168.137.149")
+
+    # ---- Mid-session mock/real instrument swap ----
+
+    _MOCK_SWAP_PATH_KEYS = (
+        "output_root", "experiment_path", "data_path", "expt_objs_path",
+        "plot_path", "log_path", "autocalib_path",
+    )
+
+    def use_mock_instruments(self):
+        """Swap im, yokos, and output paths to mock versions.
+
+        Preserves all in-memory state: hardware_cfg, multimode_cfg, ds_storage,
+        ds_floquet, soc, experiment_name, user. Idempotent — no-op if already
+        in mock mode.
+
+        Cached real instruments and paths are restored by use_real_instruments().
+        """
+        if self._is_mock:
+            return
+        # cache real state
+        self._real_im = self.im
+        self._real_yoko_coupler = self.yoko_coupler
+        self._real_yoko_jpa = self.yoko_jpa
+        self._real_paths = {k: getattr(self, k) for k in self._MOCK_SWAP_PATH_KEYS}
+        # install mocks + redirect paths
+        self._install_mock_instruments()
+        self._initialize_output_paths_mock()
+        self._is_mock = True
+        print("[STATION] switched to MOCK instruments")
+
+    def use_real_instruments(self):
+        """Restore real instruments and paths cached by use_mock_instruments().
+
+        Raises if the station was constructed in mock mode (no real cache
+        available — reconstruct with mock=False instead).
+        """
+        if not self._is_mock:
+            return
+        if not hasattr(self, "_real_im"):
+            raise RuntimeError(
+                "No real instruments cached — station was constructed with "
+                "mock=True. Reconstruct with mock=False to use real hardware."
+            )
+        self.im = self._real_im
+        self.yoko_coupler = self._real_yoko_coupler
+        self.yoko_jpa = self._real_yoko_jpa
+        for k, v in self._real_paths.items():
+            setattr(self, k, v)
+        self._is_mock = False
+        print("[STATION] switched to REAL instruments")
 
     def print(self):
         """Print station information."""
@@ -510,10 +586,16 @@ class MultimodeStation:
           and optionally `data_path` explicitly. For manual sweeps and other
           patterns where there is no single Experiment instance.
 
-        No-op (returns None) if `vault_root` is not configured.
+        No-op (returns None) if `vault_root` is not configured, or if the
+        station is currently in mock mode (mock measurements would pollute the
+        real lab notebook). Flip out of mock mode briefly if you need to test
+        the logging path itself.
 
         Returns the path to the daily markdown file, or None if disabled.
         """
+        if self._is_mock:
+            print("[log_measurement] mock mode active; skipping vault write.")
+            return None
         if self.vault_root is None:
             print(
                 "[log_measurement] vault_root not configured; skipping. "

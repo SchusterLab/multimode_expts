@@ -37,7 +37,8 @@ This package provides a job queue system that allows multiple users to submit ex
 │              │                          │                       │
 │              │  ┌────────────────────┐  │                       │
 │              │  │  MultimodeStation  │  │                       │
-│              │  │  (or MockStation)  │  │                       │
+│              │  │   (mock=True for   │  │                       │
+│              │  │    --mock worker)  │  │                       │
 │              │  └────────────────────┘  │                       │
 │              └────────────┬─────────────┘                       │
 │                           │                                     │
@@ -103,12 +104,13 @@ Manages immutable snapshots of configuration files:
 - Tracks "main" (canonical, most up-to-date) version for each config type
 - Provides push/pull functions to update and retrieve main configs
 
-### 5. Mock Hardware (`mock_hardware.py`)
+### 5. Mock Hardware
 
-Provides simulated hardware for testing:
-- `MockStation`: Mimics MultimodeStation without real hardware
-- `MockQickConfig`: Simulates QICK SoC configuration
-- Generates synthetic Rabi oscillation data for testing
+Mock-instrument support now lives in `experiments/mock_hardware.py` (see
+`docs/mock_mode_architecture_plan.md`). Use `MultimodeStation(mock=True)` or
+`station.use_mock_instruments()` to route instrument calls through stubs that
+preserve the real qick library's program validators while skipping FPGA I/O.
+Worker `--mock` flag continues to work unchanged.
 
 ## Database Schema
 

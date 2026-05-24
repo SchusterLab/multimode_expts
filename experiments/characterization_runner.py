@@ -249,6 +249,11 @@ class CharacterizationRunner:
             return
         if log is None and not getattr(self.station, "log_measurements", False):
             return
+        if getattr(self.station, "is_mock", False):
+            # Mock measurements would pollute the real lab notebook; skip the
+            # vault write here AND the display-render scaffolding below.
+            print("[char] mock mode active; skipping log_measurement.")
+            return
         try:
             returned = None
             captured_fig = None
@@ -487,6 +492,20 @@ class CharacterizationRunner:
             Completed Experiment object
         """
         mode = use_queue if use_queue is not None else self.use_queue
+
+        # Auto-default for mock instruments: silently switch to local when
+        # using the inherited default; warn if user explicitly opted in.
+        if mode and getattr(self.station, "is_mock", False):
+            if use_queue is True:
+                import warnings
+                warnings.warn(
+                    "use_queue=True with mock instruments — worker on the queue "
+                    "will run against real hardware unless it was also started "
+                    "with --mock.",
+                    RuntimeWarning,
+                )
+            else:
+                mode = False
 
         if mode:
             return self.run(**kwargs)

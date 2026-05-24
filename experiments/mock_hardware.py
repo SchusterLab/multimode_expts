@@ -1,192 +1,144 @@
-"""
-Centralized mock hardware implementations for testing without real instruments.
+"""Mock hardware stubs for running experiments without an FPGA.
 
-This module provides mock versions of hardware components for:
-- Integration testing on development machines
-- Local rapid iteration without hardware access
-- CI/CD pipeline testing
+The point: let the real qick library run unchanged through program
+construction, ASM compile, and the acquire() control loop, intercepting only
+at the leaf soc.xxx() / instrument-driver calls. This catches the python-side
+qick validation errors (bad params, malformed pulses, channel mis-declared,
+sweep-step quantization, etc.) without any FPGA contact or job-server
+overhead.
 
-Mock classes:
-- MockQickConfig: Simulates QICK SoC configuration
-- MockQickSoc: Mock QICK proxy with fake Rabi oscillation data
-- MockInstrumentManager: Simulates instrument access
-- MockYokogawa: Mock voltage source
-
-Usage:
-    # These are used internally by MultimodeStation when mock=True
-    # Direct usage is not typically needed, but available:
-    from experiments.mock_hardware import MockQickConfig, MockInstrumentManager
-
-    config = MockQickConfig()
-    im = MockInstrumentManager()
+A real `qick.QickConfig` is still used in mock mode -- only the `QickSoc`
+proxy and the Yokogawa drivers are stubbed. See docs/mock_mode_architecture_plan.md.
 """
 
 import numpy as np
-from typing import Optional, Dict
-
-
-class MockQickConfig:
-    """
-    Mock QICK SoC configuration for testing.
-
-    Simulates the QickConfig interface without real hardware.
-    Provides conversion methods that return realistic values.
-    """
-
-    def __init__(self, cfg: Optional[Dict] = None):
-        """
-        Initialize mock QICK config.
-
-        Args:
-            cfg: Optional config dict. If None, creates default mock config.
-        """
-        self._cfg = cfg or self._create_default_cfg()
-        print("[MOCK] QickConfig initialized")
-
-    def _create_default_cfg(self) -> dict:
-        """Create a realistic mock QICK config structure."""
-        return {
-            "gens": [
-                {
-                    "maxv": 32767,
-                    "maxv_scale": 1.0,
-                    "samps_per_clk": 16,
-                    "f_fabric": 430.08,
-                    "type": "full",
-                }
-                for _ in range(7)
-            ],
-            "readouts": [
-                {
-                    "freq": 100.0,
-                    "f_fabric": 430.08,
-                }
-            ],
-            "tprocs": [
-                {
-                    "f_time": 384.0,
-                }
-            ],
-        }
-
-    def __getitem__(self, key):
-        return self._cfg[key]
-
-    def get(self, key, default=None):
-        return self._cfg.get(key, default)
-
-    def freq2reg(self, f, gen_ch=0, ro_ch=None):
-        """Mock frequency to register conversion."""
-        print(f"[MOCK] freq2reg: f={f} MHz, gen_ch={gen_ch}")
-        return int(f * 1000)  # Simplified conversion
-
-    def reg2freq(self, reg, gen_ch=0, ro_ch=None):
-        """Mock register to frequency conversion."""
-        return reg / 1000.0
-
-    def us2cycles(self, us, gen_ch=0, ro_ch=None):
-        """Mock microseconds to cycles conversion."""
-        cycles = int(us * 430.08)  # Approximate conversion
-        print(f"[MOCK] us2cycles: {us} us -> {cycles} cycles")
-        return cycles
-
-    def cycles2us(self, cycles, gen_ch=0, ro_ch=None):
-        """Mock cycles to microseconds conversion."""
-        return cycles / 430.08
-
-    def deg2reg(self, deg, gen_ch=0):
-        """Mock degrees to register conversion."""
-        return int(deg * 65536 / 360)
-
-    def reg2deg(self, reg, gen_ch=0):
-        """Mock register to degrees conversion."""
-        return reg * 360 / 65536
-
-    def __repr__(self):
-        return "<MockQickConfig: Simulated QICK hardware>"
 
 
 class MockQickSoc:
-    """Mock QICK SoC proxy for InstrumentManager."""
+    """Stub QickSoc that satisfies the surface qick's AcquireMixin calls.
+
+    Three qick acquisition entry points (acquire, acquire_decimated, run_rounds)
+    call slightly different soc methods; this class covers all three. All
+    methods either no-op or return correctly-shaped zeros. Methods accept
+    *args/**kwargs so future qick library additions don't break us silently.
+    """
 
     def __init__(self):
-        self._cfg = MockQickConfig()._cfg
-        print("[MOCK] QickSoc proxy initialized")
+        # Recorded by start_readout so poll_data can return the right shape.
+        self._total_count = 0
+        self._reads_per_shot = []
 
-    def get_cfg(self) -> dict:
-        """Return mock configuration."""
-        return self._cfg
+    # --- config_all / config_gens / config_readouts / load_pulses ---
 
-    def acquire(self, *args, **kwargs):
-        """
-        Mock data acquisition.
+    def start_src(self, *args, **kwargs):
+        pass
 
-        Returns simulated Rabi oscillation data:
-        - 100 points on x-axis over 1 us (0 to 1.0 us)
-        - Oscillation frequency: 5 MHz
-        - Decay time constant: 10 us (T2)
+    def stop_tproc(self, *args, **kwargs):
+        pass
 
-        Returns:
-            Tuple of (xpts, [[avgi]], [[avgq]]) matching real QICK format
-        """
-        n_expts = kwargs.get("expts", 100)
-        print(f"[MOCK] acquire: generating {n_expts} data points")
+    def load_pulse_data(self, *args, **kwargs):
+        pass
 
-        # Generate x points: 100 points over 1 us
-        xpts = np.linspace(0, 1.0, n_expts)  # in microseconds
+    def set_nyquist(self, *args, **kwargs):
+        pass
 
-        # Simulation parameters
-        osc_freq_mhz = 5.0  # 5 MHz oscillation
-        decay_time_us = 10.0  # T2 = 10 us decay constant
+    def set_mixer_freq(self, *args, **kwargs):
+        pass
 
-        # Generate simulated Rabi oscillation with decay
-        # I = A * cos(2*pi*f*t) * exp(-t/T2) + noise
-        # Q = A * sin(2*pi*f*t) * exp(-t/T2) + noise
-        omega = 2 * np.pi * osc_freq_mhz  # angular frequency (rad/us since t is in us)
-        decay = np.exp(-xpts / decay_time_us)
-        noise_amplitude = 5.0
+    def config_mux_gen(self, *args, **kwargs):
+        pass
 
-        avgi = np.cos(omega * xpts) * decay * 100 + np.random.randn(n_expts) * noise_amplitude
-        avgq = np.sin(omega * xpts) * decay * 100 + np.random.randn(n_expts) * noise_amplitude
+    def configure_readout(self, *args, **kwargs):
+        pass
 
-        print(f"[MOCK] acquire: returning simulated I/Q data (f={osc_freq_mhz} MHz, T2={decay_time_us} us)")
-        return xpts, [[avgi]], [[avgq]]
+    def config_mux_readout(self, *args, **kwargs):
+        pass
+
+    def load_bin_program(self, *args, **kwargs):
+        pass
+
+    def config_avg(self, *args, **kwargs):
+        pass
+
+    def config_buf(self, *args, **kwargs):
+        pass
+
+    def reload_mem(self, *args, **kwargs):
+        pass
+
+    # --- averaged-acquire path ---
+
+    def start_readout(self, total_count, counter_addr=None, ch_list=None,
+                      reads_per_shot=None):
+        self._total_count = int(total_count)
+        self._reads_per_shot = list(reads_per_shot or [1])
+
+    def poll_data(self):
+        # qick acquire() loop expects: [(new_points, (data_per_ch, stats))]
+        # where data_per_ch[i].shape == (new_points * reads_per_shot[i], 2)
+        # and dtype int64. Returning everything in one chunk so count==total_count
+        # on the first poll and the loop exits.
+        n = self._total_count
+        data_per_ch = [
+            np.zeros((n * nr, 2), dtype=np.int64)
+            for nr in self._reads_per_shot
+        ]
+        return [(n, (data_per_ch, {}))]
+
+    # --- decimated-acquire and run_rounds paths ---
+
+    def start_tproc(self, *args, **kwargs):
+        pass
+
+    def set_tproc_counter(self, *args, **kwargs):
+        pass
+
+    def get_tproc_counter(self, addr=None):
+        # Polling loops in acquire_decimated / run_rounds exit when this
+        # returns >= total_count.
+        return self._total_count
+
+    def get_decimated(self, ch=None, address=0, length=0):
+        return np.zeros((int(length), 2))
+
+    def get_accumulated(self, ch=None, address=0, length=0):
+        # Caller does .reshape((*loop_dims, trigs, 2)), needs length*2 elements.
+        return np.zeros((int(length), 2))
+
+    def __repr__(self):
+        return "<MockQickSoc: stub, zero data>"
 
 
 class MockInstrumentManager(dict):
-    """
-    Mock InstrumentManager that prints operations instead of executing.
+    """Dict-of-instruments stand-in matching the real InstrumentManager surface.
 
-    Inherits from dict to match the real InstrumentManager interface.
+    Holds a MockQickSoc at the configured qick alias. Mid-session swap code in
+    MultimodeStation populates this with the right alias key.
     """
 
-    def __init__(self):
+    def __init__(self, qick_alias="Qick101"):
         super().__init__()
-        self["Qick101"] = MockQickSoc()  # Default QICK alias
-        print("[MOCK] InstrumentManager initialized")
-
-    def keys(self):
-        return ["Qick101"]
+        self[qick_alias] = MockQickSoc()
 
     def __repr__(self):
-        return "<MockInstrumentManager: Simulated hardware access>"
+        return f"<MockInstrumentManager: {list(self.keys())}>"
 
 
 class MockYokogawa:
-    """Mock Yokogawa voltage source."""
+    """Stub Yokogawa GS200 voltage source. All ops are no-ops."""
 
-    def __init__(self, name: str, address: str):
+    def __init__(self, name, address):
         self.name = name
         self.address = address
         self._voltage = 0.0
+        self._current = 0.0
         self._output_enabled = False
-        print(f"[MOCK] Yokogawa {name} initialized at {address}")
 
-    def set_voltage(self, v: float):
+    def set_voltage(self, v):
         print(f"[MOCK] {self.name}.set_voltage({v})")
-        self._voltage = v
+        self._voltage = float(v)
 
-    def get_voltage(self) -> float:
+    def get_voltage(self):
         return self._voltage
 
     def output_on(self):
@@ -197,6 +149,9 @@ class MockYokogawa:
         print(f"[MOCK] {self.name}.output_off()")
         self._output_enabled = False
 
-    def ramp_current(self, current: float, sweeprate: float=0.001, channel: int=1):
-        print(f"[MOCK] {self.name}.ramp_current({current})")
-        self._current = current
+    def ramp_current(self, current, sweeprate=0.001, channel=1):
+        print(f"[MOCK] {self.name}.ramp_current({current}, sweeprate={sweeprate}, channel={channel})")
+        self._current = float(current)
+
+    def __repr__(self):
+        return f"<MockYokogawa {self.name} @ {self.address}>"
