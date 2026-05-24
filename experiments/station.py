@@ -34,6 +34,7 @@ Usage:
     # Check mode: station.is_mock
 """
 
+import copy
 import json
 import os
 import re
@@ -46,9 +47,15 @@ import socket
 import numpy as np
 import yaml
 
-from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
+from qick import QickConfig
+
 from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
+from slab.instruments import InstrumentManager
+from slab.instruments.voltsource import YokogawaGS200
+
+from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
+from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
 
 from job_server.database import get_database
 from job_server.config_versioning import ConfigVersionManager, ConfigType
@@ -350,10 +357,6 @@ class MultimodeStation:
 
     def _initialize_hardware_real(self):
         """Connect to real hardware."""
-        from qick import QickConfig
-        from slab.instruments import InstrumentManager
-        from slab.instruments.voltsource import YokogawaGS200
-
         self.im = InstrumentManager(ns_address="192.168.137.26")
         self.soccfg = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
@@ -401,9 +404,6 @@ class MultimodeStation:
         After this, use_real_instruments() will raise — reconstruct the
         station with mock=False to switch to real mode.
         """
-        from qick import QickConfig
-        from slab.instruments import InstrumentManager
-
         try:
             real_im = InstrumentManager(ns_address="192.168.137.26")
             qick_alias = self.hardware_cfg["aliases"]["soc"]
@@ -420,7 +420,6 @@ class MultimodeStation:
 
     def _install_mock_instruments(self):
         """Build mock im + yokos and assign to self. Does not touch soc/configs."""
-        from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
         qick_alias = self.hardware_cfg["aliases"]["soc"]
         self.im = MockInstrumentManager(qick_alias=qick_alias)
         self.yoko_coupler = MockYokogawa(name="yoko_coupler", address="mock://192.168.137.148")
@@ -878,7 +877,6 @@ class MultimodeStation:
 
     def _get_sanitized_config_copy(self, config):
         """Return a deep copy of config with dataset objects and vestigial fields removed for YAML serialization."""
-        import copy
         sanitized = copy.deepcopy(config)
         if hasattr(sanitized, 'device') and hasattr(sanitized.device, 'storage'):
             # Remove runtime dataset objects (not serializable)
