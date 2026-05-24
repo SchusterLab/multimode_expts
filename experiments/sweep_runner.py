@@ -388,7 +388,7 @@ class SweepRunner:
         # Create "mother" experiment to hold accumulated 2D data
         if self.program is not None:
             mother_expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=f'{self.ExptClass.__name__}_sweep',
                 config_file=self.station.hardware_config_file,
@@ -396,7 +396,7 @@ class SweepRunner:
             )
         else:
             mother_expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=f'{self.ExptClass.__name__}_sweep',
                 config_file=self.station.hardware_config_file,
@@ -629,7 +629,7 @@ class SweepRunner:
         # Create "mother" experiment to hold accumulated 2D data
         if self.program is not None:
             mother_expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=f'{self.ExptClass.__name__}_sweep',
                 config_file=self.station.hardware_config_file,
@@ -637,7 +637,7 @@ class SweepRunner:
             )
         else:
             mother_expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=f'{self.ExptClass.__name__}_sweep',
                 config_file=self.station.hardware_config_file,
@@ -669,7 +669,7 @@ class SweepRunner:
             # Create individual experiment for this sweep point
             if self.program is not None:
                 expt = self.ExptClass(
-                    soccfg=self.station.soc,
+                    soccfg=self.station.soccfg,
                     path=self.station.data_path,
                     prefix=self.ExptClass.__name__,
                     config_file=self.station.hardware_config_file,
@@ -677,7 +677,7 @@ class SweepRunner:
                 )
             else:
                 expt = self.ExptClass(
-                    soccfg=self.station.soc,
+                    soccfg=self.station.soccfg,
                     path=self.station.data_path,
                     prefix=self.ExptClass.__name__,
                     config_file=self.station.hardware_config_file,

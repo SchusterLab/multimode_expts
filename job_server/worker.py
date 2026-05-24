@@ -500,10 +500,9 @@ class JobWorker:
             program = (job.program_module, job.program_class)
 
         # Create experiment instance
-        # Note: In mock mode, this will use MockQickConfig
         if program is not None:
             expt = ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=str(self.station.data_path),
                 prefix=job.job_id,
                 config_file=str(self.station.hardware_config_file),
@@ -511,7 +510,7 @@ class JobWorker:
             )
         else:
             expt = ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=str(self.station.data_path),
                 prefix=job.job_id,
                 config_file=str(self.station.hardware_config_file),

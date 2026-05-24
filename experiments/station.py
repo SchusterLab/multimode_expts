@@ -28,7 +28,7 @@ Usage:
     # ... iterate on a buggy qick program against the stub ...
     station.use_real_instruments()
 
-    # Access hardware: station.soc, station.im
+    # Access hardware: station.soccfg, station.im
     # Access config: station.hardware_cfg, station.multimode_cfg
     # Access paths: station.data_path, station.plot_path
     # Check mode: station.is_mock
@@ -175,6 +175,22 @@ class MultimodeStation:
         use_real_instruments() in addition to the constructor flag.
         """
         return self._is_mock
+
+    def __getattr__(self, name):
+        # Tripwire for the soc → soccfg rename. Plain AttributeError would be
+        # less helpful — the new name is one char away, easy to mistype.
+        # __getattr__ only fires when normal attribute lookup misses, so this
+        # has no impact on hot paths.
+        if name == "soc":
+            raise AttributeError(
+                "MultimodeStation.soc was renamed to .soccfg "
+                "(it's a QickConfig, not a QickSoc — the old name was misleading). "
+                "Replace all station.soc references with station.soccfg. "
+                "See docs/mock_mode_architecture.md."
+            )
+        raise AttributeError(
+            f"{type(self).__name__!r} object has no attribute {name!r}"
+        )
 
     def _initialize_configs(self, hardware_config, multiphoton_config, storage_man_file, floquet_file):
         """Load configuration files from paths, version IDs, or main versions."""
@@ -339,7 +355,7 @@ class MultimodeStation:
         from slab.instruments.voltsource import YokogawaGS200
 
         self.im = InstrumentManager(ns_address="192.168.137.26")
-        self.soc = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
+        self.soccfg = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
 
@@ -391,7 +407,7 @@ class MultimodeStation:
         try:
             real_im = InstrumentManager(ns_address="192.168.137.26")
             qick_alias = self.hardware_cfg["aliases"]["soc"]
-            self.soc = QickConfig(real_im[qick_alias].get_cfg())
+            self.soccfg = QickConfig(real_im[qick_alias].get_cfg())
         except Exception as e:
             raise RuntimeError(
                 f"Mock mode requires a reachable QICK Pyro proxy to fetch the "
@@ -466,12 +482,12 @@ class MultimodeStation:
             print(f"[MOCK STATION] Data path: {self.data_path}")
             print(f"[MOCK STATION] Config file: {self.hardware_config_file}")
             print(f"[MOCK STATION] Instruments: {list(self.im.keys())}")
-            print(f"[MOCK STATION] SOC: {self.soc}")
+            print(f"[MOCK STATION] soccfg: {self.soccfg}")
         else:
             print("Data, plots, logs will be stored in:", self.experiment_path)
             print("Hardware configs will be read from", self.hardware_config_file)
             print(self.im.keys())
-            print(self.soc)
+            print(self.soccfg)
 
     def load_data(self, filename: Optional[str] = None, prefix: Optional[str] = None):
         """Load data from HDF5 file."""

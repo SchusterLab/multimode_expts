@@ -138,9 +138,6 @@ out of mock mode briefly with `station.use_real_instruments()`.
   `MultimodeStation(mock=True)` as a config-holder; under the new design its
   `data_path` redirects into `mock_data/`. If that breaks the service, it's
   downstream of the infra and should be fixed there.
-- **Renaming `station.soc` → `station.soccfg`** for clarity. Worth doing —
-  the name has been misleading since the QickConfig/QickSoc split was added —
-  but it touches every experiment.
 
 ## Verification
 

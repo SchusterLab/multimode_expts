@@ -157,6 +157,28 @@ def test_station_module_no_detect_mock_mode():
     assert callable(s.is_production_pc)
 
 
+def test_station_soc_attribute_tripwire():
+    """station.soc was renamed to .soccfg. A __getattr__ tripwire raises
+    an informative AttributeError if anyone tries the old name."""
+    from experiments.station import MultimodeStation
+
+    # Minimal instance bypassing __init__ (which would require hardware).
+    inst = MultimodeStation.__new__(MultimodeStation)
+    inst._is_mock = False
+    inst.soccfg = "dummy_qickconfig"
+
+    # new name works
+    assert inst.soccfg == "dummy_qickconfig"
+
+    # old name raises with a helpful message
+    with pytest.raises(AttributeError, match="renamed to .soccfg"):
+        _ = inst.soc
+
+    # unrelated missing attrs still raise normal AttributeError
+    with pytest.raises(AttributeError, match="no attribute"):
+        _ = inst.this_attr_does_not_exist
+
+
 def test_swap_methods_preserve_state_per_contract():
     # The state-preservation contract from the plan: only these attrs are
     # touched by the swap methods. Anything outside should be preserved.

@@ -432,7 +432,7 @@ class CharacterizationRunner:
         # Create experiment instance
         if self.program is not None:
             expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=self.ExptClass.__name__,
                 config_file=self.station.hardware_config_file,
@@ -440,7 +440,7 @@ class CharacterizationRunner:
             )
         else:
             expt = self.ExptClass(
-                soccfg=self.station.soc,
+                soccfg=self.station.soccfg,
                 path=self.station.data_path,
                 prefix=self.ExptClass.__name__,
                 config_file=self.station.hardware_config_file,

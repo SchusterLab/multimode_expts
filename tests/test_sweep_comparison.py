@@ -107,7 +107,7 @@ def run_old_method(station, freq_start, freq_stop, freq_step):
 
     # Create old-style class
     class_for_exp = man_f0g1_class(
-        soccfg=station.soc,
+        soccfg=station.soccfg,
         path=station.data_path,
         prefix=sweep_experiment_name,
         config_file=station.hardware_config_file,
