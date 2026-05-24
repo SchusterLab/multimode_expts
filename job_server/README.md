@@ -203,6 +203,25 @@ pixi run monitor -u guan         # only guan's jobs
 pixi run monitor -u guan -n 5    # combine both
 ```
 
+### 5. Web Dashboard
+
+A richer view is available at `http://127.0.0.1:8000/ui/` (the root `/`
+also redirects there). Shows the running job, pending queue with cancel
+buttons, filterable history, and a per-job detail page with live-tailing
+output.
+
+The server binds to `127.0.0.1` only, so to view it from your laptop
+forward the port over SSH (assuming you've named the host `pippin` in
+`~/.ssh/config`):
+
+```bash
+ssh -L 8000:127.0.0.1:8000 pippin
+```
+
+Leave that session open, then open `http://localhost:8000/ui/` in your
+local browser. All API methods (including `DELETE /jobs/{id}` for
+cancelling pending jobs) are reachable through the same tunnel.
+
 ## Usage in Jupyter Notebooks
 
 ### Basic Example: Submit and Wait

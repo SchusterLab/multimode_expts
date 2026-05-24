@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Job Queue Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>Job Queue</h1>
+  <div id="health" class="health">connecting…</div>
+  <div class="header-actions">
+    <label><input type="checkbox" id="autorefresh" checked> auto-refresh</label>
+    <button id="refresh-btn" type="button">refresh</button>
+  </div>
+</header>
+
+<main>
+  <!-- Queue view -->
+  <section id="view-queue">
+    <h2>Running</h2>
+    <div id="running-job" class="job-card">none</div>
+
+    <h2>Pending <span id="pending-count" class="count"></span></h2>
+    <table id="pending-table" class="jobs">
+      <thead><tr>
+        <th>Job ID</th><th>User</th><th>Experiment</th><th>Priority</th><th>Submitted</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <h2>History</h2>
+    <div class="filters">
+      <label>user
+        <input type="text" id="filter-user" placeholder="(all)">
+      </label>
+      <label>status
+        <select id="filter-status">
+          <option value="">(all)</option>
+          <option value="completed">completed</option>
+          <option value="failed">failed</option>
+          <option value="cancelled">cancelled</option>
+          <option value="running">running</option>
+          <option value="pending">pending</option>
+        </select>
+      </label>
+      <label>limit
+        <input type="number" id="filter-limit" value="30" min="1" max="500">
+      </label>
+    </div>
+    <table id="history-table" class="jobs">
+      <thead><tr>
+        <th>Job ID</th><th>User</th><th>Experiment</th><th>Status</th><th>Created</th><th>Completed</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- Detail view -->
+  <section id="view-detail" hidden>
+    <a href="#/" class="back">&larr; back</a>
+    <h2 id="detail-job-id"></h2>
+    <div id="detail-meta" class="meta"></div>
+    <div class="detail-actions">
+      <button id="detail-cancel" type="button" hidden>cancel job</button>
+    </div>
+    <h3>Output</h3>
+    <pre id="detail-output" class="output">(waiting for output…)</pre>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

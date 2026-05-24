@@ -17,9 +17,12 @@ Or for development with auto-reload:
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -163,7 +166,13 @@ class JobOutputResponse(BaseModel):
 
 @app.get("/", tags=["info"])
 async def root():
-    """Root endpoint with API information."""
+    """Redirect to the web dashboard."""
+    return RedirectResponse(url="/ui/")
+
+
+@app.get("/api", tags=["info"])
+async def api_info():
+    """API information."""
     return {
         "name": "Multimode Experiment Job Server",
         "version": "1.0.0",
@@ -173,6 +182,7 @@ async def root():
             "queue": "GET /jobs/queue",
             "cancel": "DELETE /jobs/{job_id}",
             "health": "GET /health",
+            "dashboard": "GET /ui/",
         },
     }
 
@@ -529,6 +539,15 @@ async def get_job_log_path(
         "log_path": job.output_log_path,
         "status": job.status.value,
     }
+
+
+# ============================================================================
+# Static dashboard
+# ============================================================================
+
+_DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+if _DASHBOARD_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="ui")
 
 
 # ============================================================================
