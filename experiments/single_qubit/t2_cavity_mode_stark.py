@@ -33,6 +33,7 @@ from tqdm.notebook import tqdm
 
 from experiments.MM_base import MM_base, MMAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import RamseyFitting
+from fitting.decaysin_analysis import h5_safe_data
 
 
 class CavityModeStarkProgram(MMAveragerProgram):
@@ -377,6 +378,8 @@ class CavityModeStarkExperiment(Experiment):
         analysis.display()
 
     def save_data(self, data=None):
+        if data is None:
+            data = self.data
         print(f'Saving {self.fname}')
-        super().save_data(data=data)
+        super().save_data(data=h5_safe_data(data))
         return self.fname

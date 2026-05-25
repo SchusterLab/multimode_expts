@@ -43,6 +43,7 @@ from tqdm.notebook import tqdm
 
 from experiments.MM_base import MM_base, MMAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import RamseyFitting
+from fitting.decaysin_analysis import h5_safe_data
 
 
 def _estimate_pulse_total_us(pulse_data):
@@ -430,15 +431,9 @@ class CavityModeStarkAlwaysOnExperiment(Experiment):
         xpts = self.cfg.expt.start + self.cfg.expt.step * np.arange(
             self.cfg.expt.expts)
 
-        # Guard on the minimum wait (same as non-always-on)
-        n_wait_segments = 1 + self.cfg.expt.get('echoes', 0)
-        min_wait = 2 * self.cfg.expt.rise_time * n_wait_segments
-        if np.min(xpts) < min_wait:
-            raise AssertionError(
-                f"Minimum wait ({np.min(xpts):.3f} us) < 2*rise_time * "
-                f"n_wait_segments ({min_wait:.3f} us).")
         # Each program quantizes wait_per_seg via sync_all(us2cycles(...));
         # warn against the per-segment step using the default tProc fabric.
+        n_wait_segments = 1 + self.cfg.expt.get('echoes', 0)
         warn_step_subcycle(
             self.soccfg,
             self.cfg.expt.step / n_wait_segments,
@@ -537,6 +532,8 @@ class CavityModeStarkAlwaysOnExperiment(Experiment):
         analysis.display()
 
     def save_data(self, data=None):
+        if data is None:
+            data = self.data
         print(f'Saving {self.fname}')
-        super().save_data(data=data)
+        super().save_data(data=h5_safe_data(data))
         return self.fname

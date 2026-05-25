@@ -6,6 +6,7 @@ from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
+from fitting.decaysin_analysis import h5_safe_data
 from fitting.fit_display_classes import (
     CavityRamseyGainSweepFitting,
     GeneralFitting,
@@ -451,7 +452,9 @@ class CavityRamseyExperiment(Experiment):
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
-        super().save_data(data=data)
+        if data is None:
+            data = self.data
+        super().save_data(data=h5_safe_data(data))
         return self.fname
 
 

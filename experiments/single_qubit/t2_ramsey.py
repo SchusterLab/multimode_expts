@@ -10,6 +10,7 @@ from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, 
 
 from fitting.fit_utils import guess_sinusoidal_params
 from fitting.fit_display_classes import RamseyFitting
+from fitting.decaysin_analysis import h5_safe_data
 
 
 class RamseyProgram(MMRAveragerProgram):
@@ -346,7 +347,9 @@ class RamseyExperiment(Experiment):
         plt.show()
 
     def save_data(self, data=None):
+        if data is None:
+            data = self.data
         print(f'Saving {self.fname}')
-        super().save_data(data=data)
+        super().save_data(data=h5_safe_data(data))
         return self.fname
 
