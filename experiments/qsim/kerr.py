@@ -97,15 +97,17 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         elif cfg.expt.user_defined_pulse[5] == 3:
             self.cavity_ch = self.flux_high_ch
             self.cavity_ch_types = self.flux_high_ch_type
-        elif cfg.expt.user_defined_pulse[5] == 6:
-            self.cavity_ch = self.storage_ch
-            self.cavity_ch_types = self.storage_ch_type
+        # elif cfg.expt.user_defined_pulse[5] == 6:
+        #     self.cavity_ch = self.storage_ch
+        #     self.cavity_ch_types = self.storage_ch_type
         elif cfg.expt.user_defined_pulse[5] == 0:
             self.cavity_ch = self.f0g1_ch
             self.cavity_ch_types = self.f0g1_ch_type
         elif cfg.expt.user_defined_pulse[5] == 4:
             self.cavity_ch = self.man_ch
             self.cavity_ch_types = self.man_ch_type
+        else:
+            print(f'cant handle channel {cfg.expt.user_defined_pulse[5]}')
 
         if self.cfg.expt.storage_ramsey[0]:
             # decide which channel do we flux drive on
@@ -114,7 +116,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             ]
             self.creator = self.get_prepulse_creator(sweep_pulse)
             freq = self.creator.pulse[0][0]
-            self.flux_ch = self.flux_low_ch if freq < 1000 else self.flux_high_ch
+            self.flux_ch = self.creator.pulse.tolist()[4]
 
         if self.cfg.expt.man_ramsey[0]:
             sweep_pulse = [
@@ -240,25 +242,30 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                                      gain=self.user_gain,
                                      length=self.user_length,
                                      waveform="user_test")
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
 
         if cfg.expt.storage_ramsey[0]:
             # sweep_pulse = [['storage', 'M'+ str(self.cfg.expt.man_idx) + '-' + 'S' + str(cfg.expt.storage_ramsey[1]), 'pi'], ]
             # creator = self.get_prepulse_creator(sweep_pulse)
             self.custom_pulse(self.cfg, self.creator.pulse, prefix='Storage' + str(cfg.expt.storage_ramsey[1]))
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
         elif self.cfg.expt.coupler_ramsey:
             self.custom_pulse(cfg, cfg.expt.custom_coupler_pulse, prefix='CustomCoupler')
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
         elif self.cfg.expt.man_ramsey[0]:
             # man ramsey should be true if you are swapping in a 0+1 into manipulate instead of doing displacements;
             # if displacements, then do user defined pulse
             self.custom_pulse(self.cfg, self.creator.pulse, prefix='Manipulate' + str(cfg.expt.man_ramsey[1]))
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
 
 
         # wait advanced wait time
-        self.sync_all(self.us2cycles(0.01))
+        # self.sync_all(self.us2cycles(0.01))
+        self.sync_all()
         # self.sync(self.phase_update_page[qTest], self.r_wait)
         ecfg = self.cfg.expt
         kerr_drive_type = self.cfg.expt.get('kerr_drive_type', None)
@@ -305,7 +312,8 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         else:
             assert False, f"invalid kerr drive type {kerr_drive_type}"
         self.custom_pulse(cfg, kerr_pulse, prefix='KerrEng_')
-        self.sync_all(self.us2cycles(0.01))
+        # self.sync_all(self.us2cycles(0.01))
+        self.sync_all()
 
         # echoes
         if cfg.expt.echoes[0]:
@@ -323,10 +331,12 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
 
         if cfg.expt.storage_ramsey[0] or self.cfg.expt.coupler_ramsey:
             self.pulse(ch=self.flux_ch[qTest])
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
         elif self.cfg.expt.man_ramsey[0]:
             self.pulse(ch=self.cavity_ch[qTest])
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
 
         if self.cfg.user_defined_pulse[0]:
             phase_adv = cfg.expt.ramsey_freq * cfg.expt.kerr_length *360 # in degree
@@ -345,7 +355,8 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
                                      gain=self.user_gain,
                                      length=self.user_length,
                                      waveform="user_test")
-            self.sync_all(self.us2cycles(0.01))
+            # self.sync_all(self.us2cycles(0.01))
+            self.sync_all()
 
         # postpulse
         self.sync_all()
@@ -408,9 +419,10 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
         
         def estimate_phase(y):
             print("y[0]", y[0], "min", np.min(y), "max", np.max(y))
-            if np.abs(y[0] - np.min(y)) < np.abs(y[0] - np.max(y)):
-                return 0
-            return np.pi/2
+            return np.abs(y[0] - np.min(y)) / np.abs(np.max(y) - np.min(y)) * np.pi/2
+            # if np.abs(y[0] - np.min(y)) < np.abs(y[0] - np.max(y)):
+            #     return 0
+            # return np.pi/2
 
         def fit_model(x, alpha2, f, scale, offset, phase):
             """Fitting model: exp(2*alpha2*(-cos(2*pi*f*x)-1))"""
@@ -440,6 +452,7 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
 
             alpha_guess = y[lid]*self.cfg.device.manipulate.gain_to_alpha[0]
             phase_guess = estimate_phase(line)
+            scale_guess = np.max(line) - np.min(line)
 
             # Create lmfit Model
             model = Model(fit_model)
@@ -449,9 +462,9 @@ class KerrCavityRamseyExperiment(QsimBaseExperiment):
                 # alpha2 = dict(value=alpha_guess**2, min=alpha_guess**2/2, max=alpha_guess**2*2),
                 alpha2 = dict(value=alpha_guess**2, vary=False),
                 f=f_initial,
-                scale=dict(value=1, min=0.1, max=1.2),
+                scale=dict(value=scale_guess, min=0.75*scale_guess, max=1.25*scale_guess),
                 offset=dict(value=0, min=-0.1, max=0.5),
-                phase=dict(value=phase_guess, min=-np.pi, max=np.pi)
+                phase=dict(value=phase_guess, min=0, max=np.pi)
                 )
 
             # Perform fit
