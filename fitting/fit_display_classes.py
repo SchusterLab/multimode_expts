@@ -13,6 +13,10 @@ from scipy.optimize import curve_fit, least_squares
 from scipy.signal import find_peaks
 
 import fitting.fitting as fitter
+from fitting.decaysin_analysis import (
+    fit_decaysin_with_envelope_selection,
+    plot_envelope_overlay,
+)
 from fitting.fit_utils import guess_sinusoidal_params, guess_decaysin_params
 
 
@@ -337,23 +341,28 @@ class RamseyFitting(GeneralFitting):
         self.fitparams = fitparams
         self.results = {}
 
-    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=True, fitparams=None,
+                use_x0=False, gauss_ssr_margin=0.05, **kwargs):
         '''
-        yscale, freq, phase_deg, decay, y0, x0 
+        Fits both exp- and Gaussian-envelope decaying sinusoids and picks
+        the lower-SSR model with a ``gauss_ssr_margin`` safety threshold.
+        Default ``use_x0=False`` pins the dephasing envelope at t=0 to
+        avoid the grow-then-decay artifact at short T2.
+
+        Parameter ordering: yscale, freq, phase_deg, decay, y0, x0.
         '''
         if data is None:
             data = self.data
-        try: 
-            if self.cfg.expt.echoes[0]: # if there are echoes
+        try:
+            if self.cfg.expt.echoes[0]:
                 print('Echoes in the data')
                 print(data['xpts'][:5])
-                data['xpts'] *= (1 + self.cfg.expt['echoes'][1]) # multiply by the number of echoes
+                data['xpts'] *= (1 + self.cfg.expt['echoes'][1])
                 print(data['xpts'][:5])
             else:
                 print('No echoes in the data')
         except KeyError:
             print('No echoes in the data')
-            pass
 
         start_idx = None
         end_idx = None
@@ -363,39 +372,84 @@ class RamseyFitting(GeneralFitting):
             data['avgq'] = Qlist[start_idx:end_idx]
         xpts = data['xpts'][start_idx:end_idx]
 
-        if fit:
-            # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
+        if not fit:
+            return data
+
+        for ch in ('avgi', 'avgq'):
             if fitparams is None:
                 amp, freq, phase, decay, offset = guess_decaysin_params(
-                    xpts, data['avgi'])
-                fitparams_i = [amp, freq, phase, decay, offset, None]
-            p_avgi, pCov_avgi = fitter.fitdecaysin(xpts, data["avgi"], fitparams=fitparams_i)
+                    xpts, data[ch])
+                fp = [amp, freq, phase, decay, offset]
+                if use_x0:
+                    fp.append(None)  # let the fitter pick x0 from xdata[0]
+            else:
+                fp = fitparams
+            r = fit_decaysin_with_envelope_selection(
+                xpts, data[ch], fitparams=fp, use_x0=use_x0,
+                gauss_ssr_margin=gauss_ssr_margin)
+            data[f'fit_{ch}']           = r['p']
+            data[f'fit_err_{ch}']       = r['cov']
+            data[f'fit_{ch}_exp']       = r['p_exp']
+            data[f'fit_{ch}_gauss']     = r['p_gauss']
+            data[f'fit_err_{ch}_exp']   = r['cov_exp']
+            data[f'fit_err_{ch}_gauss'] = r['cov_gauss']
+            data[f'fit_ssr_{ch}_exp']   = r['ssr_exp']
+            data[f'fit_ssr_{ch}_gauss'] = r['ssr_gauss']
+            data[f'fit_envelope_{ch}']  = r['envelope']
+            p = r['p']
+            if isinstance(p, (list, np.ndarray)):
+                data[f'f_adjust_ramsey_{ch}'] = sorted(
+                    (self.cfg.expt.ramsey_freq - p[1],
+                     self.cfg.expt.ramsey_freq + p[1]), key=abs)
 
-            if fitparams is None:
-                amp, freq, phase, decay, offset = guess_decaysin_params(
-                    xpts, data['avgq'])
-                fitparams_q = [amp, freq, phase, decay, offset, None]
-            p_avgq, pCov_avgq = fitter.fitdecaysin(xpts, data["avgq"], fitparams=fitparams_q)
+        data['fit_envelope'] = data['fit_envelope_avgi']
+        data['fit_gauss_ssr_margin'] = float(gauss_ssr_margin)
 
-            data['fit_avgi'] = p_avgi
-            data['fit_avgq'] = p_avgq
-            data['fit_err_avgi'] = pCov_avgi
-            data['fit_err_avgq'] = pCov_avgq
-
-            if isinstance(p_avgi, (list, np.ndarray)):
-                data['f_adjust_ramsey_avgi'] = sorted(
-                    (self.cfg.expt.ramsey_freq - p_avgi[1], self.cfg.expt.ramsey_freq + p_avgi[1]), key=abs)
-            if isinstance(p_avgq, (list, np.ndarray)):
-                data['f_adjust_ramsey_avgq'] = sorted(
-                    (self.cfg.expt.ramsey_freq - p_avgq[1], self.cfg.expt.ramsey_freq + p_avgq[1]), key=abs)
-
-            self.results = {
-                'fit_avgi': p_avgi,
-                'fit_avgq': p_avgq,
-                'fit_err_avgi': pCov_avgi,
-                'fit_err_avgq': pCov_avgq,
-            }
+        self.results = {
+            'fit_avgi': data['fit_avgi'],
+            'fit_avgq': data['fit_avgq'],
+            'fit_err_avgi': data['fit_err_avgi'],
+            'fit_err_avgq': data['fit_err_avgq'],
+        }
         return data
+
+    def _draw_ramsey_overlay(self, data, channel, label_axis, f_pi_test,
+                              print_drive_line):
+        """Draw the winning-envelope curve + envelopes and print fit summary."""
+        p = data.get(f'fit_{channel}')
+        if not isinstance(p, (list, np.ndarray)):
+            return
+        envelope = data.get(f'fit_envelope_{channel}', 'exp')
+        pCov = data[f'fit_err_{channel}']
+        x = data['xpts'][:-1]
+        t2_label = '$T_2^*$ (Gauss)' if envelope == 'gauss' else '$T_2$ (Exp)'
+
+        ssr_exp = data.get(f'fit_ssr_{channel}_exp', np.nan)
+        ssr_gau = data.get(f'fit_ssr_{channel}_gauss', np.nan)
+        try:
+            captionStr = (f'{t2_label} fit [us]: {p[3]:.3} $\\pm$ '
+                          f'{np.sqrt(pCov[3][3]):.3}')
+        except Exception:
+            print('Fit Failed ; aborting')
+            captionStr = None
+
+        plot_envelope_overlay(x, p, envelope=envelope, label=captionStr)
+        plt.legend()
+
+        if print_drive_line:
+            print(f'Current pi pulse frequency: {f_pi_test}')
+        print(f'Envelope chosen ({label_axis}): {envelope}  '
+              f'(SSR exp={ssr_exp:.4g}, gauss={ssr_gau:.4g})')
+        print(f'Fit frequency from {label_axis} [MHz]: {p[1]} +/- '
+              f'{np.sqrt(pCov[1][1])}')
+        if p[1] > 2 * self.cfg.expt.ramsey_freq:
+            print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
+        adj = data[f'f_adjust_ramsey_{channel}']
+        print(f'Suggested new pi pulse frequency from fit {label_axis} [MHz]:\n',
+              f'\t{f_pi_test + adj[0]}\n',
+              f'\t{f_pi_test + adj[1]}')
+        print(f'T2 Ramsey from fit {label_axis} [us]: {p[3]}  '
+              f'(envelope={envelope})')
 
     def display(self, data=None, fit=True, f_test= None, title_str = 'Ramsey', **kwargs):
         if data is None:
@@ -433,48 +487,15 @@ class RamseyFitting(GeneralFitting):
                     ylabel="I [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgi"][:-1], 'o-')
         if fit:
-            p = data['fit_avgi']
-            if isinstance(p, (list, np.ndarray)):
-                pCov = data['fit_err_avgi']
-                try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
-                except Exception:
-                    print('Fit Failed ; aborting')
-                    captionStr = None
-                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
-                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
-                plt.legend()
-                print(f'Current pi pulse frequency: {f_pi_test}')
-                print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-                if p[1] > 2 * self.cfg.expt.ramsey_freq:
-                    print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
-                print('Suggested new pi pulse frequency from fit I [MHz]:\n',
-                        f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][0]}\n',
-                        f'\t{f_pi_test + data["f_adjust_ramsey_avgi"][1]}')
-                print(f'T2 Ramsey from fit I [us]: {p[3]}')
+            self._draw_ramsey_overlay(data, channel='avgi', label_axis='I',
+                                      f_pi_test=f_pi_test,
+                                      print_drive_line=True)
         plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgq"][:-1], 'o-')
         if fit:
-            p = data['fit_avgq']
-            if isinstance(p, (list, np.ndarray)):
-                pCov = data['fit_err_avgq']
-                try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
-                except Exception:
-                    print('Fit Failed ; aborting')
-                    captionStr = None
-                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
-                plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
-                plt.legend()
-                print(f'Fit frequency from Q [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-                if p[1] > 2 * self.cfg.expt.ramsey_freq:
-                    print('WARNING: Fit frequency >2*wR, you may be too far from the real pi pulse frequency!')
-                print('Suggested new pi pulse frequencies from fit Q [MHz]:\n',
-                        f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][0]}\n',
-                        f'\t{f_pi_test + data["f_adjust_ramsey_avgq"][1]}')
-                print(f'T2 Ramsey from fit Q [us]: {p[3]}')
+            self._draw_ramsey_overlay(data, channel='avgq', label_axis='Q',
+                                      f_pi_test=f_pi_test,
+                                      print_drive_line=False)
 
         plt.tight_layout()
         plt.show()

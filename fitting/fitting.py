@@ -465,6 +465,121 @@ def fitdecaysin(xdata, ydata, fitparams=None, use_x0=True):
     return best_pOpt, best_pCov
 
 
+# ====================================================== #
+# Gaussian-envelope decaying sinusoid (1/f-noise dephasing).
+# Same parameter ordering as decaysin so callers can swap models trivially.
+
+def gaussdecaysin(x, *p):
+    yscale, freq, phase_deg, decay, y0, x0 = p
+    return (yscale * np.sin(2*np.pi*freq*x + phase_deg*np.pi/180)
+            * np.exp(-((x - x0) / decay) ** 2) + y0)
+
+
+def gaussdecaysin1(x, *p):
+    yscale, freq, phase_deg, decay, y0 = p
+    return (yscale * np.sin(2*np.pi*freq*x + phase_deg*np.pi/180)
+            * np.exp(-(x / decay) ** 2) + y0)
+
+
+def gaussenvfunc(x, y0, yscale, x0, decay):
+    """Gaussian-decay envelope, signature mirrors expfunc for plotting parity."""
+    return y0 + yscale * np.exp(-((x - x0) / decay) ** 2)
+
+
+def fitgaussdecaysin(xdata, ydata, fitparams=None, use_x0=True):
+    """Fit sinusoid with Gaussian envelope (multi-start over phase).
+
+    Mirrors fitdecaysin but with envelope exp(-((x-x0)/T2)**2). Parameter
+    order is identical (yscale, freq, phase_deg, decay, y0, x0) so it is
+    drop-in compatible with the exp-envelope fit for downstream code.
+    """
+    from fitting.fit_utils import guess_decaysin_params
+
+    xdata = np.asarray(xdata, dtype=float)
+    ydata = np.asarray(ydata, dtype=float)
+
+    n_params = 6 if use_x0 else 5
+    model = gaussdecaysin if use_x0 else gaussdecaysin1
+
+    if fitparams is None:
+        fitparams = [None] * n_params
+
+    has_nones = any(p is None for p in fitparams)
+    if has_nones:
+        amp_g, freq_g, phase_g, decay_g, offset_g = guess_decaysin_params(
+            xdata, ydata)
+        if fitparams[0] is None: fitparams[0] = amp_g
+        if fitparams[1] is None: fitparams[1] = freq_g
+        if fitparams[2] is None: fitparams[2] = phase_g
+        if fitparams[3] is None: fitparams[3] = decay_g
+        if fitparams[4] is None: fitparams[4] = offset_g
+        if use_x0 and fitparams[5] is None:
+            fitparams[5] = xdata[0]
+
+    xrange = max(xdata) - min(xdata)
+    ymin, ymax = np.min(ydata), np.max(ydata)
+    yptp = ymax - ymin
+    if yptp == 0:
+        yptp = 1e-10
+
+    if use_x0:
+        bounds = (
+            [0, 0.1/xrange, -360, 0.1*xrange, ymin - 0.1*yptp,
+             xdata[0] - xrange],
+            [1.5*yptp, 50/xrange, 360, np.inf, ymax + 0.1*yptp,
+             xdata[-1] + xrange]
+        )
+    else:
+        bounds = (
+            [0, 0.1/xrange, -360, 0.1*xrange, ymin - 0.1*yptp],
+            [1.5*yptp, 50/xrange, 360, np.inf, ymax + 0.1*yptp]
+        )
+
+    fitparams = list(fitparams)
+    fitparams = _clamp_to_bounds(fitparams, bounds)
+
+    phase_offsets = [0, 90, 180, 270]
+    best_pOpt = list(fitparams)
+    best_pCov = np.full((n_params, n_params), np.inf)
+    best_resid = np.inf
+
+    for dph in phase_offsets:
+        p0 = list(fitparams)
+        p0[2] = fitparams[2] + dph
+        while p0[2] > 360: p0[2] -= 720
+        while p0[2] < -360: p0[2] += 720
+        p0 = _clamp_to_bounds(p0, bounds, verbose=False)
+        try:
+            pOpt, pCov = sp.optimize.curve_fit(
+                model, xdata, ydata, p0=p0, bounds=bounds, maxfev=20000)
+            resid = _residual_ss(model, xdata, ydata, pOpt)
+            if resid < best_resid:
+                best_resid = resid
+                best_pOpt = pOpt
+                best_pCov = pCov
+        except (RuntimeError, ValueError):
+            continue
+
+    if use_x0 and best_resid == np.inf:
+        try:
+            p0_5 = list(fitparams[:5])
+            bounds_5 = (list(bounds[0][:5]), list(bounds[1][:5]))
+            p0_5 = _clamp_to_bounds(p0_5, bounds_5, verbose=False)
+            pOpt5, pCov5 = sp.optimize.curve_fit(
+                gaussdecaysin1, xdata, ydata, p0=p0_5, bounds=bounds_5,
+                maxfev=20000)
+            best_pOpt = list(pOpt5) + [xdata[0]]
+            best_pCov_5 = np.full((6, 6), np.inf)
+            best_pCov_5[:5, :5] = pCov5
+            best_pCov = best_pCov_5
+            best_resid = _residual_ss(gaussdecaysin1, xdata, ydata, pOpt5)
+        except (RuntimeError, ValueError):
+            pass
+
+    if best_resid == np.inf:
+        print('Warning: gaussian-envelope fit failed (all starts)!')
+
+    return best_pOpt, best_pCov
 
 
 def gaussianfunc(x, *p):
