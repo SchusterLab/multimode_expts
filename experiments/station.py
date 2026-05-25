@@ -11,7 +11,7 @@ Supports both real hardware and mock modes:
 - Real hardware: Connects to actual instruments (production on Pippin)
 - Mock mode: Real qick.QickConfig + stub MockQickSoc (no FPGA bytes go out).
   Used to validate qick programs without hardware overhead.
-  See docs/mock_mode_architecture_plan.md for the design.
+  See docs/mock_mode_architecture.md for the design.
 
 Usage:
     from experiments.station import MultimodeStation

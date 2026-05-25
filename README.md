@@ -2,7 +2,7 @@
 
 ## Installation
 
-[Install pixi](https://pixi.prefix.dev/latest/installation/) on your machine and `pixi install` to set up the environment. 
+[Install pixi](https://pixi.prefix.dev/latest/installation/) on your machine and `pixi install` to set up the environment.
 Then `pixi run jupyter lab` or set up a Jupyter kernel to allow VS Code to execute notebooks using the default pixi environmnet (LLMs can tell you how).
 
 ## Running
@@ -13,6 +13,7 @@ On Pippin:
 - Or go inside `job_server` and double click the `.sh` executables to start server/worker individually.
 
 On Pippin or your own machine:
+
 - `pixi run [nameserver|server|worker]` to start each of them individually.
 - `pixi run monitor` to live-monitor the job queue (`-n 20` for more entries, `-u alice` to filter by user).
 
@@ -29,11 +30,12 @@ No `import multimode_expts` or `import .anything` or `sys.path` hacking!
 ## TODO
 
 - [ ] Switch jobs.db file read/write to interacting with the job server
+- [ ] Close mpl figures more proactively
 - [X] Make a web interface for viewing and operating on queued and running jobs
 - [ ] Delete the binary files that don't belong in git. hdf5 data, images etc. Move them to the data/log folder accompanying each experiment.
 - [ ] The few `slab` files are simply vendored in their original cursed state. If we straighten up the Experiment class and allow say proper file-reading functionalities, we can actually easily use the `analyze` functions in each child class to do the analysis instead of collecting everything in `fitting_display_classes` or such.
 - [ ] Deal with accumulated log files and old jobs.db entries
 - [ ] Migrate to tProcv2 at some point
 - [ ] Consider using pydantic for complex config dictionaries.
-- [ ] Mock QICK
+- [X] Mock QICK
 - [ ] Sequencer
