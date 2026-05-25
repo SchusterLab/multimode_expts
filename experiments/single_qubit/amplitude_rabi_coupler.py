@@ -61,7 +61,20 @@ class AmplitudeRabiCouplerProgram(MMRAveragerProgram):
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+        # Optional per-call override for the f0-g{man_no} pi frequency [MHz].
+        # Lets a coupler-current sweep retune the readout pulse from a lookup
+        # table without writing to the shared hardware config.
+        f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+        if f0g1_freq_override is not None:
+            mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+            _saved_f0g1 = mp_entry['frequency'][0]
+            mp_entry['frequency'][0] = float(f0g1_freq_override)
+            try:
+                self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+            finally:
+                mp_entry['frequency'][0] = _saved_f0g1
+        else:
+            self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         if pulse_type == 'gauss':
             freq_MHz, sigma_us = _resolve_pulse_params(cfg, names=('freq', 'sigma'))
@@ -166,6 +179,11 @@ class AmplitudeRabiCouplerExperiment(Experiment):
                       cfg.device.coupler.pulses.hpi.sigma[0]  [us]
         length:       (optional, pulse_type='const') override
                       cfg.device.coupler.pulses.hpi.length[0] [us]
+        f0g1_freq:    (optional, default None) override [MHz] for the
+                      f0-g{man_no} pi frequency used in the swap readout.
+                      Lets a coupler-current sweep retune the swap from a
+                      lookup table without writing to the shared hardware
+                      config.
         prepulse:        (optional) bool, play cfg.expt.pre_sweep_pulse first
         pre_sweep_pulse: (optional) gate-list spec for the custom prepulse
         active_reset:    (optional) bool, run active reset at start of body

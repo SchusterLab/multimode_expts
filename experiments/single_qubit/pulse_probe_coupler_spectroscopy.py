@@ -58,7 +58,20 @@ class PulseProbeCouplerSpectroscopyProgram(MMRAveragerProgram):
             ['multiphoton', f'f0-g{man_no}', 'pi', 0],
             ['multiphoton', 'e0-f0', 'pi', 0],
         ]
-        self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+        # Optional per-call override for the f0-g{man_no} pi frequency [MHz].
+        # Lets a coupler-current sweep retune the readout pulse from a lookup
+        # table without writing to the shared hardware config.
+        f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
+        if f0g1_freq_override is not None:
+            mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
+            _saved_f0g1 = mp_entry['frequency'][0]
+            mp_entry['frequency'][0] = float(f0g1_freq_override)
+            try:
+                self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
+            finally:
+                mp_entry['frequency'][0] = _saved_f0g1
+        else:
+            self.swap_pulse = self.get_prepulse_creator(readout_seq).pulse.tolist()
 
         # Optional coupler g->e pi pulse so the probe hits the e-f transition.
         # Mirrors the `qubit_f` flag in pulse_probe_ef_spectroscopy. Params come
@@ -190,6 +203,12 @@ class PulseProbeCouplerSpectroscopyExperiment(Experiment):
                       the calibrated cfg.device.coupler.pulses.pi_ge pulse before
                       the probe sweep, so the probe hits the coupler e-f
                       transition. Mirrors `qubit_f` in pulse_probe_ef_spectroscopy.
+        f0g1_freq:    (optional, default None) override [MHz] for the
+                      f0-g{man_no} pi frequency used in the readout sequence.
+                      When set, the readout pulse is built with this frequency
+                      instead of the multiphoton hardware-config value, without
+                      mutating the shared config. Useful for sweeping coupler
+                      current with a frequency lookup table.
         active_reset: (optional) bool, run active reset at start of body
     )
     """
