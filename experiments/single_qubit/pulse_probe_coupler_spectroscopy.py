@@ -257,6 +257,13 @@ class PulseProbeCouplerSpectroscopyExperiment(Experiment):
         if data is None:
             data = self.data
 
+        # 2D sweep data (from SweepRunner): skip the 1D Spectroscopy fit —
+        # it assumes 1D and crashes on 2D. The 2D summary is rendered in display().
+        avgi = data.get('avgi') if hasattr(data, 'get') else None
+        if avgi is not None and hasattr(avgi, 'ndim') and avgi.ndim == 2:
+            self._is_2d_sweep = True
+            return data
+
         from fitting.fit_display_classes import Spectroscopy
         spec_analysis = Spectroscopy(data, signs=signs, config=self.cfg, station=None)
         spec_analysis.analyze(fit=fit)
@@ -268,6 +275,47 @@ class PulseProbeCouplerSpectroscopyExperiment(Experiment):
                 title='Coupler Spectroscopy (via manipulate channel)', **kwargs):
         if data is None:
             data = self.data
+
+        # 2D path: render two figures — pcolormesh + overlaid amp-vs-freq traces.
+        avgi = data.get('avgi') if hasattr(data, 'get') else None
+        avgq = data.get('avgq') if hasattr(data, 'get') else None
+        if avgi is not None and hasattr(avgi, 'ndim') and avgi.ndim == 2:
+            import matplotlib.pyplot as plt
+            import numpy as np
+
+            xpts = data.get('xpts')
+            x_axis = xpts[0] if xpts is not None and hasattr(xpts, 'ndim') and xpts.ndim == 2 else xpts
+            sweep_keys = [k for k in data.keys() if k.endswith('_sweep')]
+            sweep_key = sweep_keys[0] if sweep_keys else None
+            y_axis = np.asarray(data[sweep_key]) if sweep_key else np.arange(avgi.shape[0])
+            sweep_label = sweep_key.replace('_sweep', '') if sweep_key else 'sweep index'
+
+            amps = data.get('amps')
+            if amps is None or not hasattr(amps, 'ndim') or amps.ndim != 2:
+                amps = np.abs(np.asarray(avgi) + 1j * np.asarray(avgq)) if avgq is not None else np.asarray(avgi)
+
+            fig1, ax1 = plt.subplots(figsize=(10, 6))
+            mesh = ax1.pcolormesh(x_axis, y_axis, amps, shading='auto', cmap='viridis')
+            fig1.colorbar(mesh, ax=ax1, label='amplitude')
+            ax1.set_xlabel('Pulse-probe frequency (MHz)')
+            ax1.set_ylabel(sweep_label)
+            ax1.set_title(f'{title} — 2D')
+            plt.show()
+
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
+            cmap = plt.get_cmap('viridis')
+            n = amps.shape[0]
+            for i, row in enumerate(amps):
+                color = cmap(i / max(n - 1, 1))
+                ax2.plot(x_axis, row, color=color, lw=1,
+                         label=f'{sweep_label}={y_axis[i]:.4g}' if n <= 12 else None)
+            ax2.set_xlabel('Pulse-probe frequency (MHz)')
+            ax2.set_ylabel('amplitude')
+            ax2.set_title(f'{title} — slices')
+            if n <= 12:
+                ax2.legend(fontsize=8, loc='best')
+            plt.show()
+            return
 
         if hasattr(self, '_spec_analysis'):
             vlines = kwargs.get('vlines', None)
