@@ -259,7 +259,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
             ))
         else:
             wigner_outputs.update(dict(
-                pe=np.zeros((len(self.outer_params), len(self.inner_params))),
+                pe=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
             ))
 
         # Build parity post-selection filter if requested
@@ -327,10 +327,10 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
                     if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
                         assert False, "post_select_pre_pulse with pulse_correction not implemented yet"
-                    
-                    
+
+
                     wigner_analysis_minus = WignerAnalysis(data=data_minus,
-                                                           config=self.cfg, 
+                                                           config=self.cfg,
                                                             mode_state_num=mode_state_num,
                                                             alphas=data["alpha"])
 
@@ -338,9 +338,9 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                                                           config=self.cfg,
                                                           mode_state_num=mode_state_num,
                                                           alphas=data["alpha"])
-            
-                    pe_plus = wigner_analysis_plus.bin_ss_data()
-                    pe_minus = wigner_analysis_minus.bin_ss_data()
+
+                    pe_plus = wigner_analysis_plus.bin_ss_data(filter_map=parity_filter)
+                    pe_minus = wigner_analysis_minus.bin_ss_data(filter_map=parity_filter)
                     parity_plus = (1 - pe_plus) - pe_plus
                     parity_minus = (1 - pe_minus) - pe_minus
                     parity = (parity_minus - parity_plus) / 2
@@ -348,10 +348,10 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     # print('pe_plus', pe_plus)
                     # print('parity', parity)
 
-                    # apply scale 
+                    # apply scale
                     scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
                     # print('scale parity:', scale_parity )
-            
+
                     wigner_outputs["pe_plus"][i_outer, i_inner] = pe_plus
                     wigner_outputs["pe_minus"][i_outer, i_inner] = pe_minus
                     wigner_outputs["parity_plus"][i_outer, i_inner] = parity_plus
@@ -367,6 +367,184 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
                     idx_step = read_num
                     data_wigner["idata"] = data["idata"][i_outer, i_inner, :, idx_start::idx_step]
                     data_wigner["qdata"] = data["qdata"][i_outer, i_inner, :, idx_start::idx_step]
+
+                    wigner_analysis = WignerAnalysis(data=data_wigner,
+                                                      config=self.cfg,
+                                                      mode_state_num=mode_state_num,
+                                                      alphas=data["alpha"])
+                    pe = wigner_analysis.bin_ss_data(filter_map=parity_filter)
+                    wigner_outputs["pe"][i_outer, i_inner] = pe
+                    wigner_outputs["parity"][i_outer, i_inner] = (1 - pe) - pe
+
+        data['wigner_outputs'] = wigner_outputs
+        return data
+
+    def analyze_wigner_temp(self, data=None, num_shots_sample=None, rescale_gain_to_alpha=1, rescale_alpha_scale=1, **kwargs):
+        if data is None:
+            data = self.data
+        
+        data['alpha'] = data['alpha'] * rescale_gain_to_alpha
+
+        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+        outer_param = self.cfg.expt.swept_params[0]
+        outer_params = self.cfg.expt[outer_param+'s']
+        if sweep_dim == 2:
+            inner_param = self.cfg.expt.swept_params[1]
+            inner_params = self.cfg.expt[inner_param+'s']
+        else:
+            inner_param = 'dummy'
+            inner_params = [None]  # Dummy value for single parameter sweep
+        self.outer_param, self.inner_param = outer_param, inner_param
+        self.outer_params, self.inner_params = outer_params, inner_params
+
+        mode_state_num = kwargs.get('mode_state_num', 10)
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
+        read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
+        if self.cfg.expt.post_select_pre_pulse:
+            read_num += 1
+        if self.cfg.expt.active_reset:
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+
+        # Calculate the stepping for the final readout
+        idx_start = read_num - 1
+        idx_step = read_num
+
+        wigner_outputs = dict(
+            parity=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+        )
+        if self.cfg.expt.pulse_correction:
+            wigner_outputs.update(dict(
+                pe_plus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                pe_minus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                parity_plus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+                parity_minus=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+            ))
+        else:
+            wigner_outputs.update(dict(
+                pe=np.zeros((len(self.outer_params), len(self.inner_params), len(data["alpha"]))),
+            ))
+        
+        num_shots_start = 0
+        num_shots_end = num_shots_sample if num_shots_sample else self.cfg.expt.reps
+        self.cfg.expt.reps = num_shots_end - num_shots_start
+        print("num shots start, end:", num_shots_start, num_shots_end)
+
+        for i_outer, outer_param_val in enumerate(self.outer_params):
+            for i_inner, inner_param_val in enumerate(self.inner_params):
+                print(outer_param_val, inner_param_val)
+                   
+                #############################################
+                ###added lines for the parity based filtering
+                #############################################
+                parity_filter = None
+                parity_post_select = (self.cfg.expt.get('parity_check', False)
+                        and kwargs.get('parity_post_select', self.cfg.expt.get('parity_post_select', False)))
+                if parity_post_select:
+                    parity_threshold = self.cfg.device.readout.threshold[0]
+                    rounds = self.cfg.expt.get('rounds', 1)
+                if parity_post_select:
+                    # Parity check is the first readout in each read_num group
+                    # For non-pulse_correction: data["idata"] is 4D (outer, inner, alpha, shots)
+                    # For pulse_correction: data["idata"] is 5D (outer, inner, alpha, 2, shots)
+                    raw = data["idata"][i_outer, i_inner]  # (n_alpha, ..., total_shots)
+                    _parity_start_idx= 0  
+                    if self.cfg.expt.get('active_reset', False):
+                        params = MMAveragerProgram.get_active_reset_params(self.cfg)
+                        _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
+                    if raw.ndim == 2:
+                        parity_idata = raw[:, _parity_start_idx::idx_step]
+                    else:
+                        # pulse_correction: (n_alpha, 2, total_shots) — use first acquisition
+                        parity_idata = raw[:, 0, _parity_start_idx::idx_step][:,num_shots_start:num_shots_end] #selects the first parity measurement
+                        parity_idata_second = raw[:, 1, _parity_start_idx::idx_step][:,num_shots_start:num_shots_end] #selects the second parity measurement
+                    # parity_idata shape: (n_alpha, n_parity_shots)
+                    n_alpha = parity_idata.shape[0]
+                    # Apply same reshape as bin_ss_data: (expts, rounds*reps) -> (rounds*reps, expts)
+                    parity_reshaped = np.reshape(
+                        np.transpose(
+                            np.reshape(parity_idata, (n_alpha, rounds, -1)),
+                            (1, 2, 0)
+                        ),
+                        (-1, n_alpha)
+                    )
+                    parity_filter = parity_reshaped < parity_threshold  # keep |g> (even parity)
+                    if raw.ndim != 2:
+                        parity_reshaped_second = np.reshape(
+                            np.transpose(
+                                np.reshape(parity_idata_second, (n_alpha, rounds, -1)),
+                                (1, 2, 0)
+                            ),
+                            (-1, n_alpha)
+                        )
+                        parity_filter_second = parity_reshaped_second > parity_threshold
+                        parity_filter = parity_filter & parity_filter_second
+                    n_kept = np.sum(parity_filter)
+                    n_total = parity_filter.size
+                    print(f"  parity post-select: keeping {n_kept}/{n_total} shots ({100*n_kept/n_total:.1f}%)")
+                    ##############################################################
+                    #####End of the added lines for the parity based filtering
+                    ##############################################################
+                    
+                    
+                if self.cfg.expt.pulse_correction: # shape: (len(outer_params), len(inner_params), len(alpha_list), 2, read_num * num_shots)
+                    data_minus = {}
+                    data_plus = {}
+
+                    data_minus['idata'] = data['idata'][i_outer, i_inner, :, 0, idx_start::idx_step] [:,num_shots_start:num_shots_end]
+                    data_minus['qdata'] = data['qdata'][i_outer, i_inner, :, 0, idx_start::idx_step] [:,num_shots_start:num_shots_end]
+                    data_plus['idata'] = data['idata'][i_outer, i_inner, :, 1, idx_start::idx_step][:, num_shots_start:num_shots_end]
+                    data_plus['qdata'] = data['qdata'][i_outer, i_inner, :, 1, idx_start::idx_step][:, num_shots_start:num_shots_end]
+                    print("shape", data_plus['idata'].shape)
+
+                    if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
+                        assert False, "post_select_pre_pulse with pulse_correction not implemented yet"
+                    
+                    
+                    wigner_analysis_minus = WignerAnalysis(data=data_minus,
+                                                           config=self.cfg, 
+                                                            mode_state_num=mode_state_num,
+                                                            alphas=data["alpha"])
+
+                    wigner_analysis_plus = WignerAnalysis(data=data_plus,
+                                                          config=self.cfg,
+                                                          mode_state_num=mode_state_num,
+                                                          alphas=data["alpha"])
+                 
+                    
+                    pe_plus = wigner_analysis_plus.bin_ss_data(filter_map=parity_filter)
+                    pe_minus = wigner_analysis_minus.bin_ss_data(filter_map=parity_filter)
+                    parity_plus = (1 - pe_plus) - pe_plus
+                    parity_minus = (1 - pe_minus) - pe_minus
+                    parity = (parity_minus - parity_plus) / 2
+
+                    # print('pe_plus', pe_plus)
+                    # print('parity', parity)
+
+                    # apply scale 
+                    scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx] * rescale_alpha_scale
+                    # print('scale parity:', scale_parity )
+            
+                    wigner_outputs["pe_plus"][i_outer, i_inner] = pe_plus
+                    wigner_outputs["pe_minus"][i_outer, i_inner] = pe_minus
+                    wigner_outputs["parity_plus"][i_outer, i_inner] = parity_plus
+                    wigner_outputs["parity_minus"][i_outer, i_inner] = parity_minus
+                    wigner_outputs["parity"][i_outer, i_inner] = parity / (scale_parity)
+                    print('max parity:', np.max(wigner_outputs["parity"]))
+                    print('max parity before scaling:', np.max(parity))
+
+
+                else:
+                    data_wigner = {}
+                    idx_start = read_num - 1
+                    idx_step = read_num
+                    data_wigner["idata"] = data["idata"][i_outer, i_inner, :, idx_start::idx_step][:, num_shots_start:num_shots_end]
+                    data_wigner["qdata"] = data["qdata"][i_outer, i_inner, :, idx_start::idx_step][:, num_shots_start:num_shots_end]
 
                     wigner_analysis = WignerAnalysis(data=data_wigner,
                                                       config=self.cfg, 

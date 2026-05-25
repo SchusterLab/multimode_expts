@@ -137,6 +137,8 @@ class QsimBaseProgram(MMAveragerProgram):
         if self.cfg.expt.get('active_reset', False):
             params = MMAveragerProgram.get_active_reset_params(self.cfg)
             self.active_reset(**params)
+            if self.cfg.expt.get('pre_relax_delay', 0) > 0:
+                self.sync_all(self.us2cycles(self.cfg.expt.pre_relax_delay))
 
         init_stor = self.cfg.expt.init_stor
         ro_stor = self.cfg.expt.ro_stor
@@ -228,7 +230,7 @@ class QsimBaseProgram(MMAveragerProgram):
             # Move ro_stor to man
             postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
 
-            if not self.cfg.expt.perform_wigner:
+            if not self.cfg.expt.perform_wigner and not self.cfg.expt.get("parity_readout", False):
                 # Move man to qubit for population measurement
                 postpulse_cfg.append(['man', 'M1', 'pi', 0,])
                 if self.cfg.expt.get('map_to_qubit_ge', False):
@@ -239,6 +241,12 @@ class QsimBaseProgram(MMAveragerProgram):
             self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
             self.sync_all()
 
+            if not self.cfg.expt.perform_wigner and self.cfg.expt.get("parity_readout", False):
+                if self.cfg.expt.get("debug", False):
+                    print("Performing parity readout with parity pulse")
+                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.get("phase_second_pulse", 180), fast=self.cfg.expt.parity_fast)
+                self.sync_all()
+                
             if self.cfg.expt.perform_wigner:
                 # Population is still in man, perform displacement + parity measurement
 
