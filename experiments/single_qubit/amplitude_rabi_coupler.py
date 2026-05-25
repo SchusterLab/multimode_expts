@@ -250,12 +250,27 @@ class AmplitudeRabiCouplerExperiment(Experiment):
             data['fit_err_avgq'] = pCov_avgq
             data['fit_err_amps'] = pCov_amps
 
+            def _get_pi_hpi_gain(p):
+                # p = [yscale, freq, phase_deg, decay, y0, x0]. Wrap phase
+                # to [-180, 180] and branch on whether the gain=0 intercept
+                # sits at the sinusoid's min or max so the returned gains
+                # are always inside the first oscillation. Mirrors
+                # AmplitudeRabiFitting.get_pi_hpi_gain_from_fit.
+                if p[2] > 180:
+                    p[2] = p[2] - 360
+                elif p[2] < -180:
+                    p[2] = p[2] + 360
+                if abs(p[2] - 90) > abs(p[2] + 90):  # y-intercept is min
+                    pi_gain = (0.25 - p[2] / 360) / p[1]
+                    hpi_gain = (0.0 - p[2] / 360) / p[1]
+                else:  # y-intercept is max
+                    pi_gain = (0.75 - p[2] / 360) / p[1]
+                    hpi_gain = (0.5 - p[2] / 360) / p[1]
+                return float(pi_gain), float(hpi_gain)
+
             for key, p in (('avgi', p_avgi), ('avgq', p_avgq), ('amps', p_amps)):
                 if isinstance(p, (list, np.ndarray)):
-                    period = 1.0 / p[1]
-                    phase_rad = p[2] * np.pi / 180
-                    pi_gain = (0.5 - phase_rad / np.pi) * period
-                    hpi_gain = (0.25 - phase_rad / np.pi) * period
+                    pi_gain, hpi_gain = _get_pi_hpi_gain(p)
                     data[f'pi_gain_{key}'] = pi_gain
                     data[f'hpi_gain_{key}'] = hpi_gain
         return data
