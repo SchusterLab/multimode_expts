@@ -51,7 +51,7 @@ class JointParityCalibrator:
         self.use_queue = use_queue
         self.verbose = verbose
         self.debug = debug
-        self.mm_base = MM_dual_rail_base(station.hardware_cfg, station.soc)
+        self.mm_base = MM_dual_rail_base(station.hardware_cfg, station.soccfg)
 
         # Default experiment configs (can be overridden via kwargs)
         self.error_amp_defaults = AttrDict(dict(
