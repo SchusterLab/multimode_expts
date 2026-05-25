@@ -43,13 +43,18 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         mode = cfg.expt.mode  # 'storage', 'manipulate', or 'coupler'
         self.mode = mode
         self.num_echoes = cfg.expt.get('echoes', 0)
-        # update() quantizes step / (1 + num_echoes); warn against the
-        # effective per-segment step (no gen_ch — matches the call site).
+        # Standard CPMG timing (Bylander 2011 Eq. 18): end-spacings tau/(2N)
+        # and inter-pi spacings tau/N. For Hahn echo (N=1) the end spacing is
+        # tau/2; for Ramsey (N=0) there are no echoes and the wait is tau.
+        # The smallest sub-segment determines the subcycle warning.
+        if self.num_echoes >= 1:
+            min_seg = cfg.expt.step / (2 * self.num_echoes)
+            seg_label = f"step/(2*echoes={self.num_echoes}) [CPMG]"
+        else:
+            min_seg = cfg.expt.step
+            seg_label = "step [Ramsey]"
         warn_step_subcycle(
-            self.soccfg,
-            cfg.expt.step / (1 + self.num_echoes),
-            gen_ch=None,
-            label=f"step/(1+echoes={self.num_echoes})",
+            self.soccfg, min_seg, gen_ch=None, label=seg_label,
         )
         print('Config expt:', cfg.expt)
 
@@ -170,15 +175,24 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
                     echo_str).pulse.tolist()
 
         # --- Sweep registers ---
+        # r_wait     = end-segment (between pi/2 and first/last echo) = tau/(2N)
+        # r_wait_mid = inter-pi-pulse segment (between consecutive echoes) = tau/N
+        # For Ramsey (N=0) only r_wait is used, holding the full tau.
         self.r_wait = 3
         self.r_phase2 = 4
         self.r_phase_step = 5
+        self.r_wait_mid = 6
         self.r_flux_phase = self.sreg(
             self.phase_update_channel[qTest], "phase")
 
-        n_wait_segments = 1 + self.num_echoes
-        self.safe_regwi(self.phase_update_page, self.r_wait,
-                        self.us2cycles(cfg.expt.start / n_wait_segments))
+        if self.num_echoes >= 1:
+            self.safe_regwi(self.phase_update_page, self.r_wait,
+                            self.us2cycles(cfg.expt.start / (2 * self.num_echoes)))
+            self.safe_regwi(self.phase_update_page, self.r_wait_mid,
+                            self.us2cycles(cfg.expt.start / self.num_echoes))
+        else:
+            self.safe_regwi(self.phase_update_page, self.r_wait,
+                            self.us2cycles(cfg.expt.start))
         self.safe_regwi(self.phase_update_page, self.r_phase2, 0)
 
         # Phase step register (register-register math avoids mathi limit)
@@ -240,12 +254,16 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         self.sync(self.phase_update_page, self.r_wait)
         self.sync_all()
 
-        # Echo pulses
+        # CPMG echo pulses
+        # Layout: prep -> sync(r_wait) -> echo_1 -> sync(r_wait_mid) -> echo_2
+        #         -> ... -> sync(r_wait_mid) -> echo_N -> sync(r_wait) -> second-half.
         if self.num_echoes > 0:
-            for _ in range(self.num_echoes):
+            for k in range(self.num_echoes):
                 self.custom_pulse(cfg, self.echo_pulse, prefix='echo_')
                 self.sync_all()
-                self.sync(self.phase_update_page, self.r_wait)
+                is_last = (k == self.num_echoes - 1)
+                wait_reg = self.r_wait if is_last else self.r_wait_mid
+                self.sync(self.phase_update_page, wait_reg)
                 self.sync_all()
 
         # Apply Ramsey phase and second half-pulse
@@ -280,10 +298,20 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         self.measure_wrapper()
 
     def update(self):
-        n_wait_segments = 1 + self.num_echoes
-        step_cycles = self.us2cycles(self.cfg.expt.step / n_wait_segments)
-        self.mathi(self.phase_update_page, self.r_wait,
-                    self.r_wait, '+', step_cycles)
+        if self.num_echoes >= 1:
+            step_end_cycles = self.us2cycles(
+                self.cfg.expt.step / (2 * self.num_echoes))
+            step_mid_cycles = self.us2cycles(
+                self.cfg.expt.step / self.num_echoes)
+            self.mathi(self.phase_update_page, self.r_wait,
+                       self.r_wait, '+', step_end_cycles)
+            self.sync_all(self.us2cycles(0.01))
+            self.mathi(self.phase_update_page, self.r_wait_mid,
+                       self.r_wait_mid, '+', step_mid_cycles)
+        else:
+            step_cycles = self.us2cycles(self.cfg.expt.step)
+            self.mathi(self.phase_update_page, self.r_wait,
+                       self.r_wait, '+', step_cycles)
         self.sync_all(self.us2cycles(0.01))
         op = '+' if self.ramsey_freq_sign >= 0 else '-'
         self.math(self.phase_update_page, self.r_phase2,
@@ -317,7 +345,9 @@ class CavityModeRamseyExperiment(Experiment):
         # for coupler mode:
         coupler_pulse: list of pulse descriptors
 
-        echoes: number of echo pulses (0 = Ramsey, >0 = Echo)
+        echoes: number of echo pulses (0 = Ramsey, >=1 = CPMG echo).
+            Timing is standard CPMG (Bylander 2011 Eq. 18): end-spacings
+            tau/(2N), inter-pi spacings tau/N.
         parity_meas: True to use parity measurement (default True)
 
         # optional custom pre/post (overrides auto state prep with warning):

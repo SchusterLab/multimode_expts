@@ -7,12 +7,14 @@ import fitting.fitting as fitter
 from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 
 """
-Ramsey on the coupler, driven via the manipulate channel.
+Ramsey / CPMG on the coupler, driven via the manipulate channel.
 
 Sequence
 --------
   1. First pi/2 pulse on the manipulate DAC at the coupler drive freq.
-  2. Variable wait tau (with register-stepped phase advance).
+  2. Variable wait tau, optionally interrupted by `echoes` CPMG pi pulses
+     (Bylander 2011 timing: end-spacings tau/(2N), inter-pi tau/N, pi
+     pulses at phase=90 deg for X-coherence refocusing).
   3. Second pi/2 pulse on the manipulate DAC with phase = 360 * ramsey_freq * tau.
   4. Coupler-state-selective readout prep on the qubit:
        g0-e0 pi + e0-f0 pi + f0-g{man_no} pi + e0-f0 pi.
@@ -20,9 +22,16 @@ Sequence
   5. Dispersive readout.
 
 M1 is kept empty throughout so it does not chi-shift the coupler or decay
-during the wait. The pi/2 pulse parameters (freq, sigma/length, gain) default
-to cfg.device.coupler.pulses.hpi (added to the versioned hardware config via
-station.snapshot_hardware_config); cfg.expt overrides win ad-hoc.
+during the wait. The pi/2 pulse defaults to cfg.device.coupler.pulses.hpi;
+the CPMG pi pulse to cfg.device.coupler.pulses.pi. Both pulses share the
+same drive frequency (the coupler transition is the same regardless of
+rotation angle), taken from the hpi entry / `freq` override. If only one
+pulse is calibrated, the other is derived by scaling gain by 0.5x (hpi
+from pi) or 2x (pi from hpi), with a warning — accurate only in the
+DAC/amplifier linear regime. cfg.expt overrides win: bare keys (`freq`,
+`sigma`/`length`, `gain`) for the hpi pulse, `pi_`-prefixed keys
+(`pi_sigma`/`pi_length`, `pi_gain`) for the CPMG pi pulse envelope and
+amplitude.
 """
 
 
@@ -37,34 +46,96 @@ def _validate_pulse_type(pulse_type):
         )
 
 
-def _resolve_pulse_params(cfg, names=('freq', 'sigma', 'gain')):
-    """Return pulse params for the coupler pi/2 gaussian, one per name.
-
-    Priority: cfg.expt overrides > cfg.device.coupler.pulses.hpi defaults.
-    `names` selects which fields to resolve (e.g. Rabi sweeps gain, so it
-    only asks for ('freq', 'sigma')).
-    """
-    coupler_hpi = None
+def _read_coupler_pulse(cfg, pulse_kind):
+    """Return the cfg.device.coupler.pulses[pulse_kind] AttrDict, or None."""
     device = cfg.get('device') if isinstance(cfg, dict) else getattr(cfg, 'device', None)
-    if device is not None:
-        coupler = device.get('coupler') if isinstance(device, dict) else getattr(device, 'coupler', None)
-        if coupler is not None:
-            pulses = coupler.get('pulses') if isinstance(coupler, dict) else getattr(coupler, 'pulses', None)
-            if pulses is not None:
-                coupler_hpi = pulses.get('hpi') if isinstance(pulses, dict) else getattr(pulses, 'hpi', None)
+    if device is None:
+        return None
+    coupler = device.get('coupler') if isinstance(device, dict) else getattr(device, 'coupler', None)
+    if coupler is None:
+        return None
+    pulses = coupler.get('pulses') if isinstance(coupler, dict) else getattr(coupler, 'pulses', None)
+    if pulses is None:
+        return None
+    return pulses.get(pulse_kind) if isinstance(pulses, dict) else getattr(pulses, pulse_kind, None)
+
+
+def _resolve_pulse_params(cfg, names=('freq', 'sigma', 'gain'), pulse_kind='hpi'):
+    """Return pulse params for the coupler hpi (pi/2) or pi pulse.
+
+    Priority:
+      1. cfg.expt overrides — bare names for pulse_kind='hpi', 'pi_'-prefixed
+         names (e.g. cfg.expt.pi_gain) for pulse_kind='pi'.
+      2. cfg.device.coupler.pulses.{pulse_kind}
+      3. cfg.device.coupler.pulses.{other_kind} with `gain` rescaled
+         (0.5x for hpi-from-pi, 2x for pi-from-hpi). Warns on stderr.
+      4. cfg.expt overrides for the OTHER kind with `gain` rescaled the
+         same way. Lets a bringup notebook drive both pulses off a single
+         set of hpi overrides without snapshotting the hardware config.
+         Warns on stderr.
+
+    The 3x/4x fallbacks rely on the DAC/amp linear-response assumption —
+    accurate only when both pulses are well inside the linear regime.
+
+    `names` selects which fields to resolve (e.g. Rabi sweeps gain, so it only
+    asks for ('freq', 'sigma')). Raises KeyError if no source supplies the
+    requested field.
+    """
+    if pulse_kind not in ('hpi', 'pi'):
+        raise ValueError(f"pulse_kind must be 'hpi' or 'pi', got {pulse_kind!r}")
+    other_kind = 'pi' if pulse_kind == 'hpi' else 'hpi'
+    override_prefix = '' if pulse_kind == 'hpi' else 'pi_'
+    other_override_prefix = 'pi_' if pulse_kind == 'hpi' else ''
+    gain_scale = 0.5 if pulse_kind == 'hpi' else 2.0
+
+    primary = _read_coupler_pulse(cfg, pulse_kind)
+    fallback = _read_coupler_pulse(cfg, other_kind) if primary is None else None
+    if fallback is not None:
+        print(
+            f"[ramsey_coupler] WARNING: device.coupler.pulses.{pulse_kind} missing; "
+            f"deriving {pulse_kind} from coupler.pulses.{other_kind} with "
+            f"gain * {gain_scale} (linear-response assumption — verify pulse not "
+            "near DAC/amp saturation)."
+        )
 
     expt = cfg.expt
+    _override_fallback_warned = [False]
 
     def _pick(name):
-        if name in expt and expt[name] is not None:
-            return expt[name]
-        if coupler_hpi is None:
-            raise KeyError(
-                f"ramsey_coupler: '{name}' missing. Either pass cfg.expt.{name}, "
-                "or add device.coupler.pulses.hpi to the hardware config via "
-                "station.snapshot_hardware_config(update_main=True)."
-            )
-        return coupler_hpi[name][0]
+        override_key = f'{override_prefix}{name}'
+        if override_key in expt and expt[override_key] is not None:
+            return expt[override_key]
+        if primary is not None:
+            return primary[name][0]
+        if fallback is not None:
+            val = fallback[name][0]
+            if name == 'gain':
+                val = int(round(val * gain_scale))
+            return val
+        # Last-resort: derive from cfg.expt overrides for the other kind
+        # (e.g. CPMG pi from bare hpi overrides during bringup).
+        other_key = f'{other_override_prefix}{name}'
+        if other_key in expt and expt[other_key] is not None:
+            if not _override_fallback_warned[0]:
+                print(
+                    f"[ramsey_coupler] WARNING: device.coupler.pulses.{{{pulse_kind},"
+                    f"{other_kind}}} both missing; deriving {pulse_kind} from "
+                    f"cfg.expt {other_kind} overrides with gain * {gain_scale} "
+                    "(linear-response assumption — verify pulse not near DAC/amp "
+                    "saturation)."
+                )
+                _override_fallback_warned[0] = True
+            val = expt[other_key]
+            if name == 'gain':
+                val = int(round(val * gain_scale))
+            return val
+        raise KeyError(
+            f"ramsey_coupler ({pulse_kind}): '{name}' missing. Provide "
+            f"cfg.expt.{override_key}, cfg.expt.{other_key}, or add "
+            f"device.coupler.pulses.{pulse_kind} "
+            f"(or .{other_kind} as a fallback) to the hardware config via "
+            "station.snapshot_hardware_config(update_main=True)."
+        )
 
     return tuple(_pick(n) for n in names)
 
@@ -83,8 +154,24 @@ class RamseyCouplerProgram(MMRAveragerProgram):
         self.MM_base_initialize()
         cfg = AttrDict(self.cfg)
         qTest = cfg.expt.qubits[0]
-        warn_step_subcycle(self.soccfg, cfg.expt.step,
-                           gen_ch=self.man_ch[qTest], label="ramsey step")
+        print(
+        f"man_ch={self.man_ch[qTest]} "
+        f"freq_reg={self.sreg(self.man_ch[qTest], 'freq')} "
+        f"phase_reg={self.sreg(self.man_ch[qTest], 'phase')} "
+        f"gain_reg={self.sreg(self.man_ch[qTest], 'gain')}"
+        )
+
+        self.num_echoes = int(cfg.expt.get('echoes', 0))
+        # Subcycle warning: smallest sub-segment is tau/(2N) under CPMG; tau
+        # for plain Ramsey.
+        if self.num_echoes >= 1:
+            min_step = cfg.expt.step / (2 * self.num_echoes)
+            warn_label = f"step/(2*echoes={self.num_echoes}) [CPMG]"
+        else:
+            min_step = cfg.expt.step
+            warn_label = "ramsey step"
+        warn_step_subcycle(self.soccfg, min_step,
+                           gen_ch=self.man_ch[qTest], label=warn_label)
         man_no = int(cfg.expt.get('man_mode_no', 1))
 
         # Coupler-state-selective readout prep: prepare qubit |f>, then play
@@ -114,13 +201,14 @@ class RamseyCouplerProgram(MMRAveragerProgram):
 
         if pulse_type == 'gauss':
             freq_MHz, sigma_us, gain = _resolve_pulse_params(
-                cfg, names=('freq', 'sigma', 'gain'))
+                cfg, names=('freq', 'sigma', 'gain'), pulse_kind='hpi')
+            print(f"drive freq={freq_MHz} MHz, sigma={sigma_us} us, gain={gain} DAC ")
             self.drive_sigma = self.us2cycles(sigma_us, gen_ch=self.man_ch[qTest])
             self.add_gauss(ch=self.man_ch[qTest], name="coupler_pi2_ram",
                            sigma=self.drive_sigma, length=self.drive_sigma * 4)
         elif pulse_type == 'const':
             freq_MHz, length_us, gain = _resolve_pulse_params(
-                cfg, names=('freq', 'length', 'gain'))
+                cfg, names=('freq', 'length', 'gain'), pulse_kind='hpi')
             self.drive_length = self.us2cycles(length_us, gen_ch=self.man_ch[qTest])
         else:
             raise ValueError(f"unreachable: pulse_type={pulse_type!r}")
@@ -128,21 +216,72 @@ class RamseyCouplerProgram(MMRAveragerProgram):
         self.drive_gain = gain
         self.f_drive = self.freq2reg(freq_MHz, gen_ch=self.man_ch[qTest])
 
+        # CPMG pi pulse setup (only needed when echoes >= 1). Echo pulse
+        # always uses the same drive frequency as the pi/2 (same coupler
+        # transition); only envelope and gain are pi-specific.
+        if self.num_echoes >= 1:
+            if pulse_type == 'gauss':
+                pi_sigma_us, pi_gain = _resolve_pulse_params(
+                    cfg, names=('sigma', 'gain'), pulse_kind='pi')
+                self.echo_sigma = self.us2cycles(
+                    pi_sigma_us, gen_ch=self.man_ch[qTest])
+                self.add_gauss(ch=self.man_ch[qTest], name="coupler_pi_echo",
+                               sigma=self.echo_sigma,
+                               length=self.echo_sigma * 4)
+            else:  # const
+                pi_length_us, pi_gain = _resolve_pulse_params(
+                    cfg, names=('length', 'gain'), pulse_kind='pi')
+                self.echo_length = self.us2cycles(
+                    pi_length_us, gen_ch=self.man_ch[qTest])
+            self.echo_gain = pi_gain
+
         # manipulate DAC is 'full'-type; simple phase reg works, no int4 shift needed.
         self.man_rp = self.ch_page(self.man_ch[qTest])
+        # r_wait     = end-segment (between pi/2 and first/last pi) = tau/(2N)
+        # r_wait_mid = inter-pi segment (between consecutive pi's)  = tau/N
+        # For Ramsey (N=0) only r_wait is used, holding the full tau.
         self.r_wait = 3
         self.r_phase2 = 4
+        self.r_phase_step = 5
+        self.r_wait_mid = 6
         self.r_phase = self.sreg(self.man_ch[qTest], "phase")
 
-        self.safe_regwi(self.man_rp, self.r_wait,
-                        self.us2cycles(cfg.expt.start, gen_ch=self.man_ch[qTest]))
+        if self.num_echoes >= 1:
+            self.safe_regwi(
+                self.man_rp, self.r_wait,
+                self.us2cycles(cfg.expt.start / (2 * self.num_echoes),
+                               gen_ch=self.man_ch[qTest]))
+            self.safe_regwi(
+                self.man_rp, self.r_wait_mid,
+                self.us2cycles(cfg.expt.start / self.num_echoes,
+                               gen_ch=self.man_ch[qTest]))
+        else:
+            self.safe_regwi(
+                self.man_rp, self.r_wait,
+                self.us2cycles(cfg.expt.start, gen_ch=self.man_ch[qTest]))
         self.safe_regwi(self.man_rp, self.r_phase2, 0)
+
+        # Phase step register (register-register math avoids mathi 31-bit limit
+        # when ramsey_freq*step wraps deg2reg into [2^31, 2^32)).
+        phase_step_val = self.deg2reg(
+            360 * abs(cfg.expt.ramsey_freq) * cfg.expt.step,
+            gen_ch=self.man_ch[qTest])
+        self.safe_regwi(self.man_rp, self.r_phase_step, phase_step_val)
+        self.ramsey_freq_sign = 1 if cfg.expt.ramsey_freq >= 0 else -1
 
         self.sync_all(200)
 
     def body(self):
         cfg = AttrDict(self.cfg)
         qTest = self.qubits[0]
+
+        # Phase-reset every channel's DDS accumulator to a common reference
+        # (phrst=1 zero-gain pulse on each ch). Without this the manipulate
+        # channel's accumulator drifts shot-to-shot and the per-pulse `phase`
+        # parameter on the second pi/2 has no fixed reference, so phase sweeps
+        # collapse to a constant readout. Every other Ramsey in this repo
+        # (t2_ramsey, t2_cavity_*, t2_cavity_displacement, ...) calls this.
+        self.reset_and_sync()
 
         if cfg.expt.get('active_reset', False):
             params = MM_base.get_active_reset_params(cfg)
@@ -176,6 +315,39 @@ class RamseyCouplerProgram(MMRAveragerProgram):
 
         self.sync_all()
         self.sync(self.man_rp, self.r_wait)
+
+        # CPMG echo loop: pi pulses at phase=90 deg (Y-axis rotation, refocuses
+        # X-axis coherence prepared by the first phase=0 pi/2).
+        # Layout: pi/2 -> sync(r_wait) -> pi_1 -> sync(r_wait_mid) -> pi_2
+        #         -> ... -> sync(r_wait_mid) -> pi_N -> sync(r_wait) -> pi/2.
+        if self.num_echoes >= 1:
+            echo_phase = self.deg2reg(90, gen_ch=self.man_ch[qTest])
+            for k in range(self.num_echoes):
+                if self.pulse_type == 'gauss':
+                    self.set_pulse_registers(
+                        ch=self.man_ch[qTest],
+                        style="arb",
+                        freq=self.f_drive,
+                        phase=echo_phase,
+                        gain=self.echo_gain,
+                        waveform="coupler_pi_echo",
+                    )
+                else:  # const
+                    self.set_pulse_registers(
+                        ch=self.man_ch[qTest],
+                        style="const",
+                        freq=self.f_drive,
+                        phase=echo_phase,
+                        gain=self.echo_gain,
+                        length=self.echo_length,
+                    )
+                self.sync_all(self.us2cycles(0.01))
+                self.pulse(ch=self.man_ch[qTest])
+                self.sync_all()
+                is_last = (k == self.num_echoes - 1)
+                wait_reg = self.r_wait if is_last else self.r_wait_mid
+                self.sync(self.man_rp, wait_reg)
+                self.sync_all()
 
         advance_phase_reg = self.deg2reg(cfg.expt.get('advance_phase', 0),
                                          gen_ch=self.man_ch[qTest])
@@ -218,15 +390,25 @@ class RamseyCouplerProgram(MMRAveragerProgram):
     def update(self):
         qTest = self.qubits[0]
 
-        phase_step = self.deg2reg(
-            360 * self.cfg.expt.ramsey_freq * self.cfg.expt.step,
-            gen_ch=self.man_ch[qTest],
-        )
-
-        self.mathi(self.man_rp, self.r_wait, self.r_wait, '+',
-                   self.us2cycles(self.cfg.expt.step, gen_ch=self.man_ch[qTest]))
+        if self.num_echoes >= 1:
+            step_end_cycles = self.us2cycles(
+                self.cfg.expt.step / (2 * self.num_echoes),
+                gen_ch=self.man_ch[qTest])
+            step_mid_cycles = self.us2cycles(
+                self.cfg.expt.step / self.num_echoes,
+                gen_ch=self.man_ch[qTest])
+            self.mathi(self.man_rp, self.r_wait, self.r_wait, '+',
+                       step_end_cycles)
+            self.sync_all(self.us2cycles(0.01))
+            self.mathi(self.man_rp, self.r_wait_mid, self.r_wait_mid, '+',
+                       step_mid_cycles)
+        else:
+            self.mathi(self.man_rp, self.r_wait, self.r_wait, '+',
+                       self.us2cycles(self.cfg.expt.step,
+                                      gen_ch=self.man_ch[qTest]))
         self.sync_all(self.us2cycles(0.01))
-        self.mathi(self.man_rp, self.r_phase2, self.r_phase2, '+', phase_step)
+        op = '+' if self.ramsey_freq_sign >= 0 else '-'
+        self.math(self.man_rp, self.r_phase2, self.r_phase2, op, self.r_phase_step)
         self.sync_all(self.us2cycles(0.01))
 
 
@@ -262,6 +444,23 @@ class RamseyCouplerExperiment(Experiment):
         length:       (optional, pulse_type='const') override
                       cfg.device.coupler.pulses.hpi.length[0] [us]
         gain:         (optional) override cfg.device.coupler.pulses.hpi.gain[0]   [DAC]
+        echoes:       (optional, default 0) number of CPMG pi pulses inserted
+                      between the two pi/2 pulses. 0 = plain Ramsey. >=1 uses
+                      standard CPMG timing (Bylander 2011 Eq. 18): end-spacings
+                      tau/(2N), inter-pi tau/N, pi pulses at phase=90 deg.
+                      The echo pi pulse reuses the pi/2 drive frequency
+                      (`freq` above or coupler.pulses.hpi.freq[0]); only its
+                      envelope and gain are pi-specific.
+        pi_sigma:     (optional, pulse_type='gauss') override
+                      cfg.device.coupler.pulses.pi.sigma[0]   [us]
+        pi_length:    (optional, pulse_type='const') override
+                      cfg.device.coupler.pulses.pi.length[0]  [us]
+        pi_gain:      (optional) override cfg.device.coupler.pulses.pi.gain[0]    [DAC]
+                      If coupler.pulses.pi is missing entirely, the pi params
+                      fall back to coupler.pulses.hpi (with gain * 2). If both
+                      are missing, the pi pulse derives from the bare hpi
+                      overrides (`sigma`/`length`, `gain`) with gain * 2.
+                      Warning printed; assumes DAC/amp linear response.
         f0g1_freq:    (optional) override cfg.device.multiphoton['pi']['fn-gn+1'].frequency[0]
                       [MHz] for the readout swap pulse only. Used when characterizing the
                       coupler at a flux current where the calibrated f0g1 readout pulse
@@ -319,8 +518,6 @@ class RamseyCouplerExperiment(Experiment):
         return data
 
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
-        if data is None:
-            data = self.data
 
         if fit:
             p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'], data['avgi'], fitparams=fitparams)
@@ -413,5 +610,7 @@ class RamseyCouplerExperiment(Experiment):
         plt.show()
 
     def save_data(self, data=None):
+        if data is None:
+            data = self.data
         print(f'Saving {self.fname}')
         super().save_data(data=data)
