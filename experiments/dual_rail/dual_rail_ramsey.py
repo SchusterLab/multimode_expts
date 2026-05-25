@@ -48,6 +48,7 @@ from qick import *
 from slab import Experiment, AttrDict
 
 import fitting.fitting as fitter
+from fitting.decaysin_analysis import fit_decaysin_with_envelope_selection
 from experiments.MM_base import *
 
 
@@ -709,17 +710,28 @@ class DualRailRamseyExperiment(Experiment):
         if len(xpts_fit) <= 5:
             return
 
-        p0_fit = None
-        try:
-            pOpt, pCov = fitter.fitdecaysin(
-                xpts_fit, p_0, fitparams=fitparams, use_x0=False)
-            data[f'fit_p0_{prefix}{state}'] = pOpt
-            data[f'fit_err_p0_{prefix}{state}'] = pCov
-            p0_fit = pOpt
-        except Exception as e:
-            print(f"Fit failed for state {state} ({prefix or 'raw'}) p_0: {e}")
-            data[f'fit_p0_{prefix}{state}'] = None
-            data[f'fit_err_p0_{prefix}{state}'] = None
+        def _store(channel, ydata, fp):
+            tag = f'p{channel}_{prefix}{state}'
+            try:
+                r = fit_decaysin_with_envelope_selection(
+                    xpts_fit, ydata, fitparams=fp, use_x0=False)
+            except Exception as e:
+                print(f"Fit failed for state {state} ({prefix or 'raw'}) p_{channel}: {e}")
+                data[f'fit_{tag}'] = None
+                data[f'fit_err_{tag}'] = None
+                return None
+            data[f'fit_{tag}']           = r['p']
+            data[f'fit_err_{tag}']       = r['cov']
+            data[f'fit_{tag}_exp']       = r['p_exp']
+            data[f'fit_{tag}_gauss']     = r['p_gauss']
+            data[f'fit_err_{tag}_exp']   = r['cov_exp']
+            data[f'fit_err_{tag}_gauss'] = r['cov_gauss']
+            data[f'fit_ssr_{tag}_exp']   = r['ssr_exp']
+            data[f'fit_ssr_{tag}_gauss'] = r['ssr_gauss']
+            data[f'fit_envelope_{tag}']  = r['envelope']
+            return r['p']
+
+        p0_fit = _store(0, p_0, fitparams)
 
         # Seed p_1 from p_0: flip phase by 180, flip y0
         p1_initparams = fitparams
@@ -728,15 +740,7 @@ class DualRailRamseyExperiment(Experiment):
                 p0_fit[0], p0_fit[1], p0_fit[2] + 180,
                 p0_fit[3], 1 - p0_fit[4],
             ]
-        try:
-            pOpt, pCov = fitter.fitdecaysin(
-                xpts_fit, p_1, fitparams=p1_initparams, use_x0=False)
-            data[f'fit_p1_{prefix}{state}'] = pOpt
-            data[f'fit_err_p1_{prefix}{state}'] = pCov
-        except Exception as e:
-            print(f"Fit failed for state {state} ({prefix or 'raw'}) p_1: {e}")
-            data[f'fit_p1_{prefix}{state}'] = None
-            data[f'fit_err_p1_{prefix}{state}'] = None
+        _store(1, p_1, p1_initparams)
 
     def analyze(self, data=None, fit=True, fitparams=None, post_select=True):
         """

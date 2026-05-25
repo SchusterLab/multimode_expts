@@ -4,6 +4,11 @@ from qick import *
 from slab import Experiment, AttrDict
 
 import fitting.fitting as fitter
+from fitting.decaysin_analysis import (
+    fit_decaysin_with_envelope_selection,
+    h5_safe_data,
+    plot_envelope_overlay,
+)
 from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 
 """
@@ -517,30 +522,88 @@ class RamseyCouplerExperiment(Experiment):
         self.data = data
         return data
 
-    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=True, fitparams=None,
+                gauss_ssr_margin=0.05, use_x0=False, **kwargs):
+        """Fit Ramsey data with both exp and Gaussian envelopes; pick winner.
 
-        if fit:
-            p_avgi, pCov_avgi = fitter.fitdecaysin(data['xpts'], data['avgi'], fitparams=fitparams)
-            p_avgq, pCov_avgq = fitter.fitdecaysin(data['xpts'], data['avgq'], fitparams=fitparams)
-            p_amps, pCov_amps = fitter.fitdecaysin(data['xpts'], data['amps'], fitparams=fitparams)
-            data['fit_avgi'] = p_avgi
-            data['fit_avgq'] = p_avgq
-            data['fit_amps'] = p_amps
-            data['fit_err_avgi'] = pCov_avgi
-            data['fit_err_avgq'] = pCov_avgq
-            data['fit_err_amps'] = pCov_amps
+        gauss_ssr_margin: only switch to Gaussian if it lowers SSR by more
+        than this fraction (default 5%). Otherwise default to exp for
+        continuity across a current sweep.
 
-            ramsey_freq = self.cfg.expt.ramsey_freq
-            if isinstance(p_avgi, (list, np.ndarray)):
-                data['f_adjust_ramsey_avgi'] = sorted(
-                    (ramsey_freq - p_avgi[1], ramsey_freq + p_avgi[1]), key=abs)
-            if isinstance(p_avgq, (list, np.ndarray)):
-                data['f_adjust_ramsey_avgq'] = sorted(
-                    (ramsey_freq - p_avgq[1], ramsey_freq + p_avgq[1]), key=abs)
-            if isinstance(p_amps, (list, np.ndarray)):
-                data['f_adjust_ramsey_amps'] = sorted(
-                    (ramsey_freq - p_amps[1], ramsey_freq + p_amps[1]), key=abs)
+        use_x0: if True, the envelope time-offset x0 is fit as a free
+        parameter. Default False pins x0=0 so the dephasing envelope is
+        anchored at the first pi/2 pulse (the physical choice for Ramsey).
+        Free-x0 fits at short T2 can produce a "grow-then-decay" envelope
+        artifact when the optimiser uses x0 to shape the leading edge.
+        """
+        if data is None:
+            data = self.data
+
+        if not fit:
+            return data
+
+        xpts = np.asarray(data['xpts'])
+        ramsey_freq = self.cfg.expt.ramsey_freq
+        for ch in ('avgi', 'avgq', 'amps'):
+            r = fit_decaysin_with_envelope_selection(
+                xpts, np.asarray(data[ch]),
+                fitparams=fitparams, use_x0=use_x0,
+                gauss_ssr_margin=gauss_ssr_margin)
+            data[f'fit_{ch}']           = r['p']
+            data[f'fit_err_{ch}']       = r['cov']
+            data[f'fit_{ch}_exp']       = r['p_exp']
+            data[f'fit_{ch}_gauss']     = r['p_gauss']
+            data[f'fit_err_{ch}_exp']   = r['cov_exp']
+            data[f'fit_err_{ch}_gauss'] = r['cov_gauss']
+            data[f'fit_ssr_{ch}_exp']   = r['ssr_exp']
+            data[f'fit_ssr_{ch}_gauss'] = r['ssr_gauss']
+            data[f'fit_envelope_{ch}']  = r['envelope']
+            p = r['p']
+            if isinstance(p, (list, np.ndarray)):
+                data[f'f_adjust_ramsey_{ch}'] = sorted(
+                    (ramsey_freq - p[1], ramsey_freq + p[1]), key=abs)
+        data['fit_envelope'] = data['fit_envelope_avgi']
+        data['fit_gauss_ssr_margin'] = float(gauss_ssr_margin)
         return data
+
+    def _plot_fit_overlay(self, data, channel, label_axis, f_drive,
+                          print_drive_line):
+        """Plot the winning-envelope fit + envelope curves and print summary."""
+        p = data.get(f'fit_{channel}')
+        if not isinstance(p, (list, np.ndarray)):
+            return
+        envelope = data.get(f'fit_envelope_{channel}', 'exp')
+        pCov = data[f'fit_err_{channel}']
+        x = data['xpts'][:-1]
+        t2_label = '$T_2^*$ (Gauss)' if envelope == 'gauss' else '$T_2$ (Exp)'
+
+        ssr_exp = data.get(f'fit_ssr_{channel}_exp', np.nan)
+        ssr_gau = data.get(f'fit_ssr_{channel}_gauss', np.nan)
+        try:
+            captionStr = (f'{t2_label} fit [us]: {p[3]:.3} $\\pm$ '
+                          f'{np.sqrt(pCov[3][3]):.3}\n'
+                          f'SSR exp={ssr_exp:.3g} / gauss={ssr_gau:.3g}')
+        except (ValueError, TypeError):
+            captionStr = f'{t2_label} fit failed'
+
+        plot_envelope_overlay(x, p, envelope=envelope, label=captionStr)
+        plt.legend()
+
+        if print_drive_line:
+            print(f'Current coupler drive frequency: {f_drive}')
+        print(f'Envelope chosen ({label_axis}): {envelope}  '
+              f'(SSR exp={ssr_exp:.4g}, gauss={ssr_gau:.4g}, '
+              f'margin={data.get("fit_gauss_ssr_margin", 0.05):.0%})')
+        print(f'Fit frequency from {label_axis} [MHz]: {p[1]} +/- '
+              f'{np.sqrt(pCov[1][1])}')
+        if p[1] > 2 * self.cfg.expt.ramsey_freq:
+            print('WARNING: Fit frequency >2*wR; may be too far from the real transition.')
+        adj = data[f'f_adjust_ramsey_{channel}']
+        print(f'Suggested new drive frequency from fit {label_axis} [MHz]:\n',
+              f'\t{f_drive + adj[0]}\n',
+              f'\t{f_drive + adj[1]}')
+        print(f'T2 Ramsey from fit {label_axis} [us]: {p[3]}  '
+              f'(envelope={envelope})')
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
@@ -557,54 +620,13 @@ class RamseyCouplerExperiment(Experiment):
         )
         plt.plot(data["xpts"][:-1], data["avgi"][:-1], 'o-')
         if fit:
-            p = data.get('fit_avgi')
-            if isinstance(p, (list, np.ndarray)):
-                pCov = data['fit_err_avgi']
-                try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
-                except ValueError:
-                    captionStr = 'fit failed'
-                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-                plt.plot(data["xpts"][:-1],
-                         fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]),
-                         color='0.2', linestyle='--')
-                plt.plot(data["xpts"][:-1],
-                         fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]),
-                         color='0.2', linestyle='--')
-                plt.legend()
-                print(f'Current coupler drive frequency: {f_drive}')
-                print(f'Fit frequency from I [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-                if p[1] > 2 * self.cfg.expt.ramsey_freq:
-                    print('WARNING: Fit frequency >2*wR; may be too far from the real transition.')
-                print('Suggested new drive frequency from fit I [MHz]:\n',
-                      f'\t{f_drive + data["f_adjust_ramsey_avgi"][0]}\n',
-                      f'\t{f_drive + data["f_adjust_ramsey_avgi"][1]}')
-                print(f'T2 Ramsey from fit I [us]: {p[3]}')
+            self._plot_fit_overlay(data, channel='avgi', label_axis='I',
+                                   f_drive=f_drive, print_drive_line=True)
         plt.subplot(212, xlabel="Wait Time [us]", ylabel="Q [ADC level]")
         plt.plot(data["xpts"][:-1], data["avgq"][:-1], 'o-')
         if fit:
-            p = data.get('fit_avgq')
-            if isinstance(p, (list, np.ndarray)):
-                pCov = data['fit_err_avgq']
-                try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}'
-                except ValueError:
-                    captionStr = 'fit failed'
-                plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
-                plt.plot(data["xpts"][:-1],
-                         fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]),
-                         color='0.2', linestyle='--')
-                plt.plot(data["xpts"][:-1],
-                         fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]),
-                         color='0.2', linestyle='--')
-                plt.legend()
-                print(f'Fit frequency from Q [MHz]: {p[1]} +/- {np.sqrt(pCov[1][1])}')
-                if p[1] > 2 * self.cfg.expt.ramsey_freq:
-                    print('WARNING: Fit frequency >2*wR; may be too far from the real transition.')
-                print('Suggested new drive frequency from fit Q [MHz]:\n',
-                      f'\t{f_drive + data["f_adjust_ramsey_avgq"][0]}\n',
-                      f'\t{f_drive + data["f_adjust_ramsey_avgq"][1]}')
-                print(f'T2 Ramsey from fit Q [us]: {p[3]}')
+            self._plot_fit_overlay(data, channel='avgq', label_axis='Q',
+                                   f_drive=f_drive, print_drive_line=False)
 
         plt.tight_layout()
         plt.show()
@@ -613,4 +635,4 @@ class RamseyCouplerExperiment(Experiment):
         if data is None:
             data = self.data
         print(f'Saving {self.fname}')
-        super().save_data(data=data)
+        super().save_data(data=h5_safe_data(data))
