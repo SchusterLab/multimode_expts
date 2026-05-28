@@ -446,6 +446,12 @@ class CharacterizationRunner:
                 config_file=self.station.hardware_config_file,
             )
 
+        # Use the station's instrument manager (mock or real) rather than the
+        # real one slab's Experiment.__init__ builds by default. Otherwise
+        # expt.acquire() calls self.im[aliases.soc] against a live Pyro proxy
+        # and hangs in mock mode (never reaches the MockQickSoc).
+        expt.im = self.station.im
+
         # Setup config
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))
 

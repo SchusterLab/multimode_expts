@@ -29,6 +29,7 @@ No `import multimode_expts` or `import .anything` or `sys.path` hacking!
 
 ## TODO
 
+- [ ] Experiment should initialize using `station.im` if available instead of constructing its own im every time (saves time and allows skipping the dependency injection in runners for mock instruments)
 - [ ] Switch jobs.db file read/write to interacting with the job server
 - [ ] Close mpl figures more proactively
 - [X] Make a web interface for viewing and operating on queued and running jobs
