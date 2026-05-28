@@ -2082,8 +2082,8 @@ WignerTomography1ModeExperiment:
     gain2alpha: 0.00014065 # 0.00051563  # 0.000293401      #   0.000379538
     cavity_name: 0   # displaced cavity name 0/1
     displace_length: 0.1    # displace length in us, pulse shape is gaussian
-    displacement_path: 'H:\Shared drives\SLab\Multimode\experiment\240911\wigner_disp.npy'    # displacement for wigner tomography file path
-    # displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
+    displacement_path: 'G:\Shared drives\SLab\Multimode\experiment\240911\wigner_disp.npy'    # displacement for wigner tomography file path
+    # displacement_path: 'G:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
     # I_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
     # Q_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
     # I_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ]  
@@ -2159,8 +2159,8 @@ WignerTomography1ModeCatExperiment:
     gain2alpha: 0.0003353989 # 0.00051563  # 0.000293401      #   0.000379538
     cavity_name: 0   # displaced cavity name 0/1
     displace_length: 0.5    # displace length in us, pulse shape is gaussian
-    displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\wigner_disp.npy'    # displacement for wigner tomography file path
-    # displacement_path: 'H:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
+    displacement_path: 'G:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\wigner_disp.npy'    # displacement for wigner tomography file path
+    # displacement_path: 'G:\\Shared drives\\multimode\\Multimode\\experiment\\240624\\phase_check.npy'    # displacement for phase_lock check file path
     # I_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
     # Q_list: [-3. , -2.4, -1.8, -1.2, -0.6,  0. ,  0.6,  1.2,  1.8,  2.4,  3. ]
     # I_list: [-2. , -1.6, -1.2, -0.8, -0.4,  0. ,  0.4,  0.8,  1.2,  1.6,  2. ]  

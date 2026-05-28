@@ -89,6 +89,24 @@ class ConfigVersionManager:
         """Get the version directory for a config type."""
         return self.version_base_dir / self.TYPE_TO_DIR[config_type]
 
+    def resolve_local_path(self, version: ConfigVersion) -> Path:
+        """Resolve a version record to a path under this machine's config_dir.
+
+        The DB stores absolute snapshot paths that may have been written on a
+        different machine (e.g. a different drive letter: a repo at
+        ``D:\\python\\multimode_expts`` produces ``D:\\...`` paths that don't
+        exist on a ``C:\\`` checkout). Rebuild the path relative to the local
+        config_dir using the config type's subdir and the stored filename so
+        versions resolve regardless of which machine created the record.
+
+        Falls back to the raw stored path if no local copy is found, so callers
+        still get a meaningful (if missing) path for error messages.
+        """
+        local_path = self._get_version_dir(version.config_type) / Path(version.snapshot_path).name
+        if local_path.exists():
+            return local_path
+        return Path(version.snapshot_path)
+
     def snapshot_config(
         self,
         source_path: Path,
@@ -305,7 +323,7 @@ class ConfigVersionManager:
         """
         version = session.query(ConfigVersion).filter_by(version_id=version_id).first()
         if version:
-            return Path(version.snapshot_path)
+            return self.resolve_local_path(version)
         return None
 
     def get_config_for_job(
@@ -328,7 +346,7 @@ class ConfigVersionManager:
             .first()
         )
         if version:
-            return Path(version.snapshot_path)
+            return self.resolve_local_path(version)
         return None
 
     def _snapshot_dict_as_yaml(
@@ -602,7 +620,7 @@ class ConfigVersionManager:
         """
         version = self.get_main_version(config_type, session)
         if version:
-            return Path(version.snapshot_path)
+            return self.resolve_local_path(version)
         return None
 
     def set_main_version(

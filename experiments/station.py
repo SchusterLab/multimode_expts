@@ -306,7 +306,7 @@ class MultimodeStation:
                 else:
                     return None
 
-            version_path = Path(main_version.snapshot_path)
+            version_path = config_manager.resolve_local_path(main_version)
             print(f"[STATION] Using main {config_type.value} version: {main_version.version_id}")
             return version_path
 

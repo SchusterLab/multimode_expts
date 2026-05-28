@@ -197,7 +197,7 @@ class MMDataset:
     
     def create_snapshot(self):
         db = get_database()
-        config_dir = 'D:/python/multimode_expts/configs'
+        config_dir = str(Path(__file__).resolve().parent.parent / 'configs')
         config_manager = ConfigVersionManager(config_dir)
 
         # Snapshot the current station configs (based on in-memory state)
