@@ -62,8 +62,10 @@ Usage (Local Mode - Direct Execution):
 
 from copy import deepcopy
 from typing import Optional, Callable, TYPE_CHECKING, Any
+import inspect
 import json
 
+import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 
@@ -262,8 +264,6 @@ class SweepRunner:
             captured_fig = None
             if render_display:
                 try:
-                    import inspect
-                    import matplotlib.pyplot as plt
                     # Queued path skips analyze(), but display() relies on the
                     # fitting attributes analyze() creates (e.g. _chevron_analysis
                     # for 2D sweeps). Run it here so display() takes the right
@@ -301,7 +301,19 @@ class SweepRunner:
                 fig = returned
             else:
                 fig = captured_fig
-            self.station.log_measurement(mother_expt, fig=fig)
+            # Close only the figs this function created (display() outputs), so
+            # creation and cleanup stay colocated.
+            figs_to_close = list(captured_fig) if captured_fig else []
+            if returned is not None and hasattr(returned, "savefig") and returned not in figs_to_close:
+                figs_to_close.append(returned)
+            try:
+                self.station.log_measurement(mother_expt, fig=fig)
+            finally:
+                for f in figs_to_close:
+                    try:
+                        plt.close(f)
+                    except Exception:
+                        pass
         except Exception as exc:
             print(f"[sweep] log_measurement failed: {exc}")
 

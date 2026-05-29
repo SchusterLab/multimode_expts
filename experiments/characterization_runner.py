@@ -48,8 +48,10 @@ Usage (Local Mode - Direct Execution):
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Callable, Protocol, TYPE_CHECKING, Any, Union
+import inspect
 import json
 
+import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 from slab.experiment import Experiment
@@ -259,8 +261,6 @@ class CharacterizationRunner:
             captured_fig = None
             if render_display:
                 try:
-                    import inspect
-                    import matplotlib.pyplot as plt
                     # Snapshot existing figures so we only consider those newly
                     # created by display() (avoids grabbing a stale fig from
                     # an earlier cell when display() itself raises).
@@ -293,7 +293,19 @@ class CharacterizationRunner:
                 fig = returned
             else:
                 fig = captured_fig
-            self.station.log_measurement(experiment, fig=fig)
+            # Close only the figs this function created (display() outputs), so
+            # creation and cleanup stay colocated.
+            figs_to_close = list(captured_fig) if captured_fig else []
+            if returned is not None and hasattr(returned, "savefig") and returned not in figs_to_close:
+                figs_to_close.append(returned)
+            try:
+                self.station.log_measurement(experiment, fig=fig)
+            finally:
+                for f in figs_to_close:
+                    try:
+                        plt.close(f)
+                    except Exception:
+                        pass
         except Exception as exc:
             print(f"[runner] log_measurement failed: {exc}")
 
