@@ -172,9 +172,36 @@ class SidebandGeneralExperiment(Experiment):
 
         return data
 
-    def analyze(self, data=None, fit=False, fitparams=None, **kwargs):
+    def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
         if data is None:
             data = self.data
+
+        station = kwargs.pop('station', None)
+
+        # Detect 2D sweep data (from SweepRunner — e.g. storage sideband chevron).
+        # 2D data has a 'freq_sweep' key and avgi is a 2D array.
+        is_2d = (
+            'freq_sweep' in data
+            and 'avgi' in data
+            and hasattr(data['avgi'], 'ndim')
+            and data['avgi'].ndim == 2
+        )
+
+        if is_2d:
+            from fitting.fit_display_classes import ChevronFitting
+            # Handle both 1D and 2D xpts (depends on accumulator shape).
+            time = data['xpts'][0] if data['xpts'].ndim > 1 else data['xpts']
+            analysis = ChevronFitting(
+                frequencies=data['freq_sweep'],
+                time=time,
+                response_matrix=data['avgi'],
+                config=self.cfg,
+                station=station,
+            )
+            analysis.analyze()
+            self._chevron_analysis = analysis
+            return data
+
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
             # Remove the first and last point from fit in case weird edge measurements
@@ -194,9 +221,17 @@ class SidebandGeneralExperiment(Experiment):
             data['fit_err_amps'] = pCov_amps
         return data
 
-    def display(self, data=None, fit=True, **kwargs):
+    def display(self, data=None, fit=True, title_str='Sideband General', **kwargs):
         if data is None:
             data = self.data
+
+        # 2D sweep (chevron) — delegate to ChevronFitting's renderer.
+        if hasattr(self, '_chevron_analysis'):
+            self._chevron_analysis.display_results(
+                save_fig=kwargs.get('save_fig', False),
+                title=title_str,
+            )
+            return
 
         xpts_ns = data['xpts']*1e3
 
