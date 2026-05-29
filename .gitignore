@@ -7,6 +7,14 @@ plots/
 .tmp/
 *.pkl
 
+# Binary data and generated figures — don't belong in git
+*.npy
+*.npz
+*.hdf5
+*.h5
+analysis_notebooks/**/*.pdf
+analysis_notebooks/**/*.png
+
 # these are not gitted but backed up to S via a file sync
 configs/versions/ 
 job_server/jobs.db*
