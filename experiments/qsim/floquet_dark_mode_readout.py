@@ -37,7 +37,7 @@ class DarkBaseExperiment(QsimBaseExperiment):
             read_num += MMAveragerProgram.active_reset_read_num(**params)
         if self.cfg.expt.get('multiparity_readout', False):
             read_num += 1
-        
+        self.cfg.read_num = read_num
         assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
         sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
 
@@ -855,7 +855,7 @@ class DarkBaseProgram(QsimBaseProgram):
                 self.sync_all()
                 self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
                 self.sync_all()
-
+                
             elif "init_man_fock_state" in cfg.expt:
                 print("running")
                 _init_state = cfg.expt.init_man_fock_state
@@ -868,10 +868,73 @@ class DarkBaseProgram(QsimBaseProgram):
                     if each_init_stor > 0:
                         prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
                 pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                # self.sync_all()
+                # self.custom_pulse(cfg, pulse_creator.pulse, prefix = 'pre_')
+                # self.sync_all()
+                pulse_data = np.array(pulse_creator.pulse, dtype=object).copy()
+
+                # Compensate f_n -> g_{n+1} sideband matrix element.
+                # If you are using repeated bare 'f0-g1', set scale by occurrence.
+                fg_count = 0
+                scale_by_occurrence = self.cfg.expt.get("fg_scale_by_occurrence", True)
+                fg_area_comp = self.cfg.expt.get("fg_area_comp", "gain")  # "gain" or "length"
+
+                for k, p in enumerate(prepulse_cfg):
+                    if len(p) < 2:
+                        continue
+
+                    is_multiphoton = (p[0] == "multiphoton")
+                    transition = p[1]
+
+                    is_fg_sideband = (
+                        is_multiphoton
+                        and isinstance(transition, str)
+                        and transition.startswith("f")
+                        and "-g" in transition
+                    )
+
+                    if not is_fg_sideband:
+                        continue
+
+                    if scale_by_occurrence:
+                        # Works even if the logical string repeats bare 'f0-g1':
+                        # first f-g pulse -> n=0, second -> n=1, third -> n=2.
+                        n = fg_count
+                    else:
+                        # Works if the string is f0-g1, f1-g2, f2-g3.
+                        n = int(transition.split("-")[0][1:])
+                    factor = np.sqrt(n + 1)
+
+                    old_gain = pulse_data[1, k]
+                    old_length = pulse_data[2, k]
+
+                    if fg_area_comp == "gain":
+                        pulse_data[1, k] = int(round(old_gain / factor))
+
+                    elif fg_area_comp == "length":
+                        pulse_data[2, k] = old_length / factor
+
+                    else:
+                        raise ValueError("fg_area_comp must be either 'gain' or 'length'.")
+
+                    if self.cfg.expt.get("debug", False):
+                        print(
+                            f"f-g compensation pulse {k}: {transition}, "
+                            f"n={n}, factor=sqrt({n+1})={factor:.3f}, "
+                            f"gain={old_gain}->{pulse_data[1, k]}, "
+                            f"length={old_length}->{pulse_data[2, k]}"
+                        )
+
+                    fg_count += 1
+
+                if self.cfg.expt.get("debug", False):
+                    print("final compensated prep pulse table:")
+                    for k, row in enumerate(pulse_data.T):
+                        label = prepulse_cfg[k] if k < len(prepulse_cfg) else None
+                        print(f"{k:02d}", label, "->", row)
                 self.sync_all()
-                self.custom_pulse(cfg, pulse_creator.pulse, prefix = 'pre_')
+                self.custom_pulse(cfg, pulse_data, prefix='pre_')
                 self.sync_all()
-                
             else: # init in coherent state
 
                 assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
