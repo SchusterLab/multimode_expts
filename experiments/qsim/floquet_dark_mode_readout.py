@@ -25,8 +25,365 @@ from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 from copy import deepcopy
 
+class DarkBaseExperiment(QsimBaseExperiment):
+    def acquire(self, progress=False, debug=False):
+        ensure_list_in_cfg(self.cfg)
+
+        read_num = 1
+        if self.cfg.expt.get('parity_check', False):
+            read_num += 1
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        if self.cfg.expt.get('multiparity_readout', False):
+            read_num += 1
+        
+        assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
+        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+
+        if 'perform_wigner' not in self.cfg.expt:
+            self.cfg.expt.perform_wigner = False
+
+        outer_param = self.cfg.expt.swept_params[0]
+        outer_params = self.cfg.expt[outer_param+'s']
+        if sweep_dim == 2:
+            inner_param = self.cfg.expt.swept_params[1]
+            inner_params = self.cfg.expt[inner_param+'s']
+        else:
+            inner_param = 'dummy'
+            inner_params = [None]  # Dummy value for single parameter sweep
+        self.outer_param, self.inner_param = outer_param, inner_param
+
+        data = {
+            'avgi': [], 'avgq': [],
+            'amps': [], 'phases': [],
+            'idata': [], 'qdata': [],
+        }
+        if sweep_dim == 2:
+            data['xpts'] = inner_params
+            data['ypts'] = outer_params
+        else:
+            data['xpts'] = outer_params
+
+        for self.cfg.expt[outer_param] in tqdm(outer_params, disable=not progress):
+            for self.cfg.expt[inner_param] in inner_params:
+                self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
+
+                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
+                                                threshold=None,
+                                                load_pulses=True,
+                                                progress=False,
+                                                debug=debug,
+                                                readouts_per_experiment=read_num)
+
+                idata, qdata = self.prog.collect_shots()
+                data['idata'].append(idata)
+                data['qdata'].append(qdata)
+
+                if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
+                    avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
+                        idata, qdata, read_num,
+                        threshold=self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]],
+                        pre_selection=True)
+                else:
+                    avgi_val = avgi[0][-1]
+                    avgq_val = avgq[0][-1]
+
+                avgi, avgq = avgi_val, avgq_val
+                data['avgi'].append(avgi)
+                data['avgq'].append(avgq)
+                data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
+                data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
+
+        for key in 'avgi avgq amps phases'.split():
+            data[key] = np.array(data[key])
+            if sweep_dim == 2:
+                data[key] = np.reshape(data[key], (len(outer_params), len(inner_params)))
+
+        if self.cfg.expt.get('parity_check', False):
+            idata_all = np.array(data['idata'])
+            qdata_all = np.array(data['qdata'])
+            _parity_start_idx= 0  
+            if self.cfg.expt.get('active_reset', False):
+                params = MMAveragerProgram.get_active_reset_params(self.cfg)
+                _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
+            
+            data['parity_idata'] = idata_all[..., _parity_start_idx::read_num]
+            data['parity_qdata'] = qdata_all[..., _parity_start_idx::read_num]
+
+        if self.cfg.expt.normalize:
+            from experiments.single_qubit.normalize import normalize_calib
+            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
+
+            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
+            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
+            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
+
+        self.data=data
+        return data
+
+
 class DarkBaseProgram(QsimBaseProgram):
     
+    def initialize(self):
+        """
+        MM_base_init to pull basic info 
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
+        """
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        #TODO: this should use a config key to determine whether
+        # to use floquet or gate (pi or pi/2) datasets
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
+        self.m1s_kwargs = [{
+                'ch': self.m1s_ch[stor],
+                'style': 'flat_top',
+                'freq': self.m1s_freq[stor],
+                'phase': 0,
+                'gain': self.m1s_gain[stor],
+                'length': self.m1s_length[stor],
+                'waveform': self.m1s_wf_name[stor],
+        } for stor in range(7)]
+
+        if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
+            self.displace_man(setup=True, play=False)
+
+        self.sync_all(200)
+        
+    def multi_parity_readout(self, 
+                             name='multiparity_readout', 
+                             register_label='mpreadout', 
+                             man_idx=1, 
+                             final_sync=False,
+                             fast = False):
+        
+        # import the config and set qubit number, by default 0 since we have only one, but should be done better
+        cfg=AttrDict(self.cfg)
+        qTest = self.cfg.expt.qubits[0]
+        self.r_cond_phase = 8
+        self.r_read_q = 9
+        self.r_thresh_q = 11 
+        wait_after_readout = 0.10 # in us
+        wait_after_reset = 2.0
+        
+        second_phase = self.cfg.expt.get("phase_second_pulse", 180) #if 180, maps even to ground
+        cond_sec_phase = self.cfg.expt.get("cond_sec_phase", 90)
+        cond_op = "<" if second_phase > 90 else ">"
+
+        self.safe_regwi(0, self.r_read_q, 0)  # init read val to be 0
+        self.safe_regwi(0, self.r_thresh_q, int(cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]))
+        # check if final sync is needed (only if last readout)
+        mid_sync_delay = self.us2cycles(wait_after_reset)
+        if final_sync:
+            final_sync_delay = self.us2cycles(self.cfg.device.readout.relax_delay[qTest])
+        else: 
+            if self.cfg.expt.get("debug", False):
+                print("needs a pretty long sync here due to the measurement")
+            final_sync_delay = self.us2cycles(wait_after_reset)
+
+        # parity pulses, for now I will do something hacky, 
+        # i.e. will only load the waveform once, should rewrite custom_pulse to be more general
+
+        parity_str = self.get_parity_str(man_idx, return_pulse=True, second_phase=second_phase, fast=fast)
+        self.custom_pulse(cfg, parity_str, prefix=name)
+        
+        
+        # # measurement
+        # self.sync_all(self.us2cycles(0.1))
+        self.measure(
+            pulse_ch=self.res_chs[qTest],
+            adcs=[self.adc_chs[qTest]],
+            adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+            t='auto',
+            wait=True)
+        # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
+        self.wait_all(self.us2cycles(wait_after_readout))        
+        # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
+        self.read(0, 0, "lower", self.r_read_q) # stores I in (0,0) into r_read_q
+        # # first if 
+        self.condj(0, self.r_read_q, "<", self.r_thresh_q,
+                   register_label+"LABEL1")  # compare the value recorded above to the value stored in threshold.
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=self.f_ge_reg[qTest],
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=self.pi_ge_gain,
+                                 waveform='pi_qubit_ge')
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.label(register_label+"LABEL1")  # location to be jumped to
+        self.sync_all(mid_sync_delay)
+        
+        ##Second parity pulse
+        if fast:
+            revival_time = cfg.device.manipulate.revival_time_fast[man_idx-1] / 2
+        else:
+            revival_time = cfg.device.manipulate.revival_time[man_idx-1] / 2
+        revival_cycles = self.us2cycles(revival_time)
+        reg_page = self.ch_page(self.qubit_chs[qTest])
+        reg_phase =self.sreg(self.qubit_chs[qTest], "phase")
+        if fast: 
+            freq_pi = self.f_ge_hpi_fast
+            gain_pi = self.hpi_ge_gain_fast
+            waveform_pi = 'hpi_qubit_ge_fast'
+            freq_AC = self.cfg.device.manipulate.revival_stark_shift[man_idx-1]
+            theta_2 = second_phase + 2*np.pi*freq_AC * revival_time * 180/np.pi
+            theta_2 = theta_2 % 360
+        else:
+            freq_pi = self.f_ge
+            gain_pi = self.hpi_ge_gain
+            theta_2 = second_phase
+            waveform_pi = 'hpi_qubit_ge'
+            
+        # self.safe_regwi(reg_page, self.r_cond_phase, self.deg2reg(theta_2))
+        # self.condj(0, self.r_read_q, cond_op, self.r_thresh_q,
+        #            register_label+"LABEL2")  # compare the value recorded above to the value stored in threshold.
+        # self.mathi(reg_page, self.r_cond_phase, self.r_cond_phase, "+",  self.deg2reg(cond_sec_phase))
+        # self.label(register_label+"LABEL2")
+        
+
+        
+        theta_skip = theta_2 % 360
+        theta_corr = (theta_2 + cond_sec_phase) % 360
+        theta_skip_reg = self.deg2reg(theta_skip, gen_ch=self.qubit_chs[qTest])
+        theta_corr_reg = self.deg2reg(theta_corr, gen_ch=self.qubit_chs[qTest])
+        self.safe_regwi(reg_page, self.r_cond_phase, theta_skip_reg)
+        self.condj(0, self.r_read_q, cond_op, self.r_thresh_q, register_label+"LABEL2")
+        self.safe_regwi(reg_page, self.r_cond_phase, theta_corr_reg)
+        self.label(register_label+"LABEL2")
+        
+        #first pi/2 pulse
+        self.set_pulse_registers(ch=self.qubit_chs[qTest],
+                                 freq=freq_pi,
+                                 style="arb",
+                                 phase=self.deg2reg(0),
+                                 gain=gain_pi,
+                                 waveform=waveform_pi)
+        self.pulse(ch=self.qubit_chs[qTest])
+        self.sync_all()
+        # wait based on revival time 
+        self.sync_all(revival_cycles)
+        # second pi/2 pulse, if fast take into account AC stark phase
+        # here we can just update the phase of the waveform
+        self.mathi(reg_page, reg_phase, self.r_cond_phase, "+", 0)
+        self.pulse(ch=self.qubit_chs[qTest])
+        # self.sync_all()
+        # self.measure(
+        #     pulse_ch=self.res_chs[qTest],
+        #     adcs=[self.adc_chs[qTest]],
+        #     adc_trig_offset=cfg.device.readout.trig_offset[qTest],
+        #     t='auto',
+        #     wait=True)
+        # # I dont exactly get why I need a wait instead of sync here, but ok, this is the minimal wait for read to be done    
+        # self.wait_all(self.us2cycles(wait_after_readout))        
+        # # # syntax is read(input_ch, page, upper/lower, reg) where lower is I, upper is Q
+        # self.read(0, 0, "lower", self.r_read_q) # stores I in (0,0) into r_read_q
+        # # # first if 
+        # self.condj(0, self.r_read_q, "<", self.r_thresh_q,
+        #            register_label+"LABEL3")  # compare the value recorded above to the value stored in threshold.
+        # self.set_pulse_registers(ch=self.qubit_chs[qTest],
+        #                          freq=self.f_ge_reg[qTest],
+        #                          style="arb",
+        #                          phase=self.deg2reg(0),
+        #                          gain=self.pi_ge_gain,
+        #                          waveform='pi_qubit_ge')
+        # self.pulse(ch=self.qubit_chs[qTest])
+        # self.label(register_label+"LABEL3")  # location to be jumped to
+        # self.sync_all(final_sync_delay)
+        
+        
+    def prep_man_fock_state(self, man_no, state, broadband=False):
+        """
+        Build a gate-based pulse string to prepare a Fock state (or
+        superposition of two adjacent Fock states) in the manipulate mode.
+
+        Args:
+            man_no: Manipulate mode number.
+            state: Which state to prepare.
+                '0'  → |0> (vacuum, returns empty list)
+                'n'  → |n> (single Fock state, e.g., '1', '2', '3')
+                '+'  → |0> + |1>
+                '-'  |0> - |1>
+                '+i' → |0> + i|1>
+                '-i' → |0> - i|1>
+            broadband: If True, use broadband preparation (drives through
+                g0-e0 transition for all steps).
+
+        Returns:
+            List of gate-string descriptors suitable for get_prepulse_creator().
+        """
+        if self.cfg.expt.get("debug", False):
+            print("RUNNING MULTIFOCK PREP")
+        STATE_MAP = {
+            '+': ([0, 1], 0),    # |0> + |1>
+            '-': ([0, 1], 180),  # |0> - |1>
+            '+i': ([0, 1], 90),  # |0> + i|1>
+            '-i': ([0, 1], -90), # |0> - i|1>
+        }
+        
+        if state == '0':
+            return []
+
+        if state in STATE_MAP:
+            fock_spec, phase = STATE_MAP[state]
+        elif isinstance(state, str) and state.isdigit():
+            fock_spec, phase = int(state), None
+        else:
+            raise ValueError(
+                f"Unknown state '{state}'. "
+                f"Use a positive integer (e.g., '1', '2') or one of: {list(STATE_MAP.keys())}"
+            )
+
+        # 2. Single Fock state |n>
+        if isinstance(fock_spec, int):
+            pulse_seq = []
+            for i in range(fock_spec):
+                pulse_seq += [['multiphoton', 'g0-e0', 'pi', 0]]
+                pulse_seq += [['multiphoton', 'e0-f0', 'pi', 0]]
+                pulse_seq += [['multiphoton', 'f0-g1', 'pi', 0]]
+                # pulse_seq += [['multiphoton', f'g{i}-e{i}', 'pi', 0]]
+                # pulse_seq += [['multiphoton', f'e{i}-f{i}', 'pi', 0]]
+                # pulse_seq += [['multiphoton', f'f{i}-g{i + 1}', 'pi', 0]]
+            if self.cfg.expt.get("debug", False):
+                print("single Fock prep pulse_seq:")
+                for p in pulse_seq:
+                    print("  ", p)
+            return pulse_seq
+
+        # 3. Superposition |n> + e^(i*phase)|m>
+        state_1, state_2 = fock_spec
+        pulse_seq = []
+        for i in range(state_1):
+            pulse_seq += [['multiphoton', f'g{i}-e{i}', 'pi', 0]]
+            pulse_seq += [['multiphoton', f'e{i}-f{i}', 'pi', 0]]
+            pulse_seq += [['multiphoton', f'f{i}-g{i + 1}', 'pi', 0]]
+
+        start_idx = 0 if broadband else state_1
+        pulse_seq += [
+            ['multiphoton', f'g{start_idx}-e{start_idx}', 'hpi', phase]
+        ]
+
+        diff = state_2 - state_1
+        shelving = 0
+        for k in range(diff):
+            n = state_1 + k
+            pulse_seq += [['multiphoton', f'e{n}-f{n}', 'pi', 0]]
+            if shelving < diff - 1:
+                pulse_seq += [
+                    ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]
+                ]
+            pulse_seq += [['multiphoton', f'f{n}-g{n + 1}', 'pi', 0]]
+            if shelving < diff - 1:
+                pulse_seq += [
+                    ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]
+                ]
+            shelving += 1
+
+        return pulse_seq
+        
     def man_reset(self, man_idx=1, dump_mode_idx=2, chi_dressed=True):
         '''
         Reset manipulate mode by swapping it to lossy mode
@@ -230,6 +587,7 @@ class DarkBaseProgram(QsimBaseProgram):
                     swap_stors=swap_stors,
                     pulsed_stor=stor,
                 )
+    
     def _accumulate_scramble_phases(self, phase_offsets, swap_stors):
         if not self.cfg.expt.get("update_phases", True):
             return
@@ -439,6 +797,154 @@ class DarkBaseProgram(QsimBaseProgram):
             )
 
         self.sync_all()
+    
+    def body(self):
+        cfg=AttrDict(self.cfg)
+
+        # initializations as necessary
+        self.reset_and_sync()
+
+        if self.cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            if self.cfg.expt.get('pre_relax_delay', 0) > 0:
+                self.sync_all(self.us2cycles(self.cfg.expt.pre_relax_delay))
+
+        init_stor = self.cfg.expt.init_stor
+        ro_stor = self.cfg.expt.ro_stor
+        if self.cfg.expt.get("parity_check", False):
+            self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+            qTest = self.cfg.expt.qubits[0]
+            self.sync_all()
+            self.measure(
+                pulse_ch=self.res_chs[qTest],
+                adcs=[self.adc_chs[qTest]],
+                adc_trig_offset=self.cfg.device.readout.trig_offset[qTest],
+                wait=True
+            )
+            if np.abs(self.cfg.expt.get("phase_second_pulse", 180))  <  90:
+                self.sync_all(self.us2cycles(2.0))
+                reset_pulse_creator = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]])
+                cfg = AttrDict(self.cfg)
+                self.custom_pulse(cfg, reset_pulse_creator.pulse, prefix = 'pre_parity_check_reset_')
+            self.sync_all(self.us2cycles(2.0))
+            self.reset_and_sync()
+
+        # prepulse: ge -> ef -> f0g1
+        # TODO: make this overridable from cfg
+        if cfg.expt.prepulse:
+
+            if type(init_stor) is int:
+                init_stor = [init_stor]
+            if type(init_stor) is not list:
+                raise ValueError("init_stor must be int or list of int")
+
+            if cfg.expt.init_fock:
+
+                prepulse_cfg = []
+                for each_init_stor in init_stor:
+                    prepulse_cfg += [
+                        ['qubit', 'ge', 'pi', 0,],
+                        ['qubit', 'ef', 'pi', 0,], # qubit in f
+                        ['man', 'M1', 'pi', 0,], # f0-g1 --> man in 1
+                    ]
+                    if each_init_stor > 0:
+                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
+
+                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                self.sync_all()
+                self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
+                self.sync_all()
+
+            elif "init_man_fock_state" in cfg.expt:
+                print("running")
+                _init_state = cfg.expt.init_man_fock_state
+                _man_no = getattr(cfg.expt, 'man_mode_no', 1) #currently not used
+                prepulse_cfg = []
+                for each_init_stor in init_stor:
+                    prepulse_cfg += self.prep_man_fock_state(_man_no,
+                                                             _init_state,
+                                                             broadband=False) #Check
+                    if each_init_stor > 0:
+                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
+                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                self.sync_all()
+                self.custom_pulse(cfg, pulse_creator.pulse, prefix = 'pre_')
+                self.sync_all()
+                
+            else: # init in coherent state
+
+                assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
+
+                for each_init_stor in init_stor:
+                    self.displace_man(
+                        alpha=cfg.expt.init_alpha,
+                        setup=False,
+                        play=True,
+                    ) 
+            
+                    if each_init_stor > 0:
+                        prepulse_cfg = ['storage', f'M1-S{each_init_stor}', 'pi', 0,]
+
+                        pulse_creator = self.get_prepulse_creator(prepulse_cfg)
+                        self.sync_all()
+                        self.custom_pulse(cfg, pulse_creator.pulse, prefix=f'pre_{each_init_stor}_')
+                        self.sync_all()
+
+        # core pulses: override the method to define your own expeirment
+        self.core_pulses()
+
+        # postpulse
+        if cfg.expt.postpulse:
+
+            # Move ro_stor to man
+            postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
+            
+            do_parity_readout = (
+                self.cfg.expt.get("parity_readout", False)
+                or self.cfg.expt.get("multiparity_readout", False)
+            )
+
+            if not self.cfg.expt.perform_wigner and not do_parity_readout:
+                # Move man to qubit for population measurement
+                postpulse_cfg.append(['man', 'M1', 'pi', 0,])
+                if self.cfg.expt.get('map_to_qubit_ge', False):
+                    postpulse_cfg.append(['qubit', 'ef', 'pi', 0,])
+
+            pulse_creator = self.get_prepulse_creator(postpulse_cfg)
+            self.sync_all()
+            self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
+            self.sync_all()
+
+            if not self.cfg.expt.perform_wigner and (self.cfg.expt.get("parity_readout", False) or self.cfg.expt.get("multiparity_readout", False)):
+                
+                if not self.cfg.expt.get("multiparity_readout", False):
+                    if self.cfg.expt.get("debug", False):
+                        print("Performing parity readout with parity pulse")
+                    self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.get("phase_second_pulse", 180), fast=self.cfg.expt.parity_fast)
+                if self.cfg.expt.get("multiparity_readout", False):
+                    if self.cfg.expt.get("debug", False):
+                        print("Performing multiparity readout with parity pulse")
+                    self.multi_parity_readout(fast = self.cfg.expt.get("parity_fast", False))
+                self.sync_all()
+                
+            if self.cfg.expt.perform_wigner:
+                # Population is still in man, perform displacement + parity measurement
+
+                # Displacement
+                self.displace_man(
+                    alpha=cfg.expt.wigner_alpha,
+                    setup=False,
+                    play=True,
+                    )
+                
+                # Parity pulse on qubit
+                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+
+        self.measure_wrapper()
+
+
+
 
 class DarkT1Program(DarkBaseProgram):
 
