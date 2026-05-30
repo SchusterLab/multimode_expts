@@ -855,8 +855,8 @@ class DarkBaseProgram(QsimBaseProgram):
                 self.sync_all()
                 self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
                 self.sync_all()
-                
-            elif "init_man_fock_state" in cfg.expt:
+
+            elif cfg.expt.get("init_man_fock_state", None) is not None:
                 print("running")
                 _init_state = cfg.expt.init_man_fock_state
                 _man_no = getattr(cfg.expt, 'man_mode_no', 1) #currently not used
@@ -935,7 +935,7 @@ class DarkBaseProgram(QsimBaseProgram):
                 self.sync_all()
                 self.custom_pulse(cfg, pulse_data, prefix='pre_')
                 self.sync_all()
-            else: # init in coherent state
+            else:  # init in coherent state
 
                 assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
 
@@ -944,10 +944,10 @@ class DarkBaseProgram(QsimBaseProgram):
                         alpha=cfg.expt.init_alpha,
                         setup=False,
                         play=True,
-                    ) 
-            
+                    )
+
                     if each_init_stor > 0:
-                        prepulse_cfg = ['storage', f'M1-S{each_init_stor}', 'pi', 0,]
+                        prepulse_cfg = [['storage', f'M1-S{each_init_stor}', 'pi', 0]]
 
                         pulse_creator = self.get_prepulse_creator(prepulse_cfg)
                         self.sync_all()
