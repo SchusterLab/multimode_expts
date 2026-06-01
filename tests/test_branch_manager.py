@@ -45,7 +45,8 @@ class FakeStation:
 
 @pytest.fixture
 def bm(tmp_path):
-    return BranchManager(FakeStation(tmp_path))
+    # Explicit log_path keeps the test hermetic (the default would write to CWD).
+    return BranchManager(FakeStation(tmp_path), log_path=tmp_path / "branches.jsonl")
 
 
 def test_commit_advances_and_records(bm):
@@ -120,7 +121,7 @@ def test_delete_tombstones_but_keeps_history(bm):
 def test_state_survives_reopen(bm):
     bm.commit("user1_coupler0.1")
     bm.branch("paper_v1")
-    reopened = BranchManager(bm.station)  # same log file on disk
+    reopened = BranchManager(bm.station, log_path=bm.log_path)  # same log file on disk
     assert set(reopened.list()) == {"user1_coupler0.1", "paper_v1"}
 
 

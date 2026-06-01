@@ -11,13 +11,46 @@ It is deliberately **local and non-intrusive**: the job server and worker never
 see branches. They keep receiving full station YAML exactly as before. A branch is
 a notepad for *you*, layered on top of the versioning system that already exists.
 
+## Where the log lives (and why concurrency isn't an issue)
+
+By default the backing file is `branches.jsonl` **in the current working
+directory** — i.e. each user's sandbox notebook dir (`measurement_notebooks/<user>/`),
+since a Jupyter kernel's CWD is the notebook's own folder. So every user gets their
+own log and concurrent users **never contend for one file**. The config *version
+IDs* inside still resolve against the shared version store + jobs DB, so the
+pointers stay meaningful; only the index is per-workspace.
+
+Consequences (intended for v1):
+
+- **Branches are per-workspace.** User2 cannot `checkout` user1's branch — they
+  read different files. For "each user tracks their own setups" that's the desired
+  behavior, not a limitation.
+- **One residual case:** the same user with two kernels open *in the same dir*
+  shares one file. This is bounded and recoverable — the config data is already
+  safe in the DB, and torn lines are skipped on read (see below) — so it's left
+  unguarded in v1.
+
+> **Cross-notebook rule.** A `checkout` only sees a branch that was committed from
+> the *same working directory*. Two notebooks in the **same dir** share one
+> `branches.jsonl`, so committing the branch in notebook A and then
+> `checkout`-ing it in notebook B picks up A's new snapshots — this is the normal
+> "calibrate in one notebook, use the values in another" flow and it just works.
+> Two notebooks in **different dirs** have separate logs: B won't find A's branch
+> (or may load a stale same-named one from its own log). The underlying snapshots
+> are always shared via the version store/DB; it's only the branch *name → IDs*
+> index that is per-directory.
+
+To get a single lab-wide log instead, pass an explicit shared path:
+`BranchManager(station, log_path=station.config_dir / "branches.jsonl")`. That
+reintroduces cross-process contention on appends; revisit with a file lock
+(`filelock` is available in the env) if it ever bites.
+
 ## Mental model: it's a reflog
 
-The backing file `configs/branches.jsonl` is **append-only**. Every pointer move is
-one JSON line. The "current" value of a branch is just its most recent line —
-nothing is ever overwritten, so **history can't be lost**. This is the same idea as
-git's reflog: the current value and the full history are the same structure, read
-two ways.
+The log is **append-only**. Every pointer move is one JSON line. The "current"
+value of a branch is just its most recent line — nothing is ever overwritten, so
+**history can't be lost**. This is the same idea as git's reflog: the current value
+and the full history are the same structure, read two ways.
 
 ```
 {"branch":"user1_coupler0.1","op":"commit","ids":{...},"note":"baseline","ts":"..."}

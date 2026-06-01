@@ -22,9 +22,16 @@ _ID_KEYS = ("hardware_config", "multiphoton_config", "man1_storage_swap", "floqu
 
 class BranchManager:
     def __init__(self, station, log_path=None):
-        """station: a live MultimodeStation. log_path defaults to configs/branches.jsonl."""
+        """station: a live MultimodeStation.
+
+        log_path defaults to ``branches.jsonl`` in the current working directory --
+        i.e. each user's sandbox notebook dir (measurement_notebooks/<user>/). That
+        gives every user their own log, so concurrent users never contend for one
+        file. Pass an explicit shared log_path if you want cross-user visibility
+        (and accept the concurrency caveats in docs/config_branches.md).
+        """
         self.station = station
-        self.log_path = Path(log_path) if log_path else station.config_dir / "branches.jsonl"
+        self.log_path = Path(log_path) if log_path else Path.cwd() / "branches.jsonl"
         # Set by checkout/commit: which branch we're on and a fingerprint of the
         # configs as loaded, so we can tell if the user has edited them since.
         self._loaded_name = None
