@@ -462,7 +462,8 @@ class CharacterizationRunner:
         # real one slab's Experiment.__init__ builds by default. Otherwise
         # expt.acquire() calls self.im[aliases.soc] against a live Pyro proxy
         # and hangs in mock mode (never reaches the MockQickSoc).
-        expt.im = self.station.im
+        # expt.im = self.station.im
+        # ^^ we are passing station to the Experiment now as a class property, shouldn't need this anymore?
 
         # Setup config
         expt.cfg = AttrDict(deepcopy(self.station.hardware_cfg))

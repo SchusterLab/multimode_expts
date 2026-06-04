@@ -38,7 +38,6 @@ import copy
 import json
 import os
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -51,6 +50,7 @@ from qick import QickConfig
 
 from slab import AttrDict, get_current_filename
 from slab.datamanagement import SlabFile
+from slab.experiment import Experiment
 from slab.instruments import InstrumentManager
 from slab.instruments.voltsource import YokogawaGS200
 
@@ -168,6 +168,7 @@ class MultimodeStation:
         # Output paths and hardware - routing handled internally based on mock mode
         self._initialize_output_paths()
         self._initialize_hardware()
+        Experiment._active_station = self # allow each new Experiment to access station.im instead of searching
 
         # Optional Obsidian-style lab-notebook vault (no-op if vault_root absent from config)
         self._initialize_vault_root()

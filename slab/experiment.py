@@ -55,6 +55,7 @@ def _filter_serializable(obj, exclude_prefixes=('_ds_',)):
 
 class Experiment:
     """Base class for all experiments"""
+    _active_station = None # set by MultimodeStation.__init__ so we can access station.im
 
     def __init__(self, path='', prefix='data', config_file=None, liveplot_enabled=False, **kwargs):
         """ Initializes experiment class
@@ -77,13 +78,19 @@ class Experiment:
             self.config_file = os.path.join(path, config_file)
         else:
             self.config_file = None
-        if 'no_im' not in kwargs.keys() or not kwargs['no_im']:
-            # this takes forever! skip especially if reading existing data
-            if not hasattr(self, 'ns_port'):
-                self.ns_port = None
-            if not hasattr(self, 'ns_address'):
-                self.ns_address = None
-            self.im = InstrumentManager(ns_address=self.ns_address, ns_port=self.ns_port)
+        if not getattr(kwargs, 'no_im', False):
+            # searching for IM without any arg takes very long
+            # reuse station's im if possible; skip if reading existing data
+            if getattr(self, 'im', None) is not None:
+                pass # means it's already there via explicit kwarg passing, if we ever actually implement this
+            elif Experiment._active_station is not None:
+                self.im = Experiment._active_station.im # reuse the Station's manager (see init for Station)
+            else: # ad-hoc fallback to search for an im
+                if not hasattr(self, 'ns_port'):
+                    self.ns_port = None
+                if not hasattr(self, 'ns_address'):
+                    self.ns_address = None
+                self.im = InstrumentManager(ns_address=self.ns_address, ns_port=self.ns_port)
         # if liveplot_enabled:
         #     self.plotter = LivePlotClient()
         # self.dataserver= dataserver_client()
