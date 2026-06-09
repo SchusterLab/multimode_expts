@@ -72,3 +72,223 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
         self.sync_all(self.us2cycles(0.01))
 
 
+class _CoolingBase(QsimBaseProgram):
+    """
+    Shared building blocks for the cooling probe sequence and its f0g1
+    calibration. Both run with cfg.expt.prepulse = cfg.expt.postpulse = False:
+    the whole sequence lives in core_pulses(), and the base body() still
+    provides reset_and_sync(), optional active_reset, and the final readout via
+    measure_wrapper().
+
+    The "modified" f0g1 (its freq/gain/length supplied via cfg.expt) sits on the
+    same sideband channel and uses the same flat_top shape as the bare f0g1; the
+    calibration program sweeps those params, the probe program reuses the
+    calibrated values verbatim.
+
+    Modified-f0g1 cfg.expt keys:
+        f0g1_mod_freq   : MHz   (modified f0g1 carrier)
+        f0g1_mod_gain   : DAC   (modified f0g1 gain)
+        f0g1_mod_length : us    (modified f0g1 flat-top length)
+    """
+
+    def _play_prep_chain(self, prefix='cool1_'):
+        """
+        ge pi, ef pi, BARE f0g1 pi, M1-C pi, ge pi, ef pi.
+
+        All dataset-driven gates: qubit pulses from cfg.device.qubit.pulses,
+        the bare f0g1 ('man','M1') and the M1->coupler swap ('storage','M1-C')
+        from the man1-storage dataset rows of the same name.
+        """
+        seq = self.get_prepulse_creator([
+            ['qubit', 'ge', 'pi', 0],
+            ['qubit', 'ef', 'pi', 0],
+            ['man', 'M1', 'pi', 0],        # bare f0g1
+            ['storage', 'M1-C', 'pi', 0],  # M1 -> coupler
+            ['qubit', 'ge', 'pi', 0],
+            ['qubit', 'ef', 'pi', 0],
+        ])
+        self.custom_pulse(self.cfg, seq.pulse, prefix=prefix)
+        self.sync_all()
+
+    def _f0g1_mod_pulse(self):
+        """
+        Build the modified-f0g1 pulse array from cfg.expt. Same sideband channel
+        and flat_top shape as the bare f0g1; only carrier/gain/length differ.
+        Returns a fresh list each call (custom_pulse mutates the phase row in
+        place, so the probe program must not share one instance across plays).
+        """
+        ecfg = self.cfg.expt
+        return [
+            [ecfg.f0g1_mod_freq],
+            [ecfg.f0g1_mod_gain],
+            [ecfg.f0g1_mod_length],
+            [0],
+            [self.f0g1_ch[0]],
+            ['flat_top'],
+            [self.cfg.device.manipulate.ramp_sigma],
+        ]
+
+
+class CoolingProbeProgram(_CoolingBase):
+    """
+    Sequence under investigation:
+
+        ge pi, ef pi, f0g1 pi (BARE),
+        M1-C pi,
+        ge pi, ef pi, f0g1 pi (MODIFIED),
+        probe pulse (const on flux-low),
+        f0g1 (MODIFIED),
+        readout
+
+    The first f0g1 is the bare f0g1; the second and third are an identical
+    *modified* f0g1 (calibrate it first with CoolingF0g1CalProgram).
+
+    Expected cfg.expt keys: the modified-f0g1 keys (see _CoolingBase) plus
+        probe_freq      : MHz   (pulse under investigation)
+        probe_gain      : DAC
+        probe_length    : us
+        probe_phase     : deg   (optional, default 0)
+    """
+
+    def core_pulses(self):
+        cfg = self.cfg
+        ecfg = cfg.expt
+
+        # --- pulse under investigation: constant pulse on flux-low ---
+        probe = [
+            [ecfg.probe_freq],
+            [ecfg.probe_gain],
+            [ecfg.probe_length],
+            [ecfg.get('probe_phase', 0)],
+            [self.flux_low_ch[0]],
+            ['const'],
+            [0],
+        ]
+
+        # 1) ge, ef, BARE f0g1, M1-C swap, ge, ef
+        self._play_prep_chain(prefix='cool1_')
+
+        # 2) MODIFIED f0g1
+        self.custom_pulse(cfg, self._f0g1_mod_pulse(), prefix='f0g1mod_a_')
+        self.sync_all()
+
+        # 3) probe pulse under investigation
+        self.custom_pulse(cfg, probe, prefix='probe_')
+        self.sync_all()
+
+        # 4) MODIFIED f0g1 again (identical params to step 2)
+        self.custom_pulse(cfg, self._f0g1_mod_pulse(), prefix='f0g1mod_b_')
+        self.sync_all()
+
+        # readout handled by base body() -> measure_wrapper()
+
+
+class CoolingF0g1CalProgram(_CoolingBase):
+    """
+    Calibration for the modified f0g1: the CoolingProbeProgram sequence
+    truncated right after the *first* modified f0g1, then readout:
+
+        ge pi, ef pi, f0g1 pi (BARE),
+        M1-C pi,
+        ge pi, ef pi, f0g1 pi (MODIFIED),
+        readout
+
+    Sweep f0g1_mod_freq and f0g1_mod_gain (software loops via
+    QsimBaseExperiment) to find the carrier/gain that maximize the f0g1
+    transfer back to the qubit. f0g1_mod_length is held fixed at the value the
+    probe sequence will use.
+
+    Expected cfg.expt keys: the modified-f0g1 keys (see _CoolingBase). No probe
+    keys are needed.
+    """
+
+    def core_pulses(self):
+        cfg = self.cfg
+
+        # 1) ge, ef, BARE f0g1, M1-C swap, ge, ef
+        self._play_prep_chain(prefix='cool1_')
+
+        # 2) MODIFIED f0g1 (the pulse being calibrated)
+        self.custom_pulse(cfg, self._f0g1_mod_pulse(), prefix='f0g1mod_cal_')
+        self.sync_all()
+
+        # readout handled by base body() -> measure_wrapper()
+
+
+# -----------------------------------------------------------------------------
+# Example: run CoolingProbeProgram via QsimBaseExperiment (software loops).
+#
+# QsimBaseExperiment.acquire() requires a non-empty swept_params, so even a
+# "single shot" is expressed as a 1-point sweep. Sweep whatever you want to
+# characterize by listing it in swept_params and providing the plural list
+# (e.g. swept_params=['probe_length'] + probe_lengths=[...]). 2D sweeps:
+# swept_params=['outer','inner'] with both plural lists present.
+#
+#   expt_params = dict(
+#       expts = 1,
+#       reps = 1000,
+#       rounds = 1,
+#       qubits = [0],
+#       init_stor = 0,          # read unconditionally by base body()
+#       ro_stor = 0,            # "
+#       prepulse = False,       # whole sequence lives in core_pulses()
+#       postpulse = False,
+#       active_reset = False,
+#       normalize = False,      # accessed directly in acquire()
+#
+#       # modified f0g1 (#2 and #3, identical) -- calibrated separately
+#       f0g1_mod_freq = 1234.5,     # MHz
+#       f0g1_mod_gain = 12000,      # DAC units
+#       f0g1_mod_length = 0.5,      # us (flat-top length)
+#
+#       # pulse under investigation: const on flux-low
+#       probe_freq = 800.0,         # MHz
+#       probe_gain = 5000,          # DAC units
+#       probe_length = 1.0,         # us
+#       probe_phase = 0,            # deg (optional)
+#
+#       # single shot -> 1-point sweep (swap for a real sweep later)
+#       swept_params = ['probe_length'],
+#       probe_lengths = [1.0],
+#   )
+#
+#   expt = QsimBaseExperiment(
+#       soccfg=soc, path=expt_path, config_file=config_path,
+#       prefix="CoolingProbe", expt_params=expt_params,
+#       program=CoolingProbeProgram, progress=True)
+#   expt.go(analyze=False, display=True, progress=True, save=True)
+# -----------------------------------------------------------------------------
+#
+# Example: calibrate the modified f0g1 (2D freq x gain software sweep).
+#
+#   cal_params = dict(
+#       expts = 1,
+#       reps = 1000,
+#       rounds = 1,
+#       qubits = [0],
+#       init_stor = 0,
+#       ro_stor = 0,
+#       prepulse = False,
+#       postpulse = False,
+#       active_reset = False,
+#       normalize = False,
+#
+#       # length fixed to the value the probe sequence will use; freq/gain swept
+#       f0g1_mod_length = 0.5,      # us
+#       f0g1_mod_freq = 1234.5,     # MHz  (overwritten each point)
+#       f0g1_mod_gain = 12000,      # DAC  (overwritten each point)
+#
+#       # 2D sweep: outer (y) = freq, inner (x) = gain
+#       swept_params = ['f0g1_mod_freq', 'f0g1_mod_gain'],
+#       f0g1_mod_freqs = list(np.linspace(1230, 1240, 31)),
+#       f0g1_mod_gains = list(range(8000, 16001, 250)),
+#   )
+#
+#   cal = QsimBaseExperiment(
+#       soccfg=soc, path=expt_path, config_file=config_path,
+#       prefix="CoolingF0g1Cal", expt_params=cal_params,
+#       program=CoolingF0g1CalProgram, progress=True)
+#   cal.go(analyze=False, display=True, progress=True, save=True)
+# -----------------------------------------------------------------------------
+
+
