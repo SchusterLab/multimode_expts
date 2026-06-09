@@ -12,12 +12,17 @@ cooling
 class CoolingSpectroscopyProgram(QsimBaseProgram):
     # DRIVE_CHANNEL = 3 # man drive
     # DRIVE_CHANNEL = 6 # stor drive
-    FLUX_CHANNEL = 1 # flux low drive
+    FLUX_CHANNEL_LOW = 1 # flux low drive
+    FLUX_CHANNEL_HIGH = 4 # flux high drive
     CHARGE_CHANNEL = 3 # man drive
 
     def initialize(self):
+        ecfg = self.cfg.expt
+        self.FLUX_CHANNEL = self.FLUX_CHANNEL_LOW if ecfg.cooling_freq < 4000 else self.FLUX_CHANNEL_HIGH
+        self.FLUX_NQZ = 1 if ecfg.cooling_freq < 4000 else 2
+
         super().initialize()
-        self.declare_gen(ch=self.FLUX_CHANNEL, nqz=1) # 2.5GHz < fs/2
+        self.declare_gen(ch=self.FLUX_CHANNEL, nqz=self.FLUX_NQZ)
         self.declare_gen(ch=self.CHARGE_CHANNEL, nqz=2)
         # self.declare_gen(ch=self.DRIVE_CHANNEL, nqz=2) # bad hard coded :(
         # self.declare_gen(ch=self.FLUX_CHANNEL, nqz=2, mixer_freq=7000, mux_freqs=[0])
@@ -31,7 +36,6 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
                        sigma=flux_ramp_sigma, length=flux_ramp_sigma*6)
 
     def core_pulses(self):
-        qTest = 0
         ecfg = self.cfg.expt
         # spec_pulse = [
         #     [ecfg.cooling_freq],
