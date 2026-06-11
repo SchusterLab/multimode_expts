@@ -22,8 +22,85 @@ from experiments.qsim.kerr import *
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
-
 from copy import deepcopy
+
+from collections import defaultdict
+
+def flatten_exp_lists(items, container_types=(list, tuple, set)):
+    for x in items:
+        if isinstance(x, container_types):
+            yield from flatten_exp_lists(x, container_types)
+        else:
+            yield x
+
+def classify_two_parity_readouts(expt, point_idx=0, threshold=None, e_is_high_I=True):
+    rn = expt.cfg.read_num
+    qTest = expt.cfg.expt.qubits[0]
+
+    if threshold is None:
+        threshold = expt.cfg.device.readout.threshold[qTest]
+
+    idata = np.asarray(expt.data['idata'][point_idx])
+    qdata = np.asarray(expt.data['qdata'][point_idx])
+
+    i_first  = idata[rn-2::rn]
+    q_first  = qdata[rn-2::rn]
+    i_second = idata[rn-1::rn]
+    q_second = qdata[rn-1::rn]
+
+    if e_is_high_I:
+        first_e = i_first > threshold
+        second_e = i_second > threshold
+    else:
+        first_e = i_first < threshold
+        second_e = i_second < threshold
+
+    b0 = first_e.astype(int)
+    b1 = second_e.astype(int)
+
+    # cond_sec_phase = -90 convention:
+    # (g,g)->0, (e,g)->1, (g,e)->2, (e,e)->3
+    n_mod4 = b0 + 2*b1
+
+    out = {
+        'i_first': i_first,
+        'q_first': q_first,
+        'i_second': i_second,
+        'q_second': q_second,
+
+        'first_e': first_e,
+        'second_e': second_e,
+
+        # parity expectation values:
+        # +1 means bit=0, -1 means bit=1.
+        # first parity = (-1)^n
+        # second parity = +1 for n=0,1 mod 4 and -1 for n=2,3 mod 4.
+        'parity_first': 1 - 2*b0,
+        'parity_second': 1 - 2*b1,
+
+        'n_mod4': n_mod4,
+
+        'p_first_e': np.mean(first_e),
+        'p_second_e': np.mean(second_e),
+
+        'p_gg': np.mean((~first_e) & (~second_e)),
+        'p_eg': np.mean(( first_e) & (~second_e)),
+        'p_ge': np.mean((~first_e) & ( second_e)),
+        'p_ee': np.mean(( first_e) & ( second_e)),
+    }
+
+    out['p_mod0'] = np.mean(n_mod4 == 0)
+    out['p_mod1'] = np.mean(n_mod4 == 1)
+    out['p_mod2'] = np.mean(n_mod4 == 2)
+    out['p_mod3'] = np.mean(n_mod4 == 3)
+
+    out['mean_parity_first'] = np.mean(out['parity_first'])
+    out['mean_parity_second'] = np.mean(out['parity_second'])
+    out['mean_n_mod4'] = np.mean(n_mod4)
+
+    return out
+
+
 
 class DarkBaseExperiment(QsimBaseExperiment):
     def acquire(self, progress=False, debug=False):
@@ -121,6 +198,39 @@ class DarkBaseExperiment(QsimBaseExperiment):
 
         self.data=data
         return data
+
+    def analyze_multiparity(self):
+        keys = [
+            'mean_parity_first', 'mean_parity_second',
+            'p_first_e', 'p_second_e',
+            'p_mod0', 'p_mod1', 'p_mod2', 'p_mod3',
+            'p_gg', 'p_eg', 'p_ge', 'p_ee',
+            'mean_n_mod4',
+        ]
+
+        out = {'xpts': []}
+        for key in keys:
+            out[key] = []
+
+        xpts = np.asarray(self.data['xpts']).reshape(-1)
+
+        for j, x in enumerate(xpts):
+            r = classify_two_parity_readouts(self, point_idx=j)
+
+            out['xpts'].append(x)
+            for key in keys:
+                out[key].append(r[key])
+
+        for key in out:
+            out[key] = np.asarray(out[key])
+
+        # Same quantity as p1 + 2*p2 + 3*p3.
+        # Kept as a convenient explicit name.
+        out['nmod4_mean'] = out['mean_n_mod4']
+
+        self.data['multiparity'] = out
+        return out
+        
 
 
 class DarkBaseProgram(QsimBaseProgram):
@@ -696,14 +806,26 @@ class DarkBaseProgram(QsimBaseProgram):
             update_phases=update_phases,
             label="readout: first full-swap",
         )
+        virtual_ramsey_phase = 0.0
+        if self.cfg.expt.get("dark_virtual_ramsey", False):
+            virtual_ramsey_phase = (
+                self.cfg.expt.get("dark_virtual_ramsey_phase_per_cycle_deg", 0.0)
+                * self.cfg.expt.get("floquet_cycle", 0)
+            )
+            virtual_ramsey_phase += self.cfg.expt.get("virtual_ramsey_phase_offset_deg", 0.0)
+            virtual_ramsey_phase = self._mod360(virtual_ramsey_phase)
+            if self.cfg.expt.get("debug", False):
+                print(f"Dark fixed second half swap ramsey: {virtual_ramsey_phase}")
 
+        second_logical_phase = self._mod360(second_rel_phase + virtual_ramsey_phase)
+                        
         # 2. old second pulse: last half swap
         self._play_m1s_frac_train(
             stor=stor_last,
             n_frac=n_last_half,
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
-            logical_phase_deg=second_rel_phase,
+            logical_phase_deg=second_logical_phase,
             inverse=False,
             update_phases=update_phases,
             label="readout: last half-swap",
@@ -1126,9 +1248,15 @@ class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
         # the (just-played) scrambling left behind. SidebandScrambleProgram
         # keeps its phase tracker local, so we reconstruct it here.
         self._accumulate_scramble_phases(phase_offsets, swap_stors)
-
-        # Map the selected dark/normal mode back into M1.
-        self._read_dark_mode(phase_offsets)
+        if self.cfg.expt.get("swap_man_dark", False) and not self.cfg.expt.get("swap_man_large_dark", False):
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with two supports")
+            # Map the selected dark/normal mode back into M1.
+            self._read_dark_mode(phase_offsets)
+        elif self.cfg.expt.get("swap_man_large_dark", False):
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with four supports")
+            self._read_large_dark(phase_offsets)
 
 
 class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
