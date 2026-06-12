@@ -875,6 +875,130 @@ class DarkBaseProgram(QsimBaseProgram):
 
         return swap_stors, stors, idxs, n_full, n_half
 
+    # def _read_large_dark(self, phase_offsets):
+    #     """
+    #     Length-4 dark/normal-mode readout:
+
+    #         R_m2(+pi) -> R_m1(pi/2) -> R_m2(-pi)
+    #         -> R_m4(+pi) -> R_m3(pi/2) -> R_m4(-pi)
+    #         -> R_m3(+pi) -> R_m1(pi/2) -> R_m3(-pi)
+    #         -> R_m1(-pi)
+
+    #     Maps the selected length-4 dark/normal mode back into M1.
+    #     """
+    #     swap_stors, stors, _idxs, n_full, n_half = (
+    #         self.get_dark_swap_params_large_support()
+    #     )
+    #     m1, m2, m3, m4 = stors
+    #     n_full_1, n_full_2, n_full_3, n_full_4 = n_full
+    #     n_half_1, _n_half_2, n_half_3, _n_half_4 = n_half
+
+    #     update_phases = self.cfg.expt.get("update_phases", True)
+
+    #     # (stor, n_frac, inverse, label) -- in time order
+    #     sequence = [
+    #         (m2, n_full_2, False, "large: R_m2(+pi)"),
+    #         (m1, n_half_1, False, "large: R_m1(pi/2) #1"),
+    #         (m2, n_full_2, True,  "large: R_m2(-pi)"),
+    #         (m4, n_full_4, False, "large: R_m4(+pi)"),
+    #         (m3, n_half_3, False, "large: R_m3(pi/2)"),
+    #         (m4, n_full_4, True,  "large: R_m4(-pi)"),
+    #         (m3, n_full_3, False, "large: R_m3(+pi)"),
+    #         (m1, n_half_1, False, "large: R_m1(pi/2) #2"),
+    #         (m3, n_full_3, True,  "large: R_m3(-pi)"),
+    #         (m1, n_full_1, True,  "large: R_m1(-pi)"),
+    #     ]
+
+    #     for stor, n_frac, inverse, label in sequence:
+    #         self._play_m1s_frac_train(
+    #             stor=stor,
+    #             n_frac=n_frac,
+    #             phase_offsets=phase_offsets,
+    #             swap_stors=swap_stors,
+    #             logical_phase_deg=0.0,
+    #             inverse=inverse,
+    #             update_phases=update_phases,
+    #             label=label,
+    #         )
+
+    #     self.sync_all()
+
+    def _get_large_dark_read_sequence(self):
+        """
+        Return the length-4 dark/normal-mode readout sequence in actual
+        time order.
+
+        Tuple convention:
+            (stor, n_frac, logical_phase_deg, inverse, label)
+
+        inverse=False means +area with the requested logical phase.
+        inverse=True means the adjoint of that area, implemented in
+        _play_m1s_frac_train by adding 180 deg to the pulse phase.
+        """
+        swap_stors, stors, _idxs, n_full, n_half = (
+            self.get_dark_swap_params_large_support()
+        )
+        m1, m2, m3, m4 = stors
+        n_full_1, n_full_2, n_full_3, n_full_4 = n_full
+        n_half_1, _n_half_2, n_half_3, _n_half_4 = n_half
+
+        # This is the readout sequence from the comment in _read_large_dark.
+        # It maps the selected length-4 dark/normal mode back into M1.
+        sequence = [
+            (m2, n_full_2, 0.0, False, "large read: R_m2(+pi)"),
+            (m1, n_half_1, 0.0, False, "large read: R_m1(pi/2) #1"),
+            (m2, n_full_2, 0.0, True,  "large read: R_m2(-pi)"),
+            (m4, n_full_4, 0.0, False, "large read: R_m4(+pi)"),
+            (m3, n_half_3, 0.0, False, "large read: R_m3(pi/2)"),
+            (m4, n_full_4, 0.0, True,  "large read: R_m4(-pi)"),
+            (m3, n_full_3, 0.0, False, "large read: R_m3(+pi)"),
+            (m1, n_half_1, 0.0, False, "large read: R_m1(pi/2) #2"),
+            (m3, n_full_3, 0.0, True,  "large read: R_m3(-pi)"),
+            (m1, n_full_1, 0.0, True,  "large read: R_m1(-pi)"),
+        ]
+        return swap_stors, sequence
+
+    def _invert_large_dark_sequence(self, sequence, label_prefix="large load"):
+        """
+        Build the adjoint sequence.
+
+        For load, we need R_read^dagger.  Therefore we reverse the readout
+        time order and invert each pulse.  The calibrated dynamic phase
+        tracking is still performed in the actual time order by
+        _play_m1s_frac_train; do not reverse or subtract phase_offsets here.
+        """
+        inv_sequence = []
+        for stor, n_frac, logical_phase_deg, inverse, label in reversed(sequence):
+            inv_sequence.append((
+                stor,
+                n_frac,
+                logical_phase_deg,
+                not inverse,
+                f"{label_prefix}: inverse of [{label}]",
+            ))
+        return inv_sequence
+
+    def _play_large_dark_sequence(self, phase_offsets, swap_stors, sequence):
+        """
+        Play a length-4 dark/load/read sequence while tracking all storage
+        pulse-frame offsets after every fractional M1-S pulse.
+        """
+        update_phases = self.cfg.expt.get("update_phases", True)
+
+        for stor, n_frac, logical_phase_deg, inverse, label in sequence:
+            self._play_m1s_frac_train(
+                stor=stor,
+                n_frac=n_frac,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=logical_phase_deg,
+                inverse=inverse,
+                update_phases=update_phases,
+                label=label,
+            )
+
+        self.sync_all()
+
     def _read_large_dark(self, phase_offsets):
         """
         Length-4 dark/normal-mode readout:
@@ -886,43 +1010,39 @@ class DarkBaseProgram(QsimBaseProgram):
 
         Maps the selected length-4 dark/normal mode back into M1.
         """
-        swap_stors, stors, _idxs, n_full, n_half = (
-            self.get_dark_swap_params_large_support()
+        swap_stors, sequence = self._get_large_dark_read_sequence()
+        self._play_large_dark_sequence(
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            sequence=sequence,
         )
-        m1, m2, m3, m4 = stors
-        n_full_1, n_full_2, n_full_3, n_full_4 = n_full
-        n_half_1, _n_half_2, n_half_3, _n_half_4 = n_half
 
-        update_phases = self.cfg.expt.get("update_phases", True)
+    def _load_large_dark(self, phase_offsets):
+        """
+        Length-4 dark/normal-mode load:
 
-        # (stor, n_frac, inverse, label) -- in time order
-        sequence = [
-            (m2, n_full_2, False, "large: R_m2(+pi)"),
-            (m1, n_half_1, False, "large: R_m1(pi/2) #1"),
-            (m2, n_full_2, True,  "large: R_m2(-pi)"),
-            (m4, n_full_4, False, "large: R_m4(+pi)"),
-            (m3, n_half_3, False, "large: R_m3(pi/2)"),
-            (m4, n_full_4, True,  "large: R_m4(-pi)"),
-            (m3, n_full_3, False, "large: R_m3(+pi)"),
-            (m1, n_half_1, False, "large: R_m1(pi/2) #2"),
-            (m3, n_full_3, True,  "large: R_m3(-pi)"),
-            (m1, n_full_1, True,  "large: R_m1(-pi)"),
-        ]
+            R_load = R_read^dagger
 
-        for stor, n_frac, inverse, label in sequence:
-            self._play_m1s_frac_train(
-                stor=stor,
-                n_frac=n_frac,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=0.0,
-                inverse=inverse,
-                update_phases=update_phases,
-                label=label,
-            )
+        In actual time order this is the readout sequence reversed, with
+        each pulse replaced by its inverse.  This maps an M1 excitation into
+        the same selected length-4 dark/normal mode that _read_large_dark()
+        later maps back to M1.
+        """
+        swap_stors, read_sequence = self._get_large_dark_read_sequence()
+        load_sequence = self._invert_large_dark_sequence(
+            read_sequence,
+            label_prefix="large load",
+        )
+        self._play_large_dark_sequence(
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            sequence=load_sequence,
+        )
 
-        self.sync_all()
-    
+    def _prepare_large_dark_mode(self, phase_offsets):
+        """Alias kept for consistency with _prepare_dark_mode()."""
+        self._load_large_dark(phase_offsets)
+
     def body(self):
         cfg=AttrDict(self.cfg)
 
@@ -1229,6 +1349,166 @@ class DarkT1Experiment(QsimBaseExperiment):
 
         plt.show()
 
+
+class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram):
+    # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
+    #
+    # Important:
+    # Do NOT call SidebandScrambleProgram.core_pulses() when doing
+    # load -> scramble -> readout with dark-mode tracking.
+    #
+    # SidebandScrambleProgram.core_pulses() owns a private
+    # swap_stor_phases = [0, 0, ...] tracker.  After dark load, the correct
+    # tracker is no longer zero.  Therefore scramble must use the same
+    # mutable phase_offsets object that load and readout use.
+
+    def _play_scramble_with_phase_offsets(self, phase_offsets, swap_stors):
+        """
+        Same physical pulse train as SidebandScrambleProgram.core_pulses(),
+        but using the caller-provided phase_offsets as the live frame tracker.
+
+        Correct continuous sequence:
+
+            load dark mode
+                updates phase_offsets
+
+            scramble
+                emits pulses with current phase_offsets
+                updates the same phase_offsets after every pulse
+
+            read dark mode
+                consumes the final phase_offsets
+
+        This avoids the phase discontinuity caused by super().core_pulses().
+        """
+        ecfg = self.cfg.expt
+        swap_stors = list(swap_stors)
+
+        if len(phase_offsets) != len(swap_stors):
+            raise ValueError(
+                f"phase_offsets length {len(phase_offsets)} does not match "
+                f"swap_stors length {len(swap_stors)}"
+            )
+
+        if "detunings" in ecfg and ecfg.detunings:
+            detunings = list(ecfg.detunings)
+        else:
+            detunings = [0.0] * len(swap_stors)
+
+        if len(detunings) != len(swap_stors):
+            raise AssertionError(
+                "length of detunings doesn't match that of swap_stors"
+            )
+
+        update_phases = ecfg.get("update_phases", True)
+
+        # Deep copy floquet params and apply detunings exactly as in
+        # SidebandScrambleProgram.core_pulses().
+        all_pulse_args = []
+        for i_stor, stor in enumerate(swap_stors):
+            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
+            pulse_args["freq"] += self.freq2reg(
+                detunings[i_stor],
+                gen_ch=pulse_args["ch"],
+            )
+            all_pulse_args.append(pulse_args)
+
+        self.sync_all()
+
+        if ecfg.get("debug", False):
+            print("[DarkScramble] using shared phase_offsets for scramble")
+            print("[DarkScramble] initial phase_offsets:", phase_offsets)
+            print("[DarkScramble] pulse args:", all_pulse_args)
+
+        for kk in range(ecfg.floquet_cycle):
+            for i_stor, stor in enumerate(swap_stors):
+                pulse_args = all_pulse_args[i_stor]
+
+                phase_deg = self._mod360(phase_offsets[i_stor])
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg,
+                    gen_ch=pulse_args["ch"],
+                )
+
+                if ecfg.get("debug", False) and kk == 0:
+                    print(
+                        f"[DarkScramble] cycle={kk}, stor={stor}, "
+                        f"phase_deg={phase_deg:.3f}"
+                    )
+
+                self.setup_and_pulse(**pulse_args)
+
+                # Same requirement as the original SidebandScrambleProgram:
+                # setup_and_pulse needs at least ~10 cycles.
+                self.sync_all(10)
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+        if ecfg.get("debug", False):
+            print("[DarkScramble] final phase_offsets:", phase_offsets)
+
+        self.sync_all()
+
+    def _prepare_selected_dark_mode(self, phase_offsets):
+        """
+        Dispatch dark-mode load without modifying existing dark helpers.
+        """
+        if self.cfg.expt.get("swap_man_large_dark", False):
+            self._prepare_large_dark_mode(phase_offsets)
+        else:
+            self._prepare_dark_mode(phase_offsets)
+
+    def _read_selected_dark_mode(self, phase_offsets):
+        """
+        Dispatch dark-mode readout without modifying existing dark helpers.
+        """
+        if self.cfg.expt.get("swap_man_large_dark", False):
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with four supports")
+            self._read_large_dark(phase_offsets)
+        else:
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with two supports")
+            self._read_dark_mode(phase_offsets)
+
+    def core_pulses(self):
+        swap_stors = list(self.cfg.expt.swap_stors)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        # 1. Optional load:
+        # M1/man excitation -> selected dark/normal mode.
+        #
+        # This mutates phase_offsets.  Those offsets must be the initial
+        # frame for the following scramble.
+        if self.cfg.expt.get("load_man_dark", False):
+            self._prepare_selected_dark_mode(phase_offsets)
+
+        # 2. Scramble with the same live phase tracker.
+        #
+        # Do NOT call super().core_pulses() here.  That method creates a
+        # fresh local swap_stor_phases = [0, 0, ...] and physically emits
+        # the scramble with the wrong initial frame after dark load.
+        self._play_scramble_with_phase_offsets(
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+        )
+
+        if not self.cfg.expt.get("swap_man_dark", False):
+            return
+
+        # 3. Readout with the final tracker.
+        #
+        # Do NOT call _accumulate_scramble_phases() here.  The actual scramble
+        # above already updated phase_offsets pulse-by-pulse.  Calling
+        # _accumulate_scramble_phases() again would double-count.
+        self._read_selected_dark_mode(phase_offsets)
+
+
 class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
     # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
     # so super().core_pulses() plays the scrambling pulses, while the dark-mode
@@ -1236,13 +1516,16 @@ class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
     # inherited from DarkBaseProgram.
 
     def core_pulses(self):
+        swap_stors = list(self.cfg.expt.swap_stors)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        if self.cfg.expt.get("load_man_dark", False):
+            self._prepare_large_dark_mode(phase_offsets)
+        
         super().core_pulses()  # SidebandScrambleProgram.core_pulses(): plays scrambling
 
         if not self.cfg.expt.get("swap_man_dark", False):
             return
-
-        swap_stors = list(self.cfg.expt.swap_stors)
-        phase_offsets = [0.0] * len(swap_stors)
 
         # Replay the phase bookkeeping in the calibrated frame to match what
         # the (just-played) scrambling left behind. SidebandScrambleProgram
