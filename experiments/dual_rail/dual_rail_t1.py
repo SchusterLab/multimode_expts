@@ -160,9 +160,7 @@ class DualRailT1Program(MMRAveragerProgram):
         cfg = self.cfg
         read_num = 0
 
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        read_num += MM_base.lane_layout(cfg)['n_active_reset']
 
         if cfg.expt.get('state_prep_postselect', False):
             read_num += 1
@@ -390,7 +388,7 @@ class DualRailT1Experiment(Experiment):
 
                 # Pre-selection (active reset)
                 if 'ar_pre_selection' in indices:
-                    mask = per_shot[:, indices['ar_pre_selection']] < threshold
+                    mask = np.all(per_shot[:, indices['ar_pre_selection']] < threshold, axis=1)
                     per_shot = per_shot[mask]
 
                 # State-prep post-selection
@@ -440,7 +438,7 @@ class DualRailT1Experiment(Experiment):
                     nbp = nonblip_pts[0]
                     col_names = []
                     if 'ar_pre_selection' in indices:
-                        ar_n = indices['ar_pre_selection'] + 1
+                        ar_n = max(indices['ar_pre_selection']) + 1
                         col_names += [f'ar{j}' for j in range(ar_n)]
                     if 'state_prep_ps' in indices:
                         col_names.append('sp_ps')
@@ -623,12 +621,10 @@ class DualRailT1Experiment(Experiment):
         idx = 0
         indices = {}
 
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            ar_read_num = MMAveragerProgram.active_reset_read_num(**params)
-            if params.get('pre_selection_reset', False):
-                indices['ar_pre_selection'] = idx + ar_read_num - 1
-            idx += ar_read_num
+        _ar = MM_base.lane_layout(cfg)
+        if _ar.get('idx_pre_selection_list'):
+            indices['ar_pre_selection'] = [idx + p for p in _ar['idx_pre_selection_list']]
+        idx += _ar['n_active_reset']
 
         if cfg.expt.get('state_prep_postselect', False):
             indices['state_prep_ps'] = idx

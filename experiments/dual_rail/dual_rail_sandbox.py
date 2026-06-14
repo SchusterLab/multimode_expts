@@ -153,9 +153,7 @@ class DualRailSandboxProgram(MMAveragerProgram):
         read_num = 0
 
         # Active reset adds measurements based on active_reset configuration
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        read_num += MM_base.lane_layout(cfg)['n_active_reset']
 
         # State prep post-selection measurement
         if cfg.expt.get('state_prep_postselect', False):
@@ -339,8 +337,8 @@ class DualRailSandboxExperiment(Experiment):
 
                     # Pre-selection mask: discard shots where active_reset pre_selection failed
                     if 'ar_pre_selection' in indices:
-                        pre_sel_idx = indices['ar_pre_selection']
-                        pre_sel_mask = i0_reshaped[:, pre_sel_idx] < threshold
+                        pre_sel_idx = indices['ar_pre_selection']  # list of lane indices
+                        pre_sel_mask = np.all(i0_reshaped[:, pre_sel_idx] < threshold, axis=1)
                         i0_reshaped = i0_reshaped[pre_sel_mask]
                         data[f'pre_select_count_{key}'] = np.sum(pre_sel_mask)
 
@@ -384,12 +382,10 @@ class DualRailSandboxExperiment(Experiment):
         idx = 0
         indices = {}
 
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            ar_read_num = MMAveragerProgram.active_reset_read_num(**params)
-            if params.get('pre_selection_reset', False):
-                indices['ar_pre_selection'] = idx + ar_read_num - 1
-            idx += ar_read_num
+        _ar = MM_base.lane_layout(cfg)
+        if _ar.get('idx_pre_selection_list'):
+            indices['ar_pre_selection'] = [idx + p for p in _ar['idx_pre_selection_list']]
+        idx += _ar['n_active_reset']
 
         if cfg.expt.get('state_prep_postselect', False):
             indices['state_prep_ps'] = idx

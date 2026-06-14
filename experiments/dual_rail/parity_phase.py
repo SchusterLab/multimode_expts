@@ -295,10 +295,7 @@ class ParityPhaseExperiment(Experiment):
             state_list = [state_list]
 
         # Calculate read_num to account for active_reset measurements
-        read_num = 1
-        if self.cfg.expt.active_reset:
-            params = MM_base.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        read_num = 1 + MM_base.lane_layout(self.cfg)['n_active_reset']
 
         # Store Ig, Ie for E/G scaling (from config)
         self.Ig = self.cfg.device.readout.Ig[0] if hasattr(self.cfg.device.readout, 'Ig') else None
@@ -355,7 +352,7 @@ class ParityPhaseExperiment(Experiment):
                 for ii in range(expts):
                     mi, mq = GeneralFitting.filter_shots_per_point(
                         I_reshaped[ii], Q_reshaped[ii], read_num,
-                        threshold=threshold, pre_selection=True)
+                        threshold=threshold, pre_selection=True, cfg=self.cfg)
                     avgi_list.append(mi)
                     avgq_list.append(mq)
                 avgi = np.array(avgi_list)

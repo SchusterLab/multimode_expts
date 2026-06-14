@@ -361,12 +361,10 @@ class DualRailFidelityChecksExperiment(Experiment):
         indices = {}
 
         # Active reset
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            ar_read_num = MMAveragerProgram.active_reset_read_num(**params)
-            if params.get('pre_selection_reset', False):
-                indices['ar_pre_selection'] = idx + ar_read_num - 1
-            idx += ar_read_num
+        _ar = MM_base.lane_layout(cfg)
+        if _ar.get('idx_pre_selection_list'):
+            indices['ar_pre_selection'] = [idx + p for p in _ar['idx_pre_selection_list']]
+        idx += _ar['n_active_reset']
 
         # State-prep post-selection
         if cfg.expt.get('state_prep_postselect', False):
@@ -438,7 +436,7 @@ class DualRailFidelityChecksExperiment(Experiment):
 
         # Pre-selection filtering
         if 'ar_pre_selection' in indices:
-            mask = i0_reshaped[:, indices['ar_pre_selection']] < threshold
+            mask = np.all(i0_reshaped[:, indices['ar_pre_selection']] < threshold, axis=1)
             i0_reshaped = i0_reshaped[mask]
 
         # State-prep post-selection

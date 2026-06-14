@@ -425,9 +425,7 @@ class DualRailRamseyProgram(MMRAveragerProgram):
         read_num = 0
 
         # Active reset readouts
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        read_num += MM_base.lane_layout(cfg)['n_active_reset']
 
         # State-prep post-selection
         if cfg.expt.get('state_prep_postselect', False):
@@ -646,12 +644,10 @@ class DualRailRamseyExperiment(Experiment):
         idx = 0
         indices = {}
 
-        if cfg.expt.get('active_reset', False):
-            params = MM_base.get_active_reset_params(cfg)
-            ar_read_num = MMAveragerProgram.active_reset_read_num(**params)
-            if params.get('pre_selection_reset', False):
-                indices['ar_pre_selection'] = idx + ar_read_num - 1
-            idx += ar_read_num
+        _ar = MM_base.lane_layout(cfg)
+        if _ar.get('idx_pre_selection_list'):
+            indices['ar_pre_selection'] = [idx + p for p in _ar['idx_pre_selection_list']]
+        idx += _ar['n_active_reset']
 
         if cfg.expt.get('state_prep_postselect', False):
             indices['state_prep_ps'] = idx
@@ -801,7 +797,7 @@ class DualRailRamseyExperiment(Experiment):
                 i0_at_point = i0_row.reshape(total_reps, read_num)
 
                 if 'ar_pre_selection' in indices:
-                    mask = i0_at_point[:, indices['ar_pre_selection']] < threshold
+                    mask = np.all(i0_at_point[:, indices['ar_pre_selection']] < threshold, axis=1)
                     i0_at_point = i0_at_point[mask]
 
                 # State-prep post-selection
