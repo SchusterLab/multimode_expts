@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import matplotlib.pyplot as plt
 import numpy as np
 import qutip as qt
@@ -7,18 +9,107 @@ from qutip import fock
 from slab import AttrDict, Experiment, dsfit
 from tqdm import tqdm_notebook as tqdm
 
+import warnings
+
 import fitting.fitting as fitter
 from fitting.fit_display_classes import GeneralFitting
+from fitting.state_tomography import as_confusion_matrix, correct_readout_probs
 from fitting.wigner import WignerAnalysis
 from experiments.MM_base import MMAveragerProgram, MM_base
 
-# from scipy.sepcial import erf
+
+# ====================================================== #
+#            sigma_z probe helpers (shared)              #
+# ====================================================== #
+# The sigma_z probe is a post-prep transmon readout inserted by lane_layout at
+# idx_sigma_z (see MM_base.lane_layout). These helpers turn that lane into the
+# reported scalar and, for Tier 2, into a per-shot keep-mask for the parity grid.
+# Shot/lane layout matches WignerAnalysis.bin_ss_data: flat ordering is
+# (rounds, expts, reps, read_num) with the lane index innermost; keep-masks are
+# shaped (rounds*reps, expts) via transpose(0, 2, 1).
+
+def _sigma_z_lane_shots(i0_array, read_num, idx_sigma_z,
+                        idx_pre_selection=None, threshold=None):
+    '''I values at the sigma_z lane, flattened over all shots/alphas/copies.
+
+    Works for any raw buffer whose innermost axis is the read lane, regardless
+    of the alpha/rep/pulse-correction grouping ahead of it.
+
+    If idx_pre_selection/threshold are given, keep only the pre-selection-passed
+    shots (qubit |g> at the active-reset herald lane(s), i.e. I < threshold) so the
+    sigma_z scalar is computed on the SAME shot population that bin_ss_data uses
+    for the parity. Without this, sigma_z averages over shots the experiment
+    discards (the herald rejects) -- which inflates the apparent |e> fraction,
+    since a poor in-sequence readout makes the conditional-reset pi inject |e>
+    into exactly those rejected shots.
+
+    idx_pre_selection may be a single lane index or a list of lane indices; when
+    a list is given, a shot is kept only if it passes ALL pre-selection lanes
+    (mirrors the AND in bin_ss_data).
+    '''
+    flat = np.asarray(i0_array).ravel()
+    n_groups = flat.size // read_num
+    per_shot = flat.reshape(n_groups, read_num)
+    lane = per_shot[:, idx_sigma_z]
+    if idx_pre_selection is not None and threshold is not None:
+        pre_idx = idx_pre_selection if np.ndim(idx_pre_selection) else [idx_pre_selection]
+        if len(pre_idx):
+            keep = np.all(per_shot[:, pre_idx] < threshold, axis=1)
+            lane = lane[keep]
+    return lane
+
+
+def _compute_sigma_z(lane_shots, threshold, cfg):
+    '''(sigma_z_corrected, sigma_z_raw) from sigma_z-lane single shots.
+
+    sigma_z = P_g - P_e with |g> = (I < threshold). The corrected value applies
+    the readout confusion matrix, picking the with/without-active-reset matrix to
+    match whether the shot used active reset; if no matrix is in cfg, the corrected
+    value falls back to the raw value (with a one-time warning).
+    '''
+    shots = np.asarray(lane_shots).ravel()
+    if shots.size == 0:
+        return None, None
+    P_e = float(np.mean(shots > threshold))
+    sigma_z_raw = float((1 - P_e) - P_e)
+
+    if cfg.expt.get('active_reset', False):
+        conf = cfg.device.readout.get('confusion_matrix_with_active_reset', None)
+    else:
+        conf = cfg.device.readout.get('confusion_matrix_without_reset', None)
+
+    if conf is not None:
+        Pg_c, Pe_c = correct_readout_probs([1 - P_e, P_e], as_confusion_matrix(conf))
+        sigma_z = float(Pg_c - Pe_c)
+    else:
+        warnings.warn(
+            "sigma_z: no confusion matrix in cfg.device.readout "
+            "(confusion_matrix_with_active_reset / _without_reset); "
+            "reporting the uncorrected value.", stacklevel=2)
+        sigma_z = sigma_z_raw
+    return sigma_z, sigma_z_raw
+
+
+def _sigma_z_filter_map(i0_array, cfg, layout):
+    '''Tier-2 keep-mask (|g>) from the sigma_z lane, shaped (rounds*reps, expts).
+
+    Mirrors the pre-selection mask construction in bin_ss_data so the two compose
+    cleanly when both are active.
+    '''
+    rounds = cfg['expt'].get('rounds', 1)
+    reps = cfg['expt']['reps']
+    expts = cfg['expt']['expts']
+    read_num = layout['read_num']
+    threshold = cfg.device.readout.threshold[0]
+    I_4d = np.reshape(np.asarray(i0_array).ravel(), (rounds, expts, reps, read_num))
+    mask = I_4d[:, :, :, layout['idx_sigma_z']] < threshold   # keep |g>
+    return np.reshape(np.transpose(mask, (0, 2, 1)), (rounds * reps, expts))
 
 
 class WignerTomography1ModeProgram(MMAveragerProgram):
     _pre_selection_filtering = True
 
-    def __init__(self, soccfg, cfg, loaded_pulses=None):
+    def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
 
@@ -31,11 +122,8 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         cfg = AttrDict(self.cfg)
         self.MM_base_initialize()
         qTest = self.qubits[0]
-        if 'man_mode_no' in self.cfg.expt:
-            man_mode_no = self.cfg.expt.man_mode_no
-        else:
-            man_mode_no = 1
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1
 
         
         # define the displace sigma for calibration     
@@ -52,14 +140,36 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
         self.sync_all(200)
 
 
+        # Inline IQ_table routing — see class docstring for the contract.
+        self.waveforms_opt_ctrl = None
+        self.waveforms_opt_ctrl_prepulse = None
         if "opt_pulse" in cfg.expt and cfg.expt.opt_pulse:
-            waveform_names = self.load_opt_ctrl_pulse(pulse_conf=cfg.expt.opt_pulse, 
+            waveform_names = self.load_opt_ctrl_pulse(pulse_conf=cfg.expt.opt_pulse,
                                 IQ_table=cfg.expt.IQ_table,
-                                ) 
+                                )
             self.waveforms_opt_ctrl = waveform_names
+        elif cfg.expt.get("IQ_table") is not None:
+            # IQ_table set without opt_pulse: allow routing via prepulse if it has
+            # an opt_cont row; otherwise reject (the canonical NPZ would silently play).
+            opt_cont_shapes = []
+            if cfg.expt.get("prepulse") and cfg.expt.get("pre_sweep_pulse"):
+                shapes = cfg.expt.pre_sweep_pulse[5]
+                opt_cont_shapes = [s for s in shapes
+                                   if isinstance(s, list) and s and s[0] == 'opt_cont']
+            if not opt_cont_shapes:
+                raise ValueError(
+                    "cfg.expt.IQ_table is set but cfg.expt.opt_pulse is not, and no "
+                    "['opt_cont', enc, state] row was found in cfg.expt.pre_sweep_pulse. "
+                    "Either set opt_pulse=[['opt_cont', enc, state]] (preferred) or put "
+                    "an opt_cont row in pre_sweep_pulse — otherwise the inline IQ_table "
+                    "cannot be applied (the canonical NPZ at "
+                    "cfg.device.optimal_control[...].filename would silently play instead)."
+                )
+            pulse_conf = [opt_cont_shapes[0]]
+            self.waveforms_opt_ctrl_prepulse = self.load_opt_ctrl_pulse(
+                pulse_conf=pulse_conf, IQ_table=cfg.expt.IQ_table)
 
-    
-   
+
     def body(self):
         cfg=AttrDict(self.cfg)
         qTest = self.qubits[0]
@@ -73,11 +183,16 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
 
         #  prepulse
         if cfg.expt.prepulse:
-            if cfg.expt.gate_based: 
+            if cfg.expt.gate_based:
                 creator = self.get_prepulse_creator(cfg.expt.pre_sweep_pulse)
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix = 'pre_')
-            else: 
-                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix = 'pre_', sync_zero_const=True)
+            else:
+                # B3: if an inline IQ_table was loaded for the prepulse opt_cont row,
+                # pass its waveform names through so custom_pulse uses the inline data
+                # instead of loading the canonical NPZ.
+                self.custom_pulse(cfg, cfg.expt.pre_sweep_pulse, prefix='pre_',
+                                  sync_zero_const=True,
+                                  waveform_preload=self.waveforms_opt_ctrl_prepulse)
 
 
         if "opt_pulse" in cfg.expt and cfg.expt.opt_pulse:
@@ -85,105 +200,159 @@ class WignerTomography1ModeProgram(MMAveragerProgram):
             self.custom_pulse(cfg, creator.pulse.tolist(),
                               waveform_preload=self.waveforms_opt_ctrl)
 
-        if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
+        # sigma_z probe: post-prep transmon readout (before displacement+parity).
+        # 'reset' (Tier 1) measures then conditionally pi-pulses the ancilla back
+        # to |g>; 'postselect' (Tier 2) is a bare herald measurement (no feedback);
+        # 'measure' (Tier 3) skips displace+parity entirely so the final readout is
+        # the sigma_z readout -- non-invasive, parity comes from a separate run.
+        sigma_z_mode = MM_base.lane_layout(cfg)['sigma_z_mode']
+        if sigma_z_mode == 'reset':
+            self.parity_active_reset(register_label='sigmaz_reset', play_parity=False,
+                                     man_idx=self.man_mode_idx + 1, final_sync=False)
+        elif sigma_z_mode == 'postselect':
+            # measure_parity=True -> herald is a QND parity (syndrome) measurement
+            # (play the manipulate parity pulse, then read); otherwise a bare
+            # transmon herald. Either way it's one readout lane (idx_sigma_z) and
+            # the Wigner grid is post-selected on |g> via _sigma_z_filter_map.
+            self.post_selection_measure(
+                parity=cfg.expt.get('measure_parity', False),
+                man_idx=self.man_mode_idx + 1,
+                parity_fast=cfg.expt.get('parity_fast', False),
+                prefix='sigmaz_')
 
-            # do the eg/ef measurement after the custom pulse, before the tomography
-            params = MM_base.get_active_reset_params(cfg)
-            self.active_reset(**params)
+        if sigma_z_mode != 'measure':
+            self.setup_and_pulse(ch=self.man_ch[self.man_mode_idx], style="arb", freq=self.f_cavity,
+                                phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[self.man_mode_idx]),
+                                gain=self.cfg.expt.amp_placeholder, waveform="displace")
 
+            # self.sync_all(self.us2cycles(0.05))
+            self.sync_all()
 
-        self.setup_and_pulse(ch=self.man_ch[self.man_mode_idx], style="arb", freq=self.f_cavity, 
-                            phase=self.deg2reg(self.cfg.expt.phase_placeholder, gen_ch = self.man_ch[self.man_mode_idx]), 
-                            gain=self.cfg.expt.amp_placeholder, waveform="displace")
-
-        # self.sync_all(self.us2cycles(0.05))
-        self.sync_all()
-
-        # Parity pulse
-        self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse,
-                                fast=self.cfg.expt.parity_fast)
+            # Parity pulse
+            self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse,
+                                    fast=self.cfg.expt.parity_fast)
         self.measure_wrapper()
     
     def collect_shots(self):
         # collect shots for 1 adc and I and Q channels
-        cfg = self.cfg
-        read_num = 1
-        if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            params = MM_base.get_active_reset_params(cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
-        if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
-            read_num += 1
-
-        shots_i0 = self.di_buf[0].reshape((1, read_num*self.cfg["reps"]),order='F') / self.readout_lengths_adc[0]
-        shots_q0 = self.dq_buf[0].reshape((1, read_num*self.cfg["reps"]),order='F') / self.readout_lengths_adc[0]
-
+        read_num = MM_base.lane_layout(self.cfg)['read_num']
+        shots_i0 = self.di_buf[0].reshape((1, read_num*self.cfg["reps"]), order='F') / self.readout_lengths_adc[0]
+        shots_q0 = self.dq_buf[0].reshape((1, read_num*self.cfg["reps"]), order='F') / self.readout_lengths_adc[0]
         return shots_i0, shots_q0
 
 # ====================================================== #
                       
 class WignerTomography1ModeExperiment(Experiment):
     """
-    Amplitude Rabi Experiment
+    1-mode Wigner tomography.
+
+    Pulse-source routing (CRITICAL — see also `experiments/MM_base.py: load_opt_ctrl_pulse`
+    and `experiments/MM_base.py: custom_pulse` opt_cont branch):
+
+    There are two ways to play an optimal-control pulse before the displacement+parity:
+
+    (1) Canonical NPZ path. Set `cfg.expt.prepulse = True` and put an opt_cont row in
+        `cfg.expt.pre_sweep_pulse`. `custom_pulse` will load the IQ samples from
+        `cfg.device.optimal_control[encoding][state].filename` (an .npz on disk).
+
+    (2) Inline IQ_table path. Set `cfg.expt.opt_pulse = [['opt_cont', enc, state]]`
+        AND `cfg.expt.IQ_table = {'times', 'I_c', 'Q_c', 'I_q', 'Q_q'}`. The IQ table
+        is loaded once in `initialize()` via `load_opt_ctrl_pulse`, then fired via
+        `custom_pulse(..., waveform_preload=self.waveforms_opt_ctrl)` in `body()`.
+
+    Setting `IQ_table` WITHOUT `opt_pulse` is rejected with a ValueError — it used to
+    silently fall back to (1), masking the inline samples and leading to the wrong pulse.
+
+    Q-sign convention: both paths apply DAC `qdata = -Q_input`. The negation lives in
+    `custom_pulse` (L530) for path 1 and in `load_opt_ctrl_pulse` (L887-890) for path 2.
+    Upstream IQ tables should follow the closed-system convention `α̇(t) = -i·ε(t)`
+    (Eickbusch 2022).
+
     Experimental Config:
     expt = dict(
-        start: qubit gain [dac level]
-        step: gain step [dac level]
-        expts: number steps
         reps: number averages per expt
         rounds: number repetitions of experiment sweep
-        sigma_test: gaussian sigma for pulse length [us] (default: from pi_ge in config)
-        pulse_type: 'gauss' or 'const'
+        displace_length: scaling for displacement gain
+        displacement_path: .npy path of complex alphas
+        opt_pulse: optional inline pulse spec, e.g. [['opt_cont', 'fock', '1']]
+        IQ_table: optional dict with keys 'times', 'I_c', 'Q_c', 'I_q', 'Q_q'
+                  (required iff opt_pulse is set)
+        prepulse, pre_sweep_pulse, gate_based: canonical NPZ-prepulse path
     )
     """
 
     def __init__(self, soccfg=None, path='', prefix='WignweTomography1Mode', config_file=None, progress=None):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
-        self._loaded_pulses = set()
 
-
+    def _measure_sigma_z_once(self):
+        '''Tier 3: a single transmon sigma_z measurement (prep -> readout, no
+        displacement/parity). sigma_z is displacement-independent, so one run
+        suffices. Returns (sigma_z_corrected, sigma_z_raw), herald-masked and
+        confusion-corrected the same way as the in-line probe.'''
+        cfg_sz = AttrDict(deepcopy(self.cfg))
+        cfg_sz.expt.sigma_z_mode = 'measure'
+        # placeholders the body references only inside the (skipped) displace block
+        cfg_sz.expt.phase_second_pulse = 180
+        cfg_sz.expt.amp_placeholder = 0
+        cfg_sz.expt.phase_placeholder = 0.0
+        layout = MM_base.lane_layout(cfg_sz)
+        prog = WignerTomography1ModeProgram(soccfg=self.soccfg, cfg=cfg_sz)
+        prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True,
+                     progress=False, readouts_per_experiment=layout['read_num'])
+        i0, _ = prog.collect_shots()
+        threshold = self.cfg.device.readout.threshold[0]
+        lane = _sigma_z_lane_shots(i0, layout['read_num'], layout['idx_sigma_z'],
+                                   idx_pre_selection=layout['idx_pre_selection_list'],
+                                   threshold=threshold)
+        return _compute_sigma_z(lane, threshold, self.cfg)
 
     def acquire(self, progress=False, debug=False):
         # expand entries in config that are length 1 to fill all qubits
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
-        self.format_config_before_experiment(num_qubits_sample) 
+        self.format_config_before_experiment(num_qubits_sample)
 
         qTest = self.cfg.expt.qubits[0]
 
-        if 'pulse_correction' in self.cfg.expt:
-            self.pulse_correction = self.cfg.expt.pulse_correction
-        else:
-            self.pulse_correction = False
+        self.pulse_correction = self.cfg.expt.get('pulse_correction', False)
+        self.cfg.expt.parity_fast = self.cfg.expt.get('parity_fast', False)
 
-        if 'parity_fast' in self.cfg.expt:
-            self.cfg.expt.parity_fast = self.cfg.expt.parity_fast
-        else:
-            self.cfg.expt.parity_fast = False
+        # measure_parity: insert a QND parity (syndrome) measurement on the
+        # manipulate mode BEFORE the Wigner displace+parity, and post-select the
+        # reconstruction on even (|g>). Realized through the Tier-2 'postselect'
+        # herald with a parity pulse (see body + _sigma_z_filter_map). Auto-resolve
+        # sigma_z_mode so the user only needs measure_parity=True.
+        if self.cfg.expt.get('measure_parity', False) and \
+                str(self.cfg.expt.get('sigma_z_mode', 'off')).lower() in ('off', 'none'):
+            self.cfg.expt.sigma_z_mode = 'postselect'
 
-        read_num = 1
-        if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
-            read_num += 1
-        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
-            params = MM_base.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        read_num = MM_base.lane_layout(self.cfg)['read_num']
 
         # extract displacement list from file path
         if 'alpha_list' in self.cfg.expt:
-            alpha_2d = self.cfg.expt.alpha_list  # 2d list 
-            # convert list to array 
-            alpha_2d = np.array(alpha_2d)
+            alpha_2d = np.array(self.cfg.expt.alpha_list)
             alpha_list = alpha_2d[:, 0] + 1j * alpha_2d[:, 1]
         else:
             alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
 
-        if 'man_mode_no' in self.cfg.expt:
-            man_mode_no = self.cfg.expt.man_mode_no
-        else:
-            man_mode_no = 1
-
-        self.man_mode_idx = man_mode_no -1
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[self.man_mode_idx] 
 
         data={"alpha":[],"avgi":[], "avgq":[], "amps":[], "phases":[], "i0":[], "q0":[]}
+
+        # Tier 3 ('measure'): sigma_z is displacement-independent, so measure it
+        # ONCE here (prep -> transmon readout, displace+parity skipped), then run
+        # the standard Wigner sweep below with the probe OFF so the parity grid is
+        # native -- never perturbed by the transmon readout. One job, both outputs.
+        self.sigma_z_mode = MM_base.lane_layout(self.cfg)['sigma_z_mode']
+        if self.sigma_z_mode == 'measure':
+            sz, sz_raw = self._measure_sigma_z_once()
+            data["sigma_z"] = np.nan if sz is None else sz
+            data["sigma_z_raw"] = np.nan if sz_raw is None else sz_raw
+            # Run the sweep + analyze as 'off' so parity is native and analyze
+            # does not try to re-extract sigma_z from the (probe-less) sweep shots.
+            self.cfg.expt.sigma_z_mode = 'off'
+            read_num = MM_base.lane_layout(self.cfg)['read_num']
 
         pre_selection = ('active_reset' in self.cfg.expt and self.cfg.expt.active_reset
                          and self.cfg.expt.get('pre_selection_reset', False))
@@ -207,7 +376,7 @@ class WignerTomography1ModeExperiment(Experiment):
             if pre_selection:
                 avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
                     i0.flatten(), q0.flatten(), read_num,
-                    threshold=threshold, pre_selection=True)
+                    threshold=threshold, pre_selection=True, cfg=self.cfg)
             else:
                 avgi_val = avgi[0][-1]
                 avgq_val = avgq[0][-1]
@@ -234,7 +403,7 @@ class WignerTomography1ModeExperiment(Experiment):
                 if pre_selection:
                     avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
                         i0.flatten(), q0.flatten(), read_num,
-                        threshold=threshold, pre_selection=True)
+                        threshold=threshold, pre_selection=True, cfg=self.cfg)
                 else:
                     avgi_val = avgi[0][-1]
                     avgq_val = avgq[0][-1]
@@ -256,87 +425,46 @@ class WignerTomography1ModeExperiment(Experiment):
         if data is None:
             data=self.data
 
-        expt = self.cfg.expt
-        if 'pulse_correction' in self.cfg.expt:
-            self.pulse_correction = self.cfg.expt.pulse_correction
-        else:
-            self.pulse_correction = False
+        self.pulse_correction = self.cfg.expt.get('pulse_correction', False)
+        mode_state_num = kwargs.get('mode_state_num', 10)
 
-        if 'mode_state_num' in kwargs:
-            mode_state_num = kwargs['mode_state_num']
-        else:
-            mode_state_num = 10
+        # sigma_z probe: report the post-prep transmon scalar, and (Tier 2) build
+        # a per-shot keep-mask so the parity grid uses only |g>-heralded shots.
+        layout = MM_base.lane_layout(self.cfg)
+        sigma_z_mode = layout['sigma_z_mode']
+        threshold = self.cfg.device.readout.threshold[0]
+        if sigma_z_mode != 'off':
+            # Compute sigma_z on the SAME herald-passed shots the parity uses
+            # (bin_ss_data masks the parity on idx_pre_selection; mirror it here).
+            lane = _sigma_z_lane_shots(data["i0"], layout['read_num'], layout['idx_sigma_z'],
+                                       idx_pre_selection=layout['idx_pre_selection_list'],
+                                       threshold=threshold)
+            sz, sz_raw = _compute_sigma_z(lane, threshold, self.cfg)
+            # Store nan (not None) so the HDF5 save in Experiment.save_data succeeds
+            # (a Python None has object dtype and has no native HDF5 equivalent).
+            data["sigma_z"] = np.nan if sz is None else sz
+            data["sigma_z_raw"] = np.nan if sz_raw is None else sz_raw
 
-        read_num = 1
-        if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
-            read_num += 1
-        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
-            params = MM_base.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
-
-        idx_start = read_num - 1
-        idx_step = read_num
-        idx_post_select = 0
-        if 'active_reset' in self.cfg.expt and self.cfg.expt.active_reset:
-            idx_post_select += 1
+        if sigma_z_mode == 'measure':
+            # Tier 3 (non-invasive): displace+parity were skipped, so there is no
+            # parity in this run -- it comes from a separate sigma_z='off' run.
+            # Fill nan (saveable) and return; only sigma_z is meaningful here.
+            n_alpha = len(data["alpha"])
+            data["pe"] = np.full(n_alpha, np.nan)
+            data["parity"] = np.full(n_alpha, np.nan)
+            return data
 
         if self.pulse_correction:
-            # we need to reshape the data before processing
             # if pulse correction i0 = [i_minus0, i_plus0, i_minus1, i_plus1, ...]
-            # if post_select_pre_pulse i0 = [i_gem0, i_efm0, i_minus0, i_gep0, i_efp0, i_plus0, ...]
+            #
+            # Hand bin_ss_data the raw lane-interleaved shots; it does the
+            # final-lane extraction AND pre_selection_reset masking via lane_layout.
 
-            data_minus = {}
-            data_plus = {}
-
-
-
-            data_minus["i0"] = data["i0"][0::2, :, idx_start::idx_step]
-            data_minus["q0"] = data["q0"][0::2, :, idx_start::idx_step]
-            data_plus["i0"] = data["i0"][1::2, :, idx_start::idx_step]
-            data_plus["q0"] = data["q0"][1::2, :, idx_start::idx_step]
-
-            if 'post_select_pre_pulse' in self.cfg.expt and self.cfg.expt.post_select_pre_pulse:
-                I_eg = data["i0"][0::2, 0, idx_post_select::idx_step]
-                Q_eg = data["q0"][0::2, 0, idx_post_select::idx_step]
-
-                fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-                ax.plot(I_eg[0, :], Q_eg[0, :], 'o')
-                ax.set_title("I_EG vs Q_EG")
-                # axis should be equal
-                ax.axis('equal')
-                fig.tight_layout()
-
-                data["I_postpulse_minus"] = I_eg
-                data["Q_postpulse_minus"] = Q_eg
-
-                data_temp = {}
-                data_temp["i0"] = data["i0"][0::2, :, idx_post_select::idx_step]
-                data_temp["q0"] = data["q0"][0::2, :, idx_post_select::idx_step]
-                wigner_analysis = WignerAnalysis(data=data_temp,
-                                                    config=self.cfg,
-                                                    mode_state_num=mode_state_num,
-                                                    alphas=data["alpha"])
-                pe_postpulse_minus = 1 - wigner_analysis.bin_ss_data()
-
-                data_temp = {}
-                data_temp["i0"] = data["i0"][1::2, :, idx_post_select::idx_step]
-                data_temp["q0"] = data["q0"][1::2, :, idx_post_select::idx_step]
-                wigner_analysis = WignerAnalysis(data=data_temp,
-                                                    config=self.cfg,
-                                                    mode_state_num=mode_state_num,
-                                                    alphas=data["alpha"])
-                pe_postpulse_plus = 1 - wigner_analysis.bin_ss_data()
-
-                pe_postpulse = np.average((pe_postpulse_plus + pe_postpulse_minus) / 2)
-                data["pe_postpulse"] = pe_postpulse
-                data["pe_postpulse_plus"] = pe_postpulse_plus
-                data["pe_postpulse_minus"] = pe_postpulse_minus
-
-                # apply thresholding on I_eg and calibration matrix to get pe
-
+            data_minus = {"i0": data["i0"][0::2], "q0": data["q0"][0::2]}
+            data_plus  = {"i0": data["i0"][1::2], "q0": data["q0"][1::2]}
 
             wigner_analysis_minus = WignerAnalysis(data=data_minus,
-                                                   config=self.cfg, 
+                                                   config=self.cfg,
                                                     mode_state_num=mode_state_num,
                                                     alphas=data["alpha"])
 
@@ -344,38 +472,48 @@ class WignerTomography1ModeExperiment(Experiment):
                                                   config=self.cfg,
                                                   mode_state_num=mode_state_num,
                                                   alphas=data["alpha"])
-            
-            pe_plus = wigner_analysis_plus.bin_ss_data()
-            pe_minus = wigner_analysis_minus.bin_ss_data()
+
+            fmap_minus = fmap_plus = None
+            if sigma_z_mode == 'postselect':
+                fmap_minus = _sigma_z_filter_map(data["i0"][0::2], self.cfg, layout)
+                fmap_plus  = _sigma_z_filter_map(data["i0"][1::2], self.cfg, layout)
+                data["sigma_z_discard_frac"] = float(
+                    1 - 0.5 * (fmap_minus.mean() + fmap_plus.mean()))
+
+            pe_plus = wigner_analysis_plus.bin_ss_data(filter_map=fmap_plus)
+            pe_minus = wigner_analysis_minus.bin_ss_data(filter_map=fmap_minus)
             parity_plus = (1 - pe_plus) - pe_plus
             parity_minus = (1 - pe_minus) - pe_minus
             parity = (parity_minus - parity_plus) / 2
 
-            # apply scale 
+            # apply scale
             scale_parity = self.cfg.device.manipulate.alpha_scale[self.man_mode_idx]
-            print('scale parity:', scale_parity )
-            
+
             data["pe_plus"] = pe_plus
             data["pe_minus"] = pe_minus
             data["parity_plus"] = parity_plus
             data["parity_minus"] = parity_minus
-            data["parity"] = parity / (scale_parity)
-            print('max parity:', np.max(data["parity"]))
-            print('max parity before scaling:', np.max(parity))
-
+            data["parity"] = parity / scale_parity
 
         else:
-            data_wigner = {}
-            idx_start = read_num - 1
-            idx_step = read_num
-            data_wigner["i0"] = data["i0"][:, :, idx_start::idx_step]
-            data_wigner["q0"] = data["q0"][:, :, idx_start::idx_step]
+            # Hand bin_ss_data the raw lane-interleaved shots; it handles
+            # final-lane extraction AND pre_selection_reset masking via lane_layout.
+            data_wigner = {
+                "i0": data["i0"],
+                "q0": data["q0"],
+            }
 
             wigner_analysis = WignerAnalysis(data=data_wigner,
-                                              config=self.cfg, 
+                                              config=self.cfg,
                                               mode_state_num=mode_state_num,
                                               alphas=data["alpha"])
-            pe = wigner_analysis.bin_ss_data()
+
+            filter_map = None
+            if sigma_z_mode == 'postselect':
+                filter_map = _sigma_z_filter_map(data["i0"], self.cfg, layout)
+                data["sigma_z_discard_frac"] = float(1 - filter_map.mean())
+
+            pe = wigner_analysis.bin_ss_data(filter_map=filter_map)
             data["pe"] = pe
             data["parity"] = (1 - pe) - pe
 
@@ -410,6 +548,14 @@ class WignerTomography1ModeExperiment(Experiment):
         alphas = data['alpha']
         if len(parity) != len(alphas):
             raise ValueError(f'Length mismatch: parity ({len(parity)}) vs alpha ({len(alphas)}).')
+        # Tier 3 ('measure') runs carry no parity (displace+parity were skipped);
+        # the Wigner must come from a separate sigma_z_mode='off' run.
+        if not np.all(np.isfinite(np.asarray(parity, dtype=float))):
+            raise ValueError(
+                "parity contains NaN/inf -- this looks like a sigma_z_mode='measure' "
+                "(Tier 3) run, which has no parity grid. Display the Wigner from a "
+                "separate sigma_z_mode='off' run; use this run only for "
+                "data['sigma_z'].")
 
         # Default initial state if not provided
         if initial_state is None:
@@ -496,7 +642,7 @@ class ProcessTomographyProgram(MMAveragerProgram):
     - Measure
     """
 
-    def __init__(self, soccfg, cfg, loaded_pulses=None):
+    def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
         self.cfg.reps = cfg.expt.reps
@@ -508,11 +654,8 @@ class ProcessTomographyProgram(MMAveragerProgram):
         qTest = self.qubits[0]
 
         # Manipulation channel and displacement GAUSS
-        if 'man_mode_no' in self.cfg.expt:
-            man_mode_no = self.cfg.expt.man_mode_no
-        else:
-            man_mode_no = 1
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1
         self.f_cavity = self.freq2reg(cfg.device.manipulate.f_ge[self.man_mode_idx],
                                        gen_ch=self.man_ch[self.man_mode_idx])
         self.displace_sigma = self.us2cycles(cfg.device.manipulate.displace_sigma[self.man_mode_idx],
@@ -535,17 +678,21 @@ class ProcessTomographyProgram(MMAveragerProgram):
                 pulse_conf=cfg.expt.opt_pulse, IQ_table=cfg.expt.IQ_table,
             )
             self.waveforms_opt_ctrl = waveform_names
+        elif cfg.expt.get("IQ_table") is not None:
+            raise ValueError(
+                "cfg.expt.IQ_table is set but cfg.expt.opt_pulse is not. "
+                "The inline IQ_table is only consumed when opt_pulse is set "
+                "(see WignerTomography1ModeExperiment docstring for the contract). "
+                "Set opt_pulse=[['opt_cont', enc, state]] alongside the IQ_table — "
+                "otherwise the canonical NPZ at cfg.device.optimal_control[...].filename "
+                "would silently play instead."
+            )
 
     def body(self):
         cfg = AttrDict(self.cfg)
         # reset phases
         self.reset_and_sync()
-        if 'repeat_count' in cfg.expt:
-            print('found repeat count')
-            repeat_count = int(cfg.expt.get('repeat_count'))
-        else:
-            print('no repeat count found, setting to 1')
-            repeat_count = 1
+        repeat_count = int(cfg.expt.get('repeat_count', 1))
 
         # Optional active reset
         if 'active_reset' in cfg.expt and cfg.expt.active_reset:
@@ -559,7 +706,16 @@ class ProcessTomographyProgram(MMAveragerProgram):
                 self.custom_pulse(cfg, creator.pulse.tolist(), prefix='state_')
             else:
                 self.custom_pulse(cfg, cfg.expt.state_prep, prefix='state_')
-       
+
+        # sigma_z probe: post-prep transmon readout, once per shot, before the
+        # repeat/displacement/parity block. 'reset' (Tier 1) measures then resets
+        # the ancilla to |g>; 'postselect' (Tier 2) is a bare herald measurement.
+        sigma_z_mode = MM_base.lane_layout(cfg)['sigma_z_mode']
+        if sigma_z_mode == 'reset':
+            self.parity_active_reset(register_label='sigmaz_reset_pt', play_parity=False,
+                                     man_idx=self.man_mode_idx + 1, final_sync=False)
+        elif sigma_z_mode == 'postselect':
+            self.post_selection_measure(parity=False, prefix='sigmaz_')
 
         for _ in range(repeat_count):
             # Prepulse
@@ -602,18 +758,7 @@ class ProcessTomographyProgram(MMAveragerProgram):
 
     def collect_shots(self):
         # collect shots for 1 adc and I and Q channels
-        cfg = self.cfg
-        read_num = 1
-        if 'active_reset' in cfg.expt and cfg.expt.active_reset:
-            params = MM_base.get_active_reset_params(cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
-        if 'post_select_pre_pulse' in cfg.expt and cfg.expt.post_select_pre_pulse:
-            read_num += 1
-
-        if 'parity_shot' in cfg.expt and cfg.expt.parity_shot:
-            # it is 1 * N
-            read_num += int(cfg.expt.get('repeat_count'))
-
+        read_num = MM_base.lane_layout(self.cfg)['read_num']
         shots_i0 = self.di_buf[0].reshape((1, read_num*self.cfg["reps"]), order='F') / self.readout_lengths_adc[0]
         shots_q0 = self.dq_buf[0].reshape((1, read_num*self.cfg["reps"]), order='F') / self.readout_lengths_adc[0]
         return shots_i0, shots_q0
@@ -634,7 +779,7 @@ class ProcessTomographyExperiment(Experiment):
     - repeat_list OR repeat_start, repeat_step, repeat_expts: defines sweep over repeat_count values
     - displacement_path: .npy path of complex alphas
     - displace_length: scaling ref, re-used from Wigner experiment
-    - reps, rounds, active_reset, post_select_pre_pulse, opt_pulse, IQ_table: standard
+    - reps, rounds, active_reset, opt_pulse, IQ_table: standard
     - pulse_correction: bool — if True, perform two acquisitions per alpha with phase_second_pulse=180 then 0 (non-inline)
     """
 
@@ -678,6 +823,16 @@ class ProcessTomographyExperiment(Experiment):
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         self.format_config_before_experiment(num_qubits_sample)
 
+        # Tier 3 ('measure') skips displace+parity and is only meaningful for the
+        # single-shot Wigner program; the process-tomography repeat/parity_shot
+        # structure has no well-defined 'measure' semantics. Fail fast rather than
+        # silently read the parity lane as sigma_z.
+        if MM_base.lane_layout(self.cfg)['sigma_z_mode'] == 'measure':
+            raise NotImplementedError(
+                "sigma_z_mode='measure' (Tier 3) is only supported by "
+                "WignerTomography1ModeExperiment. Use 'off' / 'reset' / "
+                "'postselect' for ProcessTomographyExperiment.")
+
         # Read control flags
         self.pulse_correction = bool(self.cfg.expt.get('pulse_correction', False))
         self.parity_fast = bool(self.cfg.expt.get('parity_fast', False))
@@ -693,11 +848,8 @@ class ProcessTomographyExperiment(Experiment):
             alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
 
 
-        if 'man_mode_no' in self.cfg.expt:
-            man_mode_no = self.cfg.expt.man_mode_no
-        else:
-            man_mode_no = 1
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1
         gain2alpha = self.cfg.device.manipulate.gain_to_alpha[self.man_mode_idx]
         displace_sigma = self.cfg.device.manipulate.displace_sigma[self.man_mode_idx]
 
@@ -705,7 +857,6 @@ class ProcessTomographyExperiment(Experiment):
         wait_list = self._build_wait_list()
         repeat_list = self._build_repeat_list()
         states = self.cfg.expt.cardinal_states
-        print('repeat list:', repeat_list)
         # Prepare data containers
         nS, nW, nR, nA = len(states), len(wait_list), len(repeat_list), len(alpha_list)
         pc_factor = 2 if self.pulse_correction else 1
@@ -731,18 +882,11 @@ class ProcessTomographyExperiment(Experiment):
                 self.cfg.expt.wait_time = float(wait_us)
 
                 for ri, repeat_count in enumerate(repeat_list):
-                    print('doing repeat', ri)
                     # set repeat count for this condition
                     self.cfg.expt.repeat_count = int(repeat_count)
 
-                    # Readouts per experiment lane count
-                    read_num = 1
-                    if self.cfg.expt.get('post_select_pre_pulse', False):
-                        read_num += 1
-                    if self.cfg.expt.get('active_reset', False):
-                        read_num += 1
-                    if 'parity_shot' in self.cfg.expt and self.cfg.expt.parity_shot:
-                        read_num += repeat_count
+                    # Readouts per shot — single source of truth in MM_base.lane_layout
+                    read_num = MM_base.lane_layout(self.cfg)['read_num']
 
                     for ai, alpha in enumerate(tqdm(alpha_list, disable=not progress)):
                         # Map alpha to amp/phase placeholders
@@ -858,8 +1002,6 @@ class ProcessTomographyExperiment(Experiment):
 
 
         # Read flags
-        post_select = bool(self.cfg.expt.get('post_select_pre_pulse', False))
-        active_reset = bool(self.cfg.expt.get('active_reset', False))
         pulse_correction = bool(self.cfg.expt.get('pulse_correction', False))
 
         # Defaults
@@ -880,13 +1022,22 @@ class ProcessTomographyExperiment(Experiment):
         nS, nW, nR, nApc = data['avgi'].shape
         pc_factor = 2 if pulse_correction else 1
 
+        # sigma_z probe mode (resolved once; lane indices come from lane_layout below)
+        sigma_z_mode = MM_base.lane_layout(self.cfg)['sigma_z_mode']
+        threshold_val = self.cfg.device.readout.threshold[0]
+
         # Containers for parity results
         results = {
-            'parity': np.empty((nS, nW, nR), dtype=object),  
+            'parity': np.empty((nS, nW, nR), dtype=object),
             'rho': np.empty((nS, nW, nR), dtype=object),
             'rho_rotated': np.empty((nS, nW, nR), dtype=object),
-            'theta_opt': np.empty((nS, nW, nR), dtype=object),     
+            'theta_opt': np.empty((nS, nW, nR), dtype=object),
         }
+        if sigma_z_mode != 'off':
+            results['sigma_z'] = np.empty((nS, nW, nR), dtype=object)
+            results['sigma_z_raw'] = np.empty((nS, nW, nR), dtype=object)
+            if sigma_z_mode == 'postselect':
+                results['sigma_z_discard_frac'] = np.empty((nS, nW, nR), dtype=object)
         if parity_shot:
             results.update({
                 'parity_shot': np.empty((nS, nW, nR), dtype=object),
@@ -919,42 +1070,42 @@ class ProcessTomographyExperiment(Experiment):
 
         # Ensure expts is set for downstream single-shot binning
         nA = len(data['alpha'])
-        # We'll construct a local cfg clone with correct expts
-        from copy import deepcopy
 
         for si in range(nS):
             for wi in range(nW):
                 for ri in range(nR):
-                    # Build small dicts like in Wigner analysis
+                    # Per-ri cfg clone with the right repeat_count so lane_layout (called
+                    # inside bin_ss_data) computes read_num correctly for this slice.
+                    cfg_local = AttrDict(deepcopy(self.cfg))
+                    cfg_local.expt.expts = nA
+                    cfg_local.expt.repeat_count = int(data['repeat_list'][ri])
 
-                            # Readout lanes
-                    read_num = 1
-                    if post_select:
-                        read_num += 1
-                    if active_reset:
-                        read_num += 1
-
-                    # Set the read_num based on parity_shot
-                    if parity_shot:
-                        read_num += data['repeat_list'][ri]
-
-                    idx_start = read_num - 1
+                    layout = MM_base.lane_layout(cfg_local)
+                    read_num = layout['read_num']
                     idx_step = read_num
-                    idx_post_select = 0
-                    if active_reset:
-                        idx_post_select += 1
+                    idx_sz = layout['idx_sigma_z']
+                    # Original behavior: all non-final lanes are treated as herald
+                    # candidates -- but the sigma_z probe lane is NOT a parity herald,
+                    # so exclude it (it is consumed for the sigma_z scalar / Tier 2 mask).
+                    idx_parity_shot = np.arange(layout['idx_final'])
+                    if idx_sz is not None:
+                        idx_parity_shot = idx_parity_shot[idx_parity_shot != idx_sz]
 
-                    idx_parity_shot = np.arange(idx_start)
-
-
+                    # sigma_z scalar for this (state, wait, repeat): aggregate the
+                    # sigma_z lane over all alphas (and both pulse-correction copies).
+                    if idx_sz is not None:
+                        _sz_buf = np.concatenate(
+                            [np.asarray(data['i0'][si, wi, ri, k][0]).ravel()
+                             for k in range(nApc)])
+                        # Herald-mask sigma_z onto the same shots the parity uses.
+                        _sz_lane = _sigma_z_lane_shots(_sz_buf, read_num, idx_sz,
+                                                       idx_pre_selection=layout['idx_pre_selection_list'],
+                                                       threshold=threshold_val)
+                        _sz, _sz_raw = _compute_sigma_z(_sz_lane, threshold_val, cfg_local)
+                        results['sigma_z'][si, wi, ri] = _sz
+                        results['sigma_z_raw'][si, wi, ri] = _sz_raw
 
                     if pulse_correction:
-                        cfg_local = AttrDict(deepcopy(self.cfg))
-                        cfg_local.expt.expts = nA
-                        # we will apply a filter to the data here
-                        # if any of the shot are odd parity we will discard them
-                        # first we should extract the parity shots
-
                         shot_minus = {
                             'i0': np.stack([data['i0'][si, wi, ri, k][0] for k in range(0, nApc, 2)], axis=0),
                             'q0': np.stack([data['q0'][si, wi, ri, k][0] for k in range(0, nApc, 2)], axis=0),
@@ -964,34 +1115,47 @@ class ProcessTomographyExperiment(Experiment):
                             'q0': np.stack([data['q0'][si, wi, ri, k][0] for k in range(1, nApc, 2)], axis=0),
                         }
 
+                        # Herald sub-bins: pre-stride a single lane so bin_ss_data treats
+                        # it as a plain single-readout slice (cfg_herald disables
+                        # active_reset/parity_shot so lane_layout returns read_num=1).
                         data_parity_minus = {idx: {
                             'i0': shot_minus['i0'][:, idx::idx_step],
                             'q0': shot_minus['q0'][:, idx::idx_step],
                             'alpha': data['alpha'],
                         } for idx in idx_parity_shot}
-
                         data_parity_plus = {idx: {
                             'i0': shot_plus['i0'][:, idx::idx_step],
                             'q0': shot_plus['q0'][:, idx::idx_step],
                             'alpha': data['alpha'],
                         } for idx in idx_parity_shot}
 
-                        data_minus = {
-                            'i0': shot_minus['i0'][:, idx_start::idx_step],
-                            'q0': shot_minus['q0'][:, idx_start::idx_step],
-                        }
-                        data_plus = {
-                            'i0': shot_plus['i0'][:, idx_start::idx_step],
-                            'q0': shot_plus['q0'][:, idx_start::idx_step],
-                        }
+                        # Main parity: hand bin_ss_data the raw lane-interleaved shots; it
+                        # extracts the final lane AND applies pre_selection_reset masking.
+                        data_minus = {'i0': shot_minus['i0'], 'q0': shot_minus['q0']}
+                        data_plus  = {'i0': shot_plus['i0'],  'q0': shot_plus['q0']}
+
+                        # Tier 2 (postselect): keep-mask (|g>) from the sigma_z lane,
+                        # shaped (reps, nA) to match the parity_shot filter_map convention.
+                        sz_fmap_minus = sz_fmap_plus = None
+                        if sigma_z_mode == 'postselect' and idx_sz is not None:
+                            sz_fmap_minus = (shot_minus['i0'][:, idx_sz::idx_step] < threshold_val).T
+                            sz_fmap_plus  = (shot_plus['i0'][:, idx_sz::idx_step] < threshold_val).T
+                            results['sigma_z_discard_frac'][si, wi, ri] = float(
+                                1 - 0.5 * (sz_fmap_minus.mean() + sz_fmap_plus.mean()))
 
                         # plot the i0 and q0 data for debugging
                         if debug:
+                            # Final-lane view for the I/Q scatter plot
+                            final_m_i = shot_minus['i0'][:, idx_step-1::idx_step]
+                            final_m_q = shot_minus['q0'][:, idx_step-1::idx_step]
+                            final_p_i = shot_plus['i0'][:, idx_step-1::idx_step]
+                            final_p_q = shot_plus['q0'][:, idx_step-1::idx_step]
+
                             fig, ax = plt.subplots(2, 1, sharex=True)
-                            ax[0].plot(np.mean(data_minus['i0'], axis=1).T, np.mean(data_minus['q0'], axis=1).T, linestyle='', marker='o', label='data minus')
+                            ax[0].plot(np.mean(final_m_i, axis=1).T, np.mean(final_m_q, axis=1).T, linestyle='', marker='o', label='data minus')
                             [ax[0].plot(np.mean(data_parity_minus[i]['i0'], axis=1).T, np.mean(data_parity_minus[i]['q0'], axis=1).T, label=f'parity minus {i}',  linestyle='', marker='o') for i in idx_parity_shot]
                             [ax[1].plot(np.mean(data_parity_plus[i]['i0'], axis=1).T, np.mean(data_parity_plus[i]['q0'], axis=1).T, label=f'parity plus {i}', linestyle='', marker='o') for i in idx_parity_shot]
-                            ax[1].plot(np.mean(data_plus['i0'], axis=1).T, np.mean(data_plus['q0'], axis=1).T, label='data plus',  linestyle='', marker='o')
+                            ax[1].plot(np.mean(final_p_i, axis=1).T, np.mean(final_p_q, axis=1).T, label='data plus',  linestyle='', marker='o')
 
                             # mark the default g / e states
                             ie = self.cfg.device.readout.Ie
@@ -1008,27 +1172,28 @@ class ProcessTomographyExperiment(Experiment):
                             ax[1].legend()
                             fig.show()
 
-
-                        if post_select:
-                            I_eg = data_minus['i0'][:, 0, idx_post_select::idx_step]
-                            Q_eg = data_minus['q0'][:, 0, idx_post_select::idx_step]
-                            # Optionally store these if desired
-
                         if parity_shot:
-                            if post_select:
-                                idx_start = 1 # first lane is post-select then parity shots, this is assuming only 1 post-select lane
-                            # Build per-shot parity across alphas
+                            # cfg for herald sub-bins: disable active_reset & parity_shot so
+                            # lane_layout returns read_num=1, matching the pre-strided shape.
+                            cfg_herald = AttrDict(deepcopy(cfg_local))
+                            cfg_herald.expt.active_reset = False
+                            cfg_herald.expt.parity_shot = False
+
                             nA = len(data['alpha'])
                             nSel = len(idx_parity_shot)
                             parity_shot_plus = np.empty((nA, nSel))
                             parity_shot_minus = np.empty((nA, nSel))
                             filter_map_plus = np.ones((self.cfg.expt.reps, nA), dtype=bool)
                             filter_map_minus = np.ones((self.cfg.expt.reps, nA), dtype=bool)
+                            # Compose Tier 2 sigma_z keep-mask into the parity_shot filter.
+                            if sz_fmap_minus is not None:
+                                filter_map_minus &= sz_fmap_minus
+                                filter_map_plus &= sz_fmap_plus
                             for j, idx in enumerate(idx_parity_shot):
-                                _wtemp_minus = WignerAnalysis(data=data_parity_minus[idx], config=cfg_local, mode_state_num=mode_state_num, alphas=data['alpha'])
-                                _wtemp_plus = WignerAnalysis(data=data_parity_plus[idx], config=cfg_local, mode_state_num=mode_state_num, alphas=data['alpha'])
-                                _pe_minus, _shots_minus = _wtemp_minus.bin_ss_data(return_shots=True)  # shape (nA,)
-                                _pe_plus, _shots_plus = _wtemp_plus.bin_ss_data(return_shots=True)  # shape (nA,)
+                                _wtemp_minus = WignerAnalysis(data=data_parity_minus[idx], config=cfg_herald, mode_state_num=mode_state_num, alphas=data['alpha'])
+                                _wtemp_plus = WignerAnalysis(data=data_parity_plus[idx], config=cfg_herald, mode_state_num=mode_state_num, alphas=data['alpha'])
+                                _pe_minus, _shots_minus = _wtemp_minus.bin_ss_data(return_shots=True)
+                                _pe_plus, _shots_plus = _wtemp_plus.bin_ss_data(return_shots=True)
                                 filter_map_minus &= (_shots_minus == 0)
                                 filter_map_plus &= (_shots_plus == 0)
 
@@ -1036,7 +1201,6 @@ class ProcessTomographyExperiment(Experiment):
                                 _parity_minus = (1 - _pe_minus) - _pe_minus
                                 parity_shot_plus[:, j] = _parity_plus
                                 parity_shot_minus[:, j] = _parity_minus
-                            
 
                         wa_minus = WignerAnalysis(data=data_minus, config=cfg_local, mode_state_num=mode_state_num, alphas=data['alpha'])
                         wa_plus = WignerAnalysis(data=data_plus, config=cfg_local, mode_state_num=mode_state_num, alphas=data['alpha'])
@@ -1066,10 +1230,14 @@ class ProcessTomographyExperiment(Experiment):
 
 
 
-                        pe_minus = wa_minus.bin_ss_data()
-                        pe_plus = wa_plus.bin_ss_data()
+                        # Tier 2 masks the MAIN parity by the sigma_z keep-mask;
+                        # sz_fmap_* is None unless sigma_z_mode == 'postselect'.
+                        pe_minus = wa_minus.bin_ss_data(filter_map=sz_fmap_minus)
+                        pe_plus = wa_plus.bin_ss_data(filter_map=sz_fmap_plus)
 
-
+                        if sz_fmap_minus is not None:
+                            pe_minus = np.ma.filled(pe_minus, np.nan)
+                            pe_plus = np.ma.filled(pe_plus, np.nan)
 
                         parity_minus = (1 - pe_minus) - pe_minus
                         parity_plus = (1 - pe_plus) - pe_plus
@@ -1105,16 +1273,23 @@ class ProcessTomographyExperiment(Experiment):
 
 
                     else:
-                        # TO DO update for post_select and parity_shot
-                        # No correction: use only the last readout lane (stride select)
-                        cfg_local = AttrDict(deepcopy(self.cfg))
-                        cfg_local.expt.expts = nA
+                        # No correction: hand bin_ss_data the raw lane-interleaved shots;
+                        # it handles final-lane extraction AND pre_selection_reset masking.
                         data_w = {
-                            'i0': np.stack([data['i0'][si, wi, ri, k][0] for k in range(0, nApc, 1)], axis=0)[:, idx_start::idx_step],
-                            'q0': np.stack([data['q0'][si, wi, ri, k][0] for k in range(0, nApc, 1)], axis=0)[:, idx_start::idx_step],
+                            'i0': np.stack([data['i0'][si, wi, ri, k][0] for k in range(0, nApc)], axis=0),
+                            'q0': np.stack([data['q0'][si, wi, ri, k][0] for k in range(0, nApc)], axis=0),
                         }
                         wa = WignerAnalysis(data=data_w, config=cfg_local, mode_state_num=mode_state_num, alphas=data['alpha'])
-                        pe = wa.bin_ss_data()
+
+                        # Tier 2 (postselect): keep-mask (|g>) from the sigma_z lane.
+                        sz_fmap = None
+                        if sigma_z_mode == 'postselect' and idx_sz is not None:
+                            sz_fmap = (data_w['i0'][:, idx_sz::idx_step] < threshold_val).T
+                            results['sigma_z_discard_frac'][si, wi, ri] = float(1 - sz_fmap.mean())
+
+                        pe = wa.bin_ss_data(filter_map=sz_fmap)
+                        if sz_fmap is not None:
+                            pe = np.ma.filled(pe, np.nan)
                         parity = (1 - pe) - pe
                         results['parity'][si, wi, ri] = parity
 

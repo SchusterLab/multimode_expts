@@ -19,6 +19,10 @@ from fitting.decaysin_analysis import (
 )
 from fitting.fit_utils import guess_sinusoidal_params, guess_decaysin_params
 
+# Note: experiments.MM_base is imported function-locally in bin_ss_data and
+# filter_shots_per_point — a top-level import would be circular because
+# experiments/__init__.py eagerly imports modules that in turn import GeneralFitting.
+
 
 class GeneralFitting:
     def __init__(self, data, readout_per_round=None, threshold=None, config=None, station=None):
@@ -59,27 +63,34 @@ class GeneralFitting:
                 Q_data = temp_data['q0']
             
 
-        # Determine read_num for parity_check and active_reset
-        read_num = 1
+        # Determine read_num and lane indices from the single source of truth.
+        from experiments.MM_base import MM_base
+        layout = MM_base.lane_layout(self.cfg)
+        read_num = layout['read_num']
         if self.cfg['expt'].get('parity_check', False):
             read_num += 1
-        if self.cfg['expt'].get('active_reset', False):
-            from experiments.MM_base import MM_base, MMAveragerProgram
-            params = MM_base.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
-        pre_selection = self.cfg['expt'].get('active_reset', False) and self.cfg['expt'].get('pre_selection_reset', False)
+        idx_pre_selection_list = layout.get('idx_pre_selection_list')
+        if idx_pre_selection_list is None:
+            # back-compat: older layout dicts only expose the scalar
+            _s = layout.get('idx_pre_selection')
+            idx_pre_selection_list = [] if _s is None else [_s]
+        idx_final = layout['idx_final']
+        active_reset = self.cfg['expt'].get('active_reset', False)
 
         # reshape data into (rounds * reps x expts)
         expected_size_raw = rounds * expts * reps * read_num
         if read_num > 1 and I_data.size == expected_size_raw:
-            # Raw data includes active_reset readouts
-            # RAverager raw ordering: (rounds, expts, reps, read_num)
+            # Raw data includes active_reset / post_select_pre_pulse readouts.
+            # Flat ordering: (rounds, expts, reps, read_num) with lane innermost.
             I_4d = np.reshape(I_data, (rounds, expts, reps, read_num))
             Q_4d = np.reshape(Q_data, (rounds, expts, reps, read_num))
 
-            if pre_selection:
-                # Keep shots where pre_selection readout (second-to-last) < threshold
-                pre_sel_mask = I_4d[:, :, :, -2] < threshold
+            if idx_pre_selection_list:
+                # AND every enabled pre-selection lane: keep a shot only if it
+                # passed ALL heralds (g-herald and/or parity herald).
+                pre_sel_mask = np.ones((rounds, expts, reps), dtype=bool)
+                for li in idx_pre_selection_list:
+                    pre_sel_mask &= (I_4d[:, :, :, li] < threshold)
                 pre_sel_mask = np.reshape(np.transpose(pre_sel_mask, (0, 2, 1)), (rounds * reps, expts))
                 if filter_map is not None:
                     filter_map = filter_map & pre_sel_mask
@@ -87,10 +98,20 @@ class GeneralFitting:
                     filter_map = pre_sel_mask
 
             # Extract final readout only
-            I_data = np.reshape(np.transpose(I_4d[:, :, :, -1], (0, 2, 1)), (rounds * reps, expts))
-            Q_data = np.reshape(np.transpose(Q_4d[:, :, :, -1], (0, 2, 1)), (rounds * reps, expts))
+            I_data = np.reshape(np.transpose(I_4d[:, :, :, idx_final], (0, 2, 1)), (rounds * reps, expts))
+            Q_data = np.reshape(np.transpose(Q_4d[:, :, :, idx_final], (0, 2, 1)), (rounds * reps, expts))
         else:
-            # Data already pre-filtered or no active_reset
+            # Data already pre-filtered or no active_reset.
+            if active_reset and read_num > 1:
+                import warnings
+                warnings.warn(
+                    f"bin_ss_data received pre-strided data while active_reset=True "
+                    f"(expected raw size {expected_size_raw}, got {I_data.size}). "
+                    f"Pre-selection on the active_reset readout will NOT be applied. "
+                    f"Pass raw i0/q0 (including all readout lanes) so bin_ss_data can "
+                    f"handle lane stripping AND pre-selection together — see "
+                    f"ParityGainExperiment.analyze for the canonical pattern.",
+                    stacklevel=2)
             I_data = np.reshape(np.transpose(np.reshape(I_data.flatten(), (expts, rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
             Q_data = np.reshape(np.transpose(np.reshape(Q_data.flatten(), (expts, rounds, reps)), (1, 2, 0)), (rounds*reps, expts))
 
@@ -208,20 +229,98 @@ class GeneralFitting:
         return np.array(result_1), np.array(result_2)
 
 
+    def _pre_selection_lanes(self):
+        '''Within-shot pre-selection herald lane indices to AND together.
+
+        Derived from MM_base.lane_layout (single source of truth), so it follows
+        BOTH pre_selection_reset (bare g-herald) and pre_selection_parity (parity
+        herald) -- not just one flag. Returns [] when there is no pre-selection
+        lane. Falls back to the legacy 'herald = second-to-last lane' convention
+        only if the layout can't be computed.'''
+        try:
+            from experiments.MM_base import MM_base
+            return list(MM_base.lane_layout(self.cfg).get('idx_pre_selection_list') or [])
+        except Exception:
+            return [self.readout_per_round - 2]
+
+    def _pre_selection_lane_labels(self):
+        '''Human labels aligned with _pre_selection_lanes(). Order matches
+        active_reset: [g-herald, parity].'''
+        labels = []
+        if hasattr(self, 'cfg') and hasattr(self.cfg, 'expt'):
+            if self.cfg.expt.get('pre_selection_reset', False):
+                labels.append('PS g-reset')
+            if self.cfg.expt.get('pre_selection_parity', False):
+                labels.append('PS parity')
+        lanes = self._pre_selection_lanes()
+        if len(labels) != len(lanes):  # legacy / unknown -> generic labels
+            labels = [f'PS lane {p}' for p in lanes]
+        return labels
+
+    def _herald_cuts(self, shots, pre_lanes, threshold):
+        '''Per-lane effective herald cut value (a shot passes lane p when its
+        I < cut[p]). cfg.expt['ps_threshold_sigma'] = k shifts each lane's cut by
+        k * sigma_g of THAT lane, where sigma_g is the std of the lane's
+        below-threshold (|g>) population:
+            k < 0  -> stricter / more aggressive (keep only confidently-|g>)
+            k > 0  -> looser / less aggressive (keep borderline shots too)
+            k == 0 -> plain threshold (default, unchanged behavior).
+        shots: (n_shots, readout_per_round) array for one prep.'''
+        k = 0.0
+        if hasattr(self, 'cfg') and hasattr(self.cfg, 'expt'):
+            k = self.cfg.expt.get('ps_threshold_sigma', 0.0)
+        cuts = []
+        for p in pre_lanes:
+            if k == 0.0:
+                cuts.append(threshold)
+                continue
+            vals = shots[:, p]
+            g_pop = vals[vals < threshold]
+            sigma = float(np.std(g_pop)) if g_pop.size > 1 else 0.0
+            cuts.append(threshold + k * sigma)
+        return cuts
+
+    def _reshape_shots(self, II):
+        '''Reshape a flat single-prep buffer to (n_shots, readout_per_round).'''
+        rpr = self.readout_per_round
+        n = len(II) // rpr
+        return np.asarray(II[:n * rpr]).reshape(n, rpr), n
+
+    def pre_selection_funnel(self, II, threshold):
+        '''Per-round cumulative kept-shot counts for one raw single-prep buffer.
+
+        Returns (n_total, [(label, cumulative_kept_after_this_round), ...]) where
+        each round ANDs in one more herald lane, so counts shrink stage by stage --
+        the post-selection funnel. Reflects ps_threshold_sigma via _herald_cuts.'''
+        pre_lanes = self._pre_selection_lanes()
+        labels = self._pre_selection_lane_labels()
+        shots, n = self._reshape_shots(II)
+        if n == 0 or not pre_lanes:
+            return n, []
+        cuts = self._herald_cuts(shots, pre_lanes, threshold)
+        mask = np.ones(n, dtype=bool)
+        funnel = []
+        for label, p, c in zip(labels, pre_lanes, cuts):
+            mask = mask & (shots[:, p] < c)
+            funnel.append((label, int(mask.sum())))
+        return n, funnel
+
     def filter_data_IQ(self, II, IQ, threshold):
-        result_Ig = []
-        result_Ie = []
-
-        for k in range(len(II) // self.readout_per_round):
-            index_4k_plus_2 = self.readout_per_round * k + self.readout_per_round - 2
-            index_4k_plus_3 = self.readout_per_round * k + self.readout_per_round - 1
-
-            if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
-                if II[index_4k_plus_2] < threshold:
-                    result_Ig.append(II[index_4k_plus_3])
-                    result_Ie.append(IQ[index_4k_plus_3])
-
-        return np.array(result_Ig), np.array(result_Ie)
+        # Keep a shot only if it passed ALL pre-selection heralds (g-herald
+        # and/or parity herald); report the I/Q of the final readout lane.
+        # Heralds use the effective (sigma-shifted) cut; the final readout I/Q is
+        # returned untouched so g/e discrimination still uses the real threshold.
+        pre_lanes = self._pre_selection_lanes() or [self.readout_per_round - 2]
+        idx_final = self.readout_per_round - 1
+        shots_i, n = self._reshape_shots(II)
+        shots_q, _ = self._reshape_shots(IQ)
+        if n == 0:
+            return np.array([]), np.array([])
+        cuts = self._herald_cuts(shots_i, pre_lanes, threshold)
+        mask = np.ones(n, dtype=bool)
+        for p, c in zip(pre_lanes, cuts):
+            mask = mask & (shots_i[:, p] < c)
+        return shots_i[mask][:, idx_final], shots_q[mask][:, idx_final]
 
     def extract_final_measurement(self, II, IQ):
         """
@@ -241,33 +340,57 @@ class GeneralFitting:
         return np.array(result_Ig), np.array(result_Ie)
 
     @staticmethod
-    def filter_shots_per_point(idata, qdata, readout_per_round, threshold=None, pre_selection=False):
+    def filter_shots_per_point(idata, qdata, readout_per_round, threshold=None,
+                               pre_selection=False, cfg=None):
         """
         Filter raw shots for a single experiment point.
         Extracts the final measurement from each group of readout_per_round shots.
         If pre_selection=True, only keeps shots where the pre-selection measurement
-        (second-to-last) is below threshold.
+        is below threshold.
 
         Args:
             idata: raw I data array of shape (reps * readout_per_round,)
             qdata: raw Q data array of shape (reps * readout_per_round,)
-            readout_per_round: number of readouts per shot (active_reset measurements + final)
+            readout_per_round: number of readouts per shot
             threshold: threshold for pre-selection filtering
             pre_selection: if True, apply threshold filtering on pre-selection measurement
+            cfg: optional experiment cfg. When provided, the pre-selection lane index is
+                 derived from MM_base.lane_layout(cfg) (handles post_select_pre_pulse and
+                 parity_shot lane offsets). When None, falls back to the legacy
+                 "pre-selection lane is second-to-last" convention.
 
         Returns:
             (mean_I, mean_Q) averaged over kept shots
         """
+        if cfg is not None:
+            from experiments.MM_base import MM_base
+            layout = MM_base.lane_layout(cfg)
+            within_shot_final = layout['idx_final']
+            within_shot_pre_list = layout.get('idx_pre_selection_list')
+            if within_shot_pre_list is None:
+                # back-compat: older layout dicts only expose the scalar
+                _s = layout.get('idx_pre_selection')
+                within_shot_pre_list = [] if _s is None else [_s]
+            if pre_selection and not within_shot_pre_list:
+                raise ValueError(
+                    "filter_shots_per_point: pre_selection=True but cfg has no "
+                    "pre-selection lane (active_reset off or pre_selection_reset off)."
+                )
+        else:
+            within_shot_final = readout_per_round - 1
+            within_shot_pre_list = [readout_per_round - 2]
+
         n_shots = len(idata) // readout_per_round
         final_I, final_Q = [], []
 
         for k in range(n_shots):
-            idx_final = readout_per_round * k + readout_per_round - 1
+            idx_final = readout_per_round * k + within_shot_final
             if idx_final >= len(idata):
                 break
             if pre_selection:
-                idx_pre = readout_per_round * k + readout_per_round - 2
-                if idata[idx_pre] < threshold:
+                # keep only if ALL pre-selection lanes passed (g-herald and/or parity)
+                if all(idata[readout_per_round * k + p] < threshold
+                       for p in within_shot_pre_list):
                     final_I.append(idata[idx_final])
                     final_Q.append(qdata[idx_final])
             else:
@@ -291,10 +414,12 @@ class GeneralFitting:
         I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds * reps * read_num))
         Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds * reps * read_num))
 
-        # Check if we should use pre-selection filtering
+        # Check if we should use pre-selection filtering. Enable whenever there is
+        # ANY pre-selection herald lane (bare g-herald and/or parity herald), per
+        # lane_layout -- not just when pre_selection_reset is set.
         pre_selection_enabled = False
         if hasattr(self.cfg, 'expt') and self.cfg.expt.get('active_reset', False):
-            pre_selection_enabled = self.cfg.expt.get('pre_selection_reset', False)
+            pre_selection_enabled = bool(self._pre_selection_lanes())
 
         Ilist = []
         Qlist = []
@@ -1067,11 +1192,14 @@ class Histogram(GeneralFitting):
         self.results = {}
 
     def analyze(self, plot=True, subdir = None):
-        # Check if pre_selection is enabled (not just active_reset)
+        # Check if pre_selection is enabled (not just active_reset). Enable whenever
+        # there is ANY pre-selection herald lane (bare g-herald and/or parity
+        # herald), per lane_layout -- not just when pre_selection_reset is set.
         pre_selection_enabled = False
         if self.active_reset and hasattr(self.cfg, 'expt'):
-            pre_selection_enabled = self.cfg.expt.get('pre_selection_reset', False)
+            pre_selection_enabled = bool(self._pre_selection_lanes())
 
+        ps_funnel_text = None  # multi-line summary annotated onto the plot below
         if pre_selection_enabled:
             print('Active reset with pre-selection is enabled')
             Ig, Qg = self.filter_data_IQ(self.data['Ig'], self.data['Qg'], self.threshold)
@@ -1079,6 +1207,26 @@ class Histogram(GeneralFitting):
             plot_f = 'If' in self.data.keys()
             if plot_f:
                 If, Qf = self.filter_data_IQ(self.data['If'], self.data['Qf'], self.threshold)
+
+            # Per-PS-round kept-shot funnel (diagnostic): how many shots survive
+            # after each herald stage, for each prep.
+            def _fmt_funnel(prep, II):
+                tot, funnel = self.pre_selection_funnel(II, self.threshold)
+                s = f'{prep}: {tot}'
+                for label, cnt in funnel:
+                    frac = (100.0 * cnt / tot) if tot else 0.0
+                    s += f'  ->  {cnt} ({frac:.0f}%, {label})'
+                return s
+            funnel_lines = [_fmt_funnel('prep g', self.data['Ig']),
+                            _fmt_funnel('prep e', self.data['Ie'])]
+            if plot_f:
+                funnel_lines.append(_fmt_funnel('prep f', self.data['If']))
+            ksig = self.cfg.expt.get('ps_threshold_sigma', 0.0) if hasattr(self.cfg, 'expt') else 0.0
+            header = f'PS funnel (kept per round, k_sigma={ksig:g}):'
+            print(header)
+            for ln in funnel_lines:
+                print('  ' + ln)
+            ps_funnel_text = header + '\n' + '\n'.join(funnel_lines)
         elif self.active_reset:
             print('Active reset is enabled (no pre-selection filtering)')
             Ig, Qg = self.extract_final_measurement(self.data['Ig'], self.data['Qg'])
@@ -1211,6 +1359,12 @@ class Histogram(GeneralFitting):
             axs[0, 1].legend(loc='upper right')
             axs[0, 1].set_title('Rotated')
             axs[0, 1].axis('equal')
+
+            if ps_funnel_text is not None:
+                axs[0, 1].text(
+                    0.02, 0.02, ps_funnel_text, transform=axs[0, 1].transAxes,
+                    fontsize=16, family='monospace', va='bottom', ha='left',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
 
             axs[1, 0].hist(Ig_new, bins=numbins, range=xlims, alpha=0.5, label='g', color='blue', density=True)
             axs[1, 0].hist(Ie_new, bins=numbins, range=xlims, alpha=0.5, label='e', color='red', density=True)
@@ -1750,7 +1904,10 @@ class ChevronFitting(GeneralFitting):
 
         for line in self.invalid_lines:
             plt.axhline(self.frequencies[line], color='k', ls=':')
-        plt.title('2D Color Plot with Chosen Frequencies')
+        if title == "chevron_plot":
+            plt.title('2D Color Plot with Chosen Frequencies')
+        else:
+            plt.title(title)
         plt.xlabel('Time (us)')
         plt.ylabel('Frequency (MHz)')
         plt.legend()

@@ -301,39 +301,38 @@ class WignerAnalysis(GeneralFitting):
         alpha_list = self.data['alpha']
         allocated_readout = 2 / np.pi * allocated_counts  # normalization
         initial_state = initial_state.unit()
-        rho_ideal = qutip.ket2dm(initial_state).unit()
+        # accept a pure ket OR an already-mixed density matrix as the target
+        rho_ideal = (initial_state if initial_state.isoper
+                     else qutip.ket2dm(initial_state)).unit()
         alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.1)
         rho = self.rho_pinv_positive_sd(allocated_readout)
         P_ns = [np.array([rho[i][i] for i in range(self.m)])]
 
 
-        fid = qutip.fidelity(qutip.Qobj(rho), rho_ideal)**2
-        # Calculate fidelity
-        if rotate:
-        # apply a rotation to rho to match the ideal state
-            theta = np.linspace(0, 2 * np.pi, 100)
-            fid_vec =np.zeros(len(theta))
-            for i, t in enumerate(theta):
-                N = np.diag(np.arange(self.m))
-                R = expm(-1j * t * N)
-                rho_rotated = R @ rho @ R.conj().T
-                fid_rotated = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal)**2
-                fid_vec[i] = fid_rotated
+        # rotate: False/None -> no rotation; True/'optimal' -> maximize fidelity
+        # over a cavity rotation exp(-i theta N); a numeric value -> apply that
+        # fixed angle (e.g. a calibrated channel phase phi_ch).
+        N = np.diag(np.arange(self.m))
+        if rotate is True or (isinstance(rotate, str) and rotate.lower() == 'optimal'):
+            theta = np.linspace(0, 2 * np.pi, 361)
+            fid_vec = np.array([
+                qutip.fidelity(
+                    qutip.Qobj(expm(-1j * t * N) @ rho @ expm(1j * t * N)),
+                    rho_ideal) ** 2
+                for t in theta])
+            theta_max = float(theta[np.argmax(fid_vec)])
+        elif rotate is False or rotate is None:
+            theta_max = 0.0
+        else:
+            theta_max = float(rotate)   # user-provided fixed angle
 
-            fid = np.max(fid_vec)
-            R = expm(-1j * theta[np.argmax(fid_vec)] * N)
-            rho_rotated = R @ rho @ R.conj().T
-            theta_max = theta[np.argmax(fid_vec)]
-
-            # fig, ax = plt.subplots()
-            # ax.plot(theta, fid_vec, marker='o')
-        else: 
-            theta_max = 0
-            rho_rotated = rho
+        R = expm(-1j * theta_max * N)
+        rho_rotated = R @ rho @ R.conj().T
+        fid = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal) ** 2
 
         alpha_max = np.max(np.abs(alpha_list))
         x_vec = np.linspace(-alpha_max, alpha_max, 200)
-        W_fit = qt.wigner(qt.Qobj(rho), x_vec, x_vec, g=2)
+        W_fit = qt.wigner(qt.Qobj(rho_rotated), x_vec, x_vec, g=2)  # rotation-aligned state
         W_ideal = qt.wigner(rho_ideal, x_vec, x_vec, g=2)
 
 
@@ -428,13 +427,32 @@ class WignerAnalysis(GeneralFitting):
     
 
 class OptimalDisplacementGeneration():
-    def __init__(self, FD=3, n_disps=None):
+    """
+    Pick a set of displacements {alpha_i} that make Wigner-tomography
+    reconstruction well-posed. The reconstruction inverts M rho_vec = w_vec where
+    M is the (n_disps x FD^2) Wigner measurement matrix (row i = W_mn(alpha_i)).
+
+    objective:
+      'a-optimal' (default) -- min Tr((M^H M)^{-1}), the mean variance of the
+                              reconstructed rho_mn under uniform measurement
+                              noise. Right criterion for parity tomography.
+      'd-optimal'           -- min -log det(M^H M); maximizes Fisher information
+                              per shot. Robust to outlier rows.
+      'condition'           -- min kappa(M) = sigma_max/sigma_min. Original
+                              behavior. Only
+                              cares about worst-case noise amplification; tends
+                              to push points to the edge of the disk.
+    """
+    def __init__(self, FD=3, n_disps=None, objective='a-optimal'):
         # super().__init__()
         self.FD = FD
         if n_disps is None:
             self.n_disps = (FD**2 + 30) * 2
         else:
             self.n_disps = n_disps
+        if objective not in ('a-optimal', 'd-optimal', 'condition'):
+            raise ValueError(f"objective must be one of 'a-optimal','d-optimal','condition'; got {objective!r}")
+        self.objective = objective
         self.best_cost = float('inf')
         self.f, self.ax = None, None
 
@@ -476,19 +494,105 @@ class OptimalDisplacementGeneration():
                 grad_mat_i[:, n, m] = np.conj(term_i)
 
         return wig_tens.reshape((ND, FD**2)), grad_mat_r.reshape((ND, FD**2)), grad_mat_i.reshape((ND, FD**2))
+    
+    
+
+    # def cost_and_grad(self, r_disps):
+    #     N = len(r_disps)
+    #     c_disps = r_disps[:N//2] + 1j*r_disps[N//2:]
+    #     M, dM_rs, dM_is = self.wigner_mat_and_grad(c_disps, self.FD)
+
+    #     if self.objective == 'condition':
+    #         U, S, Vd = svd(M)
+    #         NS = len(Vd)
+    #         cn = S[0] / S[-1]
+    #         dS_r = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_rs, Vd.conj().T).real
+    #         dS_i = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_is, Vd.conj().T).real
+    #         grad_cn_r = (dS_r[0]*S[-1]-S[0]*dS_r[-1]) / (S[-1]**2)
+    #         grad_cn_i = (dS_i[0]*S[-1]-S[0]*dS_i[-1]) / (S[-1]**2)
+    #         return cn, np.concatenate((grad_cn_r, grad_cn_i))
+
+    #     # A-optimal / D-optimal share the same gradient form:
+    #     #   d(cost)/dx_i = -2 Re( dM_rs[i,:] @ B @ M[i,:].conj() )
+    #     # where B = A_inv^2 for A-optimal and B = A_inv for D-optimal,
+    #     # with A = M^H M. Derived from d(A_inv) = -A_inv*dA*A_inv and
+    #     # d(log det A) = Tr(A_inv*dA), then using the fact that row i of M
+    #     # is the only row that depends on (x_i, y_i).
+    #     A = M.conj().T @ M
+    #     A_inv = np.linalg.inv(A)
+    #     if self.objective == 'a-optimal':
+    #         cost = float(np.real(np.trace(A_inv)))
+    #         B = A_inv @ A_inv
+    #     else:  # 'd-optimal'
+    #         sign, logdet = np.linalg.slogdet(A)
+    #         cost = -float(logdet)
+    #         B = A_inv
+
+    #     Z = B @ M.conj().T                                   # (FD^2, ND)
+    #     grad_r = -2.0 * np.real(np.einsum('ik,ki->i', dM_rs, Z))
+    #     grad_i = -2.0 * np.real(np.einsum('ik,ki->i', dM_is, Z))
+    #     return cost, np.concatenate((grad_r, grad_i))
 
     def cost_and_grad(self, r_disps):
         N = len(r_disps)
         c_disps = r_disps[:N//2] + 1j*r_disps[N//2:]
         M, dM_rs, dM_is = self.wigner_mat_and_grad(c_disps, self.FD)
-        U, S, Vd = svd(M)
-        NS = len(Vd)
-        cn = S[0] / S[-1]
-        dS_r = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_rs, Vd.conj().T).real
-        dS_i = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_is, Vd.conj().T).real
-        grad_cn_r = (dS_r[0]*S[-1]-S[0]*dS_r[-1]) / (S[-1]**2)
-        grad_cn_i = (dS_i[0]*S[-1]-S[0]*dS_i[-1]) / (S[-1]**2)
-        return cn, np.concatenate((grad_cn_r, grad_cn_i))
+
+        # ==========================================
+        # 1. COMPUTE BASE COST & GRADIENTS
+        # ==========================================
+        if self.objective == 'condition':
+            U, S, Vd = svd(M)
+            NS = len(Vd)
+            cn = S[0] / S[-1]
+            dS_r = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_rs, Vd.conj().T).real
+            dS_i = np.einsum('ij,jk,ki->ij', U.conj().T[:NS], dM_is, Vd.conj().T).real
+            
+            cost = cn
+            grad_r = (dS_r[0]*S[-1]-S[0]*dS_r[-1]) / (S[-1]**2)
+            grad_i = (dS_i[0]*S[-1]-S[0]*dS_i[-1]) / (S[-1]**2)
+
+        else:
+            A = M.conj().T @ M
+            A_inv = np.linalg.inv(A)
+            
+            if self.objective == 'a-optimal':
+                cost = float(np.real(np.trace(A_inv)))
+                B = A_inv @ A_inv
+            else:  # 'd-optimal'
+                sign, logdet = np.linalg.slogdet(A)
+                cost = -float(logdet)
+                B = A_inv
+
+            Z = B @ M.conj().T                                   # (FD^2, ND)
+            grad_r = -2.0 * np.real(np.einsum('ik,ki->i', dM_rs, Z))
+            grad_i = -2.0 * np.real(np.einsum('ik,ki->i', dM_is, Z))
+
+        # ==========================================
+        # 2. APPLY "SOFT WALL" RADIAL PENALTY
+        # ==========================================
+        # Define the circular boundary (adjust the 1.5 factor if needed)
+        max_radius = 1.5 * np.sqrt(self.FD)
+        radii_sq = c_disps.real**2 + c_disps.imag**2
+        
+        # Find which specific points escaped the circle
+        penalty_mask = radii_sq > max_radius**2
+        
+        if np.any(penalty_mask):
+            # The penalty weight needs to be strong enough to overpower the objective
+            # For A-optimal, the base cost might be small, so 1000.0 is usually dominant.
+            lambda_pen = 1000.0  
+            
+            diff = radii_sq[penalty_mask] - max_radius**2
+            
+            # Add a quadratic penalty to the objective cost
+            cost += lambda_pen * np.sum(diff**2)
+            
+            # Add the exact analytical derivative of the penalty to the gradients
+            grad_r[penalty_mask] += 4 * lambda_pen * diff * c_disps.real[penalty_mask]
+            grad_i[penalty_mask] += 4 * lambda_pen * diff * c_disps.imag[penalty_mask]
+
+        return cost, np.concatenate((grad_r, grad_i))
 
     def wrap_cost(self, disps):
         import matplotlib.pyplot as plt
@@ -498,7 +602,9 @@ class OptimalDisplacementGeneration():
             self.f, self.ax = plt.subplots(figsize=(5, 5))
         self.ax.clear()
         self.ax.plot(disps[:self.n_disps], disps[self.n_disps:], 'k.')
-        self.ax.set_title('Condition Number = %.1f' % (cost,))
+        label = {'condition': 'kappa', 'a-optimal': 'Tr(A^-1)',
+                 'd-optimal': '-log det A'}[self.objective]
+        self.ax.set_title('%s [%s] = %.3g' % (label, self.objective, cost))
         clear_output(wait=True)
         display(self.f)
         return cost, grad
@@ -512,17 +618,20 @@ class OptimalDisplacementGeneration():
         from scipy.stats import truncnorm
 
         low, high = -1.5*np.sqrt(self.FD), 1.5*np.sqrt(self.FD)
+        # low, high = -1*np.sqrt(self.FD), 1*np.sqrt(self.FD)
 
         # parameters for truncnorm: (a, b) are in std units
         a, b = (low - 0) / 2, (high - 0) / 2
 
         # sample
         samples = truncnorm.rvs(a, b, loc=0, scale=1, size=(self.n_disps, 2))
-
+        samples[0] = [0.0, 0.0] 
         init_disps = samples
-        print('init disps:', init_disps)
+        print(f'objective = {self.objective}, FD = {self.FD}, n_disps = {self.n_disps}')
         x0 = np.concatenate([init_disps[:, 0], init_disps[:, 1]])
-        ret = minimize(self.wrap_cost, x0, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6))
+        bounds = [(low, high)] * len(x0)
+        ret = minimize(self.wrap_cost, x0, method='L-BFGS-B', jac=True, options=dict(ftol=1E-6),)
+                        # bounds=bounds)
         new_disps = ret.x[:self.n_disps] + 1j*ret.x[self.n_disps:]
         new_disps = np.concatenate(([0], new_disps))
         save_path = None
@@ -539,3 +648,33 @@ class OptimalDisplacementGeneration():
             print(f"Displacements saved to {save_path}")
         return {"disps": new_disps, "path": save_path}
 
+    # def optimize(self, save_dir=None):
+    #     import matplotlib.pyplot as plt
+    #     from scipy.stats import truncnorm
+        
+    #     self.f, self.ax = plt.subplots(figsize=(5, 5))
+        
+    #     # 1. Set physical boundaries to prevent vanishing gradients
+    #     max_alpha = 1.5 * np.sqrt(self.FD)
+    #     low, high = -max_alpha, max_alpha
+        
+    #     a, b = (low - 0) / 2, (high - 0) / 2
+    #     samples = truncnorm.rvs(a, b, loc=0, scale=1, size=(self.n_disps, 2))
+        
+    #     # 2. Pin the first point exactly to the origin before optimizing
+    #     samples[0] = [0.0, 0.0] 
+        
+    #     x0 = np.concatenate([samples[:, 0], samples[:, 1]])
+        
+    #     # 3. Apply bounds to the solver
+    #     bounds = [(low, high)] * len(x0)
+        
+    #     print(f'objective = {self.objective}, FD = {self.FD}, n_disps = {self.n_disps}')
+        
+    #     ret = minimize(self.wrap_cost, x0, method='L-BFGS-B', jac=True, 
+    #                     bounds=bounds, options=dict(ftol=1E-6))
+                        
+    #     new_disps = ret.x[:self.n_disps] + 1j*ret.x[self.n_disps:]
+        
+    #     # (Optional) You no longer need to manually prepend [0] here, 
+    #     # as it was part of the optimization block.
