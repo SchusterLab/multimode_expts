@@ -452,6 +452,20 @@ class MM_base:
 
         sync_all_flag=True
 
+        # Opt-in (default OFF): dedup gaussian/flat_top envelopes by content so
+        # identical (channel, sigma, multiplier) pulses share one loaded
+        # envelope. Keeps the per-channel waveform buffer independent of
+        # sequence length (QICK add_gauss is NOT idempotent and re-allocates on
+        # every call). When OFF, the legacy per-gate naming is byte-for-byte
+        # unchanged. The flag rides on cfg.expt -> no call-site signature change.
+        _src_cfg = cfg if cfg is not None else self.cfg
+        try:
+            dedupe = bool(_src_cfg.expt.get('dedupe_waveforms', False))
+        except Exception:
+            dedupe = False
+        if dedupe and not hasattr(self, '_cp_loaded_envs'):
+            self._cp_loaded_envs = set()
+
         pulse_data[3] = [x + advance_qubit_phase for x in pulse_data[3]]
 
         if waveform_preload is not None:
@@ -471,8 +485,16 @@ class MM_base:
             if pulse_data[5][jj] == "gaussian" or pulse_data[5][jj] == "gauss" or pulse_data[5][jj] == "g":
                 self.pisigma_resolved = self.us2cycles(
                     pulse_data[6][jj], gen_ch=self.tempch)
-                self.add_gauss(ch=self.tempch, name="temp_gaussian"+str(jj)+prefix,
-                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+                if dedupe:
+                    wf_name = f"cp_g_{self.tempch}_{self.pisigma_resolved}"
+                    if wf_name not in self._cp_loaded_envs:
+                        self.add_gauss(ch=self.tempch, name=wf_name,
+                            sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+                        self._cp_loaded_envs.add(wf_name)
+                else:
+                    wf_name = "temp_gaussian"+str(jj)+prefix
+                    self.add_gauss(ch=self.tempch, name=wf_name,
+                        sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
                 # self.wait_all(self.us2cycles(0.01))
                 self.sync_all(self.us2cycles(0.01))
 
@@ -480,18 +502,23 @@ class MM_base:
                                     freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
                                     phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
                                     gain=pulse_data[1][jj],
-                                    waveform="temp_gaussian"+str(jj)+prefix)
+                                    waveform=wf_name)
 
 
             elif pulse_data[5][jj] == "flat_top" or pulse_data[5][jj] == "f":
                 self.pisigma_resolved = self.us2cycles(
                     pulse_data[6][jj], gen_ch=self.tempch)
-                if self.tempch==0 or self.tempch == 1 or self.tempch == 3: # for f0g1
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian"+str(jj)+prefix,
-                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*6)
+                mult = 6 if (self.tempch == 0 or self.tempch == 1 or self.tempch == 3) else 4  # 6 sigma for f0g1/flux
+                if dedupe:
+                    wf_name = f"cp_ft_{self.tempch}_{self.pisigma_resolved}_{mult}"
+                    if wf_name not in self._cp_loaded_envs:
+                        self.add_gauss(ch=self.tempch, name=wf_name,
+                            sigma=self.pisigma_resolved, length=self.pisigma_resolved*mult)
+                        self._cp_loaded_envs.add(wf_name)
                 else:
-                    self.add_gauss(ch=self.tempch, name="temp_gaussian"+str(jj)+prefix,
-                    sigma=self.pisigma_resolved, length=self.pisigma_resolved*4)
+                    wf_name = "temp_gaussian"+str(jj)+prefix
+                    self.add_gauss(ch=self.tempch, name=wf_name,
+                        sigma=self.pisigma_resolved, length=self.pisigma_resolved*mult)
                 self.sync_all(self.us2cycles(0.01))
 
                 self.setup_and_pulse(ch=self.tempch, style="flat_top",
@@ -500,7 +527,7 @@ class MM_base:
                                 gain=pulse_data[1][jj],
                                 length=self.us2cycles(pulse_data[2][jj],
                                                     gen_ch=self.tempch),
-                                waveform="temp_gaussian"+str(jj)+prefix)
+                                waveform=wf_name)
 
             # check if pulse_data[5][jj] is a list or not
             elif isinstance(pulse_data[5][jj], list) and pulse_data[5][jj][0] == 'opt_cont':
@@ -884,10 +911,10 @@ class MM_base:
 
 
         times = IQ_table['times']
-        Ic = IQ_table['I_c']
-        Qc = IQ_table['Q_c']
-        Iq = IQ_table['I_q']
-        Qq = IQ_table['Q_q']
+        Ic =  np.asarray(IQ_table['I_c'])
+        Qc = -np.asarray(IQ_table['Q_c'])   # match custom_pulse NPZ path (L530): DAC qdata = -Q_input
+        Iq =  np.asarray(IQ_table['I_q'])
+        Qq = -np.asarray(IQ_table['Q_q'])   # same
 
         qb_num_samps_tot = qb_samps_per_clk * self.us2cycles(times[-1], gen_ch=qb_channel)
         qb_times_samps = np.arange(0, int(qb_num_samps_tot))
