@@ -1568,10 +1568,109 @@ class MM_base:
             read_num += 1
         if use_qubit_man_reset and man_reset:
             read_num += 1
+        # Two independent pre-selection rounds, each its own readout lane:
         if pre_selection_reset:
-            read_num += 1
-        # pre_selection_parity doesn't add extra measurements, just plays parity before pre_selection measurement
+            read_num += 1  # round 1: bare g-herald
+        if pre_selection_parity:
+            read_num += 1  # round 2: additional parity herald
         return read_num
+
+    @staticmethod
+    def lane_layout(cfg):
+        '''
+        Single source of truth for the per-shot readout-lane structure.
+
+        Canonical lane order, as the program emits them:
+            [active_reset lanes...,  (sigma_z),  parity_shot heralds...,  (post_select_pre_pulse,)  final parity]
+
+        active_reset emits up to TWO independent pre-selection rounds, each its
+        own readout lane, as the LAST lanes of the active_reset block in this order:
+            [..., (g-herald: pre_selection_reset), (parity-herald: pre_selection_parity)]
+        Both rounds are post-selection heralds and must be ANDed together when
+        filtering. idx_pre_selection_list holds every pre-selection lane index;
+        idx_pre_selection is the LAST of them (back-compat scalar) — masking on the
+        scalar alone is conservative but only checks the most-recent herald.
+        Hard-coding "-2" only works when there is no post_select_pre_pulse and no
+        parity_shot; use idx_pre_selection_list here instead.
+
+        Returns dict with:
+            read_num:          total readouts per shot
+            n_active_reset:    number of lanes contributed by active_reset (0 if off)
+            n_parity_shot:     number of parity_shot herald lanes (0 if off);
+                               reads cfg.expt.repeat_count (default 1) when parity_shot
+            n_sigma_z:         number of sigma_z probe lanes (1 if sigma_z_mode in
+                               {'reset','postselect'}, else 0)
+            idx_final:         lane index of the parity measurement (always read_num - 1)
+            idx_pre_selection_list: list of all active_reset pre-selection lane
+                               indices (empty if none); AND these when filtering
+            idx_pre_selection: last element of idx_pre_selection_list (back-compat
+                               scalar), or None if there are no pre-selection lanes
+            idx_sigma_z:       lane index of the sigma_z readout -- the dedicated lane
+                               after the active_reset block ('reset'/'postselect'), or
+                               idx_final for 'measure' (Tier 3, displace+parity skipped),
+                               or None if no sigma_z readout
+            sigma_z_mode:      resolved 'off' | 'reset' | 'postselect' | 'measure'
+        '''
+        expt = cfg['expt']
+        active_reset = expt.get('active_reset', False)
+        post_select_pp = expt.get('post_select_pre_pulse', False)
+        pre_selection_reset = expt.get('pre_selection_reset', False)
+        pre_selection_parity = expt.get('pre_selection_parity', False)
+        parity_shot = expt.get('parity_shot', False)
+
+        n_active_reset = 0
+        if active_reset:
+            params = MM_base.get_active_reset_params(cfg)
+            n_active_reset = MM_base.active_reset_read_num(**params)
+
+        n_parity_shot = int(expt.get('repeat_count', 1)) if parity_shot else 0
+        n_post_select = 1 if post_select_pp else 0
+
+        # sigma_z probe: a post-prep transmon readout. 'reset' (Tier 1) and
+        # 'postselect' (Tier 2) insert a dedicated lane right after the
+        # active_reset block. 'measure' (Tier 3) is non-invasive: it adds NO lane
+        # and instead skips the displacement+parity so the FINAL readout is the
+        # sigma_z readout (parity comes from a separate sigma_z='off' run). 'off'
+        # adds nothing. Read the mode inline, like the other flags above. The
+        # collaborator boolean measure_sigma_z maps to 'reset' when sigma_z_mode
+        # is not given explicitly.
+        sigma_z_mode = expt.get('sigma_z_mode', None)
+        if sigma_z_mode is None:
+            sigma_z_mode = 'reset' if expt.get('measure_sigma_z', False) else 'off'
+        sigma_z_mode = str(sigma_z_mode).lower()
+        n_sigma_z = 1 if sigma_z_mode in ('reset', 'postselect') else 0
+
+        read_num = 1 + n_active_reset + n_sigma_z + n_parity_shot + n_post_select
+        idx_final = read_num - 1
+        # Pre-selection lanes are the LAST, contiguous lanes of the active_reset
+        # block, in the order [g-herald, parity-herald]. Build the full list; the
+        # scalar idx_pre_selection is the last element for back-compat.
+        idx_pre_selection_list = []
+        if active_reset and n_active_reset > 0:
+            n_pre = (1 if pre_selection_reset else 0) + (1 if pre_selection_parity else 0)
+            if n_pre:
+                idx_pre_selection_list = list(range(n_active_reset - n_pre, n_active_reset))
+        idx_pre_selection = idx_pre_selection_list[-1] if idx_pre_selection_list else None
+        if n_sigma_z:
+            # dedicated lane, first after the active_reset block (reset/postselect)
+            idx_sigma_z = n_active_reset
+        elif sigma_z_mode == 'measure':
+            # Tier 3: no dedicated lane; the final readout IS the sigma_z readout
+            idx_sigma_z = idx_final
+        else:
+            idx_sigma_z = None
+
+        return {
+            'read_num': read_num,
+            'n_active_reset': n_active_reset,
+            'n_parity_shot': n_parity_shot,
+            'n_sigma_z': n_sigma_z,
+            'idx_final': idx_final,
+            'idx_pre_selection_list': idx_pre_selection_list,
+            'idx_pre_selection': idx_pre_selection,
+            'idx_sigma_z': idx_sigma_z,
+            'sigma_z_mode': sigma_z_mode,
+        }
 
     def post_selection_measure(self, parity=False, man_idx=1, parity_fast=False, prefix='ps'):
         '''
@@ -1605,9 +1704,14 @@ class MM_base:
                       pre_selection_parity = False, man_idx = 1, parity_fast = False):
         '''
         Performs active reset on g,e,f as well as man/storage modes
-        Includes post selection measurement
+        Includes up to two independent post-selection rounds (heralds), each its
+        own readout lane, emitted last in order [g-herald, parity-herald]:
+        pre_selection_reset:  if True, add round 1 -- a bare "qubit in |g>?" herald
+        pre_selection_parity: if True, add round 2 -- an additional parity-mapped
+                              herald (rejects residual e-state). Independent of
+                              pre_selection_reset; enabling both yields TWO lanes
+                              that are ANDed together when filtering shots.
         use_qubit_man_reset: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found
-        pre_selection_parity: if True, play parity pulse before pre_selection measurement
         man_idx: manipulate mode index for parity pulse (default 1)
         parity_fast: if True, use fast parity pulse (default False)
         '''
@@ -1776,12 +1880,25 @@ class MM_base:
 
         # # post selection
         # # ======================================================
+        # Two independent rounds, each its own readout lane, emitted as the LAST
+        # lanes of the active_reset block in this order: [g-herald, parity-herald].
+        # The bare g-herald MUST precede the parity herald because the parity pulse
+        # rotates the qubit. Filtering ANDs all enabled pre-selection lanes.
         if pre_selection_reset:
+            # round 1: bare "did the qubit end in |g>?" check
             self.post_selection_measure(
-                parity=pre_selection_parity,
+                parity=False,
                 man_idx=man_idx,
                 parity_fast=parity_fast,
                 prefix=prefix + 'pre_select'
+            )
+        if pre_selection_parity:
+            # round 2: additional parity-mapped herald to reject residual e-state
+            self.post_selection_measure(
+                parity=True,
+                man_idx=man_idx,
+                parity_fast=parity_fast,
+                prefix=prefix + 'pre_select_parity'
             )
 
 

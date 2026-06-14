@@ -440,6 +440,9 @@ class JobWorker:
         # Remove the experiment module and any modules that might have changed.
         # - multimode_expts.*: worker infrastructure (job_server, database, etc.)
         # - experiments.* submodules: experiment classes and base classes (MM_base, etc.)
+        # - fitting.*: analysis/reconstruction helpers that experiment modules
+        #   import (e.g. fitting.state_tomography). Without this they stay cached
+        #   from the first job and source edits are silently ignored.
         #
         # We preserve specific modules where objects persist in self.station:
         # - experiments.dataset: station.ds_storage is a StorageManSwapDataset instance
@@ -450,6 +453,8 @@ class JobWorker:
             name for name in list(sys.modules.keys())
             if name == module_path
             or name.startswith('multimode_expts.')
+            or name == 'fitting'
+            or name.startswith('fitting.')
             or (name.startswith('experiments.') and name not in preserved_modules)
         ]
         for name in modules_to_remove:

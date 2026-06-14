@@ -112,6 +112,73 @@ Default: Fock |1⟩ at α=0, expected parity = -1, tolerance 0.15. Auto-deduces 
 
 Response: `{measured_parity, expected_parity, residual, in_tolerance, ...}`. **Run this before any closed-loop session** to catch calibration drift early — if a known-good Fock-1 pulse doesn't return parity ≈ -1, the QILC won't converge against good physics.
 
+## /run_tomography_1q endpoint
+
+Single-qubit (transmon) state tomography — the sibling of `/run_wigner` for when
+the figure of merit is the *transmon* state an optimized pulse prepares (e.g. a
+decoder that maps a cavity Fock state onto the qubit), not a cavity Wigner.
+Same `IQ_table` / `pulse_ref` / gain plumbing; the optimized pulse plays as the
+state prep, then the transmon is read out in the requested bases (Z/X/Y) and the
+2×2 density matrix is reconstructed (Smolin–Gambetta–Knill fast MLE by default).
+
+```json
+{
+  "mode":         "hw",                       // or "sim"
+  "IQ_table":     {...},                      // same GHz contract as /run_wigner
+  "pulse_ref":    [["optimal_control", "fock", "1", [0, 0]]],
+  "reps":         1000,
+  "bases":        ["Z", "X", "Y"],            // subset OK; ["X","Y"] = azimuth-only
+  "tomo_phases":  null,                        // optional {"X": deg, "Y": deg}
+  "recon_method": "fast",                      // "fast" | "cholesky" | "linear"
+  "target_state": [[1,0],[1,0]],               // optional ket [[re,im],..] for fidelity
+  "confusion":    null,                        // optional override; null -> auto (see below)
+  "qubits":       [0],
+  "man_mode_no":  1,
+  "knobs":        { "active_reset": false, "recalibrate_readout": true }
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true, "mode": "hw", "iter_id": "abcd1234", "bases": ["Z","X","Y"],
+  "counts":        {"Z": [n_g, n_e], "X": [...], "Y": [...]},
+  "expectations":  {"Z": 0.98, "X": 0.01, "Y": -0.02},
+  "rho":           {"real": [[...],[...]], "imag": [[...],[...]]},  // null if not all of Z/X/Y
+  "fidelity":      0.97,                       // null unless target_state given
+  "azimuth_rad":   0.01, "equatorial_contrast": 0.99,  // present iff X and Y measured
+  "shots_path":    "D:/closed_loop_runs/.../...h5",
+  "meta": { "gain_qb": 1948, "gain_cav": 0, "confusion_source": "recal", "wall_total_s": 3.2, ... }
+}
+```
+
+**Readout confusion correction (important).** The reconstruction is confusion-
+corrected by default — you do *not* pass a matrix. Resolution precedence, recorded
+in `meta.confusion_source`:
+  1. an explicit `confusion` in the request (`config`-style flat-4 `[Pgg,Pge,Peg,Pee]`
+     or a 2×2), else
+  2. the **fresh matrix from the readout recal** that ran just before this job
+     (`recalibrate_readout: true`) — fit at the same angle/threshold + reset
+     conditions the measurement uses, so it matches the live readout (`source: recal`), else
+  3. the pinned-config matrix keyed on the reset regime —
+     `confusion_matrix_with_active_reset` when active reset is on, else
+     `_without_reset` (`source: config:*`).
+Prefer leaving `recalibrate_readout: true` so the correction tracks readout drift;
+the static config matrix can be optimistic (e.g. ~98% when the live readout is ~94%).
+
+**Active reset vs confusion are independent.** Active reset physically reduces the
+true `|e⟩` population (transmon herald); the confusion matrix corrects *readout*
+misassignment of the surviving shots. Both are applied. Note the closed-loop
+*default* `active_reset` preset (used by `/run_wigner`) heralds on a cavity-PARITY
+measurement; for bare-transmon 1Q the file-drop watcher uses a transmon-`|g⟩`
+herald preset instead (`pre_selection_parity` off) — see `batch_runner.TOMO_1Q_ACTIVE_RESET`.
+
+Notes: `sim` mode samples noisy Z/X/Y counts for `sim_target_state` (else
+`target_state`, else |g⟩) — plumbing test only, no pulse physics. Reconstruction
+and fidelity run server-side from the worker's thresholded counts, so the same
+math serves sim and hw.
+
 ## How to start a closed-loop run
 
 ### 1. Confirm tunnel is up
