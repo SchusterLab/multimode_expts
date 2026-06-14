@@ -37,68 +37,16 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 # =============================================================================
-# MOCK HARDWARE MODULES - Must happen BEFORE any other imports
+# Imports
 # =============================================================================
-
-def create_mock_module(name, **attrs):
-    """Create a mock module with specified attributes."""
-    mock = MagicMock()
-    for k, v in attrs.items():
-        setattr(mock, k, v)
-    mock.__name__ = name
-    return mock
-
-# Mock qick and all its submodules (FPGA library)
-class MockQickProgram:
-    """Mock base class for QICK programs."""
-    def __init__(self, soccfg=None, cfg=None):
-        self.soccfg = soccfg
-        self.cfg = cfg
-
-class MockAveragerProgram(MockQickProgram):
-    """Mock AveragerProgram from qick."""
-    pass
-
-class MockRAveragerProgram(MockQickProgram):
-    """Mock RAveragerProgram from qick."""
-    pass
-
-mock_qick = create_mock_module('qick')
-mock_qick.QickProgram = MockQickProgram
-mock_qick.AveragerProgram = MockAveragerProgram
-mock_qick.RAveragerProgram = MockRAveragerProgram
-mock_qick.QickConfig = MagicMock
-
-mock_qick_helpers = create_mock_module('qick.helpers',
-    gauss=lambda x: x,
-    sin2=lambda x: x,
-    tanh=lambda x: x,
-    flat_top_gauss=lambda x: x,
-)
-mock_qick.helpers = mock_qick_helpers
-
-sys.modules['qick'] = mock_qick
-sys.modules['qick.helpers'] = mock_qick_helpers
-
-# Mock telnetlib (removed in Python 3.12+, needed by slab.instruments)
-sys.modules['telnetlib'] = MagicMock()
-
-# Mock Pyro4 (instrument server, optional)
-sys.modules['Pyro4'] = MagicMock()
-
-# Mock visa/pyvisa (instrument communication)
-sys.modules['visa'] = MagicMock()
-sys.modules['pyvisa'] = MagicMock()
-
-# Mock lmfit (fitting library)
-mock_lmfit = create_mock_module('lmfit')
-mock_lmfit_models = create_mock_module('lmfit.models')
-mock_lmfit.models = mock_lmfit_models
-mock_lmfit.Model = MagicMock
-sys.modules['lmfit'] = mock_lmfit
-sys.modules['lmfit.models'] = mock_lmfit_models
-
-# Now we can safely import everything else
+# NOTE: This file used to inject fake `qick`/`lmfit`/`Pyro4`/`visa`/`telnetlib`
+# modules into sys.modules here, before learning that qick can be imported for
+# real (mock mode only stubs QickSoc, not QickConfig -- see
+# experiments/mock_hardware.py). That global injection permanently polluted
+# sys.modules for the rest of the pytest process and broke any later test that
+# imported the real qick. It is gone now: the runner and its real deps import
+# cleanly, and these tests exercise pure runner logic via the lightweight
+# Mock{Experiment,Station} below (no qick contact at all).
 import numpy as np
 import tempfile
 import os
@@ -107,20 +55,16 @@ from unittest.mock import patch
 
 from slab import AttrDict, Experiment
 
-# Import CharacterizationRunner from the experiments module
-try:
-    from experiments.characterization_runner import (
-        CharacterizationRunner,
-        default_preprocessor,
-        default_postprocessor,
-    )
-    RUNNER_AVAILABLE = True
-except Exception as e:
-    print(f'Warning: CharacterizationRunner import failed ({type(e).__name__}: {e})')
-    RUNNER_AVAILABLE = False
-    CharacterizationRunner = None
-    default_preprocessor = None
-    default_postprocessor = None
+# Import CharacterizationRunner from the experiments module. This is a HARD
+# import on purpose: it used to be wrapped in try/except with a RUNNER_AVAILABLE
+# flag, which (combined with the fake-qick sys.modules injection above) silently
+# turned every test into a no-op skip when the import broke. If this import ever
+# fails again, the whole module should error loudly at collection time.
+from experiments.characterization_runner import (
+    CharacterizationRunner,
+    default_preprocessor,
+    default_postprocessor,
+)
 
 
 # =============================================================================
@@ -253,8 +197,10 @@ class MockStation:
         self.hardware_config_file = Path(self.temp_dir) / 'device.yaml'
         self.hardware_config_file.touch()
 
-        # Mock SoC
-        self.soc = MagicMock()
+        # Mock QickConfig (renamed from .soc -> .soccfg; runner reads .soccfg)
+        self.soccfg = MagicMock()
+        # Instrument manager the runner/experiment reach through
+        self.im = {'soc': MagicMock()}
 
         # Mock mode flag (test mock station is always mock)
         self._is_mock = True
@@ -309,10 +255,6 @@ def test_runner_basic():
     print('TEST: CharacterizationRunner Basic Functionality')
     print('='*60)
 
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
-
     # Setup
     station = MockStation()
 
@@ -342,7 +284,6 @@ def test_runner_basic():
 
     print('\n  Basic test passed!')
     station.cleanup()
-    return True
 
 
 def test_runner_preprocessor():
@@ -350,10 +291,6 @@ def test_runner_preprocessor():
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner Preprocessor')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -408,7 +345,6 @@ def test_runner_preprocessor():
 
     print('\n  Preprocessor test passed!')
     station.cleanup()
-    return True
 
 
 def test_runner_postprocessor():
@@ -416,10 +352,6 @@ def test_runner_postprocessor():
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner Postprocessor')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -467,7 +399,6 @@ def test_runner_postprocessor():
 
     print('\n  Postprocessor test passed!')
     station.cleanup()
-    return True
 
 
 def test_runner_use_queue_default():
@@ -475,10 +406,6 @@ def test_runner_use_queue_default():
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner use_queue Default')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -519,7 +446,6 @@ def test_runner_use_queue_default():
 
     print('\n  use_queue default test passed!')
     station.cleanup()
-    return True
 
 
 def test_runner_execute_dispatches_correctly():
@@ -527,10 +453,6 @@ def test_runner_execute_dispatches_correctly():
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner execute() Dispatch')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -559,7 +481,6 @@ def test_runner_execute_dispatches_correctly():
 
     print('\n  execute() dispatch test passed!')
     station.cleanup()
-    return True
 
 
 def test_runner_go_kwargs():
@@ -567,10 +488,6 @@ def test_runner_go_kwargs():
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner go_kwargs')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -599,7 +516,6 @@ def test_runner_go_kwargs():
 
     print('\n  go_kwargs test passed!')
     station.cleanup()
-    return True
 
 
 def test_default_preprocessor():
@@ -607,10 +523,6 @@ def test_default_preprocessor():
     print('\n' + '='*60)
     print('TEST: Default Preprocessor')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -642,7 +554,6 @@ def test_default_preprocessor():
 
     print('\n  Default preprocessor test passed!')
     station.cleanup()
-    return True
 
 
 def test_default_postprocessor():
@@ -650,10 +561,6 @@ def test_default_postprocessor():
     print('\n' + '='*60)
     print('TEST: Default Postprocessor')
     print('='*60)
-
-    if not RUNNER_AVAILABLE:
-        print('  SKIPPED: CharacterizationRunner not available')
-        return True
 
     station = MockStation()
 
@@ -682,53 +589,3 @@ def test_default_postprocessor():
 
     print('\n  Default postprocessor test passed!')
     station.cleanup()
-    return True
-
-
-# =============================================================================
-# Main Entry Point
-# =============================================================================
-
-def run_all_tests():
-    """Run all tests and report results."""
-    tests = [
-        ('Basic Functionality', test_runner_basic),
-        ('Preprocessor', test_runner_preprocessor),
-        ('Postprocessor', test_runner_postprocessor),
-        ('use_queue Default', test_runner_use_queue_default),
-        ('execute() Dispatch', test_runner_execute_dispatches_correctly),
-        ('go_kwargs', test_runner_go_kwargs),
-        ('Default Preprocessor', test_default_preprocessor),
-        ('Default Postprocessor', test_default_postprocessor),
-    ]
-
-    results = []
-    for name, test_fn in tests:
-        try:
-            success = test_fn()
-            results.append((name, success, None))
-        except Exception as e:
-            import traceback
-            results.append((name, False, str(e)))
-            traceback.print_exc()
-
-    # Summary
-    print('\n' + '='*60)
-    print('TEST SUMMARY')
-    print('='*60)
-    passed = sum(1 for _, s, _ in results if s)
-    total = len(results)
-
-    for name, success, error in results:
-        status = '  PASS' if success else '  FAIL'
-        print(f'  {status}: {name}')
-        if error:
-            print(f'         Error: {error}')
-
-    print(f'\nTotal: {passed}/{total} tests passed')
-    return passed == total
-
-
-if __name__ == '__main__':
-    success = run_all_tests()
-    sys.exit(0 if success else 1)

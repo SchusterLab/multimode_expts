@@ -37,68 +37,16 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 # =============================================================================
-# MOCK HARDWARE MODULES - Must happen BEFORE any other imports
+# Imports
 # =============================================================================
-
-def create_mock_module(name, **attrs):
-    """Create a mock module with specified attributes."""
-    mock = MagicMock()
-    for k, v in attrs.items():
-        setattr(mock, k, v)
-    mock.__name__ = name
-    return mock
-
-# Mock qick and all its submodules (FPGA library)
-class MockQickProgram:
-    """Mock base class for QICK programs."""
-    def __init__(self, soccfg=None, cfg=None):
-        self.soccfg = soccfg
-        self.cfg = cfg
-
-class MockAveragerProgram(MockQickProgram):
-    """Mock AveragerProgram from qick."""
-    pass
-
-class MockRAveragerProgram(MockQickProgram):
-    """Mock RAveragerProgram from qick."""
-    pass
-
-mock_qick = create_mock_module('qick')
-mock_qick.QickProgram = MockQickProgram
-mock_qick.AveragerProgram = MockAveragerProgram
-mock_qick.RAveragerProgram = MockRAveragerProgram
-mock_qick.QickConfig = MagicMock
-
-mock_qick_helpers = create_mock_module('qick.helpers',
-    gauss=lambda x: x,
-    sin2=lambda x: x,
-    tanh=lambda x: x,
-    flat_top_gauss=lambda x: x,
-)
-mock_qick.helpers = mock_qick_helpers
-
-sys.modules['qick'] = mock_qick
-sys.modules['qick.helpers'] = mock_qick_helpers
-
-# Mock telnetlib (removed in Python 3.12+, needed by slab.instruments)
-sys.modules['telnetlib'] = MagicMock()
-
-# Mock Pyro4 (instrument server, optional)
-sys.modules['Pyro4'] = MagicMock()
-
-# Mock visa/pyvisa (instrument communication)
-sys.modules['visa'] = MagicMock()
-sys.modules['pyvisa'] = MagicMock()
-
-# Mock lmfit (fitting library)
-mock_lmfit = create_mock_module('lmfit')
-mock_lmfit_models = create_mock_module('lmfit.models')
-mock_lmfit.models = mock_lmfit_models
-mock_lmfit.Model = MagicMock
-sys.modules['lmfit'] = mock_lmfit
-sys.modules['lmfit.models'] = mock_lmfit_models
-
-# Now we can safely import everything else
+# NOTE: This file used to inject fake `qick`/`lmfit`/`Pyro4`/`visa`/`telnetlib`
+# modules into sys.modules here, before learning that qick can be imported for
+# real (mock mode only stubs QickSoc, not QickConfig -- see
+# experiments/mock_hardware.py). That global injection permanently polluted
+# sys.modules for the rest of the pytest process and broke any later test that
+# imported the real qick. It is gone now: the runner and its real deps import
+# cleanly, and these tests exercise pure runner logic via the lightweight
+# Mock{Experiment,Station} below (no qick contact at all).
 import numpy as np
 import tempfile
 import os
@@ -107,15 +55,11 @@ from unittest.mock import patch
 
 from slab import AttrDict, Experiment
 
-# Import SweepRunner from the new location
-try:
-    from experiments.sweep_runner import SweepRunner, default_preprocessor
-    SWEEP_RUNNER_AVAILABLE = True
-except Exception as e:
-    print(f'Warning: SweepRunner import failed ({type(e).__name__}: {e})')
-    SWEEP_RUNNER_AVAILABLE = False
-    SweepRunner = None
-    default_preprocessor = None
+# Import SweepRunner. HARD import on purpose -- see the matching note in
+# test_characterization_runner.py. A try/except + SWEEP_RUNNER_AVAILABLE flag
+# silently turned these into no-op skips when the import broke under the old
+# fake-qick injection. If this import fails, fail loudly at collection time.
+from experiments.sweep_runner import SweepRunner, default_preprocessor
 
 
 # =============================================================================
@@ -318,24 +262,32 @@ class MockStation:
         self.hardware_config_file = Path(self.temp_dir) / 'device.yaml'
         self.hardware_config_file.touch()
 
-        # Mock SoC
-        self.soc = MagicMock()
+        # Mock QickConfig (renamed from .soc -> .soccfg; runner reads .soccfg)
+        self.soccfg = MagicMock()
+        # Instrument manager the runner assigns onto each per-point experiment
+        self.im = {'soc': MagicMock()}
 
         # Mock mode flag (test mock station is always mock)
         self._is_mock = True
 
-        # Config that experiments will read (hardware_cfg is the standard name)
+        # Config that experiments will read (hardware_cfg is the standard name).
+        # device.storage must exist: run_local stashes the dataset handles into
+        # cfg.device.storage._ds_storage / _ds_floquet.
         self.hardware_cfg = AttrDict({
             'device': {
                 'readout': {'relax_delay': [1000]},
                 'qubit': {'f_ge': [5000]},
                 'manipulate': {'f0g1_freq': [2000]},
                 'multiphoton': {'pi': {'fn-gn+1': {'frequency': [2000]}}},
+                'storage': {'_ds_storage': None, '_ds_floquet': None},
             },
             'expt': {},
         })
 
-        # Mock dataset
+        # Dataset handles the runner threads into cfg (storage/floquet) and the
+        # per-run dataset the postprocessor tests poke at.
+        self.ds_storage = MagicMock()
+        self.ds_floquet = None
         self.ds_thisrun = MagicMock()
         self.ds_thisrun.get_freq = MagicMock(return_value=5000)
         self.ds_thisrun.get_gain = MagicMock(return_value=8000)
@@ -361,10 +313,6 @@ def test_sweep_runner_basic():
     print('\n' + '='*60)
     print('TEST: SweepRunner Basic Functionality')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     # Setup
     station = MockStation()
@@ -405,7 +353,6 @@ def test_sweep_runner_basic():
 
     print('\n  Basic test passed!')
     station.cleanup()
-    return True
 
 
 def test_sweep_runner_2d_detection():
@@ -413,10 +360,6 @@ def test_sweep_runner_2d_detection():
     print('\n' + '='*60)
     print('TEST: SweepRunner 2D Detection in analyze()')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     station = MockStation()
 
@@ -451,7 +394,6 @@ def test_sweep_runner_2d_detection():
 
     print('\n  2D detection test passed!')
     station.cleanup()
-    return True
 
 
 def test_sweep_runner_postprocessor():
@@ -459,10 +401,6 @@ def test_sweep_runner_postprocessor():
     print('\n' + '='*60)
     print('TEST: SweepRunner Postprocessor')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     station = MockStation()
 
@@ -508,7 +446,6 @@ def test_sweep_runner_postprocessor():
 
     print('\n  Postprocessor test passed!')
     station.cleanup()
-    return True
 
 
 def test_sweep_runner_live_plot():
@@ -516,10 +453,6 @@ def test_sweep_runner_live_plot():
     print('\n' + '='*60)
     print('TEST: SweepRunner Live Plot')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     station = MockStation()
 
@@ -553,7 +486,6 @@ def test_sweep_runner_live_plot():
 
     print(f'\n  Live plot test passed! ({mock_live.call_count} calls)')
     station.cleanup()
-    return True
 
 
 def test_sweep_runner_incremental_save():
@@ -561,10 +493,6 @@ def test_sweep_runner_incremental_save():
     print('\n' + '='*60)
     print('TEST: SweepRunner Incremental Save')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     station = MockStation()
 
@@ -602,7 +530,6 @@ def test_sweep_runner_incremental_save():
 
     print(f'\n  Incremental save test passed! ({save_counts[0]} saves)')
     station.cleanup()
-    return True
 
 
 def test_data_structure():
@@ -610,10 +537,6 @@ def test_data_structure():
     print('\n' + '='*60)
     print('TEST: Data Structure for 2D Analysis')
     print('='*60)
-
-    if not SWEEP_RUNNER_AVAILABLE:
-        print('  SKIPPED: SweepRunner not available')
-        return True
 
     station = MockStation()
 
@@ -655,51 +578,3 @@ def test_data_structure():
 
     print('\n  Data structure test passed!')
     station.cleanup()
-    return True
-
-
-# =============================================================================
-# Main Entry Point
-# =============================================================================
-
-def run_all_tests():
-    """Run all tests and report results."""
-    tests = [
-        ('Basic SweepRunner', test_sweep_runner_basic),
-        ('2D Detection', test_sweep_runner_2d_detection),
-        ('Postprocessor', test_sweep_runner_postprocessor),
-        ('Live Plot', test_sweep_runner_live_plot),
-        ('Incremental Save', test_sweep_runner_incremental_save),
-        ('Data Structure', test_data_structure),
-    ]
-
-    results = []
-    for name, test_fn in tests:
-        try:
-            success = test_fn()
-            results.append((name, success, None))
-        except Exception as e:
-            import traceback
-            results.append((name, False, str(e)))
-            traceback.print_exc()
-
-    # Summary
-    print('\n' + '='*60)
-    print('TEST SUMMARY')
-    print('='*60)
-    passed = sum(1 for _, s, _ in results if s)
-    total = len(results)
-
-    for name, success, error in results:
-        status = '  PASS' if success else '  FAIL'
-        print(f'  {status}: {name}')
-        if error:
-            print(f'         Error: {error}')
-
-    print(f'\nTotal: {passed}/{total} tests passed')
-    return passed == total
-
-
-if __name__ == '__main__':
-    success = run_all_tests()
-    sys.exit(0 if success else 1)
