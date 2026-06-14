@@ -307,11 +307,13 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/cc/18245721fa7747065ab478316c7fea7c74777d07f37ae60db2e84f8172e8/beartype-0.22.9-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/66/b15ce62552d84bbfcec9a4873ab79d993a1dd4edb922cbfccae192bd5b5f/jaraco.classes-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/83/d1/68b43b53cd0fa83ae6fd406705023ca988d9e0ca41c724d82e66fbeb2ef6/nodejs_wheel_binaries-24.16.0-py2.py3-none-macosx_13_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/8c/7b/1fc1c09cc0756cf25861a3be10565915953876da48bb228fb9a672b20a42/cachetools-7.1.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/91/0f/a6110d713370bc92f074a622f8a5ebdec7e92360149b1048dca258a07b2f/anthropic-0.109.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/96/9a/982e48afcffcd727a9144506720ffd4224b6b7e355c98641866f38b7c043/jaraco_functools-4.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9b/22/adf66990e63584a68dfb50c24f48a125c07b1699899381c8151e63ed458c/cryptography-49.0.0-cp311-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/a0/3d/55c17d3ebdf3cd81356002afe5bef9bb8af631db2819785b6eac845b925b/rich_rst-2.0.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a1/f4/5b1e8ea279ce8f97a6bb1518c84fa25f5794022053ce10eab22ad3f0b51b/basedpyright-1.39.7-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a2/e8/6d75ffd9784bce2e93d1ae4415649427e39a53bb172d4672b2b59c6f0a7b/pathable-0.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ca/9520cc1f3dfbbd03ac5903bbf55833e257bc64b1cf30fa8b0d6df374d821/opentelemetry_api-1.42.1-py3-none-any.whl
@@ -658,6 +660,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/96/9a/982e48afcffcd727a9144506720ffd4224b6b7e355c98641866f38b7c043/jaraco_functools-4.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/97/c9/2553f72aaf65a2797d4229e37fa7fbe38ffbf3e32912d31bdd78b3323e59/tokenizers-0.23.1-cp310-abi3-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/a0/3d/55c17d3ebdf3cd81356002afe5bef9bb8af631db2819785b6eac845b925b/rich_rst-2.0.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a1/f4/5b1e8ea279ce8f97a6bb1518c84fa25f5794022053ce10eab22ad3f0b51b/basedpyright-1.39.7-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a2/7b/8b7a3f41bc255411be30b6d7d288aab8ffd9ea2055db8555ced3548007b9/nodejs_wheel_binaries-24.16.0-py2.py3-none-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/a2/e8/6d75ffd9784bce2e93d1ae4415649427e39a53bb172d4672b2b59c6f0a7b/pathable-0.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/ca/9520cc1f3dfbbd03ac5903bbf55833e257bc64b1cf30fa8b0d6df374d821/opentelemetry_api-1.42.1-py3-none-any.whl
@@ -6366,6 +6370,7 @@ packages:
   requires_dist:
   - notebook-intelligence>=4.8.0,<5
   - jupyterlab-notify>=3.0.0,<4
+  - basedpyright>=1.39.7,<2
 - pypi: ../qick
   name: qick
   requires_dist:
@@ -6994,6 +6999,13 @@ packages:
   - types-pywin32 ; extra == 'type'
   - shtab>=1.1.0 ; extra == 'completion'
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/83/d1/68b43b53cd0fa83ae6fd406705023ca988d9e0ca41c724d82e66fbeb2ef6/nodejs_wheel_binaries-24.16.0-py2.py3-none-macosx_13_0_arm64.whl
+  name: nodejs-wheel-binaries
+  version: 24.16.0
+  sha256: d9f8f677dcf30e37ac244f07869726abe043f01eb0f45722b1df31cc2af7093c
+  requires_dist:
+  - typing-extensions ; python_full_version < '3.8'
+  requires_python: '>=3.7'
 - pypi: https://files.pythonhosted.org/packages/86/93/1f76c8d1bafe3b0614e06b2195784a3765bbf7b0a067661af9e2dd47fc33/caio-0.9.25-py3-none-any.whl
   name: caio
   version: 0.9.25
@@ -7101,6 +7113,20 @@ packages:
   - sphinx-rtd-theme ; extra == 'docs'
   - pytest ; extra == 'tests'
   - pytest-cov ; extra == 'tests'
+- pypi: https://files.pythonhosted.org/packages/a1/f4/5b1e8ea279ce8f97a6bb1518c84fa25f5794022053ce10eab22ad3f0b51b/basedpyright-1.39.7-py3-none-any.whl
+  name: basedpyright
+  version: 1.39.7
+  sha256: 81266deb6044c9be98fb4555e4b7b1a521d8aee06b66e80858d183b0e3991140
+  requires_dist:
+  - nodejs-wheel-binaries>=20.13.1
+  requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/a2/7b/8b7a3f41bc255411be30b6d7d288aab8ffd9ea2055db8555ced3548007b9/nodejs_wheel_binaries-24.16.0-py2.py3-none-win_amd64.whl
+  name: nodejs-wheel-binaries
+  version: 24.16.0
+  sha256: bb136be9944f0662dcf1120f45193a6b75b13fac378971a95cc42c9f879a81aa
+  requires_dist:
+  - typing-extensions ; python_full_version < '3.8'
+  requires_python: '>=3.7'
 - pypi: https://files.pythonhosted.org/packages/a2/e8/6d75ffd9784bce2e93d1ae4415649427e39a53bb172d4672b2b59c6f0a7b/pathable-0.6.0-py3-none-any.whl
   name: pathable
   version: 0.6.0

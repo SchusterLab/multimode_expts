@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "multimode_expts"
 version = "0.0.1"
-dependencies = ["notebook-intelligence>=4.8.0,<5", "jupyterlab-notify>=3.0.0,<4"]
+dependencies = ["notebook-intelligence>=4.8.0,<5", "jupyterlab-notify>=3.0.0,<4", "basedpyright>=1.39.7,<2"]
 
 [tool.setuptools.packages.find]
 where = ["."]
