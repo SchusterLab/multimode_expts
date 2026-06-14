@@ -5,14 +5,15 @@ postprocessor dispatch, the use_queue default, execute() routing to
 run()/run_local(), and go_kwargs forwarding. They do NOT exercise a real
 Experiment or a real qick program.
 
-Test doubles (defined below):
-    MockStation    -- minimal stand-in for MultimodeStation: temp dirs, a fake
-                      hardware_cfg, no real device.yaml and no Pyro proxy.
-    MockExperiment -- a fake Experiment whose acquire() emits *controlled, known*
-                      synthetic data, so the tests can assert on orchestration
-                      outcomes. The runner is parameterized by ExptClass; a unit
-                      test of the runner wants data it controls, not the all-zeros
-                      a mock board returns.
+Test doubles:
+    station        -- the shared `station` fixture from tests/conftest.py (a
+                      lightweight MockStation: temp dirs, a fake hardware_cfg, no
+                      real device.yaml and no Pyro proxy). Injected by name.
+    MockExperiment -- (defined below) a fake Experiment whose acquire() emits
+                      *controlled, known* synthetic data, so the tests can assert
+                      on orchestration outcomes. The runner is parameterized by
+                      ExptClass; a unit test of the runner wants data it controls,
+                      not the all-zeros a mock board returns.
 
 Two different test levels, two different tools (see also the long note in the
 imports section about why this file no longer fakes `qick`):
@@ -27,10 +28,6 @@ imports section about why this file no longer fakes `qick`):
 Run:  pixi run python -m pytest tests/test_characterization_runner.py -v
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock
-
 # =============================================================================
 # Imports
 # =============================================================================
@@ -40,14 +37,13 @@ from unittest.mock import MagicMock
 # experiments/mock_hardware.py). That global injection permanently polluted
 # sys.modules for the rest of the pytest process and broke any later test that
 # imported the real qick. It is gone now: the runner and its real deps import
-# cleanly, and these tests exercise pure runner logic via the lightweight
-# Mock{Experiment,Station} below (no qick contact at all).
-import numpy as np
-import tempfile
+# cleanly, and these tests exercise pure runner logic via MockExperiment below
+# plus the shared `station` fixture (tests/conftest.py) -- no qick contact.
 import os
 from copy import deepcopy
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
+import numpy as np
 from slab import AttrDict, Experiment
 
 # Import CharacterizationRunner from the experiments module. This is a HARD
@@ -179,79 +175,22 @@ class MockExperiment(Experiment):
             self.display()
 
 
-class MockStation:
-    """Mock MultimodeStation for testing without hardware."""
-
-    def __init__(self, temp_dir: str = None):
-        self.temp_dir = temp_dir or tempfile.mkdtemp()
-
-        # Create required paths
-        self.data_path = Path(self.temp_dir) / 'data'
-        self.data_path.mkdir(parents=True, exist_ok=True)
-
-        self.hardware_config_file = Path(self.temp_dir) / 'device.yaml'
-        self.hardware_config_file.touch()
-
-        # Mock QickConfig (renamed from .soc -> .soccfg; runner reads .soccfg)
-        self.soccfg = MagicMock()
-        # Instrument manager the runner/experiment reach through
-        self.im = {'soc': MagicMock()}
-
-        # Mock mode flag (test mock station is always mock)
-        self._is_mock = True
-
-        # User for job submission
-        self.user = 'test_user'
-
-        # Config that experiments will read
-        self.hardware_cfg = AttrDict({
-            'device': {
-                'readout': {'relax_delay': [1000]},
-                'qubit': {
-                    'f_ge': [5000],
-                    'pulses': {
-                        'pi_ge': {'gain': [4500], 'sigma': [0.05]},
-                        'hpi_ge': {'gain': [2250], 'sigma': [0.05]},
-                        'pi_ef': {'gain': [4000], 'sigma': [0.05]},
-                        'hpi_ef': {'gain': [2000], 'sigma': [0.05]},
-                    },
-                },
-                'storage': {
-                    '_ds_storage': None,
-                    '_ds_floquet': None,
-                },
-            },
-            'expt': {},
-        })
-
-        # Mock datasets
-        self.ds_storage = MagicMock()
-        self.ds_floquet = None
-
-    @property
-    def is_mock(self) -> bool:
-        """Test mock station is always in mock mode."""
-        return self._is_mock
-
-    def cleanup(self):
-        """Remove temporary files."""
-        import shutil
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+# MockStation now lives in tests/conftest.py and is injected as the `station`
+# fixture (see the module docstring there). MockExperiment stays here: it is the
+# scenario-specific test double -- it emits a known amplitude-rabi signal so the
+# tests below can assert on what the runner did with it.
 
 
 # =============================================================================
 # Test Functions
 # =============================================================================
 
-def test_runner_basic():
+def test_runner_basic(station):
     """Test basic CharacterizationRunner functionality."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner Basic Functionality')
     print('='*60)
 
-    # Setup
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -278,16 +217,14 @@ def test_runner_basic():
     assert len(expt.data['xpts']) == 151, f"Expected 151 points, got {len(expt.data['xpts'])}"
 
     print('\n  Basic test passed!')
-    station.cleanup()
 
 
-def test_runner_preprocessor():
+def test_runner_preprocessor(station):
     """Test that preprocessor transforms config correctly."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner Preprocessor')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -339,16 +276,14 @@ def test_runner_preprocessor():
     assert expt.cfg.expt.sigma_test == 0.05, "sigma_test should be filled from config"
 
     print('\n  Preprocessor test passed!')
-    station.cleanup()
 
 
-def test_runner_postprocessor():
+def test_runner_postprocessor(station):
     """Test that postprocessor updates station config."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner Postprocessor')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -393,16 +328,14 @@ def test_runner_postprocessor():
     assert new_pi_gain == expt.data['pi_gain_avgi'], "Station config should be updated"
 
     print('\n  Postprocessor test passed!')
-    station.cleanup()
 
 
-def test_runner_use_queue_default():
+def test_runner_use_queue_default(station):
     """Test that use_queue defaults to True (independent of station.is_mock)."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner use_queue Default')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -440,16 +373,14 @@ def test_runner_use_queue_default():
     print(f'  Explicit use_queue=False: use_queue={runner3.use_queue}')
 
     print('\n  use_queue default test passed!')
-    station.cleanup()
 
 
-def test_runner_execute_dispatches_correctly():
+def test_runner_execute_dispatches_correctly(station):
     """Test that execute() dispatches to run() or run_local() based on use_queue."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner execute() Dispatch')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -475,16 +406,14 @@ def test_runner_execute_dispatches_correctly():
     print(f'  execute(use_queue=False) override completed successfully')
 
     print('\n  execute() dispatch test passed!')
-    station.cleanup()
 
 
-def test_runner_go_kwargs():
+def test_runner_go_kwargs(station):
     """Test that go_kwargs are passed to expt.go()."""
     print('\n' + '='*60)
     print('TEST: CharacterizationRunner go_kwargs')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -510,16 +439,14 @@ def test_runner_go_kwargs():
     assert expt._analysis is None, "Should not have analyzed (analyze=False)"
 
     print('\n  go_kwargs test passed!')
-    station.cleanup()
 
 
-def test_default_preprocessor():
+def test_default_preprocessor(station):
     """Test the default preprocessor behavior."""
     print('\n' + '='*60)
     print('TEST: Default Preprocessor')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -548,16 +475,14 @@ def test_default_preprocessor():
     assert expt.cfg.expt.custom_param == 'test_value', "custom_param should be added"
 
     print('\n  Default preprocessor test passed!')
-    station.cleanup()
 
 
-def test_default_postprocessor():
+def test_default_postprocessor(station):
     """Test the default postprocessor behavior (does nothing)."""
     print('\n' + '='*60)
     print('TEST: Default Postprocessor')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -583,4 +508,3 @@ def test_default_postprocessor():
     assert current_gain == original_gain, "Default postprocessor should not modify config"
 
     print('\n  Default postprocessor test passed!')
-    station.cleanup()

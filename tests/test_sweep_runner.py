@@ -5,15 +5,16 @@ accumulating per-point results into a 2D "mother" experiment, detecting 2D data
 in analyze(), routing to a postprocessor, incremental saving, and live-plot
 fan-out. They do NOT exercise a real Experiment or a real qick program.
 
-Test doubles (defined below):
-    MockStation    -- minimal stand-in for MultimodeStation: temp dirs, a fake
-                      hardware_cfg, no real device.yaml and no Pyro proxy.
-    MockExperiment -- a fake Experiment whose acquire() emits *controlled, known*
-                      synthetic data, so the tests can assert on orchestration
-                      outcomes (e.g. "the sweep found the resonance"). The runner
-                      is parameterized by ExptClass; a unit test of the runner
-                      wants data it controls, not the all-zeros a mock board
-                      returns.
+Test doubles:
+    station        -- the shared `station` fixture from tests/conftest.py (a
+                      lightweight MockStation: temp dirs, a fake hardware_cfg, no
+                      real device.yaml and no Pyro proxy). Injected by name.
+    MockExperiment -- (defined below) a fake Experiment whose acquire() emits
+                      *controlled, known* synthetic data, so the tests can assert
+                      on orchestration outcomes (e.g. "the sweep found the
+                      resonance"). The runner is parameterized by ExptClass; a
+                      unit test of the runner wants data it controls, not the
+                      all-zeros a mock board returns.
 
 Two different test levels, two different tools (see also the long note in the
 imports section about why this file no longer fakes `qick`):
@@ -28,10 +29,6 @@ imports section about why this file no longer fakes `qick`):
 Run:  pixi run python -m pytest tests/test_sweep_runner.py -v
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock
-
 # =============================================================================
 # Imports
 # =============================================================================
@@ -41,14 +38,12 @@ from unittest.mock import MagicMock
 # experiments/mock_hardware.py). That global injection permanently polluted
 # sys.modules for the rest of the pytest process and broke any later test that
 # imported the real qick. It is gone now: the runner and its real deps import
-# cleanly, and these tests exercise pure runner logic via the lightweight
-# Mock{Experiment,Station} below (no qick contact at all).
-import numpy as np
-import tempfile
+# cleanly, and these tests exercise pure runner logic via MockExperiment below
+# plus the shared `station` fixture (tests/conftest.py) -- no qick contact.
 import os
-from copy import deepcopy
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 from slab import AttrDict, Experiment
 
 # Import SweepRunner. HARD import on purpose -- see the matching note in
@@ -245,73 +240,23 @@ class MockExperiment(Experiment):
             self.display()
 
 
-class MockStation:
-    """Mock MultimodeStation for testing without hardware."""
-
-    def __init__(self, temp_dir: str = None):
-        self.temp_dir = temp_dir or tempfile.mkdtemp()
-
-        # Create required paths
-        self.data_path = Path(self.temp_dir) / 'data'
-        self.data_path.mkdir(parents=True, exist_ok=True)
-
-        self.hardware_config_file = Path(self.temp_dir) / 'device.yaml'
-        self.hardware_config_file.touch()
-
-        # Mock QickConfig (renamed from .soc -> .soccfg; runner reads .soccfg)
-        self.soccfg = MagicMock()
-        # Instrument manager the runner assigns onto each per-point experiment
-        self.im = {'soc': MagicMock()}
-
-        # Mock mode flag (test mock station is always mock)
-        self._is_mock = True
-
-        # Config that experiments will read (hardware_cfg is the standard name).
-        # device.storage must exist: run_local stashes the dataset handles into
-        # cfg.device.storage._ds_storage / _ds_floquet.
-        self.hardware_cfg = AttrDict({
-            'device': {
-                'readout': {'relax_delay': [1000]},
-                'qubit': {'f_ge': [5000]},
-                'manipulate': {'f0g1_freq': [2000]},
-                'multiphoton': {'pi': {'fn-gn+1': {'frequency': [2000]}}},
-                'storage': {'_ds_storage': None, '_ds_floquet': None},
-            },
-            'expt': {},
-        })
-
-        # Dataset handles the runner threads into cfg (storage/floquet) and the
-        # per-run dataset the postprocessor tests poke at.
-        self.ds_storage = MagicMock()
-        self.ds_floquet = None
-        self.ds_thisrun = MagicMock()
-        self.ds_thisrun.get_freq = MagicMock(return_value=5000)
-        self.ds_thisrun.get_gain = MagicMock(return_value=8000)
-
-    @property
-    def is_mock(self) -> bool:
-        """Test mock station is always in mock mode."""
-        return self._is_mock
-
-    def cleanup(self):
-        """Remove temporary files."""
-        import shutil
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+# MockStation now lives in tests/conftest.py and is injected as the `station`
+# fixture (see the module docstring there). MockExperiment stays here: it is the
+# scenario-specific test double -- it emits a known length-rabi signal and does
+# the 2D-vs-1D detection in analyze(), so the tests below can assert on how the
+# runner accumulated and analysed the sweep.
 
 
 # =============================================================================
 # Test Functions
 # =============================================================================
 
-def test_sweep_runner_basic():
+def test_sweep_runner_basic(station):
     """Test basic SweepRunner functionality with mock objects."""
     print('\n' + '='*60)
     print('TEST: SweepRunner Basic Functionality')
     print('='*60)
 
-    # Setup
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -348,16 +293,14 @@ def test_sweep_runner_basic():
     assert result._chevron_analysis is not None, "_chevron_analysis should not be None"
 
     print('\n  Basic test passed!')
-    station.cleanup()
 
 
-def test_sweep_runner_2d_detection():
+def test_sweep_runner_2d_detection(station):
     """Test that analyze() correctly detects 2D data."""
     print('\n' + '='*60)
     print('TEST: SweepRunner 2D Detection in analyze()')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -389,16 +332,14 @@ def test_sweep_runner_2d_detection():
     print(f'  Best frequency found: {best_freq:.4f} MHz')
 
     print('\n  2D detection test passed!')
-    station.cleanup()
 
 
-def test_sweep_runner_postprocessor():
+def test_sweep_runner_postprocessor(station):
     """Test postprocessor receives mother experiment."""
     print('\n' + '='*60)
     print('TEST: SweepRunner Postprocessor')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -441,16 +382,14 @@ def test_sweep_runner_postprocessor():
     station.ds_thisrun.update_freq.assert_called_once()
 
     print('\n  Postprocessor test passed!')
-    station.cleanup()
 
 
-def test_sweep_runner_live_plot():
+def test_sweep_runner_live_plot(station):
     """Test live plotting functionality."""
     print('\n' + '='*60)
     print('TEST: SweepRunner Live Plot')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -481,16 +420,14 @@ def test_sweep_runner_live_plot():
     assert mock_live.call_count == 5, f"Expected 5 live plot calls, got {mock_live.call_count}"
 
     print(f'\n  Live plot test passed! ({mock_live.call_count} calls)')
-    station.cleanup()
 
 
-def test_sweep_runner_incremental_save():
+def test_sweep_runner_incremental_save(station):
     """Test that incremental save actually writes files."""
     print('\n' + '='*60)
     print('TEST: SweepRunner Incremental Save')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -525,16 +462,14 @@ def test_sweep_runner_incremental_save():
     assert save_counts[0] == expected_saves, f"Expected {expected_saves} saves, got {save_counts[0]}"
 
     print(f'\n  Incremental save test passed! ({save_counts[0]} saves)')
-    station.cleanup()
 
 
-def test_data_structure():
+def test_data_structure(station):
     """Test that output data structure is correct for 2D analysis."""
     print('\n' + '='*60)
     print('TEST: Data Structure for 2D Analysis')
     print('='*60)
 
-    station = MockStation()
 
     defaults = AttrDict(dict(
         start=0,
@@ -573,4 +508,3 @@ def test_data_structure():
     print(f'    Shapes consistent: {n_freqs} freq points, each with {data["avgi"].shape[1]} time points')
 
     print('\n  Data structure test passed!')
-    station.cleanup()
