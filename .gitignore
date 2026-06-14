@@ -1,6 +1,6 @@
 # User defined stuff here:
 
-pixi.lock
+# pixi.lock
 analysis_notebooks/bosonic/outcmaes/
 analysis_notebooks/bosonic/*.png
 plots/
