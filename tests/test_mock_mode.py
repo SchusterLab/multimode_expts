@@ -228,7 +228,10 @@ def test_runner_helpers_short_circuit_log_in_mock():
     # Avoid wasted display rendering on zero-data plots.
     from experiments.sweep_runner import SweepRunner
     from experiments.characterization_runner import CharacterizationRunner
-    for cls in (SweepRunner, CharacterizationRunner):
-        src = inspect.getsource(cls._maybe_log_measurement)
+    # SweepRunner still uses _maybe_log_measurement; CharacterizationRunner's was
+    # generalized into _render_log_show (decoupled show/log). Both keep the guard.
+    for cls, meth in ((SweepRunner, "_maybe_log_measurement"),
+                      (CharacterizationRunner, "_render_log_show")):
+        src = inspect.getsource(getattr(cls, meth))
         assert "is_mock" in src
         assert "mock mode active" in src

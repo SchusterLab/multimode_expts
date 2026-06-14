@@ -149,6 +149,7 @@ class CharacterizationRunner:
         ExptProgram: Optional[type] = None,
         job_client: Optional["JobClient"] = None,
         use_queue: bool = True,
+        show: bool = True,
     ):
         """
         Initialize the runner.
@@ -162,6 +163,8 @@ class CharacterizationRunner:
             ExptProgram: for QsimBaseExperiment, this is the program class to use
             job_client: JobClient instance for submitting to job queue (required for run())
             use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
+            show: Default for whether to render the experiment's plot inline (per-call
+                overridable via show=). Independent of logging (log=).
         """
         self.station = station
         self.ExptClass = ExptClass
@@ -172,6 +175,7 @@ class CharacterizationRunner:
         self.job_client = job_client
         self.last_job_result = None  # Stores JobResult from most recent run()
         self.use_queue = use_queue
+        self.show = show
 
     def _serialize_station_config(self) -> str:
         """
@@ -237,77 +241,97 @@ class CharacterizationRunner:
 
         return json.dumps(station_data)
 
-    def _maybe_log_measurement(self, experiment, log: Optional[bool], render_display: bool):
-        """Log the experiment to the lab-notebook vault if enabled.
+    def _render_log_show(self, experiment, show: Optional[bool], log: Optional[bool],
+                         display_kwargs: Optional[dict] = None):
+        """Render the experiment's plot once, then route the figure: show it
+        inline (show) and/or attach it to the lab-notebook vault (log).
 
-        log=True forces logging. log=False forces skip. log=None (default)
-        defers to `station.log_measurements` — a per-session opt-in toggle
-        which itself defaults to False, so the vault stays silent for users
-        who haven't opted in. log_measurement is itself a no-op if vault_root
-        is not configured. If render_display=True, calls experiment.display()
-        in this process to produce a fig (queue path).
+        show and log are INDEPENDENT controls:
+          - show: render the plot inline. None -> the runner default (self.show).
+          - log:  write to the vault. True forces; False skips; None defers to
+                  `station.log_measurements` (a per-session opt-in, default False).
+                  log_measurement is itself a no-op if vault_root is unset.
+        The figure is rendered at most once, iff show or log is active.
+
+        display_kwargs is filtered to experiment.display()'s signature (and
+        station= is injected if accepted), so callers can pass the correct target
+        (e.g. initial_state=, rotate=, state_label= for Wigner) instead of letting
+        display() fall back to its generic default.
         """
+        # Resolve logging intent.
         if log is False:
-            return
-        if log is None and not getattr(self.station, "log_measurements", False):
-            return
+            do_log = False
+        elif log is None:
+            do_log = bool(getattr(self.station, "log_measurements", False))
+        else:
+            do_log = True
         if getattr(self.station, "is_mock", False):
-            # Mock measurements would pollute the real lab notebook; skip the
-            # vault write here AND the display-render scaffolding below.
-            print("[char] mock mode active; skipping log_measurement.")
+            # Mock runs must not touch the real vault, and we skip rendering too
+            # (tests run headless; nothing to display).
+            if do_log:
+                print("[char] mock mode active; skipping display + log_measurement.")
             return
+
+        do_show = self.show if show is None else bool(show)
+        if not (do_log or do_show):
+            return
+
+        display_kwargs = dict(display_kwargs or {})
+        returned = None
+        captured_fig = None
         try:
-            returned = None
-            captured_fig = None
-            if render_display:
-                try:
-                    # Snapshot existing figures so we only consider those newly
-                    # created by display() (avoids grabbing a stale fig from
-                    # an earlier cell when display() itself raises).
-                    fignums_before = set(plt.get_fignums())
-                    # Patch plt.show to a no-op so the new fig stays in
-                    # plt.get_fignums() after display() runs (Jupyter's inline
-                    # backend removes figs from tracking when show() is called).
-                    _orig_show = plt.show
-                    plt.show = lambda *a, **k: None
-                    try:
-                        # Some experiments' display() requires station=
-                        # (e.g. HistogramExperiment for the Histogram fitter).
-                        sig = inspect.signature(experiment.display)
-                        if "station" in sig.parameters:
-                            returned = experiment.display(station=self.station)
-                        else:
-                            returned = experiment.display()
-                    finally:
-                        plt.show = _orig_show
-                    new_fignums = sorted(set(plt.get_fignums()) - fignums_before)
-                    if new_fignums:
-                        captured_fig = [plt.figure(n) for n in new_fignums]
-                    # Now actually render so the cell still shows the plot.
-                    plt.show()
-                except Exception as exc:
-                    print(f"[runner] experiment.display() failed during logging: {exc}")
-            # Prefer display()'s return only if it's a single Figure; otherwise
-            # fall back to the list of new figs we captured (multi-panel case).
-            if returned is not None and hasattr(returned, "savefig"):
-                fig = returned
-            else:
-                fig = captured_fig
-            # Close only the figs this function created (display() outputs), so
-            # creation and cleanup stay colocated.
-            figs_to_close = list(captured_fig) if captured_fig else []
-            if returned is not None and hasattr(returned, "savefig") and returned not in figs_to_close:
-                figs_to_close.append(returned)
+            # Filter display_kwargs to display()'s signature; inject station= if
+            # it accepts it (e.g. HistogramExperiment needs the Histogram fitter).
+            sig = inspect.signature(experiment.display)
+            has_varkw = any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())
+            call_kwargs = (display_kwargs if has_varkw
+                           else {k: v for k, v in display_kwargs.items()
+                                 if k in sig.parameters})
+            if "station" in sig.parameters and "station" not in call_kwargs:
+                call_kwargs["station"] = self.station
+
+            # Snapshot existing figures so we only consider those newly created by
+            # display(); patch plt.show to a no-op so the new fig stays tracked
+            # (Jupyter's inline backend untracks figs when show() is called).
+            fignums_before = set(plt.get_fignums())
+            _orig_show = plt.show
+            plt.show = lambda *a, **k: None
             try:
-                self.station.log_measurement(experiment, fig=fig)
+                returned = experiment.display(**call_kwargs)
             finally:
-                for f in figs_to_close:
-                    try:
-                        plt.close(f)
-                    except Exception:
-                        pass
+                plt.show = _orig_show
+            new_fignums = sorted(set(plt.get_fignums()) - fignums_before)
+            if new_fignums:
+                captured_fig = [plt.figure(n) for n in new_fignums]
         except Exception as exc:
-            print(f"[runner] log_measurement failed: {exc}")
+            print(f"[runner] experiment.display() failed: {exc}")
+
+        # Prefer display()'s return only if it's a single Figure; otherwise fall
+        # back to the list of new figs we captured (multi-panel case).
+        if returned is not None and hasattr(returned, "savefig"):
+            fig = returned
+        else:
+            fig = captured_fig
+
+        figs_to_close = list(captured_fig) if captured_fig else []
+        if returned is not None and hasattr(returned, "savefig") and returned not in figs_to_close:
+            figs_to_close.append(returned)
+        try:
+            if do_log:
+                try:
+                    self.station.log_measurement(experiment, fig=fig)
+                except Exception as exc:
+                    print(f"[runner] log_measurement failed: {exc}")
+            if do_show:
+                plt.show()
+        finally:
+            # Close the figs we created (inline render already happened) so they
+            # don't leak or double-render at cell end.
+            for f in figs_to_close:
+                try:
+                    plt.close(f)
+                except Exception:
+                    pass
 
     def run(
         self,
@@ -316,6 +340,8 @@ class CharacterizationRunner:
         poll_interval: float = 2.0,
         timeout: Optional[float] = None,
         log: Optional[bool] = None,
+        show: Optional[bool] = None,
+        display_kwargs: Optional[dict] = None,
         **kwargs
     ) -> Experiment:
         """
@@ -330,6 +356,10 @@ class CharacterizationRunner:
             priority: Job priority (higher = runs sooner, default 0)
             poll_interval: Seconds between status checks while waiting
             timeout: Maximum seconds to wait (None = wait forever)
+            log: Write to the lab-notebook vault. None -> station.log_measurements.
+            show: Render the plot inline. None -> the runner default (self.show).
+            display_kwargs: Dict forwarded (filtered) to expt.display(), e.g.
+                dict(initial_state=..., rotate=..., state_label=...) for Wigner.
             **kwargs: Passed to preprocessor to modify config
 
         Returns:
@@ -412,9 +442,10 @@ class CharacterizationRunner:
         if postprocess:
             self.postprocessor(self.station, expt)
 
-        # Log to lab-notebook vault (no-op if vault_root unset or log=False)
-        # Queue path: render display() in this process to produce a fig.
-        self._maybe_log_measurement(expt, log=log, render_display=True)
+        # Queue path: the worker ran go(display=False, save=True) — data only.
+        # Render/show/log happen here in the notebook process, where the caller's
+        # display_kwargs (e.g. a qutip initial_state) is available in memory.
+        self._render_log_show(expt, show=show, log=log, display_kwargs=display_kwargs)
 
         return expt
 
@@ -423,6 +454,8 @@ class CharacterizationRunner:
         postprocess: bool = True,
         go_kwargs: Optional[dict] = None,
         log: Optional[bool] = None,
+        show: Optional[bool] = None,
+        display_kwargs: Optional[dict] = None,
         **kwargs,
     ) -> Experiment:
         """
@@ -433,13 +466,19 @@ class CharacterizationRunner:
 
         Args:
             postprocess: Whether to run postprocessor after experiment
-            go_kwargs: Dict passed to expt.go() (analyze, display, progress, save)
+            go_kwargs: Dict passed to expt.go() (analyze, progress, save). NOTE:
+                'display' is ignored — the runner owns plotting now (use show=).
+            log: Write to the lab-notebook vault. None -> station.log_measurements.
+            show: Render the plot inline. None -> the runner default (self.show).
+            display_kwargs: Dict forwarded (filtered) to expt.display() (e.g.
+                initial_state=, rotate=, state_label= for Wigner).
             **kwargs: Passed to preprocessor to modify config
 
         Returns:
             Completed Experiment object
         """
-        go_kwargs = go_kwargs or {}
+        go_kwargs = dict(go_kwargs or {})
+        go_kwargs.pop("display", None)  # runner owns plotting (use show=)
 
         # Create experiment instance
         if self.program is not None:
@@ -478,8 +517,8 @@ class CharacterizationRunner:
         if hasattr(expt.cfg.expt, "relax_delay"):
             expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
 
-        # Run with sensible defaults
-        go_defaults = {"analyze": True, "display": True, "progress": True, "save": True}
+        # Run with sensible defaults (display off: the runner renders, not go()).
+        go_defaults = {"analyze": True, "display": False, "progress": True, "save": True}
         go_defaults.update(go_kwargs)
         expt.go(**go_defaults)
 
@@ -487,10 +526,8 @@ class CharacterizationRunner:
         if postprocess:
             self.postprocessor(self.station, expt)
 
-        # Log to lab-notebook vault (no-op if vault_root unset or log=False).
-        # Local path: go(display=True) already drew the fig, so just capture it.
-        render = not bool(go_defaults.get("display", True))
-        self._maybe_log_measurement(expt, log=log, render_display=render)
+        # Runner owns render/show/log (single path for local and queue).
+        self._render_log_show(expt, show=show, log=log, display_kwargs=display_kwargs)
 
         return expt
 
