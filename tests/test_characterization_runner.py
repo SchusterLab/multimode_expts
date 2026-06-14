@@ -1,35 +1,30 @@
-"""
-Test harness for CharacterizationRunner.
+"""Unit tests for CharacterizationRunner orchestration.
 
-This module provides:
-1. Mock experiment/station objects for unit testing without hardware
-2. Tests for the CharacterizationRunner pattern including preprocessors,
-   postprocessors, and smart use_queue defaults
+What these test: the RUNNER's own logic -- preprocessor config merging,
+postprocessor dispatch, the use_queue default, execute() routing to
+run()/run_local(), and go_kwargs forwarding. They do NOT exercise a real
+Experiment or a real qick program.
 
-Note on Mock Hardware:
-    This test file uses lightweight, self-contained mocks (MockExperiment, MockStation)
-    designed specifically for unit testing without any file system dependencies.
+Test doubles (defined below):
+    MockStation    -- minimal stand-in for MultimodeStation: temp dirs, a fake
+                      hardware_cfg, no real device.yaml and no Pyro proxy.
+    MockExperiment -- a fake Experiment whose acquire() emits *controlled, known*
+                      synthetic data, so the tests can assert on orchestration
+                      outcomes. The runner is parameterized by ExptClass; a unit
+                      test of the runner wants data it controls, not the all-zeros
+                      a mock board returns.
 
-    For integration testing or manual development, use the centralized mock hardware
-    in experiments/mock_hardware.py via MultimodeStation(mock=True). The centralized
-    mocks are more realistic and load actual config files from disk.
+Two different test levels, two different tools (see also the long note in the
+imports section about why this file no longer fakes `qick`):
+    * Test the RUNNER's glue  -> this file, with a lightweight MockExperiment.
+    * Test a real Experiment end-to-end without an FPGA -> instantiate the real
+      class against the mock QICK board in experiments/mock_hardware.py
+      (MultimodeStation(mock=True)). There the real qick library runs unchanged
+      and returns shape-correct ZEROS -- ideal for catching program/acquire
+      bugs, useless for asserting on signal. That is a separate integration
+      test, not a replacement for these.
 
-    Test mocks (this file):
-    - MockStation: Minimal, creates temp directories, no real config files
-    - MockExperiment: Generates synthetic data, no QICK dependencies
-
-    Centralized mocks (experiments/mock_hardware.py):
-    - MockQickConfig, MockQickSoc: Realistic QICK hardware simulation
-    - MockInstrumentManager: Simulates instrument access
-    - MockYokogawa: Mock voltage source
-    - Used by MultimodeStation when mock=True
-
-Usage:
-    # Quick unit test with mock data
-    python -m pytest tests/test_characterization_runner.py -v
-
-    # Or run interactively
-    python tests/test_characterization_runner.py
+Run:  pixi run python -m pytest tests/test_characterization_runner.py -v
 """
 
 import sys
