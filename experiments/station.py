@@ -65,11 +65,54 @@ PIPPIN_HOSTNAME = 'pippin-meas'
 def is_production_pc() -> bool:
     """Whether we're running on the Pippin measurement PC.
 
-    Currently unused — kept for the eventual off-prod-PC support, which will
-    need a separate code path for config loading and won't share the
-    mock-instruments switch with the prod PC.
+    Drives the off-prod-PC mock path: on the prod PC mock mode fetches the
+    soccfg live from the Pyro proxy (and refreshes the committed snapshot);
+    off it, the soccfg is loaded from the committed JSON snapshot instead.
     """
     return socket.gethostname() == PIPPIN_HOSTNAME
+
+
+# Committed snapshot of the FPGA firmware shape (a serialized qick.QickConfig).
+# The prod PC writes it from the live Pyro proxy; off-prod-PC clients (laptops,
+# dev machines) load it to build a fully-functional soccfg with no FPGA and no
+# proxy — accurate unit conversions and real channel shape, unlike a hand-rolled
+# stub. See docs/mock_mode_architecture.md.
+SOCCFG_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "configs" / "soccfg_snapshot.json"
+
+
+def read_soccfg_snapshot() -> QickConfig:
+    """Build a ``QickConfig`` from the committed firmware-shape snapshot.
+
+    This is the off-prod-PC path: no Pyro proxy, no FPGA. Raises a pointed
+    error if the snapshot is missing (it's generated on the prod PC).
+    """
+    if not SOCCFG_SNAPSHOT_PATH.exists():
+        raise FileNotFoundError(
+            f"No soccfg snapshot at {SOCCFG_SNAPSHOT_PATH}. This file is the "
+            f"off-prod-PC fallback for mock mode. Generate it by running a real "
+            f"(non-mock) MultimodeStation on the prod PC ('{PIPPIN_HOSTNAME}') "
+            f"with the QICK proxy reachable, then commit the file."
+        )
+    return QickConfig(cfg=str(SOCCFG_SNAPSHOT_PATH))
+
+
+def write_soccfg_snapshot_if_changed(soccfg: QickConfig) -> bool:
+    """Write ``soccfg`` to the committed snapshot, but only if it differs.
+
+    Called after a successful live soccfg fetch on the prod PC so the snapshot
+    tracks firmware changes automatically. Write-if-changed keeps git clean
+    unless the bitstream actually changed. Returns True iff the file was
+    (re)written.
+    """
+    new_text = soccfg.dump_cfg()
+    try:
+        if json.loads(SOCCFG_SNAPSHOT_PATH.read_text()) == json.loads(new_text):
+            return False
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    SOCCFG_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SOCCFG_SNAPSHOT_PATH.write_text(new_text)
+    return True
 
 # YAML representers for numpy types
 def _np_float_representer(dumper, data):
@@ -362,6 +405,15 @@ class MultimodeStation:
         self.soccfg = QickConfig(self.im[self.hardware_cfg["aliases"]["soc"]].get_cfg())
         self.yoko_coupler = YokogawaGS200(name='yoko_coupler', address='192.168.137.148')
         self.yoko_jpa = YokogawaGS200(name='yoko_jpa', address='192.168.137.149')
+        # Keep the committed soccfg snapshot current so off-prod-PC mock mode
+        # sees this firmware's true shape. Best-effort, write-if-changed: never
+        # fail (or dirty git on) a real run over this.
+        if is_production_pc():
+            try:
+                if write_soccfg_snapshot_if_changed(self.soccfg):
+                    print(f"[STATION] Updated soccfg snapshot: {SOCCFG_SNAPSHOT_PATH}")
+            except Exception as e:
+                print(f"[STATION] WARNING: could not update soccfg snapshot ({e!r})")
 
     def _initialize_output_paths_mock(self):
         """Create output directories for mock mode.
@@ -397,27 +449,47 @@ class MultimodeStation:
     def _initialize_hardware_mock(self):
         """Initialize for mock-only mode.
 
-        Fetches a real QickConfig from the live Pyro proxy (required so the
-        qick library's program-init validators see a complete soccfg). Then
-        installs MockQickSoc + MockYokogawa stubs for instrument access. Does
-        not claim real yokos.
+        Obtains a real QickConfig (required so the qick library's program-init
+        validators see a complete soccfg), then installs MockQickSoc +
+        MockYokogawa stubs. Does not claim real yokos.
+
+        soccfg source: on the prod PC, fetched live from the Pyro proxy (and the
+        committed snapshot refreshed); off it, loaded from the committed JSON
+        snapshot — no FPGA, no proxy, accurate unit conversions and channel
+        shape. See docs/mock_mode_architecture.md.
 
         After this, use_real_instruments() will raise — reconstruct the
         station with mock=False to switch to real mode.
         """
-        try:
-            real_im = InstrumentManager(ns_address="192.168.137.26")
-            qick_alias = self.hardware_cfg["aliases"]["soc"]
-            self.soccfg = QickConfig(real_im[qick_alias].get_cfg())
-        except Exception as e:
-            raise RuntimeError(
-                f"Mock mode requires a reachable QICK Pyro proxy to fetch the "
-                f"real soccfg (got: {e!r}). Off-prod-PC mock mode is not yet "
-                f"supported — see docs/mock_mode_architecture_plan.md."
-            ) from e
-
+        self.soccfg = self._resolve_mock_soccfg()
         self._install_mock_instruments()
         print("[MOCK STATION] Mock hardware initialized (real soccfg + MockQickSoc)")
+
+    def _resolve_mock_soccfg(self) -> QickConfig:
+        """soccfg for mock mode: live proxy on the prod PC, committed snapshot off it.
+
+        Off-prod-PC we skip the proxy entirely (it would only time out). On the
+        prod PC we prefer the live proxy and opportunistically refresh the
+        snapshot, falling back to the snapshot if the proxy is unreachable
+        (e.g. board powered off).
+        """
+        qick_alias = self.hardware_cfg["aliases"]["soc"]
+        if not is_production_pc():
+            print(f"[MOCK STATION] Off-prod-PC: loading soccfg from {SOCCFG_SNAPSHOT_PATH}")
+            return read_soccfg_snapshot()
+        try:
+            real_im = InstrumentManager(ns_address="192.168.137.26")
+            soccfg = QickConfig(real_im[qick_alias].get_cfg())
+        except Exception as e:
+            print(f"[MOCK STATION] Live proxy unreachable ({e!r}); "
+                  f"falling back to committed soccfg snapshot.")
+            return read_soccfg_snapshot()
+        try:
+            if write_soccfg_snapshot_if_changed(soccfg):
+                print(f"[MOCK STATION] Updated soccfg snapshot: {SOCCFG_SNAPSHOT_PATH}")
+        except Exception as e:
+            print(f"[MOCK STATION] WARNING: could not update soccfg snapshot ({e!r})")
+        return soccfg
 
     def _install_mock_instruments(self):
         """Build mock im + yokos and assign to self. Does not touch soc/configs."""

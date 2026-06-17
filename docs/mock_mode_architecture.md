@@ -110,13 +110,36 @@ real lab notebook. Two guards:
 There is no override flag. If you need to test the logging path itself, flip
 out of mock mode briefly with `station.use_real_instruments()`.
 
+## soccfg snapshot (off-prod-PC mock fallback)
+
+The qick library's program-init validators need a complete `soccfg`
+(`QickConfig`) dict describing the loaded firmware. On the prod PC this is
+fetched live from the Pyro proxy. Off the prod PC (laptops, dev machines) there
+is no proxy, so mock mode loads a **committed JSON snapshot** of the firmware
+shape instead — a fully-functional `QickConfig` with accurate unit conversions
+and real channel shape (not a hand-rolled identity stub).
+
+- **File:** `configs/soccfg_snapshot.json`, a serialized `QickConfig`
+  (`soccfg.dump_cfg()` ↔ `QickConfig(cfg=path)`).
+- **Generation / refresh:** automatic. Any successful live soccfg fetch on the
+  prod PC (real init, or prod-PC mock init) calls
+  `write_soccfg_snapshot_if_changed()`, which rewrites the file only when the
+  firmware actually changed — git stays clean otherwise. First-time generation
+  happens the next time a real station runs on the prod PC.
+- **Resolution (`_resolve_mock_soccfg`):**
+  - On the prod PC (`is_production_pc()`): live proxy preferred (and snapshot
+    refreshed); falls back to the snapshot if the proxy is unreachable (board
+    powered off).
+  - Off the prod PC: load the snapshot directly, skipping the proxy entirely
+    (a proxy attempt off-prod would only hang and time out).
+- **Helpers** live in `experiments/station.py`: `SOCCFG_SNAPSHOT_PATH`,
+  `read_soccfg_snapshot()`, `write_soccfg_snapshot_if_changed()`.
+
+This supersedes the `offline_viz.py` / `StubSoccfg` monkeypatch workaround,
+whose identity unit-conversions made absolute pulse timing inaccurate.
+
 ## Constraints and known limitations
 
-- **Mock-init still requires the Pyro proxy** at `192.168.137.26` to fetch a
-  real `QickConfig` (the qick library's program-init validators need a
-  complete soccfg dict). On the prod PC this is always reachable. Off-prod-PC
-  mode would need a separate path (saved JSON snapshot) — flagged as out of
-  scope.
 - **Mock data path is hardcoded** to `C:/experiments/mock_data` in
   `_initialize_output_paths_mock`. Off-prod-PC mode will need its own path
   resolution.
@@ -128,12 +151,13 @@ out of mock mode briefly with `station.use_real_instruments()`.
 
 ## Out of scope / deferred
 
-- **Off-prod-PC support** (Macbooks, dev machines without the config DB or
-  `D:/` paths). The dormant `is_production_pc()` helper in `station.py`
-  exists for the eventual code path; it is not currently called from
-  `__init__`.
-- **Soccfg JSON snapshot in repo.** Not needed on the prod PC; would unlock
-  laptop validation runs.
+- **Soccfg JSON snapshot in repo.** ✅ Done — see "soccfg snapshot" above.
+  `is_production_pc()` now drives `_resolve_mock_soccfg`, so off-prod-PC mock
+  init works with no proxy.
+- **Off-prod-PC config DB / output paths.** The soccfg half of off-prod-PC
+  support is done. Still missing: the config DB (`_initialize_configs` reads
+  the version DB) and the hardcoded `C:/experiments/mock_data` output path
+  assume the prod PC. A laptop run still needs those resolved.
 - **`closed_loop/service.py` compatibility.** The service uses
   `MultimodeStation(mock=True)` as a config-holder; under the new design its
   `data_path` redirects into `mock_data/`. If that breaks the service, it's

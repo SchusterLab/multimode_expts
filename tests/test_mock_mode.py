@@ -195,6 +195,72 @@ def test_swap_methods_preserve_state_per_contract():
     )
 
 
+# ---------- soccfg snapshot (off-prod-PC mock fallback) ----------
+
+def test_snapshot_path_lives_in_configs():
+    import experiments.station as s
+    assert s.SOCCFG_SNAPSHOT_PATH.parent.name == "configs"
+    assert s.SOCCFG_SNAPSHOT_PATH.name == "soccfg_snapshot.json"
+
+
+def test_committed_snapshot_loads_as_working_qickconfig():
+    """The committed snapshot must rebuild a real QickConfig with accurate
+    (non-identity) unit conversions — the whole point over a hand-rolled stub."""
+    import experiments.station as s
+    if not s.SOCCFG_SNAPSHOT_PATH.exists():
+        pytest.skip("no committed soccfg snapshot in this checkout")
+    cfg = s.read_soccfg_snapshot()
+    # cycles2us is a real firmware-dependent conversion, never the identity.
+    assert cfg.cycles2us(100) != 100
+    assert len(cfg.get_cfg()["gens"]) > 0
+
+
+def test_read_snapshot_raises_pointed_error_when_missing(tmp_path, monkeypatch):
+    import experiments.station as s
+    monkeypatch.setattr(s, "SOCCFG_SNAPSHOT_PATH", tmp_path / "nope.json")
+    with pytest.raises(FileNotFoundError, match="prod PC"):
+        s.read_soccfg_snapshot()
+
+
+def test_write_snapshot_if_changed_semantics(tmp_path, monkeypatch):
+    import experiments.station as s
+
+    class FakeCfg:
+        def __init__(self, text):
+            self._text = text
+        def dump_cfg(self):
+            return self._text
+
+    target = tmp_path / "soccfg_snapshot.json"
+    monkeypatch.setattr(s, "SOCCFG_SNAPSHOT_PATH", target)
+
+    # first write creates the file
+    assert s.write_soccfg_snapshot_if_changed(FakeCfg('{"a": 1}')) is True
+    assert target.exists()
+    # identical content (even reformatted) is a no-op
+    assert s.write_soccfg_snapshot_if_changed(FakeCfg('{"a":     1}')) is False
+    # changed content rewrites
+    assert s.write_soccfg_snapshot_if_changed(FakeCfg('{"a": 2}')) is True
+
+
+def test_resolve_mock_soccfg_offprod_uses_snapshot_no_proxy(monkeypatch):
+    """Off-prod-PC, mock soccfg must come from the snapshot without any proxy
+    contact (a proxy attempt off-prod would only hang and time out)."""
+    import experiments.station as s
+    if not s.SOCCFG_SNAPSHOT_PATH.exists():
+        pytest.skip("no committed soccfg snapshot in this checkout")
+    monkeypatch.setattr(s, "is_production_pc", lambda: False)
+    # Detonate if anything tries to reach the proxy.
+    def _boom(*a, **k):
+        raise AssertionError("off-prod path must not construct InstrumentManager")
+    monkeypatch.setattr(s, "InstrumentManager", _boom)
+
+    inst = s.MultimodeStation.__new__(s.MultimodeStation)
+    inst.hardware_cfg = {"aliases": {"soc": "Qick101"}}
+    cfg = inst._resolve_mock_soccfg()
+    assert cfg.cycles2us(100) != 100
+
+
 # ---------- Runner mock-mode gating ----------
 
 def test_sweep_runner_execute_gates_on_is_mock():
