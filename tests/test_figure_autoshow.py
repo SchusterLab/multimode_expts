@@ -1,6 +1,6 @@
-"""Verify the visdom_autoshow post_run_cell hook reproduces the inline backend's
+"""Verify the figure_autoshow post_run_cell hook reproduces the inline backend's
 'flush figures at cell end' behavior under the Agg backend, for the three display
-patterns that appear in real measurement notebooks. Uses a ListSink so no visdom
+patterns that appear in real measurement notebooks. Uses a ListSink so no sink
 server is required.
 """
 import importlib.util
@@ -12,10 +12,10 @@ import pytest
 
 matplotlib.use("Agg")  # the overnight-safe target backend
 
-_MOD_PATH = Path(__file__).resolve().parents[1] / "measurement_notebooks" / "visdom_autoshow.py"
-_spec = importlib.util.spec_from_file_location("visdom_autoshow", _MOD_PATH)
-visdom_autoshow = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(visdom_autoshow)
+_MOD_PATH = Path(__file__).resolve().parents[1] / "measurement_notebooks" / "figure_autoshow.py"
+_spec = importlib.util.spec_from_file_location("figure_autoshow", _MOD_PATH)
+figure_autoshow = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(figure_autoshow)
 
 
 @pytest.fixture
@@ -29,8 +29,8 @@ def shell():
 
 
 def test_ad_hoc_pcolormesh_is_captured(shell):
-    sink = visdom_autoshow.ListSink()
-    hook = visdom_autoshow.enable(sink=sink, ip=shell)
+    sink = figure_autoshow.ListSink()
+    hook = figure_autoshow.enable(sink=sink, ip=shell)
     try:
         # Pattern: ad hoc pcolormesh of an in-memory array, NO show(), NO display().
         res = shell.run_cell(
@@ -50,8 +50,8 @@ def test_ad_hoc_pcolormesh_is_captured(shell):
 
 
 def test_bare_subplots_cell_no_show(shell):
-    sink = visdom_autoshow.ListSink()
-    hook = visdom_autoshow.enable(sink=sink, ip=shell)
+    sink = figure_autoshow.ListSink()
+    hook = figure_autoshow.enable(sink=sink, ip=shell)
     try:
         # Pattern from single_qubit_autocalibrate_v2.py:390-399 -- subplots,
         # plot, tight_layout, no show().
@@ -68,8 +68,8 @@ def test_bare_subplots_cell_no_show(shell):
 
 
 def test_display_method_style(shell):
-    sink = visdom_autoshow.ListSink()
-    hook = visdom_autoshow.enable(sink=sink, ip=shell)
+    sink = figure_autoshow.ListSink()
+    hook = figure_autoshow.enable(sink=sink, ip=shell)
     try:
         # Pattern: experiment.display() -- builds a fig and calls plt.show(),
         # which under Agg is an inert no-op. Hook still flushes the open fig.
@@ -88,8 +88,8 @@ def test_display_method_style(shell):
 
 
 def test_multiple_figures_one_cell(shell):
-    sink = visdom_autoshow.ListSink()
-    hook = visdom_autoshow.enable(sink=sink, ip=shell)
+    sink = figure_autoshow.ListSink()
+    hook = figure_autoshow.enable(sink=sink, ip=shell)
     try:
         res = shell.run_cell(
             "import matplotlib.pyplot as plt\n"
@@ -105,8 +105,8 @@ def test_multiple_figures_one_cell(shell):
 def test_preexisting_figure_not_flushed_when_only_new(shell):
     # A long-lived live-monitor window opened BEFORE enable() must be left alone.
     shell.run_cell("import matplotlib.pyplot as plt; plt.figure(); plt.plot([0, 1])")
-    sink = visdom_autoshow.ListSink()
-    hook = visdom_autoshow.enable(sink=sink, ip=shell, only_new=True)
+    sink = figure_autoshow.ListSink()
+    hook = figure_autoshow.enable(sink=sink, ip=shell, only_new=True)
     try:
         res = shell.run_cell("import matplotlib.pyplot as plt; plt.figure(); plt.plot([1, 0])")
         assert res.success
@@ -127,7 +127,7 @@ def test_http_sink_serves_png_round_trip():
     def get(url):
         return urllib.request.urlopen(url, timeout=5).read()
 
-    sink = visdom_autoshow.HttpImageSink(port=0, host="127.0.0.1")  # ephemeral port
+    sink = figure_autoshow.HttpImageSink(port=0, host="127.0.0.1")  # ephemeral port
     try:
         base = f"http://127.0.0.1:{sink.port}"
 
@@ -216,7 +216,7 @@ def _run_in_fresh_kernel(conn_name, code):
 _GATE_PROBE = (
     "import sys\n"
     f"sys.path.insert(0, r'{_MOD_PATH.parent}')\n"
-    "import visdom_autoshow as v\n"
+    "import figure_autoshow as v\n"
     "print('ISTARGET=', v.is_target_kernel('guan-meas'))\n"
     "h = v.enable_if_target('guan-meas', set_backend=True, sink=v.ListSink())\n"
     "print('ENABLED=', h is not None)\n"

@@ -1,7 +1,8 @@
-"""visdom_autoshow.py -- prototype.
+"""figure_autoshow.py
 
 Reproduce the IPython *inline backend's* "flush figures at end of cell" behavior,
-but ship the figures off-terminal to a sink (visdom) instead of rendering inline.
+but ship the figures off-terminal to a pluggable sink (a local HTTP server by
+default) instead of rendering inline.
 
 Why this exists
 ---------------
@@ -19,14 +20,15 @@ Opt-in on a SHARED machine/account/CWD/env
 git is not the isolation boundary here (everyone runs kernels from the same dir
 in the same pixi env on the same Windows account). The boundary is *which kernel
 this is*: :func:`enable_if_target` self-gates on the connection-file name, so a
-committed startup snippet -- ``visdom_autoshow.enable_if_target("guan-meas")`` --
+committed startup snippet -- ``figure_autoshow.enable_if_target("guan-meas")`` --
 can live in the shared IPython profile and stay completely inert for every other
 kernel (VSCode / JupyterLab / teammates' kernelspecs). Only the kernel launched
 with ``-f ~/.molten/kernels/guan-meas.json`` activates the hook + Agg backend.
 
-The sink is pluggable. Default is :class:`HttpImageSink` (stdlib only -- visdom
-no longer builds against modern setuptools). :class:`ListSink` lets the capture
-mechanism be tested with no server at all.
+The sink is pluggable. Default is :class:`HttpImageSink` (stdlib only, no extra
+deps). :class:`VisdomSink` ships to a visdom dashboard instead (visdom installs
+via conda, not pip). :class:`ListSink` lets the capture mechanism be tested with
+no server at all.
 """
 from __future__ import annotations
 
@@ -224,18 +226,18 @@ def _make_hook(sink: Sink, only_new: bool):
             try:
                 sink.send(fig, title=f"fig {num}")
             except Exception as exc:  # never let display kill a measurement cell
-                print(f"[visdom_autoshow] send failed for fig {num}: {exc}")
+                print(f"[figure_autoshow] send failed for fig {num}: {exc}")
             finally:
                 plt.close(fig)
 
     return _flush
 
 
-def enable(sink: Sink | None = None, *, ip=None, only_new: bool = True, **visdom_kwargs):
+def enable(sink: Sink | None = None, *, ip=None, only_new: bool = True, **sink_kwargs):
     """Register the post-cell flush hook on the current IPython shell.
 
     Returns the hook callable (so it can be unregistered in tests). ``sink``
-    defaults to a :class:`VisdomSink` built from ``**visdom_kwargs``.
+    defaults to a :class:`HttpImageSink` built from ``**sink_kwargs``.
     """
     if ip is None:
         from IPython import get_ipython
@@ -244,7 +246,7 @@ def enable(sink: Sink | None = None, *, ip=None, only_new: bool = True, **visdom
     if ip is None:
         raise RuntimeError("enable() needs an IPython shell (run inside a kernel)")
     if sink is None:
-        sink = HttpImageSink(**visdom_kwargs)
+        sink = HttpImageSink(**sink_kwargs)
     hook = _make_hook(sink, only_new=only_new)
     ip.events.register("post_run_cell", hook)
     return hook
