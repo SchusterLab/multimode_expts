@@ -54,6 +54,7 @@ jupyterlab-git = ">=0.51.4,<0.52"
 jupyter-lsp = ">=2.3.0,<3"
 ipympl = ">=0.10.0,<0.11"
 jupyterlab-lsp = ">=5.3.0,<6"
+jupytext = ">=1.19.3,<2"
 
 [tool.pixi.pypi-dependencies]
 qick = { path = "../qick", editable = true }
