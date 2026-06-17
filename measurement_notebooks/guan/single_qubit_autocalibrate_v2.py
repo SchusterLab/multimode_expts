@@ -23,10 +23,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm.notebook import tqdm
 from copy import deepcopy
+import yaml
 
 import experiments as meas
 from slab import AttrDict
 from experiments import MultimodeStation, CharacterizationRunner, SweepRunner
+from experiments.branch_manager import BranchManager
 
 from job_server import JobClient
 from job_server.database import get_database
@@ -68,19 +70,18 @@ station = MultimodeStation(
 # ## Config branches
 
 # %%
-from experiments.branch_manager import BranchManager
 bm = BranchManager(station)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 bm.list()
 
 # %%
 bm.commit('coupler0.5', note='found f0g1')
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 bm.branch('coupler0.5', note='branching off from 0.3')
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 bm.checkout('coupler0.05', force=True)
 
 # %% [markdown]
@@ -90,7 +91,6 @@ bm.checkout('coupler0.05', force=True)
 # ### Readout 
 
 # %%
-import yaml
 with open(station.config_dir / 'versions/hardware_config/CFG-HW-20260527-00047.yml') as f:
     rocfg = AttrDict(yaml.safe_load(f))
 rocfg.device.readout
@@ -109,10 +109,10 @@ station.hardware_cfg.hw.yoko_coupler.current = 0.5e-3
 
 station.snapshot_hardware_config()
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 station.yoko_coupler.ramp_current(0, 2e-4)
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ## Experiments to run
 #
 # Depending on stage of cooldown, we will run a different sequence of calibration experiments. For example, amplitude rabi don't need to be updated every time, but the frequency correction from T2 is important to do every day. In the dictionary experiments to run, we will speciy the experiments we want to run. 
@@ -153,7 +153,7 @@ expts_to_run = {# readout
 # %% [markdown]
 # # Qubit characterization
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # ## Resonator spectroscopy
 
 # %% [markdown]
@@ -2020,7 +2020,7 @@ spec.display()
 # sideband_spec_defaults/preproc/postproc/runner above.
 # Notable difference vs storage: much wider bw (200 MHz) needed.
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %% 
 station.ds_storage.df
 
 # %%
@@ -2136,10 +2136,10 @@ sideband_chevron_runner = SweepRunner(
     job_client=client,
 )
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 station.ds_storage.update_gain('M1-S2', 8000)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 
 # %%
 for stor_i in [2]: # range(1,8):
@@ -2172,13 +2172,13 @@ station.ds_storage.update_pi('M1-S1', 1)
 # %%
 station.snapshot_man1_storage_swap(update_main=False)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 station.ds_storage.df
 
-# %% [markdown] jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %% [markdown]
 # ### Coupler
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 stor_name = f'M1-C'
 
 freq_span = 12 # MHz
@@ -2201,9 +2201,9 @@ chevron_analysis = sideband_chevron_runner.execute(
     relax_delay=2500,
 )
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 
 # %% [markdown]
 # ## Length Rabi
@@ -2580,7 +2580,7 @@ def do_f0g1_versus_flux_spectroscopy(
     exp.go(analyze=False, display=True, progress=progress, save=save)
     return exp
 
-# %% editable=true slideshow={"slide_type": ""}
+# %%
 # Call example: run the 2D f0g1 vs flux experiment
 
 f_start = 1970
@@ -2790,7 +2790,7 @@ cool_spec_runner = CharacterizationRunner(
 def calibrate_f0g1(coupler_current):
     branch_name = f'f0g1cal_coupler{coupler_current*1e3:.2f}'
     bm.branch(branch_name)
-    
+
     # f0g1 spectroscopy
     man_spec = f0g1spec_runner.execute(
         man_mode_no=1,
@@ -2801,7 +2801,7 @@ def calibrate_f0g1(coupler_current):
         relax_delay=1500,
         reps=50,
     )
-    
+
     # coarse chevron
     f0g1_chevron_coarse = runner.execute(
         sweep_start=station.ds_storage.get_freq('M1') - 3,
@@ -2822,14 +2822,14 @@ def calibrate_f0g1(coupler_current):
         # coupler_current=coupler_current,
         batch=True
     )
-    
+
     # freq erramp
     error_amp_exp = error_amp_runner.execute(
         start=station.hardware_cfg.device.multiphoton.pi['fn-gn+1'].frequency[0]-0.5,
         go_kwargs = dict(analyze=False, display=False),
         postprocess=True  # This will call postprocessor which does the custom analysis
     )
-    
+
     # length rabi
     len_rabis_man = lenrabi_f0g1_runner.execute(
         man_mode_no=1,
@@ -2845,14 +2845,14 @@ def calibrate_f0g1(coupler_current):
 
 
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 all_expt_objs = []
 for coupler_current in np.linspace(-0.1e-3,0.2e-3,31):
     station.hardware_cfg.hw.yoko_coupler.current = coupler_current
     expt_objs = calibrate_f0g1(coupler_current)
     all_expt_objs.append(expt_objs)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 all_specs = {}
 
 for charge_gain in [0,8000,15000]:
@@ -2882,12 +2882,11 @@ for charge_gain in [0,8000,15000]:
         
         all_specs[f'charge{charge_gain}flux{cooling_gain}'] = {'fnames': fnames, 'avgi': avgis}
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
 
-# %% [markdown] jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %% [markdown]
 # ## Run
 
-# %% [markdown] jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %% [markdown]
 # Cooling requires
 #
 # $$
@@ -2908,7 +2907,7 @@ for charge_gain in [0,8000,15000]:
 #
 # Another nice property is this requires a two-photon state to be prepared and both photons to go away so we can throw out DUST more easily
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 cool_spec = cool_spec_runner.execute(
     cooling_gain = 8000,
     charge_gain = 0,
@@ -2926,7 +2925,7 @@ cool_spec = cool_spec_runner.execute(
     relax_delay = 2500,
 )
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 cool_spec = cool_spec_runner.execute(
     cooling_gain = 8000,
     charge_gain = 0,
@@ -2944,7 +2943,7 @@ cool_spec = cool_spec_runner.execute(
     relax_delay = 2500,
 )
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 cool_specs = []
 for ro_stor in [0,1,2]:
     cool_spec = cool_spec_runner.execute(
@@ -2965,7 +2964,7 @@ for ro_stor in [0,1,2]:
     )
     cool_specs.append(cool_spec)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 cool_specs = []
 for ro_stor in [0,1,2]:
     cool_spec = cool_spec_runner.execute(
@@ -2986,7 +2985,7 @@ for ro_stor in [0,1,2]:
     )
     cool_specs.append(cool_spec)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 cool_specs = []
 for ro_stor in [0,1,2]:
     cool_spec = cool_spec_runner.execute(
@@ -3007,15 +3006,12 @@ for ro_stor in [0,1,2]:
     )
     cool_specs.append(cool_spec)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
 
-# %% [markdown] jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %% [markdown]
 # ## Plotting
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-plt.close('all')
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 f0g1_specs = [eo[0] for eo in all_expt_objs]
 f0g1_avgis = np.array([fs.data['avgi'] for fs in f0g1_specs])
 
@@ -3025,23 +3021,17 @@ plt.colorbar(label='avgi')
 plt.xlabel('f0g1 (MHz)')
 plt.ylabel('Coupler current (mA)')
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 coupler_currents = np.linspace(-0.1e-3,0.2e-3,31)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 plt.figure(figsize=(12,4))
 plt.pcolormesh(cool_specs[0].data['xpts'], coupler_currents*1e3, avgis)
 plt.colorbar(label='avgi')
 plt.xlabel('Coupler drive (MHz)')
 plt.ylabel('Coupler current (mA)')
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 avgis = np.array([cs.data['avgi'] for cs in cool_specs])
 
 plt.figure(figsize=(8,4))
@@ -3051,13 +3041,8 @@ plt.xlabel('Coupler drive (MHz)')
 plt.ylabel('Coupler current (mA)')
 plt.xlim([2550, 2600])
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
 for key, result in all_specs.items():
     fnames = result['fnames']
     avgis = result['avgi']
@@ -3068,16 +3053,11 @@ for key, result in all_specs.items():
     plt.ylabel('Coupler current (mA)')
     plt.title(key)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
+# %%
 coupler_current = 0.02e-3
 branch_name = f'f0g1cal_coupler{coupler_current*1e3:.2f}'
 bm.checkout(branch_name, force=True)
 
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
 
 # %%
 for coupler_current in [0]:
@@ -3141,167 +3121,4 @@ for cooling_gain in [5000]:
             )
 
 
-# %%
 
-# %% [markdown]
-# # JPA Calibration
-
-# %%
-def do_jpa_current_sweep( config_thisrun,
-    expt_path,
-    config_path,
-    jpa_current_start=-8,
-    jpa_current_step=0.1,
-    jpa_current_stop = -2,
-    qubits=[0],
-    reps=5000,
-    check_f=False,
-    active_reset=False,
-    man_reset=False,
-    storage_reset=False,
-    qubit=0,
-    pulse_manipulate=False,
-    cavity_freq=4984.373226159381,
-    cavity_gain=800,
-    cavity_length=2,
-    prepulse=False,
-    pre_sweep_pulse=None,
-    gate_based=True,
-    relax_delay=2500
-):
-    """Run the single shot experiment with configurable parameters."""
-    from multimode_expts.sequential_experiment_classes import histogram_sweep_class
-    experiment_class = histogram_sweep_class
-    sweep_experiment_name = 'histogram_jpa_current_sweep'
-    class_for_exp = experiment_class(soccfg=soc, path=expt_path, prefix=sweep_experiment_name, config_file=config_path, exp_param_file=exp_param_file)
-
-    class_for_exp.yaml_cfg = AttrDict(deepcopy(config_thisrun))
-    
-    class_for_exp.loaded[sweep_experiment_name] =  {
-        'qubits': qubits,
-        'reps': reps,
-        'check_f': check_f,
-        'active_reset': active_reset,
-        'man_reset': man_reset,
-        'storage_reset': storage_reset,
-        'qubit': qubit,
-        'pulse_manipulate': pulse_manipulate,
-        'cavity_freq': cavity_freq,
-        'cavity_gain': cavity_gain,
-        'cavity_length': cavity_length,
-        'prepulse': prepulse,
-        'pre_sweep_pulse': pre_sweep_pulse,
-        'gate_based': gate_based,
-        'jpa_current_start': jpa_current_start,
-        'jpa_current_step': jpa_current_step,
-        'jpa_current_stop': jpa_current_stop,
-        'relax_delay': relax_delay
-    }
-
-   
-    class_for_exp.yaml_cfg.device.readout.relax_delay = [relax_delay]  # Wait time between experiments [us]
-
-    return eval('class_for_exp.run_sweep')( sweep_experiment_name = sweep_experiment_name)
-
-# %%
-do_jpa_current_sweep(config_thisrun, expt_path,
-                                   config_path, reps=1000,
-                                   jpa_current_start=-5.0,
-                                   jpa_current_stop=-4.0,
-                                   jpa_current_step=0.05,
-                                    #  jpa_current_start=0., jpa_current_step=0.2,
-                                    #    jpa_current_stop=10., 
-                                      #  active_reset=True,
-                                         relax_delay=5)
-
-# %%
-from slab.instruments import YokogawaGS200
-dcflux = YokogawaGS200(address="192.168.137.149")
-dcflux.set_output(True)
-dcflux.set_mode('current')
-
-jpa_current = -1.875 # mA
-jpa_current = 0 # mA
-current = jpa_current * 1e-3  # Convert from mA to A
-dcflux.set_current(current)
-
-print(1e3 * dcflux.get_current(), 'mA')
-
-
-# %% [markdown]
-# #### Sweep both gain and current
-
-# %%
-def do_jpa_current_gain_sweep( config_thisrun,
-    expt_path,
-    config_path,
-    jpa_current_start=3.7,
-    jpa_current_step=0.005,
-    jpa_current_stop = 3.8,
-    jpa_gain_start=-15,
-    jpa_gain_step=0.5,
-    jpa_gain_stop = -11,
-    qubits=[0],
-    reps=1000,
-    check_f=False,
-    active_reset=False,
-    man_reset=False,
-    storage_reset=False,
-    qubit=0,
-    pulse_manipulate=False,
-    cavity_freq=4984.373226159381,
-    cavity_gain=800,
-    cavity_length=2,
-    prepulse=False,
-    pre_sweep_pulse=None,
-    gate_based=True,
-    relax_delay=2500
-):
-    """Run the single shot experiment with configurable parameters."""
-    from multimode_expts.sequential_experiment_classes import histogram_sweep_class
-    experiment_class = histogram_sweep_class
-    sweep_experiment_name = 'histogram_jpa_gain_current_sweep'
-    class_for_exp = experiment_class(soccfg=soc, path=expt_path, prefix=sweep_experiment_name, config_file=config_path, exp_param_file=exp_param_file)
-
-    class_for_exp.yaml_cfg = AttrDict(deepcopy(config_thisrun))
-    
-    class_for_exp.loaded[sweep_experiment_name] =  {
-        'qubits': qubits,
-        'reps': reps,
-        'check_f': check_f,
-        'active_reset': active_reset,
-        'man_reset': man_reset,
-        'storage_reset': storage_reset,
-        'qubit': qubit,
-        'pulse_manipulate': pulse_manipulate,
-        'cavity_freq': cavity_freq,
-        'cavity_gain': cavity_gain,
-        'cavity_length': cavity_length,
-        'prepulse': prepulse,
-        'pre_sweep_pulse': pre_sweep_pulse,
-        'gate_based': gate_based,
-        'jpa_current_start': jpa_current_start,
-        'jpa_current_step': jpa_current_step,
-        'jpa_current_stop': jpa_current_stop,
-        'jpa_gain_start': jpa_gain_start,
-        'jpa_gain_step': jpa_gain_step,
-        'jpa_gain_stop': jpa_gain_stop,
-    }
-
-    print('relax delay set to:', relax_delay)
-    class_for_exp.yaml_cfg.device.readout.relax_delay = [relax_delay]  # Wait time between experiments [us]
-
-    return eval('class_for_exp.run_sweep')( sweep_experiment_name = sweep_experiment_name)
-
-
-# %%
-sweep_func = do_jpa_current_gain_sweep(config_thisrun, expt_path,
-                                        config_path, reps=1000, 
-                                        jpa_current_start=-5.5,
-                                        jpa_current_step=-0.1,
-                                        jpa_current_stop=-4.5,
-                                        jpa_gain_start=-15,
-                                        jpa_gain_step=0.5,
-                                        jpa_gain_stop=-5,
-                                        # active_reset=True, relax_delay=5
-                                        )
