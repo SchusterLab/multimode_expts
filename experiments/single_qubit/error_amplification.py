@@ -112,7 +112,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # Prepulse list
         if cfg.expt.pulse_type[0] == 'qubit':
-            if self.pulse_to_test[1] == 'ef':
+            if cfg.expt.pulse_type[1] == 'ef':
                 self.pre_creator = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]])
                 self.pre_pulse_list = self.pre_creator.pulse.tolist()
             else:
@@ -153,7 +153,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # Post-pulse list
         if cfg.expt.pulse_type[0] == 'qubit':
-            if self.pulse_to_test[1] == 'ef':
+            if cfg.expt.pulse_type[1] == 'ef':
                 self.post_pulse_list = self.pre_creator.pulse.tolist()
             else:
                 self.post_pulse_list = None
