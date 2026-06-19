@@ -30,10 +30,11 @@ name. Concretely:
 
 - You always launch your kernel with a fixed connection file, e.g.
   `~/.molten/kernels/guan-meas.json`.
-- A **committed, shared** IPython startup file checks the connection-file name and
-  does nothing unless it matches your marker. Teammates' kernels (VSCode,
-  JupyterLab, their registered kernelspecs like `multimode_direct`) never match,
-  so the startup file is inert for them — no backend change, no import, nothing.
+- One or more **gated** IPython startup files (figure autoshow, module autoreload)
+  check the connection-file name and do nothing unless it matches your marker.
+  Teammates' kernels (VSCode, JupyterLab, their registered kernelspecs like
+  `multimode_direct`) never match, so the startup files are inert for them — no
+  backend change, no import, nothing.
 
 This is verified in `tests/test_figure_autoshow.py` (real kernels launched with
 matching / non-matching connection files).
@@ -78,6 +79,33 @@ To see a runner figure, **call `.display()` yourself** in the cell, e.g. uncomme
 `man_spec.display()`. Under Agg this is the single render path (the runner's
 internal `plt.show()` is a no-op), so there is no double-render — the reason that
 line was originally commented out no longer applies.
+
+### Module autoreload
+
+Edits to editable-installed modules (`experiments/`, `fitting/`, `slab/`,
+`job_server/`) take effect live in the running kernel via IPython's
+`%autoreload 2`. As with autoshow, this is armed by a **gated** startup file —
+`~/.ipython/profile_default/startup/00-autoreload.py` — that runs
+`%load_ext autoreload; %autoreload 2` only when the connection-file name matches
+your marker. A freshly launched `guan-meas` kernel reloads on edit with no
+per-session step.
+
+**Why a startup file and not the usual top-of-notebook magic:** the `.py` cells
+are jupytext `percent` format, and jupytext comments magics out on disk
+(`# %autoreload 2`). JupyterLab *uncomments* them when it materializes the
+`.ipynb`, so the magic ran there — but molten sends cell text **verbatim**, so it
+transmits the comment and autoreload is never armed. (This is the subtle trap:
+the same repo "worked" under Jupyter and silently didn't under molten.) The
+startup file sidesteps this entirely, and avoids the linter flagging
+invalid-Python magics in a cell. **Don't** uncomment the in-cell magics —
+jupytext will re-comment them on the next sync and the linter will complain;
+leave them commented as self-documentation.
+
+To confirm a live kernel is armed, check that
+`get_ipython().events.callbacks["pre_run_cell"]` contains an `AutoreloadMagics`
+entry. `%autoreload 2` reloads edited function/method bodies reliably but can't
+always reconcile changed class hierarchies, deleted names, or dataclass/enum
+redefinitions — restart the kernel for a clean slate after a big refactor.
 
 ## How it works
 
@@ -135,6 +163,12 @@ decides *where* the figure goes; the hook is sink-agnostic.
    `VisdomSink` (then also launch `pixi run python -m visdom.server`).
 
 4. **View** at `http://localhost:<port>` (RDP) or via `ssh -L <port>:localhost:<port>`.
+
+5. **Arm autoreload** — add a second gated startup file
+   `~/.ipython/profile_default/startup/00-autoreload.py` behind the same
+   connection-file gate that runs `%load_ext autoreload; %autoreload 2`. Without
+   it, module edits won't hot-reload under molten (jupytext comments out the
+   in-cell magic — see *Module autoreload* above).
 
 Implementation + tests: `measurement_notebooks/figure_autoshow.py`,
 `tests/test_figure_autoshow.py`.
