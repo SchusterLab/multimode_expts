@@ -221,7 +221,8 @@ class HistogramExperiment(Experiment):
         return data
 
     def display(
-        self, station=None, data=None, span=None, verbose=True, plot_e=True, plot_f=False, **kwargs
+        self, station=None, data=None, span=None, verbose=True, plot_e=True, plot_f=False,
+        save_fig=False, title_str='SingleShotHistogram', subdir=None, **kwargs
     ):
         if data is None:
             data = self.data
@@ -236,7 +237,9 @@ class HistogramExperiment(Experiment):
             data=data, span=span, verbose=verbose, config=self.cfg, station=station,
             readout_per_round=read_num,
         )
-        hist_fitter.analyze(plot=True)
+        # save_fig defaults to False: a bare ss.display() just shows the plot.
+        # Saving is opt-in and needs a station (passed by the runner, or here).
+        hist_fitter.analyze(plot=True, save_fig=save_fig, title_str=title_str, subdir=subdir)
 
         fids = hist_fitter.results["fids"]
         thresholds = hist_fitter.results["thresholds"]

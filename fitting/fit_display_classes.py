@@ -576,7 +576,7 @@ class RamseyFitting(GeneralFitting):
         print(f'T2 Ramsey from fit {label_axis} [us]: {p[3]}  '
               f'(envelope={envelope})')
 
-    def display(self, data=None, fit=True, f_test= None, title_str = 'Ramsey', **kwargs):
+    def display(self, data=None, fit=True, f_test=None, save_fig=False, title_str='Ramsey', **kwargs):
         if data is None:
             data = self.data
 
@@ -625,8 +625,10 @@ class RamseyFitting(GeneralFitting):
         plt.tight_layout()
         plt.show()
 
-        #make filename same as titlestr - only save if station is available
-        if self.station is not None:
+        # Save only when explicitly requested (save_fig=True), matching
+        # Histogram/AmplitudeRabiFitting/CavityRamseyGainSweepFitting. save_plot
+        # raises a clear error if save_fig=True but no station was provided.
+        if save_fig:
             filename = title_str.replace(' ', '_').replace(':', '') + '.png'
             self.save_plot(fig, filename=filename)
 
@@ -1191,7 +1193,7 @@ class Histogram(GeneralFitting):
         self.active_reset = self.cfg.expt.active_reset 
         self.results = {}
 
-    def analyze(self, plot=True, subdir = None):
+    def analyze(self, plot=True, subdir=None, save_fig=False, title_str='SingleShotHistogram'):
         # Check if pre_selection is enabled (not just active_reset). Enable whenever
         # there is ANY pre-selection herald lane (bare g-herald and/or parity
         # herald), per lane_layout -- not just when pre_selection_reset is set.
@@ -1403,8 +1405,14 @@ class Histogram(GeneralFitting):
 
             plt.subplots_adjust(hspace=0.25, wspace=0.15)
             plt.show()
-            # save into a file ;
-            self.save_plot(fig, filename="histogram.png", subdir=subdir)
+            # Only save when explicitly asked (save_fig=True), matching
+            # AmplitudeRabiFitting/CavityRamseyGainSweepFitting. The runner's
+            # automatic logging (station.log_measurement) already persists the
+            # figure to the vault, so a bare display() shouldn't also write a
+            # hardcoded file -- and needn't have a station at all.
+            if save_fig:
+                filename = title_str.replace(' ', '_').replace(':', '') + '.png'
+                self.save_plot(fig, filename=filename, subdir=subdir)
             
 
             
