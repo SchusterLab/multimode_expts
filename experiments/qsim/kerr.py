@@ -291,7 +291,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
             ]
         elif kerr_drive_type == 'man-qubit':
             kerr_pulse = [
-                [self.cfg.device.storage._ds_storage.get_freq('M1') + ecfg.kerr_detune],
+                [self.cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] + ecfg.kerr_detune],
                 [ecfg.kerr_gain],
                 [ecfg.kerr_length],
                 [0], # phase
