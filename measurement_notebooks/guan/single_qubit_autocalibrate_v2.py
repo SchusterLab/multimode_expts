@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -19,6 +20,8 @@
 # %load_ext autoreload
 # %autoreload 2
 
+
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm.notebook import tqdm
@@ -57,7 +60,7 @@ print(f"Welcome {user}!")
 # Initialize station to retrieve soc and configs
 station = MultimodeStation(
     user = user,
-    experiment_name = "260522_qsim",
+    experiment_name = "260618_qsim",
 
     hardware_config="CFG-HW-20260528-00032",
     storage_man_file="CFG-M1-20260528-00055",
@@ -72,17 +75,19 @@ station = MultimodeStation(
 # %%
 bm = BranchManager(station)
 
+
+
 # %%
 bm.list()
 
 # %%
-bm.commit('coupler0.5', note='found f0g1')
+bm.commit('coupler0.05', note='qubit and rough f0g1 search')
 
 # %%
 bm.branch('coupler0.5', note='branching off from 0.3')
 
 # %%
-bm.checkout('coupler0.05', force=True)
+bm.checkout('coupler0.05', force=False)
 
 # %% [markdown]
 # ## Manually update entries
@@ -112,7 +117,7 @@ station.snapshot_hardware_config()
 # %%
 station.yoko_coupler.ramp_current(0, 2e-4)
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## Experiments to run
 #
 # Depending on stage of cooldown, we will run a different sequence of calibration experiments. For example, amplitude rabi don't need to be updated every time, but the frequency correction from T2 is important to do every day. In the dictionary experiments to run, we will speciy the experiments we want to run. 
@@ -153,7 +158,7 @@ expts_to_run = {# readout
 # %% [markdown]
 # # Qubit characterization
 
-# %% [markdown]
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## Resonator spectroscopy
 
 # %% [markdown]
@@ -222,7 +227,7 @@ if expts_to_run['res_spec']:
 # %%
 # Define defaults, smart config preprocessing and post-measurement updates
 # =====================================
-singleshot_defaults = AttrDict(dict(    
+singleshot_defaults = AttrDict(dict(
     reps=5000,
     relax_delay=500,
     check_f=False,
@@ -284,6 +289,8 @@ ss = ss_runner.execute(
     # priority=1,
 )
 
+ss.display()
+
 # %%
 station.preview_config_update()
 
@@ -328,7 +335,7 @@ def gespec_preproc(station, default_expt_cfg, **kwargs):
 
     expt_cfg.start = center - span / 2
     expt_cfg.step = span / expts
-    
+
     expt_cfg.update(kwargs)
     return expt_cfg
 
@@ -347,11 +354,14 @@ gespec_runner = CharacterizationRunner(
     ExptClass = meas.PulseProbeSpectroscopyExperiment,
     default_expt_cfg = gespec_defaults,
     preprocessor = gespec_preproc,
-    # postprocessor = gespec_postproc,
+    postprocessor = gespec_postproc,
     job_client=client,
 )
 
 gespec = gespec_runner.execute(
+    gain = 100,
+    span=20,
+    relax_delay = 250,
     # coupler_current=coupler_current,
 )
 gespec.display()
@@ -406,7 +416,6 @@ plt.tight_layout()
 # %%
 # Define defaults, smart config preprocessing and post-measurement updates
 # =====================================
-from sqlalchemy import false
 
 
 geramsey_defaults = AttrDict(dict(
@@ -457,7 +466,7 @@ def geramsey_preproc(station, default_expt_cfg, **kwargs):
 
     expt_cfg.prepulse = False if expt_cfg.pre_sweep_pulse is None else True if expt_cfg.prepulse is None else expt_cfg.prepulse,
     expt_cfg.postpulse = False if expt_cfg.post_sweep_pulse is None else True if expt_cfg.postpulse is None else expt_cfg.postpulse,
-    
+
     return expt_cfg
 
 def geramsey_postproc(station, expt):
@@ -490,7 +499,7 @@ geramsey = geramsey_runner.execute(
     if_ef=False,
     # coupler_current=coupler_current,
 )
-# geramsey.display()
+geramsey.display()
 
 # %%
 station.preview_config_update()
@@ -544,7 +553,7 @@ def amprabi_preproc(station, default_expt_cfg, **kwargs):
         expt_cfg.sigma_test = pulse_ge.sigma[0]
     if expt_cfg.step is None:
         expt_cfg.step = int(pulse_ge.gain[0] / (expt_cfg.expts - 1))
-    
+
     expt_cfg.checkEF = False
     expt_cfg.pulse_ge_init = False
     expt_cfg.pulse_ge_after = False
@@ -552,7 +561,7 @@ def amprabi_preproc(station, default_expt_cfg, **kwargs):
         expt_cfg.checkEF = True
         expt_cfg.pulse_ge_init = True
         expt_cfg.pulse_ge_after = True
-    
+
     return expt_cfg
 
 def amprabi_postproc(station, expt):
@@ -682,11 +691,10 @@ efspec_runner = CharacterizationRunner(
     job_client=client,
 )
 
-if expts_to_run['pulse_probe_ef']:
-    qspec_ef = efspec_runner.execute(
-        relax_delay=250,
-    )
-    qspec_ef.display()
+qspec_ef = efspec_runner.execute(
+    relax_delay=250,
+)
+qspec_ef.display()
 
 # %%
 station.hardware_cfg.device.qubit.f_ef = [3419.058641409324]
@@ -730,7 +738,7 @@ t2ramsey_ef = eframsey_runner.execute(
     relax_delay=800,
     active_reset=False,
 )
-# t2ramsey_ef.display()
+t2ramsey_ef.display()
 
 # %%
 station.preview_config_update()
@@ -773,7 +781,7 @@ efamprabi_runner = CharacterizationRunner(
 amprabi_ef = efamprabi_runner.execute(
             relax_delay=2500,
 )
-# amprabi_ef.display()
+amprabi_ef.display()
 
 # After amplitude calibration, do another T2 Ramsey to fine tune frequency
 t2_ramsey_ef_after_amp = eframsey_runner.execute(
@@ -781,7 +789,7 @@ t2_ramsey_ef_after_amp = eframsey_runner.execute(
     step = 0.1,
     relax_delay=2500,
 )
-# t2_ramsey_ef_after_amp.display()
+t2_ramsey_ef_after_amp.display()
 
 # %%
 station.preview_config_update()
@@ -860,11 +868,11 @@ def f0g1spec_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
     man_mode_no = expt_cfg.man_mode_no
     expt_cfg.update(kwargs)
-    
+
     # Compute start frequency from dataset if not provided
     if expt_cfg.start is None:
         expt_cfg.start = station.ds_storage.get_freq('M' + str(man_mode_no)) - 20
-    
+
     return expt_cfg
 
 def f0g1spec_postproc(station, expt):
@@ -891,7 +899,6 @@ f0g1spec_runner = CharacterizationRunner(
     job_client=client,
 )
 
- 
 man_spec = f0g1spec_runner.execute(
     man_mode_no=1,
     start=1965,
@@ -905,7 +912,7 @@ man_spec = f0g1spec_runner.execute(
     relax_delay=800,
     # coupler_current=coupler_current,
 )
-# man_spec.display()
+man_spec.display()
 
 
 # %%
@@ -954,8 +961,6 @@ def f0g1_chevron_postproc(station, mother_expt):
     expt_cfg.man_mode_no = 1
     stor_name = f'M{expt_cfg.man_mode_no}'
 
-    from fitting.fit_display_classes import ChevronFitting
-
     chevron_analysis = ChevronFitting(
         frequencies=mother_expt.data['freq_sweep'],
         time=mother_expt.data['xpts'][0],
@@ -965,9 +970,9 @@ def f0g1_chevron_postproc(station, mother_expt):
     )
 
     chevron_analysis.analyze()
-    
+
     best_freq = chevron_analysis.results.get('best_frequency_contrast')
-        
+
     if best_freq:
         print(f"Best frequency found: {best_freq:.4f} MHz")
         station.ds_storage.update_freq(stor_name, best_freq)
@@ -1014,6 +1019,7 @@ f0g1_chevron = runner.execute(
     # coupler_current=coupler_current,
     batch = True,
 )
+f0g1_chevron.display()
 
 # %%
 # fine sweep
@@ -1025,6 +1031,7 @@ f0g1_chevron = runner.execute(
     # start = 1, # time start in us
     # coupler_current=coupler_current,
 )
+f0g1_chevron.display()
 
 # %% [markdown]
 # ## Error amplification
@@ -1107,7 +1114,7 @@ error_amp_exp = error_amp_runner.execute(
     postprocess=True  # This will call postprocessor which does the custom analysis
 )
 
-# error_amp_exp.display()
+error_amp_exp.display()
 
 # %%
 station.preview_config_update()
@@ -1323,7 +1330,6 @@ if expts_to_run['chi_ge']:
 # ### ef
 
 # %%
-from experiments.MM_dual_rail_base import MM_dual_rail_base
 
 # the do function contains 2 calls to ramsey, one with no prepulse and one with prepulse 
 # that initializes manipulation mode to 1 state
@@ -2020,7 +2026,7 @@ spec.display()
 # sideband_spec_defaults/preproc/postproc/runner above.
 # Notable difference vs storage: much wider bw (200 MHz) needed.
 
-# %% 
+# %%
 station.ds_storage.df
 
 # %%
