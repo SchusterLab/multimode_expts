@@ -50,7 +50,15 @@ class QsimBaseProgram(MMAveragerProgram):
         self.m1s_length = [self.us2cycles(self.swap_ds.get_len(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
         self.m1s_gain = [self.swap_ds.get_gain(stor_name) for stor_name in stor_names]
-        self.m1s_wf_name = ["pi_m1si_low" if self.m1s_is_low_freq[i_stor] else "pi_m1si_high" for i_stor in range(7)]
+        _wf = self.cfg.expt.get("floquet_waveform", 'flat_top')
+        if _wf == 'flat_top':
+            self.m1s_wf_name = ["pi_m1si_low" if self.m1s_is_low_freq[i_stor] else "pi_m1si_high" for i_stor in range(7)]
+        else:
+            if self.cfg.expt.get("debug", False):
+                print("using Gaussian floquet pulses")
+            self.m1s_wf_name = ["pi_m1si_gauss_low" if self.m1s_is_low_freq[i_stor] else "pi_m1si_gauss_high" for i_stor in range(7)]
+            
+    
 
 
     def displace_man(self, alpha=None, setup=False, play=False):
@@ -102,16 +110,45 @@ class QsimBaseProgram(MMAveragerProgram):
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
-        self.m1s_kwargs = [{
-                'ch': self.m1s_ch[stor],
-                'style': 'flat_top',
-                'freq': self.m1s_freq[stor],
-                'phase': 0,
-                'gain': self.m1s_gain[stor],
-                'length': self.m1s_length[stor],
-                'waveform': self.m1s_wf_name[stor],
-        } for stor in range(7)]
-
+        
+        _wf = self.cfg.expt.get("floquet_waveform", 'flat_top')
+        _style = 'arb' if _wf in ('gauss', 'gaussian', 'arb') else _wf
+        if _style == 'flat_top':
+            self.m1s_kwargs = [{
+                    'ch': self.m1s_ch[stor],
+                    'style': self.cfg.expt.get('floquet_waveform', 'flat_top'),
+                    'freq': self.m1s_freq[stor],
+                    'phase': 0,
+                    'gain': self.m1s_gain[stor],
+                    'length': self.m1s_length[stor],
+                    'waveform': self.m1s_wf_name[stor],
+            } for stor in range(7)]
+        else: # Gaussian pulse
+            qTest = 0
+            _length_list = []
+            for i_stor in range(7):
+                _length_list.append(self.dataset_floquet.get_len(f"M1-S{i_stor+1}"))
+            _sigma = np.max(_length_list)/6
+            _sigma = self.cfg.expt.get("floquet_gauss_sigma", _sigma)
+            self.pi_m1_sigma_low = self.us2cycles(_sigma, gen_ch=self.flux_low_ch[qTest])
+            self.pi_m1_sigma_high = self.us2cycles(_sigma, gen_ch=self.flux_high_ch[qTest])
+            self.add_gauss(ch=self.flux_low_ch[qTest], 
+                            name="pi_m1si_gauss_low", 
+                            sigma=self.pi_m1_sigma_low, 
+                            length=self.pi_m1_sigma_low*6)
+            self.add_gauss(ch=self.flux_high_ch[qTest], 
+                            name="pi_m1si_gauss_high", 
+                            sigma=self.pi_m1_sigma_high, 
+                            length=self.pi_m1_sigma_high*6)
+            self.m1s_kwargs = [{
+                    'ch': self.m1s_ch[stor],
+                    'style': _style,
+                    'freq': self.m1s_freq[stor],
+                    'phase': 0,
+                    'gain': self.m1s_gain[stor],
+                    'waveform': self.m1s_wf_name[stor],
+                    } for stor in range(7)]
+            
         if self.cfg.expt.perform_wigner:
             self.displace_man(setup=True, play=False)
 

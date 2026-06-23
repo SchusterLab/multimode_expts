@@ -2671,15 +2671,32 @@ class prepulse_creator2:
         flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
         ch = flux_low_ch if freq<1000 else flux_high_ch
 
+        _wf = self.cfg.expt.get('floquet_waveform', 'flat_top')
+        style = 'gauss' if _wf in ('gauss', 'gaussian', 'arb') else 'flat_top'
+        sigma = self.cfg.expt.get('floquet_gauss_sigma', None)
+        if sigma is None:
+            sigma = self.dataset_floquet.get_ramp_sigma(stor_name)  # for flat_top: the ramp
+        if style == 'gauss':
+            length = 6 * sigma
+            
         storage_pulse = np.array([
             [self.dataset_floquet.get_freq(stor_name)],
             [self.dataset_floquet.get_gain(stor_name)],
             [length],
             [phase],
             [ch],
-            ['flat_top'],
-            [self.dataset_floquet.get_ramp_sigma(stor_name)]
+            [style],
+            [sigma]
             ], dtype = object)
+        # storage_pulse = np.array([
+        #     [self.dataset_floquet.get_freq(stor_name)],
+        #     [self.dataset_floquet.get_gain(stor_name)],
+        #     [length],
+        #     [phase],
+        #     [ch],
+        #     ['flat_top'],
+        #     [self.dataset_floquet.get_ramp_sigma(stor_name)]
+        #     ], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, storage_pulse), axis=1)
         return None
