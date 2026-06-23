@@ -2665,22 +2665,20 @@ class prepulse_creator2:
 
     def floquet(self, pulse_param):
         stor_name, pi_frac, phase = pulse_param
-        length = self.dataset_floquet.get_len(stor_name)
         freq = self.dataset_floquet.get_freq(stor_name)
         flux_low_ch = self.cfg.hw.soc.dacs.flux_low.ch[0]
         flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
         ch = flux_low_ch if freq<1000 else flux_high_ch
 
-        _wf = self.cfg.expt.get('floquet_waveform', 'flat_top')
-        style = 'gauss' if _wf in ('gauss', 'gaussian', 'arb') else 'flat_top'
-        sigma = self.cfg.expt.get('floquet_gauss_sigma', None)
-        if sigma is None:
-            sigma = self.dataset_floquet.get_ramp_sigma(stor_name)  # for flat_top: the ramp
-        if style == 'gauss':
-            length = 6 * sigma
-            
+        # Envelope comes from the dataset row, so the swap is played with whatever it
+        # was calibrated as. get_pulse_envelope returns (style, sigma, length):
+        #   flat_top -> ('flat_top', ramp_sigma, get_len)        == legacy behaviour
+        #   gauss    -> ('gauss',    gauss_sigma, gauss_sigma * n_sigma)
+        # i.e. the 3rd value already IS the right length for both, no branch needed.
+        style, sigma, length = self.dataset_floquet.get_pulse_envelope(stor_name)
+
         storage_pulse = np.array([
-            [self.dataset_floquet.get_freq(stor_name)],
+            [freq],
             [self.dataset_floquet.get_gain(stor_name)],
             [length],
             [phase],

@@ -684,6 +684,22 @@ class FloquetStorageSwapDataset(MMDataset):
         super().__init__(filename=filename, parent_path=parent_path)
         self.config_type = ConfigType.MAN1_STORAGE_SWAP
 
+        # Backfill gaussian-waveform columns for CSVs written before gauss support.
+        # The defaults reproduce the legacy flat_top behaviour exactly, so older
+        # config files load byte-for-byte unchanged. Self-healing: this no-ops once
+        # the columns are present.
+        _wf_defaults = {'waveform': 'flat_top', 'gauss_sigma (mus)': -1.0, 'gauss_n_sigma': 4}
+        _added = False
+        for _col, _val in _wf_defaults.items():
+            if _col not in self.df.columns:
+                self.df[_col] = _val
+                _added = True
+        # Keep 'last_update' as the final column: update_all()/get_all() rely on the
+        # timestamp being last. df[col]=... appends at the end, so re-pin it.
+        if _added and 'last_update' in self.df.columns:
+            _ordered = [c for c in self.df.columns if c != 'last_update'] + ['last_update']
+            self.df = self.df[_ordered]
+
     def create_new_df(self):
         column_names = [
             'stor_name',
@@ -697,6 +713,8 @@ class FloquetStorageSwapDataset(MMDataset):
             column_names.append(
                 'phase_from_M1-S' + str(idx) + ' (deg)'
             )  # phase of the pulse on M1-Sx
+        # gaussian-waveform support; defaults reproduce legacy flat_top behaviour
+        column_names += ['waveform', 'gauss_sigma (mus)', 'gauss_n_sigma']
 
         rows = []
         for idx in range(1, 8, 1):
@@ -710,6 +728,9 @@ class FloquetStorageSwapDataset(MMDataset):
             }
             for i in range(1, 8, 1):
                 row['phase_from_M1-S' + str(i) + ' (deg)'] = 0.0
+            row['waveform'] = 'flat_top'
+            row['gauss_sigma (mus)'] = -1.0
+            row['gauss_n_sigma'] = 4
             rows.append(row)
 
         self.create_new_df_from_labels(column_names, rows, add_timestamp=True)
@@ -752,6 +773,36 @@ class FloquetStorageSwapDataset(MMDataset):
 
     def update_phase_from(self, stor_name, from_stor_name, phase):
         self.update_value(stor_name, f'phase_from_{from_stor_name} (deg)', phase)
+
+    # --- gaussian-waveform support ---------------------------------------
+    def get_waveform(self, stor_name):
+        return self.get_value(stor_name, 'waveform')
+
+    def update_waveform(self, stor_name, waveform):
+        self.update_value(stor_name, 'waveform', waveform)
+
+    def get_gauss_sigma(self, stor_name):
+        return float(self.get_value(stor_name, 'gauss_sigma (mus)'))
+
+    def update_gauss_sigma(self, stor_name, sigma):
+        self.update_value(stor_name, 'gauss_sigma (mus)', sigma)
+
+    def get_gauss_n_sigma(self, stor_name):
+        return int(self.get_value(stor_name, 'gauss_n_sigma'))
+
+    def update_gauss_n_sigma(self, stor_name, n_sigma):
+        self.update_value(stor_name, 'gauss_n_sigma', int(n_sigma))
+
+    def get_pulse_envelope(self, stor_name):
+        """(style, sigma_us, total_length_us) for this mode's current waveform.
+
+        gauss  -> ('gauss', gauss_sigma, gauss_sigma * gauss_n_sigma)
+        else   -> ('flat_top', ramp_sigma, len)   (legacy behaviour)
+        """
+        if self.get_waveform(stor_name) in ('gauss', 'gaussian', 'arb'):
+            sigma = self.get_gauss_sigma(stor_name)
+            return 'gauss', sigma, sigma * self.get_gauss_n_sigma(stor_name)
+        return 'flat_top', self.get_ramp_sigma(stor_name), self.get_len(stor_name)
 
     def import_from_swap_dataset(
         self,
