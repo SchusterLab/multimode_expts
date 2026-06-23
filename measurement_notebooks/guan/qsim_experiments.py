@@ -1825,7 +1825,7 @@ kerr_ramsey_runner = CharacterizationRunner(
 )
 
 kerr_detunes = np.linspace(-50, -10, 5).tolist()
-kerr_gain = station.ds_storage.get_gain('M1')
+kerr_gain = station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['gain'][0]
 
 kerr_lengths = np.linspace(0.010, 4, 101).tolist()
 displace_gains = np.arange(2000, 7001, 1000).tolist()

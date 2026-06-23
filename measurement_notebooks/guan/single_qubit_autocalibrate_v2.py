@@ -849,7 +849,7 @@ station.preview_config_update()
 
 # %%
 f0g1spec_defaults = AttrDict(dict(
-    start=None,  # Will be computed in preprocessor from ds_storage
+    start=None,  # Will be computed in preprocessor from multiphoton
     step=0.2,
     expts=200,
     reps=100,
@@ -866,22 +866,22 @@ f0g1spec_defaults = AttrDict(dict(
 
 def f0g1spec_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
-    man_mode_no = expt_cfg.man_mode_no
     expt_cfg.update(kwargs)
 
-    # Compute start frequency from dataset if not provided
+    # Compute start frequency from multiphoton (single source of truth) if not provided
     if expt_cfg.start is None:
-        expt_cfg.start = station.ds_storage.get_freq('M' + str(man_mode_no)) - 20
+        idx = expt_cfg.man_mode_no - 1
+        expt_cfg.start = station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][idx] - 20
 
     return expt_cfg
 
 def f0g1spec_postproc(station, expt):
     man_mode_no = expt.cfg.expt.man_mode_no
-    station.ds_storage.update_freq('M' + str(man_mode_no), expt.data['fit_avgi'][2])
-    station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] = expt.data['fit_avgi'][2]
-    print(f"Updated man f0g1 freq to: {station.ds_storage.get_freq('M' + str(man_mode_no))}")
+    idx = man_mode_no - 1
+    mp = station.hardware_cfg.device.multiphoton
+    mp['pi']['fn-gn+1']['frequency'][idx] = expt.data['fit_avgi'][2]
+    print(f"Updated man f0g1 freq (mode {man_mode_no}) to: {mp['pi']['fn-gn+1']['frequency'][idx]}")
     station.snapshot_hardware_config(update_main=False)
-    station.snapshot_man1_storage_swap(update_main=False)
 
 
 # %%
@@ -918,7 +918,6 @@ man_spec.display()
 # %%
 station.preview_config_update()
 # station.snapshot_hardware_config(update_main=True)
-# station.snapshot_multiphoton_config(update_main=True)
 
 # %%
 station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency']
@@ -959,7 +958,8 @@ chevron_defaults = AttrDict(dict(
 def f0g1_chevron_postproc(station, mother_expt):
     expt_cfg = mother_expt.cfg.expt
     expt_cfg.man_mode_no = 1
-    stor_name = f'M{expt_cfg.man_mode_no}'
+    man_mode_no = expt_cfg.man_mode_no
+    idx = man_mode_no - 1
 
     chevron_analysis = ChevronFitting(
         frequencies=mother_expt.data['freq_sweep'],
@@ -974,26 +974,21 @@ def f0g1_chevron_postproc(station, mother_expt):
     best_freq = chevron_analysis.results.get('best_frequency_contrast')
 
     if best_freq:
+        mp = station.hardware_cfg.device.multiphoton
         print(f"Best frequency found: {best_freq:.4f} MHz")
-        station.ds_storage.update_freq(stor_name, best_freq)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] = best_freq
-        print(f"Updated {stor_name} frequency to {best_freq:.4f} MHz (ds_storage and hardware_cfg)")
+        mp['pi']['fn-gn+1']['frequency'][idx] = best_freq
+        print(f"Updated M{man_mode_no} frequency to {best_freq:.4f} MHz (multiphoton)")
 
         pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_period']['omega'])
-        station.ds_storage.update_pi(stor_name, pi_len)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['length'][0] = pi_len
-        print('Updated the pi length to:', pi_len, "(ds_storage and hardware_cfg)")
+        mp['pi']['fn-gn+1']['length'][idx] = pi_len
+        # multiphoton has no hpi['fn-gn+1'] slot; the f0g1 half-pi swap is pi_len/2, not stored
+        print('Updated pi length to:', pi_len, '(multiphoton; h_pi swap = pi_len/2, not stored)')
 
-        station.ds_storage.update_h_pi(stor_name, pi_len / 2)
-        print('Updated the h_pi length to:', pi_len / 2, "(ds_storage)")
-
-        gain = expt_cfg.get('gain', station.ds_storage.get_gain(stor_name))
-        station.ds_storage.update_gain(stor_name, gain)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['gain'][0] = gain
+        gain = expt_cfg.gain if expt_cfg.get('gain') is not None else mp['pi']['fn-gn+1']['gain'][idx]
+        mp['pi']['fn-gn+1']['gain'][idx] = gain
         print('Updated gain to:', gain)
     mother_expt.analysis = chevron_analysis
     chevron_analysis.display_results()
-    station.snapshot_man1_storage_swap(update_main=False)
     station.snapshot_hardware_config(update_main=False)
 
 
@@ -1010,11 +1005,12 @@ runner = SweepRunner(
 
 # %%
 # coarse sweep
+m1 = station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']
 f0g1_chevron = runner.execute(
-    sweep_start=station.ds_storage.get_freq('M1') - 3,
-    sweep_stop=station.ds_storage.get_freq('M1') + 3,
+    sweep_start=m1['frequency'][0] - 3,
+    sweep_stop=m1['frequency'][0] + 3,
     sweep_npts=11,
-    gain = station.ds_storage.get_gain('M1'),
+    gain = m1['gain'][0],
     start = 1, # time start in us
     # coupler_current=coupler_current,
     batch = True,
@@ -1023,11 +1019,12 @@ f0g1_chevron.display()
 
 # %%
 # fine sweep
+m1 = station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']
 f0g1_chevron = runner.execute(
-    sweep_start=station.ds_storage.get_freq('M1') - 0.5,
-    sweep_stop=station.ds_storage.get_freq('M1') + 0.5,
+    sweep_start=m1['frequency'][0] - 0.5,
+    sweep_stop=m1['frequency'][0] + 0.5,
     sweep_npts=11,
-    gain = station.ds_storage.get_gain('M1'),
+    gain = m1['gain'][0],
     # start = 1, # time start in us
     # coupler_current=coupler_current,
 )
@@ -1080,19 +1077,11 @@ def error_amp_postproc(station, expt):
     # expt.display(data=expt.data, state_fin='e')
     print('Error amplification analysis complete')
 
-    print(f"Man {sideband} pi frequency before update:", 
-          station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i])
-    station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i] = expt.data['fit_avgi'][2]
-    print(f"Man {sideband} pi frequency after update:", 
-          station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i])
-    if i > 0:
-        print("WARNING! No update will occur! The update in this cell was meant for the csv which does not have multiphoton params. To update the multiphoton params, please run the multiphoton calibration notebook instead.")
-    else:
-        station.ds_storage.update_freq('M1', expt.data['fit_avgi'][2])
-        print("Updated the ds_storage frequency to:", station.ds_storage.get_freq('M1'))
+    mp = station.hardware_cfg.device.multiphoton
+    print(f"Man {sideband} pi frequency before update:", mp['pi'][_sideband]['frequency'][i])
+    mp['pi'][_sideband]['frequency'][i] = expt.data['fit_avgi'][2]
+    print(f"Man {sideband} pi frequency after update:", mp['pi'][_sideband]['frequency'][i])
     station.snapshot_hardware_config(update_main=False)
-    station.snapshot_multiphoton_config(update_main=False)
-    station.snapshot_man1_storage_swap(update_main=False)  # persist ds_storage to disk
 
 # Create runner
 error_amp_runner = CharacterizationRunner(
@@ -1134,7 +1123,7 @@ lenrabi_f0g1_defaults = AttrDict(dict(
     reps=100,
     rounds=1,
     gain=8000,
-    freq=None,  # Will be set from ds_storage in preprocessor
+    freq=None,  # Will be set from multiphoton in preprocessor
     use_arb_waveform=False,
     pi_ge_before=True,
     pi_ef_before=True,
@@ -1155,20 +1144,21 @@ lenrabi_f0g1_defaults = AttrDict(dict(
 def lenrabi_f0g1_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
-    
-    man_mode_no = default_expt_cfg.man_mode_no
 
-    # Compute start and freq from soc and ds_storage if not provided
+    idx = expt_cfg.man_mode_no - 1
+
+    # Compute start and freq from soc and multiphoton (single source of truth) if not provided
     if expt_cfg.start is None:
         expt_cfg.start = station.soccfg.cycles2us(3)
     if expt_cfg.freq is None:
-        expt_cfg.freq = station.ds_storage.get_freq('M' + str(man_mode_no))
-    
+        expt_cfg.freq = station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][idx]
+
     return expt_cfg
 
 def lenrabi_f0g1_postproc(station, expt):
     man_mode_no = expt.cfg.expt.man_mode_no
-    
+    idx = man_mode_no - 1
+
     # Get analysis results from the LengthRabiFitting object stored in expt
     if hasattr(expt, '_length_rabi_analysis'):
         analysis = expt._length_rabi_analysis
@@ -1177,23 +1167,15 @@ def lenrabi_f0g1_postproc(station, expt):
         gain = expt.cfg.expt.gain
         freq = expt.cfg.expt.freq
 
-        # Update ds_storage
-        station.ds_storage.update_freq('M' + str(man_mode_no), freq)
-        station.ds_storage.update_pi('M' + str(man_mode_no), pi_length)
-        station.ds_storage.update_h_pi('M' + str(man_mode_no), pi2_length)
-        station.ds_storage.update_gain('M' + str(man_mode_no), gain)
-        print(f'Updated ds_storage M{man_mode_no}: freq={freq:.4f}, pi_length={pi_length:.4f}, pi2_length={pi2_length:.4f}, gain={gain}')
+        mp = station.hardware_cfg.device.multiphoton
+        mp['pi']['fn-gn+1']['frequency'][idx] = freq
+        mp['pi']['fn-gn+1']['length'][idx] = pi_length
+        mp['pi']['fn-gn+1']['gain'][idx] = gain
+        # multiphoton has no hpi['fn-gn+1'] slot; h_pi swap (pi2_length ~ pi_length/2) is not stored
+        print(f'Updated multiphoton fn-gn+1[{idx}]: freq={freq:.4f}, pi_length={pi_length:.4f}, '
+              f'gain={gain} (h_pi {pi2_length:.4f} not stored)')
 
-        # Keep hardware_cfg.multiphoton in sync (freq, length, gain — no h_pi field there)
-        idx = man_mode_no - 1
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][idx] = freq
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['length'][idx] = pi_length
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['gain'][idx] = gain
-        print(f'Updated hardware_cfg multiphoton[{idx}]: freq={freq:.4f}, length={pi_length:.4f}, gain={gain}')
-
-        # Persist both
         station.snapshot_hardware_config(update_main=False)
-        station.snapshot_man1_storage_swap(update_main=False)
 
 
 
@@ -1211,7 +1193,7 @@ lenrabi_f0g1_runner = CharacterizationRunner(
 
 len_rabis_man = lenrabi_f0g1_runner.execute(
     man_mode_no=1,
-    gain=station.ds_storage.get_gain('M1'),
+    gain=station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['gain'][0],
     step=0.01,
     go_kwargs=dict(progress=True, analyze=False),
 )
@@ -1225,8 +1207,8 @@ station.preview_config_update()
 station.update_all_station_snapshots(update_main=False)
 
 # %%
-# Safety-net snapshot — postprocs now keep ds_storage and hardware_cfg.multiphoton
-# in sync themselves, so this is no longer needed as a fix.
+# Safety-net snapshot — the f0g1 postprocs above now write hardware_cfg.multiphoton
+# (the single source of truth) and snapshot it themselves, so this is not needed.
 # Kept here as a belt-and-suspenders full sync if desired.
 # station.update_all_station_snapshots(update_main=False)
 
