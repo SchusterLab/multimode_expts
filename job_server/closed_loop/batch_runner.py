@@ -112,6 +112,13 @@ LAB_DEFAULTS: dict[str, Any] = {
     "reconstruct":          False,
     "reconstruct_fock_dim": 5,
     "reconstruct_rotate":   False,
+    # Shot-noise error bars on the reconstruction (bootstrap the per-alpha counts):
+    # fidelity_std/ci, populations_std/ci, per-element rho_re_std/rho_im_std. Needs
+    # reconstruct=True and parity_counts (sigma_z_mode != 'measure'). Off by default
+    # (the extra n_boot reconstructions cost time); enable lab-wide here or per-pulse
+    # via the manifest's `reconstruct_uncertainty` / `reconstruct_bootstrap_n` keys.
+    "reconstruct_uncertainty":  False,
+    "reconstruct_bootstrap_n":  400,
     # Which measurement to run per pulse: "wigner" (cavity parity tomography,
     # the default) or "tomography_1q" (single-qubit Z/X/Y state tomography of the
     # transmon the pulse prepares -- POST /run_tomography_1q / run_state_tomo_1q_core).
@@ -408,6 +415,14 @@ def build_plan(
         _rrot = pick_opt("reconstruct_rotate")
         if _rrot is not None:
             knobs.reconstruct_rotate = bool(_rrot)
+        # Shot-noise error bars on the reconstruction (bootstrap the per-alpha
+        # counts). Needs reconstruct + parity_counts (sigma_z_mode != 'measure').
+        _runc = pick_opt("reconstruct_uncertainty")
+        if _runc is not None:
+            knobs.reconstruct_uncertainty = bool(_runc)
+        _rbn = pick_opt("reconstruct_bootstrap_n")
+        if _rbn is not None:
+            knobs.reconstruct_bootstrap_n = int(_rbn)
 
         target_state = None
         if knobs.reconstruct:
@@ -501,6 +516,9 @@ class PulseOutcome:
     # is the uncorrected 1 - 2*P_e. Both None when not requested or on failure.
     sigma_z:         Optional[float] = None
     sigma_z_raw:     Optional[float] = None
+    # Raw per-alpha shot tallies so the collaborator can rebuild each parity point
+    # and a binomial error bar. See RunWignerResponse.parity_counts for the shape.
+    parity_counts:   Optional[dict] = None
     # Full-pipeline reconstruction outputs, present iff knobs.reconstruct was set
     # (None otherwise). `rho` is {"real": [[...]], "imag": [[...]]}; `populations`
     # is the photon-number diagonal; `fidelity` is None unless a target_state
@@ -508,6 +526,11 @@ class PulseOutcome:
     rho:             Optional[dict] = None
     populations:     Optional[list[float]] = None
     fidelity:        Optional[float] = None
+    # Statistical (shot-noise) error bars on the reconstruction, present iff
+    # knobs.reconstruct_uncertainty was set and counts were available (else None).
+    # See RunWignerResponse.reconstruct_uncertainty for the shape (fidelity_std/ci,
+    # populations_std/ci, rho_re_std/rho_im_std).
+    reconstruct_uncertainty: Optional[dict] = None
     # Which measurement produced this outcome ("wigner" | "tomography_1q").
     measurement:     str = "wigner"
     # 1Q state-tomography outputs (measurement == "tomography_1q"), else None.
@@ -571,9 +594,11 @@ def run_one(plan: PulsePlan) -> PulseOutcome:
             error=None,
             sigma_z=resp.sigma_z,
             sigma_z_raw=resp.sigma_z_raw,
+            parity_counts=resp.parity_counts,
             rho=resp.rho,
             populations=resp.populations,
             fidelity=resp.fidelity,
+            reconstruct_uncertainty=resp.reconstruct_uncertainty,
             measurement="wigner",
         )
     except Exception as e:
@@ -711,6 +736,9 @@ def _summarize(outs: list[PulseOutcome], mode: str, claim_id: str, lab_defaults:
                 if o.populations is not None:
                     pops = ", ".join(f"{p:.3f}" for p in o.populations)
                     fid = "n/a" if o.fidelity is None else f"{o.fidelity:.4f}"
+                    unc = o.reconstruct_uncertainty
+                    if unc is not None and unc.get("fidelity_std") is not None and o.fidelity is not None:
+                        fid = f"{o.fidelity:.4f} ± {unc['fidelity_std']:.4f}"
                     lines.append(f"    reconstruction: fidelity={fid}  pops=[{pops}]")
         else:
             err = o.error or {}
@@ -763,11 +791,13 @@ def pack_results(
                 "measurement":   o.measurement,
                 "parity":        o.parity,
                 "alphas":        o.alphas,
+                "parity_counts": o.parity_counts,
                 "sigma_z":       o.sigma_z,
                 "sigma_z_raw":   o.sigma_z_raw,
                 "rho":           o.rho,
                 "populations":   o.populations,
                 "fidelity":      o.fidelity,
+                "reconstruct_uncertainty": o.reconstruct_uncertainty,
                 "counts":        o.counts,
                 "expectations":  o.expectations,
                 "azimuth_rad":   o.azimuth_rad,

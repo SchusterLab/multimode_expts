@@ -136,6 +136,14 @@ class Knobs(BaseModel):
     reconstruct:           bool  = False
     reconstruct_fock_dim:  int   = 5      # Hilbert-space cutoff for the reconstruction
     reconstruct_rotate:    bool  = False  # phase-rotation search to maximize fidelity
+    # When True (and reconstruct is on), bootstrap the per-alpha shot counts through
+    # the reconstruction to attach a STATISTICAL (shot-noise) error bar to fidelity,
+    # populations, and each rho_nm (real + imag parts separately). Requires
+    # parity_counts (hw run, sigma_z_mode != 'measure'). Captures shot noise only --
+    # NOT confusion / alpha_scale / Fock-truncation systematics.
+    reconstruct_uncertainty:    bool = False
+    reconstruct_bootstrap_n:    int  = 400   # bootstrap draws
+    reconstruct_bootstrap_seed: int  = 0
 
 
 class RunWignerRequest(BaseModel):
@@ -169,10 +177,22 @@ class RunWignerResponse(BaseModel):
     meta: dict
     sigma_z: Optional[float] = None
     sigma_z_raw: Optional[float] = None
+    # Raw per-alpha shot tallies for rebuilding parity + a binomial error bar.
+    # None for sim mode and for sigma_z_mode='measure' (Tier 3, no parity grid).
+    # Shape depends on pulse_correction (see WignerTomography1ModeExperiment.analyze):
+    #   pulse_correction=True : {"pulse_correction": True, "alpha_scale", "threshold",
+    #       "confusion_matrix": [Pgg,Pge,Peg,Pee], "plus"/"minus": {"n_total","n_excited"}}
+    #   pulse_correction=False: {..., "n_total", "n_excited"}  (alpha_scale = 1.0)
+    parity_counts: Optional[dict] = None
     # Populated only when knobs.reconstruct is set (else None).
     rho:         Optional[dict] = None          # {"real": [[...]], "imag": [[...]]}
     populations: Optional[list[float]] = None   # diagonal of rho (photon-number pops)
     fidelity:    Optional[float] = None         # None unless target_state was given
+    # Statistical (shot-noise) error bars, populated only when knobs.reconstruct AND
+    # knobs.reconstruct_uncertainty are set and parity_counts are available (else None):
+    #   {fidelity_std, fidelity_ci, populations_std, populations_ci,
+    #    rho_re_std, rho_im_std (each m x m), n_boot, ci_percentiles, note}
+    reconstruct_uncertainty: Optional[dict] = None
 
 
 class CalibrateCheckRequest(BaseModel):
@@ -435,6 +455,10 @@ def _reconstruct_from_parity(
     fock_dim: int,
     target_ket: Optional[qutip.Qobj],
     rotate: bool,
+    parity_counts: Optional[dict] = None,
+    bootstrap: bool = False,
+    n_boot: int = 400,
+    seed: int = 0,
 ) -> dict:
     """Run the MLE-style Wigner reconstruction on a measured parity grid.
 
@@ -442,6 +466,13 @@ def _reconstruct_from_parity(
     values, the complex displacements, and the Fock cutoff -- no raw IQ / config
     (passing threshold=0.0, config=None keeps GeneralFitting.__init__ off the cfg
     path). Returns JSON-serializable rho/populations/fidelity.
+
+    When `bootstrap` and `parity_counts` are given, also bootstraps the per-alpha
+    shot counts through the reconstruction (WignerAnalysis.bootstrap_reconstruction)
+    and attaches statistical (shot-noise) error bars: fidelity_std/_ci,
+    populations_std/_ci, and per-element rho_re_std / rho_im_std (on the same
+    unrotated rho returned here). Shot noise only -- not confusion / alpha_scale /
+    Fock-truncation systematics.
     """
     alphas_c = np.asarray(alphas_c)
     wa = WignerAnalysis(
@@ -453,11 +484,33 @@ def _reconstruct_from_parity(
         np.asarray(parity, dtype=float), initial_state=init, rotate=rotate,
     )
     rho = np.asarray(res["rho"])
-    return {
+    out: dict = {
         "rho": {"real": rho.real.tolist(), "imag": rho.imag.tolist()},
         "populations": [float(np.real(rho[i, i])) for i in range(fock_dim)],
         "fidelity": float(res["fidelity"]) if target_ket is not None else None,
+        "uncertainty": None,
     }
+
+    if bootstrap and parity_counts is not None:
+        boot = wa.bootstrap_reconstruction(
+            parity_counts, initial_state=init, rotate=rotate,
+            n_boot=n_boot, seed=seed,
+        )
+        out["uncertainty"] = {
+            "n_boot":          int(boot["n_boot"]),
+            "ci_percentiles":  list(boot["ci_percentiles"]),
+            # fidelity error bar only meaningful when a target was given
+            "fidelity_std":    float(boot["fidelity_std"]) if target_ket is not None else None,
+            "fidelity_ci":     [float(x) for x in boot["fidelity_ci"]] if target_ket is not None else None,
+            "populations_std": [float(x) for x in boot["populations_std"]],
+            "populations_ci":  [[float(a), float(b)] for a, b in boot["populations_ci"]],
+            # per-element rho error bars, real and imag parts separately (m x m),
+            # on the same unrotated rho returned above
+            "rho_re_std":      np.asarray(boot["rho_re_std"]).tolist(),
+            "rho_im_std":      np.asarray(boot["rho_im_std"]).tolist(),
+            "note":            "statistical (shot-noise) only; excludes confusion / alpha_scale / Fock-truncation systematics",
+        }
+    return out
 
 
 def _load_iqtable_from_npz(filename: str) -> IQTable:
@@ -766,7 +819,7 @@ def _normalize_iq_table_for_inline_path(iq: IQTable) -> tuple[IQTable, float, fl
     )
 
 
-def submit_wigner_via_queue(req: RunWignerRequest, iter_id: str) -> tuple[np.ndarray, np.ndarray, Optional[str], dict]:
+def submit_wigner_via_queue(req: RunWignerRequest, iter_id: str) -> tuple[np.ndarray, np.ndarray, Optional[str], dict, Optional[float], Optional[float], Optional[dict]]:
     """Build a WignerTomography1ModeExperiment job, submit, wait, extract parity."""
     if (_mock_station is None or _job_client is None
             or _serializable_hw_cfg_base is None or _station_data_template is None):
@@ -922,6 +975,7 @@ def submit_wigner_via_queue(req: RunWignerRequest, iter_id: str) -> tuple[np.nda
     parity   = np.asarray(expt.data["parity"])
     sigma_z     = expt.data.get("sigma_z", None)
     sigma_z_raw = expt.data.get("sigma_z_raw", None)
+    parity_counts = expt.data.get("parity_counts", None)
 
     meta = {
         "wall_total_s":      t_done - t_submit,
@@ -943,7 +997,7 @@ def submit_wigner_via_queue(req: RunWignerRequest, iter_id: str) -> tuple[np.nda
     if recal_meta:
         meta["readout_recal"] = recal_meta
     meta["freq_override"] = freq_override_meta
-    return alphas_c, parity, result.data_file_path, meta, sigma_z, sigma_z_raw
+    return alphas_c, parity, result.data_file_path, meta, sigma_z, sigma_z_raw, parity_counts
 
 
 def submit_state_tomo_1q_via_queue(req: "RunStateTomo1QRequest", iter_id: str) -> tuple[dict, dict, Optional[str], dict]:
@@ -1176,6 +1230,7 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
     req.IQ_table._check()
 
     sigma_z = sigma_z_raw = None
+    parity_counts = None
     if req.mode == "sim":
         parity_arr, meta = run_wigner_sim(req, alphas_c)
         shots_path: Optional[str] = None
@@ -1185,7 +1240,7 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
         # internally runs the native-parity sweep PLUS one alpha-independent
         # sigma_z measurement, returning both in expt.data -- no separate job.
         (out_alphas, parity_arr, shots_path, meta,
-         sigma_z, sigma_z_raw) = submit_wigner_via_queue(req, iter_id)
+         sigma_z, sigma_z_raw, parity_counts) = submit_wigner_via_queue(req, iter_id)
     else:
         raise ValueError(f"unknown mode {req.mode!r}")
 
@@ -1193,7 +1248,7 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
 
     # Optional full-pipeline step: reconstruct the cavity density matrix from the
     # measured parity grid. Off by default (knobs.reconstruct).
-    rho_out = populations_out = fidelity_out = None
+    rho_out = populations_out = fidelity_out = recon_unc_out = None
     if req.knobs.reconstruct:
         if not np.all(np.isfinite(np.asarray(parity_arr, dtype=float))):
             # Tier-3 sigma_z_mode='measure' runs carry NaN parity (no parity
@@ -1201,13 +1256,23 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
             meta["reconstruct_skipped"] = "non-finite parity (no parity grid to reconstruct)"
         else:
             target_ket = _build_target_ket(req.target_state, req.knobs.reconstruct_fock_dim)
+            # Bootstrap error bars only if asked AND the per-alpha counts are present
+            # (hw, sigma_z_mode != 'measure'); sim has no counts.
+            want_unc = req.knobs.reconstruct_uncertainty and parity_counts is not None
+            if req.knobs.reconstruct_uncertainty and parity_counts is None:
+                meta["reconstruct_uncertainty_skipped"] = "no parity_counts (sim or sigma_z_mode='measure')"
             rec = _reconstruct_from_parity(
                 parity_arr, out_alphas, req.knobs.reconstruct_fock_dim,
                 target_ket, req.knobs.reconstruct_rotate,
+                parity_counts=parity_counts,
+                bootstrap=want_unc,
+                n_boot=req.knobs.reconstruct_bootstrap_n,
+                seed=req.knobs.reconstruct_bootstrap_seed,
             )
             rho_out = rec["rho"]
             populations_out = rec["populations"]
             fidelity_out = rec["fidelity"]
+            recon_unc_out = rec["uncertainty"]
 
     return RunWignerResponse(
         ok=True,
@@ -1220,8 +1285,10 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
         rho=rho_out,
         populations=populations_out,
         fidelity=fidelity_out,
+        reconstruct_uncertainty=recon_unc_out,
         sigma_z=float(sigma_z) if sigma_z is not None else None,
         sigma_z_raw=float(sigma_z_raw) if sigma_z_raw is not None else None,
+        parity_counts=parity_counts,
     )
 
 
@@ -1325,7 +1392,7 @@ def calibrate_check_core(req: CalibrateCheckRequest) -> CalibrateCheckResponse:
     )
 
     (_out_alphas, parity_arr, shots_path, meta,
-     _sigma_z, _sigma_z_raw) = submit_wigner_via_queue(sub_req, iter_id)
+     _sigma_z, _sigma_z_raw, _parity_counts) = submit_wigner_via_queue(sub_req, iter_id)
 
     measured = float(parity_arr[0])
     residual = None

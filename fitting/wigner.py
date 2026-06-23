@@ -16,6 +16,45 @@ from numpy import sqrt, linspace, cos, sin, real, arange
 import matplotlib.pyplot as plt
 import qutip as qt
 
+
+def parity_from_counts(parity_counts, rng=None):
+    '''Rebuild the parity grid from the raw per-alpha shot counts.
+
+    Mirrors WignerTomography1ModeExperiment.analyze exactly: confusion-correct the
+    raw excited fraction per point, then (pulse_correction) combine the plus/minus
+    sub-measurements and divide by alpha_scale.
+
+    rng=None  -> deterministic; reproduces the parity the experiment reported.
+    rng given -> each n_excited is binomial-resampled (one bootstrap draw).
+
+    `parity_counts` shape is RunWignerResponse.parity_counts: keys
+    confusion_matrix [Pgg,Pge,Peg,Pee], alpha_scale, pulse_correction, and either
+    plus/minus {n_total,n_excited} (pulse_correction) or top-level n_total/n_excited.
+    '''
+    cm = parity_counts['confusion_matrix']          # [Pgg, Pge, Peg, Pee]
+    P = np.array([[cm[0], cm[2]], [cm[1], cm[3]]])   # matches bin_ss_data
+    Pinv = np.linalg.inv(P)
+
+    def _pe(n_total, n_excited):
+        nt = np.asarray(n_total, dtype=float)
+        ne = np.asarray(n_excited, dtype=float)
+        if rng is not None:
+            p = np.clip(ne / np.where(nt > 0, nt, 1), 0.0, 1.0)
+            ne = rng.binomial(np.asarray(n_total, dtype=int), p).astype(float)
+        pe_raw = ne / np.where(nt > 0, nt, 1)
+        # confusion-correct: pe = (Pinv @ [1 - pe_raw, pe_raw])[1], per point
+        return Pinv[1, 0] * (1.0 - pe_raw) + Pinv[1, 1] * pe_raw
+
+    if parity_counts.get('pulse_correction'):
+        pe_p = _pe(parity_counts['plus']['n_total'],  parity_counts['plus']['n_excited'])
+        pe_m = _pe(parity_counts['minus']['n_total'], parity_counts['minus']['n_excited'])
+        parity_plus = 1.0 - 2.0 * pe_p
+        parity_minus = 1.0 - 2.0 * pe_m
+        return (parity_minus - parity_plus) / 2.0 / parity_counts['alpha_scale']
+    pe = _pe(parity_counts['n_total'], parity_counts['n_excited'])
+    return 1.0 - 2.0 * pe
+
+
 class WignerAnalysis(GeneralFitting):
     def __init__(self, data=None, readout_per_round=None, threshold=None, config=None, alphas=None, mode_state_num=5, station=None):
         if data is not None:
@@ -352,7 +391,81 @@ class WignerAnalysis(GeneralFitting):
             'x_vec': x_vec,
         }
 
-    def plot_wigner_reconstruction_results(self, results, initial_state=None, state_label = None):
+    def bootstrap_reconstruction(self, parity_counts, initial_state, rotate=False,
+                                 n_boot=400, seed=0, ci=(16, 84)):
+        '''Statistical (shot-noise) error bars on fidelity + populations.
+
+        Parametric bootstrap: each parity point is rebuilt from the RAW per-alpha
+        shot counts in `parity_counts` (see WignerTomography1ModeExperiment.analyze /
+        RunWignerResponse.parity_counts) with n_excited binomial-resampled, the draw
+        is reconstructed via wigner_analysis_results, and the ensemble is summarized.
+
+        The reconstruction is linear-inversion + a PSD eigenvalue clamp + optional
+        rotation-max -- nonlinear exactly near fidelity≈1 -- so we resample rather
+        than propagate a Jacobian. Fidelity uncertainty is read off the scalar
+        fidelity ensemble (NOT from per-element rho stds, which drop the strong
+        inter-element correlations). Populations are rotation-invariant (R is a
+        diagonal phase), so their CIs are well-defined regardless of `rotate`.
+
+        Captures shot noise ONLY -- not confusion-matrix / alpha_scale / Fock-
+        truncation systematics. Report it as a statistical error bar, not a budget.
+
+        Returns the point estimate (from the deterministic, un-resampled counts)
+        plus *_std / *_ci, the raw fidelity_samples, and the full central
+        reconstruction dict under 'point_results' (for plotting).
+        '''
+        if parity_counts is None:
+            raise ValueError("parity_counts is None (sim or sigma_z_mode='measure' "
+                             "run) -- no per-shot statistics to bootstrap")
+        rng = np.random.default_rng(seed)
+
+        parity0 = parity_from_counts(parity_counts, rng=None)
+        point = self.wigner_analysis_results(parity0, initial_state=initial_state,
+                                             rotate=rotate)
+
+        fids = np.empty(n_boot)
+        pops = np.empty((n_boot, self.m))
+        # Collect the full complex base reconstruction (res['rho'] -- UNROTATED) per
+        # draw. Re/Im element stds are taken on this unrotated frame: it's the rho the
+        # reconstruction returns and is independent of the `rotate` fidelity-max, so
+        # there's no phase jitter (taking Re/Im of the *rotated* rho under
+        # rotate='optimal' would smear off-diagonal phases -- |rho_nm| is invariant
+        # and kept for the display heatmap).
+        rhos = np.empty((n_boot, self.m, self.m), dtype=np.complex128)
+        for k in range(n_boot):
+            p = parity_from_counts(parity_counts, rng=rng)
+            res = self.wigner_analysis_results(p, initial_state=initial_state,
+                                               rotate=rotate)
+            fids[k] = res['fidelity']
+            pops[k] = np.real(np.diag(res['rho']))[:self.m]
+            rhos[k] = np.asarray(res['rho'])[:self.m, :self.m]
+
+        lo, hi = ci
+        rho_re_std = np.std(rhos.real, axis=0, ddof=1)
+        rho_im_std = np.std(rhos.imag, axis=0, ddof=1)
+        rho_abs_std = np.std(np.abs(rhos), axis=0, ddof=1)
+        return {
+            'fidelity':         float(point['fidelity']),
+            'fidelity_mean':    float(np.mean(fids)),
+            'fidelity_std':     float(np.std(fids, ddof=1)),
+            'fidelity_ci':      [float(np.percentile(fids, lo)),
+                                 float(np.percentile(fids, hi))],
+            'fidelity_samples': fids,
+            'populations':      [float(x) for x in np.real(np.diag(point['rho']))[:self.m]],
+            'populations_std':  [float(x) for x in np.std(pops, axis=0, ddof=1)],
+            'populations_ci':   [[float(np.percentile(pops[:, i], lo)),
+                                  float(np.percentile(pops[:, i], hi))]
+                                 for i in range(self.m)],
+            'rho_abs':          np.abs(point['rho'])[:self.m, :self.m],
+            'rho_abs_std':      rho_abs_std,
+            'rho_re_std':       rho_re_std,
+            'rho_im_std':       rho_im_std,
+            'n_boot':           int(n_boot),
+            'ci_percentiles':   [lo, hi],
+            'point_results':    point,
+        }
+
+    def plot_wigner_reconstruction_results(self, results, initial_state=None, state_label=None, uncertainty=None):
         
         alpha_list = results['alpha_list']
         allocated_readout = results['allocated_readout']
@@ -385,7 +498,14 @@ class WignerAnalysis(GeneralFitting):
         cbar1.set_ticklabels([r'$-2/\pi$', r'$-1/\pi$', '0', r'$1/\pi$', r'$2/\pi$'])
         ax[0, 0].set_title('Direct (reverse order)')
 
-        c = ax[0, 1].pcolormesh(np.arange(mode_state_num), np.arange(mode_state_num), np.abs(rho), cmap='viridis', vmin=0, vmax=1)
+        # |rho_nm| in the Fock basis. Integer-centred cells (edges at n-0.5) so all
+        # mode_state_num rows/cols render -- the old arange() edges silently dropped
+        # the last row+col -- and so per-element annotations land on cell centres.
+        rho_abs = np.abs(rho)
+        edges = np.arange(mode_state_num + 1) - 0.5
+        c = ax[0, 1].pcolormesh(edges, edges, rho_abs, cmap='viridis', vmin=0, vmax=1)
+        ax[0, 1].set_xticks(np.arange(mode_state_num))
+        ax[0, 1].set_yticks(np.arange(mode_state_num))
         ax[0, 1].set_ylabel('n')
         ax[0, 1].set_xlabel('m')
         # colorbar for the pcolormesh
@@ -394,6 +514,19 @@ class WignerAnalysis(GeneralFitting):
         cbar2.set_ticks([0, 0.5, 1])
         cbar2.set_ticklabels(['0', '1/2', '1'])
         ax[0, 1].set_title('Density matrix fock basis')
+
+        # Per-element bootstrap error bars: annotate |rho_nm| ± sigma. |rho_nm| is
+        # rotation-invariant so sigma is meaningful even with rotate='optimal'.
+        rho_abs_std = None
+        if uncertainty is not None and uncertainty.get('rho_abs_std') is not None:
+            rho_abs_std = np.asarray(uncertainty['rho_abs_std'])
+        if rho_abs_std is not None:
+            for i in range(mode_state_num):
+                for j in range(mode_state_num):
+                    val = rho_abs[i, j]
+                    ax[0, 1].text(j, i, f"{val:.2f}\n$\\pm${rho_abs_std[i, j]:.2f}",
+                                  ha='center', va='center', fontsize=6,
+                                  color='white' if val < 0.5 else 'black')
 
         ax[1, 0].set_aspect('equal')
         ax[1, 0].pcolormesh(x_vec, x_vec, W_fit, cmap='RdBu_r', vmin=vmin, vmax=vmax)
@@ -419,7 +552,10 @@ class WignerAnalysis(GeneralFitting):
             cbar4.set_ticks(ticks)
             cbar4.set_ticklabels([r'$-2/\pi$', r'$-1/\pi$', '0', r'$1/\pi$', r'$2/\pi$'])
 
-        fig.suptitle(f'Wigner Tomography Results\nFidelity: {fidelity:.4f}', fontsize=16)
+        fid_txt = f'{fidelity:.4f}'
+        if uncertainty is not None and uncertainty.get('fidelity_std') is not None:
+            fid_txt = f'{fidelity:.4f} $\\pm$ {uncertainty["fidelity_std"]:.4f}'
+        fig.suptitle(f'Wigner Tomography Results\nFidelity: {fid_txt}', fontsize=16)
         fig.subplots_adjust(top=0.9, hspace=0.3, wspace=0.3)
         fig.tight_layout()
 

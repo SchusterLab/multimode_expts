@@ -452,6 +452,7 @@ class WignerTomography1ModeExperiment(Experiment):
             n_alpha = len(data["alpha"])
             data["pe"] = np.full(n_alpha, np.nan)
             data["parity"] = np.full(n_alpha, np.nan)
+            data["parity_counts"] = None
             return data
 
         if self.pulse_correction:
@@ -480,8 +481,10 @@ class WignerTomography1ModeExperiment(Experiment):
                 data["sigma_z_discard_frac"] = float(
                     1 - 0.5 * (fmap_minus.mean() + fmap_plus.mean()))
 
-            pe_plus = wigner_analysis_plus.bin_ss_data(filter_map=fmap_plus)
-            pe_minus = wigner_analysis_minus.bin_ss_data(filter_map=fmap_minus)
+            pe_plus, counts_plus = wigner_analysis_plus.bin_ss_data(
+                filter_map=fmap_plus, return_counts=True)
+            pe_minus, counts_minus = wigner_analysis_minus.bin_ss_data(
+                filter_map=fmap_minus, return_counts=True)
             parity_plus = (1 - pe_plus) - pe_plus
             parity_minus = (1 - pe_minus) - pe_minus
             parity = (parity_minus - parity_plus) / 2
@@ -494,6 +497,22 @@ class WignerTomography1ModeExperiment(Experiment):
             data["parity_plus"] = parity_plus
             data["parity_minus"] = parity_minus
             data["parity"] = parity / scale_parity
+
+            # Raw per-alpha shot tallies so a downstream consumer can rebuild the
+            # parity point and a binomial error bar. pulse_correction combines two
+            # sub-measurements:
+            #   parity = (parity_minus - parity_plus) / 2 / alpha_scale,
+            #   parity_+/- = 1 - 2*pe_+/- ,  pe confusion-corrected from counts.
+            data["parity_counts"] = {
+                "pulse_correction": True,
+                "alpha_scale":      float(scale_parity),
+                "threshold":        counts_plus["threshold"],
+                "confusion_matrix": counts_plus["confusion_matrix"],
+                "plus":  {"n_total":   counts_plus["n_total"],
+                          "n_excited": counts_plus["n_excited"]},
+                "minus": {"n_total":   counts_minus["n_total"],
+                          "n_excited": counts_minus["n_excited"]},
+            }
 
         else:
             # Hand bin_ss_data the raw lane-interleaved shots; it handles
@@ -513,13 +532,113 @@ class WignerTomography1ModeExperiment(Experiment):
                 filter_map = _sigma_z_filter_map(data["i0"], self.cfg, layout)
                 data["sigma_z_discard_frac"] = float(1 - filter_map.mean())
 
-            pe = wigner_analysis.bin_ss_data(filter_map=filter_map)
+            pe, counts = wigner_analysis.bin_ss_data(
+                filter_map=filter_map, return_counts=True)
             data["pe"] = pe
             data["parity"] = (1 - pe) - pe
 
+            # Raw per-alpha shot tallies (no pulse_correction): parity = 1 - 2*pe,
+            # pe confusion-corrected from n_excited/n_total. No alpha_scale here.
+            data["parity_counts"] = {
+                "pulse_correction": False,
+                "alpha_scale":      1.0,
+                "threshold":        counts["threshold"],
+                "confusion_matrix": counts["confusion_matrix"],
+                "n_total":          counts["n_total"],
+                "n_excited":        counts["n_excited"],
+            }
+
+        # Reconstruction (rho / fidelity, optional bootstrap error bars) is the
+        # analysis step that belongs here -- but it's OPT-IN: a single-point alpha
+        # grid (calibrate_check, the closed-loop sanity default) can't be inverted,
+        # and the worker's go(analyze=True) must stay parity-only. Trigger it by
+        # passing reconstruct=True / bootstrap=True / initial_state=<target>.
+        do_recon = (kwargs.get('reconstruct', False) or kwargs.get('bootstrap', False)
+                    or kwargs.get('initial_state') is not None)
+        if do_recon:
+            try:
+                self.reconstruct(
+                    data,
+                    initial_state=kwargs.get('initial_state'),
+                    mode_state_num=kwargs.get('mode_state_num'),
+                    rotate=kwargs.get('rotate'),
+                    bootstrap=kwargs.get('bootstrap', False),
+                    n_boot=kwargs.get('n_boot', 400),
+                    seed=kwargs.get('seed', 0),
+                )
+            except Exception as e:
+                print(f"analyze: reconstruction skipped ({e})")
+
         return data
 
-    def display(self, data=None, mode_state_num=None, initial_state=None, rotate=None, state_label='', debug_components=False, station=None, save_fig=False, **kwargs):
+    def reconstruct(self, data=None, initial_state=None, mode_state_num=None,
+                    rotate=None, bootstrap=False, n_boot=400, seed=0, station=None):
+        '''Reconstruct the cavity density matrix + fidelity from the binned parity
+        grid (data['parity']), optionally with bootstrap shot-noise error bars from
+        the raw per-alpha counts (data['parity_counts']).
+
+        This is the analysis step: analyze() calls it (opt-in) and display() reuses
+        or refreshes it. It works off the ALREADY-binned parity grid -- it never
+        re-bins raw shots, so re-running it to re-target/re-rotate is cheap.
+
+        Stores a summary into `data` (rho, rho_rotated, fidelity, populations, the
+        Wigner grids, theta_opt, target_state, and -- when bootstrapped --
+        fidelity_std/ci, populations_std/ci, rho_abs_std) and caches the full
+        results + uncertainty on the instance for display(). Returns
+        (results, uncertainty).
+        '''
+        if data is None:
+            data = self.data
+        if 'parity' not in data or 'alpha' not in data:
+            raise ValueError("reconstruct needs 'parity' and 'alpha' in data -- run analyze() first")
+        parity = np.asarray(data['parity'], dtype=float)
+        if not np.all(np.isfinite(parity)):
+            raise ValueError("parity contains NaN/inf -- a sigma_z_mode='measure' (Tier 3) "
+                             "run has no parity grid to reconstruct")
+        if mode_state_num is None:
+            mode_state_num = int(getattr(self.cfg.expt, 'display_mode_state_num', 5))
+        if rotate is None:
+            rotate = bool(getattr(self.cfg.expt, 'display_rotate', False))
+        if initial_state is None:
+            initial_state = qt.fock(mode_state_num, 0).unit()
+
+        wa = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num,
+                            alphas=data['alpha'], station=station)
+        results = wa.wigner_analysis_results(parity, initial_state=initial_state, rotate=rotate)
+
+        uncertainty = None
+        if bootstrap:
+            pc = data.get('parity_counts')
+            if pc is None:
+                print("reconstruct: bootstrap requested but data has no 'parity_counts' "
+                      "(re-run analyze on a sigma_z_mode!='measure' run); skipping error bars.")
+            else:
+                uncertainty = wa.bootstrap_reconstruction(
+                    pc, initial_state=initial_state, rotate=rotate, n_boot=n_boot, seed=seed)
+
+        # Summary into data (saving / downstream). rho is complex and target_state
+        # is a qutip Qobj -- HDF5 serialization of those is the separate save issue.
+        data['rho'] = results['rho']
+        data['rho_rotated'] = results['rho_rotated']
+        data['fidelity'] = results['fidelity']
+        data['populations'] = np.real(np.diag(results['rho']))[:mode_state_num]
+        data['W_fit'] = results['W_fit']
+        data['W_ideal'] = results['W_ideal']
+        data['alpha_wigner'] = results['x_vec']
+        data['theta_opt'] = results['theta_max']
+        data['target_state'] = initial_state
+        if uncertainty is not None:
+            data['fidelity_std'] = uncertainty['fidelity_std']
+            data['fidelity_ci'] = uncertainty['fidelity_ci']
+            data['populations_std'] = uncertainty['populations_std']
+            data['populations_ci'] = uncertainty['populations_ci']
+            data['rho_abs_std'] = uncertainty['rho_abs_std']
+
+        self._wigner_results = results
+        self._wigner_uncertainty = uncertainty
+        return results, uncertainty
+
+    def display(self, data=None, mode_state_num=None, initial_state=None, rotate=None, state_label='', debug_components=False, station=None, save_fig=False, bootstrap=False, n_boot=400, seed=0, uncertainty=None, **kwargs):
         """
         Display using WignerAnalysis reconstruction pipeline.
 
@@ -534,12 +653,6 @@ class WignerTomography1ModeExperiment(Experiment):
         """
         if data is None:
             data = self.data
-
-        # Defaults
-        if mode_state_num is None:
-            mode_state_num = int(getattr(self.cfg.expt, 'display_mode_state_num', 5))
-        if rotate is None:
-            rotate = bool(getattr(self.cfg.expt, 'display_rotate', False))
 
         # Basic validation
         if 'parity' not in data or 'alpha' not in data:
@@ -557,23 +670,26 @@ class WignerTomography1ModeExperiment(Experiment):
                 "separate sigma_z_mode='off' run; use this run only for "
                 "data['sigma_z'].")
 
-        # Default initial state if not provided
-        if initial_state is None:
-            initial_state = qt.fock(mode_state_num, 0).unit()
+        # Analysis lives in reconstruct(); display reuses the cached result and only
+        # refreshes it when asked for a different target/cutoff/rotation or a
+        # bootstrap (re-running reconstruct() is cheap -- it works off the binned
+        # parity grid, no re-binning).
+        results = getattr(self, '_wigner_results', None)
+        unc = uncertainty if uncertainty is not None else getattr(self, '_wigner_uncertainty', None)
+        recon_requested = (bootstrap or any(v is not None for v in
+                                            (initial_state, mode_state_num, rotate)))
+        if results is None or recon_requested:
+            results, unc2 = self.reconstruct(
+                data, initial_state=initial_state, mode_state_num=mode_state_num,
+                rotate=rotate, bootstrap=bootstrap, n_boot=n_boot, seed=seed,
+                station=station)
+            if uncertainty is None:
+                unc = unc2
 
-        # Build analysis and plot
-        wigner_analysis = WignerAnalysis(data=data, config=self.cfg, mode_state_num=mode_state_num, alphas=alphas, station=station)
-        results = wigner_analysis.wigner_analysis_results(parity, initial_state=initial_state, rotate=rotate)
-        fig = wigner_analysis.plot_wigner_reconstruction_results(results, initial_state=initial_state, state_label=state_label)
-
-        data['rho'] = results['rho']
-        data['rho_rotated'] = results['rho_rotated']
-        data['fidelity'] = results['fidelity']
-        data['W_fit'] = results['W_fit']
-        data['W_ideal'] = results['W_ideal']
-        data['alpha_wigner'] = results['x_vec']
-        data['theta_opt'] = results['theta_max']
-        data['target_state'] = initial_state
+        wigner_analysis = results['wigner_analysis']
+        fig = wigner_analysis.plot_wigner_reconstruction_results(
+            results, initial_state=results['rho_ideal'], state_label=state_label,
+            uncertainty=unc)
 
         # Optional debug components plot (requires pulse-correction products)
         if debug_components:
@@ -619,9 +735,44 @@ class WignerTomography1ModeExperiment(Experiment):
 
         return fig
 
+    def reconstruct_uncertainty(self, initial_state, rotate=False, n_boot=400,
+                                seed=0, mode_state_num=10, data=None):
+        '''Statistical (shot-noise) error bars on the reconstructed fidelity +
+        populations, by bootstrapping the per-alpha shot counts in
+        data['parity_counts'] through the Wigner reconstruction.
+
+        Notebook-facing wrapper around WignerAnalysis.bootstrap_reconstruction --
+        the closed-loop reconstruct path reuses the same code. Requires a parity
+        run with counts (analyze() populated 'parity_counts'); not available for
+        sigma_z_mode='measure' (Tier 3, no parity grid).
+
+        Returns the dict from bootstrap_reconstruction (fidelity / fidelity_ci /
+        fidelity_std / populations_ci / fidelity_samples / point_results).
+        '''
+        _results, uncertainty = self.reconstruct(
+            data, initial_state=initial_state, mode_state_num=mode_state_num,
+            rotate=rotate, bootstrap=True, n_boot=n_boot, seed=seed)
+        if uncertainty is None:
+            raise ValueError("no 'parity_counts' in data -- run analyze() on a "
+                             "parity run first (sigma_z_mode != 'measure')")
+        return uncertainty
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
+        if data is None:
+            data = self.data
+        # Some keys aren't HDF5-native: parity_counts is a nested dict and
+        # target_state is a qutip Qobj — np.array() on either yields an object dtype
+        # with no native HDF5 equivalent. Stash them across the HDF5 save and restore
+        # after — they still ride along in the pickle the worker writes (which is what
+        # core.load_expt reads). Mirrors the time_peak_* stash in
+        # CavityRamseyGainSweepExperiment.save_data.
+        stashed = {}
+        for k in ('parity_counts', 'target_state'):
+            if k in data:
+                stashed[k] = data.pop(k)
         super().save_data(data=data)
+        data.update(stashed)
 
 
 # ====================================================== #

@@ -37,7 +37,7 @@ class GeneralFitting:
         self.threshold = threshold
     
 
-    def bin_ss_data(self, conf=True, return_shots=False, filter_map=None):
+    def bin_ss_data(self, conf=True, return_shots=False, filter_map=None, return_counts=False):
         '''
         This function takes config saved single shot parameters, applies the angle correction and threshold to the main data of the experiment
         bins it into counts_g and counts_e
@@ -48,8 +48,25 @@ class GeneralFitting:
         expts = self.cfg['expt']['expts']
         threshold = self.cfg.device.readout.threshold[0]
 
-        # TODO: make this a different confusion matrix if active reset is applied!!
-        conf_mat_wn_reset = self.cfg.device.readout.confusion_matrix_without_reset
+        # Select the confusion matrix matching the reset regime this data was
+        # taken under. Active reset improves state prep, so it has its own,
+        # higher-fidelity readout calibration. Correcting active-reset data with
+        # the without-reset matrix over-corrects (its off-diagonals overstate the
+        # error), pushing populations below 0 / parity above 1. Mirrors
+        # job_server/closed_loop/core.py:_config_confusion_for_reset.
+        ro = self.cfg.device.readout
+        if self.cfg['expt'].get('active_reset', False):
+            conf_mat = ro.get('confusion_matrix_with_active_reset', None)
+            if conf_mat is None:
+                import warnings
+                warnings.warn(
+                    "active_reset=True but confusion_matrix_with_active_reset is "
+                    "unset; falling back to confusion_matrix_without_reset. "
+                    "Recalibrate single shot with active reset on to populate it.",
+                    stacklevel=2)
+                conf_mat = ro.confusion_matrix_without_reset
+        else:
+            conf_mat = ro.confusion_matrix_without_reset
 
         try:
             I_data = temp_data['I_data']
@@ -134,16 +151,40 @@ class GeneralFitting:
         # fix using confusion matrix 
         ydata = shots_avg
         if conf: 
-            P_matrix = np.matrix([[conf_mat_wn_reset[0], conf_mat_wn_reset[2]],[conf_mat_wn_reset[1], conf_mat_wn_reset[3]]])
+            P_matrix = np.matrix([[conf_mat[0], conf_mat[2]],[conf_mat[1], conf_mat[3]]])
             for i in range(len(ydata)):
                 #ydata_old.append(ydata[i])
                 from numpy.linalg import inv
                 counts_new = inv(P_matrix)*np.matrix([[1-ydata[i]],[ydata[i]]])
                 ydata[i] = counts_new[1,0]
+
+        if return_counts:
+            # Per-expt RAW (pre-confusion) shot tallies, on the SAME shot
+            # population that produced shots_avg (i.e. after pre-selection /
+            # filter masking). n_excited = shots above threshold. With these plus
+            # the returned threshold + confusion_matrix a caller can reproduce the
+            # binned/corrected parity AND a binomial error bar.
+            if filter_map is not None:
+                n_total   = np.sum(filter_map, axis=0)
+                n_excited = np.sum(np.where(filter_map, shots, 0), axis=0)
+            else:
+                n_total   = np.full(shots.shape[1], shots.shape[0])
+                n_excited = np.sum(shots, axis=0)
+            counts = {
+                "n_total":          [int(x) for x in np.asarray(n_total).ravel()],
+                "n_excited":        [int(x) for x in np.asarray(n_excited).ravel()],
+                "threshold":        float(threshold),
+                "confusion_matrix": [float(conf_mat[0]), float(conf_mat[1]),
+                                     float(conf_mat[2]), float(conf_mat[3])],
+            }
+
+        if return_counts and return_shots:
+            return ydata, shots, counts
+        if return_counts:
+            return ydata, counts
         if return_shots:
             return ydata, shots
-        else:
-            return ydata
+        return ydata
     
 
     def bin_ss_data_given_ss(self, conf = True):

@@ -227,3 +227,59 @@ def test_build_plan_reconstruct_noncfock_target_is_none(tmp_path):
         manifest=_manifest("cat", reconstruct=True), mode="sim")
     assert plan.request.knobs.reconstruct is True
     assert plan.request.target_state is None
+
+
+# --- reconstruct uncertainty (bootstrap) -------------------------------------
+
+def _counts_for_parity(parity, n_total=4000):
+    """Identity-confusion, no-pulse-correction counts whose deterministic parity
+    equals `parity` (pe = (1 - parity)/2, clipped), so the bootstrap point matches.
+    """
+    pe = np.clip((1.0 - np.asarray(parity)) / 2.0, 0.0, 1.0)
+    return {
+        "pulse_correction": False, "alpha_scale": 1.0, "threshold": 0.0,
+        "confusion_matrix": [1.0, 0.0, 0.0, 1.0],
+        "n_total": [int(n_total)] * len(pe),
+        "n_excited": [int(round(p * n_total)) for p in pe],
+    }
+
+
+def test_reconstruct_uncertainty_shapes_and_keys():
+    alphas_c = _grid_alphas()
+    target = qutip.fock(FOCK_DIM, 1)
+    parity = _ideal_parity(qutip.ket2dm(target).full(), alphas_c, FOCK_DIM)
+    pc = _counts_for_parity(parity)
+
+    out = _reconstruct_from_parity(parity, alphas_c, FOCK_DIM, target, rotate=False,
+                                   parity_counts=pc, bootstrap=True, n_boot=60, seed=0)
+    unc = out["uncertainty"]
+    assert unc is not None
+    assert isinstance(unc["fidelity_std"], float) and unc["fidelity_std"] >= 0
+    assert len(unc["fidelity_ci"]) == 2
+    assert len(unc["populations_std"]) == FOCK_DIM
+    # density-matrix error bars: real + imag parts, each m x m
+    assert np.array(unc["rho_re_std"]).shape == (FOCK_DIM, FOCK_DIM)
+    assert np.array(unc["rho_im_std"]).shape == (FOCK_DIM, FOCK_DIM)
+    assert np.all(np.array(unc["rho_re_std"]) >= 0)
+
+
+def test_reconstruct_uncertainty_none_without_counts():
+    """bootstrap requested but no counts (sim / Tier-3) -> uncertainty stays None."""
+    alphas_c = _grid_alphas()
+    target = qutip.fock(FOCK_DIM, 1)
+    parity = _ideal_parity(qutip.ket2dm(target).full(), alphas_c, FOCK_DIM)
+    out = _reconstruct_from_parity(parity, alphas_c, FOCK_DIM, target, rotate=False,
+                                   parity_counts=None, bootstrap=True, n_boot=10)
+    assert out["uncertainty"] is None
+
+
+def test_build_plan_reconstruct_uncertainty_knob(tmp_path):
+    sp = tmp_path / "fock1_sampled.jld2"
+    _write_sampled_jld2(sp, target_state="fock1")
+    plan = batch_runner.build_plan(
+        {"group": "fock1", "sampled_path": str(sp)},
+        manifest=_manifest("fock1", reconstruct=True, reconstruct_uncertainty=True,
+                           reconstruct_bootstrap_n=128),
+        mode="sim")
+    assert plan.request.knobs.reconstruct_uncertainty is True
+    assert plan.request.knobs.reconstruct_bootstrap_n == 128
