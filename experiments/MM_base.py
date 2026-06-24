@@ -12,7 +12,6 @@ from qick.averager_program import NDAveragerProgram
 from qick.helpers import gauss as _qick_gauss
 from slab import AttrDict
 
-from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 
 logger = logging.getLogger("qick.qick_asm")
 logger.setLevel(logging.ERROR)
@@ -1258,7 +1257,6 @@ class MM_base:
         for name in pair_names:
             rate = ds_storage.get_dr_ac_stark_rate(name)
             if rate is None:
-                import warnings
                 warnings.warn(
                     f"dr_ac_stark_rate not calibrated for pair {name}, "
                     f"defaulting to 0.0 MHz")
@@ -1299,7 +1297,6 @@ class MM_base:
         for name in pair_names:
             phase_dict = ds_storage.get_dr_jp_phase(name)
             if phase_dict is None:
-                import warnings
                 warnings.warn(
                     f"dr_jp_phase not calibrated for pair {name}, "
                     f"defaulting to all zeros")
@@ -1729,7 +1726,6 @@ class MM_base:
         # print('man_idx:', man_idx)
         # print('parity_fast:', parity_fast)
         if pre_selection_reset and not getattr(self, '_pre_selection_filtering', False):
-            import warnings
             warnings.warn(
                 "pre_selection_reset=True but this experiment has not implemented "
                 "per-shot pre_selection filtering. The measurement is recorded but "
@@ -2606,19 +2602,32 @@ class prepulse_creator2:
         man_idx is not irrelvant
         '''
         # connie: this whole function should really be calling multiphoton with f0-g1
+        # guan: done now, but function very limited: this can only do f0g1 pi/hpi
+        # while prep_man_photon and prep_man_fock exist
+        # so only keeping this for backwards compatibility and single source of truth reasons
         cav_name, pulse_name, phase = pulse_param
+        assert cav_name == 'M1', f"prepulse_creator2.man can only handle pulse name M1 now, but got {cav_name}"
+        mp_f0g1 = self.cfg.device.multiphoton.pi['fn-gn+1']
 
+        freq = mp_f0g1.frequency[0]
+        gain = mp_f0g1.gain[0]
+        length = mp_f0g1.length[0]
         if pulse_name == 'pi':
-            length = self.dataset.get_pi(cav_name)
+            pass
+        elif pulse_name == 'hpi':
+            warnings.warn("""
+                          prepulse_creator2.man used to get half pi data from the ds_ѕtorage
+                          but now we are consolidating to hardware_cfg.device.multiphoton
+                          so there is no dedicated h_pi field.
+                          Either beware that current behavior is just dividing the pi length by 2
+                          or add that field to the config.
+                          """)
+            length /= 2
         else:
-            length = self.dataset.get_h_pi(cav_name)
+            raise KeyError(f"prepulse_creator2.man can only handle pi or hpi pulse name, but got {pulse_name}")
 
-        f0g1  = np.array([[self.dataset.get_freq(cav_name)],
-                [ self.dataset.get_gain(cav_name)],
-                [length],
-                [phase],
-                [self.cfg.hw.soc.dacs.sideband.ch],
-                ['flat_top'],
+        f0g1  = np.array([[freq], [gain], [length], [phase],
+                [self.cfg.hw.soc.dacs.sideband.ch], ['flat_top'],
                 [self.cfg.device.manipulate.ramp_sigma]], dtype = object)
 
         self.pulse = np.concatenate((self.pulse, f0g1), axis=1)

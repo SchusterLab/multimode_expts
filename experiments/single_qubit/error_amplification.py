@@ -2,14 +2,11 @@ from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
-from qick import *
-from qick.helpers import gauss
 from slab import AttrDict, Experiment
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
-from experiments.MM_base import *
-from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
+from experiments.MM_base import MMRAveragerProgram
 
 
 class ErrorAmplificationProgram(MMRAveragerProgram):
@@ -26,12 +23,10 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
     def initialize(self):
         cfg = AttrDict(self.cfg)
         self.MM_base_initialize()
-        qTest = 0 
 
         # what pulse do we want to calibrate?
         # use the pre_pulse_creator to define pulse parameters
         # I should add user define pulse later for more flexibility
-
 
         self.pulse_to_test = self.get_prepulse_creator([cfg.expt.pulse_type], cfg=cfg).pulse.tolist()
         # flatten the list
@@ -275,8 +270,6 @@ class ErrorAmplificationExperiment(Experiment):
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress)
 
 
-
-    
     def acquire(self, progress=False, debug=None):
 
         # if not in kwarg, look for setting in expt cfg
@@ -332,21 +325,18 @@ class ErrorAmplificationExperiment(Experiment):
             data[k] = np.array(a)
         self.data=data
         return data
-    
+
     def analyze(self, data=None, fit=True, state_fin='g', **kwargs):
+        """
+        use the fitting process implemented by MIT https://arxiv.org/abs/2406.08295
+        for avgi, avgq, amp and phase take the product of the raws and
+        prod_avgi = np.abs(np.prod(data['avgi'], axis=0))
+        prod_avgq = np.abs(np.prod(data['avgq'], axis=0))
+        prod_amp = np.abs(np.prod(data['amp'], axis=0))
+        prod_phase = np.abs(np.prod(data['phase'], axis=0))
+        """
         if data is None:
             data=self.data
-
-        # use the fitting process implemented by MIT 
-        # https://arxiv.org/pdf/2406.08295
-        
-        # for avgi, avgq, amp and phase take the product of the raws and
-
-        # prod_avgi = np.abs(np.prod(data['avgi'], axis=0))
-        # prod_avgq = np.abs(np.prod(data['avgq'], axis=0))
-        # prod_amp = np.abs(np.prod(data['amp'], axis=0))
-        # prod_phase = np.abs(np.prod(data['phase'], axis=0))
-
 
         Ie = self.cfg.device.readout.Ie[0]
         Ig = self.cfg.device.readout.Ig[0]
@@ -368,12 +358,12 @@ class ErrorAmplificationExperiment(Experiment):
             # add the fit parameters to the data dictionary
             data['fit_avgi'] = p_avgi
             data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-    
+
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
             data=self.data 
-        
+
         x_sweep = data['x_pts']
         y_sweep = data['N_pts']
         avgi = data['avgi']
@@ -385,8 +375,6 @@ class ErrorAmplificationExperiment(Experiment):
             xlabel = "Frequency [MHz]"
         else:
             raise ValueError("Invalid parameter to test. Must be 'gain' or 'frequency'.")
-
-
 
         title= f"Err Ampl: {self.cfg.expt.pulse_type[0]}-{self.cfg.expt.pulse_type[1]}-{self.cfg.expt.pulse_type[2]}"
         fig, ax = plt.subplots(2, 1, figsize=(8, 8), sharex=True, sharey=True)
@@ -410,7 +398,7 @@ class ErrorAmplificationExperiment(Experiment):
         ax[1].set_ylabel('N pulse')
         fig.colorbar(ax[1].imshow(np.flip(avgq, 0), cmap='viridis', extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]], aspect='auto'), ax=ax[1], label='Q [ADC level]')
 
-        if fit: 
+        if fit:
             if 'fit_avgi' in data:
                 x_opt = data['fit_avgi'][2]
                 ax[0].axvline(x_opt, color='black', linestyle='--')
@@ -447,10 +435,5 @@ class ErrorAmplificationExperiment(Experiment):
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
-        super().save_data(data=data)        
+        super().save_data(data=data)
 
-            
-    
-
-
-        
