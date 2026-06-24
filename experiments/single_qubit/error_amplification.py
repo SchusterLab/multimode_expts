@@ -36,7 +36,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         self.pulse_to_test = self.get_prepulse_creator([cfg.expt.pulse_type], cfg=cfg).pulse.tolist()
         # flatten the list
         self.pulse_to_test = [item for sublist in self.pulse_to_test for item in sublist]
-        print("pulse_to_test:", self.pulse_to_test)
+        if cfg.expt.get("debug", False):
+            print("[ERRAMP EXPT DEBUG] pulse_to_test: ", self.pulse_to_test)
         # add the pulse to test to the channel
         if self.pulse_to_test[5] == 'gauss' and self.pulse_to_test[6] > 0:
             _sigma = self.us2cycles(self.pulse_to_test[6], gen_ch=self.pulse_to_test[4])
@@ -276,9 +277,14 @@ class ErrorAmplificationExperiment(Experiment):
 
 
     
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False, debug=None):
 
-        print("cfg at start of acquire", self.cfg.expt)
+        # if not in kwarg, look for setting in expt cfg
+        if debug is None: 
+            debug = self.cfg.expt.get('debug', False)
+
+        if debug:
+            print("[ERRAMP EXPT DEBUG] cfg at start of acquire: ", self.cfg.expt)
 
         num_qubits_sample = len(self.cfg.device.qubit.f_ge)
         for subcfg in (self.cfg.device.readout, self.cfg.device.qubit, self.cfg.hw.soc):

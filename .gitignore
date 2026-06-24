@@ -14,6 +14,9 @@ job_server/jobs.db*
 job_server/worker.lock
 *.ffs_lock
 
+# those of us on jupytext no longer git sync ipynb
+measurement_notebooks/guan/*.ipynb
+
 # tooling
 .vscode/
 .idea/
