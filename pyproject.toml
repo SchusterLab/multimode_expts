@@ -63,6 +63,7 @@ qick = { path = "../qick", editable = true }
 multimode_expts = { path = ".", editable = true }
 
 [tool.pixi.tasks]
+lab = "python launch_lab.py"
 nameserver = "python start_nameserver.py"
 server = "python -m uvicorn job_server.server:app --host 127.0.0.1 --port 8000"
 worker = "python -u -m job_server.worker"
