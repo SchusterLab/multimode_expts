@@ -249,21 +249,41 @@ class DarkBaseProgram(QsimBaseProgram):
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
-        self.m1s_kwargs = [{
+        
+        # Register a gaussian envelope for each mode flagged 'arb'; per-mode sigma
+        # comes from the dataset (cfg.expt.floquet_gauss_sigma overrides if given).
+        # flat_top modes reuse MM_base's pi_m1si_low/high ramp waveforms (no buffer cost).
+        for i_stor in range(7):
+            if self.m1s_style[i_stor] != 'arb':
+                continue
+            stor_name = f"M1-S{i_stor+1}"
+            ch = self.m1s_ch[i_stor]
+            sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
+            if sig_us is None:
+                sig_us = self.swap_ds.get_gauss_sigma(stor_name)
+            n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
+            sigma = self.us2cycles(sig_us, gen_ch=ch)
+            self.add_gauss(ch=ch, name=self.m1s_wf_name[i_stor], sigma=sigma, length=sigma * n_sig)
+
+        self.m1s_kwargs = []
+        for stor in range(7):
+            kw = {
                 'ch': self.m1s_ch[stor],
-                'style': 'flat_top',
+                'style': self.m1s_style[stor],
                 'freq': self.m1s_freq[stor],
                 'phase': 0,
                 'gain': self.m1s_gain[stor],
-                'length': self.m1s_length[stor],
                 'waveform': self.m1s_wf_name[stor],
-        } for stor in range(7)]
-
+            }
+            if self.m1s_style[stor] != 'arb':   # flat_top / const need the plateau length
+                kw['length'] = self.m1s_length[stor]
+            self.m1s_kwargs.append(kw)
+            
         if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
             self.displace_man(setup=True, play=False)
 
         self.sync_all(200)
-        
+
     def multi_parity_readout(self, 
                              name='multiparity_readout', 
                              register_label='mpreadout', 
