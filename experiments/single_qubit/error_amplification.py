@@ -286,7 +286,7 @@ class ErrorAmplificationExperiment(Experiment):
                     for key2, value2 in value.items():
                         for key3, value3 in value2.items():
                             if not(isinstance(value3, list)):
-                                value2.update({key3: [value3]*num_qubits_sample})                                
+                                value2.update({key3: [value3]*num_qubits_sample})
                 elif not(isinstance(value, list)):
                     subcfg.update({key: [value]*num_qubits_sample})
 
@@ -306,12 +306,12 @@ class ErrorAmplificationExperiment(Experiment):
         data = {"npts":[],"x_pts":[], "avgi":[], "avgq":[], "amp":[], "phase":[]}
         for pt in tqdm(n_pts):
             cfg.expt.n_pulses = pt
-            prog = ErrorAmplificationProgram(soccfg=self.soccfg, cfg=cfg)
-            xpts, avgi, avgq = prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug, readouts_per_experiment=read_num)
+            self.prog = ErrorAmplificationProgram(soccfg=self.soccfg, cfg=cfg)
+            xpts, avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc], threshold=None, load_pulses=True, progress=False, debug=debug, readouts_per_experiment=read_num)
             avgi = avgi[adc_ch[0]][-1]  # Get last readout (actual measurement after active_reset)
             avgq = avgq[adc_ch[0]][-1]
             amp = np.abs(avgi+1j*avgq) # Calculating the magnitude
-            phase = np.angle(avgi+1j*avgq) # Calculating the phase        
+            phase = np.angle(avgi+1j*avgq) # Calculating the phase
 
             data["avgi"].append(avgi)
             data["avgq"].append(avgq)
