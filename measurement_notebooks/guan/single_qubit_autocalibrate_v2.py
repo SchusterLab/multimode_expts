@@ -37,6 +37,8 @@ from job_server import JobClient
 from job_server.database import get_database
 from job_server.config_versioning import ConfigVersionManager
 
+from fitting.fit_display_classes import ChevronFitting
+
 # %%
 # Initialize database and config manager
 db = get_database()
@@ -69,25 +71,49 @@ station = MultimodeStation(
     log_measurements=True,
 )
 
-# %% [markdown]
+# %% [markdown] editable=true slideshow={"slide_type": ""}
 # ## Config branches
 
 # %%
 bm = BranchManager(station)
 
-
-
 # %%
 bm.list()
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
 # %%
-bm.commit('coupler0.05', note='qubit and rough f0g1 search')
+bm.commit('coupler0.3', note='f0g1 rough; S1 S2')
 
 # %%
 bm.branch('coupler0.5', note='branching off from 0.3')
 
 # %%
+bm.checkout('coupler0.3', force=False)
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# ### Cross branch value injection
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 bm.checkout('coupler0.05', force=False)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+hwcfg = deepcopy(station.hardware_cfg)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+bm.checkout('coupler0.5', force=False)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.hardware_cfg.device.readout = hwcfg.device.readout
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.hardware_cfg.device.qubit = hwcfg.device.qubit
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 
 # %% [markdown]
 # ## Manually update entries
@@ -117,43 +143,6 @@ station.snapshot_hardware_config()
 # %%
 station.yoko_coupler.ramp_current(0, 2e-4)
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
-# ## Experiments to run
-#
-# Depending on stage of cooldown, we will run a different sequence of calibration experiments. For example, amplitude rabi don't need to be updated every time, but the frequency correction from T2 is important to do every day. In the dictionary experiments to run, we will speciy the experiments we want to run. 
-
-# %%
-expts_to_run = {# readout 
-                'res_spec': True, # Readout spectroscopy
-                'single_shot': True, 
-                # qubit ge 
-                'pulse_probe_ge': True,
-                't2_ge': True, 
-                'amplitude_ge': True,
-                't1_ge': True,
-                # qubit ef
-                'pulse_probe_ef': True,
-                't2_ef': True,
-                'amplitude_ef': True,
-                't1_ef': True,
-
-                # manipulate 
-                'man_modes': [1], # [1,2] if also want to run mode 2
-                'pulse_probe_f0g1': True,
-                'length_rabi_sweep':True,
-                'length_rabi':False, # this will run automatically if the length_rabi_sweep is set to True
-                'chi_ge': True, 
-                'chi_ef': True,
-                'RB': False,
-
-                #storage
-                'stor_modes': [1,2,3,4,5,6,7], # [1,2, .., 7] if also want to run  all modes 
-                # 'stor_modes': [3, 4, 5], # [1,2, .., 7] if also want to run  all modes 
-                'stor_spectroscopy': True,
-                'sideband_freq_sweep': True,
-                'sideband_length_rabi': True,
-                # 'storage_t1': True
-                }
 
 # %% [markdown]
 # # Qubit characterization
@@ -288,8 +277,7 @@ ss = ss_runner.execute(
     # coupler_current=coupler_current,
     # priority=1,
 )
-
-ss.display()
+# ss.display()
 
 # %%
 station.preview_config_update()
@@ -884,8 +872,6 @@ def f0g1spec_postproc(station, expt):
     station.snapshot_hardware_config(update_main=False)
 
 
-# %%
-station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']
 
 # %%
 # Execute
@@ -915,15 +901,6 @@ man_spec = f0g1spec_runner.execute(
 man_spec.display()
 
 
-# %%
-station.preview_config_update()
-# station.snapshot_hardware_config(update_main=True)
-
-# %%
-station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency']
-
-# %%
-station.snapshot_hardware_config(update_main=False)
 
 
 # %% [markdown]
@@ -987,6 +964,8 @@ def f0g1_chevron_postproc(station, mother_expt):
         gain = expt_cfg.gain if expt_cfg.get('gain') is not None else mp['pi']['fn-gn+1']['gain'][idx]
         mp['pi']['fn-gn+1']['gain'][idx] = gain
         print('Updated gain to:', gain)
+    else:
+        print('No best freq found, nothing updated')
     mother_expt.analysis = chevron_analysis
     chevron_analysis.display_results()
     station.snapshot_hardware_config(update_main=False)
@@ -1015,7 +994,7 @@ f0g1_chevron = runner.execute(
     # coupler_current=coupler_current,
     batch = True,
 )
-f0g1_chevron.display()
+# f0g1_chevron.display()
 
 # %%
 # fine sweep
@@ -1027,8 +1006,10 @@ f0g1_chevron = runner.execute(
     gain = m1['gain'][0],
     # start = 1, # time start in us
     # coupler_current=coupler_current,
+    batch = True
 )
-f0g1_chevron.display()
+# f0g1_chevron.display()
+
 
 # %% [markdown]
 # ## Error amplification
@@ -1050,8 +1031,8 @@ error_amp_defaults = AttrDict(dict(
     parameter_to_test='frequency',
     pulse_type= None, # if this is None, will be set to ['multiphoton', sideband, 'pi', 0] in preproc
     active_reset=False,
-    man_reset=True,
-    storage_reset=True,
+    man_reset=False,
+    storage_reset=False,
     relax_delay=2500,
 ))
 
@@ -1093,25 +1074,41 @@ error_amp_runner = CharacterizationRunner(
     job_client=client,
 )
 
-# Example execution
 
-# Run with analyze=False, display=False initially
-# Postprocessor will handle custom analysis
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"} editable=true slideshow={"slide_type": ""}
 error_amp_exp = error_amp_runner.execute(
     start=station.hardware_cfg.device.multiphoton.pi['fn-gn+1'].frequency[0]-0.5,
+    expts = 21,
+    step = 0.05,
+    reps=100,
+    n_pulses=7,
     go_kwargs = dict(analyze=False, display=False),
-    postprocess=True  # This will call postprocessor which does the custom analysis
+    postprocess=False,
+    # debug=True,
 )
+# error_amp_exp.display()
 
-error_amp_exp.display()
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 
-# %%
-station.preview_config_update()
+# %% editable=true slideshow={"slide_type": ""}
+data = error_amp_exp.data
+avgi, avgq = data['avgi'], data['avgq']
+Ie, Ig = station.hardware_cfg.device.readout.Ie[0], station.hardware_cfg.device.readout.Ig[0]
+
+avgi = (avgi-Ig)/(Ie-Ig)
+# avgq = (avgq-Qg)/(Ie-Ig)
+
+plt.subplot(121)
+for kk in range(avgi.shape[0]):
+    plt.plot(avgi[kk] + 1*kk)
+plt.subplot(122)
+for kk in range(avgi.shape[0]):
+    plt.plot(avgq[kk])
 
 # %% [markdown]
 # ## Length Rabi f0g1 (Update time)
 
-# %%
+# %% editable=true slideshow={"slide_type": ""}
 # Define defaults, smart config preprocessing and post-measurement updates
 # =====================================
 lenrabi_f0g1_defaults = AttrDict(dict(
@@ -1203,7 +1200,7 @@ len_rabis_man = lenrabi_f0g1_runner.execute(
 # %%
 station.preview_config_update()
 
-# %%
+# %% editable=true slideshow={"slide_type": ""}
 station.update_all_station_snapshots(update_main=False)
 
 # %%
@@ -1532,10 +1529,7 @@ def get_mode_parameters(ds_storage, config_thisrun, mode_name):
     return freq, gain, pi_len, h_pi_len, ch, prepulse, postpulse
 
 
-# %% [markdown]
-# ## Man-Stor Spectroscopy
-
-# %%
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 # ── Sideband spectroscopy — unified for storage (M1-S*), dump (M1-D*), coupler (M1-C) ──
 # Pass mode_name= at execute time, e.g.:
 #   sideband_spec_runner.execute(mode_name='M1-S4', ...)
@@ -1600,6 +1594,9 @@ sideband_spec_runner = CharacterizationRunner(
     job_client=client,
 )
 
+# %% [markdown]
+# ## Man-Stor Spectroscopy
+
 # %%
 station.ds_storage.append_dataset(
     'M1-D1', **{'freq (MHz)': 2313.294828, 
@@ -1611,9 +1608,12 @@ station.ds_storage.append_dataset(
 # %%
 station.ds_storage.update_freq('M1-C', 950)
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.ds_storage.update_gain('M1-S1', 5000)
+
 # %%
 stor_specs = {}
-for stor_mode_no in [2]:  # range(1, 8): # for all storage modes
+for stor_mode_no in [1]:  # range(1, 8): # for all storage modes
     mode_name = f'M1-S{stor_mode_no}'
     print(f'Running storage spectroscopy for {mode_name}')
     stor_specs[stor_mode_no] = sideband_spec_runner.execute(
@@ -1621,10 +1621,10 @@ for stor_mode_no in [2]:  # range(1, 8): # for all storage modes
         postproc=False,
         relax_delay=800,
         reps=100,
-        bw=200,
+        bw=20,
         expts=100,
-        flux_drive_gain=6000,
-        flux_drive_duration=5,
+        flux_drive_gain=4000,
+        flux_drive_duration=10,
     )
     # stor_specs[stor_mode_no].display()
 
@@ -2008,21 +2008,24 @@ spec.display()
 # sideband_spec_defaults/preproc/postproc/runner above.
 # Notable difference vs storage: much wider bw (200 MHz) needed.
 
-# %%
-station.ds_storage.df
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.ds_storage.update_freq('M1-C', 1500)
 
 # %%
 coupler_spec = sideband_spec_runner.execute(
     mode_name='M1-C',
     postproc=False,
     relax_delay=2500,
-    reps=100,
-    bw=100,
-    expts=100,
+    reps=50,
+    bw=800,
+    expts=400,
     flux_drive_gain=1000,
     flux_drive_duration=5,
 )
 # coupler_spec.display()
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.ds_storage.df
 
 # %%
 
@@ -2125,9 +2128,10 @@ sideband_chevron_runner = SweepRunner(
 )
 
 # %%
-station.ds_storage.update_gain('M1-S2', 8000)
+station.ds_storage.update_freq('M1-S1', 348)
 
 # %%
+station.ds_storage.get_gain('M1-S1')
 
 # %%
 for stor_i in [2]: # range(1,8):
@@ -2148,14 +2152,11 @@ for stor_i in [2]: # range(1,8):
         pi_len_sweep=pi_len_sweep,
         expts=25,
         # gain=4000,
-        # batch=True,
+        batch=True,
         # debug=True,
         relax_delay=8000,
     )
     # chevron_analysis.analysis.display_results()
-
-# %%
-station.ds_storage.update_pi('M1-S1', 1)
 
 # %%
 station.snapshot_man1_storage_swap(update_main=False)
@@ -2166,7 +2167,7 @@ station.ds_storage.df
 # %% [markdown]
 # ### Coupler
 
-# %%
+# %% editable=true slideshow={"slide_type": ""}
 stor_name = f'M1-C'
 
 freq_span = 12 # MHz
@@ -2426,6 +2427,9 @@ error_amp_stor_runner = CharacterizationRunner(
     job_client=client,
 )
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.ds_storage.update_freq('M1-S2', 519)
+
 # %%
 for i, stor_i in enumerate([2]):
     stor_name = 'M1-S' + str(stor_i)
@@ -2433,7 +2437,7 @@ for i, stor_i in enumerate([2]):
     error_amp_freq1[i] = error_amp_stor_runner.execute(
         stor_mode_no=stor_i,
         parameter_to_test='frequency',
-        span=0.2,
+        span=0.3,
         n_step=2,
         n_pulses=10,
     )
@@ -2637,7 +2641,7 @@ def lenrabi_coupler_preproc(station, default_expt_cfg, **kwargs):
 
 
     fge, fef =  station.hardware_cfg.device.qubit.f_ge[0], station.hardware_cfg.device.qubit.f_ef[0]
-    ff0g1 = station.ds_storage.get_freq('M1')
+    ff0g1 = station.hardware_cfg.device.multiphoton.pi['fn-gn+1'].frequency[0]
     fman = fge+fef-ff0g1
     fm1c = station.ds_storage.get_freq('M1-C')
     fcoupler_guess = fman-fm1c
@@ -2653,7 +2657,7 @@ def lenrabi_coupler_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg.update(kwargs)
     return expt_cfg
 
-# %%
+# %% editable=true slideshow={"slide_type": ""}
 # === LengthRabiCouplerFreqsweep: runner + execute ==========================
 lenrabi_coupler_runner = CharacterizationRunner(
     station=station,
@@ -2674,6 +2678,9 @@ lenrabi_coupler = lenrabi_coupler_runner.execute(
     reps=100,
 )
 # lenrabi_coupler.display()
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.hardware_cfg
 
 # %%
 plt.plot(lenrabi_coupler.data['ypts'], lenrabi_coupler.data['avgi'][:,1])
@@ -2873,6 +2880,32 @@ for charge_gain in [0,8000,15000]:
 
 # %% [markdown]
 # ## Run
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# ### $\Delta n = 0$
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+cool_spec = cool_spec_runner.execute(
+    cooling_gain = 8000,
+    charge_gain = 0,
+    charge_freq = 4642,
+    cooling_length = 100,
+    # cooling_lengths = np.linspace(0.01, 1, 51).tolist(),
+    cooling_freqs = np.linspace(7500,8500,501).tolist(),
+    ramp_sigma = 0.01,
+    # swept_params = ['cooling_freq', 'cooling_length'],
+    swept_params = ['cooling_freq'],
+    init_stor = [1],
+    prepulse=True,
+    ro_stor = 0,
+    reps = 50,
+    relax_delay = 2500,
+)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# ### $\Delta n=2$
 
 # %% [markdown]
 # Cooling requires
