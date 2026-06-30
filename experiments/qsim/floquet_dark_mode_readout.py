@@ -1637,13 +1637,37 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
         )
 
 
-class SidebandScrambleDarkProgramNew(SidebandScrambleDarkProgramNewNew):
-    # Backward-compatible name.  Keep the implementation identical to
-    # SidebandScrambleDarkProgramNewNew so dark load/scramble/readout share the
-    # same Stark and synthetic-disorder frame trackers.
+class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
+    # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
+    # so super().core_pulses() plays the scrambling pulses, while the dark-mode
+    # helpers (_read_dark_mode, _accumulate_scramble_phases, man_reset, ...) are
+    # inherited from DarkBaseProgram.
 
     def core_pulses(self):
-        return super().core_pulses()
+        swap_stors = list(self.cfg.expt.swap_stors)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        if self.cfg.expt.get("load_man_dark", False):
+            self._prepare_large_dark_mode(phase_offsets)
+
+        super().core_pulses()  # SidebandScrambleProgram.core_pulses(): plays scrambling
+
+        if not self.cfg.expt.get("swap_man_dark", False):
+            return
+
+        # Replay the phase bookkeeping in the calibrated frame to match what
+        # the (just-played) scrambling left behind. SidebandScrambleProgram
+        # keeps its phase tracker local, so we reconstruct it here.
+        self._accumulate_scramble_phases(phase_offsets, swap_stors)
+        if self.cfg.expt.get("swap_man_dark", False) and not self.cfg.expt.get("swap_man_large_dark", False):
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with two supports")
+            # Map the selected dark/normal mode back into M1.
+            self._read_dark_mode(phase_offsets)
+        elif self.cfg.expt.get("swap_man_large_dark", False):
+            if self.cfg.expt.get("debug", False):
+                print("reading out dark mode with four supports")
+            self._read_large_dark(phase_offsets)
 
 
 class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
