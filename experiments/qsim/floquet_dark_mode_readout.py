@@ -1424,6 +1424,18 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
         Same physical pulse train as SidebandScrambleProgram.core_pulses(),
         but using the caller-provided phase_offsets as the live frame tracker.
 
+        If cfg.expt.palindrome_scramble is True, consecutive Floquet cycles
+        alternate direction:
+
+            cycle 0: swap_stors
+            cycle 1: reversed(swap_stors)
+            cycle 2: swap_stors
+            ...
+
+        This keeps the number of pulses per floquet_cycle unchanged. With an
+        even floquet_cycle, each forward cycle has a reverse partner.
+        Otherwise it preserves the original SidebandScrambleProgram order.
+
         Correct continuous sequence:
 
             load dark mode
@@ -1470,6 +1482,7 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
 
         update_phases = ecfg.get("update_phases", True)
         scramble_sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
+        palindrome_scramble = bool(ecfg.get("palindrome_scramble", False))
 
         # Deep copy floquet params and apply detunings exactly as in
         # SidebandScrambleProgram.core_pulses().
@@ -1496,6 +1509,9 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
                 pulse_us = float(self.swap_ds.get_len(stor_name))
             pulse_us_by_stor.append(pulse_us)
 
+        forward_sequence = list(range(len(swap_stors)))
+        reverse_sequence = list(reversed(forward_sequence))
+
         scramble_sync_us = float(self.cycles2us(scramble_sync_cycles))
         scramble_elapsed_us = int(ecfg.floquet_cycle) * (
             sum(pulse_us_by_stor) + len(swap_stors) * scramble_sync_us
@@ -1509,11 +1525,26 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
             print("[DarkScramble] initial disorder_phase_offsets:", disorder_phase_offsets)
             print("[DarkScramble] detunings MHz:", detunings)
             print("[DarkScramble] scramble sync cycles:", scramble_sync_cycles)
+            print("[DarkScramble] palindrome scramble:", palindrome_scramble)
+            print("[DarkScramble] forward sequence:", swap_stors)
+            if palindrome_scramble:
+                print("[DarkScramble] reverse sequence:", list(reversed(swap_stors)))
+                if int(ecfg.floquet_cycle) % 2:
+                    print(
+                        "[DarkScramble] odd floquet_cycle leaves one unpaired "
+                        "forward cycle"
+                    )
             print("[DarkScramble] scramble elapsed us:", scramble_elapsed_us)
             print("[DarkScramble] pulse args:", all_pulse_args)
 
-        for kk in range(ecfg.floquet_cycle):
-            for i_stor, stor in enumerate(swap_stors):
+        for kk in range(int(ecfg.floquet_cycle)):
+            if palindrome_scramble and kk % 2:
+                cycle_sequence = reverse_sequence
+            else:
+                cycle_sequence = forward_sequence
+
+            for step_idx, i_stor in enumerate(cycle_sequence):
+                stor = swap_stors[i_stor]
                 pulse_args = all_pulse_args[i_stor]
 
                 phase_deg = self._mod360(phase_offsets[i_stor])
@@ -1524,7 +1555,7 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
 
                 if ecfg.get("debug", False) and kk == 0:
                     print(
-                        f"[DarkScramble] cycle={kk}, stor={stor}, "
+                        f"[DarkScramble] cycle={kk}, step={step_idx}, stor={stor}, "
                         f"phase_deg={phase_deg:.3f}, "
                         f"stark_phase={phase_offsets[i_stor]:.3f}"
                     )
