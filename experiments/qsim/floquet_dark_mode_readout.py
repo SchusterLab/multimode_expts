@@ -998,6 +998,98 @@ class DarkBaseProgram(QsimBaseProgram):
         ]
         return swap_stors, sequence
 
+    def _large_dark_fraction_to_n_frac(
+        self,
+        stor,
+        numerator,
+        denominator,
+        n_full,
+        label,
+    ):
+        """
+        Convert an exact rational multiple of pi to fractional-pulse count.
+
+        The floquet dataset convention is:
+
+            n_full fractional pulses = pi beamsplitter area.
+
+        Therefore (numerator / denominator) * pi requires
+        n_full * numerator / denominator fractional pulses.  This helper is
+        exact and never rounds.
+        """
+        n_frac_num = int(n_full) * int(numerator)
+        if n_frac_num % int(denominator) != 0:
+            raise ValueError(
+                f"{label}: exact large-dark direct sequence needs "
+                f"{numerator}/{denominator} of a pi pulse on M1-S{stor}, "
+                f"but n_full={n_full} does not make an integer fractional "
+                "pulse count."
+            )
+        n_frac = n_frac_num // int(denominator)
+
+        if self.cfg.expt.get("debug", False):
+            print(
+                f"[DarkLargeDirect] {label}: stor={stor}, "
+                f"target_angle/pi={numerator}/{denominator}, "
+                f"n_frac={n_frac}"
+            )
+
+        return n_frac
+
+    def _get_large_dark_direct_read_sequence(self):
+        """
+        Five-pulse direct readout for the same length-4 mode targeted by
+        _get_large_dark_read_sequence(), up to the beamsplitter phase
+        convention used by _play_m1s_frac_train.
+
+        The old 10-pulse sequence synthesizes pairwise storage-storage
+        rotations through M1.  If we only need to map the selected mode
+
+            (m1 - m2 - m3 + m4) / 2
+
+        back to M1, the following exact direct sequence is enough:
+
+            read:  R_m1(+pi,   phase=180)
+                -> R_m2(+pi/2, phase=180)
+                -> R_m3(+pi,   phase=0)
+                -> R_m4(-pi/2, phase=0)
+                -> R_m2(+pi/2, phase=0)
+
+        Its inverse is used for load by _invert_large_dark_sequence().
+        This is not the same full unitary on the orthogonal storage modes;
+        it is equivalent for loading/readout of the selected large-dark mode.
+
+        This path only uses pi and pi/2 areas, so it is exact whenever the
+        relevant n_full values make pi/2 an integer fractional-pulse count.
+        """
+        swap_stors, stors, _idxs, n_full, _n_half = (
+            self.get_dark_swap_params_large_support()
+        )
+        m1, m2, m3, m4 = stors
+        n_full_1, n_full_2, n_full_3, n_full_4 = n_full
+
+        n_m1_full = self._large_dark_fraction_to_n_frac(
+            m1, 1, 1, n_full_1, "direct read: R_m1(pi)"
+        )
+        n_m2_half = self._large_dark_fraction_to_n_frac(
+            m2, 1, 2, n_full_2, "direct read: R_m2(pi/2)"
+        )
+        n_m3_full = self._large_dark_fraction_to_n_frac(
+            m3, 1, 1, n_full_3, "direct read: R_m3(pi)"
+        )
+        n_m4_half = self._large_dark_fraction_to_n_frac(
+            m4, 1, 2, n_full_4, "direct read: R_m4(pi/2)"
+        )
+
+        sequence = [
+            (m1, n_m1_full, 180.0, False, "large direct read: R_m1(pi)"),
+            (m2, n_m2_half, 180.0, False, "large direct read: R_m2(pi/2) #1"),
+            (m3, n_m3_full, 0.0, False, "large direct read: R_m3(pi)"),
+            (m4, n_m4_half, 0.0, True, "large direct read: R_m4(-pi/2)"),
+            (m2, n_m2_half, 0.0, False, "large direct read: R_m2(pi/2) #2"),
+        ]
+        return swap_stors, sequence
+
     def _invert_large_dark_sequence(self, sequence, label_prefix="large load"):
         """
         Build the adjoint sequence.
@@ -1057,7 +1149,10 @@ class DarkBaseProgram(QsimBaseProgram):
 
         Maps the selected length-4 dark/normal mode back into M1.
         """
-        swap_stors, sequence = self._get_large_dark_read_sequence()
+        if self.cfg.expt.get("large_dark_direct_sequence", False):
+            swap_stors, sequence = self._get_large_dark_direct_read_sequence()
+        else:
+            swap_stors, sequence = self._get_large_dark_read_sequence()
         self._play_large_dark_sequence(
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
@@ -1076,7 +1171,10 @@ class DarkBaseProgram(QsimBaseProgram):
         the same selected length-4 dark/normal mode that _read_large_dark()
         later maps back to M1.
         """
-        swap_stors, read_sequence = self._get_large_dark_read_sequence()
+        if self.cfg.expt.get("large_dark_direct_sequence", False):
+            swap_stors, read_sequence = self._get_large_dark_direct_read_sequence()
+        else:
+            swap_stors, read_sequence = self._get_large_dark_read_sequence()
         load_sequence = self._invert_large_dark_sequence(
             read_sequence,
             label_prefix="large load",
