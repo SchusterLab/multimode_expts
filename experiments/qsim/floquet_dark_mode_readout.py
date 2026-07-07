@@ -2056,6 +2056,8 @@ class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
         self.set_pulse_registers(**m1s_kwarg_A)
         for i in range(pi_frac_A // 2):
             self.pulse(ch_A)
+            if self.cfg.expt.get("include_10cycles_buffer", False) and self.cfg.expt.get("include_10cycles_buffer_in_pi_half", False):
+                self.sync_all(10)
         self.sync_all()
 
         # # Apply a 2pi * n_pulse gate on stor_B
@@ -2087,6 +2089,8 @@ class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
         self.set_pulse_registers(**m1s_kwarg_A_advanced)
         for i in range(pi_frac_A // 2):
             self.pulse(m1s_kwarg_A_advanced['ch'])
+            if self.cfg.expt.get("include_10cycles_buffer", False) and self.cfg.expt.get("include_10cycles_buffer_in_pi_half", False):
+                self.sync_all(10)
         self.sync_all()
 
 
