@@ -2029,7 +2029,7 @@ class SidebandScrambleDarkProgram(SidebandScrambleProgram):
             
 
 
-class SidebandStarkAmplificationModifiedProgram(QsimBaseProgram):
+class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
     """
     1. Apply pi/2 swap pulse made of floquet pulses on stor_A
     2. Apply another floquet 2pi pulse on stor_B to calibrate the matrix element for. Do this xN times for error amplification
@@ -2050,46 +2050,33 @@ class SidebandStarkAmplificationModifiedProgram(QsimBaseProgram):
 
         n_pulse_B = self.cfg.expt.n_pulse
         pi_frac_A = self.m1s_pi_fracs[i_storA]
-        pi_frac_B = self.m1s_pi_fracs[i_storB]
 
         ch_A = m1s_kwarg_A['ch']
         ch_B = m1s_kwarg_B['ch']
-        channel_page_B = self.ch_page(ch_B)
-        r_phase_B= self.sreg(ch_B, "phase")
 
         # Apply pi/2 pulse on stor_A
-        self.set_pulse_registers(**m1s_kwarg_A)
+        m1s_kwarg_A = deepcopy(m1s_kwarg_A)
+        m1s_kwarg_A['phase'] = self.deg2reg(0, gen_ch=ch_A)
         for i in range(pi_frac_A // 2):
-            self.pulse(ch_A)
-        self.sync_all()
-        
-        # # Apply a 2pi * n_pulse gate on stor_B
-        # self.set_pulse_registers(**m1s_kwarg_B)
-        # for i in range(n_pulse_B * 2 * pi_frac_B):
-        #     self.pulse(ch_B)
-        # advance_phase_A = self.deg2reg(n_pulse_B * pi_frac * self.cfg.expt.advance_phase)
-        # self.sync_all()
+            self.setup_and_pulse(**m1s_kwarg_A)
+            self.sync_all(10)
 
         # Apply a (pi/12, -pi/12) * n_pulse gate on stor_B
-        phase = 0
-        self.set_pulse_registers(**m1s_kwarg_B)
+        m1s_kwarg_B = deepcopy(m1s_kwarg_B)
         for i in range(n_pulse_B):
-            for j in range(2):
-                self.pulse(ch_B)
-                # update the phase modulo 360
-                phase += 180
-                phase = phase % 360
-                _phase_reg = self.deg2reg(phase, gen_ch=ch_B)
-                self.safe_regwi(channel_page_B, r_phase_B, _phase_reg)
-                if self.cfg.expt.get("include_10cycles_buffer", False):
-                    self.sync_all(10)
-        advance_phase_A = self.deg2reg(2 * n_pulse_B * self.cfg.expt.advance_phase)
-        self.sync_all()
+            for phase in (0, 180):
+                m1s_kwarg_B['phase'] = self.deg2reg(phase, gen_ch=ch_B)
+                self.setup_and_pulse(**m1s_kwarg_B)
+                self.sync_all(10)
+        advance_phase_A = self.deg2reg(
+            2 * n_pulse_B * self.cfg.expt.advance_phase,
+            gen_ch=ch_A,
+        )
         
         # Apply -pi/2 pulse on stor_A with advanced phase
         m1s_kwarg_A_advanced = deepcopy(m1s_kwarg_A)
         m1s_kwarg_A_advanced['phase'] = advance_phase_A
-        self.set_pulse_registers(**m1s_kwarg_A_advanced)
         for i in range(pi_frac_A // 2):
-            self.pulse(m1s_kwarg_A_advanced['ch'])
+            self.setup_and_pulse(**m1s_kwarg_A_advanced)
+            self.sync_all(10)
         self.sync_all()
