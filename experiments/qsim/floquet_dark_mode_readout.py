@@ -727,8 +727,8 @@ class DarkBaseProgram(QsimBaseProgram):
 
             self.setup_and_pulse(**pulse_args)
 
-            # Existing warning from your code: setup_and_pulse needs at least ~10 cycles.
-            self.sync_all(10)
+            # setup_and_pulse needs at least ~10 cycles for instructions to finish.
+            self.sync_all(int(self.cfg.expt.get("scramble_sync_cycles", 10)))
 
             if update_phases:
                 self._advance_phase_offsets(
