@@ -185,9 +185,13 @@ class RunWignerResponse(BaseModel):
     #   pulse_correction=False: {..., "n_total", "n_excited"}  (alpha_scale = 1.0)
     parity_counts: Optional[dict] = None
     # Populated only when knobs.reconstruct is set (else None).
-    rho:         Optional[dict] = None          # {"real": [[...]], "imag": [[...]]}
+    rho:         Optional[dict] = None          # {"real": [[...]], "imag": [[...]]}  projected (physical), for display
+    rho_linear:  Optional[dict] = None          # unprojected LS estimate (rho_pinv_trace_1); unbiased
     populations: Optional[list[float]] = None   # diagonal of rho (photon-number pops)
-    fidelity:    Optional[float] = None         # None unless target_state was given
+    # Headline `fidelity` is the UNBIASED linear fidelity (from rho_linear). The
+    # projected fidelity (biased low for near-pure targets) is kept for reference.
+    fidelity:            Optional[float] = None  # None unless target_state was given
+    fidelity_projected:  Optional[float] = None
     # Statistical (shot-noise) error bars, populated only when knobs.reconstruct AND
     # knobs.reconstruct_uncertainty are set and parity_counts are available (else None):
     #   {fidelity_std, fidelity_ci, populations_std, populations_ci,
@@ -483,11 +487,16 @@ def _reconstruct_from_parity(
     res = wa.wigner_analysis_results(
         np.asarray(parity, dtype=float), initial_state=init, rotate=rotate,
     )
-    rho = np.asarray(res["rho"])
+    rho = np.asarray(res["rho"])                 # projected, physical -- for display
+    rho_lin = np.asarray(res["rho_linear"])      # unprojected LS estimate -- unbiased
     out: dict = {
         "rho": {"real": rho.real.tolist(), "imag": rho.imag.tolist()},
+        "rho_linear": {"real": rho_lin.real.tolist(), "imag": rho_lin.imag.tolist()},
         "populations": [float(np.real(rho[i, i])) for i in range(fock_dim)],
-        "fidelity": float(res["fidelity"]) if target_ket is not None else None,
+        # Headline `fidelity` is the UNBIASED linear fidelity (unprojected rho). The
+        # projected fidelity, biased low for near-pure targets, is kept for reference.
+        "fidelity": float(res["linear_fidelity"]) if target_ket is not None else None,
+        "fidelity_projected": float(res["fidelity"]) if target_ket is not None else None,
         "uncertainty": None,
     }
 
@@ -499,9 +508,13 @@ def _reconstruct_from_parity(
         out["uncertainty"] = {
             "n_boot":          int(boot["n_boot"]),
             "ci_percentiles":  list(boot["ci_percentiles"]),
-            # fidelity error bar only meaningful when a target was given
-            "fidelity_std":    float(boot["fidelity_std"]) if target_ket is not None else None,
-            "fidelity_ci":     [float(x) for x in boot["fidelity_ci"]] if target_ket is not None else None,
+            # fidelity error bar only meaningful when a target was given; these track
+            # the headline (linear) fidelity. Solver should threshold on fidelity_ci[0]
+            # (lower CI) to stay conservative. Projected error bars kept for reference.
+            "fidelity_std":    float(boot["linear_fidelity_std"]) if target_ket is not None else None,
+            "fidelity_ci":     [float(x) for x in boot["linear_fidelity_ci"]] if target_ket is not None else None,
+            "fidelity_projected_std": float(boot["fidelity_std"]) if target_ket is not None else None,
+            "fidelity_projected_ci":  [float(x) for x in boot["fidelity_ci"]] if target_ket is not None else None,
             "populations_std": [float(x) for x in boot["populations_std"]],
             "populations_ci":  [[float(a), float(b)] for a, b in boot["populations_ci"]],
             # per-element rho error bars, real and imag parts separately (m x m),
@@ -1249,6 +1262,7 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
     # Optional full-pipeline step: reconstruct the cavity density matrix from the
     # measured parity grid. Off by default (knobs.reconstruct).
     rho_out = populations_out = fidelity_out = recon_unc_out = None
+    rho_linear_out = fidelity_projected_out = None
     if req.knobs.reconstruct:
         if not np.all(np.isfinite(np.asarray(parity_arr, dtype=float))):
             # Tier-3 sigma_z_mode='measure' runs carry NaN parity (no parity
@@ -1261,17 +1275,22 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
             want_unc = req.knobs.reconstruct_uncertainty and parity_counts is not None
             if req.knobs.reconstruct_uncertainty and parity_counts is None:
                 meta["reconstruct_uncertainty_skipped"] = "no parity_counts (sim or sigma_z_mode='measure')"
+            # The closed loop NEVER rotates: it optimizes against a fixed target, so
+            # the virtual-Z gauge freedom is not wanted (the loop must get the state's
+            # coherence phase right too). reconstruct_rotate is ignored here on purpose.
             rec = _reconstruct_from_parity(
                 parity_arr, out_alphas, req.knobs.reconstruct_fock_dim,
-                target_ket, req.knobs.reconstruct_rotate,
+                target_ket, rotate=False,
                 parity_counts=parity_counts,
                 bootstrap=want_unc,
                 n_boot=req.knobs.reconstruct_bootstrap_n,
                 seed=req.knobs.reconstruct_bootstrap_seed,
             )
             rho_out = rec["rho"]
+            rho_linear_out = rec["rho_linear"]
             populations_out = rec["populations"]
             fidelity_out = rec["fidelity"]
+            fidelity_projected_out = rec["fidelity_projected"]
             recon_unc_out = rec["uncertainty"]
 
     return RunWignerResponse(
@@ -1283,8 +1302,10 @@ def run_wigner_core(req: RunWignerRequest) -> RunWignerResponse:
         shots_path=str(shots_path) if shots_path else None,
         meta=meta,
         rho=rho_out,
+        rho_linear=rho_linear_out,
         populations=populations_out,
         fidelity=fidelity_out,
+        fidelity_projected=fidelity_projected_out,
         reconstruct_uncertainty=recon_unc_out,
         sigma_z=float(sigma_z) if sigma_z is not None else None,
         sigma_z_raw=float(sigma_z_raw) if sigma_z_raw is not None else None,
