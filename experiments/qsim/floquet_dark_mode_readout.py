@@ -2155,3 +2155,54 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
             label="phase calibration: final A pi/2",
         )
         self.sync_all()
+
+
+class SidebandStarkAmplificationModifiedProgram_newold(DarkBaseProgram):
+    """
+    1. Apply pi/2 swap pulse made of floquet pulses on stor_A
+    2. Apply another floquet 2pi pulse on stor_B to calibrate the matrix element for. Do this xN times for error amplification
+    3. Apply a -pi/2 swap pulse of floquet pulses on stor_A, with advanced phase
+    
+    Parameters in cfg.expt (sweepable):
+    stor_A
+    stor_B
+    n_pulse: Nx pulses on stor B 
+    advance_phase: phase of the last pulse on stor_A
+    """
+
+    def core_pulses(self):
+        i_storA = self.cfg.expt.stor_A - 1
+        i_storB = self.cfg.expt.stor_B - 1
+        m1s_kwarg_A = self.m1s_kwargs[i_storA]
+        m1s_kwarg_B = self.m1s_kwargs[i_storB]
+
+        n_pulse_B = self.cfg.expt.n_pulse
+        pi_frac_A = self.m1s_pi_fracs[i_storA]
+
+        ch_A = m1s_kwarg_A['ch']
+        ch_B = m1s_kwarg_B['ch']
+
+        # Apply pi/2 pulse on stor_A
+        self.set_pulse_registers(**m1s_kwarg_A)
+        for i in range(pi_frac_A // 2):
+            self.pulse(ch_A)
+        self.sync_all()
+
+        # Apply a (pi/12, -pi/12) * n_pulse gate on stor_B
+        m1s_kwarg_B = deepcopy(m1s_kwarg_B)
+        for i in range(n_pulse_B):
+            for phase in (0, 180):
+                m1s_kwarg_B['phase'] = self.deg2reg(phase, gen_ch=ch_B)
+                self.setup_and_pulse(**m1s_kwarg_B)
+                self.sync_all(10)
+        advance_phase_A = self.deg2reg(
+            2 * n_pulse_B * self.cfg.expt.advance_phase,
+            gen_ch=ch_A,
+        )
+        
+        # Apply -pi/2 pulse on stor_A with advanced phase
+        m1s_kwarg_A_advanced = deepcopy(m1s_kwarg_A)
+        m1s_kwarg_A_advanced['phase'] = advance_phase_A
+        self.set_pulse_registers(**m1s_kwarg_A_advanced)
+        for i in range(pi_frac_A // 2):
+            self.pulse(ch_A)
