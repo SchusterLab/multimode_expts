@@ -96,6 +96,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # n_pulses and pi_frac
         self.n_pulses = cfg.expt.get('n_pulses', 1)
+        sync_delay = cfg.expt.get("floquet_sync_delay", 0)
+        self.floquet_sync_delay = 0 if sync_delay is None else int(sync_delay)
 
         if cfg.expt.pulse_type[2] == 'pi':
             self.pi_frac = 1
@@ -209,6 +211,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         if cfg.expt.parameter_to_test == 'gain':
             for i in range((self.n_pulses * 2) * self.pi_frac):
                 self.pulse(ch=self.pulse_to_test[4])
+                if self.floquet_sync_delay != 0:
+                    self.sync_all(self.floquet_sync_delay)
 
         elif cfg.expt.parameter_to_test == 'frequency':
             phase = self.pulse_to_test[3]
@@ -216,6 +220,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                 for repeat in range(2):
                     for p in range(self.pi_frac):
                         self.pulse(ch=self.pulse_to_test[4])
+                        if self.floquet_sync_delay != 0:
+                            self.sync_all(self.floquet_sync_delay)
                     phase = (phase + 180) % 360
                     _phase_reg = self.deg2reg(phase, gen_ch=self.pulse_to_test[4])
                     self.safe_regwi(self.channel_page, self.r_phase, _phase_reg)
