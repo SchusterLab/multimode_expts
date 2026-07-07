@@ -2104,39 +2104,54 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
     """
 
     def core_pulses(self):
-        i_storA = self.cfg.expt.stor_A - 1
-        i_storB = self.cfg.expt.stor_B - 1
-        m1s_kwarg_A = self.m1s_kwargs[i_storA]
-        m1s_kwarg_B = self.m1s_kwargs[i_storB]
+        stor_A = self.cfg.expt.stor_A
+        stor_B = self.cfg.expt.stor_B
+        swap_stors = [stor_A, stor_B]
+        phase_offsets = [0.0, 0.0]
 
         n_pulse_B = self.cfg.expt.n_pulse
-        pi_frac_A = self.m1s_pi_fracs[i_storA]
-
-        ch_A = m1s_kwarg_A['ch']
-        ch_B = m1s_kwarg_B['ch']
+        pi_frac_A = self.m1s_pi_fracs[stor_A - 1]
 
         # Apply pi/2 pulse on stor_A
-        self.set_pulse_registers(**m1s_kwarg_A)
-        for i in range(pi_frac_A // 2):
-            self.pulse(ch_A)
-        self.sync_all()
+        self._play_m1s_frac_train(
+            stor=stor_A,
+            n_frac=pi_frac_A // 2,
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=0.0,
+            update_phases=False,
+            label="phase calibration: first A pi/2",
+        )
 
         # Apply a (pi/12, -pi/12) * n_pulse gate on stor_B
-        m1s_kwarg_B = deepcopy(m1s_kwarg_B)
-        for i in range(n_pulse_B):
-            for phase in (0, 180):
-                m1s_kwarg_B['phase'] = self.deg2reg(phase, gen_ch=ch_B)
-                self.setup_and_pulse(**m1s_kwarg_B)
-                self.sync_all(10)
-        advance_phase_A = self.deg2reg(
-            2 * n_pulse_B * self.cfg.expt.advance_phase,
-            gen_ch=ch_A,
-        )
-        
+        for i in range(int(n_pulse_B)):
+            self._play_m1s_frac_train(
+                stor=stor_B,
+                n_frac=1,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=0.0,
+                update_phases=False,
+                label="phase calibration: B +frac",
+            )
+            self._play_m1s_frac_train(
+                stor=stor_B,
+                n_frac=1,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=180.0,
+                update_phases=False,
+                label="phase calibration: B -frac",
+            )
+
         # Apply -pi/2 pulse on stor_A with advanced phase
-        m1s_kwarg_A_advanced = deepcopy(m1s_kwarg_A)
-        m1s_kwarg_A_advanced['phase'] = advance_phase_A
-        self.set_pulse_registers(**m1s_kwarg_A_advanced)
-        for i in range(pi_frac_A // 2):
-            self.pulse(ch_A)
+        self._play_m1s_frac_train(
+            stor=stor_A,
+            n_frac=pi_frac_A // 2,
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=2 * n_pulse_B * self.cfg.expt.advance_phase,
+            update_phases=False,
+            label="phase calibration: final A pi/2",
+        )
         self.sync_all()
