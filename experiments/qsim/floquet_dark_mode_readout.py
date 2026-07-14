@@ -1810,7 +1810,16 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
                     self.swap_ds.get_gauss_n_sigma(stor_name)
                 )
             else:
-                pulse_us = float(self.swap_ds.get_len(stor_name))
+                # QICK flat_top length is only the plateau.  The registered
+                # pi_m1si_low/high Gaussian ramp is 6 sigma in total and is
+                # part of the physical time over which a detuned frame
+                # advances.
+                ramp_sigma_us = float(
+                    self.cfg.device.manipulate.ramp_sigma)
+                pulse_us = (
+                    float(self.swap_ds.get_len(stor_name))
+                    + 6.0 * ramp_sigma_us
+                )
             pulse_us_by_stor.append(pulse_us)
 
         forward_sequence = list(range(len(swap_stors)))
@@ -1970,6 +1979,146 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
             phase_offsets,
             disorder_phase_offsets=disorder_phase_offsets,
         )
+
+
+class SinglePhotonFloquetSpectroscopyProgram(
+        SidebandScrambleDarkProgramNewNew):
+    """Vacuum-referenced spectroscopy of the one-photon Floquet sector.
+
+    The sequence is deliberately explicit:
+
+      1. prepare (|vac> + |1_initial_mode>)/sqrt(2),
+      2. play ``floquet_cycle`` copies of the existing scramble,
+      3. map the selected initial mode back to M1,
+      4. apply the inverse preparation with a swept analyzer phase,
+      5. measure the qubit.
+
+    Combining analyzer phases 0/180 and 90/270 gives the real and imaginary
+    parts of the vacuum--one-photon coherence.  The vacuum is the fixed
+    zero-quasienergy reference, so its Fourier peaks are individual Floquet
+    eigenphases rather than pairwise eigenphase differences.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        allowed_modes = [0] + swap_stors
+        initial_mode = int(ecfg.spectroscopy_initial_mode)
+
+        if initial_mode not in allowed_modes:
+            raise ValueError(
+                "spectroscopy_initial_mode must be M1 (0) or one of "
+                f"swap_stors={swap_stors}; got {initial_mode}"
+            )
+        if int(ecfg.get("ro_stor", initial_mode)) != initial_mode:
+            raise ValueError(
+                "ro_stor must equal spectroscopy_initial_mode so the "
+                "diagonal coherence <i|U_F^n|i> is measured"
+            )
+        if ecfg.get("palindrome_scramble", False) \
+                and int(ecfg.floquet_cycle) % 2:
+            raise ValueError(
+                "palindrome spectroscopy uses an even number of nominal "
+                "cycles; one Floquet period is a forward/reverse pair"
+            )
+        for flag in (
+                "load_man_dark", "swap_man_dark", "swap_man_large_dark",
+                "perform_wigner", "parity_readout", "multiparity_readout"):
+            if ecfg.get(flag, False):
+                raise ValueError(
+                    f"{flag}=True is incompatible with single-photon "
+                    "Floquet spectroscopy"
+                )
+
+        ecfg.spectroscopy_initial_mode = initial_mode
+        ecfg.init_stor = initial_mode
+        ecfg.ro_stor = initial_mode
+        ecfg.spectroscopy_reference = "vacuum"
+        ecfg.spectroscopy_observable = "X+iY"
+        super().initialize()
+
+    def body(self):
+        ecfg = self.cfg.expt
+        cfg = AttrDict(self.cfg)
+        initial_mode = int(ecfg.spectroscopy_initial_mode)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        phase_offsets = [0.0] * len(swap_stors)
+        disorder_phase_offsets = [0.0] * len(swap_stors)
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        # First make (|vac> + |1_M1>)/sqrt(2).
+        prepulse_cfg = self.prep_man_fock_state(
+            ecfg.get("man_mode_no", 1), "+", broadband=False)
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="floquet_spec_pre_")
+        self.sync_all()
+
+        # When the initial basis state is a storage, use the tracked
+        # fractional-pulse path for the full swap.  A generic prepulse would
+        # perform the population transfer but lose the Stark phases that this
+        # pulse imprints on every other storage frame.
+        if initial_mode > 0:
+            self._play_m1s_frac_train(
+                stor=initial_mode,
+                n_frac=self.m1s_pi_fracs[initial_mode - 1],
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                disorder_phase_offsets=disorder_phase_offsets,
+                logical_phase_deg=0.0,
+                inverse=False,
+                update_phases=ecfg.get("update_phases", True),
+                label="spectroscopy: load initial basis mode",
+            )
+
+        # Reuse the exact Trotter/Floquet pulse train already used by the
+        # dark-mode and local-return programs.
+        self._play_scramble_with_phase_offsets(
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            disorder_phase_offsets=disorder_phase_offsets,
+        )
+
+        # Return the measured basis mode to M1, then undo the photon-loading
+        # ladder.  Sweeping the last half-pi phase measures an equatorial
+        # quadrature of the vacuum--one-photon coherence.
+        analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        if initial_mode > 0:
+            self._play_m1s_frac_train(
+                stor=initial_mode,
+                n_frac=self.m1s_pi_fracs[initial_mode - 1],
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                disorder_phase_offsets=disorder_phase_offsets,
+                logical_phase_deg=0.0,
+                inverse=True,
+                update_phases=ecfg.get("update_phases", True),
+                label="spectroscopy: read initial basis mode",
+            )
+
+        postpulse_cfg = [
+            ["multiphoton", "f0-g1", "pi", 180],
+            ["multiphoton", "e0-f0", "pi", 180],
+            [
+                "multiphoton", "g0-e0", "hpi",
+                (180.0 + analyzer_phase) % 360.0,
+            ],
+        ]
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="floquet_spec_post_")
+        self.sync_all()
+        self.measure_wrapper()
 
 
 class CentralBosonLocalReturnProgram(SidebandScrambleDarkProgramNewNew):
