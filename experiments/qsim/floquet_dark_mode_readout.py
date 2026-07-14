@@ -1981,29 +1981,63 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
         )
 
 
-class SinglePhotonFloquetSpectroscopyProgram(
+class NPhotonHamiltonianSpectroscopyProgram(
         SidebandScrambleDarkProgramNewNew):
-    """Vacuum-referenced spectroscopy of the one-photon Floquet sector.
+    """Vacuum-referenced spectroscopy of the N=1, 2, or 3 photon sector.
 
     The sequence is deliberately explicit:
 
-      1. prepare (|vac> + |1_initial_mode>)/sqrt(2),
-      2. play ``floquet_cycle`` copies of the existing scramble,
+      1. prepare (|vac> + |N_initial_mode>)/sqrt(2),
+      2. play ``floquet_cycle`` copies of the existing Trotter step,
       3. map the selected initial mode back to M1,
       4. apply the inverse preparation with a swept analyzer phase,
       5. measure the qubit.
 
     Combining analyzer phases 0/180 and 90/270 gives the real and imaginary
-    parts of the vacuum--one-photon coherence.  The vacuum is the fixed
-    zero-quasienergy reference, so its Fourier peaks are individual Floquet
-    eigenphases rather than pairwise eigenphase differences.
+    parts of the vacuum--N-photon coherence.  The vacuum is the fixed
+    zero-energy reference, so its Fourier peaks are individual N-particle
+    energies rather than pairwise energy differences.
+
+    For N>1 the five same-mode probes |N_i> give a projected spectral measure;
+    they are not a complete Fock basis of the 15-dimensional N=2 or
+    35-dimensional N=3 sector.
     """
+
+    @staticmethod
+    def _vacuum_n_encoder_ladder(photon_number):
+        """Map |e,0> to |g,N> while leaving |g,0> untouched.
+
+        This is the ordinary calibrated Fock-loading ladder with only its
+        first g0-e0 pi pulse removed.  The caller supplies a g0-e0 half-pi
+        before this ladder to create (|g,0> + |e,0>)/sqrt(2).
+        """
+        pulse_seq = []
+        for n in range(int(photon_number)):
+            if n > 0:
+                pulse_seq.append(
+                    ["multiphoton", f"g{n}-e{n}", "pi", 0.0])
+            pulse_seq.extend([
+                ["multiphoton", f"e{n}-f{n}", "pi", 0.0],
+                ["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0],
+            ])
+        return pulse_seq
+
+    @staticmethod
+    def _inverse_gate_sequence(pulse_seq):
+        """Return the exact inverse: reverse gate order and add 180 degrees."""
+        inverse = []
+        for gate in reversed(pulse_seq):
+            gate = list(gate)
+            gate[3] = (float(gate[3]) + 180.0) % 360.0
+            inverse.append(gate)
+        return inverse
 
     def initialize(self):
         ecfg = self.cfg.expt
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         allowed_modes = [0] + swap_stors
         initial_mode = int(ecfg.spectroscopy_initial_mode)
+        photon_number = int(ecfg.get("spectroscopy_photon_number", 1))
 
         if initial_mode not in allowed_modes:
             raise ValueError(
@@ -2013,34 +2047,45 @@ class SinglePhotonFloquetSpectroscopyProgram(
         if int(ecfg.get("ro_stor", initial_mode)) != initial_mode:
             raise ValueError(
                 "ro_stor must equal spectroscopy_initial_mode so the "
-                "diagonal coherence <i|U_F^n|i> is measured"
+                "diagonal coherence <N_i|U_step^n|N_i> is measured"
+            )
+        if photon_number not in (1, 2, 3):
+            raise ValueError(
+                "spectroscopy_photon_number must be 1, 2, or 3; "
+                f"got {photon_number}"
             )
         if ecfg.get("palindrome_scramble", False) \
                 and int(ecfg.floquet_cycle) % 2:
             raise ValueError(
                 "palindrome spectroscopy uses an even number of nominal "
-                "cycles; one Floquet period is a forward/reverse pair"
+                "cycles; one symmetric sample is a forward/reverse pair"
             )
         for flag in (
                 "load_man_dark", "swap_man_dark", "swap_man_large_dark",
                 "perform_wigner", "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
                 raise ValueError(
-                    f"{flag}=True is incompatible with single-photon "
-                    "Floquet spectroscopy"
+                    f"{flag}=True is incompatible with vacuum-referenced "
+                    "Hamiltonian spectroscopy"
                 )
 
         ecfg.spectroscopy_initial_mode = initial_mode
+        ecfg.spectroscopy_photon_number = photon_number
         ecfg.init_stor = initial_mode
         ecfg.ro_stor = initial_mode
         ecfg.spectroscopy_reference = "vacuum"
-        ecfg.spectroscopy_observable = "X+iY"
+        ecfg.spectroscopy_observable = (
+            f"vacuum-{photon_number}-photon coherence via X+iY")
+        ecfg.spectroscopy_probe = (
+            f"(|vac>+|{photon_number}_i>)/sqrt(2)")
+        ecfg.spectroscopy_projected_sector = photon_number > 1
         super().initialize()
 
     def body(self):
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
         initial_mode = int(ecfg.spectroscopy_initial_mode)
+        photon_number = int(ecfg.spectroscopy_photon_number)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
@@ -2053,9 +2098,12 @@ class SinglePhotonFloquetSpectroscopyProgram(
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
-        # First make (|vac> + |1_M1>)/sqrt(2).
-        prepulse_cfg = self.prep_man_fock_state(
-            ecfg.get("man_mode_no", 1), "+", broadband=False)
+        # First make (|vac> + |N_M1>)/sqrt(2).  This direct conditional
+        # ladder reduces to the already-used three-pulse N=1 preparation.
+        encoder_ladder = self._vacuum_n_encoder_ladder(photon_number)
+        prepulse_cfg = [
+            ["multiphoton", "g0-e0", "hpi", 0.0],
+        ] + encoder_ladder
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2079,7 +2127,7 @@ class SinglePhotonFloquetSpectroscopyProgram(
                 label="spectroscopy: load initial basis mode",
             )
 
-        # Reuse the exact Trotter/Floquet pulse train already used by the
+        # Reuse the exact Trotter product-formula pulse train already used by the
         # dark-mode and local-return programs.
         self._play_scramble_with_phase_offsets(
             phase_offsets=phase_offsets,
@@ -2088,8 +2136,9 @@ class SinglePhotonFloquetSpectroscopyProgram(
         )
 
         # Return the measured basis mode to M1, then undo the photon-loading
-        # ladder.  Sweeping the last half-pi phase measures an equatorial
-        # quadrature of the vacuum--one-photon coherence.
+        # ladder.  The analyzer phase belongs only on the final half-pi pulse:
+        # after decoding |N> back to |e,0>, this is an ordinary qubit X/Y
+        # analysis for every N.
         analyzer_phase = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
         if initial_mode > 0:
@@ -2105,20 +2154,33 @@ class SinglePhotonFloquetSpectroscopyProgram(
                 label="spectroscopy: read initial basis mode",
             )
 
-        postpulse_cfg = [
-            ["multiphoton", "f0-g1", "pi", 180],
-            ["multiphoton", "e0-f0", "pi", 180],
-            [
-                "multiphoton", "g0-e0", "hpi",
-                (180.0 + analyzer_phase) % 360.0,
-            ],
-        ]
+        postpulse_cfg = self._inverse_gate_sequence(encoder_ladder)
+        postpulse_cfg.append([
+            "multiphoton", "g0-e0", "hpi",
+            (180.0 + analyzer_phase) % 360.0,
+        ])
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
         self.sync_all()
         self.measure_wrapper()
+
+
+class SinglePhotonFloquetSpectroscopyProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Backward-compatible wrapper for the original N=1 program name."""
+
+    def initialize(self):
+        photon_number = int(
+            self.cfg.expt.get("spectroscopy_photon_number", 1))
+        if photon_number != 1:
+            raise ValueError(
+                "SinglePhotonFloquetSpectroscopyProgram only supports N=1; "
+                "use NPhotonHamiltonianSpectroscopyProgram for N=2 or N=3"
+            )
+        self.cfg.expt.spectroscopy_photon_number = 1
+        super().initialize()
 
 
 class CentralBosonLocalReturnProgram(SidebandScrambleDarkProgramNewNew):
