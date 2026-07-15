@@ -2005,26 +2005,38 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
     @staticmethod
     def _vacuum_n_encoder_ladder(photon_number):
-        """Map |e,0> to |g,N> while leaving |g,0> untouched.
-
-        This is the ordinary calibrated Fock-loading ladder with only its
-        first g0-e0 pi pulse removed.  The caller supplies a g0-e0 half-pi
-        before this ladder to create (|g,0> + |e,0>)/sqrt(2).
         """
+        The final state should be |g0> + |g N>, which is ensured by conditional ge.
+        """
+        photon_number = int(photon_number)
         pulse_seq = []
-        for n in range(int(photon_number)):
-            if n > 0:
+        for n in range(photon_number):
+            pulse_seq.append(
+                ["multiphoton", f"e{n}-f{n}", "pi", 0.0])
+
+            if n < photon_number - 1:
                 pulse_seq.append(
-                    ["multiphoton", f"g{n}-e{n}", "pi", 0.0])
-            pulse_seq.extend([
-                ["multiphoton", f"e{n}-f{n}", "pi", 0.0],
-                ["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0],
-            ])
+                    ["qubit", "ge", "pi", 0.0]) #must be broadband
+
+            pulse_seq.append(
+                ["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0])
+
+            if n < photon_number - 1:
+                pulse_seq.append(
+                    ["qubit", "ge", "pi", 0.0]) #must be broadband
+
+
         return pulse_seq
 
     @staticmethod
     def _inverse_gate_sequence(pulse_seq):
-        """Return the exact inverse: reverse gate order and add 180 degrees."""
+        """Build the ideal resonant inverse descriptor.
+
+        Reversing the order and adding 180 degrees is exact only for the
+        calibrated resonant rotations assumed by the gate model.  Detuning,
+        bandwidth, Stark phase, and leakage errors are not inverted by this
+        bookkeeping operation and must be checked experimentally.
+        """
         inverse = []
         for gate in reversed(pulse_seq):
             gate = list(gate)
@@ -2054,6 +2066,13 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 "spectroscopy_photon_number must be 1, 2, or 3; "
                 f"got {photon_number}"
             )
+        if not ecfg.get("spectroscopy_calibrations_confirmed", False):
+            raise RuntimeError(
+                "N-photon spectroscopy is disabled until all encoder/decoder "
+                "pulses have been calibrated and "
+                "spectroscopy_calibrations_confirmed=True is set explicitly."
+            )
+
         if ecfg.get("palindrome_scramble", False) \
                 and int(ecfg.floquet_cycle) % 2:
             raise ValueError(
@@ -2098,11 +2117,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
-        # First make (|vac> + |N_M1>)/sqrt(2).  This direct conditional
-        # ladder reduces to the already-used three-pulse N=1 preparation.
+        # First make (|vac> + |N_M1>)/sqrt(2).  Here ``pi`` and ``hpi`` resolve
+        # directly to the existing device.qubit.pulses.pi_ge and hpi_ge keys.
         encoder_ladder = self._vacuum_n_encoder_ladder(photon_number)
         prepulse_cfg = [
-            ["multiphoton", "g0-e0", "hpi", 0.0],
+            ["qubit", "ge", "hpi", 0.0],
         ] + encoder_ladder
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
@@ -2156,7 +2175,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         postpulse_cfg = self._inverse_gate_sequence(encoder_ladder)
         postpulse_cfg.append([
-            "multiphoton", "g0-e0", "hpi",
+            "qubit", "ge", "hpi",
             (180.0 + analyzer_phase) % 360.0,
         ])
         postpulse = self.get_prepulse_creator(postpulse_cfg)
