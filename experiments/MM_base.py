@@ -2563,6 +2563,29 @@ class prepulse_creator2:
     def qubit(self, pulse_param): #(self, transition_name, pulse_name, man_idx = 0):
         ''' pulse name comes from yaml file '''
         transition_name, pulse_name, phase = pulse_param
+
+        # Separate broadband ge path.  This is intentionally before the
+        # legacy ge/ef code below so the broadband carrier comes from its own
+        # runtime-added pulse row instead of device.qubit.f_ge.
+        if transition_name == 'ge_broadband':
+            pulse_full_name = pulse_name + '_ge_broadband'
+            broadband_cfg = self.cfg.device.qubit.pulses[pulse_full_name]
+            qubit_ch = self.cfg.hw.soc.dacs.qubit.ch[0]
+
+            qubit_pulse = np.array([
+                [broadband_cfg['frequency'][0]],
+                [broadband_cfg['gain'][0]],
+                [broadband_cfg['length'][0]],
+                [phase],
+                [qubit_ch],
+                [broadband_cfg['type'][0]],
+                [broadband_cfg['sigma'][0]],
+            ], dtype=object)
+
+            self.pulse = np.concatenate(
+                (self.pulse, qubit_pulse), axis=1)
+            return None
+
         # frequency
         if transition_name[:2] == 'ge':
             freq = self.cfg.device.qubit.f_ge[0]
