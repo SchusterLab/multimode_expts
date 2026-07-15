@@ -1981,6 +1981,86 @@ class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram
         )
 
 
+class BroadbandGeValidationProgram(QsimBaseProgram):
+    """Measure the configured broadband ge pi on |g,n> and |e,n>.
+
+    ``validation_case`` selects one of six direct-readout experiments:
+
+      0: |g,n> reference, no broadband pulse
+      1: |e,n> reference, no broadband pulse
+      2: |g,n> followed by pi_ge_broadband
+      3: |e,n> followed by pi_ge_broadband
+      4: |g,n> followed by repeated B(0) B(180) inverse pairs
+      5: |e,n> followed by repeated B(0) B(180) inverse pairs
+
+    Sweeping photon number and these six cases gives a separate IQ axis for
+    every n, so photon-number-dependent readout shifts are not mistaken for a
+    broadband-pulse error.
+    """
+
+    def initialize(self):
+        # No storage-swap pulse is played here.  The runner still supplies the
+        # storage/Floquet dataset handles required by the generic pulse creator.
+        self.MM_base_initialize()
+        self.sync_all(200)
+
+    def body(self):
+        cfg = AttrDict(self.cfg)
+        photon_number = int(cfg.expt.validation_photon_number)
+        validation_case = int(cfg.expt.validation_case)
+
+        if photon_number not in (0, 1, 2, 3):
+            raise ValueError(
+                "validation_photon_number must be 0, 1, 2, or 3; "
+                f"got {photon_number}"
+            )
+        if validation_case not in (0, 1, 2, 3, 4, 5):
+            raise ValueError(
+                "validation_case must be 0 (g ref), 1 (e ref), "
+                "2 (g->e), 3 (e->g), 4 (g inverse pairs), or "
+                "5 (e inverse pairs)"
+            )
+
+        self.reset_and_sync()
+        if cfg.expt.get('active_reset', False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = cfg.expt.get('pre_relax_delay', 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        pulse_seq = self.prep_man_photon(photon_number)
+        if validation_case in (1, 3, 5):
+            pulse_seq.append([
+                'multiphoton',
+                f'g{photon_number}-e{photon_number}',
+                'pi',
+                0.0,
+            ])
+        if validation_case in (2, 3):
+            pulse_seq.append(['qubit', 'ge_broadband', 'pi', 0.0])
+        elif validation_case in (4, 5):
+            inverse_pairs = int(
+                cfg.expt.get('validation_inverse_pairs', 4))
+            if inverse_pairs < 1:
+                raise ValueError(
+                    "validation_inverse_pairs must be at least 1")
+            for _ in range(inverse_pairs):
+                pulse_seq.append(
+                    ['qubit', 'ge_broadband', 'pi', 0.0])
+                pulse_seq.append(
+                    ['qubit', 'ge_broadband', 'pi', 180.0])
+
+        if pulse_seq:
+            pulse = self.get_prepulse_creator(pulse_seq)
+            self.sync_all()
+            self.custom_pulse(
+                cfg, pulse.pulse, prefix='ge_broadband_validation_')
+            self.sync_all()
+
+        self.measure_wrapper()
+
+
 class NPhotonHamiltonianSpectroscopyProgram(
         SidebandScrambleDarkProgramNewNew):
     """Vacuum-referenced spectroscopy of the N=1, 2, or 3 photon sector.
@@ -2011,19 +2091,22 @@ class NPhotonHamiltonianSpectroscopyProgram(
         photon_number = int(photon_number)
         pulse_seq = []
         for n in range(photon_number):
+            # This selects the ef waveform calibrated to be pi at photon
+            # number n; it is not assumed to be ON/OFF in n.  The ordering
+            # keeps every off-target branch in g whenever this pulse is played.
             pulse_seq.append(
                 ["multiphoton", f"e{n}-f{n}", "pi", 0.0])
 
             if n < photon_number - 1:
                 pulse_seq.append(
-                    ["qubit", "ge", "pi", 0.0]) #must be broadband
+                    ["qubit", "ge_broadband", "pi", 0.0])
 
             pulse_seq.append(
                 ["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0])
 
             if n < photon_number - 1:
                 pulse_seq.append(
-                    ["qubit", "ge", "pi", 0.0]) #must be broadband
+                    ["qubit", "ge_broadband", "pi", 0.0])
 
 
         return pulse_seq
@@ -2066,11 +2149,37 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 "spectroscopy_photon_number must be 1, 2, or 3; "
                 f"got {photon_number}"
             )
+        if photon_number > 1:
+            pulse_key = "pi_ge_broadband"
+            if pulse_key not in self.cfg.device.qubit.pulses:
+                raise KeyError(
+                    "N>1 spectroscopy requires "
+                    "device.qubit.pulses.pi_ge_broadband"
+                )
+
+            broadband_cfg = self.cfg.device.qubit.pulses[pulse_key]
+            for field in ("frequency", "gain", "sigma", "length", "type"):
+                if field not in broadband_cfg or np.asarray(
+                        broadband_cfg[field]).size == 0:
+                    raise RuntimeError(
+                        "device.qubit.pulses.pi_ge_broadband."
+                        f"{field} must contain one value"
+                    )
+            gain = np.asarray(
+                broadband_cfg.get("gain", []), dtype=float).reshape(-1)
+            if gain.size == 0 or gain[0] <= 0:
+                raise RuntimeError(
+                    "device.qubit.pulses.pi_ge_broadband.gain must be a "
+                    "configured nonzero value"
+                )
+
         if not ecfg.get("spectroscopy_calibrations_confirmed", False):
             raise RuntimeError(
-                "N-photon spectroscopy is disabled until all encoder/decoder "
-                "pulses have been calibrated and "
-                "spectroscopy_calibrations_confirmed=True is set explicitly."
+                "Spectroscopy is disabled until all ladder pulses and the "
+                "full encoder/decoder have been checked.  For N>1 this also "
+                "includes spectator storage occupations, inverse broadband "
+                "phases, and leakage.  Then set "
+                "spectroscopy_calibrations_confirmed=True explicitly."
             )
 
         if ecfg.get("palindrome_scramble", False) \
@@ -2117,8 +2226,9 @@ class NPhotonHamiltonianSpectroscopyProgram(
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
-        # First make (|vac> + |N_M1>)/sqrt(2).  Here ``pi`` and ``hpi`` resolve
-        # directly to the existing device.qubit.pulses.pi_ge and hpi_ge keys.
+        # First make (|vac> + |N_M1>)/sqrt(2).  The initial half-pi uses
+        # hpi_ge; only the conditional shelving rotations use
+        # pi_ge_broadband.
         encoder_ladder = self._vacuum_n_encoder_ladder(photon_number)
         prepulse_cfg = [
             ["qubit", "ge", "hpi", 0.0],
