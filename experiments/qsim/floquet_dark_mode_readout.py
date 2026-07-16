@@ -847,7 +847,7 @@ class DarkBaseProgram(QsimBaseProgram):
         Update phase offsets for all non-pulsed storage swaps after applying
         one fractional pulse on pulsed_stor.
 
-        This follows the same convention as SidebandScrambleProgram:
+        This follows the calibrated ordered-pulse phase convention:
 
             phase[stor_B] += get_phase_from("M1-S{stor_B}", "M1-S{pulsed_stor}")
 
@@ -864,6 +864,339 @@ class DarkBaseProgram(QsimBaseProgram):
             phase_offsets[j_stor] += self.swap_ds.get_phase_from(stor_B_name, pulsed_name)
             phase_offsets[j_stor] = self._mod360(phase_offsets[j_stor])
 
+    def _play_scramble_with_phase_offsets(
+        self,
+        phase_offsets,
+        swap_stors,
+        disorder_phase_offsets=None,
+    ):
+        """
+        Play the calibrated ordered Floquet pulse train while using the
+        caller-provided phase_offsets as the live frame tracker.
+
+        If cfg.expt.palindrome_scramble is True, consecutive Floquet cycles
+        alternate direction:
+
+            cycle 0: swap_stors
+            cycle 1: reversed(swap_stors)
+            cycle 2: swap_stors
+            ...
+
+        This keeps the number of pulses per floquet_cycle unchanged. With an
+        even floquet_cycle, each forward cycle has a reverse partner.
+        Otherwise it preserves the configured swap_stors order.
+
+        Correct continuous sequence:
+
+            load dark mode
+                updates phase_offsets
+
+            scramble
+                emits pulses with current phase_offsets
+                updates the same phase_offsets after every pulse
+
+            read dark mode
+                consumes the final phase_offsets
+
+        Keeping this implementation on DarkBaseProgram makes the Floquet path
+        independent of the implementation details in sideband_scramble.py.
+        """
+        ecfg = self.cfg.expt
+        swap_stors = list(swap_stors)
+
+        if len(phase_offsets) != len(swap_stors):
+            raise ValueError(
+                f"phase_offsets length {len(phase_offsets)} does not match "
+                f"swap_stors length {len(swap_stors)}"
+            )
+
+        raw_detunings = ecfg.get("detunings", None)
+        if raw_detunings is None or raw_detunings is False:
+            detunings = [0.0] * len(swap_stors)
+        else:
+            detunings = list(raw_detunings)
+            if len(detunings) == 0:
+                detunings = [0.0] * len(swap_stors)
+        if len(detunings) != len(swap_stors):
+            raise AssertionError(
+                "length of detunings doesn't match that of swap_stors"
+            )
+        detunings = [float(d) for d in detunings]
+
+        if disorder_phase_offsets is None:
+            disorder_phase_offsets = [0.0] * len(swap_stors)
+        if len(disorder_phase_offsets) != len(swap_stors):
+            raise ValueError(
+                f"disorder_phase_offsets length {len(disorder_phase_offsets)} "
+                f"does not match swap_stors length {len(swap_stors)}"
+            )
+
+        update_phases = ecfg.get("update_phases", True)
+        scramble_sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
+        palindrome_scramble = bool(ecfg.get("palindrome_scramble", False))
+        floquet_hardware_loop = bool(ecfg.get("floquet_hardware_loop", False))
+        floquet_cycle = int(ecfg.floquet_cycle)
+
+        if floquet_cycle < 0:
+            raise ValueError("floquet_cycle must be non-negative")
+        if floquet_hardware_loop and palindrome_scramble:
+            raise ValueError(
+                "floquet_hardware_loop does not support palindrome_scramble"
+            )
+
+        # Deep copy the calibrated Floquet pulse parameters before applying
+        # the per-storage detunings for this experiment.
+        all_pulse_args = []
+        for i_stor, stor in enumerate(swap_stors):
+            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
+            pulse_args["freq"] += self.freq2reg(
+                detunings[i_stor],
+                gen_ch=pulse_args["ch"],
+            )
+            all_pulse_args.append(pulse_args)
+
+        pulse_us_by_stor = []
+        for i_stor, stor in enumerate(swap_stors):
+            stor_name = f"M1-S{stor}"
+            if self.m1s_style[stor - 1] == "arb":
+                sig_us = ecfg.get("floquet_gauss_sigma", None)
+                if sig_us is None:
+                    sig_us = self.swap_ds.get_gauss_sigma(stor_name)
+                pulse_us = float(sig_us) * float(
+                    self.swap_ds.get_gauss_n_sigma(stor_name)
+                )
+            else:
+                # QICK flat_top length is only the plateau.  The registered
+                # pi_m1si_low/high Gaussian ramp is 6 sigma in total and is
+                # part of the physical time over which a detuned frame
+                # advances.
+                ramp_sigma_us = float(
+                    self.cfg.device.manipulate.ramp_sigma)
+                pulse_us = (
+                    float(self.swap_ds.get_len(stor_name))
+                    + 6.0 * ramp_sigma_us
+                )
+            pulse_us_by_stor.append(pulse_us)
+
+        forward_sequence = list(range(len(swap_stors)))
+        reverse_sequence = list(reversed(forward_sequence))
+
+        scramble_sync_us = float(self.cycles2us(scramble_sync_cycles))
+        scramble_elapsed_us = floquet_cycle * (
+            sum(pulse_us_by_stor) + len(swap_stors) * scramble_sync_us
+        )
+
+        self.sync_all()
+
+        if ecfg.get("debug", False):
+            print("[DarkScramble] using shared phase_offsets for scramble")
+            print("[DarkScramble] initial phase_offsets:", phase_offsets)
+            print("[DarkScramble] initial disorder_phase_offsets:", disorder_phase_offsets)
+            print("[DarkScramble] detunings MHz:", detunings)
+            print("[DarkScramble] scramble sync cycles:", scramble_sync_cycles)
+            print("[DarkScramble] palindrome scramble:", palindrome_scramble)
+            print("[DarkScramble] hardware loop:", floquet_hardware_loop)
+            print("[DarkScramble] forward sequence:", swap_stors)
+            if palindrome_scramble:
+                print("[DarkScramble] reverse sequence:", list(reversed(swap_stors)))
+                if floquet_cycle % 2:
+                    print(
+                        "[DarkScramble] odd floquet_cycle leaves one unpaired "
+                        "forward cycle"
+                    )
+            print("[DarkScramble] scramble elapsed us:", scramble_elapsed_us)
+            print("[DarkScramble] pulse args:", all_pulse_args)
+
+        if floquet_hardware_loop and floquet_cycle > 0 and swap_stors:
+            first_cycle_phases = [0.0] * len(swap_stors)
+            phase_offsets_after_cycle = list(phase_offsets)
+
+            # Later pulses include the shifts from earlier pulses in cycle 0.
+            for i_stor in forward_sequence:
+                stor = swap_stors[i_stor]
+                first_cycle_phases[i_stor] = self._mod360(
+                    phase_offsets_after_cycle[i_stor]
+                )
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets_after_cycle,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+            phase_step_per_cycle = [
+                self._mod360(phase_after - phase_before)
+                for phase_before, phase_after in zip(
+                    phase_offsets,
+                    phase_offsets_after_cycle,
+                )
+            ]
+
+            phase_registers = []
+            next_register_by_page = {}
+            # Raw registers must be on the same page as the generator phase.
+            for pulse_args in all_pulse_args:
+                ch = pulse_args["ch"]
+                page = self.ch_page(ch)
+                if page == 0:
+                    raise RuntimeError(
+                        "floquet_hardware_loop cannot use page 0 scratch registers"
+                    )
+
+                phase_register = next_register_by_page.get(page, 1)
+                phase_step_register = phase_register + 1
+                next_register_by_page[page] = phase_step_register + 1
+                phase_registers.append(
+                    (page, phase_register, phase_step_register)
+                )
+
+            loop_page = phase_registers[0][0]
+            loop_register = next_register_by_page.get(loop_page, 1)
+            next_register_by_page[loop_page] = loop_register + 1
+
+            register_maps = list(self._gen_regmap.values()) + list(
+                self._ro_regmap.values()
+            )
+            for page, next_register in next_register_by_page.items():
+                first_special_register = min(
+                    register
+                    for register_page, register in register_maps
+                    if register_page == page and register > 0
+                )
+                if next_register > first_special_register:
+                    raise RuntimeError(
+                        "floquet_hardware_loop does not have enough scratch "
+                        f"registers on page {page}"
+                    )
+
+            for i_stor, pulse_args in enumerate(all_pulse_args):
+                ch = pulse_args["ch"]
+                gen_manager_name = self._gen_mgrs[ch].__class__.__name__
+                if gen_manager_name != "FullSpeedGenManager":
+                    raise RuntimeError(
+                        "floquet_hardware_loop requires a full-speed generator; "
+                        f"channel {ch} uses {gen_manager_name}"
+                    )
+
+                page, phase_register, phase_step_register = \
+                    phase_registers[i_stor]
+                self.safe_regwi(
+                    page,
+                    phase_register,
+                    self.deg2reg(first_cycle_phases[i_stor], gen_ch=ch),
+                )
+                self.safe_regwi(
+                    page,
+                    phase_step_register,
+                    self.deg2reg(phase_step_per_cycle[i_stor], gen_ch=ch),
+                )
+
+            self.safe_regwi(loop_page, loop_register, floquet_cycle - 1)
+
+            floquet_loop_number = getattr(self, "_floquet_loop_number", 0)
+            self._floquet_loop_number = floquet_loop_number + 1
+            floquet_loop_label = f"FLOQUET_LOOP_{floquet_loop_number}"
+
+            # Configure the next waveform while the current pulse is playing.
+            # This leaves the original 10-cycle setup margin unchanged.
+            first_pulse_args = all_pulse_args[forward_sequence[0]]
+            first_pulse_args["phase"] = 0
+            self.set_pulse_registers(**first_pulse_args)
+            self.label(floquet_loop_label)
+
+            for step_idx, i_stor in enumerate(forward_sequence):
+                stor = swap_stors[i_stor]
+                pulse_args = all_pulse_args[i_stor]
+                ch = pulse_args["ch"]
+                page, phase_register, phase_step_register = \
+                    phase_registers[i_stor]
+
+                self.mathi(
+                    page,
+                    self.sreg(ch, "phase"),
+                    phase_register,
+                    "+",
+                    0,
+                )
+
+                if ecfg.get("debug", False):
+                    print(
+                        f"[DarkScramble] hardware step={step_idx}, "
+                        f"stor={stor}, "
+                        f"first_phase_deg={first_cycle_phases[i_stor]:.3f}, "
+                        f"phase_step_deg={phase_step_per_cycle[i_stor]:.3f}"
+                    )
+
+                self.pulse(ch)
+                self.math(
+                    page,
+                    phase_register,
+                    phase_register,
+                    "+",
+                    phase_step_register,
+                )
+
+                next_i_stor = forward_sequence[
+                    (step_idx + 1) % len(forward_sequence)
+                ]
+                next_pulse_args = all_pulse_args[next_i_stor]
+                next_pulse_args["phase"] = 0
+                self.set_pulse_registers(**next_pulse_args)
+                self.sync_all(scramble_sync_cycles)
+
+            self.loopnz(loop_page, loop_register, floquet_loop_label)
+
+            for i_stor in range(len(swap_stors)):
+                phase_offsets[i_stor] = self._mod360(
+                    phase_offsets[i_stor]
+                    + floquet_cycle * phase_step_per_cycle[i_stor]
+                )
+        else:
+            for kk in range(floquet_cycle):
+                if palindrome_scramble and kk % 2:
+                    cycle_sequence = reverse_sequence
+                else:
+                    cycle_sequence = forward_sequence
+
+                for step_idx, i_stor in enumerate(cycle_sequence):
+                    stor = swap_stors[i_stor]
+                    pulse_args = all_pulse_args[i_stor]
+
+                    phase_deg = self._mod360(phase_offsets[i_stor])
+                    pulse_args["phase"] = self.deg2reg(
+                        phase_deg,
+                        gen_ch=pulse_args["ch"],
+                    )
+
+                    if ecfg.get("debug", False) and kk == 0:
+                        print(
+                            f"[DarkScramble] cycle={kk}, step={step_idx}, "
+                            f"stor={stor}, phase_deg={phase_deg:.3f}, "
+                            f"stark_phase={phase_offsets[i_stor]:.3f}"
+                        )
+
+                    self.setup_and_pulse(**pulse_args)
+                    self.sync_all(scramble_sync_cycles)
+
+                    if update_phases:
+                        self._advance_phase_offsets(
+                            phase_offsets=phase_offsets,
+                            swap_stors=swap_stors,
+                            pulsed_stor=stor,
+                        )
+
+        for j_stor, detuning_MHz in enumerate(detunings):
+            disorder_phase_offsets[j_stor] = self._mod360(
+                disorder_phase_offsets[j_stor]
+                + 360.0 * detuning_MHz * scramble_elapsed_us
+            )
+
+        if ecfg.get("debug", False):
+            print("[DarkScramble] final phase_offsets:", phase_offsets)
+            print("[DarkScramble] final disorder_phase_offsets:", disorder_phase_offsets)
+
+        self.sync_all()
+
     def _play_m1s_frac_train(
         self,
         stor,
@@ -872,6 +1205,7 @@ class DarkBaseProgram(QsimBaseProgram):
         swap_stors,
         disorder_phase_offsets=None,
         logical_phase_deg=0.0,
+        logical_phase_step_deg=0.0,
         inverse=False,
         update_phases=True,
         label="",
@@ -881,6 +1215,10 @@ class DarkBaseProgram(QsimBaseProgram):
 
         logical_phase_deg:
             Desired logical phase of this beam-splitter pulse.
+
+        logical_phase_step_deg:
+            Phase added after every physical fractional pulse.  A value of
+            180 degrees emits the sequence +, -, +, -, ... in one train.
 
         inverse:
             If True, implements U^\dagger by adding 180 degrees to the pulse phase.
@@ -896,47 +1234,125 @@ class DarkBaseProgram(QsimBaseProgram):
             load/readout sequence; they represent the frame accumulated before
             the analyzer starts.
         """
+        n_frac = int(n_frac)
         if n_frac <= 0:
             return
 
         idx = swap_stors.index(stor)
         pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
 
+        disorder_phase_deg = 0.0
+        if disorder_phase_offsets is not None:
+            disorder_phase_deg = disorder_phase_offsets[idx]
+
         inverse_phase = 180.0 if inverse else 0.0
+        first_phase_deg = self._mod360(
+            phase_offsets[idx]
+            + disorder_phase_deg
+            + logical_phase_deg
+            + inverse_phase
+        )
+        phase_step_deg = self._mod360(logical_phase_step_deg)
+        sync_cycles = int(
+            self.cfg.expt.get("scramble_sync_cycles", 10))
+        hardware_loop = bool(
+            self.cfg.expt.get("floquet_hardware_loop", False))
 
-        for kk in range(int(n_frac)):
-            disorder_phase_deg = 0.0
-            if disorder_phase_offsets is not None:
-                disorder_phase_deg = disorder_phase_offsets[idx]
-
-            phase_deg = self._mod360(
-                phase_offsets[idx]
-                + disorder_phase_deg
-                + logical_phase_deg
-                + inverse_phase
+        if self.cfg.expt.get("debug", False):
+            direction = "inverse" if inverse else "forward"
+            print(
+                f"[DarkT1] {label}: stor={stor}, {direction}, "
+                f"n_frac={n_frac}, phase_deg={first_phase_deg:.3f}, "
+                f"phase_step_deg={phase_step_deg:.3f}, "
+                f"phase_offset={phase_offsets[idx]:.3f}, "
+                f"disorder_phase={disorder_phase_deg:.3f}, "
+                f"logical_phase={logical_phase_deg:.3f}, "
+                f"hardware_loop={hardware_loop}"
             )
 
-            if self.cfg.expt.get("debug", False) and kk == 0:
-                direction = "inverse" if inverse else "forward"
-                print(
-                    f"[DarkT1] {label}: stor={stor}, {direction}, "
-                    f"n_frac={n_frac}, phase_deg={phase_deg:.3f}, "
-                    f"phase_offset={phase_offsets[idx]:.3f}, "
-                    f"disorder_phase={disorder_phase_deg:.3f}, "
-                    f"logical_phase={logical_phase_deg:.3f}"
+        if hardware_loop:
+            ch = pulse_args["ch"]
+            page = self.ch_page(ch)
+            if page == 0: #<--- This part should be reviewed; not sure if page 0 is fully forbidden, but seems this is added to avoid
+                          #the collision with other registers assigned for RAverager or hardware loop
+                raise RuntimeError(
+                    "floquet_hardware_loop cannot use page 0 scratch registers"
+                )
+            if self._gen_mgrs[ch].__class__.__name__ != "FullSpeedGenManager": #This is done because only full speed generator has separate phase sreg.
+                raise RuntimeError(
+                    "floquet_hardware_loop requires a full-speed generator; "
+                    f"channel {ch} uses "
+                    f"{self._gen_mgrs[ch].__class__.__name__}"
                 )
 
-            pulse_args["phase"] = self.deg2reg(
-                phase_deg,
-                gen_ch=pulse_args["ch"],
+            phase_register = 1
+            phase_step_register = 2
+            loop_register = 3
+            register_maps = list(self._gen_regmap.values()) + list(
+                self._ro_regmap.values()) #In general, _gen_regmap[(ch, "freg")] = (page, register), so values() collapses those into
+                                          #list, which is used to get the lowest value of sreg for the page. 
+            first_special_register = min(
+                register
+                for register_page, register in register_maps
+                if register_page == page and register > 0
+            ) #This is done as QICK allocates sregs from the highest numbers
+            if loop_register >= first_special_register:
+                raise RuntimeError(
+                    "floquet_hardware_loop does not have enough scratch "
+                    f"registers on page {page}"
+                )
+
+            self.safe_regwi(
+                page,
+                phase_register,
+                self.deg2reg(first_phase_deg, gen_ch=ch),
             )
+            self.safe_regwi(
+                page,
+                phase_step_register,
+                self.deg2reg(phase_step_deg, gen_ch=ch),
+            )
+            self.safe_regwi(page, loop_register, n_frac - 1)
 
-            self.setup_and_pulse(**pulse_args)
+            pulse_args["phase"] = 0
+            self.set_pulse_registers(**pulse_args)
 
-            # setup_and_pulse needs at least ~10 cycles for instructions to finish.
-            self.sync_all(int(self.cfg.expt.get("scramble_sync_cycles", 10)))
+            floquet_loop_number = getattr(
+                self, "_floquet_loop_number", 0)
+            self._floquet_loop_number = floquet_loop_number + 1
+            loop_label = f"FLOQUET_FRAC_LOOP_{floquet_loop_number}"
+            self.label(loop_label)
 
-            if update_phases:
+            self.mathi(
+                page,
+                self.sreg(ch, "phase"),
+                phase_register,
+                "+",
+                0,
+            )
+            self.pulse(ch)
+            self.math(
+                page,
+                phase_register,
+                phase_register,
+                "+",
+                phase_step_register,
+            )
+            self.sync_all(sync_cycles)
+            self.loopnz(page, loop_register, loop_label)
+        else:
+            for kk in range(n_frac):
+                phase_deg = self._mod360(
+                    first_phase_deg + kk * phase_step_deg)
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg,
+                    gen_ch=pulse_args["ch"],
+                )
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+
+        if update_phases:
+            for _ in range(n_frac):
                 self._advance_phase_offsets(
                     phase_offsets=phase_offsets,
                     swap_stors=swap_stors,
@@ -1708,195 +2124,7 @@ class DarkT1Experiment(QsimBaseExperiment):
 
 class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram):
     # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
-    #
-    # Important:
-    # Do NOT call SidebandScrambleProgram.core_pulses() when doing
-    # load -> scramble -> readout with dark-mode tracking.
-    #
-    # SidebandScrambleProgram.core_pulses() owns a private
-    # swap_stor_phases = [0, 0, ...] tracker.  After dark load, the correct
-    # tracker is no longer zero.  Therefore scramble must use the same
-    # mutable phase_offsets object that load and readout use.
-
-    def _play_scramble_with_phase_offsets(
-        self,
-        phase_offsets,
-        swap_stors,
-        disorder_phase_offsets=None,
-    ):
-        """
-        Same physical pulse train as SidebandScrambleProgram.core_pulses(),
-        but using the caller-provided phase_offsets as the live frame tracker.
-
-        If cfg.expt.palindrome_scramble is True, consecutive Floquet cycles
-        alternate direction:
-
-            cycle 0: swap_stors
-            cycle 1: reversed(swap_stors)
-            cycle 2: swap_stors
-            ...
-
-        This keeps the number of pulses per floquet_cycle unchanged. With an
-        even floquet_cycle, each forward cycle has a reverse partner.
-        Otherwise it preserves the original SidebandScrambleProgram order.
-
-        Correct continuous sequence:
-
-            load dark mode
-                updates phase_offsets
-
-            scramble
-                emits pulses with current phase_offsets
-                updates the same phase_offsets after every pulse
-
-            read dark mode
-                consumes the final phase_offsets
-
-        This avoids the phase discontinuity caused by super().core_pulses().
-        """
-        ecfg = self.cfg.expt
-        swap_stors = list(swap_stors)
-
-        if len(phase_offsets) != len(swap_stors):
-            raise ValueError(
-                f"phase_offsets length {len(phase_offsets)} does not match "
-                f"swap_stors length {len(swap_stors)}"
-            )
-
-        raw_detunings = ecfg.get("detunings", None)
-        if raw_detunings is None or raw_detunings is False:
-            detunings = [0.0] * len(swap_stors)
-        else:
-            detunings = list(raw_detunings)
-            if len(detunings) == 0:
-                detunings = [0.0] * len(swap_stors)
-        if len(detunings) != len(swap_stors):
-            raise AssertionError(
-                "length of detunings doesn't match that of swap_stors"
-            )
-        detunings = [float(d) for d in detunings]
-
-        if disorder_phase_offsets is None:
-            disorder_phase_offsets = [0.0] * len(swap_stors)
-        if len(disorder_phase_offsets) != len(swap_stors):
-            raise ValueError(
-                f"disorder_phase_offsets length {len(disorder_phase_offsets)} "
-                f"does not match swap_stors length {len(swap_stors)}"
-            )
-
-        update_phases = ecfg.get("update_phases", True)
-        scramble_sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
-        palindrome_scramble = bool(ecfg.get("palindrome_scramble", False))
-
-        # Deep copy floquet params and apply detunings exactly as in
-        # SidebandScrambleProgram.core_pulses().
-        all_pulse_args = []
-        for i_stor, stor in enumerate(swap_stors):
-            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
-            pulse_args["freq"] += self.freq2reg(
-                detunings[i_stor],
-                gen_ch=pulse_args["ch"],
-            )
-            all_pulse_args.append(pulse_args)
-
-        pulse_us_by_stor = []
-        for i_stor, stor in enumerate(swap_stors):
-            stor_name = f"M1-S{stor}"
-            if self.m1s_style[stor - 1] == "arb":
-                sig_us = ecfg.get("floquet_gauss_sigma", None)
-                if sig_us is None:
-                    sig_us = self.swap_ds.get_gauss_sigma(stor_name)
-                pulse_us = float(sig_us) * float(
-                    self.swap_ds.get_gauss_n_sigma(stor_name)
-                )
-            else:
-                # QICK flat_top length is only the plateau.  The registered
-                # pi_m1si_low/high Gaussian ramp is 6 sigma in total and is
-                # part of the physical time over which a detuned frame
-                # advances.
-                ramp_sigma_us = float(
-                    self.cfg.device.manipulate.ramp_sigma)
-                pulse_us = (
-                    float(self.swap_ds.get_len(stor_name))
-                    + 6.0 * ramp_sigma_us
-                )
-            pulse_us_by_stor.append(pulse_us)
-
-        forward_sequence = list(range(len(swap_stors)))
-        reverse_sequence = list(reversed(forward_sequence))
-
-        scramble_sync_us = float(self.cycles2us(scramble_sync_cycles))
-        scramble_elapsed_us = int(ecfg.floquet_cycle) * (
-            sum(pulse_us_by_stor) + len(swap_stors) * scramble_sync_us
-        )
-
-        self.sync_all()
-
-        if ecfg.get("debug", False):
-            print("[DarkScramble] using shared phase_offsets for scramble")
-            print("[DarkScramble] initial phase_offsets:", phase_offsets)
-            print("[DarkScramble] initial disorder_phase_offsets:", disorder_phase_offsets)
-            print("[DarkScramble] detunings MHz:", detunings)
-            print("[DarkScramble] scramble sync cycles:", scramble_sync_cycles)
-            print("[DarkScramble] palindrome scramble:", palindrome_scramble)
-            print("[DarkScramble] forward sequence:", swap_stors)
-            if palindrome_scramble:
-                print("[DarkScramble] reverse sequence:", list(reversed(swap_stors)))
-                if int(ecfg.floquet_cycle) % 2:
-                    print(
-                        "[DarkScramble] odd floquet_cycle leaves one unpaired "
-                        "forward cycle"
-                    )
-            print("[DarkScramble] scramble elapsed us:", scramble_elapsed_us)
-            print("[DarkScramble] pulse args:", all_pulse_args)
-
-        for kk in range(int(ecfg.floquet_cycle)):
-            if palindrome_scramble and kk % 2:
-                cycle_sequence = reverse_sequence
-            else:
-                cycle_sequence = forward_sequence
-
-            for step_idx, i_stor in enumerate(cycle_sequence):
-                stor = swap_stors[i_stor]
-                pulse_args = all_pulse_args[i_stor]
-
-                phase_deg = self._mod360(phase_offsets[i_stor])
-                pulse_args["phase"] = self.deg2reg(
-                    phase_deg,
-                    gen_ch=pulse_args["ch"],
-                )
-
-                if ecfg.get("debug", False) and kk == 0:
-                    print(
-                        f"[DarkScramble] cycle={kk}, step={step_idx}, stor={stor}, "
-                        f"phase_deg={phase_deg:.3f}, "
-                        f"stark_phase={phase_offsets[i_stor]:.3f}"
-                    )
-
-                self.setup_and_pulse(**pulse_args)
-
-                # Same requirement as the original SidebandScrambleProgram:
-                # setup_and_pulse needs at least ~10 cycles.
-                self.sync_all(scramble_sync_cycles)
-
-                if update_phases:
-                    self._advance_phase_offsets(
-                        phase_offsets=phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-
-        for j_stor, detuning_MHz in enumerate(detunings):
-            disorder_phase_offsets[j_stor] = self._mod360(
-                disorder_phase_offsets[j_stor]
-                + 360.0 * detuning_MHz * scramble_elapsed_us
-            )
-
-        if ecfg.get("debug", False):
-            print("[DarkScramble] final phase_offsets:", phase_offsets)
-            print("[DarkScramble] final disorder_phase_offsets:", disorder_phase_offsets)
-
-        self.sync_all()
+    # Dark load, scramble, and readout share one mutable phase_offsets list.
 
     def _prepare_selected_dark_mode(
         self,
@@ -2403,7 +2631,6 @@ class FloquetPulseVacuumRamseyProgram(
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         calibration_stor = int(ecfg.floquet_phase_stor)
         pulse_count = int(ecfg.floquet_phase_pulse_count)
-        pair_count = pulse_count // 2
         phase_offsets = [0.0] * len(swap_stors)
 
         if pulse_count % 2 \
@@ -2431,45 +2658,21 @@ class FloquetPulseVacuumRamseyProgram(
             cfg, prepulse.pulse, prefix="floquet_vacuum_ramsey_pre_")
         self.sync_all()
 
-        # Do not apply the ordered phase correction here: the phase produced by
-        # this pulse pair relative to vacuum is precisely the measured signal.
-        for _ in range(pair_count):
-            self._play_m1s_frac_train(
-                stor=calibration_stor,
-                n_frac=1,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=0.0,
-                inverse=False,
-                update_phases=False,
-                label="vacuum Ramsey: +fractional pulse",
-            )
-            self._play_m1s_frac_train(
-                stor=calibration_stor,
-                n_frac=1,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=0.0,
-                inverse=True,
-                update_phases=False,
-                label="vacuum Ramsey: -fractional pulse",
-            )
-
-        # A closed pair measures exp(i 2 theta), so its half-slope leaves a
-        # pi ambiguity in theta.  The extra one-pulse return for odd counts
-        # fixes that branch.  With the calibrated fractional pulse
-        # (pi_frac >> 2), its resonant return coefficient is positive.
-        if pulse_count % 2:
-            self._play_m1s_frac_train(
-                stor=calibration_stor,
-                n_frac=1,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=0.0,
-                inverse=False,
-                update_phases=False,
-                label="vacuum Ramsey: one-pulse branch anchor",
-            )
+        # Do not apply the ordered phase correction here: the phase produced
+        # by this train relative to vacuum is precisely the measured signal.
+        # The 180-degree phase step emits +, -, +, -, ...; even counts are
+        # closed pairs and an odd count leaves the one-pulse branch anchor.
+        self._play_m1s_frac_train(
+            stor=calibration_stor,
+            n_frac=pulse_count,
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=0.0,
+            logical_phase_step_deg=180.0,
+            inverse=False,
+            update_phases=False,
+            label="vacuum Ramsey: alternating fractional train",
+        )
 
         analyzer_phase = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
@@ -2710,27 +2913,6 @@ class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
 
 class SidebandScrambleDarkProgramDebug(SidebandScrambleDarkProgramNewNew):
     # Debug variant for repeated load/readout checks.
-    #
-    # Important:
-    # Do NOT call SidebandScrambleProgram.core_pulses() when doing
-    # load -> scramble -> readout with dark-mode tracking.
-    #
-    # SidebandScrambleProgram.core_pulses() owns a private
-    # swap_stor_phases = [0, 0, ...] tracker.  After dark load, the correct
-    # tracker is no longer zero.  Therefore scramble must use the same
-    # mutable phase_offsets object that load and readout use.
-
-    def _play_scramble_with_phase_offsets(
-        self,
-        phase_offsets,
-        swap_stors,
-        disorder_phase_offsets=None,
-    ):
-        return super()._play_scramble_with_phase_offsets(
-            phase_offsets=phase_offsets,
-            swap_stors=swap_stors,
-            disorder_phase_offsets=disorder_phase_offsets,
-        )
 
     def _prepare_selected_dark_mode(
         self,
@@ -3011,26 +3193,17 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
             label="phase calibration: first A pi/2",
         )
 
-        # Apply a (pi/12, -pi/12) * n_pulse gate on stor_B
-        for i in range(int(n_pulse_B)):
-            self._play_m1s_frac_train(
-                stor=stor_B,
-                n_frac=1,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=0.0,
-                update_phases=False,
-                label="phase calibration: B +frac",
-            )
-            self._play_m1s_frac_train(
-                stor=stor_B,
-                n_frac=1,
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                logical_phase_deg=180.0,
-                update_phases=False,
-                label="phase calibration: B -frac",
-            )
+        # Apply a (+fraction, -fraction) * n_pulse train on stor_B.
+        self._play_m1s_frac_train(
+            stor=stor_B,
+            n_frac=2 * int(n_pulse_B),
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=0.0,
+            logical_phase_step_deg=180.0,
+            update_phases=False,
+            label="phase calibration: alternating B train",
+        )
 
         # Apply -pi/2 pulse on stor_A with advanced phase
         self._play_m1s_frac_train(
