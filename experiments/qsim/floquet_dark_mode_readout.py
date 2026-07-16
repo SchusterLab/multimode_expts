@@ -2149,6 +2149,20 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 "spectroscopy_photon_number must be 1, 2, or 3; "
                 f"got {photon_number}"
             )
+
+        apply_vacuum_phase = bool(ecfg.get(
+            "spectroscopy_apply_vacuum_phase_correction", False))
+        if apply_vacuum_phase \
+                and "spectroscopy_vacuum_phase_per_cycle_deg" not in ecfg:
+            raise KeyError(
+                "Program-level vacuum-phase correction requires "
+                "spectroscopy_vacuum_phase_per_cycle_deg"
+            )
+        vacuum_phase_per_cycle_deg = float(ecfg.get(
+            "spectroscopy_vacuum_phase_per_cycle_deg", 0.0))
+        if not np.isfinite(vacuum_phase_per_cycle_deg):
+            raise ValueError(
+                "spectroscopy_vacuum_phase_per_cycle_deg must be finite")
         if photon_number > 1:
             pulse_key = "pi_ge_broadband"
             if pulse_key not in self.cfg.device.qubit.pulses:
@@ -2199,6 +2213,12 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         ecfg.spectroscopy_initial_mode = initial_mode
         ecfg.spectroscopy_photon_number = photon_number
+        ecfg.spectroscopy_apply_vacuum_phase_correction = \
+            apply_vacuum_phase
+        ecfg.spectroscopy_vacuum_phase_per_cycle_deg = \
+            vacuum_phase_per_cycle_deg
+        ecfg.spectroscopy_phase_application = (
+            "analyzer_feedforward_v1" if apply_vacuum_phase else "raw_v0")
         ecfg.init_stor = initial_mode
         ecfg.ro_stor = initial_mode
         ecfg.spectroscopy_reference = "vacuum"
@@ -2270,6 +2290,17 @@ class NPhotonHamiltonianSpectroscopyProgram(
         # analysis for every N.
         analyzer_phase = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        if ecfg.spectroscopy_apply_vacuum_phase_correction:
+            # With A = (P0-P180) + i(P270-P90), shifting every analyzer
+            # phase by delta rotates the reconstructed amplitude by
+            # exp(i*delta).  Feed forward delta=-m*theta, using the absolute
+            # Floquet-cycle index, so the four nominal columns directly
+            # reconstruct A_raw*exp(-i*m*theta).  The evolution pulse train
+            # itself is not changed.
+            analyzer_phase -= (
+                int(ecfg.floquet_cycle)
+                * ecfg.spectroscopy_vacuum_phase_per_cycle_deg
+            )
         if initial_mode > 0:
             self._play_m1s_frac_train(
                 stor=initial_mode,
@@ -2310,6 +2341,149 @@ class SinglePhotonFloquetSpectroscopyProgram(
             )
         self.cfg.expt.spectroscopy_photon_number = 1
         super().initialize()
+
+
+class FloquetPulseVacuumRamseyProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Measure the vacuum--one-photon phase of one physical Floquet pulse.
+
+    The Ramsey branch is prepared as ``(|vac> + |1_M1>)/sqrt(2)`` with the
+    same hpi/ef/f0g1 ladder used by the spectroscopy program.  One calibration
+    pair is a physical fractional M1-S pulse followed by the same pulse with
+    its drive phase advanced by 180 degrees.  The ideal beam-splitter
+    population transfer cancels, while a phase relative to vacuum is retained.
+
+    An even ``floquet_phase_pulse_count`` plays closed forward/inverse pairs.
+    An odd count adds one final forward pulse.  The pair slope gives the phase
+    accurately but only modulo pi; the one-pulse point selects the physical
+    modulo-2pi branch because one fractional Floquet pulse is much shorter
+    than a half swap and therefore has a positive return coefficient.  This
+    interpretation is valid only when the pulse pairs close and the one-pulse
+    anchor retains high contrast.  This is separate from the ordered
+    storage--M1 relative-phase matrix used by ``update_phases=True``.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        calibration_stor = int(ecfg.floquet_phase_stor)
+        if calibration_stor not in swap_stors:
+            raise ValueError(
+                "floquet_phase_stor must be one of "
+                f"swap_stors={swap_stors}; got {calibration_stor}"
+            )
+
+        if "floquet_phase_pulse_count" in ecfg:
+            pulse_count = int(ecfg.floquet_phase_pulse_count)
+        else:
+            # Backward-compatible path for the first pair-count notebook.
+            pulse_count = 2 * int(
+                ecfg.get("floquet_phase_pair_count", 0))
+        if pulse_count < 0:
+            raise ValueError("floquet_phase_pulse_count must be non-negative")
+
+        # Reuse the validated N=1 vacuum-reference encoder and analyzer.  This
+        # calibration does not play a Trotter cycle and always reads M1.
+        ecfg.spectroscopy_photon_number = 1
+        ecfg.spectroscopy_initial_mode = 0
+        ecfg.ro_stor = 0
+        ecfg.floquet_cycle = 0
+        ecfg.palindrome_scramble = False
+        # This program measures the phase that spectroscopy may later remove.
+        # It must never feed that correction back into its own analyzer.
+        ecfg.spectroscopy_apply_vacuum_phase_correction = False
+        ecfg.spectroscopy_vacuum_phase_per_cycle_deg = 0.0
+        ecfg.floquet_phase_stor = calibration_stor
+        ecfg.floquet_phase_pulse_count = pulse_count
+        super().initialize()
+
+    def body(self):
+        ecfg = self.cfg.expt
+        cfg = AttrDict(self.cfg)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        calibration_stor = int(ecfg.floquet_phase_stor)
+        pulse_count = int(ecfg.floquet_phase_pulse_count)
+        pair_count = pulse_count // 2
+        phase_offsets = [0.0] * len(swap_stors)
+
+        if pulse_count % 2 \
+                and int(self.m1s_pi_fracs[calibration_stor - 1]) <= 2:
+            raise RuntimeError(
+                "The one-pulse phase anchor requires a fractional pulse "
+                "shorter than a half swap"
+            )
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        encoder_ladder = self._vacuum_n_encoder_ladder(1)
+        prepulse_cfg = [
+            ["qubit", "ge", "hpi", 0.0],
+        ] + encoder_ladder
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="floquet_vacuum_ramsey_pre_")
+        self.sync_all()
+
+        # Do not apply the ordered phase correction here: the phase produced by
+        # this pulse pair relative to vacuum is precisely the measured signal.
+        for _ in range(pair_count):
+            self._play_m1s_frac_train(
+                stor=calibration_stor,
+                n_frac=1,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=0.0,
+                inverse=False,
+                update_phases=False,
+                label="vacuum Ramsey: +fractional pulse",
+            )
+            self._play_m1s_frac_train(
+                stor=calibration_stor,
+                n_frac=1,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=0.0,
+                inverse=True,
+                update_phases=False,
+                label="vacuum Ramsey: -fractional pulse",
+            )
+
+        # A closed pair measures exp(i 2 theta), so its half-slope leaves a
+        # pi ambiguity in theta.  The extra one-pulse return for odd counts
+        # fixes that branch.  With the calibrated fractional pulse
+        # (pi_frac >> 2), its resonant return coefficient is positive.
+        if pulse_count % 2:
+            self._play_m1s_frac_train(
+                stor=calibration_stor,
+                n_frac=1,
+                phase_offsets=phase_offsets,
+                swap_stors=swap_stors,
+                logical_phase_deg=0.0,
+                inverse=False,
+                update_phases=False,
+                label="vacuum Ramsey: one-pulse branch anchor",
+            )
+
+        analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        postpulse_cfg = self._inverse_gate_sequence(encoder_ladder)
+        postpulse_cfg.append([
+            "qubit", "ge", "hpi",
+            (180.0 + analyzer_phase) % 360.0,
+        ])
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="floquet_vacuum_ramsey_post_")
+        self.sync_all()
+        self.measure_wrapper()
 
 
 class CentralBosonLocalReturnProgram(SidebandScrambleDarkProgramNewNew):
