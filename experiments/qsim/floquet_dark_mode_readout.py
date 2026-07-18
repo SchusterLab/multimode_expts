@@ -2291,111 +2291,158 @@ class BroadbandGeValidationProgram(QsimBaseProgram):
 
 class NPhotonHamiltonianSpectroscopyProgram(
         SidebandScrambleDarkProgramNewNew):
-    """Vacuum-referenced spectroscopy of the N=1, 2, or 3 photon sector.
+    """Measure a vacuum-referenced return for one occupation string.
 
-    The sequence is deliberately explicit:
-
-      1. prepare (|vac> + |N_initial_mode>)/sqrt(2),
-      2. play ``floquet_cycle`` copies of the existing Trotter step,
-      3. map the selected initial mode back to M1,
-      4. apply the inverse preparation with a swept analyzer phase,
-      5. measure the qubit.
-
-    Combining analyzer phases 0/180 and 90/270 gives the real and imaginary
-    parts of the vacuum--N-photon coherence.  The vacuum is the fixed
-    zero-energy reference, so its Fourier peaks are individual N-particle
-    energies rather than pairwise energy differences.
-
-    For N>1 the five same-mode probes |N_i> give a projected spectral measure;
-    they are not a complete Fock basis of the 15-dimensional N=2 or
-    35-dimensional N=3 sector.
+    The first qubit half-pi phase is ``spectroscopy_prep_phase``.  The program
+    then encodes the requested occupation string, plays the Trotter sequence,
+    applies the inverse encoder, and measures with one fixed analyzer pulse.
+    Cycling the preparation phase through 0, 90, 180, and 270 degrees gives
+    ``v(t)* <n|U(t)|n>``.  A complete fixed-N basis is summed in the notebook.
     """
 
     @staticmethod
-    def _vacuum_n_encoder_ladder(photon_number):
+    def _get_encoder_pulses(occupations, swap_stors):
         """
-        The final state should be |g0> + |g N>, which is ensured by conditional ge.
+        
+        Encode ``[n_M1] + [n_S for S in swap_stors]``.
+        The ocuupation order is always as above. I am not sure if there would be any better convention than this.
+        
         """
-        photon_number = int(photon_number)
-        pulse_seq = []
-        for n in range(photon_number):
-            # This selects the ef waveform calibrated to be pi at photon
-            # number n; it is not assumed to be ON/OFF in n.  The ordering
-            # keeps every off-target branch in g whenever this pulse is played.
-            pulse_seq.append(
-                ["multiphoton", f"e{n}-f{n}", "pi", 0.0])
+        if any(
+                isinstance(n, (bool, np.bool_))
+                or not isinstance(n, (int, np.integer))
+                for n in occupations):
+            raise TypeError("occupations must contain non-negative integers") #DISREGARD: This is something Codex inserted, and I really hate this type checking things.
+        
+        occupations = [int(n) for n in occupations] #DISREGARD: This is also Codex-inserted typeconversion spagetthi, which has no point at all. 
+        swap_stors = [int(stor) for stor in swap_stors] #DISREGARD: This is also Codex-inserted typeconversion spagetthi, which has no point at all.
 
-            if n < photon_number - 1:
-                pulse_seq.append(
-                    ["qubit", "ge_broadband", "pi", 0.0])
+        if len(occupations) != len(swap_stors) + 1:
+            raise ValueError(
+                "spectroscopy_occupations must be ordered as [n_M1] plus "
+                "one occupation for every entry in swap_stors"
+            )  #DISREGARD: This is also Codex inserted typeconversion spagetthi, which has no point at all. 
+        if any(n < 0 for n in occupations):
+            raise ValueError("spectroscopy_occupations must be non-negative")  #DISREGARD: Who will try to load negative photons to the system? I do not understand why Codex inserted this at all.
 
-            pulse_seq.append(
-                ["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0])
+        occupied_modes = [
+            (stor, occupation)
+            for stor, occupation in zip(swap_stors, occupations[1:])
+            if occupation > 0
+        ] 
+        if occupations[0] > 0:
+            occupied_modes.append((0, occupations[0])) #This is to make sure that the photons in M1 is loaded at last, and this is inevitable due to cascaded structure.
+            
+    
+        if not occupied_modes:
+            raise ValueError("spectroscopy_occupations must contain photons")
 
-            if n < photon_number - 1:
-                pulse_seq.append(
-                    ["qubit", "ge_broadband", "pi", 0.0])
+        encoder_pulses = []
+        for mode_index, (mode, photon_number) in enumerate(occupied_modes):
+            last_mode = mode_index == len(occupied_modes) - 1
 
+            for n in range(photon_number):
+                last_photon = n == photon_number - 1
+                last_ladder_step = last_mode and last_photon
 
-        return pulse_seq
+                encoder_pulses.append([
+                    "multiphoton", f"e{n}-f{n}", "pi", 0.0,
+                ])
+
+                if not last_ladder_step: #Conditional Shelving except for the final step
+                    encoder_pulses.append([
+                        "qubit", "ge_broadband", "pi", 0.0,
+                    ]) 
+
+                encoder_pulses.append([
+                    "multiphoton", f"f{n}-g{n + 1}", "pi", 0.0,
+                ])
+
+                if mode > 0 and last_photon: 
+                    encoder_pulses.append([
+                        "storage", f"M1-S{mode}", "pi", 0.0,
+                    ]) 
+
+                if not last_ladder_step: #Conditional Shelving except for the final step
+                    encoder_pulses.append([
+                        "qubit", "ge_broadband", "pi", 0.0,
+                    ])
+
+        return encoder_pulses
 
     @staticmethod
-    def _inverse_gate_sequence(pulse_seq):
-        """Build the ideal resonant inverse descriptor.
-
-        Reversing the order and adding 180 degrees is exact only for the
-        calibrated resonant rotations assumed by the gate model.  Detuning,
-        bandwidth, Stark phase, and leakage errors are not inverted by this
-        bookkeeping operation and must be checked experimentally.
-        """
-        inverse = []
-        for gate in reversed(pulse_seq):
-            gate = list(gate)
-            gate[3] = (float(gate[3]) + 180.0) % 360.0
-            inverse.append(gate)
-        return inverse
+    def _get_inverse_pulses(encoder_pulses): #inversing the pulse sequence. 
+        inverse_pulses = []
+        for pulse in reversed(encoder_pulses):
+            pulse = list(pulse)
+            pulse[3] = (float(pulse[3]) + 180.0) % 360.0
+            inverse_pulses.append(pulse)
+        return inverse_pulses
 
     def initialize(self):
         ecfg = self.cfg.expt
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        allowed_modes = [0] + swap_stors
-        initial_mode = int(ecfg.spectroscopy_initial_mode)
-        photon_number = int(ecfg.get("spectroscopy_photon_number", 1))
-
-        if initial_mode not in allowed_modes:
+        if len(set(swap_stors)) != len(swap_stors):
+            raise ValueError(f"swap_stors must be distinct; got {swap_stors}")
+        if any(stor < 1 or stor > 7 for stor in swap_stors):
             raise ValueError(
-                "spectroscopy_initial_mode must be M1 (0) or one of "
-                f"swap_stors={swap_stors}; got {initial_mode}"
-            )
-        if int(ecfg.get("ro_stor", initial_mode)) != initial_mode:
-            raise ValueError(
-                "ro_stor must equal spectroscopy_initial_mode so the "
-                "diagonal coherence <N_i|U_step^n|N_i> is measured"
-            )
-        if photon_number not in (1, 2, 3):
-            raise ValueError(
-                "spectroscopy_photon_number must be 1, 2, or 3; "
-                f"got {photon_number}"
+                f"swap_stors entries must be in 1..7; got {swap_stors}"
             )
 
-        apply_vacuum_phase = bool(ecfg.get(
-            "spectroscopy_apply_vacuum_phase_correction", False))
-        if apply_vacuum_phase \
-                and "spectroscopy_vacuum_phase_per_cycle_deg" not in ecfg:
-            raise KeyError(
-                "Program-level vacuum-phase correction requires "
-                "spectroscopy_vacuum_phase_per_cycle_deg"
+        if "spectroscopy_occupations" in ecfg:
+            occupations = list(ecfg.spectroscopy_occupations)
+        else:
+            initial_mode = int(ecfg.spectroscopy_initial_mode)
+            photon_number = int(ecfg.get("spectroscopy_photon_number", 1))
+            if initial_mode not in [0] + swap_stors:
+                raise ValueError(
+                    "spectroscopy_initial_mode must be M1 (0) or one of "
+                    f"swap_stors={swap_stors}; got {initial_mode}"
+                )
+            occupations = [0] * (len(swap_stors) + 1)
+            occupation_index = (
+                0 if initial_mode == 0
+                else swap_stors.index(initial_mode) + 1
             )
-        vacuum_phase_per_cycle_deg = float(ecfg.get(
-            "spectroscopy_vacuum_phase_per_cycle_deg", 0.0))
-        if not np.isfinite(vacuum_phase_per_cycle_deg):
+            occupations[occupation_index] = photon_number
+
+        if len(occupations) != len(swap_stors) + 1:
             raise ValueError(
-                "spectroscopy_vacuum_phase_per_cycle_deg must be finite")
-        if photon_number > 1:
+                "spectroscopy_occupations must be [n_M1] followed by the "
+                f"occupations of swap_stors={swap_stors}; got {occupations}"
+            )
+        if any(
+                isinstance(n, (bool, np.bool_))
+                or not isinstance(n, (int, np.integer))
+                for n in occupations):
+            raise TypeError(
+                "spectroscopy_occupations entries must be non-negative integers"
+            )
+        occupations = [int(n) for n in occupations]
+        if any(n < 0 for n in occupations):
+            raise ValueError(
+                "spectroscopy_occupations entries must be non-negative"
+            )
+
+        photon_number = sum(occupations)
+        if photon_number < 1:
+            raise ValueError("spectroscopy_occupations must contain photons")
+        if max(occupations) > 9:
+            raise ValueError(
+                "The current multiphoton transition parser supports local "
+                "occupations only through n=9"
+            )
+
+        self.encoder_pulses = self._get_encoder_pulses(
+            occupations, swap_stors)
+
+        if any(
+                pulse[1] == "ge_broadband"
+                for pulse in self.encoder_pulses):
             pulse_key = "pi_ge_broadband"
             if pulse_key not in self.cfg.device.qubit.pulses:
                 raise KeyError(
-                    "N>1 spectroscopy requires "
+                    "This occupation-string encoder requires "
                     "device.qubit.pulses.pi_ge_broadband"
                 )
 
@@ -2415,14 +2462,37 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     "configured nonzero value"
                 )
 
-        if not ecfg.get("spectroscopy_calibrations_confirmed", False):
-            raise RuntimeError(
-                "Spectroscopy is disabled until all ladder pulses and the "
-                "full encoder/decoder have been checked.  For N>1 this also "
-                "includes spectator storage occupations, inverse broadband "
-                "phases, and leakage.  Then set "
-                "spectroscopy_calibrations_confirmed=True explicitly."
-            )
+        max_local_occupation = max(occupations)
+        multiphoton_pi = self.cfg.device.multiphoton.pi
+        for transition in ("en-fn", "fn-gn+1"):
+            if transition not in multiphoton_pi:
+                raise KeyError(
+                    f"device.multiphoton.pi.{transition} is missing"
+                )
+            for field in ("frequency", "gain", "length", "type", "sigma"):
+                values = np.asarray(
+                    multiphoton_pi[transition].get(field, [])
+                ).reshape(-1)
+                if len(values) < max_local_occupation:
+                    raise RuntimeError(
+                        f"device.multiphoton.pi.{transition}.{field} needs "
+                        f"at least {max_local_occupation} entries for "
+                        f"spectroscopy_occupations={occupations}"
+                    )
+
+        storage_dataset = self.cfg.device.storage._ds_storage
+        for stor, occupation in zip(swap_stors, occupations[1:]):
+            if occupation == 0:
+                continue
+            stor_name = f"M1-S{stor}"
+            if storage_dataset.get_gain(stor_name) <= 0:
+                raise RuntimeError(
+                    f"{stor_name} needs a calibrated nonzero ds_storage gain"
+                )
+            if storage_dataset.get_pi(stor_name) <= 0:
+                raise RuntimeError(
+                    f"{stor_name} needs a calibrated ds_storage pi length"
+                )
 
         if ecfg.get("palindrome_scramble", False) \
                 and int(ecfg.floquet_cycle) % 2:
@@ -2439,29 +2509,20 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     "Hamiltonian spectroscopy"
                 )
 
-        ecfg.spectroscopy_initial_mode = initial_mode
+        prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
+        if not np.isfinite(prep_phase):
+            raise ValueError("spectroscopy_prep_phase must be finite")
+
+        ecfg.spectroscopy_occupations = occupations
+        ecfg.spectroscopy_prep_phase = prep_phase % 360.0
         ecfg.spectroscopy_photon_number = photon_number
-        ecfg.spectroscopy_apply_vacuum_phase_correction = \
-            apply_vacuum_phase
-        ecfg.spectroscopy_vacuum_phase_per_cycle_deg = \
-            vacuum_phase_per_cycle_deg
-        ecfg.spectroscopy_phase_application = (
-            "analyzer_feedforward_v1" if apply_vacuum_phase else "raw_v0")
-        ecfg.init_stor = initial_mode
-        ecfg.ro_stor = initial_mode
-        ecfg.spectroscopy_reference = "vacuum"
-        ecfg.spectroscopy_observable = (
-            f"vacuum-{photon_number}-photon coherence via X+iY")
-        ecfg.spectroscopy_probe = (
-            f"(|vac>+|{photon_number}_i>)/sqrt(2)")
-        ecfg.spectroscopy_projected_sector = photon_number > 1
+        ecfg.init_stor = 0
+        ecfg.ro_stor = 0
         super().initialize()
 
     def body(self):
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
-        initial_mode = int(ecfg.spectroscopy_initial_mode)
-        photon_number = int(ecfg.spectroscopy_photon_number)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
@@ -2474,78 +2535,31 @@ class NPhotonHamiltonianSpectroscopyProgram(
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
-        # First make (|vac> + |N_M1>)/sqrt(2).  The initial half-pi uses
-        # hpi_ge; only the conditional shelving rotations use
-        # pi_ge_broadband.
-        encoder_ladder = self._vacuum_n_encoder_ladder(photon_number)
+        # (|g,0> + exp(i theta)|e,0>) / sqrt(2) ->
+        # (|g,0> + exp(i theta)|g,n>) / sqrt(2)
         prepulse_cfg = [
-            ["qubit", "ge", "hpi", 0.0],
-        ] + encoder_ladder
+            ["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],
+        ] + self.encoder_pulses
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
             cfg, prepulse.pulse, prefix="floquet_spec_pre_")
         self.sync_all()
 
-        # When the initial basis state is a storage, use the tracked
-        # fractional-pulse path for the full swap.  A generic prepulse would
-        # perform the population transfer but lose the Stark phases that this
-        # pulse imprints on every other storage frame.
-        if initial_mode > 0:
-            self._play_m1s_frac_train(
-                stor=initial_mode,
-                n_frac=self.m1s_pi_fracs[initial_mode - 1],
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                disorder_phase_offsets=disorder_phase_offsets,
-                logical_phase_deg=0.0,
-                inverse=False,
-                update_phases=ecfg.get("update_phases", True),
-                label="spectroscopy: load initial basis mode",
-            )
-
-        # Reuse the exact Trotter product-formula pulse train already used by the
-        # dark-mode and local-return programs.
+        # U(t)|n>
         self._play_scramble_with_phase_offsets(
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
             disorder_phase_offsets=disorder_phase_offsets,
         )
 
-        # Return the measured basis mode to M1, then undo the photon-loading
-        # ladder.  The analyzer phase belongs only on the final half-pi pulse:
-        # after decoding |N> back to |e,0>, this is an ordinary qubit X/Y
-        # analysis for every N.
-        analyzer_phase = float(
-            ecfg.get("spectroscopy_analyzer_phase", 0.0))
-        if ecfg.spectroscopy_apply_vacuum_phase_correction:
-            # With A = (P0-P180) + i(P270-P90), shifting every analyzer
-            # phase by delta rotates the reconstructed amplitude by
-            # exp(i*delta).  Feed forward delta=-m*theta, using the absolute
-            # Floquet-cycle index, so the four nominal columns directly
-            # reconstruct A_raw*exp(-i*m*theta).  The evolution pulse train
-            # itself is not changed.
-            analyzer_phase -= (
-                int(ecfg.floquet_cycle)
-                * ecfg.spectroscopy_vacuum_phase_per_cycle_deg
-            )
-        if initial_mode > 0:
-            self._play_m1s_frac_train(
-                stor=initial_mode,
-                n_frac=self.m1s_pi_fracs[initial_mode - 1],
-                phase_offsets=phase_offsets,
-                swap_stors=swap_stors,
-                disorder_phase_offsets=disorder_phase_offsets,
-                logical_phase_deg=0.0,
-                inverse=True,
-                update_phases=ecfg.get("update_phases", True),
-                label="spectroscopy: read initial basis mode",
-            )
-
-        postpulse_cfg = self._inverse_gate_sequence(encoder_ladder)
+        # Decode |n> to |e,0>, then interfere it with |g,0>.
+        analyzer_phase_offset = float(
+            ecfg.get("spectroscopy_analyzer_phase", 180.0))
+        postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
-            (180.0 + analyzer_phase) % 360.0,
+            (180.0 + analyzer_phase_offset) % 360.0,
         ])
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
@@ -2560,14 +2574,28 @@ class SinglePhotonFloquetSpectroscopyProgram(
     """Backward-compatible wrapper for the original N=1 program name."""
 
     def initialize(self):
+        ecfg = self.cfg.expt
         photon_number = int(
-            self.cfg.expt.get("spectroscopy_photon_number", 1))
+            ecfg.get("spectroscopy_photon_number", 1))
         if photon_number != 1:
             raise ValueError(
                 "SinglePhotonFloquetSpectroscopyProgram only supports N=1; "
-                "use NPhotonHamiltonianSpectroscopyProgram for N=2 or N=3"
+                "use NPhotonHamiltonianSpectroscopyProgram for arbitrary N"
             )
-        self.cfg.expt.spectroscopy_photon_number = 1
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        initial_mode = int(ecfg.get("spectroscopy_initial_mode", 0))
+        if initial_mode not in [0] + swap_stors:
+            raise ValueError(
+                f"spectroscopy_initial_mode={initial_mode} is not in "
+                f"[0] + swap_stors={swap_stors}"
+            )
+        occupations = [0] * (len(swap_stors) + 1)
+        occupation_index = (
+            0 if initial_mode == 0 else swap_stors.index(initial_mode) + 1
+        )
+        occupations[occupation_index] = 1
+        ecfg.spectroscopy_occupations = occupations
+        ecfg.spectroscopy_photon_number = 1
         super().initialize()
 
 
@@ -2589,6 +2617,10 @@ class FloquetPulseVacuumRamseyProgram(
     interpretation is valid only when the pulse pairs close and the one-pulse
     anchor retains high contrast.  This is separate from the ordered
     storage--M1 relative-phase matrix used by ``update_phases=True``.
+
+    The analyzer phase is swept at every pulse count.  The four analyzer
+    phases reconstruct the complex vacuum--one-photon return directly; the
+    slope of its unwrapped phase is the phase per physical Floquet pulse.
     """
 
     def initialize(self):
@@ -2610,17 +2642,12 @@ class FloquetPulseVacuumRamseyProgram(
         if pulse_count < 0:
             raise ValueError("floquet_phase_pulse_count must be non-negative")
 
-        # Reuse the validated N=1 vacuum-reference encoder and analyzer.  This
-        # calibration does not play a Trotter cycle and always reads M1.
+        ecfg.spectroscopy_occupations = [1] + [0] * len(swap_stors)
         ecfg.spectroscopy_photon_number = 1
         ecfg.spectroscopy_initial_mode = 0
         ecfg.ro_stor = 0
         ecfg.floquet_cycle = 0
         ecfg.palindrome_scramble = False
-        # This program measures the phase that spectroscopy may later remove.
-        # It must never feed that correction back into its own analyzer.
-        ecfg.spectroscopy_apply_vacuum_phase_correction = False
-        ecfg.spectroscopy_vacuum_phase_per_cycle_deg = 0.0
         ecfg.floquet_phase_stor = calibration_stor
         ecfg.floquet_phase_pulse_count = pulse_count
         super().initialize()
@@ -2648,10 +2675,9 @@ class FloquetPulseVacuumRamseyProgram(
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
-        encoder_ladder = self._vacuum_n_encoder_ladder(1)
         prepulse_cfg = [
             ["qubit", "ge", "hpi", 0.0],
-        ] + encoder_ladder
+        ] + self.encoder_pulses
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2674,12 +2700,12 @@ class FloquetPulseVacuumRamseyProgram(
             label="vacuum Ramsey: alternating fractional train",
         )
 
-        analyzer_phase = float(
+        analyzer_phase_offset = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
-        postpulse_cfg = self._inverse_gate_sequence(encoder_ladder)
+        postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
-            (180.0 + analyzer_phase) % 360.0,
+            (180.0 + analyzer_phase_offset) % 360.0,
         ])
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
