@@ -2339,11 +2339,10 @@ class NPhotonHamiltonianSpectroscopyProgram(
         SidebandScrambleDarkProgramNewNew):
     """Measure a vacuum-referenced return for one occupation string.
 
-    The first qubit half-pi phase is ``spectroscopy_prep_phase``.  The program
-    then encodes the requested occupation string, plays the Trotter sequence,
-    applies the inverse encoder, and measures with one fixed analyzer pulse.
-    Cycling the preparation phase through 0, 90, 180, and 270 degrees gives
-    the complex return. A complete fixed-N basis is summed in the notebook.
+    ``spectroscopy_prep_phase`` is theta on the first qubit half-pi pulse, and
+    ``spectroscopy_analyzer_phase`` is phi on the final qubit half-pi pulse.
+    The measured return uses theta = 0, 180 degrees and phi = 0, 90 degrees.
+    A complete fixed-N basis is summed in the notebook.
 
     ``storage_phase_matrix`` corrects the ds_storage pulses in the
     encoder/decoder. It uses row=affected mode and column=pulsed mode in
@@ -2582,11 +2581,12 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 )
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
-        if not np.isfinite(prep_phase):
-            raise ValueError("spectroscopy_prep_phase must be finite")
+        analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0))
 
         ecfg.spectroscopy_occupations = occupations
         ecfg.spectroscopy_prep_phase = prep_phase % 360.0
+        ecfg.spectroscopy_analyzer_phase = analyzer_phase % 360.0
         ecfg.spectroscopy_photon_number = photon_number
         ecfg.legacy_for_debug = bool(
             ecfg.get("legacy_for_debug", False))
@@ -2645,8 +2645,6 @@ class NPhotonHamiltonianSpectroscopyProgram(
         )
 
         # Decode |n> to |e,0>, then interfere it with |g,0>.
-        analyzer_phase_offset = float(
-            ecfg.get("spectroscopy_analyzer_phase", 180.0))
         postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
         # To do phase calibartion. There are two layers, which are
         # 1. update ac-stark shift originating phase shift to f0g1
@@ -2687,7 +2685,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
-            (180.0 + analyzer_phase_offset) % 360.0,
+            ecfg.spectroscopy_analyzer_phase,
         ])
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
