@@ -452,6 +452,33 @@ class DarkBaseProgram(QsimBaseProgram):
         self.swap_ds = self.cfg.device.storage._ds_floquet
         self.retrieve_swap_parameters()
 
+        # Rows are decoder axes [f0g1, ds_storage M1-S1, ...]. Columns are the
+        # Floquet pulses in swap_stors order. This matrix is not
+        # the Floquet-to-Floquet matrix stored in ds_floquet.
+        decoder_phase_matrix = self.cfg.expt.get(
+            "decoder_phase_matrix", None)
+        n_stor = len(self.cfg.expt.get("swap_stors", []))
+        self.decoder_phase_matrix = np.zeros((n_stor + 1, n_stor))
+
+        if decoder_phase_matrix is not None:
+            decoder_phase_matrix = np.asarray(
+                decoder_phase_matrix, dtype=float)
+            if decoder_phase_matrix.shape != (n_stor + 1, n_stor):
+                raise ValueError(
+                    "decoder_phase_matrix must have shape "
+                    f"{(n_stor + 1, n_stor)}; got "
+                    f"{decoder_phase_matrix.shape}"
+                )
+            self.decoder_phase_matrix = decoder_phase_matrix.copy()
+
+        # Optional in-memory matrix for the ds_storage swaps. Rows are
+        # affected modes and columns are the modes whose swap pulse is played.
+        self.storage_phase_matrix = self.cfg.expt.get(
+            "storage_phase_matrix", None)
+        if self.storage_phase_matrix is not None:
+            self.storage_phase_matrix = np.asarray(
+                self.storage_phase_matrix, dtype=float)
+
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
@@ -844,15 +871,14 @@ class DarkBaseProgram(QsimBaseProgram):
 
     def _advance_phase_offsets(self, phase_offsets, swap_stors, pulsed_stor):
         """
-        Update phase offsets for all non-pulsed storage swaps after applying
-        one fractional pulse on pulsed_stor.
+        Preserve the existing phase tracking between Floquet pulses.
 
-        This follows the calibrated ordered-pulse phase convention:
+        This uses only the Floquet-to-Floquet matrix in ds_floquet:
 
             phase[stor_B] += get_phase_from("M1-S{stor_B}", "M1-S{pulsed_stor}")
 
-        Meaning: while we pulse M1-S{pulsed_stor}, the future pulse phase
-        for M1-S{stor_B} should be advanced by the calibrated amount.
+        The separate decoder_phase_matrix is directional and must never be
+        used here. It is applied only to the decoder storage swaps and f0g1.
         """
         pulsed_name = f"M1-S{pulsed_stor}"
 
@@ -861,8 +887,28 @@ class DarkBaseProgram(QsimBaseProgram):
                 continue
 
             stor_B_name = f"M1-S{stor_B}"
-            phase_offsets[j_stor] += self.swap_ds.get_phase_from(stor_B_name, pulsed_name)
+            phase_shift = self.swap_ds.get_phase_from(
+                stor_B_name, pulsed_name)
+
+            phase_offsets[j_stor] += phase_shift
             phase_offsets[j_stor] = self._mod360(phase_offsets[j_stor])
+
+    def _advance_storage_phase_offsets(
+            self, phase_offsets, swap_stors, pulsed_stor):
+        """Advance later ds_storage swap phases after one ds_storage swap.
+
+        Unlike the legacy Floquet matrix, this matrix may have a calibrated
+        diagonal: ``matrix[i, i]`` is the active-access phase of mode i.
+        """
+        if self.storage_phase_matrix is None:
+            return
+
+        pulsed_index = swap_stors.index(pulsed_stor)
+        for affected_index in range(len(swap_stors)):
+            phase_offsets[affected_index] = self._mod360(
+                phase_offsets[affected_index]
+                + self.storage_phase_matrix[affected_index, pulsed_index]
+            )
 
     def _play_scramble_with_phase_offsets(
         self,
@@ -2297,7 +2343,21 @@ class NPhotonHamiltonianSpectroscopyProgram(
     then encodes the requested occupation string, plays the Trotter sequence,
     applies the inverse encoder, and measures with one fixed analyzer pulse.
     Cycling the preparation phase through 0, 90, 180, and 270 degrees gives
-    ``v(t)* <n|U(t)|n>``.  A complete fixed-N basis is summed in the notebook.
+    the complex return. A complete fixed-N basis is summed in the notebook.
+
+    ``storage_phase_matrix`` corrects the ds_storage pulses in the
+    encoder/decoder. It uses row=affected mode and column=pulsed mode in
+    ``swap_stors`` order. The existing Floquet phase correction continues to
+    come directly from the station's ds_floquet dataset.
+    A_i can be post corrected by dividing the measured value by the value at 0,
+    for ideally it should be 1 and t = 0. As storage swaps are fixed regardless of the
+    floquet cycle depth, for now it is not needed to calibrate this.
+
+    ``decoder_phase_matrix`` has rows [f0g1, ds_storage M1-S1, ...] and columns
+    [Floquet M1-S1, ...] in ``swap_stors`` order. It is directional: each
+    Floquet pulse changes the phase used by the later decoder pulse. It is
+    never used while playing the Floquet sequence. The existing phase tracking
+    inside that sequence still comes only from ds_floquet.get_phase_from().
     """
 
     @staticmethod
@@ -2388,6 +2448,18 @@ class NPhotonHamiltonianSpectroscopyProgram(
             raise ValueError(
                 f"swap_stors entries must be in 1..7; got {swap_stors}"
             )
+
+        matrix_shape = (len(swap_stors), len(swap_stors))
+        storage_phase_matrix = ecfg.get("storage_phase_matrix", None)
+        if storage_phase_matrix is not None:
+            storage_phase_matrix = np.asarray(
+                storage_phase_matrix, dtype=float)
+            if storage_phase_matrix.shape != matrix_shape:
+                raise ValueError(
+                    f"storage_phase_matrix must have shape {matrix_shape}; "
+                    f"got {storage_phase_matrix.shape}"
+                )
+            ecfg.storage_phase_matrix = storage_phase_matrix
 
         if "spectroscopy_occupations" in ecfg:
             occupations = list(ecfg.spectroscopy_occupations)
@@ -2516,6 +2588,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
         ecfg.spectroscopy_occupations = occupations
         ecfg.spectroscopy_prep_phase = prep_phase % 360.0
         ecfg.spectroscopy_photon_number = photon_number
+        ecfg.legacy_for_debug = bool(
+            ecfg.get("legacy_for_debug", False))
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
         super().initialize()
@@ -2524,6 +2598,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        storage_phase_offsets = [0.0] * len(swap_stors)
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
 
@@ -2537,9 +2612,25 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         # (|g,0> + exp(i theta)|e,0>) / sqrt(2) ->
         # (|g,0> + exp(i theta)|g,n>) / sqrt(2)
+        encoder_pulses = deepcopy(self.encoder_pulses)
+        for pulse in encoder_pulses: #For now, this is to update phase offset due to storage-storage pulsing. It can be disregarded
+            if pulse[0] != "storage":
+                continue
+
+            stor = int(pulse[1].split("-S")[1])
+            stor_index = swap_stors.index(stor)
+            pulse[3] = self._mod360(
+                pulse[3] + storage_phase_offsets[stor_index]
+            )
+            self._advance_storage_phase_offsets(
+                phase_offsets=storage_phase_offsets,
+                swap_stors=swap_stors,
+                pulsed_stor=stor,
+            )
+
         prepulse_cfg = [
             ["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],
-        ] + self.encoder_pulses
+        ] + encoder_pulses
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2557,6 +2648,43 @@ class NPhotonHamiltonianSpectroscopyProgram(
         analyzer_phase_offset = float(
             ecfg.get("spectroscopy_analyzer_phase", 180.0))
         postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
+        # To do phase calibartion. There are two layers, which are
+        # 1. update ac-stark shift originating phase shift to f0g1
+        # 2. update ac-stark shift originating phase shift +
+        #    disorder / possible future storate-storage stark shift phase
+        #    calibration.
+        decoder_phase_offsets = np.zeros(len(swap_stors) + 1)
+        if not ecfg.legacy_for_debug \
+                and ecfg.get("update_phases", True):
+            decoder_phase_offsets = (
+                int(ecfg.floquet_cycle)
+                * np.sum(self.decoder_phase_matrix, axis=1)
+            )
+
+            for pulse in reversed(postpulse_cfg):
+                if pulse[0] == "multiphoton" and pulse[1] == "f0-g1":
+                    pulse[3] = self._mod360(
+                        pulse[3] + decoder_phase_offsets[0])
+                    break
+
+        for pulse in postpulse_cfg:
+            if pulse[0] != "storage":
+                continue
+
+            stor = int(pulse[1].split("-S")[1])
+            stor_index = swap_stors.index(stor)
+            pulse[3] = self._mod360(
+                pulse[3]
+                + storage_phase_offsets[stor_index]
+                + decoder_phase_offsets[stor_index + 1]
+                + disorder_phase_offsets[stor_index]
+            )
+            self._advance_storage_phase_offsets(
+                phase_offsets=storage_phase_offsets,
+                swap_stors=swap_stors,
+                pulsed_stor=stor,
+            )
+
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
             (180.0 + analyzer_phase_offset) % 360.0,
@@ -2610,21 +2738,27 @@ class FloquetPulseVacuumRamseyProgram(
     population transfer cancels, while a phase relative to vacuum is retained.
 
     An even ``floquet_phase_pulse_count`` plays closed forward/inverse pairs.
-    An odd count adds one final forward pulse.  The pair slope gives the phase
-    accurately but only modulo pi; the one-pulse point selects the physical
-    modulo-2pi branch because one fractional Floquet pulse is much shorter
-    than a half swap and therefore has a positive return coefficient.  This
-    interpretation is valid only when the pulse pairs close and the one-pulse
-    anchor retains high contrast.  This is separate from the ordered
-    storage--M1 relative-phase matrix used by ``update_phases=True``.
+    An odd count adds one final forward pulse. The phase ratio between each
+    odd point and the preceding even point isolates the forward-pulse phase;
+    the even-point slope independently gives the sum of the forward and
+    inverse phases. This interpretation is valid only when the pulse pairs
+    close and the odd-point return coefficient remains positive. This is
+    separate from the storage--M1 relative-phase matrix used by
+    ``update_phases=True``.
 
-    The analyzer phase is swept at every pulse count.  The four analyzer
-    phases reconstruct the complex vacuum--one-photon return directly; the
-    slope of its unwrapped phase is the phase per physical Floquet pulse.
+    The analyzer phase is swept at every pulse count. The four analyzer phases
+    reconstruct the complex vacuum--one-photon return directly.
     """
 
     def initialize(self):
         ecfg = self.cfg.expt
+        if self.__class__ is FloquetPulseVacuumRamseyProgram \
+                and not ecfg.get("legacy_for_debug", False):
+            raise RuntimeError(
+                "FloquetPulseVacuumRamseyProgram is a legacy debug path; "
+                "set legacy_for_debug=True explicitly."
+            )
+
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         calibration_stor = int(ecfg.floquet_phase_stor)
         if calibration_stor not in swap_stors:
@@ -2711,6 +2845,192 @@ class FloquetPulseVacuumRamseyProgram(
         self.sync_all()
         self.custom_pulse(
             cfg, postpulse.pulse, prefix="floquet_vacuum_ramsey_post_")
+        self.sync_all()
+        self.measure_wrapper()
+
+
+class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
+    """Error-amplify the phase left by one physical Floquet pulse.
+
+    ``stor_A=0`` measures the f0-g1 decoder axis with a direct
+    f0-g1 half-swap Ramsey. ``stor_A>0`` measures the ds_storage M1-S_A
+    decoder axis. ``stor_B`` is the Floquet pulse being repeated.
+
+    For every row, ``n_pulse`` is the number of 0/180 Floquet-pulse pairs.
+    Each point therefore plays ``2 * n_pulse`` physical Floquet pulses.
+    The fitted ``advance_phase`` is the compensation per physical pulse.
+
+    ``legacy_for_debug=True`` runs the old four-analyzer complex-return
+    sequence. In that branch ``n_pulse`` is the physical pulse count and
+    ``advance_phase`` is the final qubit analyzer phase.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        stor_A = int(ecfg.stor_A)
+        stor_B = int(ecfg.stor_B)
+
+        if stor_A not in [0] + swap_stors:
+            raise ValueError(
+                f"stor_A must be 0 or one of {swap_stors}; got {stor_A}"
+            )
+        if stor_B not in swap_stors:
+            raise ValueError(
+                f"stor_B must be one of {swap_stors}; got {stor_B}"
+            )
+
+        legacy_for_debug = bool(
+            ecfg.get("legacy_for_debug", False))
+        if legacy_for_debug and stor_A != 0:
+            raise ValueError(
+                "legacy_for_debug supports only the old vacuum phase run"
+            )
+
+        ecfg.legacy_for_debug = legacy_for_debug
+        ecfg.floquet_phase_stor = stor_B
+        if legacy_for_debug:
+            ecfg.floquet_phase_pulse_count = int(ecfg.n_pulse)
+        else:
+            ecfg.floquet_phase_pulse_count = 2 * int(ecfg.n_pulse)
+        if legacy_for_debug:
+            ecfg.spectroscopy_analyzer_phase = float(
+                ecfg.advance_phase)
+        else:
+            ecfg.spectroscopy_analyzer_phase = 0.0
+
+        super().initialize()
+
+    def _play_storage_half_swap(self, stor, phase_deg):
+        storage_ds = self.cfg.device.storage._ds_storage
+        stor_name = f"M1-S{stor}"
+        freq = storage_ds.get_freq(stor_name)
+
+        if freq < 1800:
+            ch = self.flux_low_ch[0]
+            waveform = "pi_m1si_low"
+        else:
+            ch = self.flux_high_ch[0]
+            waveform = "pi_m1si_high"
+
+        self.setup_and_pulse(
+            ch=ch,
+            style="flat_top",
+            freq=self.freq2reg(freq, gen_ch=ch),
+            phase=self.deg2reg(self._mod360(phase_deg), gen_ch=ch),
+            gain=storage_ds.get_gain(stor_name),
+            length=self.us2cycles(
+                storage_ds.get_pi(stor_name) / 2.0,
+                gen_ch=ch,
+            ),
+            waveform=waveform,
+        )
+        self.sync_all(self.us2cycles(0.01))
+
+    def body(self):
+        ecfg = self.cfg.expt
+        if ecfg.legacy_for_debug:
+            super().body()
+            return
+
+        cfg = AttrDict(self.cfg)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        stor_A = int(ecfg.stor_A)
+        stor_B = int(ecfg.stor_B)
+        n_pulse = int(ecfg.n_pulse)
+        advance_phase = float(ecfg.advance_phase)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        if stor_A == 0:
+            prepulse_cfg = [
+                ["qubit", "ge", "pi", 0.0],
+                ["qubit", "ef", "pi", 0.0],
+            ]
+        else:
+            prepulse_cfg = [
+                ["qubit", "ge", "pi", 0.0],
+            ] + self.encoder_pulses
+
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="floquet_phase_pre_")
+        self.sync_all()
+
+        if stor_A == 0:
+            f0g1_half = self.get_prepulse_creator([
+                ["multiphoton", "f0-g1", "pi", 0.0],
+            ])
+            f0g1_half.pulse[2, 0] = \
+                float(f0g1_half.pulse[2, 0]) / 2.0
+            self.custom_pulse(
+                cfg,
+                f0g1_half.pulse,
+                prefix="floquet_phase_f0g1_pre_",
+            )
+            self.sync_all()
+        else:
+            self._play_storage_half_swap(stor_A, 0.0)
+
+        physical_pulse_count = 2 * n_pulse
+
+        self._play_m1s_frac_train(
+            stor=stor_B,
+            n_frac=physical_pulse_count,
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=0.0,
+            logical_phase_step_deg=180.0,
+            update_phases=False,
+            label="phase accumulation: alternating Floquet train",
+        )
+
+        compensation_phase = physical_pulse_count * advance_phase
+
+        if stor_A == 0:
+            f0g1_half = self.get_prepulse_creator([
+                [
+                    "multiphoton",
+                    "f0-g1",
+                    "pi",
+                    180.0 + compensation_phase,
+                ],
+            ])
+            f0g1_half.pulse[2, 0] = \
+                float(f0g1_half.pulse[2, 0]) / 2.0
+            self.custom_pulse(
+                cfg,
+                f0g1_half.pulse,
+                prefix="floquet_phase_f0g1_post_",
+            )
+            self.sync_all()
+            postpulse_cfg = [
+                ["qubit", "ef", "pi", 180.0],
+                ["qubit", "ge", "pi", 180.0],
+            ]
+        else:
+            self._play_storage_half_swap(
+                stor_A,
+                180.0 + compensation_phase,
+            )
+            postpulse_cfg = self._get_inverse_pulses(
+                self.encoder_pulses)
+            postpulse_cfg.append([
+                "qubit", "ge", "pi", 180.0,
+            ])
+
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="floquet_phase_post_")
         self.sync_all()
         self.measure_wrapper()
 
@@ -3186,43 +3506,166 @@ class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
         self.sync_all()
 
 
-class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
-    """
-    1. Apply pi/2 swap pulse made of floquet pulses on stor_A
-    2. Apply another floquet 2pi pulse on stor_B to calibrate the matrix element for. Do this xN times for error amplification
-    3. Apply a -pi/2 swap pulse of floquet pulses on stor_A, with advanced phase
-    
-    Parameters in cfg.expt (sweepable):
-    stor_A
-    stor_B
-    n_pulse: Nx pulses on stor B 
-    advance_phase: phase of the last pulse on stor_A
+class StorageSwapPhaseAccumulationProgram(DarkBaseProgram):
+    """Measure the phase matrix of the ds_storage swap pulses.
+
+    ``stor_A`` is the affected Ramsey mode and ``stor_B`` is the pulsed mode.
+    The first and last A pulses use exactly half of the calibrated full-swap
+    plateau time.  Every B full/inverse-full pair closes its population action
+    while retaining the phase accumulated by A.  ``advance_phase`` is the
+    compensation in degrees per physical B full-swap pulse.
     """
 
+    def _play_storage_pulse(self, stor, length_us, phase_deg):
+        storage_ds = self.cfg.device.storage._ds_storage
+        stor_name = f"M1-S{stor}"
+        freq = storage_ds.get_freq(stor_name)
+
+        if freq < 1800:
+            ch = self.flux_low_ch[0]
+            waveform = "pi_m1si_low"
+        else:
+            ch = self.flux_high_ch[0]
+            waveform = "pi_m1si_high"
+
+        self.setup_and_pulse(
+            ch=ch,
+            style="flat_top",
+            freq=self.freq2reg(freq, gen_ch=ch),
+            phase=self.deg2reg(self._mod360(phase_deg), gen_ch=ch),
+            gain=storage_ds.get_gain(stor_name),
+            length=self.us2cycles(length_us, gen_ch=ch),
+            waveform=waveform,
+        )
+        self.sync_all(self.us2cycles(0.01))
+
     def core_pulses(self):
-        stor_A = self.cfg.expt.stor_A
-        stor_B = self.cfg.expt.stor_B
+        stor_A = int(self.cfg.expt.stor_A)
+        stor_B = int(self.cfg.expt.stor_B)
+        n_pulse_B = int(self.cfg.expt.n_pulse)
+        advance_phase = float(self.cfg.expt.advance_phase)
+
+        storage_ds = self.cfg.device.storage._ds_storage
+        pi_A = float(storage_ds.get_pi(f"M1-S{stor_A}"))
+        pi_B = float(storage_ds.get_pi(f"M1-S{stor_B}"))
+
+        # Ramsey preparation on A.  This intentionally uses pi_A / 2 rather
+        # than the separately calibrated ds_storage h_pi entry.
+        self._play_storage_pulse(
+            stor=stor_A,
+            length_us=pi_A / 2.0,
+            phase_deg=0.0,
+        )
+
+        # A 0/180 pair is a full swap followed by its physical inverse.
+        # Both pulses produce the same off-target Stark phase on A.
+        for _ in range(n_pulse_B):
+            self._play_storage_pulse(
+                stor=stor_B,
+                length_us=pi_B,
+                phase_deg=0.0,
+            )
+            self._play_storage_pulse(
+                stor=stor_B,
+                length_us=pi_B,
+                phase_deg=180.0,
+            )
+
+        self._play_storage_pulse(
+            stor=stor_A,
+            length_us=pi_A / 2.0,
+            phase_deg=180.0 + 2.0 * n_pulse_B * advance_phase,
+        )
+        self.sync_all()
+
+    def body(self):
+        cfg = AttrDict(self.cfg)
+
+        self.reset_and_sync()
+        if cfg.expt.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = cfg.expt.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        # Load one photon into M1, close the storage Ramsey sequence, and
+        # unload the photon.  The measured state is therefore g at n_pulse=0.
+        prepulse = self.get_prepulse_creator([
+            ["qubit", "ge", "pi", 0.0],
+            ["qubit", "ef", "pi", 0.0],
+            ["man", "M1", "pi", 0.0],
+        ])
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="storage_phase_pre_")
+        self.sync_all()
+
+        self.core_pulses()
+
+        postpulse = self.get_prepulse_creator([
+            ["man", "M1", "pi", 180.0],
+            ["qubit", "ef", "pi", 180.0],
+            ["qubit", "ge", "pi", 180.0],
+        ])
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="storage_phase_post_")
+        self.sync_all()
+        self.measure_wrapper()
+
+
+class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
+    """
+    Measure how a Floquet pulse on B shifts the later ds_storage swap on A.
+
+    The Ramsey preparation/readout pulses on A use exactly half of the
+    calibrated ds_storage full-swap length. Between them, the program applies
+    (+Floquet B, -Floquet B) pairs. The final A half-swap phase is advanced by
+    ``2 * n_pulse * advance_phase``, so the fitted ``advance_phase`` is the
+    compensation per physical Floquet B pulse.
+    """
+
+    def _play_storage_half_swap(self, stor, phase_deg):
+        storage_ds = self.cfg.device.storage._ds_storage
+        stor_name = f"M1-S{stor}"
+        freq = storage_ds.get_freq(stor_name)
+
+        if freq < 1800:
+            ch = self.flux_low_ch[0]
+            waveform = "pi_m1si_low"
+        else:
+            ch = self.flux_high_ch[0]
+            waveform = "pi_m1si_high"
+
+        self.setup_and_pulse(
+            ch=ch,
+            style="flat_top",
+            freq=self.freq2reg(freq, gen_ch=ch),
+            phase=self.deg2reg(self._mod360(phase_deg), gen_ch=ch),
+            gain=storage_ds.get_gain(stor_name),
+            length=self.us2cycles(
+                storage_ds.get_pi(stor_name) / 2.0,
+                gen_ch=ch,
+            ),
+            waveform=waveform,
+        )
+        self.sync_all(self.us2cycles(0.01))
+
+    def core_pulses(self):
+        stor_A = int(self.cfg.expt.stor_A)
+        stor_B = int(self.cfg.expt.stor_B)
         swap_stors = [stor_A, stor_B]
         phase_offsets = [0.0, 0.0]
 
-        n_pulse_B = self.cfg.expt.n_pulse
-        pi_frac_A = self.m1s_pi_fracs[stor_A - 1]
+        n_pulse_B = int(self.cfg.expt.n_pulse)
+        advance_phase = float(self.cfg.expt.advance_phase)
 
-        # Apply pi/2 pulse on stor_A
-        self._play_m1s_frac_train(
-            stor=stor_A,
-            n_frac=pi_frac_A // 2,
-            phase_offsets=phase_offsets,
-            swap_stors=swap_stors,
-            logical_phase_deg=0.0,
-            update_phases=False,
-            label="phase calibration: first A pi/2",
-        )
+        self._play_storage_half_swap(stor=stor_A, phase_deg=0.0)
 
-        # Apply a (+fraction, -fraction) * n_pulse train on stor_B.
+        # This is the same weak physical Floquet pulse and sync gap used by
+        # spectroscopy. The 180-degree alternation closes population transfer.
         self._play_m1s_frac_train(
             stor=stor_B,
-            n_frac=2 * int(n_pulse_B),
+            n_frac=2 * n_pulse_B,
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
             logical_phase_deg=0.0,
@@ -3231,15 +3674,9 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
             label="phase calibration: alternating B train",
         )
 
-        # Apply -pi/2 pulse on stor_A with advanced phase
-        self._play_m1s_frac_train(
+        self._play_storage_half_swap(
             stor=stor_A,
-            n_frac=pi_frac_A // 2,
-            phase_offsets=phase_offsets,
-            swap_stors=swap_stors,
-            logical_phase_deg=2 * n_pulse_B * self.cfg.expt.advance_phase,
-            update_phases=False,
-            label="phase calibration: final A pi/2",
+            phase_deg=2.0 * n_pulse_B * advance_phase,
         )
         self.sync_all()
 
