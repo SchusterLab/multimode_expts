@@ -2364,10 +2364,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
     decoder axes in ``swap_stors`` order. Columns are the physical Floquet
     pulses, also in ``swap_stors`` order.
 
-    Every played Floquet pulse advances all decoder axes. During decoding the
-    row-0 correction is placed on every inverse f_n-g_(n+1) pulse, while each
-    storage correction is placed on its own inverse M1-storage pulse. The
-    final qubit analyzer keeps only ``spectroscopy_analyzer_phase``.
+    Every played Floquet pulse advances all measured decoder-axis slopes.
+    During decoding the accumulated slope is subtracted from every inverse
+    f_n-g_(n+1) pulse, and the corresponding storage-axis slope is subtracted
+    from its inverse M1-storage pulse. The final qubit analyzer keeps only
+    ``spectroscopy_analyzer_phase``.
     """
 
     @staticmethod
@@ -2654,9 +2655,9 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 "Floquet phase calibration before spectroscopy."
             )
 
-        # U(t)|n>. Each physical Floquet pulse directly advances the decoder
-        # axes in decoder_phase_deg. The software and QICK-loop paths update
-        # the same array with the same physical pulse counts.
+        # U(t)|n>. Each physical Floquet pulse advances the measured decoder
+        # phase slopes in decoder_phase_deg. The inverse decoder later uses
+        # the opposite sign to cancel those slopes.
         self._play_scramble_with_phase_offsets(
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
@@ -2676,7 +2677,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     and pulse[1].startswith("f") \
                     and "-g" in pulse[1]:
                 pulse[3] = self._mod360(
-                    pulse[3] + decoder_phase_deg[0]
+                    pulse[3] - decoder_phase_deg[0]
                 )
 
             elif pulse[0] == "storage":
@@ -2685,7 +2686,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 pulse[3] = self._mod360(
                     pulse[3]
                     + storage_phase_offsets[stor_index]
-                    + decoder_phase_deg[stor_index + 1]
+                    - decoder_phase_deg[stor_index + 1]
                     + disorder_phase_offsets[stor_index]
                 )
                 self._advance_storage_phase_offsets(
