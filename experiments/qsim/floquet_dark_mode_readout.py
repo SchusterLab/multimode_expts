@@ -2365,9 +2365,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
     pulses, also in ``swap_stors`` order.
 
     Every played Floquet pulse advances all measured decoder-axis slopes.
-    During decoding the accumulated slope is subtracted from every inverse
-    f_n-g_(n+1) pulse, and the corresponding storage-axis slope is subtracted
-    from its inverse M1-storage pulse. The final qubit analyzer keeps only
+    During decoding the accumulated M1 slope is subtracted from every inverse
+    f_n-g_(n+1) pulse.  The storage rows are defined as
+    ``mode_path_storage - mode_path_M1`` and are added to the inverse
+    M1-storage pulses because those pulse phases enter the recovered return
+    amplitude with the opposite sign.  The final qubit analyzer keeps only
     ``spectroscopy_analyzer_phase``.
     """
 
@@ -2686,7 +2688,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 pulse[3] = self._mod360(
                     pulse[3]
                     + storage_phase_offsets[stor_index]
-                    - decoder_phase_deg[stor_index + 1]
+                    + decoder_phase_deg[stor_index + 1]
                     + disorder_phase_offsets[stor_index]
                 )
                 self._advance_storage_phase_offsets(
