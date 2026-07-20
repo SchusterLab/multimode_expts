@@ -2848,19 +2848,21 @@ class FloquetPulseVacuumRamseyProgram(
 
 
 class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
-    """Error-amplify the phase left by one physical Floquet pulse.
+    """Measure the decoder-axis phase left by physical Floquet pulses.
 
-    ``stor_A=0`` measures the f0-g1 decoder axis with a direct
-    f0-g1 half-swap Ramsey. ``stor_A>0`` measures the ds_storage M1-S_A
-    decoder axis. ``stor_B`` is the Floquet pulse being repeated.
+    ``stor_A=0`` uses an f0-g1 half-swap Ramsey. ``stor_A>0`` uses a
+    ds_storage M1-S_A half-swap Ramsey. ``stor_B`` is the physical Floquet
+    pulse between the two Ramsey pulses.
 
-    For every row, ``n_pulse`` is the number of 0/180 Floquet-pulse pairs.
-    Each point therefore plays ``2 * n_pulse`` physical Floquet pulses.
-    The fitted ``advance_phase`` is the compensation per physical pulse.
+    By default, ``n_pulse`` is the physical pulse count and
+    ``advance_phase`` is the closing Ramsey phase. Sweeping
+    ``advance_phase = [0, 90, 180, 270]`` reconstructs the complex closing
+    fringe at every pulse count. Its unwrapped phase slope is the decoder
+    correction in degrees per physical Floquet pulse.
 
-    ``legacy_for_debug=True`` runs the old four-analyzer complex-return
-    sequence. In that branch ``n_pulse`` is the physical pulse count and
-    ``advance_phase`` is the final qubit analyzer phase.
+    ``legacy_for_debug=True`` retains the former error-amplification path:
+    ``n_pulse`` is a 0/180 pulse-pair count and ``advance_phase`` is a trial
+    correction in degrees per physical pulse.
     """
 
     def initialize(self):
@@ -2880,22 +2882,13 @@ class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
 
         legacy_for_debug = bool(
             ecfg.get("legacy_for_debug", False))
-        if legacy_for_debug and stor_A != 0:
-            raise ValueError(
-                "legacy_for_debug supports only the old vacuum phase run"
-            )
-
         ecfg.legacy_for_debug = legacy_for_debug
         ecfg.floquet_phase_stor = stor_B
         if legacy_for_debug:
-            ecfg.floquet_phase_pulse_count = int(ecfg.n_pulse)
-        else:
             ecfg.floquet_phase_pulse_count = 2 * int(ecfg.n_pulse)
-        if legacy_for_debug:
-            ecfg.spectroscopy_analyzer_phase = float(
-                ecfg.advance_phase)
         else:
-            ecfg.spectroscopy_analyzer_phase = 0.0
+            ecfg.floquet_phase_pulse_count = int(ecfg.n_pulse)
+        ecfg.spectroscopy_analyzer_phase = 0.0
 
         super().initialize()
 
@@ -2927,10 +2920,6 @@ class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
 
     def body(self):
         ecfg = self.cfg.expt
-        if ecfg.legacy_for_debug:
-            super().body()
-            return
-
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         stor_A = int(ecfg.stor_A)
@@ -2978,7 +2967,12 @@ class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
         else:
             self._play_storage_half_swap(stor_A, 0.0)
 
-        physical_pulse_count = 2 * n_pulse
+        if ecfg.legacy_for_debug:
+            physical_pulse_count = 2 * n_pulse
+            closing_phase = physical_pulse_count * advance_phase
+        else:
+            physical_pulse_count = n_pulse
+            closing_phase = advance_phase
 
         self._play_m1s_frac_train(
             stor=stor_B,
@@ -2991,15 +2985,13 @@ class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
             label="phase accumulation: alternating Floquet train",
         )
 
-        compensation_phase = physical_pulse_count * advance_phase
-
         if stor_A == 0:
             f0g1_half = self.get_prepulse_creator([
                 [
                     "multiphoton",
                     "f0-g1",
                     "pi",
-                    180.0 + compensation_phase,
+                    180.0 + closing_phase,
                 ],
             ])
             f0g1_half.pulse[2, 0] = \
@@ -3017,7 +3009,7 @@ class FloquetPhaseAccumulationProgram(FloquetPulseVacuumRamseyProgram):
         else:
             self._play_storage_half_swap(
                 stor_A,
-                180.0 + compensation_phase,
+                180.0 + closing_phase,
             )
             postpulse_cfg = self._get_inverse_pulses(
                 self.encoder_pulses)
