@@ -2671,37 +2671,63 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         # Decode |n> to |e,0>, then interfere it with |g,0>.
         postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
+        
+        qubit_gauge = self.cfg.expt.get("qubit_gauge", False)
+        if qubit_gauge:
+            self.qubit_final_phase_correction = 0
+        
         for pulse in postpulse_cfg:
             # Every f_n-g_(n+1) pulse transfers one M1 photon, so all n use
             # the same M1-frame correction. N ladder steps then give N times
             # that phase without an explicit photon-number multiplier.
-            if pulse[0] == "multiphoton" \
-                    and pulse[1].startswith("f") \
-                    and "-g" in pulse[1]:
-                pulse[3] = self._mod360(
-                    pulse[3] - decoder_phase_deg[0]
-                )
+            if not qubit_gauge:
+                if pulse[0] == "multiphoton" \
+                        and pulse[1].startswith("f") \
+                        and "-g" in pulse[1]:
+                    pulse[3] = self._mod360(
+                        pulse[3] - decoder_phase_deg[0]
+                    )
 
-            elif pulse[0] == "storage":
-                stor = int(pulse[1].split("-S")[1])
-                stor_index = swap_stors.index(stor)
-                pulse[3] = self._mod360(
-                    pulse[3]
-                    + storage_phase_offsets[stor_index]
-                    + decoder_phase_deg[stor_index + 1]
-                    + disorder_phase_offsets[stor_index]
-                )
-                self._advance_storage_phase_offsets(
-                    phase_offsets=storage_phase_offsets,
-                    swap_stors=swap_stors,
-                    pulsed_stor=stor,
-                )
+                elif pulse[0] == "storage":
+                    stor = int(pulse[1].split("-S")[1])
+                    stor_index = swap_stors.index(stor)
+                    pulse[3] = self._mod360(
+                        pulse[3]
+                        + storage_phase_offsets[stor_index]
+                        + decoder_phase_deg[stor_index + 1]
+                        + disorder_phase_offsets[stor_index]
+                    )
+                    self._advance_storage_phase_offsets(
+                        phase_offsets=storage_phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+            elif qubit_gauge:
+                
+                if pulse[0] == "multiphoton" \
+                        and pulse[1].startswith("f") \
+                        and "-g" in pulse[1]:
+                    self.qubit_final_phase_correction -= decoder_phase_deg[0]
 
+                elif pulse[0] == "storage":
+                    stor = int(pulse[1].split("-S")[1])
+                    stor_index = swap_stors.index(stor)
+                    self.qubit_final_phase_correction += storage_phase_offsets[stor_index] + decoder_phase_deg[stor_index + 1] + disorder_phase_offsets[stor_index]
+                    self._advance_storage_phase_offsets(
+                        phase_offsets=storage_phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+                
+        qubit_final_phase = ecfg.spectroscopy_analyzer_phase
+        if qubit_gauge:
+            qubit_final_phase += self.qubit_final_phase_correction
+            qubit_final_phase = qubit_final_phase % 360
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
-            float(ecfg.spectroscopy_analyzer_phase),
+            float(qubit_final_phase),
         ])
-        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        postpulse = self.get_prepulse_creator(postpulse_cfg) 
         self.sync_all()
         self.custom_pulse(
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
