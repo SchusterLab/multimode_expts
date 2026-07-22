@@ -2739,6 +2739,100 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
 
 
+class StorageAccessSwapClosureProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Check one strong storage access swap and its inverse.
+
+    The ordinary occupation-string encoder is used without modification.
+    Only the selected M1-storage pulse in the inverse decoder receives
+    ``storage_inverse_phase_offset``. Sweeping that offset distinguishes a
+    wrong inverse phase from loss caused by an incomplete N-photon swap.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        target_stor = int(ecfg.storage_access_stor)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+
+        if target_stor not in swap_stors:
+            raise ValueError(
+                f"storage_access_stor must be one of {swap_stors}"
+            )
+
+        ecfg.storage_inverse_phase_offset = float(
+            ecfg.get("storage_inverse_phase_offset", 0.0)
+        )
+        ecfg.spectroscopy_prep_phase = float(
+            ecfg.get("spectroscopy_prep_phase", 0.0)
+        )
+        ecfg.spectroscopy_analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0)
+        )
+        ecfg.floquet_cycle = 0
+        ecfg.palindrome_scramble = False
+        ecfg.update_phases = False
+        ecfg.ro_stor = 0
+        super().initialize()
+
+        occupation_index = swap_stors.index(target_stor) + 1
+        if int(ecfg.spectroscopy_occupations[occupation_index]) == 0:
+            raise ValueError(
+                f"S{target_stor} is empty in "
+                f"spectroscopy_occupations={ecfg.spectroscopy_occupations}"
+            )
+
+    def body(self):
+        ecfg = self.cfg.expt
+        cfg = AttrDict(self.cfg)
+        target_name = f"M1-S{int(ecfg.storage_access_stor)}"
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        prepulse_cfg = [[
+            "qubit", "ge", "hpi",
+            float(ecfg.spectroscopy_prep_phase),
+        ]] + deepcopy(self.encoder_pulses)
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="storage_access_closure_pre_"
+        )
+        self.sync_all()
+
+        postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
+        target_pulse_found = False
+        for pulse in postpulse_cfg:
+            if pulse[0] == "storage" and pulse[1] == target_name:
+                pulse[3] = self._mod360(
+                    pulse[3]
+                    + float(ecfg.storage_inverse_phase_offset)
+                )
+                target_pulse_found = True
+
+        if not target_pulse_found:
+            raise RuntimeError(
+                f"The encoder does not contain a {target_name} access swap"
+            )
+
+        postpulse_cfg.append([
+            "qubit", "ge", "hpi",
+            float(ecfg.spectroscopy_analyzer_phase),
+        ])
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="storage_access_closure_post_"
+        )
+        self.sync_all()
+        self.measure_wrapper()
+
+
 class EncodingStarkShiftCalibrationProgram(
         NPhotonHamiltonianSpectroscopyProgram):
     """Measure the raw Floquet-pulse phase of one occupation basis state.
