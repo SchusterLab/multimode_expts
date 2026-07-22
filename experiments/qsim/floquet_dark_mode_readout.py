@@ -2369,8 +2369,12 @@ class NPhotonHamiltonianSpectroscopyProgram(
     f_n-g_(n+1) pulse.  The storage rows are defined as
     ``mode_path_storage - mode_path_M1`` and are added to the inverse
     M1-storage pulses because those pulse phases enter the recovered return
-    amplitude with the opposite sign.  The final qubit analyzer keeps only
-    ``spectroscopy_analyzer_phase``.
+    amplitude with the opposite sign.
+
+    ``spectroscopy_phase_correction_mode='decoder'`` keeps this original
+    decoder-pulse correction.  ``'final_analyzer'`` skips the decoder matrix
+    and adds ``floquet_cycle * final_analyzer_phase_per_cycle_deg`` to the
+    final qubit half-pi instead.
     """
 
     @staticmethod
@@ -2596,10 +2600,22 @@ class NPhotonHamiltonianSpectroscopyProgram(
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
         analyzer_phase = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        phase_correction_mode = str(ecfg.get(
+            "spectroscopy_phase_correction_mode", "decoder"
+        ))
+        if phase_correction_mode not in ("decoder", "final_analyzer"):
+            raise ValueError(
+                "spectroscopy_phase_correction_mode must be "
+                "'decoder' or 'final_analyzer'"
+            )
 
         ecfg.spectroscopy_occupations = occupations
         ecfg.spectroscopy_prep_phase = prep_phase % 360.0
         ecfg.spectroscopy_analyzer_phase = analyzer_phase % 360.0
+        ecfg.spectroscopy_phase_correction_mode = phase_correction_mode
+        ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get(
+            "final_analyzer_phase_per_cycle_deg", 0.0
+        ))
         ecfg.spectroscopy_photon_number = photon_number
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
@@ -2609,7 +2625,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        update_decoder_phases = ecfg.get("update_phases", True)
+        phase_correction_mode = ecfg.spectroscopy_phase_correction_mode
+        update_decoder_phases = (
+            ecfg.get("update_phases", True)
+            and phase_correction_mode == "decoder"
+        )
         storage_phase_offsets = [0.0] * len(swap_stors)
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
@@ -2671,66 +2691,157 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         # Decode |n> to |e,0>, then interfere it with |g,0>.
         postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
-        
-        qubit_gauge = self.cfg.expt.get("qubit_gauge", False)
-        if qubit_gauge:
-            self.qubit_final_phase_correction = 0
-        
         for pulse in postpulse_cfg:
             # Every f_n-g_(n+1) pulse transfers one M1 photon, so all n use
             # the same M1-frame correction. N ladder steps then give N times
             # that phase without an explicit photon-number multiplier.
-            if not qubit_gauge:
-                if pulse[0] == "multiphoton" \
-                        and pulse[1].startswith("f") \
-                        and "-g" in pulse[1]:
-                    pulse[3] = self._mod360(
-                        pulse[3] - decoder_phase_deg[0]
-                    )
+            if pulse[0] == "multiphoton" \
+                    and pulse[1].startswith("f") \
+                    and "-g" in pulse[1]:
+                pulse[3] = self._mod360(
+                    pulse[3] - decoder_phase_deg[0]
+                )
 
-                elif pulse[0] == "storage":
-                    stor = int(pulse[1].split("-S")[1])
-                    stor_index = swap_stors.index(stor)
-                    pulse[3] = self._mod360(
-                        pulse[3]
-                        + storage_phase_offsets[stor_index]
-                        + decoder_phase_deg[stor_index + 1]
-                        + disorder_phase_offsets[stor_index]
-                    )
-                    self._advance_storage_phase_offsets(
-                        phase_offsets=storage_phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-            elif qubit_gauge:
-                
-                if pulse[0] == "multiphoton" \
-                        and pulse[1].startswith("f") \
-                        and "-g" in pulse[1]:
-                    self.qubit_final_phase_correction -= decoder_phase_deg[0]
+            elif pulse[0] == "storage":
+                stor = int(pulse[1].split("-S")[1])
+                stor_index = swap_stors.index(stor)
+                pulse[3] = self._mod360(
+                    pulse[3]
+                    + storage_phase_offsets[stor_index]
+                    + decoder_phase_deg[stor_index + 1]
+                    + disorder_phase_offsets[stor_index]
+                )
+                self._advance_storage_phase_offsets(
+                    phase_offsets=storage_phase_offsets,
+                    swap_stors=swap_stors,
+                    pulsed_stor=stor,
+                )
 
-                elif pulse[0] == "storage":
-                    stor = int(pulse[1].split("-S")[1])
-                    stor_index = swap_stors.index(stor)
-                    self.qubit_final_phase_correction += storage_phase_offsets[stor_index] + decoder_phase_deg[stor_index + 1] + disorder_phase_offsets[stor_index]
-                    self._advance_storage_phase_offsets(
-                        phase_offsets=storage_phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-                
-        qubit_final_phase = ecfg.spectroscopy_analyzer_phase
-        if qubit_gauge:
-            qubit_final_phase += self.qubit_final_phase_correction
-            qubit_final_phase = qubit_final_phase % 360
+        analyzer_phase = float(ecfg.spectroscopy_analyzer_phase)
+        if phase_correction_mode == "final_analyzer":
+            # Q_phi = Re[A exp(-i phi)]: adding +Gamma to phi removes a
+            # measured +Gamma phase from the reconstructed return A.
+            analyzer_phase += (
+                int(ecfg.floquet_cycle)
+                * float(ecfg.final_analyzer_phase_per_cycle_deg)
+            )
+
         postpulse_cfg.append([
             "qubit", "ge", "hpi",
-            float(qubit_final_phase),
+            self._mod360(analyzer_phase),
         ])
-        postpulse = self.get_prepulse_creator(postpulse_cfg) 
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
+        self.sync_all()
+        self.measure_wrapper()
+
+
+
+class EncodingStarkShiftCalibrationProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Measure the raw Floquet-pulse phase of one occupation basis state.
+
+    ``spectroscopy_occupations`` selects the encoded occupation string and
+    ``stor_B`` selects the physical M1-storage Floquet pulse.  An even number
+    of pulses is played with alternating 0/180-degree phase, so the intended
+    exchange closes while any repeatable diagonal phase remains measurable.
+
+    No previously measured decoder or ds_storage phase correction is applied
+    here.  The fixed encoder/decoder access phase is removed in the notebook
+    by dividing the complex return by its zero-pulse value.  A nonzero
+    ``final_analyzer_phase_per_pulse_deg`` is multiplied by ``n_pulse`` and
+    added only to the final qubit half-pi for an end-to-end sign check.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        stor_B = int(ecfg.stor_B)
+        n_pulse = int(ecfg.n_pulse)
+
+        if stor_B not in swap_stors:
+            raise ValueError(
+                f"stor_B must be one of {swap_stors}; got {stor_B}"
+            )
+        if n_pulse < 0 or n_pulse % 2:
+            raise ValueError(
+                "n_pulse must be a non-negative even integer so the "
+                "alternating Floquet train closes before decoding"
+            )
+        if "spectroscopy_occupations" not in ecfg:
+            raise ValueError(
+                "EncodingStarkShiftCalibrationProgram requires "
+                "spectroscopy_occupations"
+            )
+
+        ecfg.spectroscopy_prep_phase = float(
+            ecfg.get("spectroscopy_prep_phase", 0.0))
+        ecfg.spectroscopy_analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        ecfg.final_analyzer_phase_per_pulse_deg = float(ecfg.get(
+            "final_analyzer_phase_per_pulse_deg", 0.0
+        ))
+        ecfg.floquet_cycle = 0
+        ecfg.palindrome_scramble = False
+        ecfg.update_phases = False
+        ecfg.ro_stor = 0
+        super().initialize()
+
+    def body(self):
+        ecfg = self.cfg.expt
+        cfg = AttrDict(self.cfg)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        stor_B = int(ecfg.stor_B)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        prepulse_cfg = [[
+            "qubit", "ge", "hpi",
+            float(ecfg.spectroscopy_prep_phase),
+        ]] + deepcopy(self.encoder_pulses)
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="encoding_stark_pre_")
+        self.sync_all()
+
+        self._play_m1s_frac_train(
+            stor=stor_B,
+            n_frac=int(ecfg.n_pulse),
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            logical_phase_deg=0.0,
+            logical_phase_step_deg=180.0,
+            update_phases=False,
+            label="occupation-resolved encoding Stark calibration",
+        )
+
+        postpulse_cfg = self._get_inverse_pulses(
+            self.encoder_pulses)
+        analyzer_phase = (
+            float(ecfg.spectroscopy_analyzer_phase)
+            # The same Q_phi convention as spectroscopy is used here.
+            + int(ecfg.n_pulse)
+            * float(ecfg.final_analyzer_phase_per_pulse_deg)
+        )
+
+        postpulse_cfg.append([
+            "qubit", "ge", "hpi",
+            self._mod360(analyzer_phase),
+        ])
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="encoding_stark_post_")
         self.sync_all()
         self.measure_wrapper()
 
