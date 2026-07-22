@@ -2432,6 +2432,20 @@ class NPhotonHamiltonianSpectroscopyProgram(
             inverse_pulses.append(pulse)
         return inverse_pulses
 
+    def _add_wait_after_storage_pulses(self, pulses):
+        wait_us = float(self.cfg.expt.get(
+            "storage_pulse_wait_us", 0.2))
+        if wait_us <= 0.0:
+            return pulses
+
+        pulses_with_wait = []
+        for pulse in pulses:
+            pulses_with_wait.append(pulse)
+            if pulse[0] == "storage":
+                pulses_with_wait.append(["wait", wait_us])
+
+        return pulses_with_wait
+
     def initialize(self):
         ecfg = self.cfg.expt
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
@@ -2663,6 +2677,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
         prepulse_cfg = [
             ["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],
         ] + encoder_pulses
+        prepulse_cfg = self._add_wait_after_storage_pulses(
+            prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2730,6 +2746,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
             "qubit", "ge", "hpi",
             self._mod360(analyzer_phase),
         ])
+        postpulse_cfg = self._add_wait_after_storage_pulses(
+            postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2808,6 +2826,8 @@ class EncodingStarkShiftCalibrationProgram(
             "qubit", "ge", "hpi",
             float(ecfg.spectroscopy_prep_phase),
         ]] + deepcopy(self.encoder_pulses)
+        prepulse_cfg = self._add_wait_after_storage_pulses(
+            prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2838,6 +2858,8 @@ class EncodingStarkShiftCalibrationProgram(
             "qubit", "ge", "hpi",
             self._mod360(analyzer_phase),
         ])
+        postpulse_cfg = self._add_wait_after_storage_pulses(
+            postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -2989,6 +3011,8 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             "qubit", "ge", "hpi",
             float(ecfg.spectroscopy_prep_phase),
         ]] + deepcopy(self.encoder_pulses)
+        prepulse_cfg = self._add_wait_after_storage_pulses(
+            prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -3012,6 +3036,8 @@ class EntireFloquetCyclePhaseCalibrationProgram(
         postpulse_cfg.append([
             "qubit", "ge", "hpi", self._mod360(analyzer_phase),
         ])
+        postpulse_cfg = self._add_wait_after_storage_pulses(
+            postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -3134,6 +3160,8 @@ class FloquetPhaseAccumulationProgram(
                 float(ecfg.spectroscopy_prep_phase),
             ],
         ] + encoder_pulses
+        prepulse_cfg = self._add_wait_after_storage_pulses(
+            prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -3174,6 +3202,8 @@ class FloquetPhaseAccumulationProgram(
             "qubit", "ge", "hpi",
             float(ecfg.spectroscopy_analyzer_phase),
         ])
+        postpulse_cfg = self._add_wait_after_storage_pulses(
+            postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
