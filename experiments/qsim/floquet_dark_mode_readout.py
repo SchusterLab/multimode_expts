@@ -2846,6 +2846,180 @@ class EncodingStarkShiftCalibrationProgram(
         self.measure_wrapper()
 
 
+class EntireFloquetCyclePhaseCalibrationProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Measure one occupation's phase from the entire Floquet cycle.
+
+    One closed pair is
+
+        ordered Floquet cycle -> reverse-order inverse Floquet cycle.
+
+    The inverse cycle uses the same tracked logical axes as spectroscopy and
+    adds 180 degrees to every beam-splitter pulse.  It therefore cancels the
+    intended exchange motion while repeatable diagonal phase can accumulate.
+    ``n_cycle_pair`` pairs contain ``2 * n_cycle_pair`` physical entire
+    cycles.  The notebook fits against that physical-cycle count, so its
+    slope is directly in degrees per entire Floquet cycle.
+
+    ``final_analyzer_phase_per_cycle_deg`` is used only for the end-to-end
+    sign check.  It is multiplied by ``2 * n_cycle_pair`` and added to the
+    final qubit half-pi.
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        n_cycle_pair = int(ecfg.n_cycle_pair)
+
+        if n_cycle_pair < 0:
+            raise ValueError("n_cycle_pair must be non-negative")
+        if "spectroscopy_occupations" not in ecfg:
+            raise ValueError(
+                "EntireFloquetCyclePhaseCalibrationProgram requires "
+                "spectroscopy_occupations"
+            )
+        if ecfg.get("floquet_hardware_loop", False):
+            raise ValueError(
+                "The exact multi-mode forward/inverse calibration currently "
+                "uses the software-emitted pulse sequence; set "
+                "floquet_hardware_loop=False"
+            )
+
+        detunings = ecfg.get("detunings", None)
+        if detunings is not None and detunings is not False \
+                and np.asarray(detunings).size > 0 \
+                and not np.allclose(detunings, 0.0):
+            raise ValueError(
+                "Entire-cycle phase calibration uses zero detuning.  "
+                "Disorder is part of the target Hamiltonian and must not be "
+                "calibrated out."
+            )
+
+        ecfg.spectroscopy_prep_phase = float(
+            ecfg.get("spectroscopy_prep_phase", 0.0))
+        ecfg.spectroscopy_analyzer_phase = float(
+            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get(
+            "final_analyzer_phase_per_cycle_deg", 0.0
+        ))
+        ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
+        ecfg.floquet_cycle = 0
+        ecfg.palindrome_scramble = False
+        ecfg.ro_stor = 0
+        super().initialize()
+
+    def _play_closed_floquet_cycle_pairs(
+            self, n_cycle_pair, phase_offsets, swap_stors):
+        update_phases = bool(self.cfg.expt.get("update_phases", True))
+        sync_cycles = int(
+            self.cfg.expt.get("scramble_sync_cycles", 10))
+        pulse_args_by_stor = {
+            stor: deepcopy(self.m1s_kwargs[stor - 1])
+            for stor in swap_stors
+        }
+
+        self.sync_all()
+
+        for pair_index in range(n_cycle_pair):
+            forward_phases = []
+            for stor in swap_stors:
+                stor_index = swap_stors.index(stor)
+                phase_deg = self._mod360(
+                    phase_offsets[stor_index])
+                forward_phases.append((stor, phase_deg))
+
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+            # Replay the actual forward control phases in reverse order and
+            # add 180 degrees.  Recomputing the inverse phases from the live
+            # tracker would not be the adjoint of the emitted forward cycle.
+            for stor, forward_phase_deg in reversed(forward_phases):
+                inverse_phase_deg = self._mod360(
+                    forward_phase_deg + 180.0
+                )
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    inverse_phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+            if self.cfg.expt.get("debug", False):
+                print(
+                    "[EntireCyclePhase] pair=",
+                    pair_index,
+                    "forward phases=",
+                    forward_phases,
+                )
+
+        self.sync_all()
+
+    def body(self):
+        ecfg = self.cfg.expt
+        cfg = AttrDict(self.cfg)
+        swap_stors = [int(stor) for stor in ecfg.swap_stors]
+        n_cycle_pair = int(ecfg.n_cycle_pair)
+        phase_offsets = [0.0] * len(swap_stors)
+
+        self.reset_and_sync()
+        if ecfg.get("active_reset", False):
+            params = MMAveragerProgram.get_active_reset_params(self.cfg)
+            self.active_reset(**params)
+            pre_relax_delay = ecfg.get("pre_relax_delay", 0)
+            if pre_relax_delay > 0:
+                self.sync_all(self.us2cycles(pre_relax_delay))
+
+        prepulse_cfg = [[
+            "qubit", "ge", "hpi",
+            float(ecfg.spectroscopy_prep_phase),
+        ]] + deepcopy(self.encoder_pulses)
+        prepulse = self.get_prepulse_creator(prepulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, prepulse.pulse, prefix="entire_cycle_phase_pre_")
+        self.sync_all()
+
+        self._play_closed_floquet_cycle_pairs(
+            n_cycle_pair=n_cycle_pair,
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+        )
+
+        postpulse_cfg = self._get_inverse_pulses(
+            self.encoder_pulses)
+        analyzer_phase = (
+            float(ecfg.spectroscopy_analyzer_phase)
+            + 2
+            * n_cycle_pair
+            * float(ecfg.final_analyzer_phase_per_cycle_deg)
+        )
+        postpulse_cfg.append([
+            "qubit", "ge", "hpi", self._mod360(analyzer_phase),
+        ])
+        postpulse = self.get_prepulse_creator(postpulse_cfg)
+        self.sync_all()
+        self.custom_pulse(
+            cfg, postpulse.pulse, prefix="entire_cycle_phase_post_")
+        self.sync_all()
+        self.measure_wrapper()
+
+
 class SinglePhotonFloquetSpectroscopyProgram(
         NPhotonHamiltonianSpectroscopyProgram):
     """Backward-compatible wrapper for the original N=1 program name."""
