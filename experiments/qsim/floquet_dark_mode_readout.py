@@ -1893,6 +1893,16 @@ class DarkBaseProgram(QsimBaseProgram):
 
     def body(self):
         cfg=AttrDict(self.cfg)
+        slow_pi_ge_readout = bool(
+            cfg.expt.get("slow_pi_ge_readout", False)
+        )
+
+        if slow_pi_ge_readout and (
+                cfg.expt.get("parity_readout", False)
+                or cfg.expt.get("multiparity_readout", False)):
+            raise ValueError(
+                "slow_pi_ge_readout cannot be combined with parity readout"
+            )
 
         # initializations as necessary
         self.reset_and_sync()
@@ -2058,12 +2068,13 @@ class DarkBaseProgram(QsimBaseProgram):
             # Move ro_stor to man
             postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
             
-            do_parity_readout = (
+            skip_default_m1_to_qubit_readout = (
                 self.cfg.expt.get("parity_readout", False)
                 or self.cfg.expt.get("multiparity_readout", False)
+                or slow_pi_ge_readout
             )
 
-            if not self.cfg.expt.perform_wigner and not do_parity_readout:
+            if not self.cfg.expt.perform_wigner and not skip_default_m1_to_qubit_readout:
                 # Move man to qubit for population measurement
                 postpulse_cfg.append(['man', 'M1', 'pi', 0,])
                 if self.cfg.expt.get('map_to_qubit_ge', False):
@@ -2098,6 +2109,24 @@ class DarkBaseProgram(QsimBaseProgram):
                 
                 # Parity pulse on qubit
                 self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+
+        if slow_pi_ge_readout:
+            qTest = self.cfg.expt.qubits[0]
+            slow_pi_ge = cfg.device.qubit.pulses.slow_pi_ge
+            slow_pi_ge_pulse = [
+                [cfg.device.qubit.f_ge[qTest]],
+                [slow_pi_ge.gain[qTest]],
+                [slow_pi_ge.length[qTest]],
+                [0.0],
+                [self.qubit_chs[qTest]],
+                [slow_pi_ge.type[qTest]],
+                [slow_pi_ge.sigma[qTest]],
+            ]
+            self.custom_pulse(
+                cfg,
+                slow_pi_ge_pulse,
+                prefix="slow_pi_ge_readout_",
+            )
 
         self.measure_wrapper()
 
