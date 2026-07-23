@@ -3446,7 +3446,7 @@ class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
             _pulse[3][0] = self.cfg.expt.custom_scramble_phase
         
         self.custom_pulse(self.cfg, _pulse, prefix = 'swap_pulse___manstorscram')
-        self.sync_all()
+        self.sync_all(0.2)
 
 
 
