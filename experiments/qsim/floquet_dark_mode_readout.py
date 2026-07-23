@@ -414,21 +414,37 @@ class DarkBaseExperiment(QsimBaseExperiment):
             'mean_n_mod4',
         ]
 
-        out = {'xpts': []}
+        xpts = np.asarray(self.data['xpts']).reshape(-1)
+        ypts = np.asarray(self.data.get('ypts', [])).reshape(-1)
+        is_2d = len(ypts) > 0
+
+        if is_2d:
+            data_shape = (len(ypts), len(xpts))
+            point_count = len(ypts) * len(xpts)
+        else:
+            data_shape = (len(xpts),)
+            point_count = len(xpts)
+
+        if len(self.data['idata']) != point_count:
+            raise ValueError(
+                'multiparity point count does not match the sweep axes: '
+                f"{len(self.data['idata'])} shots rows for shape {data_shape}"
+            )
+
+        out = {'xpts': xpts}
+        if is_2d:
+            out['ypts'] = ypts
         for key in keys:
             out[key] = []
 
-        xpts = np.asarray(self.data['xpts']).reshape(-1)
-
-        for j, x in enumerate(xpts):
+        for j in range(point_count):
             r = classify_two_parity_readouts(self, point_idx=j)
 
-            out['xpts'].append(x)
             for key in keys:
                 out[key].append(r[key])
 
-        for key in out:
-            out[key] = np.asarray(out[key])
+        for key in keys:
+            out[key] = np.asarray(out[key]).reshape(data_shape)
 
         # Same quantity as p1 + 2*p2 + 3*p3.
         # Kept as a convenient explicit name.
