@@ -454,6 +454,74 @@ class DarkBaseExperiment(QsimBaseExperiment):
         return out
         
 
+class DarkBaseRProgram(MMRAveragerProgram):
+    """RAverager counterpart of :class:`DarkBaseProgram` below.
+
+    This base class contains only the setup and pulse helpers that do not
+    depend on the AveragerProgram body loop.  A concrete RAverager experiment
+    should implement its own ``body`` and ``update`` methods.
+
+    The Fock-state preparation and multiparity readout functions are bound to
+    the existing DarkBaseProgram implementations deliberately.  They are
+    ordinary pulse-building methods and work with either QICK program base;
+    reusing the same functions keeps the two pulse conventions identical.
+    """
+
+    retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters
+    prep_man_fock_state = DarkBaseProgram.prep_man_fock_state
+    multi_parity_readout = DarkBaseProgram.multi_parity_readout
+
+    def initialize(self):
+        """Initialize common channels and M1-storage swap waveforms."""
+        self.MM_base_initialize()
+
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        self.storage_phase_matrix = self.cfg.expt.get(
+            "storage_phase_matrix", None)
+        if self.storage_phase_matrix is not None:
+            self.storage_phase_matrix = np.asarray(
+                self.storage_phase_matrix, dtype=float)
+
+        man_mode_no = self.cfg.expt.get("man_mode_no", 1)
+        self.man_mode_idx = man_mode_no - 1
+
+        for stor in range(7):
+            if self.m1s_style[stor] != "arb":
+                continue
+
+            stor_name = f"M1-S{stor + 1}"
+            ch = self.m1s_ch[stor]
+            sigma_us = self.cfg.expt.get("floquet_gauss_sigma", None)
+            if sigma_us is None:
+                sigma_us = self.swap_ds.get_gauss_sigma(stor_name)
+            n_sigma = self.swap_ds.get_gauss_n_sigma(stor_name)
+            sigma = self.us2cycles(sigma_us, gen_ch=ch)
+
+            self.add_gauss(
+                ch=ch,
+                name=self.m1s_wf_name[stor],
+                sigma=sigma,
+                length=sigma * n_sigma,
+            )
+
+        self.m1s_kwargs = []
+        for stor in range(7):
+            pulse_kwargs = {
+                "ch": self.m1s_ch[stor],
+                "style": self.m1s_style[stor],
+                "freq": self.m1s_freq[stor],
+                "phase": 0,
+                "gain": self.m1s_gain[stor],
+                "waveform": self.m1s_wf_name[stor],
+            }
+            if self.m1s_style[stor] != "arb":
+                pulse_kwargs["length"] = self.m1s_length[stor]
+            self.m1s_kwargs.append(pulse_kwargs)
+
+        self.sync_all(200)
+
 
 class DarkBaseProgram(QsimBaseProgram):
     
