@@ -587,7 +587,7 @@ class RamseyFitting(GeneralFitting):
             return
         envelope = data.get(f'fit_envelope_{channel}', 'exp')
         pCov = data[f'fit_err_{channel}']
-        x = data['xpts'][:-1]
+        x = np.asarray(data['xpts'][:-1], dtype=float)
         t2_label = '$T_2^*$ (Gauss)' if envelope == 'gauss' else '$T_2$ (Exp)'
 
         ssr_exp = data.get(f'fit_ssr_{channel}_exp', np.nan)
