@@ -3225,6 +3225,9 @@ class EntireFloquetCyclePhaseCalibrationProgram(
         ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get(
             "final_analyzer_phase_per_cycle_deg", 0.0
         ))
+        ecfg.zero_floquet_gain = bool(ecfg.get(
+            "zero_floquet_gain", False
+        ))
         ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
         ecfg.floquet_cycle = 0
         ecfg.palindrome_scramble = False
@@ -3240,6 +3243,9 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             stor: deepcopy(self.m1s_kwargs[stor - 1])
             for stor in swap_stors
         }
+        if self.cfg.expt.zero_floquet_gain:
+            for pulse_args in pulse_args_by_stor.values():
+                pulse_args["gain"] = 0
 
         self.sync_all()
 
@@ -3288,6 +3294,8 @@ class EntireFloquetCyclePhaseCalibrationProgram(
                 print(
                     "[EntireCyclePhase] pair=",
                     pair_index,
+                    "zero Floquet gain=",
+                    self.cfg.expt.zero_floquet_gain,
                     "forward phases=",
                     forward_phases,
                 )
