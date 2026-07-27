@@ -1,15 +1,16 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
 #       jupytext_version: 1.19.3
 #   kernelspec:
-#     display_name: Pixi (multimode_expts default)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: pixi-multimode
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -39,7 +40,7 @@ from job_server.config_versioning import ConfigVersionManager
 
 # Initialize database and config manager
 db = get_database()
-config_dir = 'D:/python/multimode_expts/configs'
+config_dir = 'C:/python/multimode_expts/configs'
 config_manager = ConfigVersionManager(config_dir)
 
 # Initialize job client (handle submitting and waiting for jobs)
@@ -56,11 +57,12 @@ print("Welcome", user)
 
 station = MultimodeStation(
     user=user,
-    experiment_name = "260214_qsim",
-    hardware_config='CFG-HW-20260216-00010',
-    # multiphoton_config='CFG-MP-20260121-00001',
-    storage_man_file='CFG-M1-20260216-00031',
-    floquet_file='CFG-FL-20260213-00016'
+    experiment_name = "260618_qsim",
+    hardware_config="CFG-HW-20260707-00126",
+    storage_man_file="CFG-M1-20260707-00019",
+    floquet_file="CFG-FL-20260708-00023",
+    # multiphoton_config="C:/python/multimode_expts/configs/versions/multiphoton_config/CFG-MP-20260115-00001.yml",
+    log_measurements=True,
 )
 
 USE_QUEUE = True
@@ -1530,7 +1532,7 @@ cavity_ramsey = cavity_ramsey_runner.execute(
                         station.hardware_cfg.device.manipulate.displace_sigma[0],
                         0, 
                         4],
-    postproc=False,
+    postproc=True,
 )
 
 # %%
@@ -1904,7 +1906,7 @@ t2_cavity = t2_cavity_runner.execute(
 # # Save Config
 
 # %%
-station.update_all_station_snapshots(update_main=True, updated_by=user)
+station.update_all_station_snapshots(update_main=False)
 
 # %% [markdown]
 # # Wigner Tomography
@@ -2062,7 +2064,7 @@ wigner_1mode_runner = CharacterizationRunner(
 
 #     wigner_exp.go(analyze=True, display=False, progress=True, save=True)
 #     return wigner_exp
-        
+
 
 # %% [markdown]
 # ## Wigner Tomography
@@ -3715,7 +3717,7 @@ else:
     prepulse_after[2].append(['optimal_control', 'fock', '0+2', [0, 0]])
     prepulse_before[3].append(['optimal_control', 'fock', '0+2i', [0, 0]])
     prepulse_after[3].append(['optimal_control', 'fock', '0+2i', [0, 0]])
-   
+
 
 # %% [markdown]
 # ### add the swap we want to test
@@ -3723,7 +3725,7 @@ else:
 # %%
 for j in range(len(prepulse_before)):
     prepulse_after[j].append(['storage', 'M1-S3', 'pi', 0])  # Add a pi pulse on storage after the prepulse
-    
+
 
 # %% [markdown]
 # ### Measure the tomography before the swap test 
@@ -3739,7 +3741,7 @@ for idx, photon_list in enumerate(initial_states):
         state = qt.fock(cutoff, n)
         coeff = i/np.abs(i) if np.abs(i) > 0 else 1
         initial_start_qt[idx] += coeff * state
-    
+
 
 # %%
 mm_base_calib.get_prepulse_creator(prepulse_before[2], cfg=expts_base_inst.config_thisrun).pulse.tolist()
@@ -3779,7 +3781,7 @@ for j in range(len(prepulse_before)):
                                                              initial_state=initial_start_qt[j],
                                                                state_label = state_labels[j] + ' initial')
     wigner_data_before.append(wigner.data)
-    
+
 
 # %% [markdown]
 # ### For the 4 cardinal states measure the tomography versus eta 

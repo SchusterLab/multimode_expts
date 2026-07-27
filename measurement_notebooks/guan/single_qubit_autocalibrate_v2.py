@@ -64,12 +64,16 @@ station = MultimodeStation(
     user = user,
     experiment_name = "260618_qsim",
 
-    hardware_config="CFG-HW-20260528-00032",
-    storage_man_file="CFG-M1-20260528-00055",
-    floquet_file="C:/python/multimode_expts/configs/versions/floquet_storage_swap/CFG-FL-20260216-00024.csv",
+    hardware_config="CFG-HW-20260707-00126",
+    storage_man_file="CFG-M1-20260707-00019",
+    floquet_file="CFG-FL-20260708-00023",
     # multiphoton_config="C:/python/multimode_expts/configs/versions/multiphoton_config/CFG-MP-20260115-00001.yml",
     log_measurements=True,
 )
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+for gen_ch in range(7):
+    print(station.soccfg.cycles2us(1, gen_ch=gen_ch))
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # ## Config branches
@@ -78,12 +82,10 @@ station = MultimodeStation(
 bm = BranchManager(station)
 
 # %%
-bm.list()
-
-# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+bm.show()
 
 # %%
-bm.commit('coupler0.3', note='f0g1 rough; S1 S2')
+bm.commit('pi40_coupler0.25', note='starting from jonginns calibration')
 
 # %%
 bm.branch('coupler0.5', note='branching off from 0.3')
