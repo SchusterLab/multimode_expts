@@ -621,6 +621,12 @@ class WignerTomography1ModeExperiment(Experiment):
         data['rho'] = results['rho']
         data['rho_rotated'] = results['rho_rotated']
         data['fidelity'] = results['fidelity']
+        # Unbiased companions: rho_linear is the unprojected least-squares estimate,
+        # linear_fidelity its (unbiased) overlap with the target under the SAME
+        # rotation. `fidelity`/`rho` stay the projected (physical) ones for display.
+        data['rho_linear'] = results['rho_linear']
+        data['rho_linear_rotated'] = results['rho_linear_rotated']
+        data['linear_fidelity'] = results['linear_fidelity']
         data['populations'] = np.real(np.diag(results['rho']))[:mode_state_num]
         data['W_fit'] = results['W_fit']
         data['W_ideal'] = results['W_ideal']
@@ -630,6 +636,8 @@ class WignerTomography1ModeExperiment(Experiment):
         if uncertainty is not None:
             data['fidelity_std'] = uncertainty['fidelity_std']
             data['fidelity_ci'] = uncertainty['fidelity_ci']
+            data['linear_fidelity_std'] = uncertainty['linear_fidelity_std']
+            data['linear_fidelity_ci'] = uncertainty['linear_fidelity_ci']
             data['populations_std'] = uncertainty['populations_std']
             data['populations_ci'] = uncertainty['populations_ci']
             data['rho_abs_std'] = uncertainty['rho_abs_std']
@@ -1770,7 +1778,7 @@ class ProcessTomographyExperiment(Experiment):
 
 
         # Density matrices (2D)
-        for key in ("rho", "rho_rotated"):
+        for key in ("rho", "rho_rotated", "rho_linear", "rho_linear_rotated"):
             if key in data and isinstance(data[key], np.ndarray) and data[key].dtype == object:
                 serial[key] = stack_3d(data[key])
             elif key in data:
