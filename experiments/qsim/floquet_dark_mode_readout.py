@@ -13,6 +13,7 @@ from fitting.fit_display_classes import (
     RamseyFitting,
 )
 from experiments.MM_base import *
+from experiments.characterization_runner import CharacterizationRunner
 from experiments.qsim.qsim_base import *
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 from fitting.fit_display import *
@@ -23,6 +24,7 @@ from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 from copy import deepcopy
+from itertools import product
 
 from collections import defaultdict
 
@@ -4217,3 +4219,549 @@ class SidebandStarkAmplificationModifiedProgram_newold(DarkBaseProgram):
         self.set_pulse_registers(**m1s_kwarg_A_advanced)
         for i in range(pi_frac_A // 2):
             self.pulse(ch_A)
+
+
+class BatchRunner(CharacterizationRunner):
+    """CharacterizationRunner with bounded parallel queue submission."""
+
+    @staticmethod
+    def _plain(obj):
+        """
+        Convert config values only at the queue's JSON boundary.
+        Non JSON compatible objects are converted into compatible ones.
+        """
+        if isinstance(obj, dict):
+            return {key: BatchRunner._plain(value) for key, value in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [BatchRunner._plain(value) for value in obj]
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.generic):
+            return obj.item()
+        return obj
+
+    def run_batch(self, 
+                  configs, 
+                  batch_size=10, 
+                  postprocess=True, 
+                  priority=0,
+                  poll_interval=2., 
+                  timeout=None, 
+                  log=None,
+                  show=None):
+        """Submit at most batch_size jobs, then collect them in config order."""
+        if self.job_client is None:
+            raise ValueError("job_client is required")
+        if (isinstance(batch_size, (bool, np.bool_))
+                or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
+            raise ValueError("batch_size must be a positive integer")
+
+        configs = list(configs) #list of config dictionary that is overrided in the submitted job
+        expts = []
+        self.last_job_ids = []
+        program_module = self.program.__module__ if self.program else None
+        program_class = self.program.__name__ if self.program else None
+
+        for start in range(0, len(configs), batch_size):
+            pending = []
+            batch_configs = [self.preprocessor(self.station, self.default_expt_cfg, **overrides) for overrides in configs[start:start + batch_size]]
+            station_config = self._serialize_station_config()
+            print(f"batch {start // batch_size + 1}: {len(batch_configs)} jobs")
+            try:
+                for cfg in batch_configs:
+                    job_id = self.job_client.submit_job(
+                        experiment_class=self.ExptClass.__name__,
+                        experiment_module=self.ExptClass.__module__,
+                        expt_config=self._plain(dict(cfg)), 
+                        station_config=station_config,
+                        user=self.station.user, 
+                        priority=priority,
+                        program_class=program_class, 
+                        program_module=program_module,
+                    )
+                    pending.append(job_id)
+                    self.last_job_ids.append(job_id)
+
+                for job_id in list(pending):
+                    result = self.job_client.wait_for_completion(
+                        job_id, poll_interval=poll_interval, timeout=timeout, verbose=False)
+                    pending.pop(0)
+                    self.last_job_result = result
+                    if not result.is_successful():
+                        raise RuntimeError(
+                            f"Job {job_id} {result.status}: {result.error_message or 'No details'}")
+                    expt = result.load_expt()
+                    if postprocess:
+                        self.postprocessor(self.station, expt)
+                    self._render_log_show(expt, show=show, log=log, display_kwargs=None)
+                    expts.append(expt)
+            except BaseException: #BaseException is inherited by Exception, KeyboardInterrupt, SystemExit, GeneratorExit
+                # Below is to cancel the running job when there is KeyboardInterrupt
+                for job_id in pending:
+                    try:
+                        self.job_client.cancel_job(job_id)
+                    except Exception:
+                        pass
+                raise
+        return expts
+
+
+class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
+    """Per-job and aggregate analysis for encoding-calibrated spectroscopy."""
+
+    def analyze(self, data=None, **kwargs):
+        """Store Pe and Q for the one analyzer phase measured by this job."""
+        if data is not None:
+            self.data = data
+        self._quadrature(self)
+        return self.data
+
+    @staticmethod
+    def _quadrature(expt):
+        if "return_quadrature" in expt.data:
+            return np.asarray(expt.data["return_quadrature"])
+        cycles = expt.data["ypts"]
+        theta = expt.data["xpts"]
+        signal = np.asarray(expt.data["avgi"]).reshape(len(cycles), len(theta))
+        q = expt.cfg.expt.qubits[0]
+        Ig = expt.cfg.device.readout.Ig[q]
+        Ie = expt.cfg.device.readout.Ie[q]
+        if np.isclose(Ig, Ie):
+            raise ValueError("Ig and Ie are identical; recalibrate readout")
+        expt.data["Pe"] = (signal - Ig) / (Ie - Ig)
+        expt.data["return_quadrature"] = expt.data["Pe"][:, 0] - expt.data["Pe"][:, 1]
+        return expt.data["return_quadrature"]
+
+    @classmethod
+    def analyze_cycle_phase(cls, phi0_expts, phi90_expts, occupation, cycle_pairs, radius_fraction=0.1):
+        """Reconstruct Q0+iQ90 and fit phase per physical entire cycle."""
+        phi0_expts = list(phi0_expts) if isinstance(phi0_expts, (list, tuple)) else [phi0_expts]
+        phi90_expts = list(phi90_expts) if isinstance(phi90_expts, (list, tuple)) else [phi90_expts]
+        if len(phi0_expts) != len(phi90_expts):
+            raise ValueError("phi=0 and phi=90 repeat counts differ")
+
+        cycle_pairs = np.asarray(cycle_pairs)
+        complex_returns = []
+
+        for expt_phi0, expt_phi90 in zip(phi0_expts, phi90_expts):
+            expts = [expt_phi0, expt_phi90]
+            if any(not np.array_equal(expt.data["ypts"], cycle_pairs) for expt in expts):
+                raise ValueError("saved cycle-pair sweep changed")
+            if any(not np.allclose(expt.data["xpts"], [0., 180.]) for expt in expts):
+                raise ValueError("saved preparation phases changed")
+            complex_returns.append(cls._quadrature(expt_phi0) + 1j * cls._quadrature(expt_phi90))
+
+        complex_returns = np.asarray(complex_returns)
+        # Rows are repeated jobs; average the same cycle point across repeats.
+        complex_return = complex_returns.mean(axis=0)
+        magnitude = np.abs(complex_return)
+        positive = magnitude[np.isfinite(magnitude) & (magnitude > 0.)]
+        radius_floor = radius_fraction * (np.median(positive) if len(positive) else 0.)
+        fit_mask = np.isfinite(complex_return) & (magnitude > radius_floor)
+        if np.count_nonzero(fit_mask) < 3:
+            raise RuntimeError(f"{tuple(occupation)} has too few valid IQ points")
+
+        physical_cycles = 2 * cycle_pairs
+        phase = np.full(len(cycle_pairs), np.nan)
+        phase[fit_mask] = np.rad2deg(np.unwrap(np.angle(complex_return[fit_mask])))
+        parameters, covariance = np.polyfit(physical_cycles[fit_mask], phase[fit_mask], 1, cov=True)
+        return AttrDict(dict(
+            phase_per_cycle=parameters[0],
+            phase_error=np.sqrt(covariance[0, 0]),
+        ))
+
+    @staticmethod
+    def build_phase_correction(
+            occupations, phase_mod180, cycle_branches, physical_kerr_MHz,
+            floquet_cycle_us):
+        """Remove the unwanted cycle phase while preserving physical M1 Kerr."""
+        phase_mod180 = np.asarray(phase_mod180)
+        cycle_branches = np.asarray(cycle_branches)
+        physical_kerr_MHz = -abs(physical_kerr_MHz)
+        n_M1 = np.asarray([occupation[0] for occupation in occupations])
+        kerr_energy_MHz = 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
+        kerr_phase = -360. * kerr_energy_MHz * floquet_cycle_us
+        measured_phase = phase_mod180 + 180. * cycle_branches
+        analyzer_phase = measured_phase - kerr_phase
+
+        phase_by_occupation = {
+            tuple(occupation): float(phase)
+            for occupation, phase in zip(occupations, analyzer_phase)
+        }
+        return AttrDict(dict(
+            measured_phase=measured_phase, kerr_phase=kerr_phase,
+            phase_by_occupation=phase_by_occupation,
+        ))
+
+    @classmethod
+    def reconstruct_spectroscopy(cls, spectroscopy_expts, occupations, cycle_chunks):
+        """Join cycle chunks and return A_i(t)=Q0+iQ90."""
+        expected_cycles = np.sort(np.concatenate(cycle_chunks))
+        A = np.empty((len(occupations), len(expected_cycles)), complex)
+
+        for occupation_index in range(len(occupations)):
+            quadratures = []
+            for phi_index in range(2):
+                expts = spectroscopy_expts[occupation_index][phi_index]
+                cycles = np.concatenate([np.asarray(expt.data["ypts"]) for expt in expts])
+                quadrature = np.concatenate([cls._quadrature(expt) for expt in expts])
+                order = np.argsort(cycles)
+                if not np.array_equal(cycles[order], expected_cycles):
+                    raise ValueError("spectroscopy cycles are incomplete")
+                quadratures.append(quadrature[order])
+            A[occupation_index] = quadratures[0] + 1j * quadratures[1]
+
+        return AttrDict(dict(occupations=occupations, cycles=expected_cycles, A=A))
+
+    @staticmethod
+    def analyze_spectrum(
+            reconstruction, photon_number, detunings, couplings_MHz,
+            floquet_cycle_us, physical_kerr_MHz, fft_window="raw", zero_padding=1):
+        """Build the fixed-N Hamiltonian, LDOS weights, and measured/theory spectra."""
+        cycles = reconstruction.cycles
+        A = reconstruction.A
+        detunings = np.asarray(detunings)
+        physical_kerr_MHz = -abs(physical_kerr_MHz)
+        if len(cycles) < 2:
+            raise ValueError("spectroscopy requires at least two cycle points")
+        time_us = cycles * floquet_cycle_us
+        sample_time_us = time_us[1] - time_us[0]
+        if sample_time_us <= 0. or not np.allclose(np.diff(time_us), sample_time_us):
+            raise ValueError("spectroscopy time samples are not uniform")
+
+        fft_window = "raw" if fft_window is None else fft_window
+        windows = {"raw": np.ones, "hann": np.hanning,
+                   "hamming": np.hamming, "blackman": np.blackman}
+        if fft_window not in windows:
+            raise ValueError("fft_window must be 'raw', 'hann', 'hamming', or 'blackman'")
+        window = windows[fft_window](len(cycles))
+        if not isinstance(zero_padding, (int, np.integer)) or zero_padding < 1:
+            raise ValueError("zero_padding must be an integer >= 1")
+        if np.sum(window) <= 0.:
+            raise ValueError(f"{fft_window} window needs more cycle points")
+
+        n_fft = zero_padding * len(cycles)
+        energy_MHz = np.fft.fftshift(np.fft.fftfreq(n_fft, d=sample_time_us))
+        # One Trotter step is one complete pulse+sync Floquet cycle.
+        # couplings_MHz already includes each pulse's share of that cycle:
+        # g = 1/(4*pi_frac*T_cycle). Always-on self-Kerr enters without scaling.
+        mode_count = len(reconstruction.occupations[0])
+        fock_basis = [
+            list(occupation) for occupation in product(range(photon_number + 1), repeat=mode_count)
+            if sum(occupation) == photon_number
+        ]
+        fock_index = {tuple(occupation): index for index, occupation in enumerate(fock_basis)}
+        H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
+        # The pulse program tracks detuning phase over the full cycle; its saved sign convention is -detuning.
+        onsite_MHz = np.concatenate(([0.], -detunings))
+
+        for column, occupation in enumerate(fock_basis):
+            n_M1 = occupation[0]
+            H_MHz[column, column] = np.dot(onsite_MHz, occupation) + 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
+            for mode_index, coupling_MHz in enumerate(couplings_MHz, start=1):
+                if n_M1 == 0:
+                    continue
+                final_occupation = occupation.copy()
+                final_occupation[0] -= 1
+                final_occupation[mode_index] += 1
+                row = fock_index[tuple(final_occupation)]
+                matrix_element = coupling_MHz * np.sqrt(n_M1 * (occupation[mode_index] + 1))
+                H_MHz[row, column] += matrix_element
+                H_MHz[column, row] += matrix_element
+
+        energies_MHz, states = np.linalg.eigh(H_MHz)
+        basis_rows = [fock_index[tuple(occupation)] for occupation in reconstruction.occupations]
+        eigenstate_weights = np.abs(states[basis_rows]) ** 2
+        theory_phase = np.exp(-2j * np.pi * np.outer(energies_MHz, time_us))
+        theory_A = eigenstate_weights @ theory_phase
+        fft_scale = n_fft / np.sum(window)
+        measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
+        measured_local /= np.maximum(np.abs(A[:, :1]), 1e-12)
+        theory_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(theory_A * window, n=n_fft, axis=1), axes=1))
+        measured = np.sum(measured_local, axis=0)
+        theory = np.sum(theory_local, axis=0)
+        if np.max(theory) > 0.:
+            theory_local *= np.max(measured) / np.max(theory)
+            theory = np.sum(theory_local, axis=0)
+        complete_basis = set(map(tuple, reconstruction.occupations)) == set(map(tuple, fock_basis))
+        energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(energies_MHz))))
+
+        return AttrDict(dict(
+            energy_MHz=energy_MHz, measured_local=measured_local, theory_local=theory_local,
+            measured=measured, theory=theory, energies_MHz=energies_MHz,
+            eigenstate_weights=eigenstate_weights, physical_kerr_MHz=physical_kerr_MHz,
+            complete_basis=complete_basis, energy_limit_MHz=energy_limit_MHz,
+            fft_window=fft_window, zero_padding=zero_padding,
+            fft_resolution_MHz=1. / (len(cycles) * sample_time_us),
+        ))
+
+    @staticmethod
+    def display_local_density_of_states(spectrum, occupations, ax=None):
+        """Plot rho_i(E) = sum_a |<i|E_a>|^2 delta(E-E_a)."""
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
+        else:
+            fig = ax.figure
+        for row, weights in enumerate(spectrum.eigenstate_weights):
+            height = 0.8 * weights
+            ax.hlines(row, -spectrum.energy_limit_MHz, spectrum.energy_limit_MHz, color="0.85")
+            ax.vlines(spectrum.energies_MHz, row, row + height, color="tab:blue")
+        ax.set_yticks(np.arange(len(occupations)))
+        ax.set_yticklabels([str(occupation) for occupation in occupations])
+        ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="initial occupation", title="exact local density-of-states weights")
+        return fig
+
+    @staticmethod
+    def display_result(calibration, correction, reconstruction, spectrum, mode_labels):
+        """One compact diagnostic figure for the complete workflow."""
+        rows = np.arange(len(reconstruction.occupations))
+        labels = [str(occupation) for occupation in reconstruction.occupations]
+        fig, axes = plt.subplots(1, 5, figsize=(24, max(5, 0.28 * len(rows) + 2)), constrained_layout=True)
+
+        axes[0].errorbar(correction.measured_phase, rows, xerr=calibration.phase_error, fmt="o")
+        axes[0].axvline(0., color="0.7")
+        axes[0].set(xlabel="measured phase (deg / cycle)", ylabel=f"occupation {mode_labels}")
+        axes[0].set_yticks(rows)
+        axes[0].set_yticklabels(labels)
+
+        extent = [spectrum.energy_MHz[0], spectrum.energy_MHz[-1], -0.5, len(rows) - 0.5]
+        vmax = max(np.max(spectrum.measured_local), np.max(spectrum.theory_local))
+        for ax, local, title in zip(axes[1:3], [spectrum.measured_local, spectrum.theory_local], ["experiment", "theory"]):
+            image = ax.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
+            ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=f"{title}: {spectrum.fft_window}, pad x{spectrum.zero_padding}")
+            ax.set_yticks(rows)
+            ax.set_yticklabels(labels)
+        fig.colorbar(image, ax=axes[1:3], label="spectral magnitude")
+
+        EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states(spectrum, reconstruction.occupations, axes[3])
+        axes[4].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
+        axes[4].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
+        title = "complete-basis DOS" if spectrum.complete_basis else "projected spectrum"
+        axes[4].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
+        axes[4].legend()
+        fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz")
+        return fig
+
+    @staticmethod
+    def _hardware_parameters(station, swap_stors, sync_cycles, floquet_gauss_sigma=None):
+        if (isinstance(sync_cycles, (bool, np.bool_))
+                or not isinstance(sync_cycles, (int, np.integer)) or sync_cycles < 0):
+            raise ValueError("sync_cycles must be a nonnegative integer")
+        ramp_sigma = station.hardware_cfg.device.manipulate.ramp_sigma[0]
+        pulse_us = []
+        pi_fracs = []
+        for stor in swap_stors:
+            pulse_name = f"M1-S{stor}"
+            waveform = station.ds_floquet.get_waveform(pulse_name)
+            if waveform in ("gauss", "gaussian", "arb"):
+                sigma = floquet_gauss_sigma
+                if sigma is None:
+                    sigma = station.ds_floquet.get_gauss_sigma(pulse_name)
+                length = sigma * station.ds_floquet.get_gauss_n_sigma(pulse_name)
+            else:
+                length = station.ds_floquet.get_len(pulse_name) + 6. * ramp_sigma
+            pulse_us.append(length)
+            pi_fracs.append(station.ds_floquet.get_pi_frac(pulse_name))
+
+        sync_us = station.soccfg.cycles2us(sync_cycles)
+        # Actual hardware time of one entire Floquet/Trotter cycle.
+        floquet_cycle_us = sum(pulse_us) + len(swap_stors) * sync_us
+        if not np.all(np.isfinite(pulse_us + pi_fracs)) or min(pulse_us + pi_fracs) <= 0.:
+            raise ValueError("Floquet pulse lengths and pi fractions must be finite and positive")
+        if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0.:
+            raise ValueError("Floquet cycle duration must be finite and positive")
+
+        # pi_frac repetitions of each pulse+sync block make a full swap. Scaling
+        # its calibrated g by block_time / cycle_time leaves 1/(4*pi_frac*T_cycle).
+        # Individual pulse lengths remain in T_cycle; each mode has its own pi_frac.
+        couplings_MHz = [1. / (4. * pi_frac * floquet_cycle_us) for pi_frac in pi_fracs]
+        physical_kerr_MHz = -abs(station.hardware_cfg.device.manipulate.kerr[0])
+        if not np.isfinite(physical_kerr_MHz):
+            raise ValueError("physical Kerr must be finite")
+        return AttrDict(dict(floquet_cycle_us=floquet_cycle_us,
+                             couplings_MHz=np.asarray(couplings_MHz),
+                             physical_kerr_MHz=physical_kerr_MHz))
+
+    @classmethod
+    def _run_jobs(cls, station, job_client, program, default_expt_cfg, configs, batch_size, priority, poll_interval, timeout, log):
+        runner = BatchRunner(
+            station=station,
+            ExptClass=cls,
+            ExptProgram=program,
+            default_expt_cfg=default_expt_cfg,
+            job_client=job_client,
+            show=False,
+        )
+        print(f"{program.__name__}: {len(configs)} jobs, batch size {batch_size}")
+        expts = runner.run_batch(
+            configs, batch_size=batch_size, postprocess=False, priority=priority,
+            poll_interval=poll_interval, timeout=timeout, log=log, show=False,
+        )
+        return AttrDict(dict(expts=expts, job_ids=runner.last_job_ids))
+
+    @classmethod
+    def _run_calibration(cls, station, job_client, default_expt_cfg, occupations, cycle_pairs, repeats, reps, batch_size, priority, poll_interval, timeout, log):
+        analyzer_phases = [0., 90.]
+        defaults = deepcopy(default_expt_cfg)
+        defaults.update(dict(
+            reps=reps,
+            detunings=[0.] * (len(occupations[0]) - 1),
+            spectroscopy_prep_phases=[0., 180.], n_cycle_pairs=cycle_pairs.tolist(),
+            swept_params=["n_cycle_pair", "spectroscopy_prep_phase"],
+        ))
+        configs = [
+            dict(spectroscopy_occupations=occupation, spectroscopy_analyzer_phase=phi,
+                 final_analyzer_phase_per_cycle_deg=0.)
+            for occupation in occupations for _ in range(repeats) for phi in analyzer_phases
+        ]
+        batch = cls._run_jobs(
+            station, job_client, EntireFloquetCyclePhaseCalibrationProgram,
+            defaults, configs, batch_size, priority, poll_interval, timeout, log,
+        )
+        results = []
+        for occupation_index, occupation in enumerate(occupations):
+            start = occupation_index * repeats * 2
+            results.append(cls.analyze_cycle_phase(
+                batch.expts[start:start + 2 * repeats:2],
+                batch.expts[start + 1:start + 2 * repeats:2],
+                occupation,
+                cycle_pairs,
+            ))
+        return AttrDict(dict(
+            job_ids=batch.job_ids,
+            phase_mod180=np.asarray([result.phase_per_cycle for result in results]),
+            phase_error=np.asarray([result.phase_error for result in results]),
+        ))
+
+    @classmethod
+    def _run_spectroscopy(
+            cls, station, job_client, default_expt_cfg, occupations, cycle_chunks,
+            phase_by_occupation, reps, batch_size, priority, poll_interval, timeout, log):
+        analyzer_phases = [0., 90.]
+        defaults = deepcopy(default_expt_cfg)
+        defaults.update(dict(
+            reps=reps,
+            spectroscopy_phase_correction_mode="final_analyzer",
+            spectroscopy_prep_phases=[0., 180.],
+            swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
+        ))
+        configs = [
+            dict(
+                spectroscopy_occupations=occupation,
+                spectroscopy_analyzer_phase=phi,
+                final_analyzer_phase_per_cycle_deg=phase_by_occupation[tuple(occupation)],
+                floquet_cycles=cycles.tolist(),
+            )
+            for occupation in occupations for cycles in cycle_chunks for phi in analyzer_phases
+        ]
+        batch = cls._run_jobs(
+            station, job_client, NPhotonHamiltonianSpectroscopyProgram,
+            defaults, configs, batch_size, priority, poll_interval, timeout, log,
+        )
+        expts = [[[None for _ in cycle_chunks] for _ in analyzer_phases] for _ in occupations]
+        job_index = 0
+        for occupation_index in range(len(occupations)):
+            for chunk_index in range(len(cycle_chunks)):
+                for phi_index in range(len(analyzer_phases)):
+                    expts[occupation_index][phi_index][chunk_index] = batch.expts[job_index]
+                    job_index += 1
+        reconstruction = cls.reconstruct_spectroscopy(expts, occupations, cycle_chunks)
+        return AttrDict(dict(reconstruction=reconstruction, job_ids=batch.job_ids))
+
+    @classmethod
+    def run_one_shot(
+            cls, station, job_client, default_expt_cfg, *, swap_stors, photon_number,
+            occupations, calibration_cycle_pairs, spectroscopy_cycle_chunks,
+            cycle_branches, detunings=None, expt_overrides=None,
+            calibration_repeats=1, calibration_reps=1500, spectroscopy_reps=300,
+            calibration_batch_size=10, spectroscopy_batch_size=8,
+            sync_cycles=10, priority=0, poll_interval=2., timeout=None,
+            fft_window="raw", zero_padding=1, show=True, log=True):
+        """Run calibration -> Kerr correction -> spectroscopy -> analysis."""
+        swap_stors = list(swap_stors)
+        occupations = [list(occupation) for occupation in occupations]
+        calibration_cycle_pairs = np.asarray(calibration_cycle_pairs)
+        if (not swap_stors or len(set(swap_stors)) != len(swap_stors)
+                or any(isinstance(stor, (bool, np.bool_)) or not isinstance(stor, (int, np.integer))
+                       or not 1 <= stor <= 7 for stor in swap_stors)):
+            raise ValueError("swap_stors must contain unique integers from 1 to 7")
+        if not occupations or len(set(map(tuple, occupations))) != len(occupations):
+            raise ValueError("occupations must be nonempty and unique")
+        if (len(calibration_cycle_pairs) < 3 or calibration_cycle_pairs[0] != 0
+                or not np.allclose(calibration_cycle_pairs, np.round(calibration_cycle_pairs))
+                or np.any(np.diff(calibration_cycle_pairs) <= 0)):
+            raise ValueError("calibration_cycle_pairs must be increasing integers starting at 0")
+        if not len(spectroscopy_cycle_chunks):
+            raise ValueError("spectroscopy_cycle_chunks is empty")
+        cycle_chunks = (
+            [np.asarray(spectroscopy_cycle_chunks)] if np.isscalar(spectroscopy_cycle_chunks[0])
+            else [np.asarray(cycles) for cycles in spectroscopy_cycle_chunks]
+        )
+        if any(len(cycles) == 0 for cycles in cycle_chunks):
+            raise ValueError("spectroscopy cycle chunks cannot be empty")
+        all_cycles = np.sort(np.concatenate(cycle_chunks))
+        if (len(all_cycles) < 2 or all_cycles[0] != 0 or len(np.unique(all_cycles)) != len(all_cycles)
+                or not np.allclose(all_cycles, np.round(all_cycles))
+                or not np.allclose(np.diff(all_cycles), np.diff(all_cycles)[0])):
+            raise ValueError("spectroscopy cycles must be unique, uniform integers starting at 0")
+        detunings = np.zeros(len(swap_stors)) if detunings is None else np.asarray(detunings, dtype=float)
+        if detunings.shape != (len(swap_stors),) or not np.all(np.isfinite(detunings)):
+            raise ValueError("detunings must be finite and match swap_stors")
+        integers = [photon_number, calibration_repeats, calibration_reps, spectroscopy_reps,
+                    calibration_batch_size, spectroscopy_batch_size, zero_padding]
+        if any(isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer))
+               or value < 1 for value in integers):
+            raise ValueError("photon number, reps, batch sizes, and zero padding must be positive integers")
+        if (len(cycle_branches) != len(occupations)
+                or any(isinstance(branch, (bool, np.bool_))
+                       or not isinstance(branch, (int, np.integer)) for branch in cycle_branches)):
+            raise ValueError("cycle_branches must contain one integer per occupation")
+        if any(len(o) != len(swap_stors) + 1 or sum(o) != photon_number
+               or any(isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer))
+                      or n < 0 for n in o) for o in occupations):
+            raise ValueError(f"all occupations must be in the N={photon_number} sector")
+        fft_window = "raw" if fft_window is None else fft_window
+        if fft_window not in ("raw", "hann", "hamming", "blackman"):
+            raise ValueError("fft_window must be 'raw', 'hann', 'hamming', or 'blackman'")
+
+        # User defaults -> optional user overrides -> fields this workflow owns.
+        base_cfg = deepcopy(default_expt_cfg)
+        base_cfg.update(expt_overrides or {})
+        base_cfg.update(dict(
+            storage_reset=swap_stors, swap_stors=swap_stors, detunings=detunings.tolist(),
+            scramble_sync_cycles=sync_cycles, update_phases=True,
+            palindrome_scramble=False, floquet_hardware_loop=False,
+        ))
+
+        mode_labels = ["M1"] + [f"S{stor}" for stor in swap_stors]
+        hardware = cls._hardware_parameters(station, swap_stors, sync_cycles,
+                                            base_cfg.get("floquet_gauss_sigma", None))
+        print("mode order:", mode_labels, "occupations:", occupations)
+        print("T_cycle (pulse+sync):", hardware.floquet_cycle_us, "us")
+        print("K:", hardware.physical_kerr_MHz, "MHz, g:", hardware.couplings_MHz, "MHz")
+        print("180-deg/cycle branches:", list(cycle_branches))
+
+        calibration = cls._run_calibration(
+            station, job_client, base_cfg, occupations, calibration_cycle_pairs,
+            calibration_repeats, calibration_reps, calibration_batch_size, priority, poll_interval, timeout, log,
+        )
+        correction = cls.build_phase_correction(
+            occupations, calibration.phase_mod180, cycle_branches, hardware.physical_kerr_MHz, hardware.floquet_cycle_us,
+        )
+        spectroscopy = cls._run_spectroscopy(
+            station, job_client, base_cfg, occupations, cycle_chunks,
+            correction.phase_by_occupation, spectroscopy_reps, spectroscopy_batch_size, priority, poll_interval, timeout, log,
+        )
+        spectrum = cls.analyze_spectrum(
+            spectroscopy.reconstruction, photon_number, detunings, hardware.couplings_MHz,
+            hardware.floquet_cycle_us, hardware.physical_kerr_MHz, fft_window, zero_padding,
+        )
+        result = AttrDict(dict(
+            mode_labels=mode_labels, occupations=occupations, hardware=hardware,
+            calibration=calibration, correction=correction,
+            spectroscopy=spectroscopy, spectrum=spectrum,
+        ))
+        if show:
+            cls.display_result(calibration, correction, spectroscopy.reconstruction, spectrum, mode_labels)
+            plt.show()
+        return result
