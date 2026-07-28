@@ -4400,6 +4400,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
         cycle_pairs = np.asarray(cycle_pairs)
         complex_returns = []
+        fnames = []
 
         for expt_phi0, expt_phi90 in zip(phi0_expts, phi90_expts):
             if not np.array_equal(expt_phi0.data["ypts"], cycle_pairs):
@@ -4411,6 +4412,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             if not np.allclose(expt_phi90.data["xpts"], [0., 180.]):
                 raise ValueError("saved preparation phases changed")
             complex_returns.append(cls._quadrature(expt_phi0) + 1j * cls._quadrature(expt_phi90))
+            for expt in [expt_phi0, expt_phi90]:
+                if hasattr(expt, "fname"):
+                    fname = str(expt.fname).replace("\\", "/").split("/")[-1]
+                    fnames.append(fname)
 
         complex_returns = np.asarray(complex_returns)
         # Rows are repeated jobs; average the same cycle point across repeats.
@@ -4431,7 +4436,18 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                             phase[fit_mask], 
                                             1, 
                                             cov=True)
+        phase_fit = parameters[0] * physical_cycles + parameters[1]
+        relative_return = magnitude.copy()
+        if magnitude[0] > 1e-12:
+            relative_return = magnitude / magnitude[0]
         return AttrDict(dict(
+            occupation=tuple(occupation),
+            physical_cycles=physical_cycles,
+            complex_return=complex_return,
+            relative_return=relative_return,
+            return_phase=phase,
+            phase_fit=phase_fit,
+            fnames=fnames,
             phase_per_cycle=parameters[0],
             phase_error=np.sqrt(covariance[0, 0]),
         ))
@@ -4441,19 +4457,22 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                phase_mod180, 
                                cycle_branches, 
                                physical_kerr_MHz,
-                               floquet_cycle_us):
+                               floquet_cycle_us,
+                               correction_sign=1.):
         """
         Compute the analyzer phase that cancels measured phase 
         except the always-on M1 self-Kerr phase.
         """
         phase_mod180 = np.asarray(phase_mod180)
         cycle_branches = np.asarray(cycle_branches)
+        if correction_sign not in (-1., 1.):
+            raise ValueError("correction_sign must be +1 or -1")
         physical_kerr_MHz = -abs(physical_kerr_MHz)
         n_M1 = np.asarray([occupation[0] for occupation in occupations])
         kerr_energy_MHz = 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
         kerr_phase = -360. * kerr_energy_MHz * floquet_cycle_us
         measured_phase = phase_mod180 + 180. * cycle_branches
-        analyzer_phase = measured_phase - kerr_phase
+        analyzer_phase = correction_sign * (measured_phase - kerr_phase)
 
         phase_by_occupation = {}
         for occupation, phase in zip(occupations, analyzer_phase):
@@ -4598,6 +4617,54 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ))
 
     @staticmethod
+    def display_cycle_phase(result):
+        fig = plt.figure(figsize=(12, 6), constrained_layout=True)
+        grid = fig.add_gridspec(2, 2, height_ratios=[4., 1.])
+        iq_axis = fig.add_subplot(grid[0, 0])
+        relative_axis = fig.add_subplot(grid[1, 0])
+        phase_axis = fig.add_subplot(grid[:, 1])
+
+        iq_axis.plot(result.complex_return.real, result.complex_return.imag, "o--", color="black", linewidth=1.2, markersize=4, label="raw return")
+        points = iq_axis.scatter(result.complex_return.real, result.complex_return.imag, c=result.physical_cycles, cmap="viridis", s=28, zorder=3)
+        iq_limit = 1.15 * np.nanmax(np.abs(result.complex_return))
+        if iq_limit <= 0.:
+            iq_limit = 1.
+        iq_axis.axhline(0., color="0.85")
+        iq_axis.axvline(0., color="0.85")
+        iq_axis.set(xlim=(-iq_limit, iq_limit), ylim=(-iq_limit, iq_limit), xlabel=r"$Q_0$", ylabel=r"$Q_{90}$", title="raw complex return")
+        iq_axis.set_aspect("equal", adjustable="box")
+        iq_axis.legend()
+        fig.colorbar(points, ax=iq_axis, label="number of physical entire Floquet cycles")
+
+        relative_axis.plot(result.physical_cycles, result.relative_return, "o-")
+        relative_axis.axhline(1., color="0.7")
+        relative_axis.set(xlabel="number of physical entire Floquet cycles", ylabel=r"$|A|/|A(0)|$", title="relative return")
+
+        phase_axis.plot(result.physical_cycles, result.return_phase, "o", label="measured")
+        phase_axis.plot(result.physical_cycles, result.phase_fit, label="fit")
+        phase_axis.set(xlabel="number of physical entire Floquet cycles", ylabel="return phase (deg)")
+        phase_axis.legend()
+
+        title = f"{result.occupation}: {result.phase_per_cycle:.4f} +/- {result.phase_error:.4f} deg / cycle"
+        if result.fnames:
+            title += "\n" + "\n".join(result.fnames)
+        fig.suptitle(title)
+        return fig
+
+    @staticmethod
+    def display_calibration_summary(calibration):
+        rows = np.arange(len(calibration.occupations))
+        labels = [str(occupation) for occupation in calibration.occupations]
+        fig, ax = plt.subplots(figsize=(9, max(4, 0.35 * len(rows) + 2)), constrained_layout=True)
+        ax.errorbar(calibration.phase_mod180, rows, xerr=calibration.phase_error, fmt="o")
+        ax.axvline(0., color="0.7")
+        ax.set(xlabel="measured phase mod 180 (deg / entire cycle)", ylabel="occupation", title="entire-cycle calibration summary")
+        ax.set_yticks(rows)
+        ax.set_yticklabels(labels)
+        ax.invert_yaxis()
+        return fig
+
+    @staticmethod
     def display_local_density_of_states(spectrum, occupations, ax=None):
         """Plot rho_i(E) = sum_a |<i|E_a>|^2 delta(E-E_a)."""
         if ax is None:
@@ -4614,47 +4681,42 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return fig
 
     @staticmethod
-    def display_result(calibration, correction, reconstruction, spectrum, mode_labels):
-        """One compact diagnostic figure for the complete workflow."""
+    def display_result(reconstruction, spectrum, mode_labels):
         rows = np.arange(len(reconstruction.occupations))
         labels = [str(occupation) for occupation in reconstruction.occupations]
-        fig, axes = plt.subplots(1, 5, figsize=(24, max(5, 0.28 * len(rows) + 2)), constrained_layout=True)
-
-        axes[0].errorbar(correction.measured_phase, rows, xerr=calibration.phase_error, fmt="o")
-        axes[0].axvline(0., color="0.7")
-        axes[0].set(xlabel="measured phase (deg / cycle)", ylabel=f"occupation {mode_labels}")
-        axes[0].set_yticks(rows)
-        axes[0].set_yticklabels(labels)
+        fig, axes = plt.subplots(2, 2, figsize=(15, 11), constrained_layout=True)
 
         extent = [spectrum.energy_MHz[0], spectrum.energy_MHz[-1], -0.5, len(rows) - 0.5]
         vmax = max(np.max(spectrum.measured_local), np.max(spectrum.theory_local))
-        for ax, local, title in zip(axes[1:3], [spectrum.measured_local, spectrum.theory_local], ["experiment", "theory"]):
+        for ax, local, title in zip(axes[0], [spectrum.measured_local, spectrum.theory_local], ["experiment", "theory"]):
             image = ax.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
             ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=f"{title}: {spectrum.fft_window}, pad x{spectrum.zero_padding}")
             ax.set_yticks(rows)
             ax.set_yticklabels(labels)
-        fig.colorbar(image, ax=axes[1:3], label="spectral magnitude")
+        axes[0, 0].set_ylabel(f"occupation {mode_labels}")
+        fig.colorbar(image, ax=axes[0], label="spectral magnitude")
 
-        EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states(spectrum, reconstruction.occupations, axes[3])
-        axes[4].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
-        axes[4].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
+        EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states(spectrum, reconstruction.occupations, axes[1, 0])
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
         title = "projected spectrum"
         if spectrum.complete_basis:
             title = "complete-basis DOS"
-        axes[4].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
-        axes[4].legend()
+        axes[1, 1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
+        axes[1, 1].legend()
         fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz")
         return fig
 
     def display(self, data=None, **kwargs):
         if data is not None:
             self.data = data
-        if "spectrum" not in self.data:
-            return super().display(data=self.data, **kwargs)
-        return self.display_result(
-            self.data.calibration, self.data.correction, self.data.reconstruction,
-            self.data.spectrum, self.data.mode_labels,
-        )
+        if "spectrum" in self.data:
+            return self.display_result(self.data.reconstruction, self.data.spectrum, self.data.mode_labels)
+        if "results" in self.data:
+            for result in self.data.results:
+                self.display_cycle_phase(result)
+            return self.display_calibration_summary(self.data)
+        return super().display(data=self.data, **kwargs)
 
     @staticmethod
     def hardware_parameters(station, swap_stors, sync_cycles, floquet_gauss_sigma=None):
@@ -4744,6 +4806,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             ))
         return AttrDict(dict(
             occupations=occupation_order,
+            results=results,
             phase_mod180=np.asarray([result.phase_per_cycle for result in results]),
             phase_error=np.asarray([result.phase_error for result in results]),
         ))
