@@ -4661,7 +4661,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if (isinstance(sync_cycles, (bool, np.bool_))
                 or not isinstance(sync_cycles, (int, np.integer)) or sync_cycles < 0):
             raise ValueError("sync_cycles must be a nonnegative integer")
-        ramp_sigma = station.hardware_cfg.device.manipulate.ramp_sigma[0]
+        ramp_sigma = station.hardware_cfg.device.manipulate.ramp_sigma
+        if isinstance(ramp_sigma, (list, tuple, np.ndarray)):
+            ramp_sigma = ramp_sigma[0]
         pulse_us = []
         pi_fracs = []
         for stor in swap_stors:
@@ -4689,7 +4691,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         # its calibrated g by block_time / cycle_time leaves 1/(4*pi_frac*T_cycle).
         # Individual pulse lengths remain in T_cycle; each mode has its own pi_frac.
         couplings_MHz = [1. / (4. * pi_frac * floquet_cycle_us) for pi_frac in pi_fracs]
-        physical_kerr_MHz = -abs(station.hardware_cfg.device.manipulate.kerr[0])
+        physical_kerr_MHz = station.hardware_cfg.device.manipulate.kerr
+        if isinstance(physical_kerr_MHz, (list, tuple, np.ndarray)):
+            physical_kerr_MHz = physical_kerr_MHz[0]
+        physical_kerr_MHz = -abs(physical_kerr_MHz)
         if not np.isfinite(physical_kerr_MHz):
             raise ValueError("physical Kerr must be finite")
         return AttrDict(dict(floquet_cycle_us=floquet_cycle_us,
