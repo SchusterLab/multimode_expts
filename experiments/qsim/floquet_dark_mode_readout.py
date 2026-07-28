@@ -4342,21 +4342,30 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             self._quadrature(self)
         elif stage == "calibration":
             self.data = self.analyze_calibration(
-                self.batch_expts, kwargs.get("occupations"), kwargs.get("cycle_pairs"),
+                self.batch_expts, 
+                kwargs.get("occupations"), 
+                kwargs.get("cycle_pairs"),
                 repeats=kwargs.get("repeats"),
             )
         elif stage == "spectrum":
             reconstruction = self.reconstruct_spectroscopy(
-                self.batch_expts, kwargs.get("occupations"), kwargs.get("cycle_chunks"))
+                self.batch_expts, 
+                kwargs.get("occupations"))
             spectrum = self.analyze_spectrum(
-                reconstruction, kwargs["photon_number"], kwargs["detunings"],
-                kwargs["couplings_MHz"], kwargs["floquet_cycle_us"],
-                kwargs["physical_kerr_MHz"], kwargs.get("fft_window", "raw"),
+                reconstruction, 
+                kwargs["photon_number"], 
+                kwargs["detunings"],
+                kwargs["couplings_MHz"], 
+                kwargs["floquet_cycle_us"],
+                kwargs["physical_kerr_MHz"], 
+                kwargs.get("fft_window", "raw"),
                 kwargs.get("zero_padding", 1),
             )
             self.data = AttrDict(dict(
-                calibration=kwargs["calibration"], correction=kwargs["correction"],
-                reconstruction=reconstruction, spectrum=spectrum,
+                calibration=kwargs["calibration"], 
+                correction=kwargs["correction"],
+                reconstruction=reconstruction, 
+                spectrum=spectrum,
                 mode_labels=kwargs["mode_labels"],
             ))
         else:
@@ -4386,7 +4395,23 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                             occupation, 
                             cycle_pairs, 
                             radius_fraction=0.1):
-        """Reconstruct Q0+iQ90 and fit phase per physical entire cycle."""
+        """
+        The method recieves phi0 and phi90 experiments to
+            1. reconstruct Q0+iQ90 
+            2. Unwrap the phase using np.unwrap
+            2. fit phase per physical entire cycle.
+        
+        Return:
+            AttrDict{occupation: tuple(occupation), #state string tuple
+                    physical_cycles: physical_cycles, #floquet cycles
+                    complex_return: complex_return,
+                    relative_return: relative_return,
+                    return_phase: phase,
+                    phase_fit: phase_fit,
+                    fnames: fnames,
+                    phase_per_cycle: parameters[0],
+                    phase_error: np.sqrt(covariance[0, 0])}
+        """
         if isinstance(phi0_expts, (list, tuple)):
             phi0_expts = list(phi0_expts)
         else:
@@ -4484,8 +4509,18 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ))
 
     @classmethod
-    def reconstruct_spectroscopy(cls, spectroscopy_expts, occupations=None, cycle_chunks=None):
-        """Group jobs from their saved configs and return A_i(t)=Q0+iQ90."""
+    def reconstruct_spectroscopy(cls, 
+                                 spectroscopy_expts, 
+                                 occupations=None):
+        """
+        Group jobs from their saved configs and return A_i(t)=Q0+iQ90.
+        Primary purpose is to bundle up the chucked experiments.
+        
+        Return:
+            Attrdict{"occupations": occupation_order, #Fock state Array
+                     "cycles": expected_cycles, #Floquet cycles list
+                     "A": np.asarray(rows)} #A = <N_i|U|N_i>
+        """
         if not spectroscopy_expts:
             raise ValueError("spectroscopy_expts cannot be empty")
         grouped = {}
@@ -4508,8 +4543,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if len(occupation_order) != len(grouped) or set(occupation_order) != set(grouped):
             raise ValueError("spectroscopy occupations do not match the saved configs")
         expected_cycles = None
-        if cycle_chunks is not None:
-            expected_cycles = np.sort(np.concatenate(cycle_chunks))
         rows = []
 
         for occupation in occupation_order:
@@ -4531,12 +4564,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 quadratures.append(quadrature[order])
             rows.append(quadratures[0] + 1j * quadratures[1])
 
-        return AttrDict(dict(occupations=occupation_order, cycles=expected_cycles, A=np.asarray(rows)))
+        return AttrDict(dict(occupations=occupation_order, 
+                             cycles=expected_cycles, 
+                             A=np.asarray(rows)))
 
     @staticmethod
-    def analyze_spectrum(
-            reconstruction, photon_number, detunings, couplings_MHz,
-            floquet_cycle_us, physical_kerr_MHz, fft_window="raw", zero_padding=1):
+    def analyze_spectrum(reconstruction, 
+                         photon_number, 
+                         detunings, 
+                         couplings_MHz,
+                         floquet_cycle_us, 
+                         physical_kerr_MHz, 
+                         fft_window="raw", 
+                         zero_padding=1):
         """Build the fixed-N Hamiltonian, LDOS weights, and measured/theory spectra."""
         cycles = reconstruction.cycles
         A = reconstruction.A
@@ -4681,7 +4721,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return fig
 
     @staticmethod
-    def display_result(reconstruction, spectrum, mode_labels):
+    def display_result(reconstruction, 
+                       spectrum, 
+                       mode_labels):
         rows = np.arange(len(reconstruction.occupations))
         labels = [str(occupation) for occupation in reconstruction.occupations]
         fig, axes = plt.subplots(2, 2, figsize=(15, 11), constrained_layout=True)
@@ -4711,15 +4753,30 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if data is not None:
             self.data = data
         if "spectrum" in self.data:
-            return self.display_result(self.data.reconstruction, self.data.spectrum, self.data.mode_labels)
-        if "results" in self.data:
+            return self.display_result(self.data.reconstruction, 
+                                       self.data.spectrum, 
+                                       self.data.mode_labels)
+        if "phase_mod180" in self.data:
+            if "results" not in self.data:
+                self.data = self.analyze_calibration(self.batch_expts)
             for result in self.data.results:
                 self.display_cycle_phase(result)
             return self.display_calibration_summary(self.data)
         return super().display(data=self.data, **kwargs)
 
     @staticmethod
-    def hardware_parameters(station, swap_stors, sync_cycles, floquet_gauss_sigma=None):
+    def hardware_parameters(station, 
+                            swap_stors, 
+                            sync_cycles, 
+                            floquet_gauss_sigma=None):
+        """
+        Returns hardware related physical paramters such as
+            - floquet_cycle_us: time for a single floquet cycle in a microsecond
+            - couplings_MHz: an array of effective BS coupling between man and stor
+            - physical_kerr_MHz: self Kerr on a central mode (manipulate)
+        All the values are calculated from the config/expt_cfg input
+        """
+        
         if (isinstance(sync_cycles, (bool, np.bool_))
                 or not isinstance(sync_cycles, (int, np.integer)) or sync_cycles < 0):
             raise ValueError("sync_cycles must be a nonnegative integer")
@@ -4749,9 +4806,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0.:
             raise ValueError("Floquet cycle duration must be finite and positive")
 
-        # pi_frac repetitions of each pulse+sync block make a full swap. Scaling
-        # its calibrated g by block_time / cycle_time leaves 1/(4*pi_frac*T_cycle).
-        # Individual pulse lengths remain in T_cycle; each mode has its own pi_frac.
+        # 2 * pi * g * t_swap = pi / 2 -> g = 1/ 4/ t_swap
+        # pi_frac repetitions of each pulse+sync block make a full swap:
+        # g_{bare} = 1/ 4 / n_frac / (t_pulse + t_sync)
+        # len(swap_stors) -> g_{eff} * T_F = g_{bare} * (t_pulse+t_sync) = 1/4/n_frac
+        # So g_{eff} = 1/4/n_frac/T_F
         couplings_MHz = [1. / (4. * pi_frac * floquet_cycle_us) for pi_frac in pi_fracs]
         physical_kerr_MHz = station.hardware_cfg.device.manipulate.kerr
         if isinstance(physical_kerr_MHz, (list, tuple, np.ndarray)):
@@ -4764,7 +4823,25 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              physical_kerr_MHz=physical_kerr_MHz))
 
     @classmethod
-    def analyze_calibration(cls, expts, occupations=None, cycle_pairs=None, repeats=None):
+    def analyze_calibration(cls, 
+                            expts, 
+                            occupations=None, 
+                            cycle_pairs=None, 
+                            repeats=None):
+        """
+        For each occupation encoding/decoding calibration expt,
+        extract phase accumulation using `analyze_cycle_phase` and return the collective
+        dictionary in the following form.
+        Return:
+            {
+            "occupations": occupation_order,
+            "results": results,
+            "phase_mod180": np.asarray([result.phase_per_cycle for result in results]),
+            "phase_error": np.asarray([result.phase_error for result in results])
+            }
+        
+        """
+        
         if not expts:
             raise ValueError("calibration expts cannot be empty")
         grouped = {}
@@ -4798,12 +4875,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             for expt in phi0_expts + phi90_expts:
                 if not np.array_equal(expt.cfg.expt.n_cycle_pairs, saved_cycle_pairs):
                     raise ValueError(f"{occupation}: calibration configs use different cycles")
-            results.append(cls.analyze_cycle_phase(
-                phi0_expts,
-                phi90_expts,
-                occupation,
-                saved_cycle_pairs,
-            ))
+            results.append(cls.analyze_cycle_phase(phi0_expts,
+                                                   phi90_expts,
+                                                   occupation,
+                                                   saved_cycle_pairs,))
         return AttrDict(dict(
             occupations=occupation_order,
             results=results,
@@ -4812,28 +4887,53 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ))
 
     @staticmethod
-    def calibration_batch(default_expt_cfg, swap_stors, occupations, cycle_pairs,
-                          sync_cycles=10, repeats=1, reps=1500):
+    def calibration_batch(default_expt_cfg, 
+                          swap_stors, 
+                          occupations, 
+                          cycle_pairs,
+                          sync_cycles=10, 
+                          repeats=1, 
+                          reps=1500):
+        """
+        Returns dictionary of 
+            - default_expt_cfg
+            - list of config to be overrided in each job
+            - repeats (usually 1)
+        The list of config is then used to make and batch jobs in a chunk.
+        For now, other paramters such as `update_phase`, `palindrome_scramble`, 
+        `spectroscopy_prep_phases`, `floquet_hardware_loop`, `swept_params`
+        are fixed.
+        In a nearest term, the program should migrate to using `floquet_hardware_loop`
+        
+        The actual batch is done by plugging the output to the BatchRunner.
+        Example:
+            calibration_batch = EncSpec.calibration_batch()
+            calibration_expt = calibration_runner.execute(calibration_batch.configs)
+        """
         defaults = deepcopy(default_expt_cfg)
         defaults.update(dict(
             reps=reps, 
             storage_reset=swap_stors, 
             swap_stors=swap_stors,
-            detunings=[0.] * len(swap_stors), #detuning must be 0
+            n_cycle_pairs=cycle_pairs.tolist(), 
             scramble_sync_cycles=sync_cycles,
+            
+            floquet_hardware_loop=False,
+            detunings=[0.] * len(swap_stors), #detuning must be 0 for the calibration
             update_phases=True, 
             palindrome_scramble=False, 
-            floquet_hardware_loop=False,
-            n_cycle_pairs=cycle_pairs.tolist(), 
             spectroscopy_prep_phases=[0., 180.],
             swept_params=["n_cycle_pair", "spectroscopy_prep_phase"],
         ))
         configs = [
-            dict(spectroscopy_occupations=occupation, spectroscopy_analyzer_phase=phi,
+            dict(spectroscopy_occupations=occupation, 
+                 spectroscopy_analyzer_phase=phi,
                  final_analyzer_phase_per_cycle_deg=0.)
             for occupation in occupations for _ in range(repeats) for phi in [0., 90.]
         ]
-        return AttrDict(dict(default_expt_cfg=defaults, configs=configs, repeats=repeats))
+        return AttrDict(dict(default_expt_cfg=defaults, 
+                             configs=configs, 
+                             repeats=repeats))
 
     @staticmethod
     def spectroscopy_batch(default_expt_cfg, 
@@ -4844,6 +4944,17 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                            detunings=None, 
                            sync_cycles=10, 
                            reps=300):
+        """
+        Returns dictionary of 
+            - default_expt_cfg
+            - list of config to be overrided in each job
+        The list of config is then used to make and batch jobs in a chunk.
+        The actual batch is done by plugging the output to the BatchRunner.
+        
+        Example:
+            spectroscopy_batch = EncSpec.spectroscopy_batch()
+            spectroscopy_expt = spectroscopy_runner.execute(spectroscopy_batch.configs)
+        """
         if detunings is None:
             detunings = [0.] * len(swap_stors)
         else:
@@ -4855,9 +4966,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             swap_stors=swap_stors,
             detunings=detunings, 
             scramble_sync_cycles=sync_cycles,
+            
+            floquet_hardware_loop=False,
             update_phases=True, 
             palindrome_scramble=False, 
-            floquet_hardware_loop=False,
             spectroscopy_phase_correction_mode="final_analyzer",
             spectroscopy_prep_phases=[0., 180.],
             swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
@@ -4869,4 +4981,5 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                  floquet_cycles=cycles.tolist())
             for occupation in occupations for cycles in cycle_chunks for phi in [0., 90.]
         ]
-        return AttrDict(dict(default_expt_cfg=defaults, configs=configs))
+        return AttrDict(dict(default_expt_cfg=defaults, 
+                             configs=configs))
