@@ -92,6 +92,22 @@ Response:
 }
 ```
 
+**Reconstruction fields (only when `knobs.reconstruct` is set).** The response also carries:
+
+```json
+{
+  "rho":                {"real": [[...]], "imag": [[...]]},  // PROJECTED (physical) matrix — for display
+  "rho_linear":         {"real": [[...]], "imag": [[...]]},  // unprojected least-squares matrix
+  "populations":        [p0, p1, ...],                        // photon-number diagonal of the projected rho
+  "fidelity":           0.95,                                 // UNBIASED linear fidelity (from rho_linear); null if no target
+  "fidelity_projected": 0.91,                                 // physical-state fidelity, kept for reference (biased LOW near-pure)
+  "reconstruct_uncertainty": { "fidelity_std": ..., "fidelity_ci": [lo, hi],
+                               "fidelity_projected_std": ..., "fidelity_projected_ci": [lo, hi], ... }
+}
+```
+
+The headline `fidelity` is the **unbiased linear fidelity** (Hilbert-Schmidt overlap of the *unprojected* density matrix with the target). The PSD projection is trace-preserving, so it biases the physical-state fidelity DOWN for near-pure targets — that's `fidelity_projected`, kept only for reference. **The closed loop never rotates** (`reconstruct_rotate` is ignored): it optimizes against a fixed target, phase included. When bootstrapping, threshold convergence on `fidelity_ci[0]` (the lower CI) to stay conservative.
+
 ## /calibrate_check endpoint
 
 A reference measurement against a known-good pulse. Loads the IQ_table from the npz file referenced by `pulse_ref`, runs Wigner tomography at a single displacement (default α=0), compares measured parity to expected.
@@ -229,7 +245,7 @@ Run `julia --project=... run_optimization.jl > run.log 2>&1 &`. Poll `run.log` a
 1. `Invoke-RestMethod http://127.0.0.1:18765/` — service reachable?
 2. Check `harmoniqs/Intonato.jl` (private) is cloned and Pkg.instantiate'd on this box. Find its closed-loop example.
 3. Read `D:\tmp\measure_wigner.jl` to see the call surface.
-4. Ask the user what target state / fidelity / iteration budget. Default budgets if unspecified: 50 iters, target fidelity 0.95.
+4. Ask the user what target state / fidelity / iteration budget. Default budgets if unspecified: 50 iters, target fidelity 0.95. The `fidelity` you threshold against is the unbiased linear fidelity (see the /run_wigner reconstruction-fields note); with bootstrap on, threshold on `fidelity_ci[0]`.
 5. Run, monitor, report.
 
 ## Repos worth knowing

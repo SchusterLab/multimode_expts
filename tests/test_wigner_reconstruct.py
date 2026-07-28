@@ -67,6 +67,19 @@ def test_reconstruct_recovers_fock_one():
     assert np.array(out["rho"]["imag"]).shape == (FOCK_DIM, FOCK_DIM)
 
 
+def test_reconstruct_surfaces_linear_fidelity_and_rho_linear():
+    # Headline fidelity is now the UNBIASED linear fidelity; projected kept for ref.
+    alphas_c = _grid_alphas()
+    target = qutip.fock(FOCK_DIM, 1)
+    parity = _ideal_parity(qutip.ket2dm(target).full(), alphas_c, FOCK_DIM)
+    out = _reconstruct_from_parity(parity, alphas_c, FOCK_DIM, target, rotate=False)
+
+    assert out["fidelity"] > 0.999                      # linear (headline)
+    assert out["fidelity_projected"] is not None
+    assert np.array(out["rho_linear"]["real"]).shape == (FOCK_DIM, FOCK_DIM)
+    assert np.array(out["rho_linear"]["imag"]).shape == (FOCK_DIM, FOCK_DIM)
+
+
 def test_reconstruct_fidelity_none_without_target():
     alphas_c = _grid_alphas()
     rho_target = qutip.ket2dm(qutip.fock(FOCK_DIM, 0)).full()
@@ -128,8 +141,10 @@ def test_run_wigner_core_sim_reconstructs():
     resp = run_wigner_core(req)
 
     assert resp.rho is not None
+    assert resp.rho_linear is not None
     assert resp.populations is not None
-    assert resp.fidelity is not None and resp.fidelity > 0.97
+    assert resp.fidelity is not None and resp.fidelity > 0.97       # linear (headline)
+    assert resp.fidelity_projected is not None
     assert np.argmax(resp.populations) == 0
 
 
@@ -256,6 +271,9 @@ def test_reconstruct_uncertainty_shapes_and_keys():
     assert unc is not None
     assert isinstance(unc["fidelity_std"], float) and unc["fidelity_std"] >= 0
     assert len(unc["fidelity_ci"]) == 2
+    # projected error bars kept alongside the headline (linear) ones
+    assert isinstance(unc["fidelity_projected_std"], float)
+    assert len(unc["fidelity_projected_ci"]) == 2
     assert len(unc["populations_std"]) == FOCK_DIM
     # density-matrix error bars: real + imag parts, each m x m
     assert np.array(unc["rho_re_std"]).shape == (FOCK_DIM, FOCK_DIM)

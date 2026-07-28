@@ -344,6 +344,14 @@ class WignerAnalysis(GeneralFitting):
         rho_ideal = (initial_state if initial_state.isoper
                      else qutip.ket2dm(initial_state)).unit()
         alphas2 = np.arange(-np.sqrt(self.m) / np.sqrt(1) + 0.1, np.sqrt(self.m) / np.sqrt(1), 0.1)
+        # rho_linear: the raw least-squares (linear-inversion) estimate, BEFORE the
+        # PSD eigenvalue clamp. It can be slightly unphysical (negative eigenvalues),
+        # but it is an UNBIASED estimator of the true state, so the fidelity read off
+        # it (linear_fidelity below) is unbiased -- unlike the projected fidelity,
+        # which the trace-preserving clamp biases DOWN for near-pure targets. rho
+        # (the projected, physical matrix) is kept for display: Wigner plot,
+        # non-negative populations, |rho_nm| heatmap.
+        rho_linear = self.rho_pinv_trace_1(allocated_readout)
         rho = self.rho_pinv_positive_sd(allocated_readout)
         P_ns = [np.array([rho[i][i] for i in range(self.m)])]
 
@@ -369,6 +377,17 @@ class WignerAnalysis(GeneralFitting):
         rho_rotated = R @ rho @ R.conj().T
         fid = qutip.fidelity(qutip.Qobj(rho_rotated), rho_ideal) ** 2
 
+        # Linear (unbiased) fidelity: the Hilbert-Schmidt overlap Tr(rho_ideal . rho)
+        # of the *unprojected* estimate, under the SAME fixed rotation theta_max.
+        # For a pure target rho_ideal = |psi><psi| this is exactly <psi|rho_lin|psi>
+        # (== qutip.fidelity**2 on the linear rho); for a mixed target it is the
+        # linear overlap, not the Uhlmann fidelity (which is nonlinear and cannot be
+        # estimated unbiasedly from a linear inversion). Because R is deterministic
+        # once theta_max is fixed, this stays linear in the data -> unbiased, and its
+        # bootstrap CI is honest (see bootstrap_reconstruction, which freezes theta).
+        rho_linear_rotated = R @ rho_linear @ R.conj().T
+        linear_fid = float(np.real(np.trace(rho_ideal.full() @ rho_linear_rotated)))
+
         alpha_max = np.max(np.abs(alpha_list))
         x_vec = np.linspace(-alpha_max, alpha_max, 200)
         W_fit = qt.wigner(qt.Qobj(rho_rotated), x_vec, x_vec, g=2)  # rotation-aligned state
@@ -380,10 +399,13 @@ class WignerAnalysis(GeneralFitting):
             'allocated_readout': allocated_readout,
             'rho': rho,
             'rho_rotated': rho_rotated,
+            'rho_linear': rho_linear,
+            'rho_linear_rotated': rho_linear_rotated,
             'rho_ideal': rho_ideal,
             'P_ns': P_ns,
             'alphas2': alphas2,
             'fidelity': fid,
+            'linear_fidelity': linear_fid,
             'theta_max': theta_max,
             'wigner_analysis': self,
             'W_fit': W_fit,
@@ -401,11 +423,22 @@ class WignerAnalysis(GeneralFitting):
         is reconstructed via wigner_analysis_results, and the ensemble is summarized.
 
         The reconstruction is linear-inversion + a PSD eigenvalue clamp + optional
-        rotation-max -- nonlinear exactly near fidelity≈1 -- so we resample rather
-        than propagate a Jacobian. Fidelity uncertainty is read off the scalar
-        fidelity ensemble (NOT from per-element rho stds, which drop the strong
-        inter-element correlations). Populations are rotation-invariant (R is a
-        diagonal phase), so their CIs are well-defined regardless of `rotate`.
+        rotation gauge-fix. The rotation angle theta is fit ONCE on the point
+        estimate and then FROZEN across every bootstrap draw (rotate=<theta*>), so
+        the draws don't each re-run the argmax over theta -- re-maximizing per draw
+        would inflate the mean and shrink the CI (Schwemmer et al., PRL 114, 080403).
+        With theta frozen the rotation is a deterministic diagonal phase, so the
+        linear fidelity stays linear in the data and its CI is honest.
+
+        We report TWO fidelity ensembles:
+          * linear_fidelity -- from the unprojected rho (rho_pinv_trace_1). UNBIASED;
+            this is the headline number.
+          * fidelity        -- from the projected physical rho. Biased low for near-
+            pure targets; kept for reference / display.
+        Fidelity uncertainty is read off the scalar fidelity ensembles (NOT from
+        per-element rho stds, which drop the strong inter-element correlations).
+        Populations are rotation-invariant (R is a diagonal phase), so their CIs are
+        well-defined regardless of `rotate`.
 
         Captures shot noise ONLY -- not confusion-matrix / alpha_scale / Fock-
         truncation systematics. Report it as a statistical error bar, not a budget.
@@ -422,21 +455,27 @@ class WignerAnalysis(GeneralFitting):
         parity0 = parity_from_counts(parity_counts, rng=None)
         point = self.wigner_analysis_results(parity0, initial_state=initial_state,
                                              rotate=rotate)
+        # Freeze the gauge: fit theta once (above), reuse it as a FIXED angle in every
+        # draw so the bootstrap reflects shot noise at a fixed rotation, not argmax
+        # jitter. A numeric `rotate` already means "fixed angle"; 'optimal'/True/None
+        # all collapse to the point estimate's theta_max here.
+        theta_frozen = float(point['theta_max'])
 
         fids = np.empty(n_boot)
+        lin_fids = np.empty(n_boot)
         pops = np.empty((n_boot, self.m))
         # Collect the full complex base reconstruction (res['rho'] -- UNROTATED) per
         # draw. Re/Im element stds are taken on this unrotated frame: it's the rho the
-        # reconstruction returns and is independent of the `rotate` fidelity-max, so
-        # there's no phase jitter (taking Re/Im of the *rotated* rho under
-        # rotate='optimal' would smear off-diagonal phases -- |rho_nm| is invariant
-        # and kept for the display heatmap).
+        # reconstruction returns and is independent of the rotation gauge-fix, so
+        # there's no phase jitter (taking Re/Im of the *rotated* rho would smear
+        # off-diagonal phases -- |rho_nm| is invariant and kept for the display heatmap).
         rhos = np.empty((n_boot, self.m, self.m), dtype=np.complex128)
         for k in range(n_boot):
             p = parity_from_counts(parity_counts, rng=rng)
             res = self.wigner_analysis_results(p, initial_state=initial_state,
-                                               rotate=rotate)
+                                               rotate=theta_frozen)
             fids[k] = res['fidelity']
+            lin_fids[k] = res['linear_fidelity']
             pops[k] = np.real(np.diag(res['rho']))[:self.m]
             rhos[k] = np.asarray(res['rho'])[:self.m, :self.m]
 
@@ -445,12 +484,19 @@ class WignerAnalysis(GeneralFitting):
         rho_im_std = np.std(rhos.imag, axis=0, ddof=1)
         rho_abs_std = np.std(np.abs(rhos), axis=0, ddof=1)
         return {
+            'theta_frozen':     theta_frozen,
             'fidelity':         float(point['fidelity']),
             'fidelity_mean':    float(np.mean(fids)),
             'fidelity_std':     float(np.std(fids, ddof=1)),
             'fidelity_ci':      [float(np.percentile(fids, lo)),
                                  float(np.percentile(fids, hi))],
             'fidelity_samples': fids,
+            'linear_fidelity':      float(point['linear_fidelity']),
+            'linear_fidelity_mean': float(np.mean(lin_fids)),
+            'linear_fidelity_std':  float(np.std(lin_fids, ddof=1)),
+            'linear_fidelity_ci':   [float(np.percentile(lin_fids, lo)),
+                                     float(np.percentile(lin_fids, hi))],
+            'linear_fidelity_samples': lin_fids,
             'populations':      [float(x) for x in np.real(np.diag(point['rho']))[:self.m]],
             'populations_std':  [float(x) for x in np.std(pops, axis=0, ddof=1)],
             'populations_ci':   [[float(np.percentile(pops[:, i], lo)),
