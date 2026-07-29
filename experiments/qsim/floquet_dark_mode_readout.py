@@ -4412,6 +4412,36 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         expt.data["return_quadrature"] = expt.data["Pe"][:, 0] - expt.data["Pe"][:, 1]
         return expt.data["return_quadrature"]
 
+    @staticmethod
+    def _unwrap_cycle_phase(complex_return, physical_cycles, valid_mask, closed_mask, guide_weight=0.2):
+        raw_phase = np.rad2deg(np.angle(complex_return))
+        fit_mask = valid_mask & closed_mask
+        guide_mask = valid_mask & ~closed_mask
+
+        # Closed-pair points are two physical cycles apart, so their slope is unique modulo 180 deg/cycle.
+        slopes = np.linspace(-90., 90., 18001)
+        fit_return = complex_return[fit_mask] / np.abs(complex_return[fit_mask])
+        rotation = np.exp(-1j * np.deg2rad(np.outer(slopes, physical_cycles[fit_mask])))
+        score = np.abs(rotation @ fit_return) / len(fit_return)
+
+        # Odd points may have a different offset; only their internal phase progression is used as a weak guide.
+        if np.count_nonzero(guide_mask) > 1:
+            guide_return = complex_return[guide_mask] / np.abs(complex_return[guide_mask])
+            rotation = np.exp(-1j * np.deg2rad(np.outer(slopes, physical_cycles[guide_mask])))
+            score += guide_weight * np.abs(rotation @ guide_return) / len(guide_return)
+
+        slope = slopes[np.argmax(score)]
+        phase = np.full(len(complex_return), np.nan)
+        for mask in [fit_mask, guide_mask]:
+            if not np.any(mask):
+                continue
+            unit_return = complex_return[mask] / np.abs(complex_return[mask])
+            rotated_return = unit_return * np.exp(-1j * np.deg2rad(slope * physical_cycles[mask]))
+            intercept = np.rad2deg(np.angle(np.sum(rotated_return)))
+            phase_model = intercept + slope * physical_cycles[mask]
+            phase[mask] = raw_phase[mask] + 360. * np.round((phase_model - raw_phase[mask]) / 360.)
+        return phase
+
     @classmethod
     def analyze_cycle_phase(cls, #batch_expt is plugged in
                             phi0_expts, 
@@ -4488,8 +4518,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if np.count_nonzero(fit_mask) < 3:
             raise RuntimeError(f"{tuple(occupation)} has too few valid IQ points")
 
-        phase = np.full(len(cycle_pairs), np.nan)
-        phase[valid_mask] = np.rad2deg(np.unwrap(np.angle(complex_return[valid_mask])))
+        phase = cls._unwrap_cycle_phase(complex_return, physical_cycles, valid_mask, closed_mask)
         parameters, covariance = np.polyfit(physical_cycles[fit_mask], 
                                             phase[fit_mask], 
                                             1, 
