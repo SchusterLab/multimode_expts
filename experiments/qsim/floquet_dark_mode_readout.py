@@ -2784,13 +2784,16 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
     @staticmethod
     def _get_encoder_pulses(occupations, swap_stors):
-        """Encode ``[n_M1] + [n_S for S in swap_stors]``."""
+        """
+        Returning encoding pulse sequence as per `prepulse_creator2`.
+        So each element in the list follows
+            - output = [pulse1, pulse2, ...]
+            - pulse1 = ['transition_name', 'which_transition', 'pi or hpi', relative_phase]
+        The input of occupation should be n-string in the order of [n_M1] + [n_S for S in swap_stors].
+        The shelving is done except for the final step, which is when last_mode and last_photon is true
+        """
 
-        occupied_modes = [
-            (stor, occupation)
-            for stor, occupation in zip(swap_stors, occupations[1:])
-            if occupation > 0
-        ] 
+        occupied_modes = [(stor, occupation) for stor, occupation in zip(swap_stors, occupations[1:]) if occupation > 0] 
         if occupations[0] > 0:
             # M1 is loaded last because storage loading passes through M1.
             occupied_modes.append((0, occupations[0]))
@@ -2803,33 +2806,29 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 last_photon = n == photon_number - 1
                 last_ladder_step = last_mode and last_photon
 
-                encoder_pulses.append([
-                    "multiphoton", f"e{n}-f{n}", "pi", 0.0,
-                ])
-
+                encoder_pulses.append(["multiphoton", f"e{n}-f{n}", "pi", 0.0,])
                 if not last_ladder_step:
-                    encoder_pulses.append([
-                        "qubit", "ge_broadband", "pi", 0.0,
-                    ]) 
-
-                encoder_pulses.append([
-                    "multiphoton", f"f{n}-g{n + 1}", "pi", 0.0,
-                ])
-
+                    encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,]) 
+                encoder_pulses.append(["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0,])
                 if mode > 0 and last_photon:
-                    encoder_pulses.append([
-                        "storage", f"M1-S{mode}", "pi", 0.0,
-                    ]) 
-
+                    encoder_pulses.append(["storage", f"M1-S{mode}", "pi", 0.0,]) 
                 if not last_ladder_step:
-                    encoder_pulses.append([
-                        "qubit", "ge_broadband", "pi", 0.0,
-                    ])
+                    encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,])
 
         return encoder_pulses
 
     @staticmethod
-    def _get_inverse_pulses(encoder_pulses): #inversing the pulse sequence. 
+    def _get_inverse_pulses(encoder_pulses): 
+        """
+        The input is list of the pulse that follows the syntax of `prepulse_creator2`.
+            - input = [pulse1, pulse2, ...]
+            - pulse1 = ['transition_name', 'which_transition', 'pi or hpi', relative_phase]
+        The function gives the inverse of the input pulse list, by reversing the order and 
+        adding relative phase of 180 deg to each pulse.
+        Note that the phase is changed by modifying pulse[3] by the aforementioned syntax
+            
+        """
+        
         inverse_pulses = []
         for pulse in reversed(encoder_pulses):
             pulse = list(pulse)
@@ -2838,6 +2837,13 @@ class NPhotonHamiltonianSpectroscopyProgram(
         return inverse_pulses
 
     def _add_wait_after_storage_pulses(self, pulses):
+        """
+        This is to add wait after manipulate storage swap pulses, and 
+        this follows the reasoning of `man_stor_swap` method in the MMbase.
+        The default is 0.2 us, but this can be modified by specifying `storage_pulse_wait_us` in the 
+        experimental config when the program is executed.
+        """
+        
         wait_us = float(self.cfg.expt.get(
             "storage_pulse_wait_us", 0.2))
         if wait_us <= 0.0:
@@ -2852,14 +2858,22 @@ class NPhotonHamiltonianSpectroscopyProgram(
         return pulses_with_wait
 
     def initialize(self):
+        """
+        The primary purpose of overriding `initialize` method is for the initialization of phase calibration matrix.
+        For now, `storage_phase_matrix` is not really being used, as the phase accumulating during floquet cycle matters.
+        There are two mode of calibration:  `decoder` and `final_analyzer`
+        1. `decoder`
+        - uses `decoder_phase_matrix` for the calibration of ac stark shift on every sideband transition including fn_gn+1.
+        2. `final_analyzer`
+        - 
+        """
+        
         ecfg = self.cfg.expt
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         if len(set(swap_stors)) != len(swap_stors):
             raise ValueError(f"swap_stors must be distinct; got {swap_stors}")
         if any(stor < 1 or stor > 7 for stor in swap_stors):
-            raise ValueError(
-                f"swap_stors entries must be in 1..7; got {swap_stors}"
-            )
+            raise ValueError(f"swap_stors entries must be in 1..7; got {swap_stors}")
 
         matrix_shape = (len(swap_stors), len(swap_stors))
         storage_phase_matrix = ecfg.get("storage_phase_matrix", None)
@@ -2867,33 +2881,20 @@ class NPhotonHamiltonianSpectroscopyProgram(
             storage_phase_matrix = np.asarray(
                 storage_phase_matrix, dtype=float)
             if storage_phase_matrix.shape != matrix_shape:
-                raise ValueError(
-                    f"storage_phase_matrix must have shape {matrix_shape}; "
-                    f"got {storage_phase_matrix.shape}"
-                )
+                raise ValueError(f"storage_phase_matrix must have shape {matrix_shape}; got {storage_phase_matrix.shape}")
             ecfg.storage_phase_matrix = storage_phase_matrix
 
-        decoder_matrix_shape = (
-            len(swap_stors) + 1,
-            len(swap_stors),
-        )
+        decoder_matrix_shape = (len(swap_stors) + 1,len(swap_stors),)
+        
         decoder_phase_matrix = ecfg.get("decoder_phase_matrix", None)
-        self.decoder_phase_matrix_is_calibrated = \
-            decoder_phase_matrix is not None
+        self.decoder_phase_matrix_is_calibrated = decoder_phase_matrix is not None
 
         if decoder_phase_matrix is None:
             self.decoder_phase_matrix = np.zeros(decoder_matrix_shape)
         else:
-            decoder_phase_matrix = np.asarray(
-                decoder_phase_matrix,
-                dtype=float,
-            )
+            decoder_phase_matrix = np.asarray(decoder_phase_matrix,dtype=float,)
             if decoder_phase_matrix.shape != decoder_matrix_shape:
-                raise ValueError(
-                    "decoder_phase_matrix must have shape "
-                    f"{decoder_matrix_shape}; got "
-                    f"{decoder_phase_matrix.shape}"
-                )
+                raise ValueError(f"decoder_phase_matrix must have shape {decoder_matrix_shape}; got {decoder_phase_matrix.shape}")
             self.decoder_phase_matrix = decoder_phase_matrix.copy()
 
         if "spectroscopy_occupations" in ecfg:
@@ -2902,56 +2903,32 @@ class NPhotonHamiltonianSpectroscopyProgram(
             initial_mode = int(ecfg.spectroscopy_initial_mode)
             photon_number = int(ecfg.get("spectroscopy_photon_number", 1))
             if initial_mode not in [0] + swap_stors:
-                raise ValueError(
-                    "spectroscopy_initial_mode must be M1 (0) or one of "
-                    f"swap_stors={swap_stors}; got {initial_mode}"
-                )
+                raise ValueError(f"spectroscopy_initial_mode must be M1 (0) or one of swap_stors={swap_stors}; got {initial_mode}")
             occupations = [0] * (len(swap_stors) + 1)
-            occupation_index = (
-                0 if initial_mode == 0
-                else swap_stors.index(initial_mode) + 1
-            )
+            occupation_index = (0 if initial_mode == 0 else swap_stors.index(initial_mode) + 1)
             occupations[occupation_index] = photon_number
 
         if len(occupations) != len(swap_stors) + 1:
-            raise ValueError(
-                "spectroscopy_occupations must be [n_M1] followed by the "
-                f"occupations of swap_stors={swap_stors}; got {occupations}"
-            )
-        if any(
-                isinstance(n, (bool, np.bool_))
-                or not isinstance(n, (int, np.integer))
-                for n in occupations):
-            raise TypeError(
-                "spectroscopy_occupations entries must be non-negative integers"
-            )
+            raise ValueError(f"spectroscopy_occupations must be [n_M1] followed by the occupations of swap_stors={swap_stors}; got {occupations}")
+        if any(isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer)) for n in occupations):
+            raise TypeError("spectroscopy_occupations entries must be non-negative integers")
         occupations = [int(n) for n in occupations]
         if any(n < 0 for n in occupations):
-            raise ValueError(
-                "spectroscopy_occupations entries must be non-negative"
-            )
+            raise ValueError("spectroscopy_occupations entries must be non-negative")
 
         photon_number = sum(occupations)
         if photon_number < 1:
             raise ValueError("spectroscopy_occupations must contain photons")
         if max(occupations) > 9:
-            raise ValueError(
-                "The current multiphoton transition parser supports local "
-                "occupations only through n=9"
-            )
+            raise ValueError("The current multiphoton transition parser supports local occupations only through n=9")
 
         self.encoder_pulses = self._get_encoder_pulses(
             occupations, swap_stors)
 
-        if any(
-                pulse[1] == "ge_broadband"
-                for pulse in self.encoder_pulses):
+        if any(pulse[1] == "ge_broadband" for pulse in self.encoder_pulses):
             pulse_key = "pi_ge_broadband"
             if pulse_key not in self.cfg.device.qubit.pulses:
-                raise KeyError(
-                    "This occupation-string encoder requires "
-                    "device.qubit.pulses.pi_ge_broadband"
-                )
+                raise KeyError("This occupation-string encoder requires device.qubit.pulses.pi_ge_broadband")
 
             broadband_cfg = self.cfg.device.qubit.pulses[pulse_key]
             for field in ("frequency", "gain", "sigma", "length", "type"):
@@ -2961,31 +2938,21 @@ class NPhotonHamiltonianSpectroscopyProgram(
                         "device.qubit.pulses.pi_ge_broadband."
                         f"{field} must contain one value"
                     )
-            gain = np.asarray(
-                broadband_cfg.get("gain", []), dtype=float).reshape(-1)
+            gain = np.asarray(broadband_cfg.get("gain", []), dtype=float).reshape(-1)
+            
             if gain.size == 0 or gain[0] <= 0:
-                raise RuntimeError(
-                    "device.qubit.pulses.pi_ge_broadband.gain must be a "
-                    "configured nonzero value"
-                )
+                raise RuntimeError("device.qubit.pulses.pi_ge_broadband.gain must be a configured nonzero value")
 
         max_local_occupation = max(occupations)
         multiphoton_pi = self.cfg.device.multiphoton.pi
         for transition in ("en-fn", "fn-gn+1"):
             if transition not in multiphoton_pi:
-                raise KeyError(
-                    f"device.multiphoton.pi.{transition} is missing"
-                )
+                raise KeyError(f"device.multiphoton.pi.{transition} is missing")
+            
             for field in ("frequency", "gain", "length", "type", "sigma"):
-                values = np.asarray(
-                    multiphoton_pi[transition].get(field, [])
-                ).reshape(-1)
+                values = np.asarray(multiphoton_pi[transition].get(field, [])).reshape(-1)
                 if len(values) < max_local_occupation:
-                    raise RuntimeError(
-                        f"device.multiphoton.pi.{transition}.{field} needs "
-                        f"at least {max_local_occupation} entries for "
-                        f"spectroscopy_occupations={occupations}"
-                    )
+                    raise RuntimeError(f"device.multiphoton.pi.{transition}.{field} needs at least {max_local_occupation} entries for spectroscopy_occupations={occupations}")
 
         storage_dataset = self.cfg.device.storage._ds_storage
         for stor, occupation in zip(swap_stors, occupations[1:]):
@@ -2993,48 +2960,29 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 continue
             stor_name = f"M1-S{stor}"
             if storage_dataset.get_gain(stor_name) <= 0:
-                raise RuntimeError(
-                    f"{stor_name} needs a calibrated nonzero ds_storage gain"
-                )
+                raise RuntimeError(f"{stor_name} needs a calibrated nonzero ds_storage gain")
             if storage_dataset.get_pi(stor_name) <= 0:
-                raise RuntimeError(
-                    f"{stor_name} needs a calibrated ds_storage pi length"
-                )
+                raise RuntimeError(f"{stor_name} needs a calibrated ds_storage pi length")
 
         if ecfg.get("palindrome_scramble", False) \
                 and int(ecfg.floquet_cycle) % 2:
-            raise ValueError(
-                "palindrome spectroscopy uses an even number of nominal "
-                "cycles; one symmetric sample is a forward/reverse pair"
-            )
-        for flag in (
-                "load_man_dark", "swap_man_dark", "swap_man_large_dark",
-                "perform_wigner", "parity_readout", "multiparity_readout"):
+            raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
+        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark","perform_wigner", "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
-                raise ValueError(
-                    f"{flag}=True is incompatible with vacuum-referenced "
-                    "Hamiltonian spectroscopy"
-                )
+                raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
         analyzer_phase = float(
             ecfg.get("spectroscopy_analyzer_phase", 0.0))
-        phase_correction_mode = str(ecfg.get(
-            "spectroscopy_phase_correction_mode", "decoder"
-        ))
+        phase_correction_mode = str(ecfg.get("spectroscopy_phase_correction_mode", "decoder"))
         if phase_correction_mode not in ("decoder", "final_analyzer"):
-            raise ValueError(
-                "spectroscopy_phase_correction_mode must be "
-                "'decoder' or 'final_analyzer'"
-            )
+            raise ValueError("spectroscopy_phase_correction_mode must be 'decoder' or 'final_analyzer'")
 
         ecfg.spectroscopy_occupations = occupations
         ecfg.spectroscopy_prep_phase = prep_phase % 360.0
         ecfg.spectroscopy_analyzer_phase = analyzer_phase % 360.0
         ecfg.spectroscopy_phase_correction_mode = phase_correction_mode
-        ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get(
-            "final_analyzer_phase_per_cycle_deg", 0.0
-        ))
+        ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.0))
         ecfg.spectroscopy_photon_number = photon_number
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
@@ -3045,10 +2993,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         phase_correction_mode = ecfg.spectroscopy_phase_correction_mode
-        update_decoder_phases = (
-            ecfg.get("update_phases", True)
-            and phase_correction_mode == "decoder"
-        )
+        update_decoder_phases = (ecfg.get("update_phases", True) and phase_correction_mode == "decoder")
         storage_phase_offsets = [0.0] * len(swap_stors)
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
@@ -3070,20 +3015,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
             stor = int(pulse[1].split("-S")[1])
             stor_index = swap_stors.index(stor)
-            pulse[3] = self._mod360(
-                pulse[3] + storage_phase_offsets[stor_index]
-            )
-            self._advance_storage_phase_offsets(
-                phase_offsets=storage_phase_offsets,
-                swap_stors=swap_stors,
-                pulsed_stor=stor,
-            )
+            pulse[3] = self._mod360(pulse[3] + storage_phase_offsets[stor_index])
+            self._advance_storage_phase_offsets(phase_offsets=storage_phase_offsets,swap_stors=swap_stors,pulsed_stor=stor)
 
-        prepulse_cfg = [
-            ["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],
-        ] + encoder_pulses
-        prepulse_cfg = self._add_wait_after_storage_pulses(
-            prepulse_cfg)
+        prepulse_cfg = [["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],] + encoder_pulses
+        prepulse_cfg = self._add_wait_after_storage_pulses(prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(
@@ -3091,12 +3027,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
         self.sync_all()
 
         decoder_phase_deg = [0.0] * (len(swap_stors) + 1)
-        if update_decoder_phases \
-                and not self.decoder_phase_matrix_is_calibrated:
-            raise RuntimeError(
-                "decoder_phase_matrix is missing. Run the exact-path "
-                "Floquet phase calibration before spectroscopy."
-            )
+        if update_decoder_phases and not self.decoder_phase_matrix_is_calibrated:
+            raise RuntimeError("decoder_phase_matrix is missing. Run the exact-path Floquet phase calibration before spectroscopy.")
 
         # U(t)|n>. Each physical Floquet pulse advances the measured decoder
         # phase slopes in decoder_phase_deg. The inverse decoder later uses
@@ -3105,9 +3037,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
             disorder_phase_offsets=disorder_phase_offsets,
-            decoder_phase_offsets=(
-                decoder_phase_deg if update_decoder_phases else None
-            ),
+            decoder_phase_offsets=(decoder_phase_deg if update_decoder_phases else None),
         )
 
         # Decode |n> to |e,0>, then interfere it with |g,0>.
@@ -3116,12 +3046,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
             # Every f_n-g_(n+1) pulse transfers one M1 photon, so all n use
             # the same M1-frame correction. N ladder steps then give N times
             # that phase without an explicit photon-number multiplier.
-            if pulse[0] == "multiphoton" \
-                    and pulse[1].startswith("f") \
-                    and "-g" in pulse[1]:
-                pulse[3] = self._mod360(
-                    pulse[3] - decoder_phase_deg[0]
-                )
+            if pulse[0] == "multiphoton" and pulse[1].startswith("f") and "-g" in pulse[1]:
+                pulse[3] = self._mod360(pulse[3] - decoder_phase_deg[0])
 
             elif pulse[0] == "storage":
                 stor = int(pulse[1].split("-S")[1])
