@@ -5193,18 +5193,18 @@ class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
         cycle_pairs = np.asarray(self.data.get("cycle_pairs", self.data["xpts"]))
         displace_gains = np.asarray(self.data.get("displace_gains", self.data["ypts"]))
         time_us = 2 * cycle_pairs * self.data["floquet_cycle_us"]
-        zeros = np.zeros_like(self.data["avgi"])
         ramsey_data = AttrDict(dict(
             gain_list=displace_gains,
             xpts=np.tile(time_us, (len(displace_gains), 1)),
             g_avgi=self.data["avgi"], g_avgq=self.data["avgq"],
             g_amps=self.data["amps"], g_phases=self.data["phases"],
-            e_avgi=zeros, e_avgq=zeros, e_amps=zeros, e_phases=zeros,
+            e_avgi=self.data["avgi"], e_avgq=self.data["avgq"],
+            e_amps=self.data["amps"], e_phases=self.data["phases"],
         ))
         self._ramsey_fitter(ramsey_data).analyze(fit=True, **kwargs)
         self.data.update(ramsey_data)
-        self.data.cycle_pairs = cycle_pairs
-        self.data.displace_gains = displace_gains
+        self.data["cycle_pairs"] = cycle_pairs
+        self.data["displace_gains"] = displace_gains
         return self.data
 
     def display(self, data=None, **kwargs):
