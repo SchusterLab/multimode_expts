@@ -3190,14 +3190,20 @@ class EntireFloquetCyclePhaseCalibrationProgram(
     ``final_analyzer_phase_per_cycle_deg`` is used only for the end-to-end
     sign check.  It is multiplied by ``2 * n_cycle_pair`` and added to the
     final qubit half-pi.
+
+    ``n_physical_cycle`` also permits odd guide points.  An odd point plays
+    all complete forward/inverse pairs followed by one forward cycle.
     """
 
     def initialize(self):
         ecfg = self.cfg.expt
-        n_cycle_pair = int(ecfg.n_cycle_pair)
+        if ecfg.get("phase_unwrap_mode", "pair") == "odd_guide":
+            n_physical_cycle = int(ecfg.n_physical_cycle)
+        else:
+            n_physical_cycle = 2 * int(ecfg.n_cycle_pair)
 
-        if n_cycle_pair < 0:
-            raise ValueError("n_cycle_pair must be non-negative")
+        if n_physical_cycle < 0:
+            raise ValueError("n_physical_cycle must be non-negative")
         if "spectroscopy_occupations" not in ecfg:
             raise ValueError(
                 "EntireFloquetCyclePhaseCalibrationProgram requires "
@@ -3231,13 +3237,15 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             "zero_floquet_gain", False
         ))
         ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
+        ecfg.n_physical_cycle = n_physical_cycle
         ecfg.floquet_cycle = 0
         ecfg.palindrome_scramble = False
         ecfg.ro_stor = 0
         super().initialize()
 
     def _play_closed_floquet_cycle_pairs(
-            self, n_cycle_pair, phase_offsets, swap_stors):
+            self, n_cycle_pair, phase_offsets, swap_stors,
+            extra_forward=False):
         update_phases = bool(self.cfg.expt.get("update_phases", True))
         sync_cycles = int(
             self.cfg.expt.get("scramble_sync_cycles", 10))
@@ -3302,13 +3310,29 @@ class EntireFloquetCyclePhaseCalibrationProgram(
                     forward_phases,
                 )
 
+        if extra_forward:
+            for stor in swap_stors:
+                stor_index = swap_stors.index(stor)
+                phase_deg = self._mod360(phase_offsets[stor_index])
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
         self.sync_all()
 
     def body(self):
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        n_cycle_pair = int(ecfg.n_cycle_pair)
+        n_physical_cycle = int(ecfg.n_physical_cycle)
+        n_cycle_pair = n_physical_cycle // 2
         phase_offsets = [0.0] * len(swap_stors)
 
         self.reset_and_sync()
@@ -3335,14 +3359,14 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             n_cycle_pair=n_cycle_pair,
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
+            extra_forward=n_physical_cycle % 2,
         )
 
         postpulse_cfg = self._get_inverse_pulses(
             self.encoder_pulses)
         analyzer_phase = (
             float(ecfg.spectroscopy_analyzer_phase)
-            + 2
-            * n_cycle_pair
+            + n_physical_cycle
             * float(ecfg.final_analyzer_phase_per_cycle_deg)
         )
         postpulse_cfg.append([
@@ -4394,7 +4418,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                             phi90_expts, 
                             occupation, 
                             cycle_pairs, 
-                            radius_fraction=0.1):
+                            radius_fraction=0.1,
+                            unwrap_mode="pair"):
         """
         The method recieves phi0 and phi90 experiments to
             1. reconstruct Q0+iQ90 
@@ -4423,6 +4448,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if len(phi0_expts) != len(phi90_expts):
             raise ValueError("phi=0 and phi=90 repeat counts differ")
 
+        if unwrap_mode not in ("pair", "odd_guide"):
+            raise ValueError("unwrap_mode must be 'pair' or 'odd_guide'")
         cycle_pairs = np.asarray(cycle_pairs)
         complex_returns = []
         fnames = []
@@ -4450,13 +4477,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         radius_floor = 0.
         if len(positive):
             radius_floor = radius_fraction * np.median(positive)
-        fit_mask = np.isfinite(complex_return) & (magnitude > radius_floor)
+        valid_mask = np.isfinite(complex_return) & (magnitude > radius_floor)
+        if unwrap_mode == "odd_guide":
+            physical_cycles = cycle_pairs
+            closed_mask = physical_cycles % 2 == 0
+        else:
+            physical_cycles = 2 * cycle_pairs
+            closed_mask = np.ones(len(cycle_pairs), dtype=bool)
+        fit_mask = valid_mask & closed_mask
         if np.count_nonzero(fit_mask) < 3:
             raise RuntimeError(f"{tuple(occupation)} has too few valid IQ points")
 
-        physical_cycles = 2 * cycle_pairs
         phase = np.full(len(cycle_pairs), np.nan)
-        phase[fit_mask] = np.rad2deg(np.unwrap(np.angle(complex_return[fit_mask])))
+        phase[valid_mask] = np.rad2deg(np.unwrap(np.angle(complex_return[valid_mask])))
         parameters, covariance = np.polyfit(physical_cycles[fit_mask], 
                                             phase[fit_mask], 
                                             1, 
@@ -4472,6 +4505,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             relative_return=relative_return,
             return_phase=phase,
             phase_fit=phase_fit,
+            closed_mask=closed_mask,
+            unwrap_mode=unwrap_mode,
             fnames=fnames,
             phase_per_cycle=parameters[0],
             phase_error=np.sqrt(covariance[0, 0]),
@@ -4648,7 +4683,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(energies_MHz))))
 
         return AttrDict(dict(
-            energy_MHz=energy_MHz, measured_local=measured_local, theory_local=theory_local,
+            time_us=time_us, energy_MHz=energy_MHz, measured_local=measured_local, theory_local=theory_local,
             measured=measured, theory=theory, energies_MHz=energies_MHz,
             eigenstate_weights=eigenstate_weights, physical_kerr_MHz=physical_kerr_MHz,
             complete_basis=complete_basis, energy_limit_MHz=energy_limit_MHz,
@@ -4666,6 +4701,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
         iq_axis.plot(result.complex_return.real, result.complex_return.imag, "o--", color="black", linewidth=1.2, markersize=4, label="raw return")
         points = iq_axis.scatter(result.complex_return.real, result.complex_return.imag, c=result.physical_cycles, cmap="viridis", s=28, zorder=3)
+        if result.get("unwrap_mode", "pair") == "odd_guide":
+            iq_axis.scatter(result.complex_return.real[result.closed_mask], result.complex_return.imag[result.closed_mask], color="tab:red", s=30, zorder=4, label="closed pair")
         iq_limit = 1.15 * np.nanmax(np.abs(result.complex_return))
         if iq_limit <= 0.:
             iq_limit = 1.
@@ -4677,10 +4714,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fig.colorbar(points, ax=iq_axis, label="number of physical entire Floquet cycles")
 
         relative_axis.plot(result.physical_cycles, result.relative_return, "o-")
+        if result.get("unwrap_mode", "pair") == "odd_guide":
+            relative_axis.plot(result.physical_cycles[result.closed_mask], result.relative_return[result.closed_mask], "o", color="tab:red")
         relative_axis.axhline(1., color="0.7")
         relative_axis.set(xlabel="number of physical entire Floquet cycles", ylabel=r"$|A|/|A(0)|$", title="relative return")
 
         phase_axis.plot(result.physical_cycles, result.return_phase, "o", label="measured")
+        if result.get("unwrap_mode", "pair") == "odd_guide":
+            phase_axis.plot(result.physical_cycles[result.closed_mask], result.return_phase[result.closed_mask], "o", color="tab:red", label="closed pair (fit)")
         phase_axis.plot(result.physical_cycles, result.phase_fit, label="fit")
         phase_axis.set(xlabel="number of physical entire Floquet cycles", ylabel="return phase (deg)")
         phase_axis.legend()
@@ -4721,6 +4762,36 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return fig
 
     @staticmethod
+    def display_occupation(reconstruction, spectrum, occupation):
+        if isinstance(occupation, (int, np.integer)):
+            row = int(occupation)
+            if row < 0 or row >= len(reconstruction.occupations):
+                raise IndexError("occupation row is outside the spectroscopy data")
+        else:
+            occupation = tuple(occupation)
+            if occupation not in reconstruction.occupations:
+                raise ValueError(f"{occupation} is not in the spectroscopy data")
+            row = reconstruction.occupations.index(occupation)
+        occupation = tuple(reconstruction.occupations[row])
+
+        measured = spectrum.measured_local[row]
+        theory = spectrum.theory_local[row].copy()
+        if np.max(theory) > 0.:
+            theory *= np.max(measured) / np.max(theory)
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+        axes[0].plot(spectrum.time_us, reconstruction.A[row].real, label="Re A")
+        axes[0].plot(spectrum.time_us, reconstruction.A[row].imag, label="Im A")
+        axes[0].set(xlabel="time (us)", ylabel="return amplitude", title=str(occupation))
+        axes[0].legend()
+
+        axes[1].plot(spectrum.energy_MHz, measured, color="black", label="measured")
+        axes[1].plot(spectrum.energy_MHz, theory, color="tab:orange", label="theory (shape scaled)")
+        axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=f"N={sum(occupation)} projected spectrum {occupation}")
+        axes[1].legend()
+        return fig
+
+    @staticmethod
     def display_result(reconstruction, 
                        spectrum, 
                        mode_labels):
@@ -4749,10 +4820,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz")
         return fig
 
-    def display(self, data=None, **kwargs):
+    def display(self, data=None, occupation=None, **kwargs):
         if data is not None:
             self.data = data
         if "spectrum" in self.data:
+            if occupation is not None:
+                return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation)
             return self.display_result(self.data.reconstruction, 
                                        self.data.spectrum, 
                                        self.data.mode_labels)
@@ -4872,13 +4945,23 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             saved_cycle_pairs = np.asarray(phi0_expts[0].cfg.expt.n_cycle_pairs)
             if cycle_pairs is not None and not np.array_equal(saved_cycle_pairs, cycle_pairs):
                 raise ValueError(f"{occupation}: calibration cycles do not match the requested cycles")
+            saved_unwrap_mode = phi0_expts[0].cfg.expt.get("phase_unwrap_mode", "pair")
+            if saved_unwrap_mode == "odd_guide":
+                saved_cycle_counts = np.asarray(phi0_expts[0].cfg.expt.n_physical_cycles)
+            else:
+                saved_cycle_counts = saved_cycle_pairs
             for expt in phi0_expts + phi90_expts:
                 if not np.array_equal(expt.cfg.expt.n_cycle_pairs, saved_cycle_pairs):
                     raise ValueError(f"{occupation}: calibration configs use different cycles")
+                if expt.cfg.expt.get("phase_unwrap_mode", "pair") != saved_unwrap_mode:
+                    raise ValueError(f"{occupation}: calibration configs use different unwrap modes")
+                if saved_unwrap_mode == "odd_guide" and not np.array_equal(expt.cfg.expt.n_physical_cycles, saved_cycle_counts):
+                    raise ValueError(f"{occupation}: calibration configs use different physical cycles")
             results.append(cls.analyze_cycle_phase(phi0_expts,
                                                    phi90_expts,
                                                    occupation,
-                                                   saved_cycle_pairs,))
+                                                   saved_cycle_counts,
+                                                   unwrap_mode=saved_unwrap_mode,))
         return AttrDict(dict(
             occupations=occupation_order,
             results=results,
@@ -4893,7 +4976,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                           cycle_pairs,
                           sync_cycles=10, 
                           repeats=1, 
-                          reps=1500):
+                          reps=1500,
+                          unwrap_mode="pair"):
         """
         Returns dictionary of 
             - default_expt_cfg
@@ -4910,21 +4994,36 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             calibration_batch = EncSpec.calibration_batch()
             calibration_expt = calibration_runner.execute(calibration_batch.configs)
         """
+        if unwrap_mode not in ("pair", "odd_guide"):
+            raise ValueError("unwrap_mode must be 'pair' or 'odd_guide'")
+
         defaults = deepcopy(default_expt_cfg)
         defaults.update(dict(
             reps=reps, 
             storage_reset=swap_stors, 
             swap_stors=swap_stors,
-            n_cycle_pairs=cycle_pairs.tolist(), 
+            n_cycle_pairs=cycle_pairs.tolist(),
             scramble_sync_cycles=sync_cycles,
             
             floquet_hardware_loop=False,
             detunings=[0.] * len(swap_stors), #detuning must be 0 for the calibration
             update_phases=True, 
             palindrome_scramble=False, 
+            phase_unwrap_mode=unwrap_mode,
             spectroscopy_prep_phases=[0., 180.],
-            swept_params=["n_cycle_pair", "spectroscopy_prep_phase"],
         ))
+        if unwrap_mode == "odd_guide":
+            physical_cycles = []
+            for cycle_pair in cycle_pairs.tolist():
+                physical_cycles.extend([2 * cycle_pair, 2 * cycle_pair + 1])
+            defaults.update(dict(
+                n_physical_cycles=physical_cycles,
+                swept_params=["n_physical_cycle", "spectroscopy_prep_phase"],
+            ))
+        else:
+            defaults.update(dict(
+                swept_params=["n_cycle_pair", "spectroscopy_prep_phase"],
+            ))
         configs = [
             dict(spectroscopy_occupations=occupation, 
                  spectroscopy_analyzer_phase=phi,
