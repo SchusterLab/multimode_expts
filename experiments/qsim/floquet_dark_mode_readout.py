@@ -515,6 +515,23 @@ class DarkBaseProgram(QsimBaseProgram):
 
         self.sync_all(200)
 
+    def calculate_floquet_cycle_us(self):
+        ecfg = self.cfg.expt
+        cycle_us = len(ecfg.swap_stors) * self.cycles2us(ecfg.get("scramble_sync_cycles", 10))
+        for stor in ecfg.swap_stors:
+            index = stor - 1
+            ch = self.m1s_ch[index]
+            if self.m1s_style[index] == "arb": #I think naming this as 'arb' is not really a good convention
+                sigma_us = ecfg.get("floquet_gauss_sigma", None) # I suspect this is needed now. Could be deleted
+                if sigma_us is None:
+                    sigma_us = self.swap_ds.get_gauss_sigma(f"M1-S{stor}")
+                pulse_cycles = self.us2cycles(sigma_us, gen_ch=ch) * self.swap_ds.get_gauss_n_sigma(f"M1-S{stor}")
+            else:
+                ramp_cycles = self.pi_m1_sigma_low if self.m1s_is_low_freq[index] else self.pi_m1_sigma_high
+                pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
+            cycle_us += self.cycles2us(pulse_cycles, gen_ch=ch)
+        return cycle_us
+
     def multi_parity_readout(self, 
                              name='multiparity_readout', 
                              register_label='mpreadout', 
@@ -890,6 +907,90 @@ class DarkBaseProgram(QsimBaseProgram):
 
             phase_offsets[j_stor] += phase_shift
             phase_offsets[j_stor] = self._mod360(phase_offsets[j_stor])
+
+    def _play_closed_floquet_cycle_pairs(
+            self, n_cycle_pair, phase_offsets, swap_stors,
+            extra_forward=False):
+        update_phases = bool(self.cfg.expt.get("update_phases", True))
+        sync_cycles = int(
+            self.cfg.expt.get("scramble_sync_cycles", 10))
+        pulse_args_by_stor = {
+            stor: deepcopy(self.m1s_kwargs[stor - 1])
+            for stor in swap_stors
+        }
+        if self.cfg.expt.zero_floquet_gain:
+            for pulse_args in pulse_args_by_stor.values():
+                pulse_args["gain"] = 0
+
+        self.sync_all()
+
+        for pair_index in range(n_cycle_pair):
+            forward_phases = []
+            for stor in swap_stors:
+                stor_index = swap_stors.index(stor)
+                phase_deg = self._mod360(
+                    phase_offsets[stor_index])
+                forward_phases.append((stor, phase_deg))
+
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+            # Replay the actual forward control phases in reverse order and
+            # add 180 degrees.  Recomputing the inverse phases from the live
+            # tracker would not be the adjoint of the emitted forward cycle.
+            for stor, forward_phase_deg in reversed(forward_phases):
+                inverse_phase_deg = self._mod360(
+                    forward_phase_deg + 180.0
+                )
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    inverse_phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+            if self.cfg.expt.get("debug", False):
+                print(
+                    "[EntireCyclePhase] pair=",
+                    pair_index,
+                    "zero Floquet gain=",
+                    self.cfg.expt.zero_floquet_gain,
+                    "forward phases=",
+                    forward_phases,
+                )
+
+        if extra_forward:
+            for stor in swap_stors:
+                stor_index = swap_stors.index(stor)
+                phase_deg = self._mod360(phase_offsets[stor_index])
+                pulse_args = pulse_args_by_stor[stor]
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg, gen_ch=pulse_args["ch"])
+                self.setup_and_pulse(**pulse_args)
+                self.sync_all(sync_cycles)
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+        self.sync_all()
 
     def _advance_storage_phase_offsets(
             self, phase_offsets, swap_stors, pulsed_stor):
@@ -3243,90 +3344,6 @@ class EntireFloquetCyclePhaseCalibrationProgram(
         ecfg.ro_stor = 0
         super().initialize()
 
-    def _play_closed_floquet_cycle_pairs(
-            self, n_cycle_pair, phase_offsets, swap_stors,
-            extra_forward=False):
-        update_phases = bool(self.cfg.expt.get("update_phases", True))
-        sync_cycles = int(
-            self.cfg.expt.get("scramble_sync_cycles", 10))
-        pulse_args_by_stor = {
-            stor: deepcopy(self.m1s_kwargs[stor - 1])
-            for stor in swap_stors
-        }
-        if self.cfg.expt.zero_floquet_gain:
-            for pulse_args in pulse_args_by_stor.values():
-                pulse_args["gain"] = 0
-
-        self.sync_all()
-
-        for pair_index in range(n_cycle_pair):
-            forward_phases = []
-            for stor in swap_stors:
-                stor_index = swap_stors.index(stor)
-                phase_deg = self._mod360(
-                    phase_offsets[stor_index])
-                forward_phases.append((stor, phase_deg))
-
-                pulse_args = pulse_args_by_stor[stor]
-                pulse_args["phase"] = self.deg2reg(
-                    phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
-                self.sync_all(sync_cycles)
-
-                if update_phases:
-                    self._advance_phase_offsets(
-                        phase_offsets=phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-
-            # Replay the actual forward control phases in reverse order and
-            # add 180 degrees.  Recomputing the inverse phases from the live
-            # tracker would not be the adjoint of the emitted forward cycle.
-            for stor, forward_phase_deg in reversed(forward_phases):
-                inverse_phase_deg = self._mod360(
-                    forward_phase_deg + 180.0
-                )
-                pulse_args = pulse_args_by_stor[stor]
-                pulse_args["phase"] = self.deg2reg(
-                    inverse_phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
-                self.sync_all(sync_cycles)
-
-                if update_phases:
-                    self._advance_phase_offsets(
-                        phase_offsets=phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-
-            if self.cfg.expt.get("debug", False):
-                print(
-                    "[EntireCyclePhase] pair=",
-                    pair_index,
-                    "zero Floquet gain=",
-                    self.cfg.expt.zero_floquet_gain,
-                    "forward phases=",
-                    forward_phases,
-                )
-
-        if extra_forward:
-            for stor in swap_stors:
-                stor_index = swap_stors.index(stor)
-                phase_deg = self._mod360(phase_offsets[stor_index])
-                pulse_args = pulse_args_by_stor[stor]
-                pulse_args["phase"] = self.deg2reg(
-                    phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
-                self.sync_all(sync_cycles)
-                if update_phases:
-                    self._advance_phase_offsets(
-                        phase_offsets=phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-        self.sync_all()
-
     def body(self):
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
@@ -3380,6 +3397,44 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             cfg, postpulse.pulse, prefix="entire_cycle_phase_post_")
         self.sync_all()
         self.measure_wrapper()
+
+
+class FloquetDisplacementKerrProgram(DarkBaseProgram):
+    """
+    D(alpha) -> closed Floquet pairs -> D(alpha) -> vacuum readout using `slow_pi_ge`.
+    Now displacement pulse entirely relies on displace_man, which receives complex
+    alpha and converts it into magnitude and phase.
+    Here, the prepulse and postpulse is turned off, as relying on prepulse and postpulse
+    seemed unstraightforward.
+    
+    """
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        ecfg.prepulse = False #Enforcing prepulse to be off
+        ecfg.postpulse = False #Enforcing postpulse to be off
+        ecfg.init_stor = 0
+        ecfg.ro_stor = 0
+        ecfg.slow_pi_ge_readout = True
+        gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha
+        if isinstance(gain_to_alpha, (list, tuple, np.ndarray)):
+            gain_to_alpha = gain_to_alpha[ecfg.man_mode_no - 1]
+        ecfg.init_alpha = ecfg.displace_gain * gain_to_alpha
+        super().initialize()
+        self.floquet_cycle_us = self.calculate_floquet_cycle_us()
+        ecfg.floquet_cycle_us = self.floquet_cycle_us
+
+    def core_pulses(self):
+        ecfg = self.cfg.expt
+        swap_stors = list(ecfg.swap_stors)
+        phase_offsets = [0.] * len(swap_stors)
+        self.displace_man(alpha=ecfg.init_alpha, setup=False, play=True)
+        self._play_closed_floquet_cycle_pairs(ecfg.n_cycle_pair, phase_offsets, swap_stors)
+        time_us = 2 * ecfg.n_cycle_pair * self.floquet_cycle_us
+        # Same gain/sign as the first displacement; only the known Ramsey frame advances.
+        second_alpha = ecfg.init_alpha * np.exp(-2j * np.pi * ecfg.ramsey_freq * time_us)
+        self.displace_man(alpha=second_alpha, setup=False, play=True)
+        self.sync_all()
 
 
 class SinglePhotonFloquetSpectroscopyProgram(
@@ -5111,3 +5166,58 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ]
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs))
+
+
+class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
+    """Fit Floquet Kerr with the existing cavity-Ramsey gain-sweep analysis."""
+
+    def acquire(self, progress=False, debug=False):
+        data = super().acquire(progress=progress, debug=debug)
+        data["floquet_cycle_us"] = self.prog.floquet_cycle_us
+        self.cfg.expt.floquet_cycle_us = self.prog.floquet_cycle_us
+        return data
+
+    def _ramsey_fitter(self, data):
+        cfg = deepcopy(self.cfg)
+        gain_to_alpha = cfg.device.manipulate.gain_to_alpha
+        if isinstance(gain_to_alpha, (list, tuple, np.ndarray)):
+            gain_to_alpha = gain_to_alpha[cfg.expt.man_mode_no - 1]
+        cfg.device.manipulate.gain_to_alpha = [gain_to_alpha]
+        return CavityRamseyGainSweepFitting(data, config=cfg)
+
+    def analyze(self, data=None, fit=True, **kwargs):
+        if data is not None:
+            self.data = data
+        if not fit:
+            return self.data
+        cycle_pairs = np.asarray(self.data.get("cycle_pairs", self.data["xpts"]))
+        displace_gains = np.asarray(self.data.get("displace_gains", self.data["ypts"]))
+        time_us = 2 * cycle_pairs * self.data["floquet_cycle_us"]
+        zeros = np.zeros_like(self.data["avgi"])
+        ramsey_data = AttrDict(dict(
+            gain_list=displace_gains,
+            xpts=np.tile(time_us, (len(displace_gains), 1)),
+            g_avgi=self.data["avgi"], g_avgq=self.data["avgq"],
+            g_amps=self.data["amps"], g_phases=self.data["phases"],
+            e_avgi=zeros, e_avgq=zeros, e_amps=zeros, e_phases=zeros,
+        ))
+        self._ramsey_fitter(ramsey_data).analyze(fit=True, **kwargs)
+        self.data.update(ramsey_data)
+        self.data.cycle_pairs = cycle_pairs
+        self.data.displace_gains = displace_gains
+        return self.data
+
+    def display(self, data=None, **kwargs):
+        if data is not None:
+            self.data = data
+        if "Kerr" not in self.data:
+            self.analyze()
+        return self._ramsey_fitter(self.data).display(**kwargs)
+
+    def save_data(self, data=None):
+        if data is None:
+            data = self.data
+        peaks = {key: data.pop(key) for key in ["time_peak_g", "time_peak_e"] if key in data}
+        fname = super().save_data(data)
+        data.update(peaks)
+        return fname
