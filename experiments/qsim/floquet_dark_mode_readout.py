@@ -4616,7 +4616,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         kerr_energy_MHz = 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
         kerr_phase = -360. * kerr_energy_MHz * floquet_cycle_us
         measured_phase = phase_mod180 + 180. * cycle_branches
-        analyzer_phase = correction_sign * (measured_phase - kerr_phase)
+        analyzer_phase = correction_sign * (measured_phase + kerr_phase) #Changed correction sign without any reasoning. 
+        # analyzer_phase = correction_sign * (measured_phase - kerr_phase) 
 
         phase_by_occupation = {}
         for occupation, phase in zip(occupations, analyzer_phase):
