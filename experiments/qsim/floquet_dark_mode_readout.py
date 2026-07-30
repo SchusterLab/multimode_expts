@@ -2865,7 +2865,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         1. `decoder`
         - uses `decoder_phase_matrix` for the calibration of ac stark shift on every sideband transition including fn_gn+1.
         2. `final_analyzer`
-        - 
+        - uses `expt.cfg.final_analyzer_phase_per_cycle_deg` at the final hpi to calibrate ac stark shift out collectively.
         """
         
         ecfg = self.cfg.expt
@@ -3022,8 +3022,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         prepulse_cfg = self._add_wait_after_storage_pulses(prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
-        self.custom_pulse(
-            cfg, prepulse.pulse, prefix="floquet_spec_pre_")
+        self.custom_pulse(cfg, prepulse.pulse, prefix="floquet_spec_pre_")
         self.sync_all()
 
         decoder_phase_deg = [0.0] * (len(swap_stors) + 1)
@@ -3068,17 +3067,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
         if phase_correction_mode == "final_analyzer":
             # Q_phi = Re[A exp(-i phi)]: adding +Gamma to phi removes a
             # measured +Gamma phase from the reconstructed return A.
-            analyzer_phase += (
-                int(ecfg.floquet_cycle)
-                * float(ecfg.final_analyzer_phase_per_cycle_deg)
+            analyzer_phase += (int(ecfg.floquet_cycle)* float(ecfg.final_analyzer_phase_per_cycle_deg)
             )
 
-        postpulse_cfg.append([
-            "qubit", "ge", "hpi",
-            self._mod360(analyzer_phase),
-        ])
-        postpulse_cfg = self._add_wait_after_storage_pulses(
-            postpulse_cfg)
+        postpulse_cfg.append(["qubit", "ge", "hpi",self._mod360(analyzer_phase),])
+        postpulse_cfg = self._add_wait_after_storage_pulses(postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
         self.custom_pulse(
