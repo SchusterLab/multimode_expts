@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import matplotlib.pyplot as plt
 import numpy as np
+import qutip as qt
 from qick import *
 from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
@@ -2762,6 +2763,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
     ``spectroscopy_prep_phase`` is theta on the first qubit half-pi pulse, and
     ``spectroscopy_analyzer_phase`` is phi on the final qubit half-pi pulse.
     The measured return uses theta = 0, 180 degrees and phi = 0, 90 degrees.
+    With QICK's raw DDS-phase convention, ``Q_phi = Re[A exp(+i phi)]``;
+    therefore the complex return is ``A = Q_0 - i Q_90``.
     A complete fixed-N basis is summed in the notebook.
 
     ``decoder_phase_matrix[row, column]`` tracks decoder control axes. Row 0
@@ -2778,8 +2781,9 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
     ``spectroscopy_phase_correction_mode='decoder'`` keeps this original
     decoder-pulse correction.  ``'final_analyzer'`` skips the decoder matrix
-    and adds ``floquet_cycle * final_analyzer_phase_per_cycle_deg`` to the
-    final qubit half-pi instead.
+    and subtracts
+    ``floquet_cycle * final_analyzer_phase_per_cycle_deg`` from the final
+    qubit half-pi instead.
     """
 
     @staticmethod
@@ -3065,10 +3069,9 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         analyzer_phase = float(ecfg.spectroscopy_analyzer_phase)
         if phase_correction_mode == "final_analyzer":
-            # Q_phi = Re[A exp(-i phi)]: adding +Gamma to phi removes a
-            # measured +Gamma phase from the reconstructed return A.
-            analyzer_phase += (int(ecfg.floquet_cycle)* float(ecfg.final_analyzer_phase_per_cycle_deg)
-            )
+            # Q_phi = Re[A exp(+i phi)], so a measured +Gamma phase is
+            # removed by shifting the final analyzer by -Gamma.
+            analyzer_phase -= (int(ecfg.floquet_cycle)* float(ecfg.final_analyzer_phase_per_cycle_deg))
 
         postpulse_cfg.append(["qubit", "ge", "hpi",self._mod360(analyzer_phase),])
         postpulse_cfg = self._add_wait_after_storage_pulses(postpulse_cfg)
@@ -3094,7 +3097,7 @@ class EncodingStarkShiftCalibrationProgram(
     here.  The fixed encoder/decoder access phase is removed in the notebook
     by dividing the complex return by its zero-pulse value.  A nonzero
     ``final_analyzer_phase_per_pulse_deg`` is multiplied by ``n_pulse`` and
-    added only to the final qubit half-pi for an end-to-end sign check.
+    subtracted only from the final qubit half-pi for an end-to-end sign check.
     """
 
     def initialize(self):
@@ -3174,7 +3177,7 @@ class EncodingStarkShiftCalibrationProgram(
         analyzer_phase = (
             float(ecfg.spectroscopy_analyzer_phase)
             # The same Q_phi convention as spectroscopy is used here.
-            + int(ecfg.n_pulse)
+            - int(ecfg.n_pulse)
             * float(ecfg.final_analyzer_phase_per_pulse_deg)
         )
 
@@ -3208,8 +3211,8 @@ class EntireFloquetCyclePhaseCalibrationProgram(
     slope is directly in degrees per entire Floquet cycle.
 
     ``final_analyzer_phase_per_cycle_deg`` is used only for the end-to-end
-    sign check.  It is multiplied by ``2 * n_cycle_pair`` and added to the
-    final qubit half-pi.
+    sign check.  It is multiplied by ``2 * n_cycle_pair`` and subtracted from
+    the final qubit half-pi.
 
     ``n_physical_cycle`` also permits odd guide points.  An odd point plays
     all complete forward/inverse pairs followed by one forward cycle.
@@ -3302,7 +3305,7 @@ class EntireFloquetCyclePhaseCalibrationProgram(
             self.encoder_pulses)
         analyzer_phase = (
             float(ecfg.spectroscopy_analyzer_phase)
-            + n_physical_cycle
+            - n_physical_cycle
             * float(ecfg.final_analyzer_phase_per_cycle_deg)
         )
         postpulse_cfg.append([
@@ -4426,7 +4429,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                             unwrap_mode="pair"):
         """
         The method recieves phi0 and phi90 experiments to
-            1. reconstruct Q0+iQ90 
+            1. reconstruct Q0-iQ90
             2. Unwrap the phase using np.unwrap
             2. fit phase per physical entire cycle.
         
@@ -4467,7 +4470,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError("saved preparation phases changed")
             if not np.allclose(expt_phi90.data["xpts"], [0., 180.]):
                 raise ValueError("saved preparation phases changed")
-            complex_returns.append(cls._quadrature(expt_phi0) + 1j * cls._quadrature(expt_phi90))
+            complex_returns.append(cls._quadrature(expt_phi0) - 1j * cls._quadrature(expt_phi90))
             for expt in [expt_phi0, expt_phi90]:
                 if hasattr(expt, "fname"):
                     fname = str(expt.fname).replace("\\", "/").split("/")[-1]
@@ -4523,8 +4526,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                floquet_cycle_us,
                                correction_sign=1.):
         """
-        Compute the analyzer phase that cancels measured phase 
-        except the always-on M1 self-Kerr phase.
+        Compute the phase correction that the pulse program subtracts from the
+        final analyzer, excluding the always-on M1 self-Kerr phase.
         """
         phase_mod180 = np.asarray(phase_mod180)
         cycle_branches = np.asarray(cycle_branches)
@@ -4551,7 +4554,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                  spectroscopy_expts, 
                                  occupations=None):
         """
-        Group jobs from their saved configs and return A_i(t)=Q0+iQ90.
+        Group jobs from their saved configs and return A_i(t)=Q0-iQ90.
         Primary purpose is to bundle up the chucked experiments.
         
         Return:
@@ -4600,7 +4603,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 elif not np.array_equal(cycles, expected_cycles):
                     raise ValueError(f"{occupation}, phi={phi}: spectroscopy cycles are incomplete")
                 quadratures.append(quadrature[order])
-            rows.append(quadratures[0] + 1j * quadratures[1])
+            rows.append(quadratures[0] - 1j * quadratures[1])
 
         return AttrDict(dict(occupations=occupation_order, 
                              cycles=expected_cycles, 
@@ -4644,16 +4647,37 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         # One Trotter step is one complete pulse+sync Floquet cycle.
         # couplings_MHz already includes each pulse's share of that cycle:
         # g = 1/(4*pi_frac*T_cycle). Always-on self-Kerr enters without scaling.
+        
+        
+        
+        #Here, the Hamiltonian is directly calculated as a matrix in a Fock basis
+        #First, product makes the all possible product states within photon_number
+        #and then those are conditionally stored in fock_basis if the number = photon number
         mode_count = len(reconstruction.occupations[0])
         fock_basis = [
             list(occupation) for occupation in product(range(photon_number + 1), repeat=mode_count)
             if sum(occupation) == photon_number
         ]
+        #Storing index of each fock basis
         fock_index = {tuple(occupation): index for index, occupation in enumerate(fock_basis)}
+        #Making Hamiltonian matrix in a fock basis
         H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
         # The pulse program tracks detuning phase over the full cycle; its saved sign convention is -detuning.
-        onsite_MHz = np.concatenate(([0.], -detunings))
-
+        onsite_MHz = np.concatenate(([0.], detunings))
+        # updating Hamiltonian indices by estimating
+        # <n_i|H_{diag}|n_j> = \delta_{ij}(delta_i n_i+Kerr/2*n_M*(n_M-1) 
+        #Specifically, the algorithm is
+        #   1. Multiply self Kerr times n_M1
+        #   2. Multiply onsize detuning times n_i
+        # <n_i|H_{coupling}|n_j>  = g \delta_{n_M+1  n_i-1}\sqrt{n_M+1 n_i}+
+        #                           g \delta_{n_M-1  n_i+1}\sqrt{n_M   n_i+1}
+        #Specifically, the algorithm is
+        #For each column occupation,
+        #   1. Loop the iteraction on storage mode index i
+        #   2. Find the state with n_M increased by 1 and n_i decreased by 1 
+        #      using fock_index dictionary
+        #   3. Add g * \sqrt{n_M+1 n_i}
+        #   4. Do the same for the state iwth n_M-1 and n_i+1
         for column, occupation in enumerate(fock_basis):
             n_M1 = occupation[0]
             H_MHz[column, column] = np.dot(onsite_MHz, occupation) + 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
@@ -4667,11 +4691,20 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 matrix_element = coupling_MHz * np.sqrt(n_M1 * (occupation[mode_index] + 1))
                 H_MHz[row, column] += matrix_element
                 H_MHz[column, row] += matrix_element
-
+        #Using np.linalg.eigh, get the eigenvalue of the Hamiltonian Matrix
+        #Returns matrix with the index of (f, k), where k being eigenstate index
+        #And f being fock state index.
+        #So each column is an eigen state in a fock basis
         energies_MHz, states = np.linalg.eigh(H_MHz)
+        #For each occupations for the experiment, calculate its index in the basis
+        #that is used for the matrix setup
         basis_rows = [fock_index[tuple(occupation)] for occupation in reconstruction.occupations]
+        #Pick rows in the eigenstate matrix
         eigenstate_weights = np.abs(states[basis_rows]) ** 2
+        #List of "Theory phase", which is the list of e^{-i2 * pi * f_{eigen} t}
         theory_phase = np.exp(-2j * np.pi * np.outer(energies_MHz, time_us))
+        #Do the matrix multiplication, which will give sum_n <n|U|n> 
+        #as a function of time
         theory_A = eigenstate_weights @ theory_phase
         fft_scale = n_fft / np.sum(window)
         measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
@@ -4711,7 +4744,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             iq_limit = 1.
         iq_axis.axhline(0., color="0.85")
         iq_axis.axvline(0., color="0.85")
-        iq_axis.set(xlim=(-iq_limit, iq_limit), ylim=(-iq_limit, iq_limit), xlabel=r"$Q_0$", ylabel=r"$Q_{90}$", title="raw complex return")
+        iq_axis.set(xlim=(-iq_limit, iq_limit), ylim=(-iq_limit, iq_limit), xlabel=r"$Q_0$", ylabel=r"$-Q_{90}$", title="raw complex return")
         iq_axis.set_aspect("equal", adjustable="box")
         iq_axis.legend()
         fig.colorbar(points, ax=iq_axis, label="number of physical entire Floquet cycles")
