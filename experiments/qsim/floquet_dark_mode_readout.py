@@ -4624,6 +4624,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                     manual_kerr_MHz, 
                                     cycle_branches, 
                                     legacy):
+        """
+        The postprocessing got a bit complicated as the previous experiment
+        did not designate `application_sign`. The current convention is 
+        `application_sign` = -1, whereas previously it was +1.
+        The designation of +1 to application_sign is done by setting legacy = True.
+        
+        
+        
+        """
+        
         if manual_kerr_MHz is not None and phase_frame == "as_acquired":
             phase_frame = "manual_kerr"
         if phase_frame == "zero_kerr":
@@ -4680,7 +4690,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     target_phase = target_correction.phase_by_occupation[tuple(occupation)]
                     A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
                 physical_kerr_MHz = float(manual_kerr_MHz)
-        return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, cycles=reconstruction.cycles, A=A)), target_correction=target_correction, physical_kerr_MHz=physical_kerr_MHz, phase_frame=phase_frame, cycle_branches=branches, analyzer_phase_application_sign=application_sign, legacy_analyzer_migration=legacy_migration))
+        return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, 
+                                                          cycles=reconstruction.cycles,
+                                                          A=A)), 
+                             target_correction=target_correction, 
+                             physical_kerr_MHz=physical_kerr_MHz, 
+                             phase_frame=phase_frame, 
+                             cycle_branches=branches, 
+                             analyzer_phase_application_sign=application_sign, 
+                             legacy_analyzer_migration=legacy_migration))
 
     def analyze(self, data=None, **kwargs):
         if data is not None:
