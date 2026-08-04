@@ -5506,14 +5506,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             figures[key] = self.display_occupation(data.reconstruction, data.spectrum, occupation, data.get("phase_frame", None), ldos_weight_cutoff)
         return figures
 
-    def display_sff(self, data=None, sff=None, row_normalize=True):
+    def display_sff(self, 
+                    data=None, 
+                    sff=None, 
+                    row_normalize=True,
+                    plot_theory_limit = False):
         if sff is None:
             sff = self.analyze_sff(data=data, row_normalize=row_normalize)
         fig, axes = plt.subplots(1, 2, figsize=(14, 4.8), constrained_layout=True)
         axes[0].plot(sff.time_us, sff.SFF_exp, color="black", label="experiment")
         axes[0].plot(sff.time_us, sff.SFF_theory, color="tab:orange", label="theory")
-        axes[0].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
-        axes[0].set(xlabel="time (us)", ylabel=r"$K(t)=|\mathrm{Tr}\,U(t)/D|^2$", title="spectral form factor")
+        if plot_theory_limit:
+            axes[0].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
+        axes[0].set(xlabel="time (us)", ylabel=r"$K(t)=|\\mathrm{Tr}\\,U(t)/D|^2$", title="spectral form factor")
         axes[0].legend()
 
         axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_exp, 1e-12), color="black", label="experiment")
