@@ -5518,7 +5518,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         axes[0].plot(sff.time_us, sff.SFF_theory, color="tab:orange", label="theory")
         if plot_theory_limit:
             axes[0].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
-        axes[0].set(xlabel="time (us)", ylabel=r"$K(t)=|\\mathrm{Tr}\\,U(t)/D|^2$", title="spectral form factor")
+        axes[0].set(xlabel="time (us)", ylabel=r"$K(t)=|\mathrm{Tr}\,U(t)/D|^2$", title="spectral form factor")
         axes[0].legend()
 
         axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_exp, 1e-12), color="black", label="experiment")
