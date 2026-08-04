@@ -4448,6 +4448,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         and return the params as an AttrDict.
         If the class is called for post processing using hdf5 files,
         one should specify station with proper config as well.
+        
+        Returning params are:
+            - `swap_stors`
+            - `detunings`
+            - `mode_labels`
+            - `hardware_parameters`
+                - `floquet_cycles_us`
+                - `couplings_MHz`
+                - `physical_kerr_MHz`
         """
         
         first_cfg = expts[0].cfg
@@ -4491,7 +4500,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     raise ValueError("saved jobs use different Floquet hardware parameters")
             hardware_source = "saved program"
         elif station is not None:
-            hardware = cls.hardware_parameters(station, swap_stors, sync_cycles, floquet_gauss_sigma, floquet_waveform)
+            hardware = cls.hardware_parameters(station, 
+                                               swap_stors, 
+                                               sync_cycles, 
+                                               floquet_gauss_sigma, 
+                                               floquet_waveform)
             floquet_cycle_us, couplings_MHz = hardware.floquet_cycle_us, hardware.couplings_MHz
             hardware_source = "current station (H5 fallback)"
         else:
@@ -4512,6 +4525,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             - int: fix branch to int (ideally 0 or 1) for all encoding pulses
             - list: select branch per occupation; should match the length of occupation
             - dictionary: select branch for a specified occupation.
+            
         Example:
         1. cycle_branches = 1
         2. occupations = [
@@ -4525,6 +4539,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 (1, 1, 0): 1,
                 (1, 0, 1): 0,
             }
+        
         Recommendation is 3
         """
         
@@ -4700,7 +4715,95 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              analyzer_phase_application_sign=application_sign, 
                              legacy_analyzer_migration=legacy_migration))
 
-    def analyze(self, data=None, **kwargs):
+    def analyze(self, 
+                data=None, 
+                **kwargs):
+        """
+        Analyze a single job or an aggregate calibration/spectroscopy experiment.
+
+        ``stage`` selects one of three paths:
+
+        1. ``None`` calls ``_quadrature`` for one saved job. It converts the two
+           preparation-phase measurements into the real return quadrature
+           ``Q_phi`` at that job's analyzer phase. It does not combine the
+           ``phi=0`` and ``phi=90`` jobs into a complex return.
+        2. ``'calibration'`` calls ``analyze_calibration`` on ``batch_expts`` and
+           returns the measured phase per physical Floquet cycle modulo 180
+           degrees, together with the reconstructed hardware and mode labels.
+        3. ``'spectrum'`` reconstructs ``A_alpha=Q_0-iQ_90`` from all chunked
+           spectroscopy jobs, transforms it to the requested phase frame, and
+           calculates the measured FFT and the matching fixed-N Hamiltonian,
+           eigenenergies, LDOS weights, and theory spectrum.
+
+        The spectrum result stores both ``acquired_reconstruction`` and
+        ``reconstruction``. The former is exactly the complex return built from
+        the saved quadratures. The latter is the return after the selected
+        phase-frame transformation and is passed to ``analyze_spectrum``.
+        ``_postprocess_reconstruction`` is therefore called even for
+        ``phase_frame='as_acquired'``; with branch zero it is a pass-through that
+        also records the Kerr and phase-frame metadata.
+
+        Spectrum keyword arguments:
+
+        - ``occupations`` optionally fixes the reconstruction row order and must
+          exactly match the occupations represented by the jobs.
+        - ``calibration`` accepts the aggregate calibration experiment, its data,
+          or an equivalent mapping. It is required for ``zero_kerr`` and
+          ``manual_kerr`` because those frames must remove the saved analyzer
+          correction and construct a new occupation-dependent correction.
+        - ``phase_frame`` is ``'as_acquired'`` by default. ``'uncorrected'``
+          undoes the saved final-analyzer correction. ``'zero_kerr'`` rephases
+          to a Hamiltonian with zero M1 self-Kerr. ``'manual_kerr'`` rephases to
+          the signed value supplied through ``manual_kerr_MHz``. Supplying
+          ``manual_kerr_MHz`` with the default frame selects ``'manual_kerr'``.
+        - ``cycle_branches`` is an integer applied to every occupation, one
+          integer per occupation, or a dictionary keyed by occupation. A branch
+          ``b`` changes the chosen phase slope by ``180*b`` degrees per cycle.
+          ``second_branch=True`` is shorthand for adding one branch everywhere
+          and cannot be combined with a nonzero ``cycle_branches`` value.
+        - ``legacy`` resolves old jobs that did not save the analyzer-phase
+          application sign. Use ``True`` for the old ``+correction`` convention
+          and ``False`` for the current ``-correction`` convention. It is only
+          meaningful when undoing or replacing the acquired correction.
+        - ``fft_window`` is ``'raw'``, ``'hann'``, ``'hamming'``, or ``'blackman'``;
+          ``zero_padding`` is an integer FFT-length multiplier.
+
+        Self-Kerr convention:
+
+        The standard acquisition preserves the physical M1 self-Kerr. For an
+        M1 occupation ``n``, ``analyze_spectrum`` uses
+
+            ``E_K/h=(K/2)*n*(n-1)``
+
+        with signed ``K=physical_kerr_MHz``. The corresponding return-phase
+        slope per Floquet cycle is
+
+            ``Gamma_K=-360*(E_K/h)*T_cycle`` degrees/cycle.
+
+        If calibration measures ``Gamma_meas=Gamma_unwanted+Gamma_K``, then
+        ``build_phase_correction`` sends
+
+            ``Gamma_correction=Gamma_meas-Gamma_K``
+
+        to the final analyzer. Removing Kerr from the correction does not remove
+        Kerr from the measured return: after the analyzer correction the residual
+        phase is ``Gamma_meas-Gamma_correction=Gamma_K``. Consequently the
+        default ``phase_frame='as_acquired'`` leaves ``A_alpha`` unchanged and
+        compares it with a Hamiltonian containing the signed physical Kerr.
+
+        ``phase_frame='zero_kerr'`` instead removes that residual physical-Kerr
+        evolution and compares against ``K=0``. ``phase_frame='manual_kerr'``
+        removes the acquired correction and applies the correction appropriate
+        to the requested signed Kerr. If a custom acquisition canceled the Kerr
+        itself by sending the full ``Gamma_meas`` to the analyzer, its acquired
+        return is already in the zero-Kerr frame and must not be interpreted by
+        the default physical-Kerr assumption.
+
+        ``data``, when supplied, replaces ``self.data`` before analysis. Every
+        path returns ``self.data``; the calibration and spectrum paths replace it
+        with their aggregate result.
+        """
+        
         if data is not None:
             self.data = data
         stage = kwargs.pop("stage", None)
@@ -4713,12 +4816,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 kwargs.get("cycle_pairs"),
                 repeats=kwargs.get("repeats"),
             )
-            saved = self._saved_parameters(self.batch_expts, getattr(self, "_analysis_station", None))
+            saved = self._saved_parameters(self.batch_expts, 
+                                           getattr(self, "_analysis_station", None))
             self.data.hardware = saved.hardware
             self.data.mode_labels = saved.mode_labels
         elif stage == "spectrum":
-            saved = self._saved_parameters(self.batch_expts, getattr(self, "_analysis_station", None))
-            acquired_reconstruction = self.reconstruct_spectroscopy(self.batch_expts, kwargs.get("occupations"))
+            saved = self._saved_parameters(self.batch_expts, 
+                                           getattr(self, "_analysis_station", None))
+            acquired_reconstruction = self.reconstruct_spectroscopy(self.batch_expts, 
+                                                                    kwargs.get("occupations"))
             photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
             if len(photon_numbers) != 1:
                 raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
@@ -4733,17 +4839,27 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     raise ValueError("calibration and spectroscopy used different Floquet hardware")
             cycle_branches = kwargs.get("cycle_branches", 0)
             if kwargs.get("second_branch", False):
-                cycle_branches = self._cycle_branches(acquired_reconstruction.occupations, cycle_branches)
+                cycle_branches = self._cycle_branches(acquired_reconstruction.occupations, 
+                                                      cycle_branches)
                 if np.any(cycle_branches):
                     raise ValueError("use either cycle_branches or second_branch, not both")
                 cycle_branches += 1
             saved_correction = self._saved_correction(self.batch_expts)
             postprocessed = self._postprocess_reconstruction(
-                acquired_reconstruction, saved_correction, calibration, saved.hardware,
-                kwargs.get("phase_frame", "as_acquired"), kwargs.get("manual_kerr_MHz", None), cycle_branches, kwargs.get("legacy", None))
+                acquired_reconstruction, 
+                saved_correction, 
+                calibration, 
+                saved.hardware,
+                kwargs.get("phase_frame", "as_acquired"), 
+                kwargs.get("manual_kerr_MHz", None), 
+                cycle_branches, 
+                kwargs.get("legacy", None))
             spectrum = self.analyze_spectrum(
-                postprocessed.reconstruction, photon_number, saved.detunings,
-                saved.hardware.couplings_MHz, saved.hardware.floquet_cycle_us,
+                postprocessed.reconstruction, 
+                photon_number, 
+                saved.detunings,
+                saved.hardware.couplings_MHz, 
+                saved.hardware.floquet_cycle_us,
                 postprocessed.physical_kerr_MHz,
                 kwargs.get("fft_window", "raw"),
                 kwargs.get("zero_padding", 1),
@@ -4788,7 +4904,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return expt.data["return_quadrature"]
 
     @staticmethod
-    def _unwrap_cycle_phase(complex_return, physical_cycles, valid_mask, closed_mask, guide_weight=0.2):
+    def _unwrap_cycle_phase(complex_return, 
+                            physical_cycles, 
+                            valid_mask, 
+                            closed_mask, 
+                            guide_weight=0.2):
         raw_phase = np.rad2deg(np.angle(complex_return))
         fit_mask = valid_mask & closed_mask
         guide_mask = valid_mask & ~closed_mask
@@ -4831,16 +4951,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             2. Unwrap the phase using np.unwrap
             2. fit phase per physical entire cycle.
         
-        Return:
-            AttrDict{occupation: tuple(occupation), #state string tuple
-                    physical_cycles: physical_cycles, #floquet cycles
-                    complex_return: complex_return,
-                    relative_return: relative_return,
-                    return_phase: phase,
-                    phase_fit: phase_fit,
-                    fnames: fnames,
-                    phase_per_cycle: parameters[0],
-                    phase_error: np.sqrt(covariance[0, 0])}
+        Return: AttrDict containing
+            - occupation: tuple(occupation), #state string tuple
+            - physical_cycles: physical_cycles, #floquet cycles
+            - complex_return: complex_return,
+            - relative_return: relative_return,
+            - return_phase: phase,
+            - phase_fit: phase_fit,
+            - fnames: fnames,
+            - phase_per_cycle: parameters[0],
+            - phase_error: np.sqrt(covariance[0, 0])}
         """
         if isinstance(phi0_expts, (list, tuple)):
             phi0_expts = list(phi0_expts)
@@ -4958,13 +5078,34 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                  spectroscopy_expts, 
                                  occupations=None):
         """
-        Group jobs from their saved configs and return A_i(t)=Q0-iQ90.
-        Primary purpose is to bundle up the chucked experiments.
-        
-        Return:
-            Attrdict{"occupations": occupation_order, #Fock state Array
-                     "cycles": expected_cycles, #Floquet cycles list
-                     "A": np.asarray(rows)} #A = <N_i|U|N_i>
+        Combine chunked spectroscopy jobs into the complex return amplitudes in
+        the phase frame used during acquisition.
+
+        For each initial occupation ``alpha``, the saved jobs must contain the
+        analyzer settings ``phi=0`` and ``phi=90``. ``_quadrature`` first forms
+        ``Q_phi=Pe(theta=0)-Pe(theta=180)`` from the two preparation phases.
+        With the QICK convention ``Q_phi=Re[A_alpha exp(+i phi)]``, the two
+        analyzer quadratures give
+
+            ``A_alpha=Q_0-i Q_90=<alpha|U|alpha>``.
+
+        The analyzer phase already contains any correction played by the pulse
+        program. This method only reconstructs what was acquired: it does not
+        undo or replace that correction, select a 180-degree phase branch,
+        change the self-Kerr frame, or perform an FFT. Those operations belong
+        to ``analyze(stage='spectrum')`` after this reconstruction.
+
+        Jobs are grouped using the saved ``spectroscopy_occupations`` and
+        ``spectroscopy_analyzer_phase``. Cycle chunks are concatenated and
+        sorted, and every occupation and analyzer quadrature must cover the same
+        non-overlapping cycle points. If ``occupations`` is supplied, it sets
+        the returned row order and must contain exactly the occupations present
+        in the saved jobs.
+
+        Returns an AttrDict with ``occupations``, the common sorted ``cycles``,
+        and a complex array ``A`` of shape ``(n_occupations, n_cycles)``. This
+        result is called ``acquired_reconstruction`` by ``analyze`` to distinguish
+        it from the reconstruction after an optional phase-frame transformation.
         """
         if not spectroscopy_expts:
             raise ValueError("spectroscopy_expts cannot be empty")
@@ -5116,6 +5257,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         #Do the matrix multiplication, which will give sum_n <n|U|n> 
         #as a function of time
         theory_A = eigenstate_weights @ theory_phase
+        
+        
+        #############################################################
+        #######   FFT of measured dataset   #########################
+        #############################################################
+        
         fft_scale = n_fft / np.sum(window)
         measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
         measured_local /= np.maximum(np.abs(A[:, :1]), 1e-12)
@@ -5129,12 +5276,74 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(energies_MHz))))
 
         return AttrDict(dict(
-            time_us=time_us, energy_MHz=energy_MHz, measured_local=measured_local, theory_local=theory_local,
-            measured=measured, theory=theory, energies_MHz=energies_MHz,
-            eigenstate_weights=eigenstate_weights, physical_kerr_MHz=physical_kerr_MHz,
-            complete_basis=complete_basis, energy_limit_MHz=energy_limit_MHz,
-            fft_window=fft_window, zero_padding=zero_padding,
+            time_us=time_us, 
+            energy_MHz=energy_MHz, 
+            measured_local=measured_local, 
+            theory_local=theory_local,
+            measured=measured, 
+            theory=theory, 
+            energies_MHz=energies_MHz,
+            eigenstate_weights=eigenstate_weights, 
+            physical_kerr_MHz=physical_kerr_MHz,
+            complete_basis=complete_basis, 
+            energy_limit_MHz=energy_limit_MHz,
+            fft_window=fft_window, 
+            zero_padding=zero_padding,
             fft_resolution_MHz=1. / (len(cycles) * sample_time_us),
+        ))
+
+    def analyze_sff(self, 
+                    data=None, 
+                    row_normalize=True):
+        """
+        Analyzes SFF based. Should be run after running `analyze_spectrum`.
+        This dependency can be lifted in fugure. 
+        """
+        
+        data = self.data if data is None else data
+        if "reconstruction" not in data or "spectrum" not in data:
+            raise ValueError("SFF analysis requires analyzed spectroscopy data")
+        reconstruction = data.reconstruction
+        spectrum = data.spectrum
+        if not spectrum.complete_basis:
+            raise ValueError("SFF requires the complete fixed-N occupation basis; this data gives only a projected trace")
+
+        cycles = np.asarray(reconstruction.cycles)
+        A = np.asarray(reconstruction.A, dtype=complex).copy()
+        if A.ndim != 2 or A.shape[1] != len(spectrum.time_us):
+            raise ValueError("measured return and spectroscopy time dimensions differ")
+        if row_normalize:
+            if len(cycles) == 0 or not np.isclose(cycles[0], 0.):
+                raise ValueError("row normalization requires the zero-cycle point")
+            if np.any(np.abs(A[:, 0]) < 1e-12):
+                raise ValueError("at least one occupation has zero return at t=0")
+            A /= A[:, :1]
+
+        energies_MHz = np.asarray(spectrum.energies_MHz)
+        dimension = len(energies_MHz)
+        if dimension == 0 or A.shape[0] != dimension:
+            raise ValueError("measured basis dimension and theory Hilbert-space dimension differ")
+        time_us = np.asarray(spectrum.time_us)
+        Z_exp = np.sum(A, axis=0)
+        Z_theory = np.sum(np.exp(-2j * np.pi * np.outer(energies_MHz, time_us)), axis=0)
+        SFF_exp = np.abs(Z_exp / dimension) ** 2
+        SFF_theory = np.abs(Z_theory / dimension) ** 2
+        degenerate_pairs = np.isclose(energies_MHz[:, None], energies_MHz[None, :], rtol=0., atol=1e-10)
+        plateau_reference = np.count_nonzero(degenerate_pairs) / dimension ** 2
+        return AttrDict(dict(
+            time_us=time_us, 
+            A=A, 
+            Z_exp=Z_exp,
+            Z_theory=Z_theory,
+            SFF_exp=SFF_exp, 
+            SFF_theory=SFF_theory, 
+            dimension=dimension,
+            plateau_reference=plateau_reference, 
+            nondegenerate_reference=1. / dimension,
+            row_normalized=bool(row_normalize), 
+            photon_number=data.get("photon_number", sum(reconstruction.occupations[0])),
+            phase_frame=data.get("phase_frame", "as_acquired"), 
+            physical_kerr_MHz=spectrum.physical_kerr_MHz,
         ))
 
     @staticmethod
@@ -5208,7 +5417,22 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return fig
 
     @staticmethod
-    def display_occupation(reconstruction, spectrum, occupation):
+    def display_occupation(reconstruction, 
+                           spectrum, 
+                           occupation, 
+                           phase_frame=None, 
+                           ldos_weight_cutoff=0,
+                           axes = None,
+                           figsize = None,
+                           plot_abs_A = False):
+        """
+        The lowest-level function that displays
+        - time trace
+        - FFT result
+        - LDOS result
+        
+        """
+        
         if isinstance(occupation, (int, np.integer)):
             row = int(occupation)
             if row < 0 or row >= len(reconstruction.occupations):
@@ -5224,17 +5448,80 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         theory = spectrum.theory_local[row].copy()
         if np.max(theory) > 0.:
             theory *= np.max(measured) / np.max(theory)
-
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+        if not np.isfinite(ldos_weight_cutoff) or ldos_weight_cutoff < 0.:
+            raise ValueError("ldos_weight_cutoff must be finite and nonnegative")
+        ldos_weights = spectrum.eigenstate_weights[row]
+        keep = ldos_weights >= ldos_weight_cutoff
+        if axes is None:
+            if figsize is None:
+                figsize = (18, 4.8)
+            fig, axes = plt.subplots(1, 3, 
+                                     figsize=figsize, 
+                                     constrained_layout=True)
         axes[0].plot(spectrum.time_us, reconstruction.A[row].real, label="Re A")
         axes[0].plot(spectrum.time_us, reconstruction.A[row].imag, label="Im A")
-        axes[0].set(xlabel="time (us)", ylabel="return amplitude", title=str(occupation))
+        if plot_abs_A:
+            axes[0].plot(spectrum.time_us, np.abs(reconstruction.A[row]), "--", color="0.5", label="|A|")
+        axes[0].set(xlabel="time (us)", 
+                    ylabel="return amplitude", 
+                    title="oscillation trace")
         axes[0].legend()
 
         axes[1].plot(spectrum.energy_MHz, measured, color="black", label="measured")
         axes[1].plot(spectrum.energy_MHz, theory, color="tab:orange", label="theory (shape scaled)")
-        axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=f"N={sum(occupation)} projected spectrum {occupation}")
+        axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title="finite-time FFT")
         axes[1].legend()
+
+        axes[2].vlines(spectrum.energies_MHz[keep], 0., ldos_weights[keep], color="tab:blue")
+        axes[2].plot(spectrum.energies_MHz[keep], ldos_weights[keep], "o", color="tab:blue", markersize=4)
+        axes[2].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="spectral weight", title="exact LDOS weights")
+        title = str(occupation)
+        if phase_frame is not None:
+            title += f"; frame={phase_frame}"
+        fig.suptitle(f"{title}; Kerr={spectrum.physical_kerr_MHz:.6g} MHz")
+        return fig
+
+    def display_occupations(self, 
+                            data=None, 
+                            occupations=None, 
+                            ldos_weight_cutoff=1e-3):
+        data = self.data if data is None else data
+        if "reconstruction" not in data or "spectrum" not in data:
+            raise ValueError("occupation display requires analyzed spectroscopy data")
+        if occupations is None:
+            selections = data.reconstruction.occupations
+        elif isinstance(occupations, (int, np.integer)):
+            selections = [occupations]
+        else:
+            selections = list(occupations)
+            if selections and all(np.isscalar(value) for value in selections):
+                selections = [selections]
+
+        figures = {}
+        for occupation in selections:
+            if isinstance(occupation, (int, np.integer)):
+                key = tuple(data.reconstruction.occupations[int(occupation)])
+            else:
+                key = tuple(occupation)
+            figures[key] = self.display_occupation(data.reconstruction, data.spectrum, occupation, data.get("phase_frame", None), ldos_weight_cutoff)
+        return figures
+
+    def display_sff(self, data=None, sff=None, row_normalize=True):
+        if sff is None:
+            sff = self.analyze_sff(data=data, row_normalize=row_normalize)
+        fig, axes = plt.subplots(1, 2, figsize=(14, 4.8), constrained_layout=True)
+        axes[0].plot(sff.time_us, sff.SFF_exp, color="black", label="experiment")
+        axes[0].plot(sff.time_us, sff.SFF_theory, color="tab:orange", label="theory")
+        axes[0].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
+        axes[0].set(xlabel="time (us)", ylabel=r"$K(t)=|\mathrm{Tr}\,U(t)/D|^2$", title="spectral form factor")
+        axes[0].legend()
+
+        axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_exp, 1e-12), color="black", label="experiment")
+        axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_theory, 1e-12), color="tab:orange", label="theory")
+        axes[1].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
+        axes[1].set(xlabel="time (us)", ylabel=r"$K(t)$", title="spectral form factor (log scale)")
+        axes[1].legend()
+        fig.suptitle(f"N={sff.photon_number}, D={sff.dimension}; frame={sff.phase_frame}; Kerr={sff.physical_kerr_MHz:.6g} MHz")
         return fig
 
     @staticmethod
@@ -5271,7 +5558,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             self.data = data
         if "spectrum" in self.data:
             if occupation is not None:
-                return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation)
+                return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation, self.data.get("phase_frame", None), kwargs.get("ldos_weight_cutoff", 1e-3))
             return self.display_result(self.data.reconstruction, 
                                        self.data.spectrum, 
                                        self.data.mode_labels)
@@ -5349,16 +5636,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                             cycle_pairs=None, 
                             repeats=None):
         """
-        For each occupation encoding/decoding calibration expt,
-        extract phase accumulation using `analyze_cycle_phase` and return the collective
-        dictionary in the following form.
-        Return:
-            {
-            "occupations": occupation_order,
-            "results": results,
-            "phase_mod180": np.asarray([result.phase_per_cycle for result in results]),
-            "phase_error": np.asarray([result.phase_error for result in results])
-            }
+        The method first groups input experiments in a pair of encoding/decoding
+        calibration with phi 0 and 90. For each pair, extract phase accumulation
+        using `analyze_cycle_phase` and return the collective dictionary in the following form.
+        
+        Return: Attrdict containing
+            - "occupations": occupation_order,
+            - "results": results,
+            - "phase_mod180": np.asarray([result.phase_per_cycle for result in results]),
+            - "phase_error": np.asarray([result.phase_error for result in results])
         
         """
         
