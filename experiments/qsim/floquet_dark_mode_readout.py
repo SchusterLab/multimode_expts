@@ -2987,6 +2987,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         ecfg.spectroscopy_analyzer_phase = analyzer_phase % 360.0
         ecfg.spectroscopy_phase_correction_mode = phase_correction_mode
         ecfg.final_analyzer_phase_per_cycle_deg = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.0))
+        ecfg.final_analyzer_phase_application_sign = -1.
         ecfg.spectroscopy_photon_number = photon_number
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
@@ -4335,6 +4336,352 @@ class BatchRunner(CharacterizationRunner):
 class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     """Per-job and aggregate analysis for encoding-calibrated spectroscopy."""
 
+    @classmethod
+    def _from_expts(cls, expts, job_ids=None, station=None):
+        """
+        Reconstruct 'mother' experiment instance by collecting all the experiments
+        to be analyzed. The `sister` experiment should have identical following params;
+        otherwise, `_saved_parameters` will return error
+            - swap_stors
+            - detunings
+            - physical_kerr_MHz
+            - scramble_sync_cycles
+            - floquet_gauss_sigma
+            - floquet_waveform
+        The current version also assumes reconstructing the data from pickle; 
+        if this is the case,
+            - floquet_cycle_us
+            - couplings_MHz
+        which is to ensure that the same floquet pulse sequence is used.
+        Otherwise, the station should be input as well to calculate physical params
+        """
+        
+        expts = list(flatten_exp_lists(expts))
+        if not expts:
+            raise ValueError("experiment jobs cannot be empty")
+        aggregate = cls.__new__(cls)
+        aggregate.cfg = expts[0].cfg
+        aggregate.data = AttrDict()
+        aggregate.batch_expts = expts
+        aggregate.batch_job_ids = list(job_ids or [])
+        aggregate._analysis_station = station
+        return aggregate
+
+    @classmethod
+    def from_job_files(cls, job_files, station=None):
+        """
+        Load child experiment pickle/H5 files into one analysis object.
+        """
+        import pickle
+        from pathlib import Path
+
+        if isinstance(job_files, (str, Path)):
+            job_files = [job_files]
+        expts = []
+        for job_file in flatten_exp_lists(job_files):
+            if not isinstance(job_file, (str, Path)):
+                expts.append(job_file)
+                continue
+            path = Path(job_file)
+            if path.suffix.lower() in (".h5", ".hdf5"):
+                expts.append(cls.from_h5file(str(path)))
+            else:
+                with path.open("rb") as handle:
+                    expts.append(pickle.load(handle))
+        return cls._from_expts(expts, station=station)
+
+    @classmethod
+    def from_job_ids(cls, job_ids, client=None, station=None):
+        """
+        Load completed queue jobs without rebuilding a BatchRunner.
+        If station is properly specified (along with project name and directory (which is hardcoded)),
+        a list of job_ids is okay. Otherwise, a complete directory is necessary.
+        """
+        if isinstance(job_ids, (str, int, np.integer)):
+            job_ids = [job_ids]
+        job_ids = [str(job_id) for job_id in flatten_exp_lists(job_ids)]
+        if not job_ids:
+            raise ValueError("job_ids cannot be empty")
+        if client is None:
+            if station is None:
+                raise ValueError("client or station is required to resolve job IDs")
+            job_files = [station.expt_objs_path / f"{job_id}_expt.pkl" for job_id in job_ids]
+            aggregate = cls.from_job_files(job_files, station=station)
+            aggregate.batch_job_ids = job_ids
+            return aggregate
+        expts = []
+        for job_id in job_ids:
+            result = client.get_status(job_id)
+            if not result.is_successful():
+                raise RuntimeError(f"Job {job_id} {result.status}: {result.error_message or 'No details'}")
+            expts.append(result.load_expt())
+        return cls._from_expts(expts, job_ids=job_ids, station=station)
+
+    @staticmethod
+    def _first_scalar(value):
+        """
+        This is to avoid a conflict due to different data type of 
+        self Kerr. Sometimes it is stored as a list, sometimes as a float...
+        """
+        
+        values = np.asarray(value).reshape(-1)
+        if len(values) == 0:
+            raise ValueError("saved scalar config is empty")
+        return float(values[0])
+
+    @staticmethod
+    def _saved_detunings(ecfg, mode_count):
+        """
+        This is to avoid a conflict due to different data type of 
+        detuning. Sometimes it is stored as a list, sometimes as an np array...
+        """
+        
+        detunings = ecfg.get("detunings", None)
+        if detunings is None or detunings is False or np.asarray(detunings).size == 0:
+            detunings = [0.] * mode_count
+        return np.asarray(detunings, dtype=float)
+
+    @classmethod
+    def _saved_parameters(cls, expts, station=None):
+        """
+        Check whether all the sister expts have the same params,
+        and return the params as an AttrDict.
+        If the class is called for post processing using hdf5 files,
+        one should specify station with proper config as well.
+        """
+        
+        first_cfg = expts[0].cfg
+        first_expt_cfg = first_cfg.expt
+        swap_stors = [int(stor) for stor in first_expt_cfg.swap_stors]
+        detunings = cls._saved_detunings(first_expt_cfg, len(swap_stors))
+        physical_kerr_MHz = -abs(cls._first_scalar(first_cfg.device.manipulate.kerr))
+        if len(detunings) != len(swap_stors) or not np.all(np.isfinite(detunings)):
+            raise ValueError("saved detunings do not match swap_stors")
+
+        program_hardware = []
+        sync_cycles = int(first_expt_cfg.get("scramble_sync_cycles", 10))
+        floquet_gauss_sigma = first_expt_cfg.get("floquet_gauss_sigma", None)
+        floquet_waveform = first_expt_cfg.get("floquet_waveform", None)
+        for expt in expts:
+            cfg = expt.cfg
+            ecfg = cfg.expt
+            if [int(stor) for stor in ecfg.swap_stors] != swap_stors:
+                raise ValueError("saved jobs use different swap_stors")
+            if len(ecfg.spectroscopy_occupations) != len(swap_stors) + 1:
+                raise ValueError("saved spectroscopy_occupations do not match swap_stors")
+            saved_detunings = cls._saved_detunings(ecfg, len(swap_stors))
+            if saved_detunings.shape != detunings.shape or not np.allclose(saved_detunings, detunings):
+                raise ValueError("saved jobs use different detunings")
+            saved_kerr_MHz = -abs(cls._first_scalar(cfg.device.manipulate.kerr))
+            if not np.isclose(saved_kerr_MHz, physical_kerr_MHz):
+                raise ValueError("saved jobs use different M1 self-Kerr")
+            if int(ecfg.get("scramble_sync_cycles", 10)) != sync_cycles or ecfg.get("floquet_gauss_sigma", None) != floquet_gauss_sigma or ecfg.get("floquet_waveform", None) != floquet_waveform:
+                raise ValueError("saved jobs use different Floquet timing configs")
+            prog = getattr(expt, "prog", None)
+            if prog is not None and hasattr(prog, "calculate_floquet_cycle_us") and hasattr(prog, "m1s_pi_fracs"):
+                floquet_cycle_us = float(prog.calculate_floquet_cycle_us())
+                pi_fracs = np.asarray([prog.m1s_pi_fracs[stor - 1] for stor in swap_stors], dtype=float)
+                couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
+                program_hardware.append((floquet_cycle_us, couplings_MHz))
+
+        if program_hardware:
+            floquet_cycle_us, couplings_MHz = program_hardware[0]
+            for saved_cycle_us, saved_couplings_MHz in program_hardware[1:]:
+                if not np.isclose(saved_cycle_us, floquet_cycle_us) or not np.allclose(saved_couplings_MHz, couplings_MHz):
+                    raise ValueError("saved jobs use different Floquet hardware parameters")
+            hardware_source = "saved program"
+        elif station is not None:
+            hardware = cls.hardware_parameters(station, swap_stors, sync_cycles, floquet_gauss_sigma, floquet_waveform)
+            floquet_cycle_us, couplings_MHz = hardware.floquet_cycle_us, hardware.couplings_MHz
+            hardware_source = "current station (H5 fallback)"
+        else:
+            raise RuntimeError("Floquet cycle time and couplings need the job pickle or station when loading H5 files")
+        if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0. or not np.all(np.isfinite(couplings_MHz)) or np.min(couplings_MHz) <= 0.:
+            raise ValueError("saved Floquet hardware parameters must be finite and positive")
+        hardware = AttrDict(dict(floquet_cycle_us=float(floquet_cycle_us), couplings_MHz=np.asarray(couplings_MHz), physical_kerr_MHz=physical_kerr_MHz, source=hardware_source))
+        return AttrDict(dict(swap_stors=swap_stors, 
+                             detunings=detunings, 
+                             mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors], 
+                             hardware=hardware))
+
+    @staticmethod
+    def _cycle_branches(occupations, cycle_branches=0):
+        """
+        Specfy a branch for an accumulated phase for a encoding pulse per a floquet cycle
+        default is 0, and possible inputs are
+            - int: fix branch to int (ideally 0 or 1) for all encoding pulses
+            - list: select branch per occupation; should match the length of occupation
+            - dictionary: select branch for a specified occupation.
+        Example:
+        1. cycle_branches = 1
+        2. occupations = [
+                (2, 0, 0),
+                (1, 1, 0),
+                (1, 0, 1),
+            ]
+            cycle_branches = [0, 1, 0]
+        3. cycle_branches = {
+                (2, 0, 0): 0,
+                (1, 1, 0): 1,
+                (1, 0, 1): 0,
+            }
+        Recommendation is 3
+        """
+        
+        if isinstance(cycle_branches, dict):
+            branches = np.asarray([cycle_branches.get(tuple(occupation), 0) for occupation in occupations], dtype=float)
+        elif np.isscalar(cycle_branches):
+            branches = np.full(len(occupations), cycle_branches, dtype=float)
+        else:
+            branches = np.asarray(cycle_branches, dtype=float)
+        if branches.shape != (len(occupations),) or not np.all(np.isfinite(branches)) or not np.allclose(branches, np.round(branches)):
+            raise ValueError("cycle_branches must give one integer branch per occupation")
+        return branches.astype(int)
+
+    @classmethod
+    def _calibration_data(cls, calibration):
+        if calibration is None:
+            return None
+        if hasattr(calibration, "data"):
+            if "phase_mod180" not in calibration.data:
+                if hasattr(calibration, "batch_expts"):
+                    cls.analyze(calibration, stage="calibration")
+                else:
+                    raise ValueError("calibration must contain the aggregated calibration jobs")
+            return calibration.data
+        return AttrDict(calibration)
+
+    @classmethod
+    def phase_correction_from_calibration(cls, 
+                                          calibration, 
+                                          cycle_branches=0, 
+                                          second_branch=False):
+        """
+        Prepare the phase calibration list, which is returned as `phase_by_occupation` 
+        by `build_phase_correction` method.
+        """
+        
+        calibration = cls._calibration_data(calibration)
+        if calibration is None:
+            raise ValueError("calibration is required")
+        if "hardware" not in calibration:
+            raise ValueError("calibration hardware is unavailable; analyze the calibration experiment first")
+        branches = cls._cycle_branches(calibration.occupations, cycle_branches)
+        if second_branch:
+            if np.any(branches):
+                raise ValueError("use either cycle_branches or second_branch, not both")
+            branches += 1
+        return cls.build_phase_correction(calibration.occupations, calibration.phase_mod180, branches, calibration.hardware.physical_kerr_MHz, calibration.hardware.floquet_cycle_us)
+
+    @classmethod
+    def _saved_correction(cls, expts):
+        """
+        Reconstruct `phase_by_occupation` from the stored experiments.
+        For now, `decoder` is the only supported
+        
+        """
+        
+        phase_by_occupation = {}
+        modes = set()
+        application_signs = set()
+        missing_application_sign = False
+        for expt in expts:
+            ecfg = expt.cfg.expt
+            occupation = tuple(ecfg.spectroscopy_occupations)
+            phase = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.))
+            if occupation in phase_by_occupation and not np.isclose(phase, phase_by_occupation[occupation]):
+                raise ValueError(f"{occupation} spectroscopy chunks used different analyzer corrections")
+            phase_by_occupation[occupation] = phase
+            modes.add(str(ecfg.get("spectroscopy_phase_correction_mode", 
+                                   "decoder")))
+            application_sign = ecfg.get("final_analyzer_phase_application_sign", None)
+            if application_sign is None:
+                missing_application_sign = True
+            else:
+                application_sign = float(application_sign)
+                if application_sign not in (-1., 1.):
+                    raise ValueError("saved analyzer phase application sign must be +1 or -1")
+                application_signs.add(application_sign)
+        if len(application_signs) > 1:
+            raise ValueError("saved jobs use different analyzer phase application signs")
+        if len(modes) != 1:
+            raise ValueError("saved jobs use different spectroscopy phase-correction modes")
+        nonzero_correction = any(not np.isclose(phase, 0.) for phase in phase_by_occupation.values())
+        if nonzero_correction and missing_application_sign and application_signs:
+            raise ValueError("saved jobs mix marked and unmarked analyzer phase conventions")
+        application_sign = next(iter(application_signs)) if len(application_signs) == 1 and not missing_application_sign else None
+        return AttrDict(dict(phase_by_occupation=phase_by_occupation, 
+                             modes=modes, 
+                             application_sign=application_sign))
+
+    @classmethod
+    def _postprocess_reconstruction(cls, 
+                                    reconstruction, 
+                                    saved_correction, 
+                                    calibration, 
+                                    hardware, 
+                                    phase_frame, 
+                                    manual_kerr_MHz, 
+                                    cycle_branches, 
+                                    legacy):
+        if manual_kerr_MHz is not None and phase_frame == "as_acquired":
+            phase_frame = "manual_kerr"
+        if phase_frame == "zero_kerr":
+            if manual_kerr_MHz is not None:
+                raise ValueError("zero_kerr does not take manual_kerr_MHz")
+            manual_kerr_MHz = 0.
+        if phase_frame not in ("as_acquired", "uncorrected", "zero_kerr", "manual_kerr"):
+            raise ValueError("phase_frame must be 'as_acquired', 'uncorrected', 'zero_kerr', or 'manual_kerr'")
+        occupations = reconstruction.occupations
+        branches = cls._cycle_branches(occupations, cycle_branches)
+        A = reconstruction.A.copy()
+        target_correction = None
+        application_sign = saved_correction.application_sign
+        legacy_migration = False
+
+        if phase_frame == "as_acquired":
+            if legacy is not None:
+                raise ValueError("legacy is only used with uncorrected/zero_kerr/manual_kerr rephasing")
+            for row, branch in enumerate(branches):
+                A[row] *= np.exp(-1j * np.deg2rad(180. * branch) * reconstruction.cycles)
+            physical_kerr_MHz = hardware.physical_kerr_MHz
+        else:
+            if saved_correction.modes != {"final_analyzer"}:
+                raise ValueError("uncorrected/zero_kerr/manual_kerr rephasing requires spectroscopy_phase_correction_mode='final_analyzer'")
+            if application_sign is None:
+                nonzero_correction = any(not np.isclose(phase, 0.) for phase in saved_correction.phase_by_occupation.values())
+                if nonzero_correction and legacy is None:
+                    raise ValueError("saved jobs do not record the analyzer sign; use legacy=True for old +correction jobs or legacy=False for -correction jobs")
+                application_sign = 1. if legacy else -1.
+                legacy_migration = bool(legacy)
+            elif legacy is not None and application_sign != (1. if legacy else -1.):
+                raise ValueError("legacy disagrees with the saved analyzer phase application sign")
+            legacy_migration = application_sign == 1.
+
+            if phase_frame == "uncorrected":
+                if manual_kerr_MHz is not None:
+                    raise ValueError("uncorrected does not take manual_kerr_MHz")
+                for row, occupation in enumerate(occupations):
+                    saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
+                    A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + 180. * branches[row]) * reconstruction.cycles)
+                physical_kerr_MHz = hardware.physical_kerr_MHz
+            else:
+                if manual_kerr_MHz is None or not np.isfinite(manual_kerr_MHz):
+                    raise ValueError("phase_frame='manual_kerr' requires a finite signed manual_kerr_MHz")
+                if calibration is None:
+                    raise ValueError("zero_kerr/manual_kerr rephasing requires calibration")
+                calibration_phase = {tuple(occupation): phase for occupation, phase in zip(calibration.occupations, calibration.phase_mod180)}
+                missing = [occupation for occupation in occupations if tuple(occupation) not in calibration_phase]
+                if missing:
+                    raise ValueError(f"calibration is missing occupations {missing}")
+                target_correction = cls.build_phase_correction(occupations, [calibration_phase[tuple(occupation)] for occupation in occupations], branches, float(manual_kerr_MHz), hardware.floquet_cycle_us)
+                for row, occupation in enumerate(occupations):
+                    saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
+                    target_phase = target_correction.phase_by_occupation[tuple(occupation)]
+                    A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
+                physical_kerr_MHz = float(manual_kerr_MHz)
+        return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, cycles=reconstruction.cycles, A=A)), target_correction=target_correction, physical_kerr_MHz=physical_kerr_MHz, phase_frame=phase_frame, cycle_branches=branches, analyzer_phase_application_sign=application_sign, legacy_analyzer_migration=legacy_migration))
+
     def analyze(self, data=None, **kwargs):
         if data is not None:
             self.data = data
@@ -4348,27 +4695,60 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 kwargs.get("cycle_pairs"),
                 repeats=kwargs.get("repeats"),
             )
+            saved = self._saved_parameters(self.batch_expts, getattr(self, "_analysis_station", None))
+            self.data.hardware = saved.hardware
+            self.data.mode_labels = saved.mode_labels
         elif stage == "spectrum":
-            reconstruction = self.reconstruct_spectroscopy(
-                self.batch_expts, 
-                kwargs.get("occupations"))
+            saved = self._saved_parameters(self.batch_expts, getattr(self, "_analysis_station", None))
+            acquired_reconstruction = self.reconstruct_spectroscopy(self.batch_expts, kwargs.get("occupations"))
+            photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
+            if len(photon_numbers) != 1:
+                raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
+            photon_number = photon_numbers.pop()
+            calibration_arg = kwargs.get("calibration", None)
+            calibration = self._calibration_data(calibration_arg)
+            if calibration is not None and "mode_labels" in calibration and list(calibration.mode_labels) != list(saved.mode_labels):
+                raise ValueError("calibration and spectroscopy use different modes")
+            if calibration is not None and "hardware" in calibration:
+                calibration_couplings = np.asarray(calibration.hardware.couplings_MHz)
+                if calibration_couplings.shape != saved.hardware.couplings_MHz.shape or not np.isclose(calibration.hardware.floquet_cycle_us, saved.hardware.floquet_cycle_us) or not np.allclose(calibration_couplings, saved.hardware.couplings_MHz):
+                    raise ValueError("calibration and spectroscopy used different Floquet hardware")
+            cycle_branches = kwargs.get("cycle_branches", 0)
+            if kwargs.get("second_branch", False):
+                cycle_branches = self._cycle_branches(acquired_reconstruction.occupations, cycle_branches)
+                if np.any(cycle_branches):
+                    raise ValueError("use either cycle_branches or second_branch, not both")
+                cycle_branches += 1
+            saved_correction = self._saved_correction(self.batch_expts)
+            postprocessed = self._postprocess_reconstruction(
+                acquired_reconstruction, saved_correction, calibration, saved.hardware,
+                kwargs.get("phase_frame", "as_acquired"), kwargs.get("manual_kerr_MHz", None), cycle_branches, kwargs.get("legacy", None))
             spectrum = self.analyze_spectrum(
-                reconstruction, 
-                kwargs["photon_number"], 
-                kwargs["detunings"],
-                kwargs["couplings_MHz"], 
-                kwargs["floquet_cycle_us"],
-                kwargs["physical_kerr_MHz"], 
+                postprocessed.reconstruction, photon_number, saved.detunings,
+                saved.hardware.couplings_MHz, saved.hardware.floquet_cycle_us,
+                postprocessed.physical_kerr_MHz,
                 kwargs.get("fft_window", "raw"),
                 kwargs.get("zero_padding", 1),
             )
             self.data = AttrDict(dict(
-                calibration=kwargs["calibration"], 
-                correction=kwargs["correction"],
-                reconstruction=reconstruction, 
+                calibration=calibration, 
+                correction=saved_correction,
+                saved_correction=saved_correction, 
+                target_correction=postprocessed.target_correction,
+                acquired_reconstruction=acquired_reconstruction, 
+                reconstruction=postprocessed.reconstruction,
                 spectrum=spectrum,
-                mode_labels=kwargs["mode_labels"],
+                hardware=saved.hardware, 
+                photon_number=photon_number, 
+                detunings=saved.detunings,
+                mode_labels=saved.mode_labels, 
+                phase_frame=postprocessed.phase_frame,
+                cycle_branches=postprocessed.cycle_branches,
+                analyzer_phase_application_sign=postprocessed.analyzer_phase_application_sign,
+                legacy_analyzer_migration=postprocessed.legacy_analyzer_migration,
             ))
+            if hasattr(calibration_arg, "batch_job_ids"):
+                self.calibration_job_ids = list(calibration_arg.batch_job_ids)
         else:
             raise ValueError("stage must be 'calibration' or 'spectrum'")
         return self.data
@@ -4533,7 +4913,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         cycle_branches = np.asarray(cycle_branches)
         if correction_sign not in (-1., 1.):
             raise ValueError("correction_sign must be +1 or -1")
-        physical_kerr_MHz = -abs(physical_kerr_MHz)
+        if phase_mod180.shape != (len(occupations),) or cycle_branches.shape != (len(occupations),):
+            raise ValueError("phase_mod180 and cycle_branches must match occupations")
+        physical_kerr_MHz = float(physical_kerr_MHz)
+        if not np.isfinite(physical_kerr_MHz):
+            raise ValueError("physical_kerr_MHz must be finite")
         n_M1 = np.asarray([occupation[0] for occupation in occupations])
         kerr_energy_MHz = 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
         kerr_phase = -360. * kerr_energy_MHz * floquet_cycle_us
@@ -4546,6 +4930,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return AttrDict(dict(
             measured_phase=measured_phase, 
             kerr_phase=kerr_phase,
+            cycle_branches=cycle_branches,
+            physical_kerr_MHz=physical_kerr_MHz,
             phase_by_occupation=phase_by_occupation,
         ))
 
@@ -4571,6 +4957,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             phi = cfg.spectroscopy_analyzer_phase
             if phi not in (0., 90.):
                 raise ValueError(f"{occupation} has analyzer phase {phi}; expected 0 or 90")
+            if "floquet_cycles" not in cfg:
+                raise ValueError(f"{occupation}, phi={phi}: this is not a spectroscopy job")
+            if not np.allclose(expt.data["xpts"], [0., 180.]):
+                raise ValueError(f"{occupation}, phi={phi}: saved preparation phases changed")
             if not np.array_equal(expt.data["ypts"], cfg.floquet_cycles):
                 raise ValueError(f"{occupation}, phi={phi}: saved cycles do not match its config")
             if occupation not in grouped:
@@ -4578,7 +4968,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             grouped[occupation][phi].append(expt)
 
         if occupations is None:
-            occupation_order = sorted(grouped)
+            occupation_order = list(grouped)
         else:
             occupation_order = [tuple(occupation) for occupation in occupations]
         if len(occupation_order) != len(grouped) or set(occupation_order) != set(grouped):
@@ -4622,7 +5012,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         cycles = reconstruction.cycles
         A = reconstruction.A
         detunings = np.asarray(detunings)
-        physical_kerr_MHz = -abs(physical_kerr_MHz)
+        physical_kerr_MHz = float(physical_kerr_MHz)
+        if not np.isfinite(physical_kerr_MHz):
+            raise ValueError("physical_kerr_MHz must be finite")
         if len(cycles) < 2:
             raise ValueError("spectroscopy requires at least two cycle points")
         time_us = cycles * floquet_cycle_us
@@ -4877,7 +5269,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     def hardware_parameters(station, 
                             swap_stors, 
                             sync_cycles, 
-                            floquet_gauss_sigma=None):
+                            floquet_gauss_sigma=None,
+                            floquet_waveform=None):
         """
         Returns hardware related physical paramters such as
             - floquet_cycle_us: time for a single floquet cycle in a microsecond
@@ -4896,7 +5289,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         pi_fracs = []
         for stor in swap_stors:
             pulse_name = f"M1-S{stor}"
-            waveform = station.ds_floquet.get_waveform(pulse_name)
+            waveform = floquet_waveform if floquet_waveform is not None else station.ds_floquet.get_waveform(pulse_name)
             if waveform in ("gauss", "gaussian", "arb"):
                 sigma = floquet_gauss_sigma
                 if sigma is None:
@@ -4965,7 +5358,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             grouped[occupation][phi].append(expt)
 
         if occupations is None:
-            occupation_order = sorted(grouped)
+            occupation_order = list(grouped)
         else:
             occupation_order = [tuple(occupation) for occupation in occupations]
         if len(occupation_order) != len(grouped) or set(occupation_order) != set(grouped):
