@@ -5213,8 +5213,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fock_index = {tuple(occupation): index for index, occupation in enumerate(fock_basis)}
         #Making Hamiltonian matrix in a fock basis
         H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
-        # The pulse program tracks detuning phase over the full cycle; its saved sign convention is -detuning.
-        onsite_MHz = np.concatenate(([0.], detunings))
+        # The pulse program adds detuning to the positive storage-M1 sideband, so the rotating-frame onsite energy is -detuning.
+        onsite_MHz = np.concatenate(([0.], -detunings))
         # updating Hamiltonian indices by estimating
         # <n_i|H_{diag}|n_j> = \delta_{ij}(delta_i n_i+Kerr/2*n_M*(n_M-1) 
         #Specifically, the algorithm is
@@ -5407,10 +5407,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
         else:
             fig = ax.figure
-        for row, weights in enumerate(spectrum.eigenstate_weights):
+        ldos_energies_MHz, energy_indices = np.unique(np.round(spectrum.energies_MHz, 10), return_inverse=True)
+        ldos_weights = np.asarray([np.bincount(energy_indices, weights=weights, minlength=len(ldos_energies_MHz)) for weights in spectrum.eigenstate_weights])
+        for row, weights in enumerate(ldos_weights):
             height = 0.8 * weights
             ax.hlines(row, -spectrum.energy_limit_MHz, spectrum.energy_limit_MHz, color="0.85")
-            ax.vlines(spectrum.energies_MHz, row, row + height, color="tab:blue")
+            ax.vlines(ldos_energies_MHz, row, row + height, color="tab:blue")
         ax.set_yticks(np.arange(len(occupations)))
         ax.set_yticklabels([str(occupation) for occupation in occupations])
         ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="initial occupation", title="exact local density-of-states weights")
@@ -5450,7 +5452,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             theory *= np.max(measured) / np.max(theory)
         if not np.isfinite(ldos_weight_cutoff) or ldos_weight_cutoff < 0.:
             raise ValueError("ldos_weight_cutoff must be finite and nonnegative")
-        ldos_weights = spectrum.eigenstate_weights[row]
+        ldos_energies_MHz, energy_indices = np.unique(np.round(spectrum.energies_MHz, 10), return_inverse=True)
+        ldos_weights = np.bincount(energy_indices, weights=spectrum.eigenstate_weights[row], minlength=len(ldos_energies_MHz))
         keep = ldos_weights >= ldos_weight_cutoff
         if axes is None:
             if figsize is None:
@@ -5472,8 +5475,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title="finite-time FFT")
         axes[1].legend()
 
-        axes[2].vlines(spectrum.energies_MHz[keep], 0., ldos_weights[keep], color="tab:blue")
-        axes[2].plot(spectrum.energies_MHz[keep], ldos_weights[keep], "o", color="tab:blue", markersize=4)
+        axes[2].vlines(ldos_energies_MHz[keep], 0., ldos_weights[keep], color="tab:blue")
+        axes[2].plot(ldos_energies_MHz[keep], ldos_weights[keep], "o", color="tab:blue", markersize=4)
         axes[2].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="spectral weight", title="exact LDOS weights")
         title = str(occupation)
         if phase_frame is not None:
