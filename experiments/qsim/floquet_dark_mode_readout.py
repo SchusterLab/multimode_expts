@@ -5523,7 +5523,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
         axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_exp, 1e-12), color="black", label="experiment")
         axes[1].semilogy(sff.time_us, np.maximum(sff.SFF_theory, 1e-12), color="tab:orange", label="theory")
-        axes[1].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
+        if plot_theory_limit:
+            axes[1].axhline(sff.plateau_reference, color="0.6", linestyle=":", label="theory infinite-time average")
         axes[1].set(xlabel="time (us)", ylabel=r"$K(t)$", title="spectral form factor (log scale)")
         axes[1].legend()
         fig.suptitle(f"N={sff.photon_number}, D={sff.dimension}; frame={sff.phase_frame}; Kerr={sff.physical_kerr_MHz:.6g} MHz")
