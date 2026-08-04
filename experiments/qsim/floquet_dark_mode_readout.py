@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import qutip as qt
+from scipy.signal import find_peaks
 from qick import *
 from qick.helpers import gauss
 from slab import AttrDict, Experiment, dsfit
@@ -5167,7 +5168,31 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                          physical_kerr_MHz, 
                          fft_window="raw", 
                          zero_padding=1):
-        """Build the fixed-N Hamiltonian, LDOS weights, and measured/theory spectra."""
+        """
+        Build the fixed-N Hamiltonian, LDOS weights, and measured/theory spectra.
+        
+        Returns AttrDict with:
+            - time_us=time_us, 
+            - energy_MHz=energy_MHz, 
+            - measured_local=measured_local, 
+            - theory_local=theory_local,
+            - measured=measured, 
+            - theory=theory, 
+            - energies_MHz=energies_MHz,
+            - fock_basis=fock_basis,
+            - basis_eigenstate_weights=np.abs(states) ** 2,
+            - eigenstate_weights=eigenstate_weights, 
+            - physical_kerr_MHz=physical_kerr_MHz,
+            - complete_basis=complete_basis, 
+            - energy_limit_MHz=energy_limit_MHz,
+            - fft_window=fft_window, 
+            - zero_padding=zero_padding,
+            - fft_resolution_MHz=1. / (len(cycles) * sample_time_us),
+        
+        energies_MHz is the list of energy eigenvalue of the hamiltonian.
+        theory_local is the fft result expected from theory, and 
+        measured_local is the measured fft result.
+        """
         cycles = reconstruction.cycles
         A = reconstruction.A
         detunings = np.asarray(detunings)
@@ -5451,14 +5476,21 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
     def analyze_level_statistics(self,
                                  data=None,
-                                 degeneracy_tolerance_MHz=1e-10):
-        """Calculate exact DOS multiplicities and adjacent-gap ratios 
-        for a complete fixed-N spectrum.
+                                 peak_prominence=None,
+                                 peak_prominence_fraction=None,
+                                 minimum_peak_distance_MHz=None,
+                                 energy_limit_MHz=None):
+        """Calculate adjacent-gap ratios from peaks in the measured complete-basis DOS.
 
-        This uses the exact eigenenergies of the Hamiltonian built by ``analyze_spectrum``,
-        not peaks extracted from the finite-time measured FFT. 
-        Degenerate energies are combined only for the exact-DOS display;
-        gap ratios use the full ordered level list, so degeneracies remain as zero gaps.
+        The measured DOS is ``spectrum.measured``, which is the sum of all measured
+        occupation-resolved FFT magnitudes. Peak positions are extracted from that
+        experimental curve without using the Hamiltonian eigenenergies. The default
+        minimum peak separation is set by the physical FFT resolution and the selected
+        window. Unresolved or exactly degenerate levels remain one measured peak. Their
+        background-corrected spectral weights are normalized to the known Hilbert-space
+        dimension and converted to positive integer multiplicities whose sum is exactly D.
+        The measured peak energy is then repeated by that inferred multiplicity before
+        calculating adjacent gaps and gap ratios.
         """
         if data is None:
             data = self.data
@@ -5467,50 +5499,98 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         spectrum = data.spectrum
         if not spectrum.complete_basis:
             raise ValueError("level statistics requires the complete fixed-N occupation basis")
-        if not np.isfinite(degeneracy_tolerance_MHz) or degeneracy_tolerance_MHz < 0.:
-            raise ValueError("degeneracy_tolerance_MHz must be finite and nonnegative")
+        window_resolution_factors = {"raw": 1., "hann": 2., "hamming": 2., "blackman": 3.}
+        default_prominence_fractions = {"raw": 0.05, "hann": 0.05, "hamming": 0.05, "blackman": 0.05}
+        if spectrum.fft_window not in window_resolution_factors:
+            raise ValueError(f"unknown FFT window {spectrum.fft_window}")
+        if peak_prominence_fraction is None:
+            peak_prominence_fraction = default_prominence_fractions[spectrum.fft_window]
+        if not np.isfinite(peak_prominence_fraction) or peak_prominence_fraction < 0. or peak_prominence_fraction >= 1.:
+            raise ValueError("peak_prominence_fraction must be finite and in [0, 1)")
 
-        energies_MHz = np.sort(np.asarray(spectrum.energies_MHz, dtype=float))
-        if len(energies_MHz) < 3:
-            raise ValueError("adjacent-gap ratios require at least three energy levels")
+        energy_MHz = np.asarray(spectrum.energy_MHz, dtype=float)
+        measured_DOS = np.asarray(spectrum.measured, dtype=float)
+        theory_DOS = np.asarray(spectrum.theory, dtype=float)
+        if energy_MHz.ndim != 1 or measured_DOS.shape != energy_MHz.shape or theory_DOS.shape != energy_MHz.shape:
+            raise ValueError("measured DOS, theory DOS, and FFT energy axis must be one-dimensional and have the same shape")
+        if not np.all(np.isfinite(energy_MHz)) or not np.all(np.isfinite(measured_DOS)) or not np.all(np.isfinite(theory_DOS)):
+            raise ValueError("measured DOS, theory DOS, and FFT energy axis must be finite")
 
-        # Calculate every adjacent gap once. Gaps within the tolerance are treated as exact degeneracies.
-        gaps_MHz = np.diff(energies_MHz)
-        for gap_index, gap_MHz in enumerate(gaps_MHz):
-            gap_is_degenerate = np.isclose(
-                gap_MHz,
-                0.,
-                rtol=0.,
-                atol=degeneracy_tolerance_MHz,
-            )
-            if gap_is_degenerate:
-                gaps_MHz[gap_index] = 0.
+        if energy_limit_MHz is None:
+            energy_limit_MHz = float(np.max(np.abs(energy_MHz)))
+        if not np.isfinite(energy_limit_MHz) or energy_limit_MHz <= 0.:
+            raise ValueError("energy_limit_MHz must be finite and positive")
+        inside_energy_limit = np.abs(energy_MHz) <= energy_limit_MHz
+        energy_MHz = energy_MHz[inside_energy_limit]
+        measured_DOS = measured_DOS[inside_energy_limit]
+        theory_DOS = theory_DOS[inside_energy_limit]
+        if len(energy_MHz) < 3:
+            raise ValueError("the selected energy range has fewer than three FFT bins")
 
-        # The first energy always begins the first level. Every later energy begins a new level only when its preceding gap is nonzero.
-        begins_new_level = np.empty(len(energies_MHz), dtype=bool)
-        begins_new_level[0] = True
-        for energy_index in range(1, len(energies_MHz)):
-            preceding_gap_MHz = gaps_MHz[energy_index - 1]
-            begins_new_level[energy_index] = preceding_gap_MHz != 0.
+        energy_bin_widths_MHz = np.diff(energy_MHz)
+        energy_step_MHz = float(energy_bin_widths_MHz[0])
+        if energy_step_MHz <= 0. or not np.allclose(energy_bin_widths_MHz, energy_step_MHz):
+            raise ValueError("FFT energy grid must be uniformly increasing")
 
-        # Give the same level index to energies that are degenerate within the tolerance.
-        level_indices = np.empty(len(energies_MHz), dtype=int)
-        current_level_index = -1
-        for energy_index, starts_new_level in enumerate(begins_new_level):
-            if starts_new_level:
-                current_level_index += 1
-            level_indices[energy_index] = current_level_index
+        measured_DOS_range = float(np.max(measured_DOS) - np.min(measured_DOS))
+        if measured_DOS_range <= 0.:
+            raise ValueError("measured DOS has no peak contrast")
+        if peak_prominence is None:
+            peak_prominence = peak_prominence_fraction * measured_DOS_range
+        elif not np.isfinite(peak_prominence) or peak_prominence < 0.:
+            raise ValueError("peak_prominence must be finite and nonnegative")
+        else:
+            peak_prominence = float(peak_prominence)
+            peak_prominence_fraction = peak_prominence / measured_DOS_range
 
-        # Count the number of eigenstates and calculate the representative energy of each level.
-        number_of_levels = current_level_index + 1
-        multiplicities = np.zeros(number_of_levels, dtype=int)
-        level_energy_sums_MHz = np.zeros(number_of_levels, dtype=float)
-        for energy_MHz, level_index in zip(energies_MHz, level_indices):
-            multiplicities[level_index] += 1
-            level_energy_sums_MHz[level_index] += energy_MHz
-        level_energies_MHz = level_energy_sums_MHz / multiplicities
+        row_fft_resolution_MHz = spectrum.get("row_fft_resolution_MHz", [spectrum.fft_resolution_MHz])
+        fft_resolution_MHz = float(np.max(row_fft_resolution_MHz))
+        window_resolution_factor = window_resolution_factors[spectrum.fft_window]
+        effective_resolution_MHz = window_resolution_factor * fft_resolution_MHz
+        if minimum_peak_distance_MHz is None:
+            minimum_peak_distance_MHz = effective_resolution_MHz
+        if not np.isfinite(minimum_peak_distance_MHz) or minimum_peak_distance_MHz <= 0.:
+            raise ValueError("minimum_peak_distance_MHz must be finite and positive")
+        minimum_peak_distance_bins = max(1, int(np.ceil(minimum_peak_distance_MHz / energy_step_MHz - 1e-10)))
 
-        # For neighboring gaps delta_n and delta_(n+1), calculate min(delta_n, delta_(n+1)) / max(delta_n, delta_(n+1)).
+        peak_indices, peak_properties = find_peaks(
+            measured_DOS,
+            prominence=peak_prominence,
+            distance=minimum_peak_distance_bins,
+        )
+        peak_prominences = peak_properties["prominences"]
+        peak_energies_MHz = energy_MHz[peak_indices]
+        peak_heights = measured_DOS[peak_indices]
+
+        basis_dimension = len(data.reconstruction.occupations)
+        detected_peak_count = len(peak_energies_MHz)
+        if detected_peak_count == 0:
+            raise ValueError("no experimental DOS peaks were detected; reduce peak_prominence")
+        if detected_peak_count > basis_dimension:
+            raise ValueError(f"detected {detected_peak_count} peaks for a D={basis_dimension} Hilbert space; increase peak_prominence")
+
+        # Peak prominence is the measured peak height above its local background. Normalize these experimental spectral weights so their continuous multiplicities sum to D.
+        total_peak_weight = float(np.sum(peak_prominences))
+        if total_peak_weight <= 0.:
+            raise ValueError("detected peaks have zero total prominence")
+        continuous_multiplicities = basis_dimension * peak_prominences / total_peak_weight
+
+        # Find the closest positive integer multiplicities while preserving the known total number of states D.
+        multiplicities = np.maximum(1, np.rint(continuous_multiplicities).astype(int))
+        while np.sum(multiplicities) < basis_dimension:
+            under_assignment = continuous_multiplicities - multiplicities
+            peak_to_increment = int(np.argmax(under_assignment))
+            multiplicities[peak_to_increment] += 1
+        while np.sum(multiplicities) > basis_dimension:
+            removable_peaks = np.flatnonzero(multiplicities > 1)
+            if len(removable_peaks) == 0:
+                raise ValueError("experimental peak multiplicities cannot be made consistent with D")
+            over_assignment = multiplicities[removable_peaks] - continuous_multiplicities[removable_peaks]
+            peak_to_decrement = removable_peaks[int(np.argmax(over_assignment))]
+            multiplicities[peak_to_decrement] -= 1
+
+        experimental_level_energies_MHz = np.repeat(peak_energies_MHz, multiplicities)
+        gaps_MHz = np.diff(experimental_level_energies_MHz)
         gap_ratios = []
         undefined_gap_ratios = 0
         for left_gap_MHz, right_gap_MHz in zip(gaps_MHz[:-1], gaps_MHz[1:]):
@@ -5522,22 +5602,63 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 gap_ratios.append(smaller_gap_MHz / larger_gap_MHz)
         gap_ratios = np.asarray(gap_ratios, dtype=float)
 
+        # Keep the exact-Hamiltonian level statistics only as a background comparison.
+        theory_energies_MHz = np.sort(np.asarray(spectrum.energies_MHz, dtype=float))
+        theory_gaps_MHz = np.diff(theory_energies_MHz)
+        theory_degeneracy_tolerance_MHz = 1e-10
+        for gap_index, gap_MHz in enumerate(theory_gaps_MHz):
+            if np.isclose(gap_MHz, 0., rtol=0., atol=theory_degeneracy_tolerance_MHz):
+                theory_gaps_MHz[gap_index] = 0.
+        theory_gap_ratios = []
+        theory_undefined_gap_ratios = 0
+        for left_gap_MHz, right_gap_MHz in zip(theory_gaps_MHz[:-1], theory_gaps_MHz[1:]):
+            smaller_gap_MHz = min(left_gap_MHz, right_gap_MHz)
+            larger_gap_MHz = max(left_gap_MHz, right_gap_MHz)
+            if larger_gap_MHz == 0.:
+                theory_undefined_gap_ratios += 1
+            else:
+                theory_gap_ratios.append(smaller_gap_MHz / larger_gap_MHz)
+        theory_gap_ratios = np.asarray(theory_gap_ratios, dtype=float)
+
         if "photon_number" in data:
             photon_number = data.photon_number
         else:
             photon_number = sum(data.reconstruction.occupations[0])
         return AttrDict(dict(
-            energies_MHz=energies_MHz, 
-            level_energies_MHz=level_energies_MHz,
-            multiplicities=multiplicities, 
-            gaps_MHz=gaps_MHz, 
+            energy_MHz=energy_MHz,
+            measured_DOS=measured_DOS,
+            theory_DOS=theory_DOS,
+            peak_indices=peak_indices,
+            peak_energies_MHz=peak_energies_MHz,
+            peak_heights=peak_heights,
+            peak_prominences=peak_prominences,
+            continuous_multiplicities=continuous_multiplicities,
+            multiplicities=multiplicities,
+            experimental_level_energies_MHz=experimental_level_energies_MHz,
+            gaps_MHz=gaps_MHz,
             gap_ratios=gap_ratios,
             undefined_gap_ratios=undefined_gap_ratios,
-            dimension=len(energies_MHz),
+            theory_energies_MHz=theory_energies_MHz,
+            theory_gaps_MHz=theory_gaps_MHz,
+            theory_gap_ratios=theory_gap_ratios,
+            theory_undefined_gap_ratios=theory_undefined_gap_ratios,
+            basis_dimension=basis_dimension,
+            detected_peak_count=detected_peak_count,
+            gap_ratio_count=len(gap_ratios),
+            sufficient_for_gap_ratios=len(gap_ratios) > 0,
             photon_number=photon_number,
-            poisson_mean=2. * np.log(2.) - 1., 
+            peak_prominence=peak_prominence,
+            peak_prominence_fraction=float(peak_prominence_fraction),
+            minimum_peak_distance_MHz=float(minimum_peak_distance_MHz),
+            energy_limit_MHz=float(energy_limit_MHz),
+            fft_resolution_MHz=fft_resolution_MHz,
+            effective_resolution_MHz=effective_resolution_MHz,
+            window_resolution_factor=window_resolution_factor,
+            fft_window=spectrum.fft_window,
+            mixed_resolution=bool(spectrum.get("mixed_resolution", False)),
+            raw_window_peak_ambiguity=spectrum.fft_window == "raw",
+            poisson_mean=2. * np.log(2.) - 1.,
             goe_mean=4. - 2. * np.sqrt(3.),
-            degeneracy_tolerance_MHz=float(degeneracy_tolerance_MHz),
         ))
 
     def analyze_sff(self, 
@@ -5788,42 +5909,67 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                  data=None,
                                  level_statistics=None,
                                  bins=10,
-                                 degeneracy_tolerance_MHz=1e-10):
+                                 peak_prominence=None,
+                                 peak_prominence_fraction=None,
+                                 minimum_peak_distance_MHz=None,
+                                 energy_limit_MHz=None):
         """
-        Plot exact DOS state counts and the gap-ratio distribution with 
-        Poisson and GOE guides.
+        Plot the measured complete-basis DOS and experimental gap-ratio
+        distribution in the foreground. The exact-Hamiltonian DOS and gap
+        ratios are retained only as faded background comparisons.
         
         """
         if level_statistics is None:
-            level_statistics = self.analyze_level_statistics(data=data, degeneracy_tolerance_MHz=degeneracy_tolerance_MHz)
+            level_statistics = self.analyze_level_statistics(
+                data=data,
+                peak_prominence=peak_prominence,
+                peak_prominence_fraction=peak_prominence_fraction,
+                minimum_peak_distance_MHz=minimum_peak_distance_MHz,
+                energy_limit_MHz=energy_limit_MHz,
+            )
         if not isinstance(bins, (int, np.integer)) or bins < 1:
             raise ValueError("bins must be a positive integer")
 
         fig, axes = plt.subplots(1, 2, figsize=(14, 4.8), constrained_layout=True)
-        axes[0].vlines(level_statistics.level_energies_MHz, 0., level_statistics.multiplicities, color="tab:blue")
-        axes[0].plot(level_statistics.level_energies_MHz, level_statistics.multiplicities, "o", color="tab:blue", markersize=4)
-        axes[0].set(xlabel="eigenenergy E/h (MHz)", ylabel="exact DOS weight (number of states)", title="exact complete-basis DOS")
+        axes[0].plot(level_statistics.energy_MHz, level_statistics.theory_DOS, color="0.65", linewidth=1.5, alpha=0.6, label="exact H (background)")
+        axes[0].plot(level_statistics.energy_MHz, level_statistics.measured_DOS, color="black", linewidth=2., label="experiment")
+        axes[0].errorbar(level_statistics.peak_energies_MHz, level_statistics.peak_heights, xerr=0.5 * level_statistics.effective_resolution_MHz, fmt="o", color="tab:red", capsize=3, label="detected peaks; horizontal bar = effective resolution")
+        for peak_energy_MHz, peak_height, multiplicity in zip(level_statistics.peak_energies_MHz, level_statistics.peak_heights, level_statistics.multiplicities):
+            axes[0].annotate(f"m={multiplicity}", (peak_energy_MHz, peak_height), xytext=(0, 7), textcoords="offset points", ha="center", color="tab:red")
+        DOS_title = f"measured complete-basis DOS proxy; {level_statistics.detected_peak_count} peaks, inferred multiplicities sum to D={level_statistics.basis_dimension}"
+        if level_statistics.raw_window_peak_ambiguity:
+            DOS_title += "; raw-window peak detection is heuristic"
+        if level_statistics.mixed_resolution:
+            DOS_title += "; mixed resolution"
+        axes[0].set(xlabel="energy E/h (MHz)", ylabel="summed measured FFT magnitude", title=DOS_title)
         axes[0].set_ylim(bottom=0.)
-        axes[0].set_yticks(np.arange(np.max(level_statistics.multiplicities) + 1))
+        axes[0].legend()
 
-        r = np.linspace(0., 1., 501)
+        gap_ratio_axis = np.linspace(0., 1., 501)
         #equation reference: Roushan et al., Science 358, 1175–1179 (2017)
-        poisson = 2. / (1. + r) ** 2
-        goe = 27. * (r + r ** 2) / (4. * (1. + r + r ** 2) ** 2.5)
+        poisson_probability_density = 2. / (1. + gap_ratio_axis) ** 2
+        goe_probability_density = 27. * (gap_ratio_axis + gap_ratio_axis ** 2) / (4. * (1. + gap_ratio_axis + gap_ratio_axis ** 2) ** 2.5)
+        comparison_count = max(level_statistics.gap_ratio_count, len(level_statistics.theory_gap_ratios))
+        histogram_bins = min(bins, max(1, int(np.ceil(np.sqrt(comparison_count)))))
+        histogram_edges = np.linspace(0., 1., histogram_bins + 1)
+        if len(level_statistics.theory_gap_ratios):
+            theory_label = f"exact H (background); n={len(level_statistics.theory_gap_ratios)}, mean={np.mean(level_statistics.theory_gap_ratios):.3f}"
+            axes[1].hist(level_statistics.theory_gap_ratios, bins=histogram_edges, density=True, histtype="stepfilled", color="0.75", edgecolor="0.55", linewidth=1.2, alpha=0.45, label=theory_label)
         if len(level_statistics.gap_ratios):
-            axes[1].hist(level_statistics.gap_ratios, bins=np.linspace(0., 1., bins + 1), density=True, histtype="step", color="black", linewidth=1.8, label=f"spectrum; mean={np.mean(level_statistics.gap_ratios):.3f}")
+            axes[1].hist(level_statistics.gap_ratios, bins=histogram_edges, density=True, histtype="step", color="black", linestyle="-", linewidth=2., label=f"experiment; n={level_statistics.gap_ratio_count}, mean={np.mean(level_statistics.gap_ratios):.3f}")
+            axes[1].plot(level_statistics.gap_ratios, np.zeros(level_statistics.gap_ratio_count), "|", color="black", markersize=10)
         else:
-            axes[1].plot([], [], color="black", label="spectrum; no finite ratios")
-        axes[1].plot(r, poisson, label=f"Poisson; mean={level_statistics.poisson_mean:.3f}")
-        axes[1].plot(r, goe, label=f"GOE; mean={level_statistics.goe_mean:.3f}")
+            axes[1].plot([], [], color="black", label="measured DOS levels; no finite gap ratios")
+        axes[1].plot(gap_ratio_axis, poisson_probability_density, linestyle="--", label=f"Poisson; mean={level_statistics.poisson_mean:.3f}")
+        axes[1].plot(gap_ratio_axis, goe_probability_density, linestyle="--", label=f"GOE; mean={level_statistics.goe_mean:.3f}")
         axes[1].axvline(level_statistics.poisson_mean, color="tab:blue", linestyle=":")
         axes[1].axvline(level_statistics.goe_mean, color="tab:orange", linestyle=":")
-        ratio_title = "adjacent-gap-ratio statistics"
+        ratio_title = "experimental adjacent-gap-ratio statistics"
         if level_statistics.undefined_gap_ratios:
-            ratio_title += f"; {level_statistics.undefined_gap_ratios} undefined 0/0 omitted"
+            ratio_title += f"; {level_statistics.undefined_gap_ratios} inferred-degeneracy 0/0 omitted"
         axes[1].set(xlim=(0., 1.), xlabel=r"adjacent-gap ratio $\tilde r$", ylabel=r"probability density $P(\tilde r)$", title=ratio_title)
         axes[1].legend()
-        fig.suptitle(f"N={level_statistics.photon_number}, D={level_statistics.dimension}; exact Hamiltonian levels")
+        fig.suptitle(f"N={level_statistics.photon_number}; experiment solid, exact H faded; experimental resolution={level_statistics.effective_resolution_MHz:.6g} MHz, prominence={level_statistics.peak_prominence:.4g}")
         return fig
 
     def display_sff(self, 
@@ -5901,7 +6047,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                       self.data.spectrum,
                                       self.data.mode_labels)
             if self.data.spectrum.complete_basis and kwargs.get("level_statistics", True):
-                self.display_level_statistics(data=self.data, bins=kwargs.get("level_statistics_bins", 10))
+                self.display_level_statistics(
+                    data=self.data,
+                    bins=kwargs.get("level_statistics_bins", 10),
+                    peak_prominence=kwargs.get("level_peak_prominence", None),
+                    peak_prominence_fraction=kwargs.get("level_peak_prominence_fraction", None),
+                    minimum_peak_distance_MHz=kwargs.get("level_minimum_peak_distance_MHz", None),
+                    energy_limit_MHz=kwargs.get("level_energy_limit_MHz", None),
+                )
             return fig
         if "phase_mod180" in self.data:
             if "results" not in self.data:
