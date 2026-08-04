@@ -5283,6 +5283,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             measured=measured, 
             theory=theory, 
             energies_MHz=energies_MHz,
+            fock_basis=fock_basis,
+            basis_eigenstate_weights=np.abs(states) ** 2,
             eigenstate_weights=eigenstate_weights, 
             physical_kerr_MHz=physical_kerr_MHz,
             complete_basis=complete_basis, 
@@ -5290,6 +5292,252 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             fft_window=fft_window, 
             zero_padding=zero_padding,
             fft_resolution_MHz=1. / (len(cycles) * sample_time_us),
+        ))
+
+    @staticmethod
+    def merge_spectra(data):
+        """
+        This method is to join occupation rows from separately analyzed spectra on 
+        one common energy grid.
+
+        Each input must already contain ``reconstruction`` and ``spectrum`` 
+        from ``analyze(stage='spectrum')``. The photon number, mode order, phase frame, 
+        and FFT window must agree, but the record length, zero padding, and energy grids 
+        may differ. A source Hamiltonian may differ from the first source only when its
+        largest eigenenergy change is smaller than the worse of their physical FFT 
+        resolutions. The first source defines the Hamiltonian used for all theory and 
+        LDOS rows. Measured FFT magnitudes are linearly interpolated only over the shared 
+        Nyquist range. Interpolation aligns coordinates; it does not improve a row's 
+        physical resolution, which is retained in ``row_fft_resolution_MHz``.
+
+        The returned object is spectrum-only because its rows do not share one complex time
+        grid. It can be passed to ``display`` and to complete-basis level-statistics 
+        analysis, but not to SFF or occupation time-trace displays.
+        """
+        sources = list(data) if isinstance(data, (list, tuple)) else [data]
+        sources = [source.data if not isinstance(source, dict) and hasattr(source, "data") else source for source in sources]
+        if len(sources) < 2:
+            raise ValueError("merge_spectra requires at least two analyzed spectra")
+        for source in sources:
+            if "reconstruction" not in source or "spectrum" not in source:
+                raise ValueError("every merge source must contain reconstruction and spectrum")
+            if source.get("spectrum_only", False):
+                raise ValueError("merge_spectra does not accept an already merged spectrum")
+
+        reference = sources[0]
+        reference_energies_MHz = np.asarray(reference.spectrum.energies_MHz)
+        if "fock_basis" not in reference.spectrum or "basis_eigenstate_weights" not in reference.spectrum:
+            raise ValueError("reanalyze the first spectrum with the current code before merging")
+        reference_fock_basis = [tuple(occupation) for occupation in reference.spectrum.fock_basis]
+        reference_basis_eigenstate_weights = np.asarray(reference.spectrum.basis_eigenstate_weights)
+        if reference_basis_eigenstate_weights.shape != (len(reference_fock_basis), len(reference_energies_MHz)):
+            raise ValueError("the first spectrum has inconsistent full-basis eigenstate weights")
+        reference_weights_by_occupation = dict(zip(reference_fock_basis, reference_basis_eigenstate_weights))
+        occupations = []
+        measured_rows = []
+        theory_rows = []
+        row_fft_resolution_MHz = []
+        row_physical_kerr_MHz = []
+        hamiltonian_mismatch_MHz = []
+        energy_steps_MHz = []
+        energy_minima_MHz = []
+        energy_maxima_MHz = []
+        windows = {"raw": np.ones, 
+                   "hann": np.hanning, 
+                   "hamming": np.hamming, 
+                   "blackman": np.blackman}
+        # Collect the spectrum and its resolution information
+        for source in sources:
+            spectrum = source.spectrum
+            if source.photon_number != reference.photon_number or list(source.mode_labels) != list(reference.mode_labels):
+                raise ValueError("merged spectra must use the same photon number and mode order")
+            if source.phase_frame != reference.phase_frame:
+                raise ValueError("merged spectra must use the same physical phase frame")
+            if spectrum.fft_window != reference.spectrum.fft_window:
+                raise ValueError("merged spectra must use the same FFT window")
+            source_energies_MHz = np.asarray(spectrum.energies_MHz)
+            if source_energies_MHz.shape != reference_energies_MHz.shape:
+                raise ValueError("merged spectra describe different Hilbert-space dimensions")
+            energy_mismatch_MHz = float(np.max(np.abs(source_energies_MHz - reference_energies_MHz)))
+            allowed_mismatch_MHz = max(float(spectrum.fft_resolution_MHz), float(reference.spectrum.fft_resolution_MHz))
+            if energy_mismatch_MHz > allowed_mismatch_MHz:
+                raise ValueError(f"source Hamiltonian differs by {energy_mismatch_MHz:.6g} MHz, larger than the {allowed_mismatch_MHz:.6g} MHz FFT resolution")
+            hamiltonian_mismatch_MHz.append(energy_mismatch_MHz)
+
+            source_occupations = [tuple(occupation) for occupation in source.reconstruction.occupations]
+            if set(occupations).intersection(source_occupations):
+                raise ValueError("merged spectra contain duplicate occupations")
+            occupations.extend(source_occupations)
+            energy_MHz = np.asarray(spectrum.energy_MHz)
+            energy_steps_MHz.append(float(np.median(np.diff(energy_MHz))))
+            energy_minima_MHz.append(float(energy_MHz[0]))
+            energy_maxima_MHz.append(float(energy_MHz[-1]))
+            row_fft_resolution_MHz.extend([float(spectrum.fft_resolution_MHz)] * len(source_occupations))
+            row_physical_kerr_MHz.extend([float(spectrum.physical_kerr_MHz)] * len(source_occupations))
+        # Choose the coarsest binning and range
+        energy_step_MHz = max(energy_steps_MHz)
+        energy_min_MHz = max(energy_minima_MHz)
+        energy_max_MHz = min(energy_maxima_MHz)
+        
+
+        first_bin = int(np.ceil(energy_min_MHz / energy_step_MHz - 1e-10))
+        last_bin = int(np.floor(energy_max_MHz / energy_step_MHz + 1e-10))
+        energy_MHz = np.arange(first_bin, last_bin + 1, dtype=float) * energy_step_MHz
+        if len(energy_MHz) < 2:
+            raise ValueError("merged spectra have no usable common energy range")
+        if np.any(reference_energies_MHz < energy_MHz[0]) or np.any(reference_energies_MHz > energy_MHz[-1]):
+            raise ValueError("Hamiltonian eigenenergies lie outside the shared Nyquist range")
+        eigenstate_weights = np.asarray([reference_weights_by_occupation[occupation] for occupation in occupations])
+
+        for source in sources:
+            spectrum = source.spectrum
+            source_energy_MHz = np.asarray(spectrum.energy_MHz)
+            measured_rows.extend([np.interp(energy_MHz, source_energy_MHz, row) for row in spectrum.measured_local])
+
+            time_us = np.asarray(spectrum.time_us)
+            window = windows[spectrum.fft_window](len(time_us))
+            theory_phase = np.exp(-2j * np.pi * np.outer(reference_energies_MHz, time_us))
+            source_weights = np.asarray([reference_weights_by_occupation[tuple(occupation)] for occupation in source.reconstruction.occupations])
+            theory_A = source_weights @ theory_phase
+            fourier_kernel = np.exp(2j * np.pi * np.outer(time_us, energy_MHz))
+            theory_rows.extend(np.abs((theory_A * window) @ fourier_kernel) / np.sum(window))
+
+        measured_local = np.asarray(measured_rows)
+        theory_local = np.asarray(theory_rows)
+        measured = np.sum(measured_local, axis=0)
+        theory = np.sum(theory_local, axis=0)
+        if np.max(theory) > 0.:
+            theory_local *= np.max(measured) / np.max(theory)
+            theory = np.sum(theory_local, axis=0)
+
+        complete_basis = set(occupations) == set(reference_fock_basis)
+        row_fft_resolution_MHz = np.asarray(row_fft_resolution_MHz)
+        row_physical_kerr_MHz = np.asarray(row_physical_kerr_MHz)
+        energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(reference_energies_MHz))))
+        spectrum = AttrDict(dict(
+            energy_MHz=energy_MHz, 
+            measured_local=measured_local, 
+            theory_local=theory_local,
+            measured=measured, 
+            theory=theory, 
+            energies_MHz=reference_energies_MHz,
+            fock_basis=[list(occupation) for occupation in reference_fock_basis], 
+            basis_eigenstate_weights=reference_basis_eigenstate_weights,
+            eigenstate_weights=eigenstate_weights, 
+            physical_kerr_MHz=float(reference.spectrum.physical_kerr_MHz),
+            complete_basis=complete_basis, 
+            energy_limit_MHz=energy_limit_MHz,
+            fft_window=reference.spectrum.fft_window, 
+            zero_padding=None,
+            fft_resolution_MHz=float(np.max(row_fft_resolution_MHz)), 
+            row_fft_resolution_MHz=row_fft_resolution_MHz,
+            mixed_resolution=not np.allclose(row_fft_resolution_MHz, row_fft_resolution_MHz[0]),
+            row_physical_kerr_MHz=row_physical_kerr_MHz,
+            hamiltonian_mismatch_MHz=float(np.max(hamiltonian_mismatch_MHz)),
+            mixed_hamiltonian=not np.isclose(np.max(hamiltonian_mismatch_MHz), 0.), 
+            energy_grid_step_MHz=energy_step_MHz,
+        ))
+        return AttrDict(dict(
+            reconstruction=AttrDict(dict(occupations=occupations)), 
+            spectrum=spectrum,
+            hardware=reference.hardware, 
+            photon_number=reference.photon_number,
+            detunings=reference.detunings, 
+            mode_labels=reference.mode_labels,
+            phase_frame=reference.phase_frame,
+            source_phase_frames=[source.get("source_phase_frame", source.phase_frame) for source in sources],
+            spectrum_only=True, # To disable SFF analysis
+        ))
+
+    def analyze_level_statistics(self,
+                                 data=None,
+                                 degeneracy_tolerance_MHz=1e-10):
+        """Calculate exact DOS multiplicities and adjacent-gap ratios 
+        for a complete fixed-N spectrum.
+
+        This uses the exact eigenenergies of the Hamiltonian built by ``analyze_spectrum``,
+        not peaks extracted from the finite-time measured FFT. 
+        Degenerate energies are combined only for the exact-DOS display;
+        gap ratios use the full ordered level list, so degeneracies remain as zero gaps.
+        """
+        if data is None:
+            data = self.data
+        if "spectrum" not in data:
+            raise ValueError("level statistics requires analyzed spectroscopy data")
+        spectrum = data.spectrum
+        if not spectrum.complete_basis:
+            raise ValueError("level statistics requires the complete fixed-N occupation basis")
+        if not np.isfinite(degeneracy_tolerance_MHz) or degeneracy_tolerance_MHz < 0.:
+            raise ValueError("degeneracy_tolerance_MHz must be finite and nonnegative")
+
+        energies_MHz = np.sort(np.asarray(spectrum.energies_MHz, dtype=float))
+        if len(energies_MHz) < 3:
+            raise ValueError("adjacent-gap ratios require at least three energy levels")
+
+        # Calculate every adjacent gap once. Gaps within the tolerance are treated as exact degeneracies.
+        gaps_MHz = np.diff(energies_MHz)
+        for gap_index, gap_MHz in enumerate(gaps_MHz):
+            gap_is_degenerate = np.isclose(
+                gap_MHz,
+                0.,
+                rtol=0.,
+                atol=degeneracy_tolerance_MHz,
+            )
+            if gap_is_degenerate:
+                gaps_MHz[gap_index] = 0.
+
+        # The first energy always begins the first level. Every later energy begins a new level only when its preceding gap is nonzero.
+        begins_new_level = np.empty(len(energies_MHz), dtype=bool)
+        begins_new_level[0] = True
+        for energy_index in range(1, len(energies_MHz)):
+            preceding_gap_MHz = gaps_MHz[energy_index - 1]
+            begins_new_level[energy_index] = preceding_gap_MHz != 0.
+
+        # Give the same level index to energies that are degenerate within the tolerance.
+        level_indices = np.empty(len(energies_MHz), dtype=int)
+        current_level_index = -1
+        for energy_index, starts_new_level in enumerate(begins_new_level):
+            if starts_new_level:
+                current_level_index += 1
+            level_indices[energy_index] = current_level_index
+
+        # Count the number of eigenstates and calculate the representative energy of each level.
+        number_of_levels = current_level_index + 1
+        multiplicities = np.zeros(number_of_levels, dtype=int)
+        level_energy_sums_MHz = np.zeros(number_of_levels, dtype=float)
+        for energy_MHz, level_index in zip(energies_MHz, level_indices):
+            multiplicities[level_index] += 1
+            level_energy_sums_MHz[level_index] += energy_MHz
+        level_energies_MHz = level_energy_sums_MHz / multiplicities
+
+        # For neighboring gaps delta_n and delta_(n+1), calculate min(delta_n, delta_(n+1)) / max(delta_n, delta_(n+1)).
+        gap_ratios = []
+        undefined_gap_ratios = 0
+        for left_gap_MHz, right_gap_MHz in zip(gaps_MHz[:-1], gaps_MHz[1:]):
+            smaller_gap_MHz = min(left_gap_MHz, right_gap_MHz)
+            larger_gap_MHz = max(left_gap_MHz, right_gap_MHz)
+            if larger_gap_MHz == 0.:
+                undefined_gap_ratios += 1
+            else:
+                gap_ratios.append(smaller_gap_MHz / larger_gap_MHz)
+        gap_ratios = np.asarray(gap_ratios, dtype=float)
+
+        if "photon_number" in data:
+            photon_number = data.photon_number
+        else:
+            photon_number = sum(data.reconstruction.occupations[0])
+        return AttrDict(dict(
+            energies_MHz=energies_MHz, 
+            level_energies_MHz=level_energies_MHz,
+            multiplicities=multiplicities, 
+            gaps_MHz=gaps_MHz, 
+            gap_ratios=gap_ratios,
+            undefined_gap_ratios=undefined_gap_ratios,
+            dimension=len(energies_MHz),
+            photon_number=photon_number,
+            poisson_mean=2. * np.log(2.) - 1., 
+            goe_mean=4. - 2. * np.sqrt(3.),
+            degeneracy_tolerance_MHz=float(degeneracy_tolerance_MHz),
         ))
 
     def analyze_sff(self, 
@@ -5303,6 +5551,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         data = self.data if data is None else data
         if "reconstruction" not in data or "spectrum" not in data:
             raise ValueError("SFF analysis requires analyzed spectroscopy data")
+        if data.get("spectrum_only", False):
+            raise ValueError("SFF requires one common complex time grid and is unavailable for merged spectra")
         reconstruction = data.reconstruction
         spectrum = data.spectrum
         if not spectrum.complete_basis:
@@ -5347,8 +5597,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ))
 
     @staticmethod
-    def display_cycle_phase(result):
-        fig = plt.figure(figsize=(12, 6), constrained_layout=True)
+    def display_cycle_phase(result, fig=None):
+        if fig is None:
+            fig = plt.figure(figsize=(12, 6), constrained_layout=True)
         grid = fig.add_gridspec(2, 2, height_ratios=[4., 1.])
         iq_axis = fig.add_subplot(grid[0, 0])
         relative_axis = fig.add_subplot(grid[1, 0])
@@ -5385,6 +5636,28 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if result.fnames:
             title += "\n" + "\n".join(result.fnames)
         fig.suptitle(title)
+        return fig
+
+    @staticmethod
+    def display_calibration_results(calibration, ncols=None):
+        results = calibration.results
+        if len(results) == 0:
+            raise ValueError("calibration results cannot be empty")
+        if ncols is None:
+            nrows = max(1, int(np.floor(np.sqrt(len(results)))))
+            ncols = int(np.ceil(len(results) / nrows))
+        elif not isinstance(ncols, (int, np.integer)) or ncols < 1:
+            raise ValueError("ncols must be a positive integer")
+        else:
+            ncols = min(int(ncols), len(results))
+            nrows = int(np.ceil(len(results) / ncols))
+
+        fig = plt.figure(figsize=(7 * ncols, 4 * nrows), constrained_layout=True)
+        subfigures = fig.subfigures(nrows, ncols, squeeze=False)
+        for result, subfigure in zip(results, subfigures.flat):
+            EncodingHamiltonianSpectroscopyExperiment.display_cycle_phase(result, subfigure)
+        for subfigure in subfigures.flat[len(results):]:
+            subfigure.set_visible(False)
         return fig
 
     @staticmethod
@@ -5491,6 +5764,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         data = self.data if data is None else data
         if "reconstruction" not in data or "spectrum" not in data:
             raise ValueError("occupation display requires analyzed spectroscopy data")
+        if data.get("spectrum_only", False):
+            raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
         if occupations is None:
             selections = data.reconstruction.occupations
         elif isinstance(occupations, (int, np.integer)):
@@ -5508,6 +5783,48 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 key = tuple(occupation)
             figures[key] = self.display_occupation(data.reconstruction, data.spectrum, occupation, data.get("phase_frame", None), ldos_weight_cutoff)
         return figures
+
+    def display_level_statistics(self,
+                                 data=None,
+                                 level_statistics=None,
+                                 bins=10,
+                                 degeneracy_tolerance_MHz=1e-10):
+        """
+        Plot exact DOS state counts and the gap-ratio distribution with 
+        Poisson and GOE guides.
+        
+        """
+        if level_statistics is None:
+            level_statistics = self.analyze_level_statistics(data=data, degeneracy_tolerance_MHz=degeneracy_tolerance_MHz)
+        if not isinstance(bins, (int, np.integer)) or bins < 1:
+            raise ValueError("bins must be a positive integer")
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 4.8), constrained_layout=True)
+        axes[0].vlines(level_statistics.level_energies_MHz, 0., level_statistics.multiplicities, color="tab:blue")
+        axes[0].plot(level_statistics.level_energies_MHz, level_statistics.multiplicities, "o", color="tab:blue", markersize=4)
+        axes[0].set(xlabel="eigenenergy E/h (MHz)", ylabel="exact DOS weight (number of states)", title="exact complete-basis DOS")
+        axes[0].set_ylim(bottom=0.)
+        axes[0].set_yticks(np.arange(np.max(level_statistics.multiplicities) + 1))
+
+        r = np.linspace(0., 1., 501)
+        #equation reference: Roushan et al., Science 358, 1175–1179 (2017)
+        poisson = 2. / (1. + r) ** 2
+        goe = 27. * (r + r ** 2) / (4. * (1. + r + r ** 2) ** 2.5)
+        if len(level_statistics.gap_ratios):
+            axes[1].hist(level_statistics.gap_ratios, bins=np.linspace(0., 1., bins + 1), density=True, histtype="step", color="black", linewidth=1.8, label=f"spectrum; mean={np.mean(level_statistics.gap_ratios):.3f}")
+        else:
+            axes[1].plot([], [], color="black", label="spectrum; no finite ratios")
+        axes[1].plot(r, poisson, label=f"Poisson; mean={level_statistics.poisson_mean:.3f}")
+        axes[1].plot(r, goe, label=f"GOE; mean={level_statistics.goe_mean:.3f}")
+        axes[1].axvline(level_statistics.poisson_mean, color="tab:blue", linestyle=":")
+        axes[1].axvline(level_statistics.goe_mean, color="tab:orange", linestyle=":")
+        ratio_title = "adjacent-gap-ratio statistics"
+        if level_statistics.undefined_gap_ratios:
+            ratio_title += f"; {level_statistics.undefined_gap_ratios} undefined 0/0 omitted"
+        axes[1].set(xlim=(0., 1.), xlabel=r"adjacent-gap ratio $\tilde r$", ylabel=r"probability density $P(\tilde r)$", title=ratio_title)
+        axes[1].legend()
+        fig.suptitle(f"N={level_statistics.photon_number}, D={level_statistics.dimension}; exact Hamiltonian levels")
+        return fig
 
     def display_sff(self, 
                     data=None, 
@@ -5545,7 +5862,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         vmax = max(np.max(spectrum.measured_local), np.max(spectrum.theory_local))
         for ax, local, title in zip(axes[0], [spectrum.measured_local, spectrum.theory_local], ["experiment", "theory"]):
             image = ax.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
-            ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=f"{title}: {spectrum.fft_window}, pad x{spectrum.zero_padding}")
+            fft_label = f"{spectrum.fft_window}, pad x{spectrum.zero_padding}"
+            if spectrum.get("zero_padding", None) is None:
+                fft_label = f"{spectrum.fft_window}, merged grid"
+            elif spectrum.get("mixed_resolution", False):
+                fft_label = f"{spectrum.fft_window}, mixed resolution"
+            ax.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=f"{title}: {fft_label}")
             ax.set_yticks(rows)
             ax.set_yticklabels(labels)
         axes[0, 0].set_ylabel(f"occupation {mode_labels}")
@@ -5559,7 +5881,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             title = "complete-basis DOS"
         axes[1, 1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
         axes[1, 1].legend()
-        fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz")
+        resolution_label = f"FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz"
+        if spectrum.get("mixed_resolution", False):
+            resolution_label = f"FFT resolution range: {np.min(spectrum.row_fft_resolution_MHz):.6g}-{np.max(spectrum.row_fft_resolution_MHz):.6g} MHz"
+        if spectrum.get("mixed_hamiltonian", False):
+            resolution_label += f"; source-H mismatch: {spectrum.hamiltonian_mismatch_MHz:.6g} MHz"
+        fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; {resolution_label}")
         return fig
 
     def display(self, data=None, occupation=None, **kwargs):
@@ -5567,15 +5894,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             self.data = data
         if "spectrum" in self.data:
             if occupation is not None:
+                if self.data.get("spectrum_only", False):
+                    raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
                 return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation, self.data.get("phase_frame", None), kwargs.get("ldos_weight_cutoff", 1e-3))
-            return self.display_result(self.data.reconstruction, 
-                                       self.data.spectrum, 
-                                       self.data.mode_labels)
+            fig = self.display_result(self.data.reconstruction,
+                                      self.data.spectrum,
+                                      self.data.mode_labels)
+            if self.data.spectrum.complete_basis and kwargs.get("level_statistics", True):
+                self.display_level_statistics(data=self.data, bins=kwargs.get("level_statistics_bins", 10))
+            return fig
         if "phase_mod180" in self.data:
             if "results" not in self.data:
                 self.data = self.analyze_calibration(self.batch_expts)
-            for result in self.data.results:
-                self.display_cycle_phase(result)
+            self.display_calibration_results(self.data, kwargs.get("ncols", None))
             return self.display_calibration_summary(self.data)
         return super().display(data=self.data, **kwargs)
 
