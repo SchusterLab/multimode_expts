@@ -4910,7 +4910,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 self.data.matrix_pencil = self.analyze_matrix_pencil(
                     postprocessed.reconstruction,
                     spectrum,
-                    requested_max_modes=kwargs.get("mpm_requested_max_modes", 35),
+                    requested_max_modes=kwargs.get("mpm_requested_max_modes", None),
                     pencil_length=kwargs.get("mpm_pencil_length", None),
                     minimum_consecutive_ranks=kwargs.get("mpm_minimum_consecutive_ranks", 3),
                     minimum_supporting_rows=kwargs.get("mpm_minimum_supporting_rows", 1),
@@ -5370,7 +5370,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     @staticmethod
     def analyze_matrix_pencil(reconstruction,
                               spectrum,
-                              requested_max_modes=35,
+                              requested_max_modes=None,
                               pencil_length=None,
                               minimum_consecutive_ranks=3,
                               minimum_supporting_rows=1,
@@ -5424,6 +5424,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         A = np.asarray(reconstruction.A, dtype=complex)
         time_us = np.asarray(spectrum.time_us, dtype=float)
         occupations = [tuple(occupation) for occupation in reconstruction.occupations]
+        if requested_max_modes is None:
+            requested_max_modes = len(spectrum.fock_basis)
         
         
         
@@ -5732,6 +5734,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             row_diagnostics.append(diagnostic)
             
         #--- B. Sortitng and MPM iteraction initiation--------------------------------------------------
+        #--- 1. Order row_candidates in the order of confidence and then merge them
+        #       when the frequency distance is smaller than merge_frequency_tolerance_MHz
         ordered_candidates = sorted(row_candidates, 
                                     key=lambda candidate: -candidate.confidence)
         clusters = []
@@ -5755,6 +5759,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], 
                                                               [member.confidence for member in cluster.members])
 
+        #--- 2. Discard candidates which appeared less than `minimum_supporting_rows`; 
+        #       e.g. if if `minimum_supporting_rows` = 2 and the pole has appeard in only one row, it is discarded
         merged_candidates = []
         for cluster in clusters:
             members = cluster.members
@@ -5781,23 +5787,32 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                                    confidence=float(confidence),
                                                    members=members)))
             
+        #--- 3. Select upto `requested_max_modes`
         merged_candidates.sort(key=lambda candidate: (-candidate.confidence, -len(candidate.supporting_rows), candidate.frequency_scatter_MHz))
         selected_candidates = merged_candidates[:min(requested_max_modes, sample_count - 1)]
         selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
         if not selected_candidates:
             raise RuntimeError("no stable rowwise Matrix-Pencil candidates were found")
 
+        
+        #--- 4. Extract amplitude of each pole using lstsq, which estimates x for A x = b with least square difference.
         selected_frequencies_MHz = np.asarray([candidate.frequency_MHz for candidate in selected_candidates])
         selected_decay_per_us = np.asarray([candidate.decay_per_us for candidate in selected_candidates])
-        sample_index = np.arange(sample_count)
-        shared_poles = np.exp((-selected_decay_per_us - 2j * np.pi * selected_frequencies_MHz) * sample_time_us)
-        design = shared_poles[None, :] ** sample_index[:, None]
+        shared_poles = np.exp((-selected_decay_per_us - 2j * np.pi * selected_frequencies_MHz) * sample_time_us) # The list of poles; [z_1, z_2, ..., z_K]
+        
+        sample_index = np.arange(sample_count) #The arange upto N-1, where N is the number of time samples
+        design = shared_poles[None, :] ** sample_index[:, None] #broadcast z into row, time into column, to make (transposed) vandermonde matrix. Shape: [N, K]
         normalized_amplitudes = np.zeros((len(occupations), len(selected_candidates)), dtype=complex)
         normalized_fitted_return = np.zeros_like(normalized_A)
+         
         for row_index, normalized_row in enumerate(normalized_A):
-            row_amplitudes, _, _, _ = np.linalg.lstsq(design, normalized_row, rcond=least_squares_rcond)
+            row_amplitudes, _, _, _ = np.linalg.lstsq(design, 
+                                                      normalized_row,
+                                                      rcond=least_squares_rcond) #Finds design * x = normalized_row. The solution is the amplitude for each row.
             normalized_amplitudes[row_index] = row_amplitudes
-            normalized_fitted_return[row_index] = design @ row_amplitudes
+            normalized_fitted_return[row_index] = design @ row_amplitudes #Finds design * row_amp = fitted row
+            
+        
         amplitudes = normalized_amplitudes * initial_return
         fitted_return = normalized_fitted_return * initial_return
         residual = A - fitted_return
@@ -5806,8 +5821,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         relative_residual_by_row = residual_norm_by_row / np.maximum(signal_norm_by_row, np.finfo(float).eps)
         relative_residual = float(np.linalg.norm(residual) / np.linalg.norm(A))
 
+        #--- Below are redoing fft; but I think the below can be deleted. The dependency got too complicated, so i am leaving it as is.
         fft_window = spectrum.get("fft_window", "raw")
-        windows = {"raw": np.ones, "hann": np.hanning, "hamming": np.hamming, "blackman": np.blackman}
+        windows = {"raw": np.ones, 
+                   "hann": np.hanning, 
+                   "hamming": np.hamming, 
+                   "blackman": np.blackman}
         if fft_window not in windows:
             raise ValueError("Matrix-Pencil display requires a supported spectrum.fft_window")
         zero_padding = spectrum.get("zero_padding", None)
