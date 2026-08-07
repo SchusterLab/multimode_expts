@@ -6834,16 +6834,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     def display_matrix_pencil(self,
                               data=None,
                               matrix_pencil=None,
-                              show_poles=True,
-                              plot_theory=False):
+                              show_poles=True):
         """
-        Compare the measured, Matrix-Pencil reconstructed, and theoretical
-        occupation-resolved finite-time FFTs with the Matrix-Pencil DOS.
+        Compare the measured and theoretical occupation-resolved FFTs and DOS.
 
-        All three heat maps use the same energy grid, measured-A(0)
-        normalization, and color limits. The DOS panel preserves the measured
-        and reconstructed finite-time spectra and displays the fitted
-        Matrix-Pencil pole weights as delta functions.
+        The upper panels show the measured and theoretical occupation-resolved
+        finite-time FFTs. The lower-left panel compares the summed measured FFT
+        with the Matrix-Pencil reconstruction and delta-function DOS. The
+        lower-right panel compares the summed theoretical FFT with the exact
+        Hamiltonian delta-function DOS.
         """
         data = self.data if data is None else data
         if "reconstruction" not in data or "spectrum" not in data:
@@ -6867,35 +6866,45 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             raise ValueError("measured, Matrix-Pencil, and theory spectra use different grids")
 
         fig, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
-        raw_axis = axes[0, 0]
-        reconstructed_axis = axes[0, 1]
-        theory_axis = axes[1, 0]
-        DOS_axis = axes[1, 1]
+        measured_axis = axes[0, 0]
+        theory_axis = axes[0, 1]
+        measured_DOS_axis = axes[1, 0]
+        theory_DOS_axis = axes[1, 1]
         extent = [energy_MHz[0], energy_MHz[-1], -0.5, len(rows) - 0.5]
-        vmax = max(np.max(measured_local), np.max(reconstructed_local), np.max(theory_local))
-        for axis, local, title in zip((raw_axis, reconstructed_axis, theory_axis),
-                                      (measured_local, reconstructed_local, theory_local),
-                                      ("measured finite-time FFT", "Matrix-Pencil reconstructed finite-time FFT", "theory finite-time FFT")):
+        vmax = max(np.max(measured_local), np.max(theory_local))
+        for axis, local, title in zip((measured_axis, theory_axis),
+                                      (measured_local, theory_local),
+                                      ("measured finite-time FFT", "theory finite-time FFT")):
             image = axis.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
-            if show_poles and axis is not theory_axis:
+            if show_poles and axis is measured_axis:
                 for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
                     axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.45)
             axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=title)
             axis.set_yticks(rows)
             axis.set_yticklabels(labels)
-        raw_axis.set_ylabel(f"occupation {data.mode_labels}")
-        theory_axis.set_ylabel(f"occupation {data.mode_labels}")
-        fig.colorbar(image, ax=(raw_axis, reconstructed_axis, theory_axis), label="spectral magnitude")
+        measured_axis.set_ylabel(f"occupation {data.mode_labels}")
+        fig.colorbar(image, ax=(measured_axis, theory_axis), label="spectral magnitude")
 
-        DOS_axis.plot(energy_MHz, spectrum.measured, color="black", linewidth=1.5, label="measured FFT")
-        DOS_axis.plot(energy_MHz, matrix_pencil.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
-        if plot_theory:
-            DOS_axis.plot(energy_MHz, spectrum.theory, color="tab:orange", alpha=0.65, label="theory FFT")
-        DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
-        DOS_axis.plot(matrix_pencil.selected_frequencies_MHz, matrix_pencil.pole_DOS_weights, "o", color="tab:blue", markersize=5)
-        DOS_title = "complete-basis DOS" if spectrum.complete_basis else "projected summed spectrum"
-        DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / pole weight", title=DOS_title)
-        DOS_axis.legend()
+        measured_DOS_axis.plot(energy_MHz, spectrum.measured, color="black", linewidth=1.5, label="measured FFT sum")
+        measured_DOS_axis.plot(energy_MHz, matrix_pencil.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
+        measured_DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
+        measured_DOS_axis.plot(matrix_pencil.selected_frequencies_MHz, matrix_pencil.pole_DOS_weights, "o", color="tab:blue", markersize=5)
+        measured_DOS_title = "measured FFT sum and Matrix-Pencil DOS" if spectrum.complete_basis else "measured projected FFT sum and Matrix-Pencil weights"
+        measured_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / pole weight", title=measured_DOS_title)
+        measured_DOS_axis.legend()
+
+        exact_energies_MHz, exact_energy_indices = np.unique(np.round(np.asarray(spectrum.energies_MHz), 10), return_inverse=True)
+        eigenstate_weights = np.asarray(spectrum.eigenstate_weights)
+        if eigenstate_weights.ndim != 2 or eigenstate_weights.shape[1] != len(spectrum.energies_MHz):
+            raise ValueError("exact eigenstate weights and energies have different dimensions")
+        exact_state_weights = np.sum(eigenstate_weights, axis=0)
+        exact_DOS_weights = np.bincount(exact_energy_indices, weights=exact_state_weights, minlength=len(exact_energies_MHz))
+        theory_DOS_axis.plot(energy_MHz, spectrum.theory, color="tab:orange", linewidth=1.5, label="theory FFT sum")
+        theory_DOS_axis.vlines(exact_energies_MHz, 0., exact_DOS_weights, color="tab:orange", alpha=0.7, label="exact Hamiltonian DOS weights")
+        theory_DOS_axis.plot(exact_energies_MHz, exact_DOS_weights, "o", color="tab:orange", markersize=5)
+        theory_DOS_title = "theory FFT sum and exact DOS" if spectrum.complete_basis else "theory projected FFT sum and exact spectral weights"
+        theory_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / DOS weight", title=theory_DOS_title)
+        theory_DOS_axis.legend()
         fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
 
@@ -6957,8 +6966,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation, self.data.get("phase_frame", None), kwargs.get("ldos_weight_cutoff", 1e-3))
             if spectrum_method == "matrix_pencil":
                 return self.display_matrix_pencil(data=self.data,
-                                                  show_poles=kwargs.get("show_mpm_poles", True),
-                                                  plot_theory=kwargs.get("plot_mpm_theory", False))
+                                                  show_poles=kwargs.get("show_mpm_poles", True))
             fig = self.display_result(self.data.reconstruction,
                                       self.data.spectrum,
                                       self.data.mode_labels)
