@@ -25,7 +25,7 @@ from experiments.qsim.kerr import *
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from itertools import product
 
 from collections import defaultdict
@@ -4719,6 +4719,201 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              analyzer_phase_application_sign=application_sign, 
                              legacy_analyzer_migration=legacy_migration))
 
+    @classmethod
+    def subsample_spectroscopy_shots(cls,
+                                     spectroscopy_expts,
+                                     shots_per_point,
+                                     seed=None):
+        """
+        Rebuild saved spectroscopy averages from fewer final-readout shots.
+
+        Every saved sweep point contains interleaved readout lanes in ``idata``
+        and ``qdata``. The final science measurement is the last lane of each
+        repetition. This method draws ``shots_per_point`` paired I/Q samples
+        from that lane without replacement and replaces only ``avgi``,
+        ``avgq``, ``amps``, and ``phases`` in lightweight experiment copies.
+        The original experiments and their raw-shot arrays are not modified.
+
+        QICK's saved averaged values and ``collect_shots`` may use different ADC
+        offsets or averaging rounds. For each point, the subset fluctuation
+        relative to the complete raw-shot mean is therefore added to the saved
+        average. Selecting every available shot then reproduces the saved
+        ``avgi`` and ``avgq`` exactly without assuming a particular QICK offset.
+
+        ``shots_per_point`` is the number of final-readout shots used for each
+        saved ``(Floquet cycle, preparation phase)`` point. ``seed`` makes the
+        random subset reproducible. Pre-selected acquisitions are rejected
+        because their saved average is conditioned on herald lanes and cannot
+        be reproduced by unconditioned final-lane sampling.
+
+        Returns ``(subsampled_expts, metadata)``. The metadata records the
+        requested shot count, seed, available-shot range, and raw-versus-saved
+        averaging diagnostics for every child job.
+        """
+
+        if isinstance(shots_per_point, (bool, np.bool_)):
+            raise ValueError("shots_per_point must be a positive integer")
+        if not isinstance(shots_per_point, (int, np.integer)) or shots_per_point < 1:
+            raise ValueError("shots_per_point must be a positive integer")
+        shots_per_point = int(shots_per_point)
+        spectroscopy_expts = list(flatten_exp_lists(spectroscopy_expts))
+        if not spectroscopy_expts:
+            raise ValueError("spectroscopy_expts cannot be empty")
+
+        rng = np.random.default_rng(seed)
+        subsampled_expts = []
+        job_summaries = []
+        available_shots = []
+
+        for job_index, expt in enumerate(spectroscopy_expts):
+            if (expt.cfg.expt.get("active_reset", False)
+                    and expt.cfg.expt.get("pre_selection_reset", False)):
+                raise ValueError(
+                    "shot subsampling does not support pre_selection_reset; "
+                    "the saved average is conditioned on herald readouts"
+                )
+            if "idata" not in expt.data or "qdata" not in expt.data:
+                raise ValueError(f"spectroscopy job {job_index} has no saved single-shot IQ data")
+            if "avgi" not in expt.data or "avgq" not in expt.data:
+                raise ValueError(f"spectroscopy job {job_index} has no saved averaged IQ data")
+
+            saved_avgi = np.asarray(expt.data["avgi"], dtype=float)
+            saved_avgq = np.asarray(expt.data["avgq"], dtype=float)
+            if saved_avgi.shape != saved_avgq.shape:
+                raise ValueError(f"spectroscopy job {job_index} has mismatched avgi/avgq shapes")
+            point_count = saved_avgi.size
+
+            def point_rows(values, name):
+                try:
+                    array = np.asarray(values)
+                except ValueError:
+                    array = None
+                if array is not None and array.ndim >= 2 and array.shape[0] == point_count:
+                    return [np.asarray(array[index], dtype=float).reshape(-1)
+                            for index in range(point_count)]
+                if point_count == 1 and array is not None and array.dtype != object:
+                    return [np.asarray(array, dtype=float).reshape(-1)]
+                if len(values) == point_count:
+                    return [np.asarray(values[index], dtype=float).reshape(-1)
+                            for index in range(point_count)]
+                raise ValueError(
+                    f"spectroscopy job {job_index} has {name} that does not "
+                    f"match its {point_count} sweep points"
+                )
+
+            idata_rows = point_rows(expt.data["idata"], "idata")
+            qdata_rows = point_rows(expt.data["qdata"], "qdata")
+
+            read_num = int(expt.cfg.get("read_num", 0))
+            if read_num < 1:
+                read_num = 1
+                if expt.cfg.expt.get("parity_check", False):
+                    read_num += 1
+                if expt.cfg.expt.get("active_reset", False):
+                    reset_params = MMAveragerProgram.get_active_reset_params(expt.cfg)
+                    read_num += MMAveragerProgram.active_reset_read_num(**reset_params)
+                if expt.cfg.expt.get("multiparity_readout", False):
+                    read_num += 1
+            final_lane = read_num - 1
+
+            final_i_rows = []
+            final_q_rows = []
+            for point_index, (idata, qdata) in enumerate(zip(idata_rows, qdata_rows)):
+                if len(idata) != len(qdata):
+                    raise ValueError(
+                        f"spectroscopy job {job_index}, point {point_index} has "
+                        "different I/Q shot counts"
+                    )
+                if len(idata) % read_num:
+                    raise ValueError(
+                        f"spectroscopy job {job_index}, point {point_index} raw "
+                        f"length {len(idata)} is not divisible by read_num={read_num}"
+                    )
+                final_i = idata[final_lane::read_num]
+                final_q = qdata[final_lane::read_num]
+                if len(final_i) < shots_per_point:
+                    raise ValueError(
+                        f"spectroscopy job {job_index}, point {point_index} has "
+                        f"only {len(final_i)} final-readout shots; requested "
+                        f"{shots_per_point}"
+                    )
+                final_i_rows.append(final_i)
+                final_q_rows.append(final_q)
+                available_shots.append(len(final_i))
+
+            saved_avgi_flat = saved_avgi.reshape(-1)
+            saved_avgq_flat = saved_avgq.reshape(-1)
+            full_i_mean = np.asarray([np.mean(values) for values in final_i_rows])
+            full_q_mean = np.asarray([np.mean(values) for values in final_q_rows])
+            full_raw_minus_saved_avgi = full_i_mean - saved_avgi_flat
+            full_raw_minus_saved_avgq = full_q_mean - saved_avgq_flat
+
+            sampled_avgi = np.empty(point_count, dtype=float)
+            sampled_avgq = np.empty(point_count, dtype=float)
+            for point_index, (final_i, final_q) in enumerate(zip(final_i_rows, final_q_rows)):
+                selected_indices = rng.choice(len(final_i),
+                                              size=shots_per_point,
+                                              replace=False)
+                sampled_avgi[point_index] = (
+                    saved_avgi_flat[point_index]
+                    + np.mean(final_i[selected_indices])
+                    - full_i_mean[point_index]
+                )
+                sampled_avgq[point_index] = (
+                    saved_avgq_flat[point_index]
+                    + np.mean(final_q[selected_indices])
+                    - full_q_mean[point_index]
+                )
+
+            sampled_avgi = sampled_avgi.reshape(saved_avgi.shape)
+            sampled_avgq = sampled_avgq.reshape(saved_avgq.shape)
+            sampled_data = AttrDict(dict(expt.data))
+            sampled_data["avgi"] = sampled_avgi
+            sampled_data["avgq"] = sampled_avgq
+            sampled_data["amps"] = np.abs(sampled_avgi + 1j * sampled_avgq)
+            sampled_data["phases"] = np.angle(sampled_avgi + 1j * sampled_avgq)
+            sampled_data.pop("Pe", None)
+            sampled_data.pop("return_quadrature", None)
+
+            sampled_expt = copy(expt)
+            sampled_expt.data = sampled_data
+            subsampled_expts.append(sampled_expt)
+            job_summaries.append(AttrDict(dict(
+                job_index=job_index,
+                read_num=read_num,
+                point_count=point_count,
+                minimum_available_shots=min(len(values) for values in final_i_rows),
+                maximum_available_shots=max(len(values) for values in final_i_rows),
+                median_full_raw_minus_saved_avgi=float(
+                    np.median(full_raw_minus_saved_avgi)
+                ),
+                median_full_raw_minus_saved_avgq=float(
+                    np.median(full_raw_minus_saved_avgq)
+                ),
+                maximum_full_raw_minus_saved_avgi_scatter=float(
+                    np.max(np.abs(
+                        full_raw_minus_saved_avgi
+                        - np.median(full_raw_minus_saved_avgi)
+                    ))
+                ),
+                maximum_full_raw_minus_saved_avgq_scatter=float(
+                    np.max(np.abs(
+                        full_raw_minus_saved_avgq
+                        - np.median(full_raw_minus_saved_avgq)
+                    ))
+                ),
+            )))
+
+        metadata = AttrDict(dict(
+            shots_per_point=shots_per_point,
+            seed=seed,
+            replace=False,
+            minimum_available_shots=min(available_shots),
+            maximum_available_shots=max(available_shots),
+            job_summaries=job_summaries,
+        ))
+        return subsampled_expts, metadata
+
     def analyze(self, 
                 data=None, 
                 **kwargs):
@@ -4775,6 +4970,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
           ``'mpm'`` additionally performs the rowwise Matrix-Pencil analysis and
           stores it in ``data.matrix_pencil``. The raw FFT remains in
           ``data.spectrum`` and is used as the unfiltered reference.
+        - ``shots_per_point`` optionally reconstructs every spectroscopy job
+          from that many randomly selected final-readout shots at each saved
+          cycle and preparation phase. ``shot_seed`` makes the without-
+          replacement subsets reproducible. The raw jobs are not modified, and
+          the returned data records the selection in ``shot_subsampling``.
         - Matrix-Pencil heuristic kwargs use the ``mpm_`` prefix. The defaults
           reproduce the notebook values: 
           ``mpm_requested_max_modes=35``,
@@ -4847,9 +5047,20 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 spectrum_method = "matrix_pencil"
             if spectrum_method not in ("fft", "matrix_pencil"):
                 raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
-            saved = self._saved_parameters(self.batch_expts, 
+            analysis_expts = self.batch_expts
+            shot_subsampling = None
+            shots_per_point = kwargs.get("shots_per_point", None)
+            if shots_per_point is not None:
+                analysis_expts, shot_subsampling = self.subsample_spectroscopy_shots(
+                    self.batch_expts,
+                    shots_per_point,
+                    seed=kwargs.get("shot_seed", None),
+                )
+            elif kwargs.get("shot_seed", None) is not None:
+                raise ValueError("shot_seed requires shots_per_point")
+            saved = self._saved_parameters(analysis_expts, 
                                            getattr(self, "_analysis_station", None))
-            acquired_reconstruction = self.reconstruct_spectroscopy(self.batch_expts, 
+            acquired_reconstruction = self.reconstruct_spectroscopy(analysis_expts, 
                                                                     kwargs.get("occupations"))
             photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
             if len(photon_numbers) != 1:
@@ -4870,7 +5081,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 if np.any(cycle_branches):
                     raise ValueError("use either cycle_branches or second_branch, not both")
                 cycle_branches += 1
-            saved_correction = self._saved_correction(self.batch_expts)
+            saved_correction = self._saved_correction(analysis_expts)
             postprocessed = self._postprocess_reconstruction(
                 acquired_reconstruction, 
                 saved_correction, 
@@ -4932,6 +5143,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     least_squares_rcond=kwargs.get("mpm_least_squares_rcond", None),
                     store_rank_sweeps=kwargs.get("mpm_store_rank_sweeps", False),
                 )
+            if shot_subsampling is not None:
+                self.data.shot_subsampling = shot_subsampling
             if hasattr(calibration_arg, "batch_job_ids"):
                 self.calibration_job_ids = list(calibration_arg.batch_job_ids)
         else:
