@@ -5566,7 +5566,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             left_vectors, singular_values, right_vectors_h = np.linalg.svd(unshifted, 
                                                                            full_matrices=False)
             relative_singular_values = singular_values / singular_values[0]       
-            singular_value_threshold = noise_singular_value_factor * np.median(singular_values)
+            singular_value_threshold = noise_singular_value_factor * np.median(singular_values) #as we do not know the singular value of noise, it is replaced by median value.
             
             #--- 3. Prepare iterative MPM after setting up signal rank, numerical rank.
             estimated_signal_rank = max(1, int(np.count_nonzero(singular_values > singular_value_threshold)))
