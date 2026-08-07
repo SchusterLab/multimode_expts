@@ -6835,19 +6835,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                               data=None,
                               matrix_pencil=None,
                               show_poles=True,
-                              plot_theory=True):
+                              plot_theory=False):
         """
         Compare the measured, Matrix-Pencil reconstructed, and theoretical
-        occupation-resolved finite-time FFTs in a 2 by 2 figure. The last panel
-        displays the Matrix-Pencil and exact Hamiltonian DOS as delta functions.
+        occupation-resolved finite-time FFTs with the Matrix-Pencil DOS.
 
         All three heat maps use the same energy grid, measured-A(0)
-        normalization, and color limits. The vertical-line heights in the DOS
-        panel are coefficients multiplying delta functions, not broadened FFT
-        peak heights. Matrix-Pencil coefficients are sums of the real fitted
-        amplitudes over occupations. Exact coefficients are obtained by summing
-        the exact LDOS weights over the measured occupations; for a complete
-        basis they equal the eigenvalue multiplicities.
+        normalization, and color limits. The DOS panel preserves the measured
+        and reconstructed finite-time spectra and displays the fitted
+        Matrix-Pencil pole weights as delta functions.
         """
         data = self.data if data is None else data
         if "reconstruction" not in data or "spectrum" not in data:
@@ -6891,20 +6887,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         theory_axis.set_ylabel(f"occupation {data.mode_labels}")
         fig.colorbar(image, ax=(raw_axis, reconstructed_axis, theory_axis), label="spectral magnitude")
 
-        exact_energies_MHz, exact_energy_indices = np.unique(np.round(np.asarray(spectrum.energies_MHz), 10), return_inverse=True)
-        eigenstate_weights = np.asarray(spectrum.eigenstate_weights)
-        if eigenstate_weights.ndim != 2 or eigenstate_weights.shape[1] != len(spectrum.energies_MHz):
-            raise ValueError("exact eigenstate weights and energies have different dimensions")
-        exact_state_weights = np.sum(eigenstate_weights, axis=0)
-        exact_DOS_weights = np.bincount(exact_energy_indices, weights=exact_state_weights, minlength=len(exact_energies_MHz))
+        DOS_axis.plot(energy_MHz, spectrum.measured, color="black", linewidth=1.5, label="measured FFT")
+        DOS_axis.plot(energy_MHz, matrix_pencil.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
         if plot_theory:
-            DOS_axis.vlines(exact_energies_MHz, 0., exact_DOS_weights, color="tab:orange", linewidth=4., alpha=0.35, label="exact Hamiltonian delta coefficients")
-            DOS_axis.plot(exact_energies_MHz, exact_DOS_weights, "o", color="tab:orange", markersize=6, alpha=0.65)
-        DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", linewidth=1.5, label="Matrix-Pencil delta coefficients")
+            DOS_axis.plot(energy_MHz, spectrum.theory, color="tab:orange", alpha=0.65, label="theory FFT")
+        DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
         DOS_axis.plot(matrix_pencil.selected_frequencies_MHz, matrix_pencil.pole_DOS_weights, "o", color="tab:blue", markersize=5)
-        DOS_title = "complete-basis delta-functional DOS" if spectrum.complete_basis else "projected delta-functional spectral weights"
-        DOS_axis.axhline(0., color="0.8", linewidth=0.8)
-        DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="delta coefficient", title=DOS_title)
+        DOS_title = "complete-basis DOS" if spectrum.complete_basis else "projected summed spectrum"
+        DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / pole weight", title=DOS_title)
         DOS_axis.legend()
         fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
@@ -6968,7 +6958,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             if spectrum_method == "matrix_pencil":
                 return self.display_matrix_pencil(data=self.data,
                                                   show_poles=kwargs.get("show_mpm_poles", True),
-                                                  plot_theory=kwargs.get("plot_mpm_theory", True))
+                                                  plot_theory=kwargs.get("plot_mpm_theory", False))
             fig = self.display_result(self.data.reconstruction,
                                       self.data.spectrum,
                                       self.data.mode_labels)
