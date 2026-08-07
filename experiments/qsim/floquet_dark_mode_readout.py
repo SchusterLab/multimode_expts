@@ -5537,6 +5537,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
         row_candidates = []
         row_diagnostics = []
+        #--- A. Row MPM iteraction initiation--------------------------------------------------
         for row_index, row in enumerate(normalized_A):
             row_norm = np.linalg.norm(row)
             if row_norm <= numerical_floor: 
@@ -5665,11 +5666,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                                          frequencies_MHz=[float(current_frequency_MHz)],
                                                          decay_per_us=[float(solution.decay_per_us[current_pole_index])],
                                                          pole_radii=[float(solution.pole_radii[current_pole_index])])))
-
+            
+            #--- 6. Filter poles that did not appear consecutively or appeared after signal rank; this is to rule out poles from noise
             candidates = []
             for pole_history in pole_histories:
-                #Below loop filters poles that did not appeared consecutively or
-                #appeared after signal rank
                 rank_span = len(pole_history.ranks)
                 #below only retains poles with minimum_consecutive ranks
                 if rank_span < minimum_consecutive_ranks:
@@ -5701,12 +5701,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                                 confidence=float(rank_span / confidence_denominator))))
             
             
-            
-            
             candidates.sort(key=lambda candidate: (-candidate.rank_span, #to sort large values first
                                                    candidate.frequency_scatter_MHz, 
                                                    candidate.decay_scatter_per_us))
             
+            #--- 7. Deduplicate frequency poles from candidates; the criteria is dedup_frequency_tolerance_MHz, which is identical to the track_frequency_tolerance_MHz by defaultt
             unique_candidates = []
             for candidate in candidates:
                 # This loop is to discard duplicated peaked
@@ -5731,8 +5730,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 diagnostic.rank_solutions = rank_solutions
                 diagnostic.tracks = pole_histories
             row_diagnostics.append(diagnostic)
-
-        ordered_candidates = sorted(row_candidates, key=lambda candidate: -candidate.confidence)
+            
+        #--- B. Sortitng and MPM iteraction initiation--------------------------------------------------
+        ordered_candidates = sorted(row_candidates, 
+                                    key=lambda candidate: -candidate.confidence)
         clusters = []
         for candidate in ordered_candidates:
             compatible_clusters = []
@@ -5740,16 +5741,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 existing_rows = {member.row_index for member in cluster.members}
                 if candidate.row_index in existing_rows:
                     continue
-                distance_MHz = frequency_distance(candidate.frequency_MHz, cluster.frequency_MHz)
+                distance_MHz = frequency_distance(candidate.frequency_MHz, 
+                                                  cluster.frequency_MHz)
                 if distance_MHz <= merge_frequency_tolerance_MHz:
                     compatible_clusters.append((distance_MHz, cluster_index))
             if not compatible_clusters:
-                clusters.append(AttrDict(dict(frequency_MHz=candidate.frequency_MHz, members=[candidate])))
+                clusters.append(AttrDict(dict(frequency_MHz=candidate.frequency_MHz, 
+                                              members=[candidate])))
                 continue
             _, nearest_cluster_index = min(compatible_clusters)
             cluster = clusters[nearest_cluster_index]
             cluster.members.append(candidate)
-            cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], [member.confidence for member in cluster.members])
+            cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], 
+                                                              [member.confidence for member in cluster.members])
 
         merged_candidates = []
         for cluster in clusters:
@@ -5776,6 +5780,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                                    decay_scatter_per_us=float(np.max(np.abs(decay_values - raw_decay_per_us))),
                                                    confidence=float(confidence),
                                                    members=members)))
+            
         merged_candidates.sort(key=lambda candidate: (-candidate.confidence, -len(candidate.supporting_rows), candidate.frequency_scatter_MHz))
         selected_candidates = merged_candidates[:min(requested_max_modes, sample_count - 1)]
         selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
