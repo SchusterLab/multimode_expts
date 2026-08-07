@@ -5928,6 +5928,109 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              total_DOS_weight=total_DOS_weight,
                              complete_basis=bool(spectrum.complete_basis)))
 
+    def analyze_matrix_pencil_occupation(self,
+                                         occupation,
+                                         data=None,
+                                         matrix_pencil=None,
+                                         least_squares_rcond=None):
+        """
+        Refit one occupation using only the poles detected independently in that row.
+
+        This is different from taking one row of the global Matrix-Pencil fit. The
+        global fit uses every shared pole selected after candidates from all rows are
+        merged. This wrapper instead uses ``row_diagnostics[row].candidates`` and
+        therefore shows the Matrix-Pencil result supported by the selected occupation
+        before the cross-row merge.
+        """
+        data = self.data if data is None else data
+        if "reconstruction" not in data or "spectrum" not in data:
+            raise ValueError("occupation Matrix-Pencil analysis requires analyzed spectroscopy data")
+        if data.get("spectrum_only", False):
+            raise ValueError("occupation Matrix Pencil requires the original occupation time traces")
+        if matrix_pencil is None:
+            matrix_pencil = data.get("matrix_pencil", None)
+        if matrix_pencil is None:
+            raise ValueError("Matrix-Pencil analysis is unavailable; analyze with spectrum_method='matrix_pencil'")
+
+        occupations = [tuple(value) for value in data.reconstruction.occupations]
+        if [tuple(value) for value in matrix_pencil.occupations] != occupations:
+            raise ValueError("Matrix-Pencil occupations do not match the spectroscopy reconstruction")
+        if isinstance(occupation, (int, np.integer)):
+            row = int(occupation)
+            if row < 0 or row >= len(occupations):
+                raise IndexError("occupation row is outside the spectroscopy data")
+        else:
+            occupation = tuple(occupation)
+            if occupation not in occupations:
+                raise ValueError(f"{occupation} is not in the spectroscopy data")
+            row = occupations.index(occupation)
+        occupation = occupations[row]
+
+        diagnostic = matrix_pencil.row_diagnostics[row]
+        row_candidates = sorted(list(diagnostic.candidates), key=lambda candidate: candidate.frequency_MHz)
+        frequencies_MHz = np.asarray([candidate.frequency_MHz for candidate in row_candidates], dtype=float)
+        raw_decay_per_us = np.asarray([candidate.decay_per_us for candidate in row_candidates], dtype=float)
+        if matrix_pencil.settings.clip_growth:
+            decay_per_us = np.maximum(raw_decay_per_us, 0.)
+        else:
+            decay_per_us = raw_decay_per_us.copy()
+
+        time_us = np.asarray(matrix_pencil.sampling.time_us, dtype=float)
+        sample_time_us = float(matrix_pencil.sampling.sample_time_us)
+        measured_return = np.asarray(data.reconstruction.A[row], dtype=complex)
+        initial_return = measured_return[0]
+        if np.abs(initial_return) <= matrix_pencil.settings.numerical_floor:
+            raise ValueError("occupation Matrix-Pencil analysis requires nonzero A_i(0)")
+        normalized_return = measured_return / initial_return
+        sample_index = np.arange(len(time_us))
+        poles = np.exp((-decay_per_us - 2j * np.pi * frequencies_MHz) * sample_time_us)
+        design = poles[None, :] ** sample_index[:, None]
+        if least_squares_rcond is None:
+            least_squares_rcond = matrix_pencil.settings.least_squares_rcond
+        if len(row_candidates):
+            normalized_amplitudes, _, _, _ = np.linalg.lstsq(design, normalized_return, rcond=least_squares_rcond)
+            normalized_fitted_return = design @ normalized_amplitudes
+            design_condition_number = float(np.linalg.cond(design))
+        else:
+            normalized_amplitudes = np.array([], dtype=complex)
+            normalized_fitted_return = np.zeros_like(normalized_return)
+            design_condition_number = np.nan
+        fitted_return = normalized_fitted_return * initial_return
+        residual = measured_return - fitted_return
+        relative_residual = float(np.linalg.norm(residual) / np.linalg.norm(measured_return))
+
+        windows = {"raw": np.ones, "hann": np.hanning, "hamming": np.hamming, "blackman": np.blackman}
+        fft_window = matrix_pencil.settings.fft_window
+        zero_padding = matrix_pencil.settings.zero_padding
+        window = windows[fft_window](len(time_us))
+        n_fft = zero_padding * len(time_us)
+        fft_scale = n_fft / np.sum(window)
+        reconstructed_spectrum = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(fitted_return * window, n=n_fft))) / np.abs(initial_return)
+
+        return AttrDict(dict(method="matrix_pencil_occupation",
+                             row_index=row,
+                             occupation=occupation,
+                             diagnostic=diagnostic,
+                             candidates=row_candidates,
+                             time_us=time_us,
+                             measured_return=measured_return,
+                             normalized_return=normalized_return,
+                             fitted_return=fitted_return,
+                             normalized_fitted_return=normalized_fitted_return,
+                             residual=residual,
+                             relative_residual=relative_residual,
+                             frequencies_MHz=frequencies_MHz,
+                             raw_decay_per_us=raw_decay_per_us,
+                             decay_per_us=decay_per_us,
+                             poles=poles,
+                             normalized_amplitudes=normalized_amplitudes,
+                             local_weights=np.real(normalized_amplitudes),
+                             local_magnitude_weights=np.abs(normalized_amplitudes),
+                             design_condition_number=design_condition_number,
+                             energy_MHz=np.asarray(data.spectrum.energy_MHz),
+                             measured_spectrum=np.asarray(data.spectrum.measured_local[row]),
+                             reconstructed_spectrum=reconstructed_spectrum))
+
     @staticmethod
     def merge_spectra(data):
         """
@@ -6672,6 +6775,50 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fig.suptitle(f"N={sff.photon_number}, D={sff.dimension}; frame={sff.phase_frame}; Kerr={sff.physical_kerr_MHz:.6g} MHz")
         return fig
 
+    def display_matrix_pencil_occupation(self,
+                                         data=None,
+                                         occupation=None,
+                                         result=None,
+                                         show_magnitude_weights=False):
+        """Plot the independent rowwise Matrix-Pencil result for one occupation."""
+        data = self.data if data is None else data
+        if result is None:
+            if occupation is None:
+                raise ValueError("occupation must be supplied when result is None")
+            result = self.analyze_matrix_pencil_occupation(occupation, data=data)
+
+        fig, axes = plt.subplots(1, 3, figsize=(18, 4.8), constrained_layout=True)
+        axes[0].plot(result.time_us, result.measured_return.real, color="tab:blue", label="Re A")
+        axes[0].plot(result.time_us, result.measured_return.imag, color="tab:orange", label="Im A")
+        axes[0].plot(result.time_us, result.fitted_return.real, "--", color="tab:blue", label="Re MPM fit")
+        axes[0].plot(result.time_us, result.fitted_return.imag, "--", color="tab:orange", label="Im MPM fit")
+        axes[0].set(xlabel="time (us)", ylabel="return amplitude", title="oscillation trace and rowwise MPM fit")
+        axes[0].legend()
+
+        axes[1].plot(result.energy_MHz, result.measured_spectrum, color="black", label="measured FFT")
+        axes[1].plot(result.energy_MHz, result.reconstructed_spectrum, "--", color="tab:blue", label="rowwise MPM reconstruction")
+        for frequency_index, frequency_MHz in enumerate(result.frequencies_MHz):
+            label = "rowwise MPM poles" if frequency_index == 0 else None
+            axes[1].axvline(frequency_MHz, color="cyan", linewidth=0.8, alpha=0.55, label=label)
+        axes[1].set(xlim=(-data.spectrum.energy_limit_MHz, data.spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title="finite-time FFT")
+        axes[1].legend()
+
+        if len(result.frequencies_MHz):
+            axes[2].vlines(result.frequencies_MHz, 0., result.local_weights, color="tab:blue")
+            axes[2].plot(result.frequencies_MHz, result.local_weights, "o", color="tab:blue", label="linear local weights")
+            if show_magnitude_weights:
+                axes[2].plot(result.frequencies_MHz, result.local_magnitude_weights, "x", color="0.4", label="amplitude magnitudes")
+        else:
+            axes[2].text(0.5, 0.5, "no stable rowwise candidates", transform=axes[2].transAxes, ha="center", va="center")
+        axes[2].axhline(0., color="0.8", linewidth=0.8)
+        axes[2].set(xlim=(-data.spectrum.energy_limit_MHz, data.spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="local pole weight", title="individual-occupation MPM weights")
+        if len(result.frequencies_MHz):
+            axes[2].legend()
+
+        frame = data.get("phase_frame", "as_acquired")
+        fig.suptitle(f"{result.occupation}; rowwise poles={len(result.frequencies_MHz)}; estimated signal rank={result.diagnostic.estimated_signal_rank}; relative residual={result.relative_residual:.3f}; frame={frame}")
+        return fig
+
     def display_matrix_pencil(self,
                               data=None,
                               matrix_pencil=None,
@@ -6789,6 +6936,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             if occupation is not None:
                 if self.data.get("spectrum_only", False):
                     raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
+                if spectrum_method == "matrix_pencil":
+                    return self.display_matrix_pencil_occupation(data=self.data,
+                                                                 occupation=occupation,
+                                                                 show_magnitude_weights=kwargs.get("show_mpm_magnitude_weights", False))
                 return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation, self.data.get("phase_frame", None), kwargs.get("ldos_weight_cutoff", 1e-3))
             if spectrum_method == "matrix_pencil":
                 return self.display_matrix_pencil(data=self.data,
