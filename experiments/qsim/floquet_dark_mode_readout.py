@@ -4707,9 +4707,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     target_phase = target_correction.phase_by_occupation[tuple(occupation)]
                     A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
                 physical_kerr_MHz = float(manual_kerr_MHz)
+        normalized_A = A / A[:, :1]
         return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, 
                                                           cycles=reconstruction.cycles,
-                                                          A=A)), 
+                                                          A=A,
+                                                          A_norm=normalized_A)), 
                              target_correction=target_correction, 
                              physical_kerr_MHz=physical_kerr_MHz, 
                              phase_frame=phase_frame, 
