@@ -6876,12 +6876,17 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                       (measured_local, theory_local),
                                       ("measured finite-time FFT", "theory finite-time FFT")):
             image = axis.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
-            if show_poles and axis is measured_axis:
+            if show_poles:
                 for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
                     axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.45)
             axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=title)
             axis.set_yticks(rows)
             axis.set_yticklabels(labels)
+        if show_poles:
+            rowwise_frequencies_MHz = [candidate.frequency_MHz for candidate in matrix_pencil.candidates.per_row]
+            rowwise_indices = [candidate.row_index for candidate in matrix_pencil.candidates.per_row]
+            measured_axis.scatter(rowwise_frequencies_MHz, rowwise_indices, s=20, facecolors="none", edgecolors="cyan", linewidths=0.8, label="rowwise Matrix-Pencil poles")
+            measured_axis.legend()
         measured_axis.set_ylabel(f"occupation {data.mode_labels}")
         fig.colorbar(image, ax=(measured_axis, theory_axis), label="spectral magnitude")
 
@@ -6905,6 +6910,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         theory_DOS_title = "theory FFT sum and exact DOS" if spectrum.complete_basis else "theory projected FFT sum and exact spectral weights"
         theory_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / DOS weight", title=theory_DOS_title)
         theory_DOS_axis.legend()
+        if show_poles:
+            for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
+                measured_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
+                theory_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
         fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
 
