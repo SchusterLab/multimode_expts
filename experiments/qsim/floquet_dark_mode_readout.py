@@ -5202,10 +5202,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     raise ValueError(f"{occupation}, phi={phi}: spectroscopy cycles are incomplete")
                 quadratures.append(quadrature[order])
             rows.append(quadratures[0] - 1j * quadratures[1])
-
+        A = np.asarray(rows, dtype = complex)
+        normalized_A = A[:] / A[:, :1] # A[:, 0] gives shape mismatch; so spliced
         return AttrDict(dict(occupations=occupation_order, 
                              cycles=expected_cycles, 
-                             A=np.asarray(rows)))
+                             A= A,
+                             A_norm= normalized_A))
 
     @staticmethod
     def analyze_spectrum(reconstruction, 
