@@ -96,7 +96,8 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # n_pulses and pi_frac
         self.n_pulses = cfg.expt.get('n_pulses', 1)
-        sync_delay = cfg.expt.get("floquet_sync_delay", 0)
+        sync_delay = cfg.expt.get("floquet_sync_delay", 
+                                  cfg.expt.get("scramble_sync_cycles", 0))
         self.floquet_sync_delay = 0 if sync_delay is None else int(sync_delay)
 
         if cfg.expt.pulse_type[2] == 'pi':
