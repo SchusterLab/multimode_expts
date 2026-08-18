@@ -3940,6 +3940,8 @@ class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
 
     Kept for comparing against the DarkBaseProgram/setup_and_pulse-matched
     version below.
+    
+    THIS IS STILL BEING USED; MUST BE KEPT IN THE REFACTORING.
     """
 
     def core_pulses(self):
