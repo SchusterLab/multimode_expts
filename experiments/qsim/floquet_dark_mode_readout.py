@@ -7487,7 +7487,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
 
-    def display_orthogonality(self, data=None):
+    def display_orthogonality(self, 
+                              data=None,
+                              **kwargs):
         """Plot raw cross return and raw/normalized off-diagonal leakage."""
         data = self.data if data is None else data
         if "matrix" not in data:
@@ -7510,8 +7512,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 r"normalized off-diagonal $|M_{j i}|^2/(|M_{ii}||M_{jj}|)$",
             ),
         ]
+        
+        figsize = kwargs.get("figsize", (max(16, 1.35 * size + 10), 6))
         fig, axes = plt.subplots(
-            1, 3, figsize=(max(16, 1.35 * size + 10), 6),
+            1, 3, figsize=figsize,
             constrained_layout=True,
         )
         for axis, (values, title) in zip(axes, panels):
