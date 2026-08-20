@@ -14,6 +14,9 @@ job_server/jobs.db*
 job_server/worker.lock
 *.ffs_lock
 
+# those of us on jupytext no longer git sync ipynb
+measurement_notebooks/guan/*.ipynb
+
 # tooling
 .vscode/
 .idea/
@@ -201,3 +204,17 @@ cython_debug/
 
 
 .DS_Store
+
+
+# jonginn ignore list
+measurement_notebooks/jonginn/floquet_dataset_tutorial.md
+measurement_notebooks/jonginn/floquet_dataset_tutorial.html
+
+measurement_notebooks/jonginn/deprecated_might_be_deleted/
+measurement_notebooks/jonginn/untracked_backups/
+
+measurement_notebooks/jonginn/data_postprocess.ipynb.bak
+
+output/
+tmp/
+tests/

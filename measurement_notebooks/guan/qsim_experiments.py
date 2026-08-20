@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -57,15 +58,12 @@ station = MultimodeStation(
     user = user,
     experiment_name = "260513_qsim",
     
-    hardware_config="CFG-HW-20260528-00032",
-    storage_man_file="CFG-M1-20260528-00055",
-    floquet_file="CFG-FL-20260223-00017",
+    hardware_config="CFG-HW-20260709-00019",
+    storage_man_file="CFG-M1-20260707-00020",
+    floquet_file="CFG-FL-20260707-00053",
     # multiphoton_config="versions/multiphoton_config/CFG-MP-20260115-00001.yml",
     log_measurements=True,
 )
-
-# %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
-bm
 
 # %%
 from experiments.MM_dual_rail_base import MM_dual_rail_base
@@ -191,15 +189,14 @@ station.preview_config_update()
 # %% [markdown]
 # # Floquet pulse calibrations
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
 # %% [markdown]
 # ## Freq chevron
 
 # %%
-station.ds_floquet.df
-
-# %%
 # not ideal but qsim base (to be precise, the us2cycles) wants all the lengths to be valid and not NaN
-for i in range(2,7):
+for i in range(4,5):
     station.ds_floquet.update_len(f'M1-S{i}', 0)
 
 # %%
@@ -271,7 +268,7 @@ def floquet_freq_chev_postproc(station, expt):
 
 
 # %%
-stor_modes_to_run = [1, 7] #list(range(1,8))
+stor_modes_to_run = [4, 5] #list(range(1,8))
 freq_len_expt = [None] * len(stor_modes_to_run)
 
 floquet_freq_chev_runner = CharacterizationRunner(
@@ -388,7 +385,7 @@ error_amp_floquet_runner = CharacterizationRunner(
 )
 
 # %%
-stor_modes_to_run = [7] #list(range(1,8))
+stor_modes_to_run = [4,5] #list(range(1,8))
 error_amp_gain1 = [None] * len(stor_modes_to_run)
 error_amp_freq1 = [None] * len(stor_modes_to_run)
 error_amp_gain2 = [None] * len(stor_modes_to_run)
@@ -406,7 +403,7 @@ for i, stor_i in enumerate(stor_modes_to_run):
         parameter_to_test='frequency',
         go_kwargs=dict(analyze=False, progress=True, display=False),
     )
-    error_amp_freq1[i].display()
+    # error_amp_freq1[i].display()
 
     error_amp_gain1[i] = error_amp_floquet_runner.execute(
         stor_mode_no=stor_i,
@@ -414,7 +411,7 @@ for i, stor_i in enumerate(stor_modes_to_run):
         go_kwargs=dict(analyze=False, progress=True, display=False),
         span=int(station.ds_floquet.get_gain(stor_name) * 0.4),
     )
-    error_amp_gain1[i].display()
+    # error_amp_gain1[i].display()
 
 # %%
 station.snapshot_floquet_storage_swap(update_main=False)
@@ -520,7 +517,7 @@ sideband_stark_error_amp_runner = CharacterizationRunner(
 )
 
 # %%
-stor_modes_to_run = [1, 7] #list(range(1,8))
+stor_modes_to_run = [4, 5] #list(range(1,8))
 
 for iA, init_storA in enumerate(stor_modes_to_run): #range(1,8):
     for iB, init_storB in enumerate(stor_modes_to_run): #range(1,8):
@@ -542,7 +539,7 @@ station.ds_floquet.df
 # %%
 station.update_all_station_snapshots()
 
-# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# %% [markdown]
 # # AC Stark calibration with pi/2 dual rail
 
 # %%
@@ -765,18 +762,18 @@ scramble_runner = CharacterizationRunner(
     job_client=client,
 )
 
-floquet_cycles = np.arange(0, 51, step=1)
+floquet_cycles = np.arange(0, 201, step=4)o
 
-meas_stors = [0,1,7]
-swap_stors = [1, 7]
-detunings = [0, 0] # None/False/unspecified all default to all zeros
+meas_stors = [0,4,5]
+swap_stors = [4,5]
+detunings = [0,0] # None/False/unspecified all default to all zeros
 
 scramble_expts = []
 
 for update_phases in [True]:
     for meas_stor in meas_stors:
         scramble = scramble_runner.execute(
-            reps=200,
+            reps=50,
             init_fock=True,
             init_stor=0,
             ro_stor=meas_stor,
@@ -789,7 +786,7 @@ for update_phases in [True]:
             swept_params=['floquet_cycle'],
         )
         scramble_expts.append(scramble)
-        scramble.display()
+        # scramble.display()
 
 # %%
 meas_stors = [0,1,7]
@@ -1187,7 +1184,154 @@ plt.plot(ss[9].data['avgi'])
 
 # %%
 
-# %%
+# %% [markdown]
+# ## Scramble using DarkBase 
+#
+# for initial coherent state prep and parity readout 
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+dark_scramble_defaults = AttrDict(dict(
+    expts=1,
+    reps=100,
+    rounds=1,
+    qubits=[0],
+    ro_stor=0, # storage mode number that gets read out in the end
+
+    init_fock=True,
+
+    normalize=False,
+    post_select_pre_pulse=False,
+    active_reset=False,
+    man_reset=False, 
+    storage_reset=False, 
+    prepulse=True,
+    postpulse=True,
+)) # Shouldn't be modifying this on the fly!
+# You can use kwargs in the run function to override these values
+
+def dark_scramble_preproc(station, default_expt_cfg, **kwargs):
+    assert 'swept_params' in kwargs
+    assert len(kwargs['swept_params']) > 0
+
+    expt_cfg = deepcopy(default_expt_cfg)
+    expt_cfg.update(kwargs)
+    assert 'init_stor' in kwargs
+    if not expt_cfg.init_fock:
+        assert 'init_alpha' in kwargs
+        
+    # print(expt_cfg)
+    return expt_cfg
+
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"} jupyter={"outputs_hidden": true}
+dark_scramble_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment,
+    ExptProgram=meas.qsim.floquet_dark_mode_readout.SidebandScrambleDarkProgramNewNew,
+    default_expt_cfg=dark_scramble_defaults,   # + the keys above
+    postprocessor=None,
+    job_client=client,
+)
+
+
+floquet_cycles = np.arange(0, 200, step=1)
+
+meas_stors = [0,4,5]
+swap_stors = [4,5]
+detunings = [0,0] # None/False/unspecified all default to all zeros
+
+scramble_expts = []
+
+init_alphas = np.linspace(0.1,5,50)
+
+for init_alpha in init_alphas:
+    for meas_stor in meas_stors:
+        scramble = dark_scramble_runner.execute(
+            reps=400,
+            init_fock=False,
+            init_alpha=init_alpha,
+            init_stor=0,
+            ro_stor=meas_stor,
+            relax_delay=8000,
+    
+            swap_stors=swap_stors,
+            update_phases=True,
+            detunings=detunings,
+            floquet_cycles=floquet_cycles,
+            swept_params=['floquet_cycle'],
+    
+            parity_readout = True,
+            parity_fast = False,
+            perform_wigner = False,
+        )
+        scramble_expts.append(scramble)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.use_real_instruments()
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+dark_scramble_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment,
+    ExptProgram=meas.qsim.floquet_dark_mode_readout.SidebandScrambleDarkProgramNewNew,
+    default_expt_cfg=dark_scramble_defaults,   # + the keys above
+    postprocessor=None,
+    job_client=client,
+)
+
+
+floquet_cycles = np.arange(0, 2001, step=5)
+
+meas_stors = [0,4,5]
+swap_stors = [4,5]
+detunings = [0,0] # None/False/unspecified all default to all zeros
+
+
+scramble = dark_scramble_runner.execute(
+            reps=200,
+            init_fock=False,
+            init_alpha=init_alpha,
+            init_stor=0,
+            ro_stor=0,
+            relax_delay=80,
+    
+            swap_stors=[4,5],
+            update_phases=True,
+            detunings=detunings,
+            floquet_cycles=floquet_cycles,
+            swept_params=['floquet_cycle'],
+    
+            parity_readout = True,
+            parity_fast = False,
+            perform_wigner = False,
+        )
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+m1is = np.array([se.data['avgi'] for se in scramble_expts])
+plt.pcolormesh(m1is)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+m1is = np.array([se.data['avgi'] for se in scramble_expts[0::3]])
+s4is = np.array([se.data['avgi'] for se in scramble_expts[1::3]])
+s5is = np.array([se.data['avgi'] for se in scramble_expts[2::3]])
+
+plt.pcolormesh(floquet_cycles, init_alphas, m1is)
+plt.colorbar(label='avgi')
+plt.xlabel('cycles')
+plt.ylabel('alpha')
+plt.title('M1 parity')
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+plt.pcolormesh(floquet_cycles, init_alphas, s4is)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+plt.pcolormesh(floquet_cycles, init_alphas, s5is)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 
 # %% [markdown] jp-MarkdownHeadingCollapsed=true
 # ## Amplitude Rabi

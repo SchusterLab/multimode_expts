@@ -109,11 +109,16 @@ LAB_DEFAULTS: dict[str, Any] = {
     # the fidelity target is auto-derived from each pulse's `target_state` meta
     # (Fock labels only); non-Fock targets still return rho + populations with
     # fidelity = null. A manifest `target_state` dict overrides the auto-derived one.
+    # The returned `fidelity` is the UNBIASED linear fidelity (from the unprojected
+    # rho); `fidelity_projected` is the physical-state one, kept for reference.
     "reconstruct":          False,
     "reconstruct_fock_dim": 5,
+    # reconstruct_rotate is IGNORED by the closed loop: it never rotates (it must get
+    # the state's coherence phase right, not gauge it away). Kept for manifest compat.
     "reconstruct_rotate":   False,
     # Shot-noise error bars on the reconstruction (bootstrap the per-alpha counts):
-    # fidelity_std/ci, populations_std/ci, per-element rho_re_std/rho_im_std. Needs
+    # fidelity_std/ci (tracking the linear fidelity), fidelity_projected_std/ci,
+    # populations_std/ci, per-element rho_re_std/rho_im_std. Needs
     # reconstruct=True and parity_counts (sigma_z_mode != 'measure'). Off by default
     # (the extra n_boot reconstructions cost time); enable lab-wide here or per-pulse
     # via the manifest's `reconstruct_uncertainty` / `reconstruct_bootstrap_n` keys.
@@ -520,12 +525,18 @@ class PulseOutcome:
     # and a binomial error bar. See RunWignerResponse.parity_counts for the shape.
     parity_counts:   Optional[dict] = None
     # Full-pipeline reconstruction outputs, present iff knobs.reconstruct was set
-    # (None otherwise). `rho` is {"real": [[...]], "imag": [[...]]}; `populations`
-    # is the photon-number diagonal; `fidelity` is None unless a target_state
-    # was resolved for this pulse.
-    rho:             Optional[dict] = None
-    populations:     Optional[list[float]] = None
-    fidelity:        Optional[float] = None
+    # (None otherwise). `rho` is the PROJECTED (physical) matrix {"real", "imag"},
+    # for display; `rho_linear` is the unprojected least-squares matrix (same shape).
+    # `populations` is the photon-number diagonal of the projected rho. `fidelity`
+    # is None unless a target_state was resolved for this pulse; it is the UNBIASED
+    # linear fidelity (from rho_linear). `fidelity_projected` is the physical-state
+    # fidelity, kept for reference (biased low for near-pure targets). See the
+    # WignerAnalysis reconstruction docs for the bias discussion.
+    rho:                Optional[dict] = None
+    rho_linear:         Optional[dict] = None
+    populations:        Optional[list[float]] = None
+    fidelity:           Optional[float] = None
+    fidelity_projected: Optional[float] = None
     # Statistical (shot-noise) error bars on the reconstruction, present iff
     # knobs.reconstruct_uncertainty was set and counts were available (else None).
     # See RunWignerResponse.reconstruct_uncertainty for the shape (fidelity_std/ci,
@@ -596,8 +607,10 @@ def run_one(plan: PulsePlan) -> PulseOutcome:
             sigma_z_raw=resp.sigma_z_raw,
             parity_counts=resp.parity_counts,
             rho=resp.rho,
+            rho_linear=resp.rho_linear,
             populations=resp.populations,
             fidelity=resp.fidelity,
+            fidelity_projected=resp.fidelity_projected,
             reconstruct_uncertainty=resp.reconstruct_uncertainty,
             measurement="wigner",
         )
@@ -795,8 +808,10 @@ def pack_results(
                 "sigma_z":       o.sigma_z,
                 "sigma_z_raw":   o.sigma_z_raw,
                 "rho":           o.rho,
+                "rho_linear":    o.rho_linear,
                 "populations":   o.populations,
                 "fidelity":      o.fidelity,
+                "fidelity_projected": o.fidelity_projected,
                 "reconstruct_uncertainty": o.reconstruct_uncertainty,
                 "counts":        o.counts,
                 "expectations":  o.expectations,

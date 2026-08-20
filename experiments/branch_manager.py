@@ -142,9 +142,13 @@ class BranchManager:
         """{branch: latest_event} for all live branches/tags."""
         return self._state()
 
-    def show(self, name):
-        """The 4 current IDs for `name`."""
-        return self._state()[name]["ids"]
+    def show(self, name=None):
+        """The 4 current IDs for `name`. If name==None, show the currently checked out branch."""
+        if name is None:
+            if self._loaded_name is None:
+                raise TypeError("No branch checked out. Specify a branch name to show.")
+            name = self._loaded_name
+        return {'name': name, 'IDs': self._state()[name]["ids"]}
 
     def log(self, name=None):
         """Full history (all appends), optionally filtered to one branch -- oldest->newest."""
