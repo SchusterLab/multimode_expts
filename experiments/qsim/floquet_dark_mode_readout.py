@@ -3127,6 +3127,34 @@ class EncodingOrthogonalityProgram(
         return super()._get_inverse_pulses(self.decoder_encoder_pulses)
 
 
+class EncodingPropagatorProgram(
+        NPhotonHamiltonianSpectroscopyProgram):
+    """Measure one raw column of the short-time propagator."""
+
+    def initialize(self):
+        ecfg = self.cfg.expt
+        cycle_decoder_analyzer = list(ecfg.cycle_decoder_analyzer)
+        decoder_occupation = [
+            int(n) for n in cycle_decoder_analyzer[1:-1]
+        ]
+
+        ecfg.floquet_cycle = int(cycle_decoder_analyzer[0])
+        ecfg.spectroscopy_analyzer_phase = float(
+            cycle_decoder_analyzer[-1])
+        ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
+        ecfg.final_analyzer_phase_per_cycle_deg = 0.
+
+        super().initialize()
+        self.decoder_encoder_pulses = self._get_encoder_pulses(
+            decoder_occupation,
+            [int(stor) for stor in ecfg.swap_stors],
+        )
+
+    def _get_inverse_pulses(self, _):
+        # The parent body requests inverse(encoder); decode the selected row.
+        return super()._get_inverse_pulses(self.decoder_encoder_pulses)
+
+
 class EncodingStarkShiftCalibrationProgram(
         NPhotonHamiltonianSpectroscopyProgram):
     """Measure the raw Floquet-pulse phase of one occupation basis state.
@@ -5091,6 +5119,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 self.batch_expts,
                 kwargs.get("occupations"),
             )
+        elif stage == "propagator":
+            self.data = self.reconstruct_propagator(
+                self.batch_expts,
+                kwargs.get("occupations"),
+            )
         elif stage == "spectrum":
             spectrum_method = str(kwargs.get("spectrum_method", "fft")).lower()
             if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
@@ -5199,7 +5232,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 self.calibration_job_ids = list(calibration_arg.batch_job_ids)
         else:
             raise ValueError(
-                "stage must be 'calibration', 'orthogonality', or 'spectrum'"
+                "stage must be 'calibration', 'orthogonality', "
+                "'propagator', or 'spectrum'"
             )
         return self.data
 
@@ -5446,6 +5480,61 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             normalized_power=normalized_power,
             offdiagonal_normalized_power=offdiagonal_normalized_power,
             column_leakage=column_leakage,
+            matrix_orientation="rows=decoder, columns=encoder",
+        ))
+
+    @classmethod
+    def reconstruct_propagator(cls,
+                               propagator_expts,
+                               occupations=None):
+        """Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices."""
+        first_cfg = propagator_expts[0].cfg.expt
+        swap_stors = [int(stor) for stor in first_cfg.swap_stors]
+        cycles = [int(cycle) for cycle in first_cfg.propagator_cycles]
+        decoder_order = [
+            tuple(occupation)
+            for occupation in first_cfg.propagator_occupations
+        ]
+
+        columns = {}
+        for expt in propagator_expts:
+            encoder = tuple(expt.cfg.expt.spectroscopy_occupations)
+            quadrature = np.asarray(
+                cls._quadrature(expt), dtype=float
+            ).reshape(len(cycles), len(decoder_order), 2)
+            columns[encoder] = (
+                quadrature[:, :, 0] - 1j * quadrature[:, :, 1]
+            )
+
+        occupation_order = decoder_order if occupations is None else [
+            tuple(occupation) for occupation in occupations
+        ]
+        decoder_indices = [
+            decoder_order.index(occupation)
+            for occupation in occupation_order
+        ]
+        raw_matrices = np.stack([
+            columns[occupation][:, decoder_indices]
+            for occupation in occupation_order
+        ], axis=2).astype(complex, copy=False)
+        phase_correction = np.asarray(
+            first_cfg.propagator_decoder_phase_correction_deg,
+            dtype=float,
+        )[decoder_indices]
+        matrices = raw_matrices * np.exp(
+            -1j * np.deg2rad(
+                np.asarray(cycles)[:, None, None]
+                * phase_correction[None, :, None]
+            )
+        )
+
+        return AttrDict(dict(
+            cycles=np.asarray(cycles, dtype=int),
+            occupations=occupation_order,
+            mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors],
+            raw_matrices=raw_matrices,
+            matrices=matrices,
+            decoder_phase_correction_deg=phase_correction,
             matrix_orientation="rows=decoder, columns=encoder",
         ))
 
@@ -7884,6 +7973,71 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             occupations=deepcopy(occupations),
             points_per_job=4 * len(occupations),
             total_points=4 * len(occupations) ** 2,
+        ))
+
+    @staticmethod
+    def propagator_batch(default_expt_cfg,
+                         swap_stors,
+                         occupations,
+                         cycles,
+                         phase_by_occupation,
+                         sync_cycles=10,
+                         reps=300):
+        """Build one raw short-time propagator job per encoded occupation."""
+        swap_stors = [int(stor) for stor in swap_stors]
+        occupations = [list(occupation) for occupation in occupations]
+        cycles = [int(cycle) for cycle in cycles]
+        decoder_phase_correction = [
+            float(phase_by_occupation[tuple(occupation)])
+            for occupation in occupations
+        ]
+
+        # Every outer sweep value says exactly what is played:
+        # [Floquet cycle, decoder occupation..., analyzer phase].
+        cycle_decoder_analyzers = [
+            [cycle, *decoder_occupation, analyzer_phase]
+            for cycle in cycles
+            for decoder_occupation in occupations
+            for analyzer_phase in (0., 90.)
+        ]
+
+        defaults = deepcopy(default_expt_cfg)
+        defaults.update(dict(
+            reps=int(reps),
+            storage_reset=swap_stors,
+            swap_stors=swap_stors,
+            detunings=[0.] * len(swap_stors),
+            scramble_sync_cycles=int(sync_cycles),
+            floquet_cycle=0,
+            floquet_hardware_loop=False,
+            update_phases=True,
+            palindrome_scramble=False,
+            spectroscopy_phase_correction_mode="final_analyzer",
+            final_analyzer_phase_per_cycle_deg=0.,
+            propagator_cycles=cycles,
+            propagator_occupations=deepcopy(occupations),
+            propagator_decoder_phase_correction_deg=(
+                decoder_phase_correction
+            ),
+            cycle_decoder_analyzers=cycle_decoder_analyzers,
+            spectroscopy_prep_phases=[0., 180.],
+            swept_params=[
+                "cycle_decoder_analyzer",
+                "spectroscopy_prep_phase",
+            ],
+        ))
+        configs = [
+            dict(spectroscopy_occupations=list(occupation))
+            for occupation in occupations
+        ]
+        points_per_job = 4 * len(cycles) * len(occupations)
+        return AttrDict(dict(
+            default_expt_cfg=defaults,
+            configs=configs,
+            cycles=cycles,
+            occupations=deepcopy(occupations),
+            points_per_job=points_per_job,
+            total_points=points_per_job * len(occupations),
         ))
 
     @staticmethod
