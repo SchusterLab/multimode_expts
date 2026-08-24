@@ -4414,23 +4414,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
     @classmethod
     def _from_expts(cls, expts, job_ids=None, station=None):
-        """
-        Reconstruct 'mother' experiment instance by collecting all the experiments
-        to be analyzed. The `sister` experiment should have identical following params;
-        otherwise, `_saved_parameters` will return error
-            - swap_stors
-            - detunings
-            - physical_kerr_MHz
-            - scramble_sync_cycles
-            - floquet_gauss_sigma
-            - floquet_waveform
-        The current version also assumes reconstructing the data from pickle; 
-        if this is the case,
-            - floquet_cycle_us
-            - couplings_MHz
-        which is to ensure that the same floquet pulse sequence is used.
-        Otherwise, the station should be input as well to calculate physical params
-        """
+        """Collect saved jobs for analysis; station supplies missing hardware data."""
         
         expts = list(flatten_exp_lists(expts))
         if not expts:
@@ -4550,30 +4534,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         for expt in expts:
             cfg = expt.cfg
             ecfg = cfg.expt
-            if [int(stor) for stor in ecfg.swap_stors] != swap_stors:
-                raise ValueError("saved jobs use different swap_stors")
-            if len(ecfg.spectroscopy_occupations) != len(swap_stors) + 1:
-                raise ValueError("saved spectroscopy_occupations do not match swap_stors")
-            saved_detunings = cls._saved_detunings(ecfg, len(swap_stors))
-            if saved_detunings.shape != detunings.shape or not np.allclose(saved_detunings, detunings):
-                raise ValueError("saved jobs use different detunings")
-            saved_kerr_MHz = -abs(cls._first_scalar(cfg.device.manipulate.kerr))
-            if not np.isclose(saved_kerr_MHz, physical_kerr_MHz):
-                raise ValueError("saved jobs use different M1 self-Kerr")
-            if int(ecfg.get("scramble_sync_cycles", 10)) != sync_cycles or ecfg.get("floquet_gauss_sigma", None) != floquet_gauss_sigma or ecfg.get("floquet_waveform", None) != floquet_waveform:
-                raise ValueError("saved jobs use different Floquet timing configs")
             prog = getattr(expt, "prog", None)
             if prog is not None and hasattr(prog, "calculate_floquet_cycle_us") and hasattr(prog, "m1s_pi_fracs"):
                 floquet_cycle_us = float(prog.calculate_floquet_cycle_us())
                 pi_fracs = np.asarray([prog.m1s_pi_fracs[stor - 1] for stor in swap_stors], dtype=float)
                 couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
                 program_hardware.append((floquet_cycle_us, couplings_MHz))
+                break
 
         if program_hardware:
             floquet_cycle_us, couplings_MHz = program_hardware[0]
-            for saved_cycle_us, saved_couplings_MHz in program_hardware[1:]:
-                if not np.isclose(saved_cycle_us, floquet_cycle_us) or not np.allclose(saved_couplings_MHz, couplings_MHz):
-                    raise ValueError("saved jobs use different Floquet hardware parameters")
             hardware_source = "saved program"
         elif station is not None:
             hardware = cls.hardware_parameters(station, 
@@ -4682,8 +4652,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         missing_application_sign = False
         for expt in expts:
             ecfg = expt.cfg.expt
-            occupation = tuple(ecfg.get("spectroscopy_final_occupations", ecfg.spectroscopy_occupations))
-            phase = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.))
+            occupation = tuple(ecfg.get(
+                "offdiag_decoder_occupation",
+                ecfg.get("spectroscopy_final_occupations", ecfg.spectroscopy_occupations),
+            ))
+            phase = float(ecfg.get(
+                "offdiag_decoder_phase_correction_deg",
+                ecfg.get("final_analyzer_phase_per_cycle_deg", 0.),
+            ))
             if occupation in phase_by_occupation and not np.isclose(phase, phase_by_occupation[occupation]):
                 raise ValueError(f"{occupation} spectroscopy chunks used different analyzer corrections")
             phase_by_occupation[occupation] = phase
@@ -5152,20 +5128,18 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError("shot_seed requires shots_per_point")
             saved = self._saved_parameters(analysis_expts, 
                                            getattr(self, "_analysis_station", None))
-            acquired_reconstruction = self.reconstruct_spectroscopy(analysis_expts, 
-                                                                    kwargs.get("occupations"))
+            if "offdiag_cycles" in analysis_expts[0].cfg.expt:
+                acquired_reconstruction = self.reconstruct_pair_spectroscopy(
+                    analysis_expts, kwargs.get("occupations"))
+            else:
+                acquired_reconstruction = self.reconstruct_spectroscopy(
+                    analysis_expts, kwargs.get("occupations"))
             photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
             if len(photon_numbers) != 1:
                 raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
             photon_number = photon_numbers.pop()
             calibration_arg = kwargs.get("calibration", None)
             calibration = self._calibration_data(calibration_arg, getattr(self, "_analysis_station", None))
-            if calibration is not None and "mode_labels" in calibration and list(calibration.mode_labels) != list(saved.mode_labels):
-                raise ValueError("calibration and spectroscopy use different modes")
-            if calibration is not None and "hardware" in calibration:
-                calibration_couplings = np.asarray(calibration.hardware.couplings_MHz)
-                if calibration_couplings.shape != saved.hardware.couplings_MHz.shape or not np.isclose(calibration.hardware.floquet_cycle_us, saved.hardware.floquet_cycle_us) or not np.allclose(calibration_couplings, saved.hardware.couplings_MHz):
-                    raise ValueError("calibration and spectroscopy used different Floquet hardware")
             cycle_branches = kwargs.get("cycle_branches", 0)
             if kwargs.get("second_branch", False):
                 cycle_branches = self._cycle_branches(acquired_reconstruction.final_occupations,
@@ -5545,6 +5519,61 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             matrices=matrices,
             decoder_phase_correction_deg=phase_correction,
             matrix_orientation="rows=decoder, columns=encoder",
+        ))
+
+    @classmethod
+    def reconstruct_pair_spectroscopy(cls, spectroscopy_expts,
+                                      occupations=None):
+        """Reconstruct the interleaved off-diagonal acquisition path."""
+        grouped = {}
+        for expt in spectroscopy_expts:
+            cfg = expt.cfg.expt
+            initial = tuple(cfg.spectroscopy_occupations)
+            final = tuple(cfg.offdiag_decoder_occupation)
+            cycles = np.asarray(cfg.offdiag_cycles, dtype=int)
+            quadratures = np.asarray(
+                cls._quadrature(expt), dtype=float
+            ).reshape(-1, 2)
+            A = quadratures[:, 0] - 1j * quadratures[:, 1]
+            phase = float(cfg.offdiag_decoder_phase_correction_deg)
+            A *= np.exp(-1j * np.deg2rad(phase * cycles))
+            grouped.setdefault((final, initial), []).append((cycles, A))
+
+        if occupations is None:
+            state_order = list(grouped)
+        else:
+            initial_order = [tuple(occupation) for occupation in occupations]
+            state_order = [
+                state for initial in initial_order
+                for state in grouped if state[1] == initial
+            ]
+
+        rows = []
+        expected_cycles = None
+        for state in state_order:
+            cycles = np.concatenate([chunk[0] for chunk in grouped[state]])
+            A = np.concatenate([chunk[1] for chunk in grouped[state]])
+            order = np.argsort(cycles)
+            cycles, A = cycles[order], A[order]
+            if expected_cycles is None:
+                expected_cycles = cycles
+            rows.append(A)
+
+        initial_occupations = [state[1] for state in state_order]
+        final_occupations = [state[0] for state in state_order]
+        A = np.asarray(rows, dtype=complex)
+        A_norm = np.asarray([
+            row / row[0] if initial == final else row
+            for row, initial, final in zip(
+                A, initial_occupations, final_occupations
+            )
+        ])
+        return AttrDict(dict(
+            occupations=initial_occupations,
+            final_occupations=final_occupations,
+            cycles=expected_cycles,
+            A=A,
+            A_norm=A_norm,
         ))
 
     @classmethod
@@ -7285,6 +7314,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError(f"{occupation} is not in the spectroscopy data")
             row = reconstruction.occupations.index(occupation)
         occupation = tuple(reconstruction.occupations[row])
+        final_occupation = tuple(reconstruction.get(
+            "final_occupations", reconstruction.occupations
+        )[row])
+        offdiagonal = final_occupation != occupation
 
         measured = spectrum.measured_local[row]
         theory = spectrum.theory_local[row].copy()
@@ -7306,22 +7339,29 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if plot_abs_A:
             axes[0].plot(spectrum.time_us, np.abs(reconstruction.A[row]), "--", color="0.5", label="|A|")
         axes[0].set(xlabel="time (us)", 
-                    ylabel="return amplitude", 
-                    title="oscillation trace")
+                    ylabel="cross return" if offdiagonal else "return amplitude",
+                    title=(
+                        rf"$\langle {final_occupation}|U(t)|{occupation}\rangle$"
+                        if offdiagonal else "oscillation trace"
+                    ))
         axes[0].legend()
 
         axes[1].plot(spectrum.energy_MHz, measured, color="black", label="measured")
         axes[1].plot(spectrum.energy_MHz, theory, color="tab:orange", label="theory (shape scaled)")
-        axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title="finite-time FFT")
+        axes[1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title="off-diagonal finite-time FFT" if offdiagonal else "finite-time FFT")
         axes[1].legend()
 
         axes[2].vlines(ldos_energies_MHz[keep], 0., ldos_weights[keep], color="tab:blue")
         axes[2].plot(ldos_energies_MHz[keep], ldos_weights[keep], "o", color="tab:blue", markersize=4)
-        axes[2].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="spectral weight", title="exact LDOS weights")
-        title = str(occupation)
+        axes[2].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="eigenenergy E/h (MHz)", ylabel="spectral weight", title="exact off-diagonal spectral weights" if offdiagonal else "exact LDOS weights")
+        title = (
+            rf"$\langle {final_occupation}|U(t)|{occupation}\rangle$"
+            if offdiagonal else str(occupation)
+        )
         if phase_frame is not None:
             title += f"; frame={phase_frame}"
-        fig.suptitle(f"{title}; Kerr={spectrum.physical_kerr_MHz:.6g} MHz")
+        if not offdiagonal:
+            fig.suptitle(f"{title}; Kerr={spectrum.physical_kerr_MHz:.6g} MHz")
         return fig
 
     def display_occupations(self, 
@@ -7343,7 +7383,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if spectrum_method not in ("fft", "matrix_pencil"):
             raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
         if occupations is None:
-            selections = data.reconstruction.occupations
+            selections = range(len(data.reconstruction.occupations))
         elif isinstance(occupations, (int, np.integer)):
             selections = [occupations]
         else:
@@ -7354,7 +7394,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         figures = {}
         for occupation in selections:
             if isinstance(occupation, (int, np.integer)):
-                key = tuple(data.reconstruction.occupations[int(occupation)])
+                row = int(occupation)
+                initial = tuple(data.reconstruction.occupations[row])
+                final = tuple(data.reconstruction.final_occupations[row])
+                key = initial if initial == final else (final, initial)
             else:
                 key = tuple(occupation)
             if spectrum_method == "matrix_pencil":
@@ -7545,7 +7588,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         reconstruction = data.reconstruction
         spectrum = data.spectrum
         rows = np.arange(len(reconstruction.occupations))
-        labels = [str(occupation) for occupation in reconstruction.occupations]
+        labels = [
+            str(initial) if tuple(initial) == tuple(final)
+            else f"{tuple(final)} <- {tuple(initial)}"
+            for initial, final in zip(
+                reconstruction.occupations,
+                reconstruction.final_occupations,
+            )
+        ]
         energy_MHz = np.asarray(spectrum.energy_MHz)
         measured_local = np.asarray(spectrum.measured_local)
         reconstructed_local = np.asarray(matrix_pencil.reconstructed_local)
@@ -7677,7 +7727,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                        spectrum, 
                        mode_labels):
         rows = np.arange(len(reconstruction.occupations))
-        labels = [str(occupation) for occupation in reconstruction.occupations]
+        labels = [
+            str(initial) if tuple(initial) == tuple(final)
+            else f"{tuple(final)} <- {tuple(initial)}"
+            for initial, final in zip(
+                reconstruction.occupations,
+                reconstruction.final_occupations,
+            )
+        ]
         fig, axes = plt.subplots(2, 2, figsize=(15, 11), constrained_layout=True)
 
         extent = [spectrum.energy_MHz[0], spectrum.energy_MHz[-1], -0.5, len(rows) - 0.5]
@@ -7695,7 +7752,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         axes[0, 0].set_ylabel(f"occupation {mode_labels}")
         fig.colorbar(image, ax=axes[0], label="spectral magnitude")
 
-        EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states(spectrum, reconstruction.occupations, axes[1, 0])
+        EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states(spectrum, labels, axes[1, 0])
         axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
         axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
         title = "projected spectrum"
@@ -7897,6 +7954,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         Returns dictionary of 
             - default_expt_cfg
             - list of config to be overrided in each job
+            - program selected for diagonal or interleaved off-diagonal acquisition
             - repeats (usually 1)
         The list of config is then used to make and batch jobs in a chunk.
         For now, other paramters such as `update_phase`, `palindrome_scramble`, 
@@ -8088,6 +8146,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         
         Example:
             spectroscopy_batch = EncSpec.spectroscopy_batch()
+            spectroscopy_runner = BatchRunner(
+                ExptProgram=spectroscopy_batch.program, ...)
             spectroscopy_expt = spectroscopy_runner.execute(spectroscopy_batch.configs)
         """
         if detunings is None:
@@ -8110,16 +8170,50 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
         ))
         final_occupations = occupations if final_occupations is None else final_occupations
+        pairs = list(zip(occupations, final_occupations))
+        if any(tuple(initial) != tuple(final) for initial, final in pairs):
+            defaults.update(dict(
+                final_analyzer_phase_per_cycle_deg=0.,
+                swept_params=[
+                    "cycle_decoder_analyzer",
+                    "spectroscopy_prep_phase",
+                ],
+            ))
+            configs = [
+                dict(
+                    spectroscopy_occupations=list(initial),
+                    offdiag_decoder_occupation=list(final),
+                    offdiag_pair_index=pair_index,
+                    offdiag_chunk_index=chunk_index,
+                    offdiag_cycles=cycles.tolist(),
+                    offdiag_decoder_phase_correction_deg=(
+                        phase_by_occupation[tuple(final)]
+                    ),
+                    cycle_decoder_analyzers=[
+                        [int(cycle), *final, phi]
+                        for cycle in cycles for phi in [0., 90.]
+                    ],
+                )
+                for pair_index, (initial, final) in enumerate(pairs)
+                for chunk_index, cycles in enumerate(cycle_chunks)
+            ]
+            return AttrDict(dict(
+                default_expt_cfg=defaults,
+                configs=configs,
+                program=EncodingPropagatorProgram,
+            ))
+
         configs = [
             dict(spectroscopy_occupations=occupation,
                  spectroscopy_final_occupations=final_occupation,
                  spectroscopy_analyzer_phase=phi,
                  final_analyzer_phase_per_cycle_deg=phase_by_occupation[tuple(final_occupation)],
                  floquet_cycles=cycles.tolist())
-            for occupation, final_occupation in zip(occupations, final_occupations) for cycles in cycle_chunks for phi in [0., 90.]
+            for occupation, final_occupation in pairs for cycles in cycle_chunks for phi in [0., 90.]
         ]
         return AttrDict(dict(default_expt_cfg=defaults, 
-                             configs=configs))
+                             configs=configs,
+                             program=NPhotonHamiltonianSpectroscopyProgram))
 
 
 class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
