@@ -2930,6 +2930,8 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         self.encoder_pulses = self._get_encoder_pulses(
             occupations, swap_stors)
+        final_occupations = ecfg.get("spectroscopy_final_occupations", occupations)
+        self.decoder_encoder_pulses = self._get_encoder_pulses(final_occupations, swap_stors)
 
         if any(pulse[1] == "ge_broadband" for pulse in self.encoder_pulses):
             pulse_key = "pi_ge_broadband"
@@ -3047,7 +3049,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
         )
 
         # Decode |n> to |e,0>, then interfere it with |g,0>.
-        postpulse_cfg = self._get_inverse_pulses(self.encoder_pulses)
+        postpulse_cfg = self._get_inverse_pulses(self.decoder_encoder_pulses)
         for pulse in postpulse_cfg:
             # Every f_n-g_(n+1) pulse transfers one M1 photon, so all n use
             # the same M1-frame correction. N ladder steps then give N times
@@ -4403,6 +4405,7 @@ class BatchRunner(CharacterizationRunner):
         batch_expt.data = AttrDict()
         batch_expt.batch_expts = expts
         batch_expt.batch_job_ids = list(self.last_job_ids)
+        batch_expt._analysis_station = self.station
         return batch_expt
 
 
@@ -4627,9 +4630,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return branches.astype(int)
 
     @classmethod
-    def _calibration_data(cls, calibration):
+    def _calibration_data(cls, calibration, station=None):
         if calibration is None:
             return None
+        from pathlib import Path
+        if isinstance(calibration, (str, Path, list, tuple)):
+            calibration = cls.from_job_files(calibration, station=station)
         if hasattr(calibration, "data"):
             if "phase_mod180" not in calibration.data:
                 if hasattr(calibration, "batch_expts"):
@@ -4643,13 +4649,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     def phase_correction_from_calibration(cls, 
                                           calibration, 
                                           cycle_branches=0, 
-                                          second_branch=False):
+                                          second_branch=False,
+                                          station=None):
         """
         Prepare the phase calibration list, which is returned as `phase_by_occupation` 
         by `build_phase_correction` method.
         """
         
-        calibration = cls._calibration_data(calibration)
+        calibration = cls._calibration_data(calibration, station=station)
         if calibration is None:
             raise ValueError("calibration is required")
         if "hardware" not in calibration:
@@ -4675,7 +4682,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         missing_application_sign = False
         for expt in expts:
             ecfg = expt.cfg.expt
-            occupation = tuple(ecfg.spectroscopy_occupations)
+            occupation = tuple(ecfg.get("spectroscopy_final_occupations", ecfg.spectroscopy_occupations))
             phase = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.))
             if occupation in phase_by_occupation and not np.isclose(phase, phase_by_occupation[occupation]):
                 raise ValueError(f"{occupation} spectroscopy chunks used different analyzer corrections")
@@ -4731,7 +4738,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if phase_frame not in ("as_acquired", "uncorrected", "zero_kerr", "manual_kerr"):
             raise ValueError("phase_frame must be 'as_acquired', 'uncorrected', 'zero_kerr', or 'manual_kerr'")
         occupations = reconstruction.occupations
-        branches = cls._cycle_branches(occupations, cycle_branches)
+        final_occupations = reconstruction.get("final_occupations", occupations)
+        branches = cls._cycle_branches(final_occupations, cycle_branches)
         A = reconstruction.A.copy()
         target_correction = None
         application_sign = saved_correction.application_sign
@@ -4759,7 +4767,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             if phase_frame == "uncorrected":
                 if manual_kerr_MHz is not None:
                     raise ValueError("uncorrected does not take manual_kerr_MHz")
-                for row, occupation in enumerate(occupations):
+                for row, occupation in enumerate(final_occupations):
                     saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
                     A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + 180. * branches[row]) * reconstruction.cycles)
                 physical_kerr_MHz = hardware.physical_kerr_MHz
@@ -4769,17 +4777,18 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 if calibration is None:
                     raise ValueError("zero_kerr/manual_kerr rephasing requires calibration")
                 calibration_phase = {tuple(occupation): phase for occupation, phase in zip(calibration.occupations, calibration.phase_mod180)}
-                missing = [occupation for occupation in occupations if tuple(occupation) not in calibration_phase]
+                missing = [occupation for occupation in final_occupations if tuple(occupation) not in calibration_phase]
                 if missing:
                     raise ValueError(f"calibration is missing occupations {missing}")
-                target_correction = cls.build_phase_correction(occupations, [calibration_phase[tuple(occupation)] for occupation in occupations], branches, float(manual_kerr_MHz), hardware.floquet_cycle_us)
-                for row, occupation in enumerate(occupations):
+                target_correction = cls.build_phase_correction(final_occupations, [calibration_phase[tuple(occupation)] for occupation in final_occupations], branches, float(manual_kerr_MHz), hardware.floquet_cycle_us)
+                for row, occupation in enumerate(final_occupations):
                     saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
                     target_phase = target_correction.phase_by_occupation[tuple(occupation)]
                     A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
                 physical_kerr_MHz = float(manual_kerr_MHz)
-        normalized_A = A / A[:, :1]
+        normalized_A = np.asarray([row / row[0] if tuple(initial) == tuple(final) else row for row, initial, final in zip(A, occupations, final_occupations)])
         return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, 
+                                                          final_occupations=final_occupations,
                                                           cycles=reconstruction.cycles,
                                                           A=A,
                                                           A_norm=normalized_A)), 
@@ -5150,7 +5159,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
             photon_number = photon_numbers.pop()
             calibration_arg = kwargs.get("calibration", None)
-            calibration = self._calibration_data(calibration_arg)
+            calibration = self._calibration_data(calibration_arg, getattr(self, "_analysis_station", None))
             if calibration is not None and "mode_labels" in calibration and list(calibration.mode_labels) != list(saved.mode_labels):
                 raise ValueError("calibration and spectroscopy use different modes")
             if calibration is not None and "hardware" in calibration:
@@ -5159,7 +5168,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     raise ValueError("calibration and spectroscopy used different Floquet hardware")
             cycle_branches = kwargs.get("cycle_branches", 0)
             if kwargs.get("second_branch", False):
-                cycle_branches = self._cycle_branches(acquired_reconstruction.occupations, 
+                cycle_branches = self._cycle_branches(acquired_reconstruction.final_occupations,
                                                       cycle_branches)
                 if np.any(cycle_branches):
                     raise ValueError("use either cycle_branches or second_branch, not both")
@@ -5578,6 +5587,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         for expt in spectroscopy_expts:
             cfg = expt.cfg.expt
             occupation = tuple(cfg.spectroscopy_occupations)
+            final_occupation = tuple(cfg.get("spectroscopy_final_occupations", occupation))
+            state = (final_occupation, occupation)
             phi = cfg.spectroscopy_analyzer_phase
             if phi not in (0., 90.):
                 raise ValueError(f"{occupation} has analyzer phase {phi}; expected 0 or 90")
@@ -5587,23 +5598,24 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError(f"{occupation}, phi={phi}: saved preparation phases changed")
             if not np.array_equal(expt.data["ypts"], cfg.floquet_cycles):
                 raise ValueError(f"{occupation}, phi={phi}: saved cycles do not match its config")
-            if occupation not in grouped:
-                grouped[occupation] = {0.: [], 90.: []}
-            grouped[occupation][phi].append(expt)
+            if state not in grouped:
+                grouped[state] = {0.: [], 90.: []}
+            grouped[state][phi].append(expt)
 
         if occupations is None:
-            occupation_order = list(grouped)
+            state_order = list(grouped)
         else:
             occupation_order = [tuple(occupation) for occupation in occupations]
-        if len(occupation_order) != len(grouped) or set(occupation_order) != set(grouped):
+            state_order = [next(state for state in grouped if state[1] == occupation) for occupation in occupation_order]
+        if len(state_order) != len(grouped) or set(state_order) != set(grouped):
             raise ValueError("spectroscopy occupations do not match the saved configs")
         expected_cycles = None
         rows = []
 
-        for occupation in occupation_order:
+        for state in state_order:
             quadratures = []
             for phi in [0., 90.]:
-                expts = grouped[occupation][phi]
+                expts = grouped[state][phi]
                 if not expts:
                     raise ValueError(f"{occupation} is missing phi={phi} data")
                 cycles = np.concatenate([np.asarray(expt.data["ypts"]) for expt in expts])
@@ -5619,8 +5631,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 quadratures.append(quadrature[order])
             rows.append(quadratures[0] - 1j * quadratures[1])
         A = np.asarray(rows, dtype = complex)
-        normalized_A = A[:] / A[:, :1] # A[:, 0] gives shape mismatch; so spliced
-        return AttrDict(dict(occupations=occupation_order, 
+        occupation_order = [state[1] for state in state_order]
+        final_occupations = [state[0] for state in state_order]
+        normalized_A = np.asarray([row / row[0] if initial == final else row for row, (final, initial) in zip(A, state_order)])
+        return AttrDict(dict(occupations=occupation_order,
+                             final_occupations=final_occupations,
                              cycles=expected_cycles, 
                              A= A,
                              A_norm= normalized_A))
@@ -5661,6 +5676,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         """
         cycles = reconstruction.cycles
         A = reconstruction.A
+        final_occupations = reconstruction.get("final_occupations", reconstruction.occupations)
         detunings = np.asarray(detunings)
         physical_kerr_MHz = float(physical_kerr_MHz)
         if not np.isfinite(physical_kerr_MHz):
@@ -5741,13 +5757,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         #For each occupations for the experiment, calculate its index in the basis
         #that is used for the matrix setup
         basis_rows = [fock_index[tuple(occupation)] for occupation in reconstruction.occupations]
+        final_rows = [fock_index[tuple(occupation)] for occupation in final_occupations]
         #Pick rows in the eigenstate matrix
-        eigenstate_weights = np.abs(states[basis_rows]) ** 2
+        spectral_weights = states[final_rows] * states[basis_rows].conj()
+        eigenstate_weights = np.abs(spectral_weights)
         #List of "Theory phase", which is the list of e^{-i2 * pi * f_{eigen} t}
         theory_phase = np.exp(-2j * np.pi * np.outer(energies_MHz, time_us))
         #Do the matrix multiplication, which will give sum_n <n|U|n> 
         #as a function of time
-        theory_A = eigenstate_weights @ theory_phase
+        theory_A = spectral_weights @ theory_phase
         
         
         #############################################################
@@ -5756,14 +5774,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         
         fft_scale = n_fft / np.sum(window)
         measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
-        measured_local /= np.maximum(np.abs(A[:, :1]), 1e-12)
+        diagonal = np.asarray([tuple(initial) == tuple(final) for initial, final in zip(reconstruction.occupations, final_occupations)])
+        fft_normalization = np.where(diagonal, np.maximum(np.abs(A[:, 0]), 1e-12), 1.)
+        measured_local /= fft_normalization[:, None]
         theory_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(theory_A * window, n=n_fft, axis=1), axes=1))
         measured = np.sum(measured_local, axis=0)
         theory = np.sum(theory_local, axis=0)
         if np.max(theory) > 0.:
             theory_local *= np.max(measured) / np.max(theory)
             theory = np.sum(theory_local, axis=0)
-        complete_basis = set(map(tuple, reconstruction.occupations)) == set(map(tuple, fock_basis))
+        complete_basis = np.all(diagonal) and set(map(tuple, reconstruction.occupations)) == set(map(tuple, fock_basis))
         energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(energies_MHz))))
 
         return AttrDict(dict(
@@ -5773,10 +5793,13 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             theory_local=theory_local,
             measured=measured, 
             theory=theory, 
+            theory_A=theory_A,
             energies_MHz=energies_MHz,
             fock_basis=fock_basis,
             basis_eigenstate_weights=np.abs(states) ** 2,
             eigenstate_weights=eigenstate_weights, 
+            spectral_weights=spectral_weights,
+            fft_normalization=fft_normalization,
             physical_kerr_MHz=physical_kerr_MHz,
             complete_basis=complete_basis, 
             energy_limit_MHz=energy_limit_MHz,
@@ -5842,6 +5865,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         A = np.asarray(reconstruction.A, dtype=complex)
         time_us = np.asarray(spectrum.time_us, dtype=float)
         occupations = [tuple(occupation) for occupation in reconstruction.occupations]
+        final_occupations = [tuple(occupation) for occupation in reconstruction.get(
+            "final_occupations", occupations)]
+        diagonal = np.asarray([initial == final for initial, final in zip(occupations, final_occupations)])
         if requested_max_modes is None:
             requested_max_modes = len(spectrum.fock_basis)
         
@@ -5886,10 +5912,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
         if not np.isfinite(numerical_floor) or numerical_floor <= 0.:
             raise ValueError("numerical_floor must be finite and positive")
-        initial_return = A[:, :1]
-        if np.any(np.abs(initial_return) <= numerical_floor):
+        row_normalization = np.asarray([A[row, 0] if diagonal[row] else 1. for row in range(len(A))])[:, None]
+        if np.any(np.abs(row_normalization) <= numerical_floor):
             raise ValueError("Matrix Pencil DOS reconstruction requires nonzero A_i(0) for every occupation")
-        normalized_A = A / initial_return
+        normalized_A = A / row_normalization
         if not np.isfinite(noise_singular_value_factor) or noise_singular_value_factor <= 0.:
             raise ValueError("noise_singular_value_factor must be finite and positive")
         if not np.isfinite(minimum_pole_radius) or not np.isfinite(maximum_pole_radius) or minimum_pole_radius <= 0. or maximum_pole_radius <= minimum_pole_radius:
@@ -6067,8 +6093,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             normalized_fitted_return[row_index] = design @ row_amplitudes #Finds design * row_amp = fitted row
             
         
-        amplitudes = normalized_amplitudes * initial_return
-        fitted_return = normalized_fitted_return * initial_return
+        amplitudes = normalized_amplitudes * row_normalization
+        fitted_return = normalized_fitted_return * row_normalization
         residual = A - fitted_return
         residual_norm_by_row = np.linalg.norm(residual, axis=1)
         signal_norm_by_row = np.linalg.norm(A, axis=1)
@@ -6093,15 +6119,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             raise ValueError("Matrix Pencil requires the original uniform FFT energy grid")
         window = windows[fft_window](sample_count)
         fft_scale = n_fft / np.sum(window)
-        normalization = np.abs(initial_return)
+        normalization = np.asarray(spectrum.fft_normalization)[:, None]
         reconstructed_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(fitted_return * window, n=n_fft, axis=1), axes=1))
         reconstructed_local /= normalization
         reconstructed = np.sum(reconstructed_local, axis=0)
-        pole_local_weights = np.real(normalized_amplitudes)
-        pole_complex_DOS_weights = np.sum(normalized_amplitudes, axis=0)
+        spectral_amplitudes = np.where(diagonal[:, None], normalized_amplitudes, amplitudes)
+        pole_local_weights = np.real(spectral_amplitudes)
+        pole_complex_DOS_weights = np.sum(spectral_amplitudes, axis=0)
         pole_DOS_weights = np.real(pole_complex_DOS_weights)
         pole_DOS_imaginary_weights = np.imag(pole_complex_DOS_weights)
-        pole_local_magnitude_weights = np.abs(normalized_amplitudes)
+        pole_local_magnitude_weights = np.abs(spectral_amplitudes)
         pole_amplitude_magnitude_sums = np.sum(pole_local_magnitude_weights, axis=0)
         row_weight_sums = np.sum(pole_local_weights, axis=1)
         total_DOS_weight = float(np.sum(pole_DOS_weights))
@@ -6137,7 +6164,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                               supporting_row_counts=supporting_row_counts,
                               supporting_rows=[candidate.supporting_rows for candidate in selected_candidates],
                               supporting_occupations=[candidate.supporting_occupations for candidate in selected_candidates],
-                              local_complex_amplitudes=normalized_amplitudes,
+                              local_complex_amplitudes=spectral_amplitudes,
                               local_weights=pole_local_weights,
                               local_magnitude_weights=pole_local_magnitude_weights,
                               complex_DOS_weights=pole_complex_DOS_weights,
@@ -6163,6 +6190,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                 complete_basis=bool(spectrum.complete_basis)))
         return AttrDict(dict(method="matrix_pencil",
                              occupations=occupations,
+                             row_normalization=row_normalization[:, 0],
                              settings=settings,
                              sampling=AttrDict(dict(time_us=time_us,
                                                     sample_time_us=sample_time_us,
@@ -6257,7 +6285,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             raise ValueError("numerical_floor must be finite and positive")
         initial_return = trace[0]
         if np.abs(initial_return) <= numerical_floor:
-            raise ValueError("Matrix Pencil trace analysis requires nonzero trace[0]")
+            initial_return = 1.
         normalized_return = trace / initial_return
 
         if pencil_length is None:
@@ -6637,9 +6665,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         time_us = np.asarray(matrix_pencil.sampling.time_us, dtype=float)
         sample_time_us = float(matrix_pencil.sampling.sample_time_us)
         measured_return = np.asarray(data.reconstruction.A[row], dtype=complex)
-        initial_return = measured_return[0]
-        if np.abs(initial_return) <= matrix_pencil.settings.numerical_floor:
-            raise ValueError("occupation Matrix-Pencil analysis requires nonzero A_i(0)")
+        initial_return = matrix_pencil.row_normalization[row]
         normalized_return = measured_return / initial_return
         sample_index = np.arange(len(time_us))
         poles = np.exp((-decay_per_us - 2j * np.pi * frequencies_MHz) * sample_time_us)
@@ -6654,6 +6680,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             normalized_amplitudes = np.array([], dtype=complex)
             normalized_fitted_return = np.zeros_like(normalized_return)
             design_condition_number = np.nan
+        amplitudes = normalized_amplitudes * initial_return
         fitted_return = normalized_fitted_return * initial_return
         residual = measured_return - fitted_return
         relative_residual = float(np.linalg.norm(residual) / np.linalg.norm(measured_return))
@@ -6664,7 +6691,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         window = windows[fft_window](len(time_us))
         n_fft = zero_padding * len(time_us)
         fft_scale = n_fft / np.sum(window)
-        reconstructed_spectrum = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(fitted_return * window, n=n_fft))) / np.abs(initial_return)
+        reconstructed_spectrum = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(fitted_return * window, n=n_fft))) / data.spectrum.fft_normalization[row]
+        is_diagonal = occupation == tuple(data.reconstruction.final_occupations[row])
+        spectral_amplitudes = normalized_amplitudes if is_diagonal else amplitudes
 
         return AttrDict(dict(method="matrix_pencil_occupation",
                              row_index=row,
@@ -6683,8 +6712,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              decay_per_us=decay_per_us,
                              poles=poles,
                              normalized_amplitudes=normalized_amplitudes,
-                             local_weights=np.real(normalized_amplitudes),
-                             local_magnitude_weights=np.abs(normalized_amplitudes),
+                             local_weights=np.real(spectral_amplitudes),
+                             local_magnitude_weights=np.abs(spectral_amplitudes),
                              design_condition_number=design_condition_number,
                              energy_MHz=np.asarray(data.spectrum.energy_MHz),
                              measured_spectrum=np.asarray(data.spectrum.measured_local[row]),
@@ -8048,7 +8077,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                            phase_by_occupation, 
                            detunings=None, 
                            sync_cycles=10, 
-                           reps=300):
+                           reps=300,
+                           final_occupations=None):
         """
         Returns dictionary of 
             - default_expt_cfg
@@ -8079,12 +8109,14 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             spectroscopy_prep_phases=[0., 180.],
             swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
         ))
+        final_occupations = occupations if final_occupations is None else final_occupations
         configs = [
-            dict(spectroscopy_occupations=occupation, 
+            dict(spectroscopy_occupations=occupation,
+                 spectroscopy_final_occupations=final_occupation,
                  spectroscopy_analyzer_phase=phi,
-                 final_analyzer_phase_per_cycle_deg=phase_by_occupation[tuple(occupation)],
+                 final_analyzer_phase_per_cycle_deg=phase_by_occupation[tuple(final_occupation)],
                  floquet_cycles=cycles.tolist())
-            for occupation in occupations for cycles in cycle_chunks for phi in [0., 90.]
+            for occupation, final_occupation in zip(occupations, final_occupations) for cycles in cycle_chunks for phi in [0., 90.]
         ]
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs))
