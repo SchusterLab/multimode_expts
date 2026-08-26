@@ -1103,6 +1103,44 @@ validation. Mock mode is confirmed working here
 against the linked archive and database), so old-versus-new Program
 equivalence testing does not wait on hardware.
 
+## 14. Working order
+
+Section 10 gives the architectural phases. This is the operational view: what
+must happen in order, and what can be taken in any order.
+
+There are only **two real ordering constraints**:
+
+1. The golden characterization test comes before any extraction, or the moves
+   have no safety net.
+2. Every pure move happens before the first section 2 behavior fix. Extraction
+   is free only while the golden stays green; the first re-blessing spends that.
+
+### Spine
+
+1. **Golden test** on current behavior — `tests/test_mbr_analysis_golden.py`.
+2. **Pure numerical extractions.** Matrix pencil, level statistics, SFF,
+   Hamiltonian and basis construction. Golden green throughout.
+3. **Section 2 behavior fixes**, one per commit, each re-blessing the golden
+   and carrying its own test for the new behavior.
+4. **Aggregate Experiments** and derived persistence (sections 3.3, 3.4).
+
+### Pool
+
+Free to take in any order. None changes numerical output, so the golden stays
+green:
+
+- section 2.6 source-collection contract, replacing `flatten_exp_lists`;
+- section 2.7 explicit file-format selection;
+- the one-time read-only `jobs.db` provenance export (section 3.2);
+- the `resolve_job_paths` seam (section 9.1) — **done**, `experiments/job_paths.py`;
+- the section 6 naming review.
+
+### Gated externally
+
+- HDF5 stamping: needs a merge to the primary checkout and a worker restart, so
+  it can run in parallel whenever convenient.
+- Anything touching pulse code: needs the phase-4 acquisition audit.
+
 ## Appendix A. Whole-file ownership inventory
 
 This inventory prevents the refactor from treating the 3,805-line god

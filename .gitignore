@@ -217,4 +217,6 @@ measurement_notebooks/jonginn/data_postprocess.ipynb.bak
 
 output/
 tmp/
-tests/
+# tests/  -- unignored 2026-08-25: 21 test files were already tracked, so this
+#            rule only hid NEW tests. See 6f10b27 ("please revert if this
+#            affect your project"). __pycache__ is covered above.
