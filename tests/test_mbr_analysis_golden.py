@@ -48,7 +48,15 @@ from tests.mbr_reference import (
     run_reference_analysis,
 )
 
-BASELINE = Path(__file__).parent / "data" / "mbr_spectrum_20260815.npz"
+# One baseline per spectrum method. Both are needed: the FFT path and the
+# Matrix-Pencil path share the reconstruction but almost nothing after it, so a
+# baseline for one does not protect moves in the other. The first extraction
+# proved that the hard way -- a missing import in the moved Matrix-Pencil code
+# was invisible to the FFT baseline.
+BASELINES = {
+    "fft": Path(__file__).parent / "data" / "mbr_spectrum_20260815.npz",
+    "matrix_pencil": Path(__file__).parent / "data" / "mbr_matrix_pencil_20260815.npz",
+}
 
 # Tolerances. The analysis is deterministic -- same inputs, same floating-point
 # operations -- so a pure move should reproduce bit-for-bit. rtol is left just
@@ -81,26 +89,29 @@ def _save_baseline(flat, path):
 
 @pytest.fixture(scope="module")
 def analysis():
-    """The reference analysis, run once for every assertion in this module."""
+    """The default (FFT) reference analysis, run once per module."""
     expt, result = run_reference_analysis()
     return expt, result, flatten_result(result)
 
 
-def test_baseline_matches(analysis):
-    """Every pinned field of the analysis result is unchanged."""
-    _, _, flat = analysis
+@pytest.mark.parametrize("method", sorted(BASELINES))
+def test_baseline_matches(method):
+    """Every pinned field of the analysis result is unchanged, per method."""
+    _, result = run_reference_analysis(spectrum_method=method)
+    flat = flatten_result(result)
+    baseline = BASELINES[method]
 
-    if _blessing() or not BASELINE.exists():
-        if not BASELINE.exists() and not _blessing():
+    if _blessing() or not baseline.exists():
+        if not baseline.exists() and not _blessing():
             pytest.fail(
-                f"No baseline at {BASELINE}.\n"
+                f"No baseline at {baseline}.\n"
                 f"Create it once from known-good code:\n"
                 f"  MBR_GOLDEN_BLESS=1 pixi run python -m pytest {__file__}"
             )
-        _save_baseline(flat, BASELINE)
-        pytest.skip(f"baseline written to {BASELINE} ({len(flat)} fields); re-run to compare")
+        _save_baseline(flat, baseline)
+        pytest.skip(f"baseline written to {baseline} ({len(flat)} fields); re-run to compare")
 
-    with np.load(BASELINE, allow_pickle=True) as handle:
+    with np.load(baseline, allow_pickle=True) as handle:
         expected = {k: handle[k] for k in handle.files}
 
     new = set(flat) - set(expected)

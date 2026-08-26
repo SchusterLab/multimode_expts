@@ -142,8 +142,13 @@ def flatten_result(value, prefix=""):
         elif isinstance(item, (list, tuple, set)):
             # Homogeneous numeric sequences are arrays in all but name; keep
             # them as one entry rather than exploding into hundreds of paths.
-            as_array = np.array(sorted(item) if isinstance(item, set) else item)
-            if as_array.dtype != object:
+            # Ragged or object sequences (matrix-pencil candidate lists, say)
+            # raise here rather than producing an object array, so recurse.
+            try:
+                as_array = np.array(sorted(item) if isinstance(item, set) else item)
+            except (ValueError, TypeError):
+                as_array = None
+            if as_array is not None and as_array.dtype != object:
                 flat[path] = as_array
             else:
                 for i, sub in enumerate(item):
