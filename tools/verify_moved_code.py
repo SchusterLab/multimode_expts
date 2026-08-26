@@ -5,7 +5,7 @@ reflow cannot mask or manufacture a difference. Stronger than a runtime check
 on one dataset: it covers every branch, not only the ones the characterization
 data reaches.
 """
-import ast, subprocess, sys
+import ast, copy, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(r"C:\python\multimode_expts_guan")
@@ -18,6 +18,7 @@ MOVED = [
     ("merge_spectra",               "c1867d6", "level_statistics"),
     ("analyze_level_statistics",    "c1867d6", "level_statistics"),
     ("analyze_sff",                 "c1867d6", "level_statistics"),
+    ("analyze_spectrum",            "5365e4f", "mbr_spectrum"),
 ]
 
 def at(rev):
@@ -34,13 +35,31 @@ def find_fn(source, name, cls=None):
     return next((n for n in scope.body
                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name), None)
 
+def _is_docstring(node):
+    return (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str))
+
+
+def _strip_docstrings(node):
+    """Drop docstrings everywhere, including from nested functions.
+
+    Dedenting a moved block reflows the indentation inside nested docstrings,
+    which is a cosmetic difference. Left in, it makes this tool report a
+    difference on every move, and a tool that always says REVIEW NEEDED is a
+    tool nobody reads.
+    """
+    for child in ast.walk(node):
+        body = getattr(child, "body", None)
+        if isinstance(body, list) and body and _is_docstring(body[0]) and isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+            child.body = body[1:] or [ast.Pass()]
+    return node
+
+
 def statements(fn):
-    """Body statements, docstring dropped, each AST-normalized."""
-    body = fn.body
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
-            and isinstance(body[0].value.value, str):
-        body = body[1:]
-    return [ast.unparse(s) for s in body]
+    """Body statements, docstrings dropped throughout, each AST-normalized."""
+    fn = _strip_docstrings(copy.deepcopy(fn))
+    return [ast.unparse(s) for s in fn.body]
 
 def normalize(text):
     """Erase the edits we made on purpose: the self->data signature change and

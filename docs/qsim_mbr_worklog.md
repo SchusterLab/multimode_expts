@@ -166,3 +166,63 @@ by the golden (the FFT path builds theory spectra), so expect real numerical
 verification. Grep the god file for the basis/Hamiltonian builders first; spec
 section 7.5 wants basis construction, Hamiltonian construction,
 diagonalization and theoretical amplitudes together.
+
+## 2026-08-25 (end of session) — spectrum extracted; step 2 mapped
+
+**Landed**: `fitting/qsim/mbr_spectrum.py` (190 lines) holding
+`analyze_spectrum`. `floquet_dark_mode_readout.py` 6972 → 6809 lines.
+**8271 → 6809 across the session, no behavior change.**
+
+`analyze_spectrum` was already static with zero `self` use. It is covered by
+the golden (the FFT path runs it), and a missing `from itertools import product`
+was caught by both the static import check and the golden — the first move where
+the golden did its job unaided.
+
+**Left deliberately undone**: `analyze_spectrum` does two things the spec
+separates — fixed-N basis plus Hamiltonian assembly and diagonalization
+(`mbr_hamiltonian.py`), and windowing/padding/FFT (`mbr_spectrum.py`).
+Splitting it is a refactor, not a move, so it gets its own commit. A TODO in the
+module head records it. The golden covers it, so the split is verifiable
+numerically.
+
+`tools/verify_moved_code.py` now strips docstrings recursively, so dedent
+reflow no longer reports a false difference. All six moved functions:
+**IDENTICAL**.
+
+### Step 2 remaining, fully enumerated
+
+Every pure static/no-`self` method over 20 lines in the god Experiment, with
+its disposition. This is the complete step-2 worklist:
+
+| Method | Lines | Where |
+|---|---|---|
+| `subsample_spectroscopy_shots` | 192 | → `fitting/qsim/mbr_reconstruction.py` |
+| `build_phase_correction` | 34 | → `fitting/qsim/mbr_phase.py` |
+| `_unwrap_cycle_phase` | 31 | → `fitting/qsim/mbr_phase.py` |
+| `_cycle_branches` | 33 | → `fitting/qsim/mbr_phase.py` |
+| `_saved_correction` | 44 | → `fitting/qsim/mbr_phase.py` |
+| `analyze_spectrum` split | — | → `mbr_hamiltonian.py`, its own commit |
+
+**Stays put, with reasons** — do not move these as part of step 2:
+
+- `display_occupation`, `display_result`, `display_cycle_phase` (156 lines
+  total): spec 7.8 keeps display on the owning Experiment.
+- `spectroscopy_batch`, `calibration_batch`, `propagator_batch`,
+  `orthogonality_batch` (262 lines): spec 7.7 runner territory, gated on the
+  new Experiment interfaces existing first.
+- `hardware_parameters` (56 lines): this *is* the section 2.2 station fallback.
+  Removing it is a behavior fix, so it belongs in spine step 3, not here.
+
+### Method for each remaining move
+
+1. Assert exact line boundaries in a throwaway script; slice, dedent, write.
+2. Wrapper on the class: `staticmethod(module.fn)`, or a `self.data`-supplying
+   method. Import the module under an `_analysis` alias so argument names that
+   match the module name are not shadowed.
+3. Static undefined-name check on the new module (catches the missing-import
+   class of bug — it has happened twice).
+4. `pixi run python tools/verify_moved_code.py`, after adding the function and
+   its pre-move commit to `MOVED`.
+5. Golden: `pixi run python -m pytest tests/test_mbr_analysis_golden.py`.
+   If the golden does not reach the moved code, say so in the commit message
+   rather than implying coverage.
