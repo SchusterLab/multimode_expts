@@ -31,6 +31,10 @@ Treat this spec as guidance that describes the general shape of desired behavior
 and not a hard rule to stick to, as there might be details on the ground that
 affect implementation that this coarse sweep did not surface.
 
+New sessions: read section 13 (where the work runs), appendix B (what is
+verified, not assumed), and appendix C (configuration traps) first. All three
+come from re-running the reference path against live data.
+
 ## 1. Scope
 
 ### 1.1 Goals
@@ -97,26 +101,48 @@ only the first occurrence.
 The current HDF5 fallback reconstructs Floquet timing from today's station
 configuration. For the audited August data, this selected different
 **m1s_pi_fracs** and produced a substantially wrong cycle time without an
-error.
+error. Confirmed: between **CFG-FL-20260814-00076** and
+**CFG-FL-20260825-00076** the swap dataset moved `gauss_sigma` 0.04 → 0.02 us,
+so today's station gives roughly half the historical cycle time.
 
 Required behavior:
 
 - ordinary offline analysis has no station argument;
-- historical timing is resolved from the HDF5 configuration-version
-  references described in section 3;
-- a temporary legacy loader may accept an explicitly supplied historical
-  timing record;
-- any legacy timing source is labeled and persisted in derived output; and
+- historical timing is resolved from the configuration-version references
+  described in section 3; and
 - failure to resolve an unambiguous historical source is an error.
 
+**Historical timing is fully reconstructible**, from four already-persisted
+inputs:
+
+- the versioned Floquet swap CSV — all of `retrieve_swap_parameters`;
+- the versioned hardware YAML — `ramp_sigma`, for the `flat_top` branch only;
+- committed **configs/soccfg_snapshot.json**, as a real `QickConfig`, for
+  `us2cycles`/`cycles2us`; and
+- the HDF5's embedded `expt` config — `swap_stors`, `scramble_sync_cycles`,
+  and any waveform override.
+
+Verified for `JOB-20260815-00009`: `floquet_cycle_us == 0.7340315934065934`
+and `m1s_pi_fracs == [40] * 7`, equal to the values recovered from the pickle.
+The pickled program computed the same quantity from the same configs, so it was
+a cache, not an independent measurement.
+
+Couplings follow: `couplings_MHz = 1 / (4 * pi_fracs * floquet_cycle_us)`. One
+`resolve_floquet_hardware(version_ids, expt_cfg, soccfg)` replaces **both**
+branches of the current `_saved_parameters` dispatch. No legacy timing
+descriptor is needed; sections 9.1 and 11.1 are corrected.
+
 Station remains a valid acquisition dependency. It is not an aggregate or
-numerical-analysis dependency.
+numerical-analysis dependency. Section 13 makes the same rule an isolation
+guarantee.
 
 ### 2.3 Validate aggregate compatibility
 
 The current **_saved_parameters** documentation says it checks sister
 experiments, but it primarily adopts the first configuration and the first
-available saved Program.
+available saved Program. Confirmed by inspection: the per-expt loop
+`break`s on the first source that carries a usable `prog`, and no
+cross-source comparison happens anywhere in the method.
 
 Before reconstruction, every aggregate must compare all invariants not
 intentionally varied by that aggregate. Depending on the Experiment, these
@@ -192,6 +218,25 @@ This refactor defines and consumes the resulting contract. It removes the
 current MBR class's FastAPI, job-database, current-station, and implicit-pickle
 fallbacks.
 
+**The contract is already satisfied — in the wrong file.** `jobs.db` table
+`jobs` records per job: all four `*_version_id` fields,
+`experiment_class`/`module`, `program_class`/`module`, `data_file_path`,
+`expt_pickle_path`, timestamps, and a `station_config` snapshot. A saved HDF5
+file carries **exactly one attribute, `config`** — no job ID, no class name, no
+version IDs, no timestamp, no code revision.
+
+Two consequences:
+
+- Stamping is mechanical, not research. The worker already computes the
+  version-ID dict; the HDF5 write is one choke point in `slab/experiment.py`
+  (the two `attrs['config'] = json.dumps(...)` sites).
+- Until it lands, `from_h5file()` cannot tell which Experiment wrote a file, so
+  criterion 11.3 is blocked on stamping, not on this refactor.
+
+The problem is location, not redundancy. A live database on the acquisition
+workstation blocks offline analysis and cannot be published. Portable derived
+artifacts (section 3.3) are the fix, hence their phase-2 priority.
+
 ### 3.2 Raw measurement provenance
 
 Reconstructing a raw measurement requires only:
@@ -218,6 +263,32 @@ Offline scientific analysis does not query **jobs.db** or the FastAPI server.
 A read-only share or synchronized copy may expose the archive away from the
 production workstation. The archive location is deployment configuration; its
 immutable contents and unique IDs form the provenance contract.
+
+Archive reads open `configs/versions/<type>/<ID>` as plain files. They do not
+go through `ConfigVersionManager` or `get_database()`, which reach the live
+database and can mutate live rig state.
+
+#### Historical data: no raw-file mutation
+
+Existing raw HDF5 files predate the stamp and **are never modified**. The risk
+of damaging them outweighs the tidiness; derived artifacts are cheap to
+regenerate, raw files are not.
+
+Pre-stamp references come from a **one-time, read-only export** of `jobs.db`
+(`job_id` to the four version IDs, class names, data path). The aggregate
+manifest then carries them, marked as injected. This is the case section 2.7
+already licenses, applied systematically instead of ad hoc.
+
+Use a read-only connection — the live worker holds the same database open in
+WAL mode:
+
+~~~python
+sqlite3.connect("file:///C:/.../job_server/jobs.db?mode=ro", uri=True)
+# writes raise OperationalError: attempt to write a readonly database
+~~~
+
+After the export, offline analysis reads only HDF5 files plus the archive, and
+the prohibition above holds unconditionally. Stamped data needs no export.
 
 The HDF5 file also identifies, when available:
 
@@ -255,7 +326,25 @@ Aggregate provenance is recursive: a spectrum may cite saved matrix-element
 artifacts or matrix-element objects built in memory, but its saved provenance
 must ultimately identify the raw leaf HDF5 files.
 
-### 3.4 Vault logging
+The record also separates values read from the raw files from values
+**injected** during aggregation — version IDs from the database export,
+reconstructed timing, manual entries — each labelled with how it was obtained.
+An injected value is never presented as raw-file provenance.
+
+### 3.4 Derived artifact location and lifecycle
+
+Derived artifacts go to `{output_root}/{experiment_name}/processed_data/`,
+beside the existing `data/`, `expt_objs/`, `logs/` and `plots/`. No such
+directory exists yet. Its path is a plain function of
+`(output_root, experiment_name)`, not a station attribute, so the aggregate
+track can compute it without a station (section 13).
+
+Derived artifacts are **cheap to re-derive and safe to overwrite or export**.
+Hence the asymmetry: raw files are immutable, and everything expensive to
+reconstruct by hand — source manifest, injected provenance, analysis
+parameters, interactive decisions — lives in the derived file.
+
+### 3.5 Vault logging
 
 Vault entries are an index and presentation layer, not the primary provenance
 record. A vault entry links to the persisted raw or aggregate HDF5 artifact and
@@ -678,9 +767,28 @@ notebook:
 - replace server and implicit-pickle loading with typed HDF5 inputs; and
 - reproduce the audited datasets and plots.
 
-Existing data lacking configuration-ID stamps may use an explicit,
-documented legacy timing descriptor while this track is developed. It never
-falls back to current station state.
+Existing data lacking configuration-ID stamps resolves its timing through the
+section 2.2 resolver, using version IDs from the one-time database export
+(section 3.2). No legacy timing descriptor is needed, and nothing falls back to
+current station state.
+
+Confirmed executable: the reference analysis
+(`analysis_notebooks/guan/MBR_analysis.py` over `JOB-20260815-00009..16`) runs
+end to end from HDF5 alone, returns all sixteen analysis products with
+`hardware.source == "saved program"`, and reproduces the spectrum figure.
+Phase 0 needs no new infrastructure.
+
+Two portability seams belong to this track:
+
+- **Job-ID to path resolution is environment-dependent, not a naming problem.**
+  On the workstation the data are local and `{output_root}/*/data/{JOB-ID}_*.h5`
+  resolves uniquely. Elsewhere the tree comes over SMB, where globbing is far
+  too slow, so the reference notebook scrapes `data_path` from the
+  cloud-synced vault log instead. Both are valid; neither is universal. Put
+  them behind one `resolve_job_paths(ids)` with an environment-selected
+  backend. This makes the section 12.2 naming follow-up cosmetic.
+- **Roots are per-machine.** The configs record absolute Windows data and vault
+  roots. Off-workstation readers need environment overrides.
 
 ### 9.2 Acquisition track
 
@@ -724,8 +832,13 @@ scoping round. The implementation details may depend on realities on the ground.
 3. Distinguish expected changes from defects, especially theory-display
    scaling and validation failures.
 4. Add narrow tests for the local defects in section 2.
+5. Export the `job_id` to configuration-version mapping once, read-only, from
+   the database (section 3.2), so later phases have provenance to carry.
 
 No class movement or deletion occurs in this phase.
+
+Step 2 is confirmed reachable (appendix B). Write the section 2.2 timing
+resolver test first: its expected value is already known exactly.
 
 ### Phase 1: extract numerical seams
 
@@ -760,6 +873,12 @@ project but an integration dependency for fully automatic offline loading.
 
 Verify that a new raw HDF5 file plus **configs/versions/** resolves timing
 without **jobs.db**, FastAPI, station, or pickle.
+
+**Consider bringing this forward.** It is numbered third because it is
+externally owned, not because it is large (section 3.1). It is the only thing
+blocking criterion 11.3, and landing it early stops the database export from
+having to cover future data. It does need a merge to the primary checkout and
+a worker restart (section 13.4).
 
 ### Phase 4: audit acquisition and choose migration strategy
 
@@ -805,7 +924,13 @@ Deletion is the last step, not the first.
 
 - The August characterization dataset loads from HDF5 without FastAPI,
   **jobs.db**, live station state, or implicit pickle loading.
-- Existing unstamped data uses only an explicit legacy timing descriptor.
+- Existing unstamped data resolves timing through the section 2.2 resolver.
+  A regression test asserts the resolver reproduces
+  `floquet_cycle_us == 0.7340315934065934` and `m1s_pi_fracs == [40] * 7` for
+  `JOB-20260815-00009` from versioned configs alone.
+- No offline code path constructs a station, reaches an instrument manager, or
+  opens a writable database handle.
+- Raw HDF5 files are byte-identical before and after any analysis run.
 - Reconstructed raw quadratures and acquired complex amplitudes match the
   characterization baseline where behavior is intended to remain unchanged.
 - Intentional correctness changes are documented and tested separately.
@@ -818,6 +943,8 @@ Deletion is the last step, not the first.
 
 - Every aggregate Experiment can save and reload its result.
 - Reloaded results reproduce analysis and display without source pickles.
+- A derived artifact reloads and re-displays with no database, no station, no
+  vault, and no pickle available. This is the publication-portability test.
 - Aggregate HDF5 provenance resolves recursively to the raw leaf files.
 - All live processing decisions and calibration references survive the
   round-trip.
@@ -837,6 +964,10 @@ Deletion is the last step, not the first.
 ### 11.4 Pulse behavior
 
 - Shared Floquet primitives have pulse/event-trace tests.
+- Compiled-sequence tests pin the committed **configs/soccfg_snapshot.json**
+  explicitly rather than taking whatever soccfg a station hands them, so a
+  trace comparison cannot silently depend on which machine ran it (see
+  section 13).
 - New MBR Programs do not inherit dark-mode measurement dispatch merely to
   obtain shared helpers.
 - Representative compiled sequences agree with the intended reference
@@ -890,12 +1021,87 @@ configuration-directed god dispatch.
   copy.
 - Record Program/Experiment source revision in new raw HDF5 files.
 - Improve data-directory naming so experiment paths do not depend on stale
-  station session names.
+  station session names. Downgraded to cosmetic by the `resolve_job_paths`
+  seam in section 9.1.
+- Retire the multiphoton configuration leg of the four-ID contract. Its
+  archive holds exactly one file, **CFG-MP-20260121-00001.yml**, which every
+  job since January cites, so the reference is inert. It is known dead weight
+  slated for removal; the refactor should record it where present but must not
+  build logic that depends on it varying.
 - Consider a repository-wide change making the flattened **experiments**
   exporter include only locally defined classes and raise on collisions.
 
 These follow-ups do not move into the MBR implementation merely because the
 audit exposed them.
+
+## 13. Execution environment
+
+### 13.1 Decision
+
+The refactor runs **on the acquisition workstation, in the `guan` worktree**
+(`C:\python\multimode_expts_guan`, branch `guan`).
+
+Working off-workstation was rejected: its only gain is that it cannot touch
+live rig state, and the rule in 13.3 buys that more cheaply than losing local
+access to the data tree and the archive. Off-workstation stays useful as a
+second seat for compiled-trace work, which needs neither.
+
+`main..guan` differs only in `docs/` and notebooks — no code divergence in
+`experiments/`, `fitting/`, `slab/`, `job_server/`. So work develops on `guan`
+and merges to `main` without conflict risk.
+
+### 13.2 What the worktree shares with the live tree
+
+The worktree isolates version control, not rig state. Two paths link back to
+the primary checkout:
+
+~~~
+configs/versions   -> <primary>\configs\versions      (directory junction)
+job_server/jobs.db -> <primary>\job_server\jobs.db    (symlink)
+~~~
+
+They behave coherently, not divergently: a snapshot taken here resolves its
+config directory from its own module path, follows the junction, and lands in
+the one real archive with its row in the one real database. Nothing forks.
+
+So **the worktree can mutate live rig state as easily as the primary checkout
+can.** Reading is safe; writing is not made safe by the worktree. Three
+hazards:
+
+- A **non-mock** station here connects to the live instrument manager and,
+  because this is the production host, writes the *tracked*
+  `configs/soccfg_snapshot.json`. Mock mode does neither.
+- **Mock mode on the production host** takes its soccfg from the live proxy,
+  not the committed snapshot. Harmless to the hardware, but it makes
+  compiled-trace comparison machine-dependent — hence criterion 11.4.
+- `MMDataset.create_snapshot()` and the main-version setters write to the
+  shared archive and database. They have no place in the offline track.
+
+### 13.3 The isolation rule
+
+> The offline analysis track constructs no station, ever.
+
+Section 2.2 already requires this for correctness. It is also the isolation
+guarantee: no station means no instrument manager, no snapshot write, no
+config-version mutation, no job submission. With direct archive file reads
+(section 3.2) and a read-only database handle for the export, the offline
+track is read-only against live state by construction, not by care.
+
+Compiled-sequence work follows the same rule: load
+`configs/soccfg_snapshot.json` into a `QickConfig` directly rather than asking
+a station.
+
+### 13.4 What requires the primary checkout
+
+Only two things: **hardware job submission** (the worker runs code from the
+primary checkout, so new data means merging first) and **landing the stamping
+change**.
+
+Phases 0, 1 and 2 run in the worktree, as does phase-5 compiled-trace
+validation. Mock mode is confirmed working here
+(`tests/test_mock_mode.py` passes; `MultimodeStation(mock=True)` constructs
+against the linked archive and database), so old-versus-new Program
+equivalence testing does not wait on hardware.
 
 ## Appendix A. Whole-file ownership inventory
 
@@ -959,5 +1165,45 @@ Top-level helper functions receive the same treatment:
   shape—select sources, load, analyze, display—but currently needs a fake
   Program object and manual timing because of the missing provenance stamps.
 
+Added after re-running the reference path in the worktree:
+
+- The reference analysis runs end to end from HDF5 alone — all sixteen
+  analysis products, `hardware.source == "saved program"`, spectrum figure
+  reproduced. No station, database or pickle needed.
+- Historical Floquet timing reconstructs bit-for-bit from versioned configs,
+  the committed soccfg snapshot and the embedded experiment config.
+- All four versioned artifacts cited by `JOB-20260815-00009` are present:
+  `CFG-HW-20260814-00074`, `CFG-MP-20260121-00001`, `CFG-FL-20260814-00076`,
+  `CFG-M1-20260814-00121`.
+- Saved raw HDF5 files carry exactly one attribute, `config`, while `jobs.db`
+  records every field the section 3.2 contract asks for.
+
 These observations are regression evidence, not permanent architectural
 assumptions.
+
+## Appendix C. Configuration source-of-truth traps
+
+Both cost real time to find, and neither is visible from the code that trips
+over them.
+
+### C.1 The version-controlled configuration files are stale decoys
+
+`configs/*.csv` and `configs/*.yml` are tracked in git and were the live
+configuration before versioning arrived. They are no longer live: the station
+resolves configuration through the database's main-version pointers into
+`configs/versions/`.
+
+They have since drifted badly. `configs/floquet_storage_swap_dataset.csv` is
+frozen at 2026-01-08, with `pi_frac` 50/30/40 where August used 40 throughout,
+and it **lacks the `waveform`, `gauss_sigma` and `gauss_n_sigma` columns** that
+the August Gaussian-envelope data needs.
+
+The trap: `MMDataset` and its subclasses default to `parent_path='configs'`, so
+any new module that omits an explicit path silently reads January. Every new
+module here passes its archive path explicitly.
+
+### C.2 Timing conversions need a real QickConfig
+
+`us2cycles`/`cycles2us` are firmware-dependent and are not the identity. Use
+the committed `configs/soccfg_snapshot.json`; a hand-rolled stub silently
+changes every reconstructed time.
