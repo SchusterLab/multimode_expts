@@ -115,3 +115,54 @@ candidate lists). It now falls back to per-element recursion.
 golden reaches them — `merge_spectra` and the level-statistics path are
 probably not on the `analyze(stage="spectrum")` route, in which case use the
 worktree diff.
+
+## 2026-08-25 (later still) — level statistics extracted
+
+**Landed**: `fitting/qsim/level_statistics.py` (461 lines) holding
+`merge_spectra`, `analyze_level_statistics`, `analyze_sff`.
+`floquet_dark_mode_readout.py` 7386 → 6971 lines (8271 at the start of today).
+
+Same shape as the matrix-pencil move: `merge_spectra` was already static and
+moved verbatim; the other two keep their signatures and become wrappers that
+supply `self.data`. Module aliased to `level_statistics_analysis`.
+
+**Coverage gap found — worth knowing before trusting any test here.**
+
+None of these three can run on the characterization dataset. All raise before
+doing arithmetic:
+
+- `analyze_level_statistics`: "requires the complete fixed-N occupation basis"
+- `analyze_sff`: same, "this data gives only a projected trace"
+- `merge_spectra`: "merged spectra contain duplicate occupations"
+
+The Aug-15 set covers four occupations, not the complete fixed-N basis, so the
+level-3 ensemble code of spec section 8 has **no test data at all**. The
+before/after run confirms only that the wrappers reach the same guards with the
+same messages. Finding a dataset that completes the basis, or building a
+synthetic one, is a real outstanding task — this code is currently unverifiable
+by execution.
+
+**So verification moved to textual identity**: `tools/verify_moved_code.py`
+compares AST-normalized statement lists between the pre-move commit and the
+extracted module, erasing only the edits made on purpose (the `self`/`data`
+signature change, the class-qualified internal call). For a pure move this is
+stronger than a runtime check on one dataset, because it covers every branch
+rather than the ones the data happens to reach.
+
+Result: all five moved functions identical. The single reported difference is
+docstring indentation inside a nested function, a `textwrap.dedent` artifact;
+the executable statement matches.
+
+Run it after any further move:
+
+    pixi run python tools/verify_moved_code.py
+
+It needs its `MOVED` table updated with each new function and the commit whose
+god file still held it.
+
+**Next**: Hamiltonian and fixed-photon-number basis construction →
+`fitting/qsim/mbr_hamiltonian.py`. Unlike level statistics this *is* exercised
+by the golden (the FFT path builds theory spectra), so expect real numerical
+verification. Grep the god file for the basis/Hamiltonian builders first; spec
+section 7.5 wants basis construction, Hamiltonian construction,
+diagonalization and theoretical amplitudes together.
