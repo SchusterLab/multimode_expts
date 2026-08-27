@@ -36,13 +36,125 @@ Treat this spec as guidance that describes the general shape of desired behavior
 and not a hard rule to stick to, as there might be details on the ground that
 affect implementation that this coarse sweep did not surface.
 
-New sessions: read section 13 (where the work runs), appendix B (what is
-verified, not assumed), and appendix C (configuration traps) first. All three
+New sessions: read section 0 (why this refactor exists, and what counts as
+done) first, then section 13 (where the work runs), appendix B (what is
+verified, not assumed), and appendix C (configuration traps). The last three
 come from re-running the reference path against live data.
+
+## 0. Purpose: correctness, and how it is established
+
+### 0.1 The deliverable
+
+The deliverable of this refactor is physics that can be trusted and published.
+Every structural goal below is a means to that, not an end. When a structural
+change and a correctness gain conflict, the correctness gain wins.
+
+This has to be stated because the alternative reading has already cost us. The
+extraction in **217c1eb** met every acceptance criterion this spec had: the
+lines moved verbatim, the golden baseline passed, no behavior changed. The code
+it moved was wrong, before and after -- see the LDOS defect recorded in section
+0.4. The baseline did not merely miss the defect, it *pinned* it.
+
+So "behavior-preserving" is a check on the *move*, not a claim about the
+*physics*. Both are needed, and they must not be confused for one another.
+
+### 0.2 Watertight abstraction is what makes verification possible
+
+We call `np.fft.ifft` without reading its source. That is not faith. It rests on
+a boundary: a named contract, a stable meaning, and evidence behind it. Because
+the boundary holds, the function can be used without being re-examined.
+
+A component that can be trusted without being read is simultaneously the unit of
+reuse and the unit of verification. It is the same boundary serving both. This is
+the whole reason the structural work matters:
+
+- Tangled code has no such boundaries, so it offers nothing to verify. The only
+  check available for a 6,000-line module is "does the whole thing still produce
+  the same numbers" -- which is exactly the check that certified the LDOS defect.
+- Every boundary this spec draws is therefore a thing that can be verified once
+  and afterwards assumed. That, and not tidiness, is why locality and module
+  ownership appear in the goals.
+
+Watertightness is the property to aim for. A boundary that leaks -- a shared
+mutable intermediate, a quantity whose meaning depends on its caller, a function
+that needs its consumers read to be understood -- is not a component, whatever
+file it lives in.
+
+### 0.3 The inspectability target
+
+One physical measurement should be one file that can be read in a sitting: on
+the order of 200 lines, holding the content specific to that measurement plus
+named calls into layers whose correctness is already established.
+
+The second half is what makes the first half honest. A line budget met by moving
+work into imports buys nothing; it is only legitimate when the callee is itself
+verified. Locality and hierarchy are the same requirement seen from two sides.
+
+### 0.4 The hierarchy, and why it needs a ledger
+
+Correctness is established per layer and assumed by callers. Verify the
+multi-photon-manipulation functions, and their callers may then assume them.
+
+This works only if what was established is recorded, *and against which
+definition*. The August 2026 LDOS defect is the failure mode:
+`eigenstate_weights` was correct and inspected as the probability
+`|<b|E_k>|^2`; **93c1b20** then redefined it in place as the signed amplitude
+product `|<f|E_k><E_k|b>|`, while every consumer went on treating it as the old
+probability. Nothing failed, because the two agree for diagonal rows and all
+data was diagonal at the time. The established status silently became false.
+
+The rule that follows: changing the meaning of a shared quantity invalidates the
+established status of everything downstream, even when the name, shape and dtype
+are unchanged. Redefinition in place is a contract break and must be treated as
+one.
+
+### 0.5 Ways to establish correctness
+
+The goal is correctness. The following are tools that have done real work in this
+codebase -- **examples, not an exhaustive list and not a checklist**. Reach for
+whatever exposes the specific way a thing could be wrong, and expect to invent
+modes not named here.
+
+- **Equivalence and characterization.** Identical output to the pre-refactor
+  path: identical assembly from a mock station fixture, golden analysis
+  baselines. Cheap, runs anywhere, and the right tool for proving a move changed
+  nothing. It answers "did I change this", never "is this right".
+- **Invariance and other properties.** Assert what must leave a quantity
+  unchanged: eigenvector gauge, units, permutation of identical modes, time
+  translation, normalization. This is what exposed the LDOS defect. It needs no
+  device, no data and no known answer, and it does not go stale.
+- **Synthetic ground truth.** Feed data whose correct answer is known, and also
+  data that is known to be bad, then require the analysis to respond correctly to
+  both. Rejecting what should be rejected is part of the contract.
+- **On-device interrogation.** Physics correctness ultimately requires the
+  device: change something, predict the response, check it. Nothing above
+  substitutes for this, and it is the scarcest resource, which is a reason to
+  let the cheaper modes carry everything they can.
+
+The question to ask of any component is not "which of these did I run" but "what
+would expose this being wrong, and have I done that".
+
+### 0.6 Current practice is the starting specification
+
+Acquisition and analysis both currently live in **measurement_notebooks/**, not
+in the sandbox paths this spec designates. Those notebooks gesture at an intended
+design and then implement by the path of least resistance and accumulated debt.
+They are the authority on how the work is done today.
+
+The concrete acceptance test for this refactor is therefore: from the refactored
+entry point, reproduce what those notebooks do. Start a new measurement with a
+few lines of config adjustment and standard job submission, and inspect the
+result through the canonical analysis API.
+
+As with the August dataset, they are evidence of current behavior, not a
+definition of correct behavior. Reproducing them is necessary and not sufficient.
 
 ## 1. Scope
 
 ### 1.1 Goals
+
+These are the means to section 0. Each exists because it creates a boundary
+that can be verified once and then assumed.
 
 - Replace the stage-directed god Experiment with Experiment types describing
   concrete acquired measurements and concrete derived results.
@@ -1044,6 +1156,12 @@ Only after the MBR replacement is established:
 Deletion is the last step, not the first.
 
 ## 11. Verification and completion criteria
+
+The criteria below are mostly of the equivalence and characterization kind
+(section 0.5): they establish that a move changed nothing. That is necessary and
+not sufficient. A component is not done until something has been done that would
+expose it being *wrong*, not merely *changed* -- and the established status is
+recorded against the definition it was established for (section 0.4).
 
 ### 11.1 Offline analysis
 
