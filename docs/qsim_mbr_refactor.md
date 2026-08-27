@@ -887,13 +887,31 @@ Phase 0 needs no new infrastructure.
 
 Two portability seams belong to this track:
 
-- **Job-ID to path resolution is environment-dependent, not a naming problem.**
-  On the workstation the data are local and `{output_root}/*/data/{JOB-ID}_*.h5`
-  resolves uniquely. Elsewhere the tree comes over SMB, where globbing is far
-  too slow, so the reference notebook scrapes `data_path` from the
-  cloud-synced vault log instead. Both are valid; neither is universal. Put
-  them behind one `resolve_job_paths(ids)` with an environment-selected
-  backend. This makes the section 12.2 naming follow-up cosmetic.
+- **Job-ID to path resolution needs the subdirectory, and nothing more.**
+  A job's file is `{output_root}/{subdir}/data/{JOB-ID}_*.h5`, where `subdir`
+  is the station's `experiment_name` at acquisition time -- so it tracks
+  neither the job date nor the project, and cannot be derived from the ID.
+  Three ways to obtain it, behind one `resolve_job_paths(ids)`:
+
+  - **Recorded (`provenance`, the default).** The subdirectory is an immutable
+    fact about the job, and `tools/export_job_provenance.py` already records it
+    in `tests/data/job_provenance.json`. Reading it is a JSON read: no walk, no
+    vault, no database, and publishable, since the database will not ship with
+    the paper. Jobs acquired since the last export fall through to the glob.
+  - **Glob (`index`).** Correct anywhere, instant on the workstation, but the
+    walk spans all projects; over SMB it measured ~3 minutes for 148 project
+    directories, against 0.18 s for the same eight jobs from the record.
+  - **Vault scrape (`vault`).** Retained but **not** a general backend: it only
+    knows runs whose acquirer set `station.log_measurements` (default False),
+    so entire campaigns are missing from it -- the August 2026 MBR campaign
+    among them, on the workstation's own vault copy as well as any synced one.
+    Do not rely on it for a dataset you did not personally log.
+
+  Querying the job database for the subdirectory, which the pre-refactor
+  loader did, is ruled out on three counts: it dominated load time (about half
+  of 40 s for eight files), it contends with the job server for a resource that
+  belongs to submission and execution, and it cannot be published.
+  This makes the section 12.2 naming follow-up cosmetic.
 - **Roots are per-machine.** The configs record absolute Windows data and vault
   roots. Off-workstation readers need environment overrides.
 
