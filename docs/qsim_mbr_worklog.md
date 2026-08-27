@@ -226,3 +226,61 @@ its disposition. This is the complete step-2 worklist:
 5. Golden: `pixi run python -m pytest tests/test_mbr_analysis_golden.py`.
    If the golden does not reach the moved code, say so in the commit message
    rather than implying coverage.
+
+## 2026-08-26 — complete-basis coverage; timing resolver is real
+
+Closes the coverage gap recorded on 2026-08-25. The level-statistics and SFF
+code is now verified numerically, not just textually.
+
+**Where the data was.** `measurement_notebooks/jonginn/data_postprocess.ipynb`
+(3.3 MB, 175 code cells) — its `replot_job_ranges` cell is the authoritative
+record of which jobs formed each published photon-number sector:
+
+| N | Calibration | Spectroscopy |
+|---|---|---|
+| 1 | `20260722` 557–566 | `20260722` 577–595 |
+| 2 | `20260722` 35–64 | `20260722` 215–244 (+ supplement 425–426 / 452–454) |
+| 3 | `20260722` 683–712, `20260723` 1–40 | `20260723` 48–85, 87–149 step 2 |
+
+**N=3 chosen.** All 140 jobs COMPLETED under one config triple
+(`CFG-HW-20260717-00173`, `CFG-FL-20260722-00001`, `CFG-M1-20260722-00010`).
+N=1 and N=2 spectroscopy ranges contain jobs with a *null* `program_class` and
+several different config versions, which is why the notebook filters them by
+program name — and, because HDF5 records no program class (spec 3.1), a
+file-based loader could not reproduce that filter. N=2 additionally needs a
+supplement merged in to complete its basis.
+
+It gives `complete_basis=True`, 35 occupations, the full N=3 five-mode basis.
+Both `analyze_level_statistics` and `analyze_sff` run on it.
+
+**Verification of all three extractions, numerically at last**: N=3 analysis
+run at `04cea3a` (before any extraction) versus the working tree —
+**5274 numeric fields, 45453 elements, bit-identical**.
+
+**Landed**
+
+- `experiments/floquet_timing.py` — `resolve_floquet_timing()`, the spec 2.2
+  resolver, promoted from a proof to production code. It was *needed*: the
+  July sector ran at 0.4135 us per cycle against August's 0.7340, so no
+  constant covers both. Reproduces the August pickle value exactly.
+- `tools/export_job_provenance.py` + `tests/data/job_provenance.json` — the
+  one-time read-only `jobs.db` export of spec 3.2 (148 jobs). Analysis now
+  reads HDF5 + sidecar + archive, and never opens the database.
+- `tests/mbr_reference.py`: `load_aggregate_resolved()` and
+  `run_complete_basis_analysis()`, which reproduce the notebook's
+  `replot_analyze_sector` without `JobClient` or pickles.
+- Three tests, two marked `slow` (`-m "not slow"` deselects). Third baseline:
+  `mbr_complete_basis_20260723.npz` (2 MB).
+
+**Suite: 324 passed, 0 failed.** The three `test_branch_manager` failures
+reported yesterday were fixed by you in `65a7415`/`4f25675`, not by anything
+here.
+
+**Next**: unchanged — `mbr_phase.py` (4 methods, 142 lines), then
+`mbr_reconstruction.py` (`subsample_spectroscopy_shots`, 192 lines), then
+splitting the Hamiltonian half out of `analyze_spectrum`. All three golden
+paths (FFT, Matrix-Pencil, complete-basis) now guard those moves.
+
+Worth noting for spec section 3.2: with the sidecar in place, the offline path
+is now genuinely database-free. The remaining pickle/FastAPI dependency lives
+only in the old notebook, not in anything under test.

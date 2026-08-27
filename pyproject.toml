@@ -72,3 +72,6 @@ monitor = "python -m job_server.monitor_jobqueue"
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes
 
+
+[tool.pytest.ini_options]
+markers = ["slow: needs the full 140-file N=3 sector; skip with -m \"not slow\""]

@@ -25,11 +25,13 @@ themselves.
 """
 
 import json
+from pathlib import Path
 
 import h5py
 import numpy as np
 from slab import AttrDict
 
+from experiments.floquet_timing import resolve_floquet_timing
 from experiments.job_paths import resolve_job_paths
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
@@ -61,6 +63,47 @@ CHARACTERIZATION_TIMING = dict(
     floquet_cycle_us=0.7340315934065934,
     m1s_pi_fracs=[40] * 7,
 )
+
+# --------------------------------------------------------------------------
+# The complete-basis dataset, for level statistics and the SFF
+# --------------------------------------------------------------------------
+#
+# The August set covers four occupations, not the complete fixed-N basis, so
+# analyze_level_statistics / analyze_sff / merge_spectra all refuse to run on
+# it. The N=3 sector of the July 22-23 report data does complete the basis.
+# Ranges taken from measurement_notebooks/jonginn/data_postprocess.ipynb
+# (the `replot_job_ranges` cell), which is the authoritative record of which
+# jobs formed each published sector.
+#
+# All 140 jobs are COMPLETED under one configuration triple
+# (CFG-HW-20260717-00173, CFG-FL-20260722-00001, CFG-M1-20260722-00010), which
+# is why N=3 was chosen over N=1 or N=2: those ranges contain jobs with a null
+# program class and several different config versions, so the notebook has to
+# filter them by program name.
+
+
+def _expand(*ranges):
+    return [f"JOB-{date}-{n:05d}"
+            for date, first, last, step in ranges
+            for n in range(first, last + 1, step)]
+
+
+COMPLETE_BASIS_CALIBRATION_IDS = _expand((20260722, 683, 712, 1), (20260723, 1, 40, 1))
+COMPLETE_BASIS_SPECTROSCOPY_IDS = _expand((20260723, 48, 85, 1), (20260723, 87, 149, 2))
+
+# The notebook's settings for this sector, reproduced exactly.
+COMPLETE_BASIS_ANALYSIS = dict(
+    stage="spectrum",
+    phase_frame="manual_kerr",
+    manual_kerr_MHz=-19.756e-3,
+    cycle_branches={},
+    legacy=True,
+    fft_window="raw",
+    zero_padding=1,
+    spectrum_method="matrix_pencil",
+)
+
+PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
 
 
 def load_h5(path, load_shots=False):
@@ -111,6 +154,70 @@ def run_reference_analysis(job_ids=None, timing=None, **overrides):
     params = dict(CHARACTERIZATION_ANALYSIS)
     params.update(overrides)
     return expt, expt.analyze(**params)
+
+
+# --------------------------------------------------------------------------
+# Loading by resolved provenance, rather than a hard-coded timing constant
+# --------------------------------------------------------------------------
+
+
+def job_provenance():
+    """-> {job_id: record} from the exported sidecar (spec section 3.2).
+
+    Written once by ``tools/export_job_provenance.py``. Reading it here keeps
+    the analysis path free of any database access.
+    """
+    if not PROVENANCE.is_file():
+        raise FileNotFoundError(
+            f"No provenance sidecar at {PROVENANCE}. Regenerate it with\n"
+            f"  pixi run python tools/export_job_provenance.py --range ... -o {PROVENANCE}"
+        )
+    return json.loads(PROVENANCE.read_text())
+
+
+def load_aggregate_resolved(job_ids):
+    """Build an aggregate whose Floquet timing comes from the versioned configs.
+
+    Unlike :func:`load_aggregate` this needs no hard-coded timing: each job's
+    Floquet config version comes from the provenance sidecar and the timing is
+    recomputed from the archive (spec section 2.2). That is what makes datasets
+    other than the August characterization set loadable at all -- the July
+    sectors were taken under a different configuration.
+    """
+    ids = list(job_ids)
+    paths = resolve_job_paths(ids)
+    provenance = job_provenance()
+
+    missing = [j for j in ids if j not in provenance]
+    if missing:
+        raise KeyError(f"{len(missing)} jobs absent from the provenance sidecar: {missing[:5]}")
+
+    jobs = []
+    for job_id in ids:
+        cfg, data = load_h5(paths[job_id])
+        timing = resolve_floquet_timing(
+            cfg, provenance[job_id]["floquet_storage_version_id"])
+        jobs.append(_SavedJob(
+            job_id, cfg, data, paths[job_id],
+            _SavedProgram(timing["floquet_cycle_us"], timing["m1s_pi_fracs"]),
+        ))
+    return EncodingHamiltonianSpectroscopyExperiment._from_expts(jobs, job_ids=ids)
+
+
+def run_complete_basis_analysis(**overrides):
+    """-> (expt, analysis_result) for the N=3 complete-basis sector.
+
+    Reproduces `replot_analyze_sector` from data_postprocess.ipynb, but loads
+    from HDF5 plus the provenance sidecar rather than through the job server
+    and pickles.
+    """
+    calibration = load_aggregate_resolved(COMPLETE_BASIS_CALIBRATION_IDS)
+    calibration.analyze(stage="calibration")
+
+    spectroscopy = load_aggregate_resolved(COMPLETE_BASIS_SPECTROSCOPY_IDS)
+    params = dict(COMPLETE_BASIS_ANALYSIS, calibration=calibration)
+    params.update(overrides)
+    return spectroscopy, spectroscopy.analyze(**params)
 
 
 # --------------------------------------------------------------------------

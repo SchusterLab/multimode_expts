@@ -189,3 +189,95 @@ def test_source_mutation_is_pinned():
         f"aggregate analysis writes back more than the known fields: "
         f"{sorted(injected - EXPECTED_INJECTED)}"
     )
+
+
+# --------------------------------------------------------------------------
+# Complete-basis coverage: level statistics and the SFF
+# --------------------------------------------------------------------------
+#
+# The August characterization set covers four occupations, so
+# analyze_level_statistics, analyze_sff and merge_spectra all refuse to run on
+# it and were extracted with no execution coverage at all. The N=3 July sector
+# completes the 35-state fixed-N basis and does exercise them.
+#
+# Slower than the rest of this module (140 source files plus a Matrix-Pencil
+# fit), hence its own marker: `-m "not slow"` skips it during quick iteration.
+
+COMPLETE_BASIS_BASELINE = Path(__file__).parent / "data" / "mbr_complete_basis_20260723.npz"
+
+
+@pytest.mark.slow
+def test_complete_basis_baseline_matches():
+    """Level statistics and SFF outputs are unchanged on the N=3 sector."""
+    from tests.mbr_reference import run_complete_basis_analysis
+
+    expt, data = run_complete_basis_analysis()
+    assert data.spectrum.complete_basis, "N=3 sector no longer completes the basis"
+    assert int(data.photon_number) == 3
+
+    flat = {}
+    flat.update(flatten_result(data, "spectrum_run"))
+    flat.update(flatten_result(expt.analyze_level_statistics(data=data), "levels"))
+    flat.update(flatten_result(expt.analyze_sff(data=data), "sff"))
+
+    if _blessing() or not COMPLETE_BASIS_BASELINE.exists():
+        if not COMPLETE_BASIS_BASELINE.exists() and not _blessing():
+            pytest.fail(f"No baseline at {COMPLETE_BASIS_BASELINE}; bless it once.")
+        _save_baseline(flat, COMPLETE_BASIS_BASELINE)
+        pytest.skip(f"baseline written ({len(flat)} fields); re-run to compare")
+
+    with np.load(COMPLETE_BASIS_BASELINE, allow_pickle=True) as handle:
+        expected = {k: handle[k] for k in handle.files}
+
+    assert not set(expected) - set(flat), "fields disappeared from the analysis result"
+    mismatched = []
+    for path, want in sorted(expected.items()):
+        want_arr, got_arr = np.asarray(want), np.asarray(flat[path])
+        if want_arr.shape != got_arr.shape:
+            mismatched.append(f"{path}: shape {want_arr.shape} -> {got_arr.shape}")
+        elif want_arr.dtype.kind in "OUSb":
+            if not np.array_equal(want_arr, got_arr):
+                mismatched.append(f"{path}: {want_arr!r} -> {got_arr!r}")
+        elif not np.allclose(want_arr, got_arr, rtol=RTOL, atol=ATOL, equal_nan=True):
+            mismatched.append(f"{path}: values differ")
+    assert not mismatched, "analysis output changed:\n  " + "\n  ".join(mismatched)
+
+
+@pytest.mark.slow
+def test_timing_resolves_from_versioned_configs_not_a_constant():
+    """Every source in the N=3 sector resolves its own historical timing.
+
+    The July sector was taken under a different configuration than August
+    (0.4135 us vs 0.7340 us per cycle), so loading it at all proves the section
+    2.2 resolver works rather than a constant happening to fit.
+    """
+    from experiments.floquet_timing import resolve_floquet_timing
+    from tests.mbr_reference import (COMPLETE_BASIS_SPECTROSCOPY_IDS, job_provenance,
+                                     load_h5)
+    from experiments.job_paths import resolve_job_paths
+
+    provenance = job_provenance()
+    ids = COMPLETE_BASIS_SPECTROSCOPY_IDS[:3]
+    paths = resolve_job_paths(ids)
+    for job_id in ids:
+        cfg, _ = load_h5(paths[job_id])
+        timing = resolve_floquet_timing(
+            cfg, provenance[job_id]["floquet_storage_version_id"])
+        assert timing["floquet_cycle_us"] == pytest.approx(0.41351877289377287, rel=1e-15)
+        assert timing["source"].startswith("versioned config CFG-FL-")
+
+
+def test_august_timing_reproduces_the_pickled_value():
+    """The resolver reproduces the value the historical pickle held, exactly.
+
+    Fast, and the single sharpest check that section 2.2 is correct: today's
+    station gives roughly half this (gauss_sigma moved 0.04 -> 0.02 us).
+    """
+    from experiments.floquet_timing import resolve_floquet_timing
+    from experiments.job_paths import resolve_job_path
+    from tests.mbr_reference import load_h5
+
+    cfg, _ = load_h5(resolve_job_path("JOB-20260815-00009"))
+    timing = resolve_floquet_timing(cfg, "CFG-FL-20260814-00076")
+    assert timing["floquet_cycle_us"] == 0.7340315934065934
+    assert timing["m1s_pi_fracs"] == [40] * 7
