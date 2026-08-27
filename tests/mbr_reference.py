@@ -37,10 +37,34 @@ from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
 
-# The August 2026 N=3 characterization set: eight quadrature acquisitions
-# covering four occupations. This is the dataset the spec's appendix B evidence
-# was taken from, and the one the golden baseline pins.
-CHARACTERIZATION_JOB_IDS = [f"JOB-20260815-{n:05d}" for n in range(9, 17)]
+DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
+
+
+def dataset(name, kind):
+    """Job IDs for one named dataset, from the recorded literal list.
+
+    Deliberately not a numeric range. Job IDs are one global counter on a queue
+    shared by every user -- they interleave by design, each job pinning its own
+    config -- so a range is not an identifier for a dataset. The notebook
+    subtracts the other user's jobs with a positional stride in one place and a
+    program-class filter in another; three of its four July ranges pull in jobs
+    belonging to someone else. (``july_N3`` and every August set are
+    unaffected.)
+
+    The lists were resolved from the job database once, by owner, program
+    class, completed status and config-triple agreement. That resolver was a
+    throwaway; only its output is kept. This file is the interim home -- the
+    list belongs in the aggregate HDF5 manifest (spec 3.3) once aggregates can
+    save themselves.
+    """
+    return json.loads(DATASETS.read_text())["datasets"][name][kind]
+
+
+# Eight quadrature acquisitions covering four occupations, from the August
+# campaign. In the notebook this is `data_four_realization`: a fragment used
+# for quick plotting, NOT the August N=3 sector. It does not complete the
+# fixed-N basis. The golden baseline pins it.
+CHARACTERIZATION_JOB_IDS = dataset("august_quickplot", "spectroscopy")
 
 # Analysis parameters the reference notebook uses. Kept here rather than in the
 # test so the baseline generator and the test cannot disagree about them.
@@ -82,28 +106,8 @@ CHARACTERIZATION_TIMING = dict(
 # filter them by program name.
 
 
-SECTOR_JOB_IDS = Path(__file__).parent / "data" / "mbr_sector_job_ids.json"
-
-
-def _sector(name, kind):
-    """Job IDs for one published sector, from the verified literal list.
-
-    Deliberately not a numeric range. Job IDs are one global counter on a
-    shared queue -- users interleave by design, each job pinning its own config
-    -- so a range is not an identifier for a dataset. The notebook subtracts
-    the other user's jobs with a positional stride in one place and a
-    program-class filter in another; checked against the database, three of its
-    four declared ranges pull in jobs belonging to someone else.
-    N=3 is unaffected, but the list is used here regardless so the harness
-    cannot inherit that class of mistake.
-
-    Regenerate with ``pixi run python tools/resolve_sector_job_ids.py``.
-    """
-    return json.loads(SECTOR_JOB_IDS.read_text())[name][kind]
-
-
-COMPLETE_BASIS_CALIBRATION_IDS = _sector("N3", "calibration")
-COMPLETE_BASIS_SPECTROSCOPY_IDS = _sector("N3", "spectroscopy")
+COMPLETE_BASIS_CALIBRATION_IDS = dataset("july_N3", "calibration")
+COMPLETE_BASIS_SPECTROSCOPY_IDS = dataset("july_N3", "spectroscopy")
 
 # The notebook's settings for this sector, reproduced exactly.
 COMPLETE_BASIS_ANALYSIS = dict(

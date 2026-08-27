@@ -344,3 +344,52 @@ agreement on `(user, experiment_class, program_class, config triple)` for a
 declared set. The provenance sidecar already carries every field needed, so it
 is a short function plus a test, and it would catch this class of problem
 automatically.
+
+## 2026-08-26 (aside, revised) — one record of which jobs form which dataset
+
+Replaces the previous entry's approach. The range-resolving script was a
+throwaway and has been deleted; keeping it would have made a glorified
+sed/awk into a library fixture. Only its output is kept.
+
+`tests/data/mbr_datasets.json` now records all ten datasets literally, each
+with its config triple. **Interim home**: this belongs in the aggregate HDF5
+manifest (spec 3.3) once aggregates can save themselves, at which point the
+JSON goes away too.
+
+### There are two campaigns, not three datasets
+
+The three sets pointed at so far are not independent — one is a fragment, one
+is a subset, one is the declaration of the other.
+
+**July 22–23** — photon-number scaling, `replot_*` in the notebook. Three
+sectors N=1/2/3 plus an N=2 supplement. This is the campaign whose ranges
+interleave with `closed_loop`, so three of four declared ranges over-collect.
+
+**August 15–17** — N=3 plus disorder, `saved_*` in the notebook. One N=3
+sector (70 cal + 70 spec) and four disorder realizations of 20 each. **Every
+August range is clean** — no foreign jobs anywhere, single config triple.
+
+| Dataset | cal | spec | complete basis? |
+|---|---|---|---|
+| `july_N1` | 10 | 10 | — |
+| `july_N2` | 30 | 28 | needs the supplement merged |
+| `july_N2_supplement` | 2 | 2 | one occupation, different FL/M1 config |
+| `july_N3` | 70 | 70 | **yes**, 35 occupations |
+| `august_quickplot` | – | 8 | no, 4 occupations |
+| `august_N3` | 70 | 70 | untested, very likely yes |
+| `august_disorder_r0..r3` | – | 20 each | untested |
+
+- The 8-file set is the notebook's `data_four_realization`: a quick-plot
+  **fragment of the August campaign**, not the August N=3 sector.
+- The OneNote block is `replot_job_ranges` itself — the declaration that
+  `july_N3` came from, so it is not a fourth dataset.
+
+### Open question for the next session
+
+`august_N3` is arguably the better complete-basis fixture than `july_N3`: it
+shares the August campaign and the *same* Floquet and M1 config as the
+quick-plot set the golden already pins (`CFG-FL-20260814-00076`,
+`CFG-M1-20260814-00121`), so one timing resolution covers both, and its four
+disorder realizations give `merge_spectra` real multi-spectrum input — which
+still has no coverage. `july_N3` works and is committed; switching costs a
+re-bless. Not done, deliberately.
