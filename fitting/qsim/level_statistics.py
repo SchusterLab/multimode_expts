@@ -47,6 +47,26 @@ def merge_spectra(data):
             raise ValueError("every merge source must contain reconstruction and spectrum")
         if source.get("spectrum_only", False):
             raise ValueError("merge_spectra does not accept an already merged spectrum")
+        # This function rebuilds theory from the diagonal probabilities
+        # |<b|E_a>|^2 (see below), which is the return amplitude <b|U|b>. That
+        # predates the 2026-08-24 off-diagonal generalization and is simply the
+        # wrong quantity for a row whose measured occupation differs from its
+        # prepared one: that row needs <f|E_a><E_a|b>. Refuse rather than plot a
+        # curve that looks plausible and is not the propagator element.
+        occupations = source.reconstruction.occupations
+        final_occupations = source.reconstruction.get("final_occupations", occupations)
+        off_diagonal = [
+            (tuple(initial), tuple(final))
+            for initial, final in zip(occupations, final_occupations)
+            if tuple(initial) != tuple(final)
+        ]
+        if off_diagonal:
+            raise NotImplementedError(
+                "merge_spectra reconstructs theory from diagonal weights only, but "
+                f"{len(off_diagonal)} row(s) measure a different occupation than they "
+                f"prepare, e.g. {off_diagonal[0][0]} -> {off_diagonal[0][1]}. "
+                "Generalizing it needs <f|E_a><E_a|b>, not |<b|E_a>|^2."
+            )
 
     reference = sources[0]
     reference_energies_MHz = np.asarray(reference.spectrum.energies_MHz)

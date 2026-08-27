@@ -80,6 +80,43 @@ BASELINES = {
 RTOL = 1e-12
 ATOL = 1e-12
 
+# Fields that are not functions of the data, but of which orthonormal basis
+# LAPACK happened to choose inside each degenerate eigen-subspace.
+#
+# ``analyze_spectrum`` diagonalizes the model Hamiltonian with ``eigh``. This
+# Hamiltonian is permutation-symmetric among equal-detuning storage modes, so it
+# is massively degenerate -- on the N=3 sector, 31 of 35 levels sit in multiplets
+# of dimension 3, 6 or 10. Individual eigenvectors inside a multiplet are an
+# arbitrary basis choice; only the subspace projector is defined. Anything built
+# from a single eigenvector therefore differs between BLAS implementations while
+# being equally correct: these three fields move by ~0.4 between the acquisition
+# workstation and a macOS laptop, which is how the pre-existing off-diagonal
+# LDOS bug was found.
+#
+# The physics is pinned by what survives the gauge: ``energies_MHz`` (2e-17
+# agreement), ``theory_A`` = <f|exp(-iHt)|b> (8e-15), and its transforms
+# ``theory_local``/``theory``. Those sum over each multiplet before contracting,
+# so they only ever see projectors. Pinning per-eigenvector weights on top of
+# them adds no coverage of the analysis and asserts a property of the linear
+# algebra backend instead.
+#
+# The gauge-invariant content of these weights -- the multiplet-summed LDOS that
+# the displays actually consume -- is covered by tests/test_mbr_ldos_weights.py.
+GAUGE_DEPENDENT_FIELDS = frozenset({
+    "spectral_weights",
+    "eigenstate_weights",
+    "basis_eigenstate_weights",
+})
+
+
+def drop_gauge_dependent(flat):
+    """Remove gauge-dependent leaves from a flattened result, at any depth."""
+    return {
+        path: value for path, value in flat.items()
+        if path.rsplit(".", 1)[-1] not in GAUGE_DEPENDENT_FIELDS
+    }
+
+
 # Fields whose meaning is structural rather than numerical. Compared exactly.
 EXACT_PATHS = (
     "phase_frame",
@@ -148,7 +185,7 @@ def analysis():
 def test_baseline_matches(method):
     """Every pinned field of the analysis result is unchanged, per method."""
     _, result = run_reference_analysis(spectrum_method=method)
-    flat = flatten_result(result)
+    flat = drop_gauge_dependent(flatten_result(result))
     baseline = BASELINES[method]
 
     if _blessing() or not baseline.exists():
@@ -272,6 +309,7 @@ def test_complete_basis_baseline_matches(branch):
     flat.update(flatten_result(data, "spectrum_run"))
     flat.update(flatten_result(expt.analyze_level_statistics(data=data), "levels"))
     flat.update(flatten_result(expt.analyze_sff(data=data), "sff"))
+    flat = drop_gauge_dependent(flat)
 
     baseline = COMPLETE_BASIS_BASELINES[branch]
     if _blessing() or not baseline.exists():

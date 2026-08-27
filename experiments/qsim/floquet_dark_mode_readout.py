@@ -4679,8 +4679,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
         else:
             fig = ax.figure
-        ldos_energies_MHz, energy_indices = np.unique(np.round(spectrum.energies_MHz, 10), return_inverse=True)
-        ldos_weights = np.asarray([np.bincount(energy_indices, weights=weights, minlength=len(ldos_energies_MHz)) for weights in spectrum.eigenstate_weights])
+        # Summed within each degenerate multiplet before the modulus is taken;
+        # see mbr_spectrum.ldos_weights for why that order is the physics.
+        ldos_energies_MHz, ldos_weights = mbr_spectrum_analysis.ldos_weights(spectrum)
         for row, weights in enumerate(ldos_weights):
             height = 0.8 * weights
             ax.hlines(row, -spectrum.energy_limit_MHz, spectrum.energy_limit_MHz, color="0.85")
@@ -4728,8 +4729,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             theory *= np.max(measured) / np.max(theory)
         if not np.isfinite(ldos_weight_cutoff) or ldos_weight_cutoff < 0.:
             raise ValueError("ldos_weight_cutoff must be finite and nonnegative")
-        ldos_energies_MHz, energy_indices = np.unique(np.round(spectrum.energies_MHz, 10), return_inverse=True)
-        ldos_weights = np.bincount(energy_indices, weights=spectrum.eigenstate_weights[row], minlength=len(ldos_energies_MHz))
+        ldos_energies_MHz, all_ldos_weights = mbr_spectrum_analysis.ldos_weights(spectrum)
+        ldos_weights = all_ldos_weights[row]
         keep = ldos_weights >= ldos_weight_cutoff
         if axes is None:
             if figsize is None:

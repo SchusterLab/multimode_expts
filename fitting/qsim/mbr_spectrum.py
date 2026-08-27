@@ -24,6 +24,51 @@ import numpy as np
 from slab import AttrDict
 
 
+def ldos_weights(spectrum):
+    """Local density-of-states weights, summed within each degenerate multiplet.
+
+    Returns ``(energies_MHz, weights)`` with one row per measured row and one
+    column per *distinct* eigenenergy.
+
+    Why the summation order matters. ``rho_i(E) = sum_a |<i|E_a>|^2 delta(E-E_a)``
+    is only well defined once the sum over a degenerate multiplet is taken
+    *before* the modulus. Individual eigenvectors inside a multiplet are an
+    arbitrary basis choice -- ``eigh`` picks one, and a different LAPACK picks
+    another -- but the subspace projector ``P_lambda`` is not arbitrary. So bin
+    the signed weights and take the modulus of the bin,
+    ``|<f|P_lambda|b>|``, rather than binning the moduli.
+
+    For diagonal rows (final occupation == initial) every term is
+    ``|<b|E_a>|^2 >= 0``, nothing can cancel, and the two orders agree
+    identically. That is why the diagonal-only code predating the off-diagonal
+    generalization (2026-08-24) was correct, and why fixing the order changes
+    no diagonal result.
+
+    Merged spectra carry no ``spectral_weights``: :func:`merge_spectra` rebuilds
+    theory from the diagonal probabilities in ``basis_eigenstate_weights``. Those
+    are already non-negative, so binning them directly is the same quantity.
+    """
+    energies_MHz, energy_indices = np.unique(
+        np.round(np.asarray(spectrum.energies_MHz), 10), return_inverse=True)
+    n_bins = len(energies_MHz)
+
+    if "spectral_weights" in spectrum:
+        weights = np.asarray(spectrum.spectral_weights)
+    else:
+        weights = np.asarray(spectrum.eigenstate_weights)
+        if np.any(weights < -1e-12):
+            raise ValueError(
+                "spectrum has no spectral_weights and its eigenstate_weights are "
+                "not non-negative, so the degenerate-multiplet sum is ambiguous")
+
+    binned = np.empty((weights.shape[0], n_bins))
+    for row, row_weights in enumerate(weights):
+        real = np.bincount(energy_indices, weights=np.real(row_weights), minlength=n_bins)
+        imag = np.bincount(energy_indices, weights=np.imag(row_weights), minlength=n_bins)
+        binned[row] = np.abs(real + 1j * imag)
+    return energies_MHz, binned
+
+
 def analyze_spectrum(reconstruction, 
                      photon_number, 
                      detunings, 
