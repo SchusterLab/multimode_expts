@@ -393,3 +393,54 @@ quick-plot set the golden already pins (`CFG-FL-20260814-00076`,
 disorder realizations give `merge_spectra` real multi-spectrum input — which
 still has no coverage. `july_N3` works and is committed; switching costs a
 re-bless. Not done, deliberately.
+
+## 2026-08-26 — consolidated onto one campaign (August)
+
+Every fixture now comes from the August 2026 campaign, under one swap
+calibration (`CFG-FL-20260814-00076`, `CFG-M1-20260814-00121`). July is no
+longer a fixture.
+
+**Why.** `august_N3` completes the 35-state basis just as `july_N3` does, but
+shares its configuration with the quick-plot set the golden already pins, so a
+single timing resolution now covers the whole module. Its ranges are also
+clean, where three of the four July ranges over-collect.
+
+**Coverage went up, not sideways.** The August sector is pinned under three
+branches, which between them cover both phase frames and both spectrum
+methods — everything the old two-dataset arrangement reached, plus the
+complete basis:
+
+| Branch | phase frame | method |
+|---|---|---|
+| `as_acquired_fft` | as acquired | FFT |
+| `as_acquired_matrix_pencil` | as acquired | Matrix Pencil |
+| `manual_kerr_fft` | manual Kerr + cycle branches | FFT |
+
+The eight-file quick-plot set stays, for two reasons: it is what
+`analysis_notebooks/guan/MBR_analysis.py` actually runs, and it is the only
+fixture with `calibration=None`.
+
+11 tests in the module, 327 in the suite. `-m "not slow"` deselects the four
+that touch the 140-file sector, leaving a 15 s run.
+
+**A test earned its keep during the switch.** With both fixtures now August,
+`test_timing_resolves_..._not_a_constant` started failing: its premise was that
+the fixture came from a differently configured campaign, and that stopped being
+true. Rewritten as `test_timing_resolver_is_not_a_constant`, which resolves one
+July job and one August job directly and asserts both the values and that they
+differ. July appears there as a data point, not a fixture.
+
+**Baseline storage.** A flattened complete-basis result has ~8.5k scalar
+leaves. One npz member each meant ~300 bytes of zip header per scalar: 1.5 MB
+of numbers in a 4.4 MB file. Scalars now pack into a single JSON member, which
+is greppable as a bonus. `tests/data` went 6.6 MB -> 3.8 MB.
+
+Watch the packing condition: it is `ndim == 0`, not `size == 1`. Packing a
+single-element *array* would return it as a 0-d scalar and report a false
+shape difference — which it did, on `correction.modes` and the Matrix-Pencil
+`supporting_rows` fields, until fixed.
+
+**Still uncovered**: `merge_spectra`. The natural fixture is
+`july_N2` + `july_N2_supplement`, which is what it was written for, but those
+were taken under different Floquet and M1 configs — worth doing deliberately
+rather than by accident.

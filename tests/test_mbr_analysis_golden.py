@@ -22,10 +22,22 @@ commit as the change and say why in the commit message::
 Consequence for ordering: do every pure move while this test is green, because
 extraction is free only until the first re-blessing. See spec section 14.
 
+Fixtures
+--------
+Both come from the **August 2026 campaign**, under one swap calibration
+(``CFG-FL-20260814-00076``, ``CFG-M1-20260814-00121``), so a single timing
+resolution covers everything here:
+
+* the eight-file quick-plot set (`JOB-20260815-00009..16`), which is what
+  ``analysis_notebooks/guan/MBR_analysis.py`` runs -- four occupations, no
+  calibration source; and
+* the N=3 sector (140 files), which completes the 35-state basis and so is
+  the only fixture that reaches level statistics and the SFF.
+
 Running it
 ----------
-Needs the raw HDF5 for ``JOB-20260815-00009..16``. On the acquisition
-workstation that is automatic. Elsewhere point it at your mount::
+Needs the raw HDF5 for those jobs. On the acquisition workstation that is
+automatic. Elsewhere point it at your mount::
 
     MULTIMODE_DATA_ROOT=/Volumes/experiments pixi run python -m pytest tests/
 
@@ -34,6 +46,7 @@ so every run is a human on a machine that should have the data, and a skip
 would just hide the fact that the suite never ran.
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -44,7 +57,9 @@ from tests.mbr_reference import (
     CHARACTERIZATION_ANALYSIS,
     CHARACTERIZATION_JOB_IDS,
     CHARACTERIZATION_TIMING,
+    COMPLETE_BASIS_BRANCHES,
     flatten_result,
+    run_complete_basis_analysis,
     run_reference_analysis,
 )
 
@@ -79,12 +94,47 @@ def _blessing() -> bool:
     return os.environ.get("MBR_GOLDEN_BLESS", "").strip() not in ("", "0", "false")
 
 
+SCALARS_MEMBER = "__scalars_json__"
+
+
 def _save_baseline(flat, path):
+    """Write a flattened result, packing scalars into one member.
+
+    A flattened complete-basis result has thousands of 0-d scalar leaves.
+    Stored as one npz member each, the ~300-byte zip header per member costs
+    more than the data: 1.5 MB of numbers became 4.4 MB on disk. Scalars
+    therefore go into a single JSON member, which is also readable with a text
+    editor. Anything JSON cannot represent (complex, say) stays an array member,
+    as does any single-element *array* -- packing those would silently turn a
+    shape (1,) field into a 0-d one and report a false difference.
+    """
+    scalars, arrays = {}, {}
+    for key, value in flat.items():
+        as_array = np.asarray(value)
+        if as_array.ndim == 0 and as_array.dtype.kind in "biufOUS":
+            item = as_array.item()
+            try:
+                json.dumps(item)
+            except (TypeError, ValueError):
+                arrays[key] = as_array
+            else:
+                scalars[key] = item
+        else:
+            arrays[key] = as_array
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    # allow_pickle for the object-dtype placeholders flatten_result emits for
-    # None and for non-numerical members.
-    np.savez_compressed(path, **flat)
+    np.savez_compressed(path, **arrays,
+                        **{SCALARS_MEMBER: np.array(json.dumps(scalars))})
     return path
+
+
+def _load_baseline(path):
+    """-> {path: ndarray or scalar}, undoing the scalar packing."""
+    with np.load(path, allow_pickle=True) as handle:
+        out = {k: handle[k] for k in handle.files if k != SCALARS_MEMBER}
+        if SCALARS_MEMBER in handle.files:
+            out.update(json.loads(str(handle[SCALARS_MEMBER])))
+    return out
 
 
 @pytest.fixture(scope="module")
@@ -111,8 +161,7 @@ def test_baseline_matches(method):
         _save_baseline(flat, baseline)
         pytest.skip(f"baseline written to {baseline} ({len(flat)} fields); re-run to compare")
 
-    with np.load(baseline, allow_pickle=True) as handle:
-        expected = {k: handle[k] for k in handle.files}
+    expected = _load_baseline(baseline)
 
     new = set(flat) - set(expected)
     gone = set(expected) - set(flat)
@@ -195,39 +244,43 @@ def test_source_mutation_is_pinned():
 # Complete-basis coverage: level statistics and the SFF
 # --------------------------------------------------------------------------
 #
-# The August characterization set covers four occupations, so
-# analyze_level_statistics, analyze_sff and merge_spectra all refuse to run on
-# it and were extracted with no execution coverage at all. The N=3 July sector
-# completes the 35-state fixed-N basis and does exercise them.
+# The eight-file quick-plot set covers four occupations, so
+# analyze_level_statistics and analyze_sff refuse to run on it and were once
+# extracted with no execution coverage at all. The August N=3 sector completes
+# the 35-state basis and exercises both, under three parameter branches
+# spanning both phase frames and both spectrum methods.
 #
-# Slower than the rest of this module (140 source files plus a Matrix-Pencil
-# fit), hence its own marker: `-m "not slow"` skips it during quick iteration.
+# Slower than the rest of this module (140 source files), hence the marker:
+# `-m "not slow"` skips it during quick iteration.
 
-COMPLETE_BASIS_BASELINE = Path(__file__).parent / "data" / "mbr_complete_basis_20260723.npz"
+COMPLETE_BASIS_BASELINES = {
+    branch: Path(__file__).parent / "data" / f"mbr_complete_basis_{branch}.npz"
+    for branch in COMPLETE_BASIS_BRANCHES
+}
 
 
 @pytest.mark.slow
-def test_complete_basis_baseline_matches():
-    """Level statistics and SFF outputs are unchanged on the N=3 sector."""
-    from tests.mbr_reference import run_complete_basis_analysis
-
-    expt, data = run_complete_basis_analysis()
+@pytest.mark.parametrize("branch", sorted(COMPLETE_BASIS_BRANCHES))
+def test_complete_basis_baseline_matches(branch):
+    """Spectrum, level statistics and SFF are unchanged on the N=3 sector."""
+    expt, data = run_complete_basis_analysis(branch)
     assert data.spectrum.complete_basis, "N=3 sector no longer completes the basis"
     assert int(data.photon_number) == 3
+    assert len(data.reconstruction.occupations) == 35
 
     flat = {}
     flat.update(flatten_result(data, "spectrum_run"))
     flat.update(flatten_result(expt.analyze_level_statistics(data=data), "levels"))
     flat.update(flatten_result(expt.analyze_sff(data=data), "sff"))
 
-    if _blessing() or not COMPLETE_BASIS_BASELINE.exists():
-        if not COMPLETE_BASIS_BASELINE.exists() and not _blessing():
-            pytest.fail(f"No baseline at {COMPLETE_BASIS_BASELINE}; bless it once.")
-        _save_baseline(flat, COMPLETE_BASIS_BASELINE)
+    baseline = COMPLETE_BASIS_BASELINES[branch]
+    if _blessing() or not baseline.exists():
+        if not baseline.exists() and not _blessing():
+            pytest.fail(f"No baseline at {baseline}; bless it once.")
+        _save_baseline(flat, baseline)
         pytest.skip(f"baseline written ({len(flat)} fields); re-run to compare")
 
-    with np.load(COMPLETE_BASIS_BASELINE, allow_pickle=True) as handle:
-        expected = {k: handle[k] for k in handle.files}
+    expected = _load_baseline(baseline)
 
     assert not set(expected) - set(flat), "fields disappeared from the analysis result"
     mismatched = []
@@ -244,27 +297,52 @@ def test_complete_basis_baseline_matches():
 
 
 @pytest.mark.slow
-def test_timing_resolves_from_versioned_configs_not_a_constant():
-    """Every source in the N=3 sector resolves its own historical timing.
+def test_complete_basis_shares_the_quickplot_configuration():
+    """Both fixtures come from one campaign under one swap calibration.
 
-    The July sector was taken under a different configuration than August
-    (0.4135 us vs 0.7340 us per cycle), so loading it at all proves the section
-    2.2 resolver works rather than a constant happening to fit.
+    That is why this sector was chosen over the July one: a single timing
+    resolution covers every fixture in this module.
     """
-    from experiments.floquet_timing import resolve_floquet_timing
-    from tests.mbr_reference import (COMPLETE_BASIS_SPECTROSCOPY_IDS, job_provenance,
-                                     load_h5)
-    from experiments.job_paths import resolve_job_paths
+    from tests.mbr_reference import job_provenance, dataset
 
     provenance = job_provenance()
-    ids = COMPLETE_BASIS_SPECTROSCOPY_IDS[:3]
-    paths = resolve_job_paths(ids)
-    for job_id in ids:
-        cfg, _ = load_h5(paths[job_id])
+    fields = ("floquet_storage_version_id", "man1_storage_version_id")
+    ids = (dataset("august_quickplot", "spectroscopy")
+           + dataset("august_N3", "calibration")
+           + dataset("august_N3", "spectroscopy"))
+    triples = {tuple(provenance[j][f] for f in fields) for j in ids}
+    assert triples == {("CFG-FL-20260814-00076", "CFG-M1-20260814-00121")}, triples
+
+
+def test_timing_resolver_is_not_a_constant():
+    """The resolver returns different timing for differently configured data.
+
+    Every fixture in this module now comes from the August campaign and shares
+    one swap calibration, so the fixtures alone cannot show that the section 2.2
+    resolver actually reads the configs. This compares a July job against an
+    August one directly: same code, two configurations, two answers, each
+    matching what that campaign was compiled with.
+
+    July appears only here, as a second data point. It is not a fixture.
+    """
+    from experiments.floquet_timing import resolve_floquet_timing
+    from experiments.job_paths import resolve_job_paths
+    from tests.mbr_reference import dataset, job_provenance, load_h5
+
+    provenance = job_provenance()
+    expected = {"july_N3": 0.41351877289377287, "august_N3": 0.7340315934065934}
+
+    resolved = {}
+    for name, want in expected.items():
+        job_id = dataset(name, "spectroscopy")[0]
+        cfg, _ = load_h5(resolve_job_paths([job_id])[job_id])
         timing = resolve_floquet_timing(
             cfg, provenance[job_id]["floquet_storage_version_id"])
-        assert timing["floquet_cycle_us"] == pytest.approx(0.41351877289377287, rel=1e-15)
+        assert timing["floquet_cycle_us"] == pytest.approx(want, rel=1e-15), name
         assert timing["source"].startswith("versioned config CFG-FL-")
+        resolved[name] = timing["floquet_cycle_us"]
+
+    assert resolved["july_N3"] != resolved["august_N3"]
 
 
 def test_august_timing_reproduces_the_pickled_value():

@@ -89,37 +89,49 @@ CHARACTERIZATION_TIMING = dict(
 )
 
 # --------------------------------------------------------------------------
-# The complete-basis dataset, for level statistics and the SFF
+# The complete-basis dataset: August N=3
 # --------------------------------------------------------------------------
 #
-# The August set covers four occupations, not the complete fixed-N basis, so
-# analyze_level_statistics / analyze_sff / merge_spectra all refuse to run on
-# it. The N=3 sector of the July 22-23 report data does complete the basis.
-# Ranges taken from measurement_notebooks/jonginn/data_postprocess.ipynb
-# (the `replot_job_ranges` cell), which is the authoritative record of which
-# jobs formed each published sector.
+# 70 calibration plus 70 spectroscopy jobs completing the 35-state N=3 basis,
+# so level statistics, the SFF and the complete-basis branch of analyze_spectrum
+# all run on it -- none of which the eight-file quick-plot set can reach.
 #
-# All 140 jobs are COMPLETED under one configuration triple
-# (CFG-HW-20260717-00173, CFG-FL-20260722-00001, CFG-M1-20260722-00010), which
-# is why N=3 was chosen over N=1 or N=2: those ranges contain jobs with a null
-# program class and several different config versions, so the notebook has to
-# filter them by program name.
+# Chosen over the July N=3 sector, which also completes the basis, because it
+# is the same campaign and the *same* Floquet and M1 configuration as the
+# quick-plot set (CFG-FL-20260814-00076, CFG-M1-20260814-00121). One timing
+# resolution therefore covers every fixture here. Its ranges are also clean:
+# no other user's jobs fall inside them, unlike three of the four July ranges.
+#
+# Settings below are the notebook's `saved_*` values for this sector.
 
+COMPLETE_BASIS_CALIBRATION_IDS = dataset("august_N3", "calibration")
+COMPLETE_BASIS_SPECTROSCOPY_IDS = dataset("august_N3", "spectroscopy")
 
-COMPLETE_BASIS_CALIBRATION_IDS = dataset("july_N3", "calibration")
-COMPLETE_BASIS_SPECTROSCOPY_IDS = dataset("july_N3", "spectroscopy")
+COMPLETE_BASIS_CYCLE_BRANCHES = {
+    (2, 1, 0, 0, 0): 1,
+    (2, 0, 1, 0, 0): 1,
+    (1, 1, 0, 1, 0): 1,
+    (1, 1, 0, 0, 1): 1,
+    (1, 0, 1, 1, 0): 1,
+    (1, 0, 1, 0, 1): 1,
+}
 
-# The notebook's settings for this sector, reproduced exactly.
-COMPLETE_BASIS_ANALYSIS = dict(
-    stage="spectrum",
-    phase_frame="manual_kerr",
-    manual_kerr_MHz=-19.756e-3,
-    cycle_branches={},
-    legacy=True,
-    fft_window="raw",
-    zero_padding=1,
-    spectrum_method="matrix_pencil",
-)
+# Branches worth pinning separately. The notebook runs the first and the third;
+# the second exists so the Matrix-Pencil path gets complete-basis coverage too.
+# Together they exercise both phase frames and both spectrum methods, which is
+# everything the previous two-dataset arrangement covered plus the complete
+# basis.
+COMPLETE_BASIS_BRANCHES = {
+    "as_acquired_fft": dict(phase_frame="as_acquired", spectrum_method="fft"),
+    "as_acquired_matrix_pencil": dict(phase_frame="as_acquired",
+                                      spectrum_method="matrix_pencil"),
+    "manual_kerr_fft": dict(phase_frame="manual_kerr",
+                            manual_kerr_MHz=-10.5e-3,
+                            cycle_branches=COMPLETE_BASIS_CYCLE_BRANCHES,
+                            spectrum_method="fft"),
+}
+
+COMPLETE_BASIS_ANALYSIS = dict(stage="spectrum", fft_window="raw", zero_padding=1)
 
 PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
 
@@ -222,18 +234,33 @@ def load_aggregate_resolved(job_ids):
     return EncodingHamiltonianSpectroscopyExperiment._from_expts(jobs, job_ids=ids)
 
 
-def run_complete_basis_analysis(**overrides):
-    """-> (expt, analysis_result) for the N=3 complete-basis sector.
+def load_complete_basis():
+    """-> (calibration_expt, spectroscopy_expt, occupations) for August N=3.
 
-    Reproduces `replot_analyze_sector` from data_postprocess.ipynb, but loads
-    from HDF5 plus the provenance sidecar rather than through the job server
-    and pickles.
+    Loads from HDF5 plus the provenance sidecar; no job server, no pickles.
+    Cached per process because the two aggregates cover 140 files and every
+    branch reuses them.
     """
-    calibration = load_aggregate_resolved(COMPLETE_BASIS_CALIBRATION_IDS)
-    calibration.analyze(stage="calibration")
+    if not hasattr(load_complete_basis, "_cache"):
+        calibration = load_aggregate_resolved(COMPLETE_BASIS_CALIBRATION_IDS)
+        calibration.analyze(stage="calibration")
+        occupations = [tuple(map(int, o)) for o in calibration.data.occupations]
+        if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
+            raise RuntimeError(
+                f"calibration is not the complete 35-state N=3 sector: "
+                f"{len(occupations)} occupations")
+        spectroscopy = load_aggregate_resolved(COMPLETE_BASIS_SPECTROSCOPY_IDS)
+        load_complete_basis._cache = (calibration, spectroscopy, occupations)
+    return load_complete_basis._cache
 
-    spectroscopy = load_aggregate_resolved(COMPLETE_BASIS_SPECTROSCOPY_IDS)
-    params = dict(COMPLETE_BASIS_ANALYSIS, calibration=calibration)
+
+def run_complete_basis_analysis(branch="as_acquired_fft", **overrides):
+    """-> (expt, analysis_result) for one branch of the August N=3 sector."""
+    calibration, spectroscopy, occupations = load_complete_basis()
+    params = dict(COMPLETE_BASIS_ANALYSIS,
+                  calibration=calibration,
+                  occupations=occupations,
+                  **COMPLETE_BASIS_BRANCHES[branch])
     params.update(overrides)
     return spectroscopy, spectroscopy.analyze(**params)
 
