@@ -4,8 +4,8 @@ Running handoff for the refactor in `docs/qsim_mbr_refactor.md`. Newest entry
 last. Each entry says what landed, how to check it, and what is next, so a
 session that starts cold can pick up from the bottom.
 
-Read first: spec section 14 (working order), section 13 (execution
-environment), appendix C (configuration traps).
+Read first: spec section 14 (working order **and its invariants**), section
+13 (execution environment), appendix C (configuration traps).
 
 ## Standing facts
 
@@ -444,3 +444,57 @@ shape difference — which it did, on `correction.modes` and the Matrix-Pencil
 `july_N2` + `july_N2_supplement`, which is what it was written for, but those
 were taken under different Floquet and M1 configs — worth doing deliberately
 rather than by accident.
+
+## 2026-08-26 (correction) — the Experiment triple is the target shape
+
+Recorded because it was proposed for violation twice, in two different
+sessions, after reading the spec. The spec said the right thing in section 7.8
+but stated it as a target with no reason attached, so it did not survive
+contact with a plausible-sounding alternative.
+
+**The claim that was wrong**: that `acquire`/`analyze`/`display` are separable
+concerns, and that lifting the 598 lines of `display_*` out of the god
+Experiment — or splitting the file along an acquisition/analysis line so the
+analysis half reads alone — would improve inspectability.
+
+**Why it is wrong.** `slab/experiment.py:170` makes the four-method lifecycle
+the contract, and the runners enforce it by calling `analyze()` and
+`display()` after acquisition and capturing the output to file
+(`characterization_runner.py:300`/`:523`, `sweep_runner.py:230`/`:235`/
+`:276`-`:289`). A measurement whose display lives elsewhere produces no
+record.
+
+More importantly it inverts the target. The shape to copy is
+`experiments/single_qubit/error_amplification.py`: one Program, one
+Experiment, four methods, ~180 lines, reusable mathematics delegated to
+`fitting/` and the measurement-specific glue kept local. You open one file and
+see the whole story of one measurement.
+
+**So the real defect in the god Experiment** is not that display is attached.
+It is that one class holds the triples of four measurements plus the aggregate
+analyses behind a `stage` argument, so no triple is local. The fix is to split
+the class into several Experiments, each keeping its whole triple — sections
+7.3 and 7.4 — not to split the triple.
+
+Spec section 7.8 now carries the contract, the enforcement points with file
+and line, the exemplar, and the rejected alternatives. Section 14 gained an
+**Invariants** block that names this first, because section 14 is what a cold
+session reads first.
+
+**Measured shape of the god class**, for planning. Class is 2341 lines
+(4415-6755) of the 6810-line file; the rest is 28 acquisition classes.
+
+| Group | Lines | Fns |
+|---|---|---|
+| Loading and provenance | 196 | 7 |
+| Reconstruction | 462 | 6 |
+| Phase | 269 | 7 |
+| Calibration analysis | 168 | 2 |
+| `analyze` switchboard | 249 | 1 |
+| Wrappers to extracted modules | 41 | 3 |
+| Display | 598 | 13 |
+| Batch runners | 266 | 4 |
+
+The HDF5-to-output spine is about 1200 lines in about 20 functions. Each
+display function belongs with the measurement it displays, so the 598 lines
+are distributed by the 7.3/7.4 split, not extracted.

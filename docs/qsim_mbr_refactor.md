@@ -679,7 +679,62 @@ known.
 
 ### 7.8 Display ownership
 
-There is no public standalone display subsystem.
+**The acquire/analyze/display triple is the unit of locality. It is the target
+shape, not a legacy accident. Do not propose separating it.**
+
+This has been raised twice in review, so the reasoning is recorded here in
+full.
+
+#### The contract
+
+`slab/experiment.py:170` defines the lifecycle every Experiment implements:
+
+~~~
+Experiment.go(save, analyze, display, progress)
+    data = self.acquire(progress)
+    if analyze:  data = self.analyze(data)
+    if save:     self.save_data(data)
+    if display:  self.display(data)
+~~~
+
+`acquire`, `analyze`, `display` and `save_data` are the four stubs on the base
+class. One measurement implements all four, in one class, in one file.
+
+#### The contract is actively enforced
+
+The runners call `analyze()` and `display()` after acquisition and capture the
+output to file. A measurement whose display lives elsewhere produces no record.
+
+- `experiments/characterization_runner.py:523` calls `expt.go(...)`, then
+  `:300` calls `experiment.display(**call_kwargs)` with the kwargs filtered to
+  the display signature. `:307` catches and reports a display failure.
+- `experiments/sweep_runner.py:230` and `:235` call `mother_expt.analyze()`
+  then `mother_expt.display()` for live plotting; `:276`-`:289` repeat that for
+  the final analysis and the logged record.
+
+#### The exemplar
+
+`experiments/single_qubit/error_amplification.py` is the shape to copy: one
+Program, one Experiment, and the four methods, in about 180 lines. `acquire`
+runs the sweep, `analyze` scales by `Ig`/`Ie` and fits, `display` plots the
+data with the fitted curve. Reusable mathematics is delegated out
+(`fitter.fitgaussian`); the measurement-specific glue stays local.
+
+The result is what inspection should feel like: you open one file, and the
+whole story of one measurement — what was pulsed, what was fitted, what was
+plotted — is in front of you.
+
+#### What is actually wrong with the god Experiment
+
+Not that display is attached to it. That **one** class carries the triples of
+four different measurements (calibration, spectroscopy, orthogonality,
+propagator) plus the aggregate analyses, dispatched by a `stage` argument. No
+single triple is local, because each is interleaved with three others.
+
+The fix is therefore to **split the class into several Experiments, each
+keeping its own triple**, per sections 7.3 and 7.4 — not to split the triple.
+
+#### Ownership after the split
 
 - Leaf acquisition-quality displays belong to leaf Experiments.
 - Matrix-element display belongs to **MBRMatrixElementExperiment**.
@@ -689,6 +744,16 @@ There is no public standalone display subsystem.
 
 Private plotting helpers may be shared, but callers interact through the
 owning Experiment's **display()** method.
+
+#### Rejected alternatives
+
+- A standalone display module or display package. It breaks the runner
+  contract above and inverts the target shape.
+- Splitting the file along an acquisition/analysis line so that the analysis
+  half can be read without the Program classes. The same reasoning applies:
+  the desired locality is per **measurement**, not per **lifecycle stage**.
+  Splitting by module is correct only once the classes are split by
+  measurement, at which point each module holds a whole triple.
 
 ## 8. MBR data-product hierarchy
 
@@ -1114,6 +1179,23 @@ There are only **two real ordering constraints**:
    have no safety net.
 2. Every pure move happens before the first section 2 behavior fix. Extraction
    is free only while the golden stays green; the first re-blessing spends that.
+
+### Invariants
+
+Hold these constant through every step. Each has been proposed for violation at
+least once.
+
+1. **The acquire/analyze/display triple stays together on one Experiment.**
+   It is the canonical slab shape and the runners enforce it. Reorganize by
+   splitting the god class into several Experiments, each keeping its whole
+   triple; never by separating analysis from display, or analysis from
+   acquisition. Full reasoning, enforcement points and the exemplar file are in
+   section 7.8.
+2. **The offline track constructs no station.** Sections 2.2 and 13.3.
+3. **Reusable mathematics moves to fitting/qsim; measurement-specific glue
+   stays on the owning Experiment.** Section 7.5. The test of "reusable" is
+   whether the function takes arrays and returns arrays with no knowledge of
+   how the data was acquired.
 
 ### Spine
 
