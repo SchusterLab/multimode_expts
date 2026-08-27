@@ -284,3 +284,63 @@ paths (FFT, Matrix-Pencil, complete-basis) now guard those moves.
 Worth noting for spec section 3.2: with the sidecar in place, the offline path
 is now genuinely database-free. The remaining pickle/FastAPI dependency lives
 only in the old notebook, not in anything under test.
+
+## 2026-08-26 (aside) — dataset selection was loose; sectors resolved literally
+
+Side quest from reading the notebook's `replot_job_ranges`. Not part of the
+refactor spine; recorded because it changes what "the N=2 sector" means.
+
+**How the ranges work.** Each tuple is `(date, first, last, step)` expanded by
+`range()`. The fourth element is a **stride**, and N=3 uses `step=2` to skip
+every other job.
+
+**Why a stride is needed at all.** Job IDs are one global counter on a queue
+shared by every user, and that is the intended design: user A measures at set
+point 1, user B measures at set point 2 then refits and stores a new config
+version, A goes again, and so on. Each job pins its own config, so the
+interleaving is benign — I initially misread the changing `CFG-HW-*` IDs as a
+possible mid-run reconfiguration of jonginn's sweep. It is not.
+
+**What is not fine** is identifying a dataset by a numeric range over that
+counter. The notebook subtracts the other user's jobs two different ad-hoc
+ways: a positional stride (N=3) and a program-class filter (N=1). The stride
+assumes strict alternation *and* correct phase.
+
+Checked against the database, three of the four declared ranges disagree with
+an owner-plus-program filter:
+
+| Sector | Declared | Actually jonginn's | Foreign |
+|---|---|---|---|
+| N1 spectroscopy | 19 | 10 | 9 |
+| N2 spectroscopy | 30 | 28 | 2 |
+| N2 supplement spectroscopy | 3 | 2 | 1 |
+| N3 spectroscopy | 70 | 70 | 0 |
+
+N=3's stride was exactly right — the 31 skipped jobs are all `closed_loop` /
+`closed_loop_recal`. Correct by luck rather than by construction.
+
+**Data integrity is fine.** Every sector resolves to exactly one config
+triple. Only the selection was loose, and the foreign jobs are a different
+program class so they would have failed loudly rather than corrupting a
+result. The risk is latent: had the other user run the same program class
+concurrently, the stride would have absorbed their jobs silently.
+
+**Landed**: `tools/resolve_sector_job_ids.py` and
+`tests/data/mbr_sector_job_ids.json` — literal, verified lists filtered by
+user, program class, completion and config triple. `tests/mbr_reference.py`
+now reads N=3 from the JSON. The IDs are byte-identical to the declared range
+for N=3, so no test result changes (324 passed).
+
+**Worth knowing for level-3 work**: the N=2 supplement runs under a *different*
+Floquet and M1 config than the N=2 main set (`CFG-FL-20260722-00001` /
+`CFG-M1-20260722-00002` versus `CFG-FL-20260717-00029` /
+`CFG-M1-20260717-00011`). `merge_spectra` is therefore joining data taken under
+different swap calibrations. That is what it is designed to check, but it is
+worth confirming deliberately when the level-3 aggregate is built.
+
+**Follow-up for spine step 3**: apply spec 2.3 compatibility validation one
+level earlier, at source *selection* rather than reconstruction — assert
+agreement on `(user, experiment_class, program_class, config triple)` for a
+declared set. The provenance sidecar already carries every field needed, so it
+is a short function plus a test, and it would catch this class of problem
+automatically.

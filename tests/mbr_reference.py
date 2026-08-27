@@ -82,14 +82,28 @@ CHARACTERIZATION_TIMING = dict(
 # filter them by program name.
 
 
-def _expand(*ranges):
-    return [f"JOB-{date}-{n:05d}"
-            for date, first, last, step in ranges
-            for n in range(first, last + 1, step)]
+SECTOR_JOB_IDS = Path(__file__).parent / "data" / "mbr_sector_job_ids.json"
 
 
-COMPLETE_BASIS_CALIBRATION_IDS = _expand((20260722, 683, 712, 1), (20260723, 1, 40, 1))
-COMPLETE_BASIS_SPECTROSCOPY_IDS = _expand((20260723, 48, 85, 1), (20260723, 87, 149, 2))
+def _sector(name, kind):
+    """Job IDs for one published sector, from the verified literal list.
+
+    Deliberately not a numeric range. Job IDs are one global counter on a
+    shared queue -- users interleave by design, each job pinning its own config
+    -- so a range is not an identifier for a dataset. The notebook subtracts
+    the other user's jobs with a positional stride in one place and a
+    program-class filter in another; checked against the database, three of its
+    four declared ranges pull in jobs belonging to someone else.
+    N=3 is unaffected, but the list is used here regardless so the harness
+    cannot inherit that class of mistake.
+
+    Regenerate with ``pixi run python tools/resolve_sector_job_ids.py``.
+    """
+    return json.loads(SECTOR_JOB_IDS.read_text())[name][kind]
+
+
+COMPLETE_BASIS_CALIBRATION_IDS = _sector("N3", "calibration")
+COMPLETE_BASIS_SPECTROSCOPY_IDS = _sector("N3", "spectroscopy")
 
 # The notebook's settings for this sector, reproduced exactly.
 COMPLETE_BASIS_ANALYSIS = dict(
