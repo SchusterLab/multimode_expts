@@ -498,3 +498,83 @@ session reads first.
 The HDF5-to-output spine is about 1200 lines in about 20 functions. Each
 display function belongs with the measurement it displays, so the 598 lines
 are distributed by the 7.3/7.4 split, not extracted.
+
+## 2026-08-26 (later) -- seven measurement families out, verbatim
+
+Section 7.8 says the triple is the unit of locality; section 7.6 already named
+the module each family belongs in. Those two together authorize a mechanical
+split, and it needs none of the pending audits, because moving a family's whole
+triple into its own file decides nothing about that family.
+
+Seven modules, 1,190 lines out. `floquet_dark_mode_readout.py` 6,810 -> 5,665.
+
+| New module | Classes | Lines |
+|---|---|---|
+| `central_boson_local_return.py` | Program, Experiment, the two config validators | 368 |
+| `dark_mode_multiparity_chevron.py` | `DarkBaseRProgram`, chevron Program + Experiment | 256 |
+| `sideband_stark_shift_cal.py` | the three `SidebandStarkAmplificationModified` variants | 185 |
+| `storage_swap_phase_cal.py` | `StorageSwapPhaseAccumulationProgram` | 105 |
+| `dark_mode_t1.py` | `DarkT1Program`, `DarkT1Experiment` | 92 |
+| `floquet_displacement_kerr.py` | Program + Experiment | 91 |
+| `dark_mode_broadband_ge_validation.py` | `BroadbandGeValidationProgram` | 78 |
+
+Every block is a verbatim line slice; only the module header is new. Done with
+a throwaway script that sliced by line range, so re-indentation and reflow
+could not creep in. `tests/test_qsim_measurement_split.py` pins each moved
+definition to its AST at `c7578de` and passes (33 cases). Full suite 360 pass,
+golden green -- unchanged, since none of this is the analysis spine.
+
+### Two things the split had to solve
+
+**The exporter.** `experiments/__init__.py` walks every file and flattens every
+class it finds -- including imported ones -- into one namespace, last write
+wins. So a name defined in two modules is a coin flip on filesystem order. The
+test asserts no name is defined twice, and asserts the moved names are *not*
+bound in the legacy module's `vars()`.
+
+**The old addresses.** The acquisition notebooks say
+`meas.qsim.floquet_dark_mode_readout.DarkT1Program`, which is attribute access
+on that specific module, so it breaks the moment the class leaves. The fix is a
+module-level `__getattr__` (PEP 562) mapping the 18 moved names to their new
+modules.
+
+It has to be lazy, and that is not a style preference. Each new module imports
+`DarkBaseProgram` (or `DarkBaseExperiment`, or
+`SidebandScrambleDarkProgramNewNew`) *from* the legacy module, because the base
+classes stay behind until section 7.2 decomposes them. A top-level re-import in
+the legacy module would close that cycle, and it would fail in exactly one
+direction: import the new module first and the legacy module's bottom-of-file
+re-import finds a half-initialized module in `sys.modules`. `__getattr__` runs
+at attribute-access time instead, long after both modules are loaded.
+
+Being invisible to `inspect.getmembers` is a feature here, not a cost: it is
+what stops the exporter from binding each moved class twice.
+
+### Judgement calls, so the next session does not relitigate them
+
+- **`DarkBaseRProgram` moved** into the chevron module. It is named like
+  infrastructure and appendix A had it as "pending consumer audit", but it has
+  exactly one subclass in the whole repository. Moving it keeps the measurement
+  local; leaving it behind would have kept a 70-line base in the god file for
+  one caller. If a second RAverager program appears, promote it then.
+- **`classify_two_parity_readouts` stayed.** It looks central-return-specific
+  because that is where the naming energy went, but it is a generic two-parity
+  classifier and `DarkBaseExperiment.analyze_multiparity` calls it. The two
+  `configure_/validate_central_return_*` functions did move: those encode this
+  protocol's conventions and nothing else calls them.
+- **The three stark variants share a file.** `_old` is live, the other two are
+  pending. Grouping them is not a survival decision, and the file is named for
+  the measurement, not for the winner.
+- **Nothing was renamed.** The names still violate section 6. Renaming touches
+  notebooks and worker logs and is its own pass.
+- **`dark_mode_readout.py` was not created.** The remaining eighth module in
+  section 7.6 is the dark-mode half of `DarkBaseProgram`, which is a
+  decomposition, not a move, and is gated on the phase-4 audit.
+
+### What is left in the god file
+
+5,665 lines: `DarkBaseExperiment` and `DarkBaseProgram` (the pulse base, ~1,900
+lines), the five MBR acquisition programs, the legacy scramble/Kerr variants,
+`BatchRunner`, and the 2,341-line god Experiment. Nothing further splits
+cleanly by measurement -- the next cuts are the god Experiment (7.3/7.4) and
+the pulse base (7.2), and both are decompositions.

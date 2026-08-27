@@ -1,10 +1,15 @@
 # Qsim many-body Ramsey and Floquet/dark-mode refactor specification
 
-**experiments/qsim/floquet_dark_mode_readout.py** is an 8,272-line
+**experiments/qsim/floquet_dark_mode_readout.py** was an 8,272-line
 mixed-responsibility module containing 31 classes. Its two largest classes,
 **EncodingHamiltonianSpectroscopyExperiment** and **DarkBaseProgram**, account
 for approximately 67% of the file, but the refactor covers the entire module
 rather than only those two classes.
+
+It is now 5,665 lines: the numerical spine moved to **fitting/qsim/** and seven
+whole measurement families moved to their own modules (section 7.6). What
+remains is the dark-mode pulse base, the MBR acquisition programs, the legacy
+scramble variants, **BatchRunner**, and the god Experiment.
 
 This specification defines:
 
@@ -657,6 +662,43 @@ This is an ownership map, not authorization to extract or delete these
 classes. Exact boundaries and supported variants remain pending the
 acquisition-notebook audit.
 
+**Done, as pure moves.** Seven of these modules now exist, each holding one
+measurement family's whole acquire/analyze/display triple, verbatim:
+
+| Module | Moved in |
+|---|---|
+| **dark_mode_t1.py** | **DarkT1Program/Experiment** |
+| **dark_mode_multiparity_chevron.py** | **DarkBaseRProgram**, **ManStorMultiparityChevronRProgram/Experiment** |
+| **dark_mode_broadband_ge_validation.py** | **BroadbandGeValidationProgram** |
+| **floquet_displacement_kerr.py** | **FloquetDisplacementKerrProgram/Experiment** |
+| **central_boson_local_return.py** | **CentralBosonLocalReturnProgram/Experiment**, the central-return config validators |
+| **storage_swap_phase_cal.py** | **StorageSwapPhaseAccumulationProgram** |
+| **sideband_stark_shift_cal.py** | the three **SidebandStarkAmplificationModified** variants |
+
+Nothing was renamed, merged, deleted, or reclassified; the names still violate
+section 6 and the variant fates are still pending. Grouping a family's variants
+in one file is not a decision about which of them survives.
+
+`tests/test_qsim_measurement_split.py` pins every moved definition to its
+pre-split AST, so a later edit cannot be mistaken for part of the move.
+
+Two mechanisms make these moves safe under the flattening exporter:
+
+- Each new module imports the base classes it needs *from*
+  **floquet_dark_mode_readout.py**. That is backwards against section 7.1 and
+  temporary: the direction inverts when **DarkBaseProgram** decomposes into the
+  shared sequence layer (section 7.2).
+- **floquet_dark_mode_readout.py** keeps the old attribute addresses alive
+  through a module-level `__getattr__` (PEP 562), because the acquisition
+  notebooks say `meas.qsim.floquet_dark_mode_readout.<Name>`. It has to be lazy
+  -- a top-level re-import would close the cycle above -- and being invisible to
+  `inspect.getmembers` is the point: each name is exported to the
+  **experiments** namespace by its owning module, exactly once.
+
+**dark_mode_readout.py** is not created yet. Its content is the dark-mode half
+of **DarkBaseProgram**/**DarkBaseExperiment**, which is a decomposition rather
+than a move and so waits on the phase-4 acquisition audit.
+
 ### 7.7 Runner responsibility
 
 The current **BatchRunner** does not belong in a physics module. Its eventual
@@ -1215,7 +1257,9 @@ green:
 - section 2.7 explicit file-format selection;
 - the one-time read-only `jobs.db` provenance export (section 3.2);
 - the `resolve_job_paths` seam (section 9.1) — **done**, `experiments/job_paths.py`;
-- the section 6 naming review.
+- the section 6 naming review;
+- splitting whole measurement families out of the god module (section 7.6) --
+  **done** for seven of the eight.
 
 ### Gated externally
 
@@ -1233,41 +1277,42 @@ acquisition notebook audit; no row authorizes deletion.
 |---|---|---|
 | **DarkBaseExperiment** | Legacy dark-mode acquisition façade or decomposed leaf behavior | Pending consumer audit |
 | **DarkBaseProgram** | Source of shared Floquet primitives plus legacy dark-mode behavior | Decompose; do not move intact |
-| **DarkBaseRProgram** | Dark-mode RAverager infrastructure | Pending consumer audit |
-| **ManStorMultiparityChevronRProgram** | Dark-mode multiparity chevron | Prospective distinct measurement |
-| **ManStorMultiparityChevronRExperiment** | Dark-mode multiparity chevron | Prospective distinct measurement |
-| **DarkT1Program** | Dark-mode T1 | Prospective distinct measurement |
-| **DarkT1Experiment** | Dark-mode T1 | Prospective distinct measurement |
+| **DarkBaseRProgram** | Dark-mode RAverager infrastructure | Moved to dark_mode_multiparity_chevron.py, its only subclass |
+| **ManStorMultiparityChevronRProgram** | Dark-mode multiparity chevron | Moved to dark_mode_multiparity_chevron.py |
+| **ManStorMultiparityChevronRExperiment** | Dark-mode multiparity chevron | Moved to dark_mode_multiparity_chevron.py |
+| **DarkT1Program** | Dark-mode T1 | Moved to dark_mode_t1.py |
+| **DarkT1Experiment** | Dark-mode T1 | Moved to dark_mode_t1.py |
 | **SidebandScrambleDarkProgramNewNew** | Legacy dark-mode/scramble bridge used as an MBR base | Remove MBR dependency; legacy fate pending |
-| **BroadbandGeValidationProgram** | Dark-mode broadband ge validation | Prospective distinct measurement |
+| **BroadbandGeValidationProgram** | Dark-mode broadband ge validation | Moved to dark_mode_broadband_ge_validation.py |
 | **NPhotonHamiltonianSpectroscopyProgram** | MBR quadrature acquisition | Replace with descriptively named leaf |
 | **EncodingOrthogonalityProgram** | MBR orthogonality-column acquisition | Replace with descriptively named leaf |
 | **EncodingPropagatorProgram** | MBR propagator-column acquisition | Replace with descriptively named leaf |
 | **EncodingStarkShiftCalibrationProgram** | MBR Stark-phase calibration | Replace with descriptively named leaf |
 | **EntireFloquetCyclePhaseCalibrationProgram** | MBR cycle-phase calibration | Replace with descriptively named leaf |
-| **FloquetDisplacementKerrProgram** | Floquet displacement Kerr | Distinct measurement family |
+| **FloquetDisplacementKerrProgram** | Floquet displacement Kerr | Moved to floquet_displacement_kerr.py |
 | **SinglePhotonFloquetSpectroscopyProgram** | Compatibility wrapper for old N=1 name | Compatibility-only candidate |
 | **FloquetPhaseAccumulationProgram** | Closed N=1 access-path phase measurement | Rename after domain review |
-| **CentralBosonLocalReturnProgram** | Central-boson local return | Distinct measurement family |
-| **CentralBosonLocalReturnExperiment** | Central-boson local return | Distinct measurement family |
+| **CentralBosonLocalReturnProgram** | Central-boson local return | Moved to central_boson_local_return.py |
+| **CentralBosonLocalReturnExperiment** | Central-boson local return | Moved to central_boson_local_return.py |
 | **SidebandScrambleDarkProgramNew** | Legacy dark-mode variant | Pending consumer audit |
 | **ManStorScrambleProgram** | Legacy scramble variant | Pending consumer audit |
 | **SidebandScrambleDarkProgramDebug** | Legacy diagnostic variant | Pending consumer audit |
 | **KerrWaitProgramDark** | Legacy Kerr-wait path | Pending consumer audit |
 | **SidebandScrambleDarkProgram** | Legacy dark-mode path; also imported elsewhere | Pending consumer audit |
-| **SidebandStarkAmplificationModifiedProgram_old** | Live sideband calibration despite suffix | Requires supported descriptive replacement |
-| **StorageSwapPhaseAccumulationProgram** | Storage-swap phase calibration | Prospective distinct measurement |
-| **SidebandStarkAmplificationModifiedProgram** | Sideband calibration | Pending variant comparison |
-| **SidebandStarkAmplificationModifiedProgram_newold** | Legacy sideband calibration variant | Pending consumer audit |
+| **SidebandStarkAmplificationModifiedProgram_old** | Live sideband calibration despite suffix | Moved to sideband_stark_shift_cal.py; still needs a descriptive replacement |
+| **StorageSwapPhaseAccumulationProgram** | Storage-swap phase calibration | Moved to storage_swap_phase_cal.py |
+| **SidebandStarkAmplificationModifiedProgram** | Sideband calibration | Moved to sideband_stark_shift_cal.py; variant comparison still pending |
+| **SidebandStarkAmplificationModifiedProgram_newold** | Legacy sideband calibration variant | Moved to sideband_stark_shift_cal.py; consumer audit still pending |
 | **BatchRunner** | Generic acquisition orchestration | Move only after new interfaces stabilize |
 | **EncodingHamiltonianSpectroscopyExperiment** | Multiple MBR leaf and aggregate workflows | Replace with concrete Experiment types |
-| **FloquetDisplacementKerrExperiment** | Floquet displacement Kerr | Distinct measurement family |
+| **FloquetDisplacementKerrExperiment** | Floquet displacement Kerr | Moved to floquet_displacement_kerr.py |
 
 Top-level helper functions receive the same treatment:
 
 - **flatten_exp_lists** is replaced by an explicit source-collection contract.
-- central-return classification and validation helpers move with the
-  central-boson measurement family.
+- central-return validation helpers moved with the central-boson measurement
+  family. **classify_two_parity_readouts** stayed behind: it is a generic
+  two-parity classifier and **DarkBaseExperiment.analyze_multiparity** calls it.
 - large configuration-mutating metadata helpers move behind the concrete
   Experiment that owns those parameters.
 
