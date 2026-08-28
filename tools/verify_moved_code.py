@@ -11,14 +11,31 @@ from pathlib import Path
 ROOT = Path(r"C:\python\multimode_expts_guan")
 GOD = "experiments/qsim/floquet_dark_mode_readout.py"
 
-# Each moved function, with the commit whose god file still contained it.
+# Each moved function, with the commit whose god file still contained it, the
+# module it landed in, and -- when the move renamed it -- its new name.
 MOVED = [
     ("analyze_matrix_pencil",       "04cea3a", "matrix_pencil"),
     ("analyze_matrix_pencil_trace", "04cea3a", "matrix_pencil"),
-    ("merge_spectra",               "c1867d6", "level_statistics"),
     ("analyze_level_statistics",    "c1867d6", "level_statistics"),
     ("analyze_sff",                 "c1867d6", "level_statistics"),
     ("analyze_spectrum",            "5365e4f", "mbr_spectrum"),
+    ("_cycle_branches",             "718a5db", "mbr_phase", "cycle_branches"),
+    ("build_phase_correction",      "718a5db", "mbr_phase"),
+    ("_unwrap_cycle_phase",         "718a5db", "mbr_phase", "unwrap_cycle_phase"),
+    ("_saved_correction",           "718a5db", "mbr_phase", "saved_correction"),
+]
+
+# Rows carry an optional fourth field; normalize to a fixed shape once.
+MOVED = [row if len(row) == 4 else (*row, row[0]) for row in MOVED]
+
+# Retired rows: moved verbatim, then intentionally changed by a later behavior
+# fix. A row here can never match again, and leaving it in MOVED makes this
+# tool report REVIEW NEEDED forever -- which is how a tool stops being read.
+# Kept as a record of which functions are no longer their pre-move originals.
+DIVERGED = [
+    ("merge_spectra", "level_statistics", "2da9cdc",
+     "now refuses off-diagonal merges instead of rebuilding theory from the "
+     "pre-generalization return amplitude"),
 ]
 
 def at(rev):
@@ -67,15 +84,14 @@ def normalize(text):
     return (text.replace("EncodingHamiltonianSpectroscopyExperiment.", "")
                 .replace("self.data", "data"))
 
-sources = {rev: at(rev) for rev in {r for _, r, _ in MOVED}}
+sources = {rev: at(rev) for rev in {r for _, r, _, _ in MOVED}}
 new_src = {m: (ROOT / f"fitting/qsim/{m}.py").read_text(encoding="utf-8")
-           for m in {m for _, _, m in MOVED}}
+           for m in {m for _, _, m, _ in MOVED}}
 
 ok = True
-for name, rev, module in MOVED:
+for name, rev, module, new_name in MOVED:
     old_fn = find_fn(sources[rev], name, "EncodingHamiltonianSpectroscopyExperiment")
-    new_fn = find_fn(new_src[module], name if name != "analyze_matrix_pencil_occupation"
-                     else "refit_occupation")
+    new_fn = find_fn(new_src[module], new_name)
     if old_fn is None or new_fn is None:
         print(f"  {name}: NOT FOUND (old={old_fn is not None}, new={new_fn is not None})")
         ok = False; continue

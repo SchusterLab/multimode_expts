@@ -578,3 +578,65 @@ lines), the five MBR acquisition programs, the legacy scramble/Kerr variants,
 `BatchRunner`, and the 2,341-line god Experiment. Nothing further splits
 cleanly by measurement -- the next cuts are the god Experiment (7.3/7.4) and
 the pulse base (7.2), and both are decompositions.
+
+## 2026-08-27 -- analyzer phase out to fitting/qsim/mbr_phase.py
+
+Four of the five remaining step-2 moves, done by the standard method:
+`_cycle_branches`, `build_phase_correction`, `_unwrap_cycle_phase`,
+`_saved_correction` -> `fitting/qsim/mbr_phase.py` (180 lines). God file
+5,666 -> 5,514. `verify_moved_code.py` reports all four IDENTICAL; full suite
+396 pass, golden green (it reaches `build_phase_correction` and
+`_cycle_branches` through the saved-correction path).
+
+Every call site was internal (`cls.`/`self.`), so four class attributes
+restore them:
+
+~~~python
+_cycle_branches        = staticmethod(mbr_phase_analysis.cycle_branches)
+build_phase_correction = staticmethod(mbr_phase_analysis.build_phase_correction)
+_unwrap_cycle_phase    = staticmethod(mbr_phase_analysis.unwrap_cycle_phase)
+_saved_correction      = staticmethod(mbr_phase_analysis.saved_correction)
+~~~
+
+The notebook hits on `cycle_branches` are all the keyword argument, not the
+method, so nothing outside the module had to change.
+
+### Two judgement calls
+
+**Underscores dropped in the new module.** `_unwrap_cycle_phase` as a
+module-level name says "private to this module" while being imported across
+one, which is backwards. Class attribute names are unchanged, so this is
+invisible to callers. Precedent: `refit_occupation`. Bodies are still verbatim,
+which is what the verify tool checks -- it compares body statements, so the
+rename and dropping `cls` from `_saved_correction` (it never used it) are both
+invisible to it.
+
+**`_saved_correction` moved even though it is not mathematics.** It reads
+`expt.cfg.expt`, so by the section 7.5 test -- arrays in, arrays out, no
+knowledge of acquisition -- it belongs on the Experiment, not in
+`fitting/qsim`. It moved anyway because it is the exact inverse of
+`build_phase_correction`: one computes the correction to apply, the other
+recovers the correction that was applied, and the sign and branch conventions
+they must agree on are stated once at the top of the module. Splitting the pair
+would put those conventions in two files. Narrowing its signature to plain
+config mappings, with the `expt.cfg.expt` extraction left behind on the
+Experiment, is a follow-up and is a real signature change, not a move.
+
+### verify_moved_code.py had been red since last night
+
+Not from this work. `merge_spectra` was moved verbatim in `c1867d6`, then
+deliberately changed in `2da9cdc` (it now refuses off-diagonal merges). Its
+verbatim-move claim retired the moment that fix landed, but the row stayed in
+`MOVED`, so the tool reported REVIEW NEEDED regardless of input -- the exact
+failure its own docstring warns about ("a tool that always says REVIEW NEEDED
+is a tool nobody reads").
+
+Moved to a new `DIVERGED` list, which prints the retirement and its reason
+instead of asserting identity. Rows now also carry an optional new name, which
+replaced the hardcoded `refit_occupation` special case.
+
+### Step 2 after this
+
+One move left: `subsample_spectroscopy_shots` (192 lines) ->
+`fitting/qsim/mbr_reconstruction.py`. It is the largest single move in step 2
+and the only one that creates that module.
