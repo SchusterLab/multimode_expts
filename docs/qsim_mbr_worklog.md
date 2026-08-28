@@ -751,3 +751,85 @@ call's arity and argument order.
   four stage classes inherit them, and `EncSpec.analyze_spectrum` keeps
   resolving with no forwarding needed, which is strictly better during the
   transition.
+
+## 2026-08-27 (end) -- shims dropped, explicit signature
+
+Two follow-ups to the stage split, both reversing decisions made earlier the
+same day.
+
+### The shims are gone
+
+Direction change, on request: a forwarding layer is a migration that never
+happens, and the new API was the point of the split. Break the old call sites
+loudly, once, and hand over a worked example instead.
+
+Deleted: the `analyze(stage=...)` dispatch, the `_StageForwarding` metaclass
+`__getattr__`, the instance `__getattr__`, `_MOVED_METHODS`, `_STAGE_OWNERS`,
+`_stage_owner`. God file 3,853 -> 3,640.
+
+What replaces them is a message, not a redirect. `STAGE_CLASSES` maps stage to
+class and `stage=` raises `TypeError` carrying the import line and the three
+calls to make. `display()` does the same when handed aggregate data, since it
+sniffed `self.data` rather than dispatching on `stage`.
+
+`MBR_analysis.py` opens with the migration reference: the stage->class table,
+all 14 moved class-level methods with their new owners, and an explicit "do not
+touch this" list. **The breakage list was computed against the live classes, not
+written from memory** -- of the 19 names jonginn addresses, 10 still resolve and
+9 moved. Worth repeating for the next such break: guessing that list would have
+produced a table that is wrong in both directions.
+
+`tests/mbr_reference.py` migrated too. It was a consumer like any other, and
+the golden found every site.
+
+### What must not move, and why it was checked
+
+`BatchRunner` records `ExptClass.__name__` and `.__module__` into the job, and
+jonginn submits with `ExptClass=EncSpec`. So the god class's **name and module
+are recorded provenance**, and renaming or relocating it would break data taking
+and the re-analysis of existing jobs. That is a different decision from breaking
+an analysis call site, and it was left alone. Renaming it to something honest
+like `MBRJobExperiment` is possible, but only alongside a provenance story.
+
+Also confirmed: `BatchRunner` never calls the aggregate `analyze`/`display`, so
+removing the facade could not affect acquisition. The remaining `analyze` on the
+god class is the per-job quadrature, which *is* what the worker runs after
+`acquire` -- the one branch that was ever this class's own work.
+
+### Explicit signature
+
+`MBRSpectrumExperiment.analyze` had 31 `kwargs.get` lookups. The 12 real knobs
+are now named parameters; the 19 `mpm_*` forwards collapsed to
+`**matrix_pencil_options`.
+
+The collapse is sound for a checkable reason: every default the old block spelled
+out was **identical** to `analyze_matrix_pencil`'s own, and it forwarded all of
+them and nothing else. Verified against the live signature before editing, and a
+test now pins that agreement so a later default change in `analyze_matrix_pencil`
+cannot silently redefine what the old call site meant.
+
+The live trap this closes: `zero_paddding=2` or `mpm_pencil_lenght=5` used to run
+to completion with the knob doing nothing. Both raise now.
+
+Retired the `analyze` row from the dispatch-body pin rather than re-blessing it.
+The pin existed to prove a move; the method has since been rewritten on purpose,
+so re-blessing would pin the rewrite to itself. The golden is the right net for
+an intentional edit -- 11 tests across fft, matrix_pencil, complete basis and
+both phase frames, green and unchanged.
+
+### Standing after today
+
+God file 5,521 -> 3,640, almost entirely pulse code. Suite 360 -> 479.
+
+Open, in the order they seem worth doing:
+
+1. The same explicit-signature treatment for the other three stages' `analyze`.
+   They are much smaller and none has a `**kwargs` trap of this size.
+2. `DarkBaseExperiment` (plus `classify_two_parity_readouts` and
+   `flatten_exp_lists`) out of the god module -- the prerequisite for extracting
+   the loading layer as `MBRAnalysisBase`, since a base class cannot resolve
+   lazily.
+3. `subsample_spectroscopy_shots` (194 lines) -> `fitting/qsim/`
+   `mbr_reconstruction.py`, the last item on the old step-2 worklist.
+4. The section 6 naming review, which now has to reckon with the god class name
+   being recorded provenance.
