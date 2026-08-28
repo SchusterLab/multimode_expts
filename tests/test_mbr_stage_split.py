@@ -25,6 +25,23 @@ GOD = "experiments/qsim/floquet_dark_mode_readout.py"
 GODCLASS = "EncodingHamiltonianSpectroscopyExperiment"
 
 STAGES = [
+    dict(stage="calibration",
+         module="mbr_phase_correction",
+         cls="MBRPhaseCorrectionExperiment",
+         pin="c8ce067",
+         methods=["_calibration_data", "phase_correction_from_calibration",
+                  "analyze_cycle_phase", "display_cycle_phase",
+                  "display_calibration_results", "display_calibration_summary",
+                  "analyze_calibration", "calibration_batch"],
+         # Declared edits: names the move invalidated, re-addressed. Applied to
+         # the pre-split source before comparing, so every other statement
+         # stays pinned. Same idea as tools/verify_moved_code.py's normalize().
+         edits=[
+             ("cls.analyze(calibration, stage='calibration')",
+              "cls.analyze(calibration)"),
+             ("EncodingHamiltonianSpectroscopyExperiment.display_cycle_phase",
+              "MBRPhaseCorrectionExperiment.display_cycle_phase"),
+         ]),
     dict(stage="orthogonality",
          module="mbr_orthogonality",
          cls="MBROrthogonalityExperiment",
@@ -90,7 +107,23 @@ def test_moved_method_is_unchanged(stage, method, before, after):
     old = before[spec["pin"]]
     assert method in old, f"{method} was not on {GODCLASS} at {spec['pin']}"
     assert method in after[stage], f"{method} is missing from {spec['cls']}"
-    assert ast.unparse(after[stage][method]) == ast.unparse(old[method])
+
+    was = ast.unparse(old[method])
+    for target, replacement in spec.get("edits", ()):
+        was = was.replace(target, replacement)
+    assert ast.unparse(after[stage][method]) == was
+
+
+@pytest.mark.parametrize("stage", sorted(BY_STAGE))
+def test_every_declared_edit_was_needed(stage, before):
+    """An edit that no longer matches is a hole in the pin, not a no-op."""
+    spec = BY_STAGE[stage]
+    source = "\n".join(
+        ast.unparse(before[spec["pin"]][m]) for m in spec["methods"])
+    for target, _ in spec.get("edits", ()):
+        assert target in source, (
+            f"{stage}: declared edit {target!r} matches nothing at "
+            f"{spec['pin']}; delete the row instead of leaving it")
 
 
 @pytest.mark.parametrize("stage,method", CASES)

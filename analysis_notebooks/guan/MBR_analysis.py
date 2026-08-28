@@ -25,6 +25,15 @@ from slab import AttrDict
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment as ManyBodyRamsey,
 )
+from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+
+# This file is the migration exemplar. The god Experiment is being split one
+# analyze(stage=...) branch at a time into an Experiment per stage, and this
+# notebook moves to each new class as it lands, so there is always one worked
+# example of the current API to copy from.
+#
+# Migrated so far: calibration -> MBRPhaseCorrectionExperiment.
+# Still on the stage= facade: spectrum. It moves when that stage does.
 
 # Where this machine sees the two shared trees. Configs record Windows paths
 # (output_root C:, vault_root G:), so off-prod every reader needs a mapping.
@@ -104,12 +113,17 @@ class _SavedProgram:
         return self._cycle_us
 
 
-def load(ids, load_shots=False):
+def load(ids, owner=ManyBodyRamsey, load_shots=False):
+    """Wrap saved H5 jobs in the Experiment that analyzes them.
+
+    `owner` is the stage class: the loading layer is inherited, so
+    `_from_expts` returns an instance of whichever class is asked.
+    """
     ids = list(ids)
     paths = vault_paths(ids)
     prog = _SavedProgram(**TIMING)
     jobs = [_SavedJob(j, *load_h5(paths[j], load_shots), paths[j], prog) for j in ids]
-    return ManyBodyRamsey._from_expts(jobs, job_ids=ids)
+    return owner._from_expts(jobs, job_ids=ids)
 
 
 # %% [markdown]
@@ -130,9 +144,11 @@ CYCLE_BRANCHES = {
 
 # %%
 expt = load(SPECTROSCOPY_IDS)
-calibration = load(CALIBRATION_IDS) if CALIBRATION_IDS else None
+calibration = (load(CALIBRATION_IDS, MBRPhaseCorrectionExperiment)
+               if CALIBRATION_IDS else None)
 if calibration is not None:
-    calibration.analyze(stage="calibration")
+    calibration.analyze()          # no stage argument: the class is the stage
+    calibration.display()
 
 
 # %% [markdown]

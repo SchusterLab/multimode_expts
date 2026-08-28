@@ -3461,45 +3461,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
                              hardware=hardware))
 
     @classmethod
-    def _calibration_data(cls, calibration, station=None):
-        if calibration is None:
-            return None
-        from pathlib import Path
-        if isinstance(calibration, (str, Path, list, tuple)):
-            calibration = cls.from_job_files(calibration, station=station)
-        if hasattr(calibration, "data"):
-            if "phase_mod180" not in calibration.data:
-                if hasattr(calibration, "batch_expts"):
-                    cls.analyze(calibration, stage="calibration")
-                else:
-                    raise ValueError("calibration must contain the aggregated calibration jobs")
-            return calibration.data
-        return AttrDict(calibration)
-
-    @classmethod
-    def phase_correction_from_calibration(cls, 
-                                          calibration, 
-                                          cycle_branches=0, 
-                                          second_branch=False,
-                                          station=None):
-        """
-        Prepare the phase calibration list, which is returned as `phase_by_occupation` 
-        by `build_phase_correction` method.
-        """
-        
-        calibration = cls._calibration_data(calibration, station=station)
-        if calibration is None:
-            raise ValueError("calibration is required")
-        if "hardware" not in calibration:
-            raise ValueError("calibration hardware is unavailable; analyze the calibration experiment first")
-        branches = cls._cycle_branches(calibration.occupations, cycle_branches)
-        if second_branch:
-            if np.any(branches):
-                raise ValueError("use either cycle_branches or second_branch, not both")
-            branches += 1
-        return cls.build_phase_correction(calibration.occupations, calibration.phase_mod180, branches, calibration.hardware.physical_kerr_MHz, calibration.hardware.floquet_cycle_us)
-
-    @classmethod
     def _postprocess_reconstruction(cls, 
                                     reconstruction, 
                                     saved_correction, 
@@ -3903,7 +3864,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
         if stage is None:
             self._quadrature(self)
         elif stage == "calibration":
-            self.data = self.analyze_calibration(
+            self.data = _stage_owner("calibration").analyze_calibration(
                 self.batch_expts, 
                 kwargs.get("occupations"), 
                 kwargs.get("cycle_pairs"),
@@ -3953,7 +3914,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
                 raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
             photon_number = photon_numbers.pop()
             calibration_arg = kwargs.get("calibration", None)
-            calibration = self._calibration_data(calibration_arg, getattr(self, "_analysis_station", None))
+            calibration = _stage_owner("calibration")._calibration_data(
+                calibration_arg, getattr(self, "_analysis_station", None))
             cycle_branches = kwargs.get("cycle_branches", 0)
             if kwargs.get("second_branch", False):
                 cycle_branches = self._cycle_branches(acquired_reconstruction.final_occupations,
@@ -4049,105 +4011,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
         expt.data["Pe"] = (signal - Ig) / (Ie - Ig)
         expt.data["return_quadrature"] = expt.data["Pe"][:, 0] - expt.data["Pe"][:, 1]
         return expt.data["return_quadrature"]
-
-    @classmethod
-    def analyze_cycle_phase(cls, #batch_expt is plugged in
-                            phi0_expts, 
-                            phi90_expts, 
-                            occupation, 
-                            cycle_pairs, 
-                            radius_fraction=0.1,
-                            unwrap_mode="pair"):
-        """
-        The method recieves phi0 and phi90 experiments to
-            1. reconstruct Q0-iQ90
-            2. Unwrap the phase using np.unwrap
-            2. fit phase per physical entire cycle.
-        
-        Return: AttrDict containing
-            - occupation: tuple(occupation), #state string tuple
-            - physical_cycles: physical_cycles, #floquet cycles
-            - complex_return: complex_return,
-            - relative_return: relative_return,
-            - return_phase: phase,
-            - phase_fit: phase_fit,
-            - fnames: fnames,
-            - phase_per_cycle: parameters[0],
-            - phase_error: np.sqrt(covariance[0, 0])}
-        """
-        if isinstance(phi0_expts, (list, tuple)):
-            phi0_expts = list(phi0_expts)
-        else:
-            phi0_expts = [phi0_expts]
-        if isinstance(phi90_expts, (list, tuple)):
-            phi90_expts = list(phi90_expts)
-        else:
-            phi90_expts = [phi90_expts]
-        if len(phi0_expts) != len(phi90_expts):
-            raise ValueError("phi=0 and phi=90 repeat counts differ")
-
-        if unwrap_mode not in ("pair", "odd_guide"):
-            raise ValueError("unwrap_mode must be 'pair' or 'odd_guide'")
-        cycle_pairs = np.asarray(cycle_pairs)
-        complex_returns = []
-        fnames = []
-
-        for expt_phi0, expt_phi90 in zip(phi0_expts, phi90_expts):
-            if not np.array_equal(expt_phi0.data["ypts"], cycle_pairs):
-                raise ValueError("saved cycle-pair sweep changed")
-            if not np.array_equal(expt_phi90.data["ypts"], cycle_pairs):
-                raise ValueError("saved cycle-pair sweep changed")
-            if not np.allclose(expt_phi0.data["xpts"], [0., 180.]):
-                raise ValueError("saved preparation phases changed")
-            if not np.allclose(expt_phi90.data["xpts"], [0., 180.]):
-                raise ValueError("saved preparation phases changed")
-            complex_returns.append(cls._quadrature(expt_phi0) - 1j * cls._quadrature(expt_phi90))
-            for expt in [expt_phi0, expt_phi90]:
-                if hasattr(expt, "fname"):
-                    fname = str(expt.fname).replace("\\", "/").split("/")[-1]
-                    fnames.append(fname)
-
-        complex_returns = np.asarray(complex_returns)
-        # Rows are repeated jobs; average the same cycle point across repeats.
-        complex_return = complex_returns.mean(axis=0)
-        magnitude = np.abs(complex_return)
-        positive = magnitude[np.isfinite(magnitude) & (magnitude > 0.)]
-        radius_floor = 0.
-        if len(positive):
-            radius_floor = radius_fraction * np.median(positive)
-        valid_mask = np.isfinite(complex_return) & (magnitude > radius_floor)
-        if unwrap_mode == "odd_guide":
-            physical_cycles = cycle_pairs
-            closed_mask = physical_cycles % 2 == 0
-        else:
-            physical_cycles = 2 * cycle_pairs
-            closed_mask = np.ones(len(cycle_pairs), dtype=bool)
-        fit_mask = valid_mask & closed_mask
-        if np.count_nonzero(fit_mask) < 3:
-            raise RuntimeError(f"{tuple(occupation)} has too few valid IQ points")
-
-        phase = cls._unwrap_cycle_phase(complex_return, physical_cycles, valid_mask, closed_mask)
-        parameters, covariance = np.polyfit(physical_cycles[fit_mask], 
-                                            phase[fit_mask], 
-                                            1, 
-                                            cov=True)
-        phase_fit = parameters[0] * physical_cycles + parameters[1]
-        relative_return = magnitude.copy()
-        if magnitude[0] > 1e-12:
-            relative_return = magnitude / magnitude[0]
-        return AttrDict(dict(
-            occupation=tuple(occupation),
-            physical_cycles=physical_cycles,
-            complex_return=complex_return,
-            relative_return=relative_return,
-            return_phase=phase,
-            phase_fit=phase_fit,
-            closed_mask=closed_mask,
-            unwrap_mode=unwrap_mode,
-            fnames=fnames,
-            phase_per_cycle=parameters[0],
-            phase_error=np.sqrt(covariance[0, 0]),
-        ))
 
     @classmethod
     def reconstruct_pair_spectroscopy(cls, spectroscopy_expts,
@@ -4363,83 +4226,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
         :func:`fitting.qsim.level_statistics.analyze_sff`."""
         data = self.data if data is None else data
         return level_statistics_analysis.analyze_sff(data, row_normalize=row_normalize)
-
-    @staticmethod
-    def display_cycle_phase(result, fig=None):
-        if fig is None:
-            fig = plt.figure(figsize=(12, 6), constrained_layout=True)
-        grid = fig.add_gridspec(2, 2, height_ratios=[4., 1.])
-        iq_axis = fig.add_subplot(grid[0, 0])
-        relative_axis = fig.add_subplot(grid[1, 0])
-        phase_axis = fig.add_subplot(grid[:, 1])
-
-        iq_axis.plot(result.complex_return.real, result.complex_return.imag, "o--", color="black", linewidth=1.2, markersize=4, label="raw return")
-        points = iq_axis.scatter(result.complex_return.real, result.complex_return.imag, c=result.physical_cycles, cmap="viridis", s=28, zorder=3)
-        if result.get("unwrap_mode", "pair") == "odd_guide":
-            iq_axis.scatter(result.complex_return.real[result.closed_mask], result.complex_return.imag[result.closed_mask], color="tab:red", s=30, zorder=4, label="closed pair")
-        iq_limit = 1.15 * np.nanmax(np.abs(result.complex_return))
-        if iq_limit <= 0.:
-            iq_limit = 1.
-        iq_axis.axhline(0., color="0.85")
-        iq_axis.axvline(0., color="0.85")
-        iq_axis.set(xlim=(-iq_limit, iq_limit), ylim=(-iq_limit, iq_limit), xlabel=r"$Q_0$", ylabel=r"$-Q_{90}$", title="raw complex return")
-        iq_axis.set_aspect("equal", adjustable="box")
-        iq_axis.legend()
-        fig.colorbar(points, ax=iq_axis, label="number of physical entire Floquet cycles")
-
-        relative_axis.plot(result.physical_cycles, result.relative_return, "o-")
-        if result.get("unwrap_mode", "pair") == "odd_guide":
-            relative_axis.plot(result.physical_cycles[result.closed_mask], result.relative_return[result.closed_mask], "o", color="tab:red")
-        relative_axis.axhline(1., color="0.7")
-        relative_axis.set(xlabel="number of physical entire Floquet cycles", ylabel=r"$|A|/|A(0)|$", title="relative return")
-
-        phase_axis.plot(result.physical_cycles, result.return_phase, "o", label="measured")
-        if result.get("unwrap_mode", "pair") == "odd_guide":
-            phase_axis.plot(result.physical_cycles[result.closed_mask], result.return_phase[result.closed_mask], "o", color="tab:red", label="closed pair (fit)")
-        phase_axis.plot(result.physical_cycles, result.phase_fit, label="fit")
-        phase_axis.set(xlabel="number of physical entire Floquet cycles", ylabel="return phase (deg)")
-        phase_axis.legend()
-
-        title = f"{result.occupation}: {result.phase_per_cycle:.4f} +/- {result.phase_error:.4f} deg / cycle"
-        if result.fnames:
-            title += "\n" + "\n".join(result.fnames)
-        fig.suptitle(title)
-        return fig
-
-    @staticmethod
-    def display_calibration_results(calibration, ncols=None):
-        results = calibration.results
-        if len(results) == 0:
-            raise ValueError("calibration results cannot be empty")
-        if ncols is None:
-            nrows = max(1, int(np.floor(np.sqrt(len(results)))))
-            ncols = int(np.ceil(len(results) / nrows))
-        elif not isinstance(ncols, (int, np.integer)) or ncols < 1:
-            raise ValueError("ncols must be a positive integer")
-        else:
-            ncols = min(int(ncols), len(results))
-            nrows = int(np.ceil(len(results) / ncols))
-
-        fig = plt.figure(figsize=(7 * ncols, 4 * nrows), constrained_layout=True)
-        subfigures = fig.subfigures(nrows, ncols, squeeze=False)
-        for result, subfigure in zip(results, subfigures.flat):
-            EncodingHamiltonianSpectroscopyExperiment.display_cycle_phase(result, subfigure)
-        for subfigure in subfigures.flat[len(results):]:
-            subfigure.set_visible(False)
-        return fig
-
-    @staticmethod
-    def display_calibration_summary(calibration):
-        rows = np.arange(len(calibration.occupations))
-        labels = [str(occupation) for occupation in calibration.occupations]
-        fig, ax = plt.subplots(figsize=(9, max(4, 0.35 * len(rows) + 2)), constrained_layout=True)
-        ax.errorbar(calibration.phase_mod180, rows, xerr=calibration.phase_error, fmt="o")
-        ax.axvline(0., color="0.7")
-        ax.set(xlabel="measured phase mod 180 (deg / entire cycle)", ylabel="occupation", title="entire-cycle calibration summary")
-        ax.set_yticks(rows)
-        ax.set_yticklabels(labels)
-        ax.invert_yaxis()
-        return fig
 
     @staticmethod
     def display_local_density_of_states(spectrum, occupations, ax=None):
@@ -4913,10 +4699,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
                 )
             return fig
         if "phase_mod180" in self.data:
+            owner = _stage_owner("calibration")
             if "results" not in self.data:
-                self.data = self.analyze_calibration(self.batch_expts)
-            self.display_calibration_results(self.data, kwargs.get("ncols", None))
-            return self.display_calibration_summary(self.data)
+                self.data = owner.analyze_calibration(self.batch_expts)
+            owner.display_calibration_results(self.data, kwargs.get("ncols", None))
+            return owner.display_calibration_summary(self.data)
         return super().display(data=self.data, **kwargs)
 
     @staticmethod
@@ -4977,145 +4764,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
         return AttrDict(dict(floquet_cycle_us=floquet_cycle_us,
                              couplings_MHz=np.asarray(couplings_MHz),
                              physical_kerr_MHz=physical_kerr_MHz))
-
-    @classmethod
-    def analyze_calibration(cls, 
-                            expts, 
-                            occupations=None, 
-                            cycle_pairs=None, 
-                            repeats=None):
-        """
-        The method first groups input experiments in a pair of encoding/decoding
-        calibration with phi 0 and 90. For each pair, extract phase accumulation
-        using `analyze_cycle_phase` and return the collective dictionary in the following form.
-        
-        Return: Attrdict containing
-            - "occupations": occupation_order,
-            - "results": results,
-            - "phase_mod180": np.asarray([result.phase_per_cycle for result in results]),
-            - "phase_error": np.asarray([result.phase_error for result in results])
-        
-        """
-        
-        if not expts:
-            raise ValueError("calibration expts cannot be empty")
-        grouped = {}
-        for expt in expts:
-            cfg = expt.cfg.expt
-            occupation = tuple(cfg.spectroscopy_occupations)
-            phi = cfg.spectroscopy_analyzer_phase
-            if phi not in (0., 90.):
-                raise ValueError(f"{occupation} has analyzer phase {phi}; expected 0 or 90")
-            if occupation not in grouped:
-                grouped[occupation] = {0.: [], 90.: []}
-            grouped[occupation][phi].append(expt)
-
-        if occupations is None:
-            occupation_order = list(grouped)
-        else:
-            occupation_order = [tuple(occupation) for occupation in occupations]
-        if len(occupation_order) != len(grouped) or set(occupation_order) != set(grouped):
-            raise ValueError("calibration occupations do not match the saved configs")
-        results = []
-        for occupation in occupation_order:
-            phi0_expts = grouped[occupation][0.]
-            phi90_expts = grouped[occupation][90.]
-            if not phi0_expts or len(phi0_expts) != len(phi90_expts):
-                raise ValueError(f"{occupation} needs the same nonzero number of phi=0 and phi=90 jobs")
-            if repeats is not None and len(phi0_expts) != repeats:
-                raise ValueError(f"{occupation} has {len(phi0_expts)} repeats; expected {repeats}")
-            saved_cycle_pairs = np.asarray(phi0_expts[0].cfg.expt.n_cycle_pairs)
-            if cycle_pairs is not None and not np.array_equal(saved_cycle_pairs, cycle_pairs):
-                raise ValueError(f"{occupation}: calibration cycles do not match the requested cycles")
-            saved_unwrap_mode = phi0_expts[0].cfg.expt.get("phase_unwrap_mode", "pair")
-            if saved_unwrap_mode == "odd_guide":
-                saved_cycle_counts = np.asarray(phi0_expts[0].cfg.expt.n_physical_cycles)
-            else:
-                saved_cycle_counts = saved_cycle_pairs
-            for expt in phi0_expts + phi90_expts:
-                if not np.array_equal(expt.cfg.expt.n_cycle_pairs, saved_cycle_pairs):
-                    raise ValueError(f"{occupation}: calibration configs use different cycles")
-                if expt.cfg.expt.get("phase_unwrap_mode", "pair") != saved_unwrap_mode:
-                    raise ValueError(f"{occupation}: calibration configs use different unwrap modes")
-                if saved_unwrap_mode == "odd_guide" and not np.array_equal(expt.cfg.expt.n_physical_cycles, saved_cycle_counts):
-                    raise ValueError(f"{occupation}: calibration configs use different physical cycles")
-            results.append(cls.analyze_cycle_phase(phi0_expts,
-                                                   phi90_expts,
-                                                   occupation,
-                                                   saved_cycle_counts,
-                                                   unwrap_mode=saved_unwrap_mode,))
-        return AttrDict(dict(
-            occupations=occupation_order,
-            results=results,
-            phase_mod180=np.asarray([result.phase_per_cycle for result in results]),
-            phase_error=np.asarray([result.phase_error for result in results]),
-        ))
-
-    @staticmethod
-    def calibration_batch(default_expt_cfg, 
-                          swap_stors, 
-                          occupations, 
-                          cycle_pairs,
-                          sync_cycles=10, 
-                          repeats=1, 
-                          reps=1500,
-                          unwrap_mode="pair"):
-        """
-        Returns dictionary of 
-            - default_expt_cfg
-            - list of config to be overrided in each job
-            - program selected for diagonal or interleaved off-diagonal acquisition
-            - repeats (usually 1)
-        The list of config is then used to make and batch jobs in a chunk.
-        For now, other paramters such as `update_phase`, `palindrome_scramble`, 
-        `spectroscopy_prep_phases`, `floquet_hardware_loop`, `swept_params`
-        are fixed.
-        In a nearest term, the program should migrate to using `floquet_hardware_loop`
-        
-        The actual batch is done by plugging the output to the BatchRunner.
-        Example:
-            calibration_batch = EncSpec.calibration_batch()
-            calibration_expt = calibration_runner.execute(calibration_batch.configs)
-        """
-        if unwrap_mode not in ("pair", "odd_guide"):
-            raise ValueError("unwrap_mode must be 'pair' or 'odd_guide'")
-
-        defaults = deepcopy(default_expt_cfg)
-        defaults.update(dict(
-            reps=reps, 
-            storage_reset=swap_stors, 
-            swap_stors=swap_stors,
-            n_cycle_pairs=cycle_pairs.tolist(),
-            scramble_sync_cycles=sync_cycles,
-            
-            floquet_hardware_loop=False,
-            detunings=[0.] * len(swap_stors), #detuning must be 0 for the calibration
-            update_phases=True, 
-            palindrome_scramble=False, 
-            phase_unwrap_mode=unwrap_mode,
-            spectroscopy_prep_phases=[0., 180.],
-        ))
-        if unwrap_mode == "odd_guide":
-            physical_cycles = []
-            for cycle_pair in cycle_pairs.tolist():
-                physical_cycles.extend([2 * cycle_pair, 2 * cycle_pair + 1])
-            defaults.update(dict(
-                n_physical_cycles=physical_cycles,
-                swept_params=["n_physical_cycle", "spectroscopy_prep_phase"],
-            ))
-        else:
-            defaults.update(dict(
-                swept_params=["n_cycle_pair", "spectroscopy_prep_phase"],
-            ))
-        configs = [
-            dict(spectroscopy_occupations=occupation, 
-                 spectroscopy_analyzer_phase=phi,
-                 final_analyzer_phase_per_cycle_deg=0.)
-            for occupation in occupations for _ in range(repeats) for phi in [0., 90.]
-        ]
-        return AttrDict(dict(default_expt_cfg=defaults, 
-                             configs=configs, 
-                             repeats=repeats))
 
     @staticmethod
     def spectroscopy_batch(default_expt_cfg, 
@@ -5219,6 +4867,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
 # Lazy for the same reason ``__getattr__`` below is: every stage module imports
 # its base class from here, so a top-level import would close the cycle.
 _STAGE_OWNERS = {
+    "calibration": ("mbr_phase_correction", "MBRPhaseCorrectionExperiment"),
     "orthogonality": ("mbr_orthogonality", "MBROrthogonalityExperiment"),
     "propagator": ("mbr_propagator", "MBRPropagatorExperiment"),
 }
@@ -5226,6 +4875,14 @@ _STAGE_OWNERS = {
 # Methods that left the god class, so ``EncSpec.<name>`` keeps resolving.
 # One row per moved method, not per class: the notebooks address the methods.
 _MOVED_METHODS = {
+    "_calibration_data": "calibration",
+    "analyze_calibration": "calibration",
+    "analyze_cycle_phase": "calibration",
+    "calibration_batch": "calibration",
+    "display_calibration_results": "calibration",
+    "display_calibration_summary": "calibration",
+    "display_cycle_phase": "calibration",
+    "phase_correction_from_calibration": "calibration",
     "display_orthogonality": "orthogonality",
     "orthogonality_batch": "orthogonality",
     "reconstruct_orthogonality": "orthogonality",
