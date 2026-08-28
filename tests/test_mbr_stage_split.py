@@ -152,16 +152,6 @@ def test_method_left_the_god_class(stage, method):
 
 
 @pytest.mark.parametrize("stage", sorted(BY_STAGE))
-def test_the_stage_facade_routes_to_the_owner(stage):
-    """jonginn's notebooks still call analyze(stage=...); it must still land."""
-    spec = BY_STAGE[stage]
-    legacy = importlib.import_module(
-        "experiments.qsim.floquet_dark_mode_readout")
-    owner = importlib.import_module(f"experiments.qsim.{spec['module']}")
-    assert legacy._stage_owner(stage) is getattr(owner, spec["cls"])
-
-
-@pytest.mark.parametrize("stage", sorted(BY_STAGE))
 def test_the_new_class_can_load_its_own_data(stage):
     """The loading layer is still inherited, so the new class is usable alone."""
     spec = BY_STAGE[stage]
@@ -185,8 +175,8 @@ def test_the_new_class_can_load_its_own_data(stage):
 # a broken *delegation*: the method can be byte-identical in its new home while
 # the facade no longer reaches it, or reaches it with the wrong arguments.
 #
-# These build the smallest data that each display and each facade branch will
-# accept. Synthetic, not physical: they assert plumbing, not numbers.
+# These build the smallest data each display will accept. Synthetic, not
+# physical: they assert plumbing, not numbers.
 
 def _orthogonality_data(size=3):
     import numpy as np
@@ -224,18 +214,6 @@ def test_orthogonality_display_runs_on_its_own_class():
     plt.close(figure)
 
 
-def test_the_god_display_still_reaches_the_moved_orthogonality_plot():
-    """The facade branch keys off `"matrix" in self.data`, not off `stage`."""
-    import matplotlib.pyplot as plt
-    from experiments.qsim.floquet_dark_mode_readout import (
-        EncodingHamiltonianSpectroscopyExperiment as God,
-    )
-
-    expt = God.__new__(God)
-    expt.data = _orthogonality_data()
-    figure = expt.display()
-    assert figure is not None
-    plt.close(figure)
 
 
 def test_orthogonality_display_rejects_foreign_data():
@@ -249,112 +227,21 @@ def test_orthogonality_display_rejects_foreign_data():
         expt.display()
 
 
-def test_the_god_analyze_delegates_propagator_with_its_arguments(monkeypatch):
-    """Propagator has no display and no fixture, so pin the call itself.
-
-    A wrong-arity or wrong-order delegation is exactly the failure the AST pin
-    is blind to, and no recorded data would catch it either.
-    """
-    from experiments.qsim.floquet_dark_mode_readout import (
-        EncodingHamiltonianSpectroscopyExperiment as God,
-    )
-    from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
-
-    seen = {}
-
-    def spy(cls, expts, occupations=None):
-        seen["expts"] = expts
-        seen["occupations"] = occupations
-        return "reconstructed"
-
-    monkeypatch.setattr(MBRPropagatorExperiment, "reconstruct_propagator",
-                        classmethod(spy))
-    expt = God.__new__(God)
-    expt.data = {}
-    expt.batch_expts = ["job-a", "job-b"]
-    order = [(2, 0, 0), (1, 1, 0)]
-
-    assert expt.analyze(stage="propagator", occupations=order) == "reconstructed"
-    assert seen == dict(expts=["job-a", "job-b"], occupations=order)
-
-
 # ---------------------------------------------------------------------------
-# The old class-level addresses.
+# The moved dispatch bodies.
 #
-# jonginn's acquisition notebook says `EncSpec.orthogonality_batch(...)` --
-# attribute access on the god class, not on a module. The module-level
-# __getattr__ that covers the moved *classes* cannot see it, so the first stage
-# split broke that call site silently: nothing in the repo calls it, and no
-# test looked. This pins every method the notebooks address by class.
-
-NOTEBOOK_CLASS_ATTRS = [
-    # measurement_notebooks/jonginn/qsim_experiments.ipynb
-    "_calibration_data", "_cycle_branches", "_saved_correction",
-    "_saved_parameters", "analyze_spectrum", "build_phase_correction",
-    "calibration_batch", "display_cycle_phase", "display_occupation",
-    "from_job_ids", "hardware_parameters", "orthogonality_batch",
-    "phase_correction_from_calibration", "spectroscopy_batch",
-    # measurement_notebooks/jonginn/data_postprocess.ipynb
-    "_from_expts", "analyze_matrix_pencil_trace",
-    "display_local_density_of_states", "merge_spectra",
-    "subsample_spectroscopy_shots",
-]
-
-
-@pytest.mark.parametrize("name", NOTEBOOK_CLASS_ATTRS)
-def test_the_notebook_class_address_still_resolves(name):
-    from experiments.qsim.floquet_dark_mode_readout import (
-        EncodingHamiltonianSpectroscopyExperiment as God,
-    )
-    assert getattr(God, name) is not None
-
-
-@pytest.mark.parametrize("stage,method", CASES)
-def test_the_moved_method_forwards_to_its_owner(stage, method):
-    """Forwarding must reach the owner, not a stale copy."""
-    from experiments.qsim.floquet_dark_mode_readout import (
-        EncodingHamiltonianSpectroscopyExperiment as God,
-    )
-    spec = BY_STAGE[stage]
-    owner = getattr(
-        importlib.import_module(f"experiments.qsim.{spec['module']}"),
-        spec["cls"])
-    assert getattr(God, method) == getattr(owner, method)
-
-
-def test_an_unknown_class_attribute_still_raises():
-    """The metaclass must not turn typos into something else."""
-    from experiments.qsim.floquet_dark_mode_readout import (
-        EncodingHamiltonianSpectroscopyExperiment as God,
-    )
-    with pytest.raises(AttributeError, match="no attribute 'no_such_method'"):
-        God.no_such_method
-
-
-def test_forwarding_does_not_recurse_through_the_subclasses():
-    """Stage classes inherit the metaclass; a blind getattr would loop."""
-    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-    assert not hasattr(MBROrthogonalityExperiment, "no_such_method")
-
-
-# ---------------------------------------------------------------------------
-# The dispatch bodies themselves.
-#
-# For the spectrum stage the `analyze` and `display` bodies were the bulk of
-# the work -- 104 and 28 lines of branch, not a delegating one-liner. They moved
-# into the new class's analyze/display verbatim, so they are pinned the same way
-# the methods are. Without this, the largest single block of moved code would be
-# the only one with no pin.
+# For the spectrum stage, `analyze` and `display` were not one-line branches --
+# 104 and 28 statements. They became the new class's analyze/display verbatim,
+# so they get the same pin the methods do. The pin reads the pre-split commit
+# from git, so it survives the branch being deleted from the god class.
 
 BRANCHES = [
-    dict(stage="spectrum", module="mbr_spectrum", cls="MBRSpectrumExperiment",
-         pin="be90ca8", method="analyze", test="stage == 'spectrum'",
-         trailing=["return self.data"],
+    dict(stage="spectrum", method="analyze", test="stage == 'spectrum'",
+         pin="be90ca8", trailing=["return self.data"],
          edits=[("_stage_owner('calibration')._calibration_data",
                  "MBRPhaseCorrectionExperiment._calibration_data")]),
-    dict(stage="spectrum", module="mbr_spectrum", cls="MBRSpectrumExperiment",
-         pin="be90ca8", method="display", test="'spectrum' in self.data",
-         trailing=[], edits=[]),
+    dict(stage="spectrum", method="display", test="'spectrum' in self.data",
+         pin="be90ca8", trailing=[], edits=[]),
 ]
 
 
@@ -379,7 +266,6 @@ def test_the_moved_dispatch_body_is_unchanged(spec, before, after):
             and isinstance(statements[0].value.value, str)):
         statements = statements[1:]          # the new docstring
     now = [ast.unparse(s) for s in statements]
-    # The new method adds a `data` prologue and, for analyze, a return.
     assert now[0] == "if data is not None:\n    self.data = data"
     body = now[1:]
     if spec["trailing"]:
@@ -388,14 +274,68 @@ def test_the_moved_dispatch_body_is_unchanged(spec, before, after):
     assert body == was
 
 
-@pytest.mark.parametrize(
-    "spec", BRANCHES, ids=[f"{b['stage']}.{b['method']}" for b in BRANCHES])
-def test_the_god_dispatch_now_only_delegates(spec):
-    """The branch must be gone from the god file, not duplicated there."""
+# ---------------------------------------------------------------------------
+# The break is deliberate, so it has to be a good break.
+#
+# No shim forwards the old addresses: `stage=` is gone and so are both
+# __getattr__ hooks. What replaces them is a message that names the class to
+# use. Consumers migrate once, against the exemplar, instead of running on
+# forwarding layers indefinitely.
+
+def test_no_forwarding_shim_survives():
+    """A shim left behind is a consumer that never migrates."""
+    root = Path(_repo_root())
+    source = (root / GOD).read_text(encoding="utf-8")
+    for shim in ("_stage_owner", "_MOVED_METHODS", "_StageForwarding"):
+        assert shim not in source, f"{shim} is still forwarding"
+
+
+def test_the_god_analyze_has_no_stage_branches():
     root = Path(_repo_root())
     god = _methods((root / GOD).read_text(encoding="utf-8"), GODCLASS)
-    body = _branch_body(god[spec["method"]], spec["test"])
-    assert len(body) == 1, (
-        f"god {spec['method']} still holds {len(body)} statements for "
-        f"{spec['stage']}; it should only delegate")
-    assert "_stage_owner" in body[0]
+    for method in ("analyze", "display"):
+        source = ast.unparse(god[method])
+        for stage in ("calibration", "orthogonality", "propagator", "spectrum"):
+            assert f"'{stage}'" not in source or "_stage_migration_message" in source
+
+
+@pytest.mark.parametrize("stage", sorted(BY_STAGE))
+def test_the_stage_error_names_its_replacement(stage):
+    """The traceback is the migration note, so it must be actionable."""
+    from experiments.qsim.floquet_dark_mode_readout import (
+        STAGE_CLASSES,
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    spec = BY_STAGE[stage]
+    assert STAGE_CLASSES[stage].endswith("." + spec["cls"])
+    assert STAGE_CLASSES[stage] == (
+        f"experiments.qsim.{spec['module']}.{spec['cls']}")
+
+    expt = God.__new__(God)
+    expt.data = {}
+    with pytest.raises(TypeError) as raised:
+        expt.analyze(stage=stage)
+    message = str(raised.value)
+    assert spec["cls"] in message
+    assert f"experiments.qsim.{spec['module']}" in message
+    assert "MBR_analysis.py" in message
+
+
+def test_the_named_replacement_actually_imports():
+    """A message naming a class that does not exist is worse than no message."""
+    from experiments.qsim.floquet_dark_mode_readout import STAGE_CLASSES
+
+    for stage, target in STAGE_CLASSES.items():
+        module, _, name = target.rpartition(".")
+        assert hasattr(importlib.import_module(module), name), (
+            f"{stage} points at {target}, which does not resolve")
+
+
+def test_an_unknown_stage_lists_the_real_ones():
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    expt = God.__new__(God)
+    expt.data = {}
+    with pytest.raises(TypeError, match="unknown stage"):
+        expt.analyze(stage="nonsense")

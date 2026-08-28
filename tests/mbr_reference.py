@@ -3,7 +3,7 @@
 This is the *current* behaviour of the many-body Ramsey spectrum workflow,
 captured so it can be pinned. It is the executable form of
 ``analysis_notebooks/guan/MBR_analysis.py``: pick job IDs, load their HDF5,
-run ``EncodingHamiltonianSpectroscopyExperiment.analyze(stage="spectrum")``.
+run ``MBRSpectrumExperiment.analyze()``.
 
 Not a test module (no ``test_`` prefix, so pytest does not collect it). It is
 imported by ``test_mbr_analysis_golden.py`` and by the baseline generator.
@@ -33,9 +33,8 @@ from slab import AttrDict
 
 from experiments.floquet_timing import resolve_floquet_timing
 from experiments.job_paths import resolve_job_paths
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-)
+from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
 
@@ -69,7 +68,6 @@ CHARACTERIZATION_JOB_IDS = dataset("august_quickplot", "spectroscopy")
 # Analysis parameters the reference notebook uses. Kept here rather than in the
 # test so the baseline generator and the test cannot disagree about them.
 CHARACTERIZATION_ANALYSIS = dict(
-    stage="spectrum",
     calibration=None,
     cycle_branches={(3, 0, 0, 0, 0): 1, (2, 0, 0, 1, 0): 1},
     fft_window="raw",
@@ -131,7 +129,7 @@ COMPLETE_BASIS_BRANCHES = {
                             spectrum_method="fft"),
 }
 
-COMPLETE_BASIS_ANALYSIS = dict(stage="spectrum", fft_window="raw", zero_padding=1)
+COMPLETE_BASIS_ANALYSIS = dict(fft_window="raw", zero_padding=1)
 
 PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
 
@@ -165,7 +163,8 @@ class _SavedJob:
         self.prog = prog
 
 
-def load_aggregate(job_ids=None, timing=None):
+def load_aggregate(job_ids=None, timing=None,
+                   owner=MBRSpectrumExperiment):
     """Build the aggregate Experiment for ``job_ids`` from HDF5 alone.
 
     Touches no station, no database, no vault note and no pickle, per the
@@ -175,7 +174,7 @@ def load_aggregate(job_ids=None, timing=None):
     paths = resolve_job_paths(ids)
     prog = _SavedProgram(**(timing or CHARACTERIZATION_TIMING))
     jobs = [_SavedJob(j, *load_h5(paths[j]), paths[j], prog) for j in ids]
-    return EncodingHamiltonianSpectroscopyExperiment._from_expts(jobs, job_ids=ids)
+    return owner._from_expts(jobs, job_ids=ids)
 
 
 def run_reference_analysis(job_ids=None, timing=None, **overrides):
@@ -205,7 +204,7 @@ def job_provenance():
     return json.loads(PROVENANCE.read_text())
 
 
-def load_aggregate_resolved(job_ids):
+def load_aggregate_resolved(job_ids, owner=MBRSpectrumExperiment):
     """Build an aggregate whose Floquet timing comes from the versioned configs.
 
     Unlike :func:`load_aggregate` this needs no hard-coded timing: each job's
@@ -231,7 +230,7 @@ def load_aggregate_resolved(job_ids):
             job_id, cfg, data, paths[job_id],
             _SavedProgram(timing["floquet_cycle_us"], timing["m1s_pi_fracs"]),
         ))
-    return EncodingHamiltonianSpectroscopyExperiment._from_expts(jobs, job_ids=ids)
+    return owner._from_expts(jobs, job_ids=ids)
 
 
 def load_complete_basis():
@@ -242,8 +241,9 @@ def load_complete_basis():
     branch reuses them.
     """
     if not hasattr(load_complete_basis, "_cache"):
-        calibration = load_aggregate_resolved(COMPLETE_BASIS_CALIBRATION_IDS)
-        calibration.analyze(stage="calibration")
+        calibration = load_aggregate_resolved(
+            COMPLETE_BASIS_CALIBRATION_IDS, owner=MBRPhaseCorrectionExperiment)
+        calibration.analyze()
         occupations = [tuple(map(int, o)) for o in calibration.data.occupations]
         if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
             raise RuntimeError(

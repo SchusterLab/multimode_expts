@@ -22,21 +22,67 @@ import h5py
 import matplotlib.pyplot as plt
 
 from slab import AttrDict
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment as ManyBodyRamsey,
-)
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
-# This file is the migration exemplar. The god Experiment is being split one
-# analyze(stage=...) branch at a time into an Experiment per stage, and this
-# notebook moves to each new class as it lands, so there is always one worked
-# example of the current API to copy from.
+# ===========================================================================
+# MIGRATION REFERENCE -- read this if your notebook broke.
 #
-# Migrated: calibration -> MBRPhaseCorrectionExperiment,
-#           spectrum    -> MBRSpectrumExperiment.
-# ManyBodyRamsey is kept only as the default `load` owner; nothing below passes
-# a `stage` any more.
+# `EncodingHamiltonianSpectroscopyExperiment.analyze(stage=...)` is gone. One
+# class used to answer four unrelated questions behind a string argument; each
+# is now its own Experiment with its own `analyze` and `display`. No forwarding
+# shim was left behind, deliberately: a shim is a migration that never happens,
+# and the new API is the point. This file is the worked example -- point your
+# agent at it.
+#
+# The pattern everywhere is the same three lines:
+#
+#     expt = <StageClass>.from_job_ids(ids, station=station)   # or from_job_files
+#     expt.analyze()
+#     expt.display()
+#
+#   stage=                 ->  class                            module
+#   ---------------------------------------------------------------------------
+#   'calibration'          ->  MBRPhaseCorrectionExperiment      mbr_phase_correction
+#   'orthogonality'        ->  MBROrthogonalityExperiment        mbr_orthogonality
+#   'propagator'           ->  MBRPropagatorExperiment           mbr_propagator
+#   'spectrum'             ->  MBRSpectrumExperiment             mbr_spectrum
+#
+# Class-level calls that MOVED. Same method, same arguments, new owner:
+#
+#   EncSpec.spectroscopy_batch             ->  MBRSpectrumExperiment
+#   EncSpec.subsample_spectroscopy_shots   ->  MBRSpectrumExperiment
+#   EncSpec.display_occupation             ->  MBRSpectrumExperiment
+#   EncSpec.display_local_density_of_states->  MBRSpectrumExperiment
+#   EncSpec.display_result                 ->  MBRSpectrumExperiment
+#   EncSpec.reconstruct_spectroscopy       ->  MBRSpectrumExperiment
+#   EncSpec.calibration_batch              ->  MBRPhaseCorrectionExperiment
+#   EncSpec.display_cycle_phase            ->  MBRPhaseCorrectionExperiment
+#   EncSpec.analyze_calibration            ->  MBRPhaseCorrectionExperiment
+#   EncSpec.phase_correction_from_calibration -> MBRPhaseCorrectionExperiment
+#   EncSpec._calibration_data              ->  MBRPhaseCorrectionExperiment
+#   EncSpec.orthogonality_batch            ->  MBROrthogonalityExperiment
+#   EncSpec.display_orthogonality          ->  MBROrthogonalityExperiment
+#   EncSpec.propagator_batch               ->  MBRPropagatorExperiment
+#
+# What did NOT change, so do not touch it:
+#
+# - Acquisition. `BatchRunner(ExptClass=EncSpec, ...)` is unchanged, and so is
+#   every `ExptClass=...DarkBaseExperiment`. The class name and module are
+#   recorded in job provenance, so they deliberately did not move.
+# - The loading layer: `from_job_ids`, `from_job_files`, `_from_expts`,
+#   `_saved_parameters`, `hardware_parameters`. Still on the same class, and
+#   inherited by all four stage classes -- which is why `from_job_ids` on a
+#   stage class returns an instance of *that* class.
+# - Shared numerics still reachable as before: `analyze_spectrum`,
+#   `merge_spectra`, `analyze_matrix_pencil`, `analyze_matrix_pencil_trace`,
+#   `build_phase_correction`. Their real home is now `fitting/qsim/` --
+#   `mbr_spectrum.py`, `level_statistics.py`, `matrix_pencil.py`,
+#   `mbr_phase.py` -- and importing from there is preferred in new code.
+#
+# If a call raises TypeError or AttributeError, read the message: the stage
+# errors name the replacement class and the import line to use.
+# ===========================================================================
 
 # Where this machine sees the two shared trees. Configs record Windows paths
 # (output_root C:, vault_root G:), so off-prod every reader needs a mapping.
@@ -116,7 +162,7 @@ class _SavedProgram:
         return self._cycle_us
 
 
-def load(ids, owner=ManyBodyRamsey, load_shots=False):
+def load(ids, owner=MBRSpectrumExperiment, load_shots=False):
     """Wrap saved H5 jobs in the Experiment that analyzes them.
 
     `owner` is the stage class: the loading layer is inherited, so

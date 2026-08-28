@@ -3277,58 +3277,8 @@ class BatchRunner(CharacterizationRunner):
         return batch_expt
 
 
-class _StageForwarding(type):
-    """Forward class-attribute lookups for methods that moved to a stage class.
-
-    The acquisition notebooks say ``EncSpec.orthogonality_batch``, which is
-    attribute access on the *class*. The module-level ``__getattr__`` at the
-    bottom of this file handles moved classes and cannot see it, so a stage
-    split silently breaks those call sites. A metaclass ``__getattr__`` runs
-    only after normal lookup fails, so it costs nothing on real attributes.
-
-    Lazy for the usual reason: every stage module imports this class as its
-    base, so resolving at class-creation time would close the cycle. The guard
-    against a name the stage class does not actually define matters -- stage
-    classes inherit this metaclass, so a blind ``getattr`` would recurse.
-
-    Transitional, and it goes away with the ``stage=`` dispatch, once consumers
-    address the owning classes directly.
-    """
-
-    def __getattr__(cls, name):
-        stage = _MOVED_METHODS.get(name)
-        if stage is not None:
-            owner = _stage_owner(stage)
-            if name in vars(owner):
-                return vars(owner)[name].__get__(None, owner)
-        raise AttributeError(
-            f"type object {cls.__name__!r} has no attribute {name!r}")
-
-
-class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
-                                                metaclass=_StageForwarding):
+class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     """Per-job and aggregate analysis for encoding-calibrated spectroscopy."""
-
-    def __getattr__(self, name):
-        """Instance-side twin of ``_StageForwarding.__getattr__``.
-
-        The ``stage=`` facade hands ``self`` -- an instance of *this* class --
-        to the owning stage class's ``analyze``, whose moved body then calls
-        ``self.reconstruct_spectroscopy``. Normal lookup cannot find that: it
-        lives on a subclass. The metaclass covers ``EncSpec.<name>`` but not
-        ``instance.<name>``, so both halves are needed.
-
-        Called only when normal lookup fails, so real attributes are untouched
-        and a missing ``self.data`` still raises AttributeError as before.
-        """
-        stage = _MOVED_METHODS.get(name)
-        if stage is not None:
-            owner = _stage_owner(stage)
-            attribute = vars(owner).get(name)
-            if attribute is not None:
-                return attribute.__get__(self, owner)
-        raise AttributeError(
-            f"{type(self).__name__!r} object has no attribute {name!r}")
 
     @classmethod
     def _from_expts(cls, expts, job_ids=None, station=None):
@@ -3481,152 +3431,23 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
                              mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors], 
                              hardware=hardware))
 
-    def analyze(self, 
-                data=None, 
-                **kwargs):
+    def analyze(self, data=None, **kwargs):
+        """Convert one saved job's two preparation phases to a real quadrature.
+
+        This is the per-job analysis the worker runs after ``acquire``. It
+        produces ``Q_phi`` at that job's analyzer phase and does *not* combine
+        the ``phi=0`` and ``phi=90`` jobs into a complex return -- that is an
+        aggregate step and belongs to a stage Experiment.
+
+        The four aggregate stages that used to hide behind ``stage=`` are now
+        separate classes; see :data:`STAGE_CLASSES` and the migration table in
+        ``analysis_notebooks/guan/MBR_analysis.py``.
         """
-        Analyze a single job or an aggregate calibration/spectroscopy experiment.
-
-        ``stage`` selects one of four paths:
-
-        1. ``None`` calls ``_quadrature`` for one saved job. It converts the two
-           preparation-phase measurements into the real return quadrature
-           ``Q_phi`` at that job's analyzer phase. It does not combine the
-           ``phi=0`` and ``phi=90`` jobs into a complex return.
-        2. ``'calibration'`` calls ``analyze_calibration`` on ``batch_expts`` and
-           returns the measured phase per physical Floquet cycle modulo 180
-           degrees, together with the reconstructed hardware and mode labels.
-        3. ``'orthogonality'`` reconstructs the raw zero-cycle cross-return
-           matrix between independently selected encoder and decoder paths.
-        4. ``'spectrum'`` reconstructs ``A_alpha=Q_0-iQ_90`` from all chunked
-           spectroscopy jobs, transforms it to the requested phase frame, and
-           calculates the measured FFT and the matching fixed-N Hamiltonian,
-           eigenenergies, LDOS weights, and theory spectrum.
-
-        The spectrum result stores both ``acquired_reconstruction`` and
-        ``reconstruction``. The former is exactly the complex return built from
-        the saved quadratures. The latter is the return after the selected
-        phase-frame transformation and is passed to ``analyze_spectrum``.
-        ``_postprocess_reconstruction`` is therefore called even for
-        ``phase_frame='as_acquired'``; with branch zero it is a pass-through that
-        also records the Kerr and phase-frame metadata.
-
-        Spectrum keyword arguments:
-
-        - ``occupations`` optionally fixes the reconstruction row order and must
-          exactly match the occupations represented by the jobs.
-        - ``calibration`` accepts the aggregate calibration experiment, its data,
-          or an equivalent mapping. It is required for ``zero_kerr`` and
-          ``manual_kerr`` because those frames must remove the saved analyzer
-          correction and construct a new occupation-dependent correction.
-        - ``phase_frame`` is ``'as_acquired'`` by default. ``'uncorrected'``
-          undoes the saved final-analyzer correction. ``'zero_kerr'`` rephases
-          to a Hamiltonian with zero M1 self-Kerr. ``'manual_kerr'`` rephases to
-          the signed value supplied through ``manual_kerr_MHz``. Supplying
-          ``manual_kerr_MHz`` with the default frame selects ``'manual_kerr'``.
-        - ``cycle_branches`` is an integer applied to every occupation, one
-          integer per occupation, or a dictionary keyed by occupation. A branch
-          ``b`` changes the chosen phase slope by ``180*b`` degrees per cycle.
-          ``second_branch=True`` is shorthand for adding one branch everywhere
-          and cannot be combined with a nonzero ``cycle_branches`` value.
-        - ``legacy`` resolves old jobs that did not save the analyzer-phase
-          application sign. Use ``True`` for the old ``+correction`` convention
-          and ``False`` for the current ``-correction`` convention. It is only
-          meaningful when undoing or replacing the acquired correction.
-        - ``fft_window`` is ``'raw'``, ``'hann'``, ``'hamming'``, or ``'blackman'``;
-          ``zero_padding`` is an integer FFT-length multiplier.
-        - ``spectrum_method`` is ``'fft'`` by default. ``'matrix_pencil'`` or
-          ``'mpm'`` additionally performs the rowwise Matrix-Pencil analysis and
-          stores it in ``data.matrix_pencil``. The raw FFT remains in
-          ``data.spectrum`` and is used as the unfiltered reference.
-        - ``shots_per_point`` optionally reconstructs every spectroscopy job
-          from that many randomly selected final-readout shots at each saved
-          cycle and preparation phase. ``shot_seed`` makes the without-
-          replacement subsets reproducible. The raw jobs are not modified, and
-          the returned data records the selection in ``shot_subsampling``.
-        - Matrix-Pencil heuristic kwargs use the ``mpm_`` prefix. The defaults
-          reproduce the notebook values: 
-          ``mpm_requested_max_modes=35``,
-          ``mpm_minimum_consecutive_ranks=3``,
-          ``mpm_minimum_supporting_rows=1``,
-          ``mpm_track_frequency_tolerance_bins=1.5``,
-          ``mpm_noise_singular_value_factor=2.858``, ; Note: this is math-based heuristic value based on REF: IEEE Transactions on Information Theory, 60(8), 5040-5053.
-          ``mpm_numerical_floor=1e-10``, and pole radii from 0.2 to 1.05.
-          
-          
-          Track/merge/dedup frequency tolerances, decay tolerances, pencil
-          length, rank-sweep extent, growth clipping, and least-squares rcond
-          can also be overridden; see ``analyze_matrix_pencil``.
-
-        Self-Kerr convention:
-
-        The standard acquisition preserves the physical M1 self-Kerr. For an
-        M1 occupation ``n``, ``analyze_spectrum`` uses
-
-            ``E_K/h=(K/2)*n*(n-1)``
-
-        with signed ``K=physical_kerr_MHz``. The corresponding return-phase
-        slope per Floquet cycle is
-
-            ``Gamma_K=-360*(E_K/h)*T_cycle`` degrees/cycle.
-
-        If calibration measures ``Gamma_meas=Gamma_unwanted+Gamma_K``, then
-        ``build_phase_correction`` sends
-
-            ``Gamma_correction=Gamma_meas-Gamma_K``
-
-        to the final analyzer. Removing Kerr from the correction does not remove
-        Kerr from the measured return: after the analyzer correction the residual
-        phase is ``Gamma_meas-Gamma_correction=Gamma_K``. Consequently the
-        default ``phase_frame='as_acquired'`` leaves ``A_alpha`` unchanged and
-        compares it with a Hamiltonian containing the signed physical Kerr.
-
-        ``phase_frame='zero_kerr'`` instead removes that residual physical-Kerr
-        evolution and compares against ``K=0``. ``phase_frame='manual_kerr'``
-        removes the acquired correction and applies the correction appropriate
-        to the requested signed Kerr. If a custom acquisition canceled the Kerr
-        itself by sending the full ``Gamma_meas`` to the analyzer, its acquired
-        return is already in the zero-Kerr frame and must not be interpreted by
-        the default physical-Kerr assumption.
-
-        ``data``, when supplied, replaces ``self.data`` before analysis. Every
-        path returns ``self.data``; the calibration and spectrum paths replace it
-        with their aggregate result.
-        """
-        
+        if "stage" in kwargs:
+            raise TypeError(_stage_migration_message(kwargs["stage"]))
         if data is not None:
             self.data = data
-        stage = kwargs.pop("stage", None)
-        if stage is None:
-            self._quadrature(self)
-        elif stage == "calibration":
-            self.data = _stage_owner("calibration").analyze_calibration(
-                self.batch_expts, 
-                kwargs.get("occupations"), 
-                kwargs.get("cycle_pairs"),
-                repeats=kwargs.get("repeats"),
-            )
-            saved = self._saved_parameters(self.batch_expts, 
-                                           getattr(self, "_analysis_station", None))
-            self.data.hardware = saved.hardware
-            self.data.mode_labels = saved.mode_labels
-        elif stage == "orthogonality":
-            self.data = _stage_owner("orthogonality").reconstruct_orthogonality(
-                self.batch_expts,
-                kwargs.get("occupations"),
-            )
-        elif stage == "propagator":
-            self.data = _stage_owner("propagator").reconstruct_propagator(
-                self.batch_expts,
-                kwargs.get("occupations"),
-            )
-        elif stage == "spectrum":
-            self.data = _stage_owner("spectrum").analyze(self, **kwargs)
-        else:
-            raise ValueError(
-                "stage must be 'calibration', 'orthogonality', "
-                "'propagator', or 'spectrum'"
-            )
+        self._quadrature(self)
         return self.data
 
     @staticmethod
@@ -3668,24 +3489,15 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
     # call sites, notebook usage and self.data defaulting.
     merge_spectra = staticmethod(level_statistics_analysis.merge_spectra)
 
-    def display(self, data=None, occupation=None, **kwargs):
+    def display(self, data=None, **kwargs):
+        """Per-job display, inherited. Aggregate plots live on the stage classes."""
         if data is not None:
             self.data = data
-        if "matrix" in self.data:
-            # Passing `self` to a subclass method is deliberate scaffolding:
-            # display_orthogonality touches `self` only for the `data` default,
-            # which is supplied here. It dies with this dispatch.
-            return _stage_owner("orthogonality").display_orthogonality(
-                self, self.data)
-        if "spectrum" in self.data:
-            return _stage_owner("spectrum").display(
-                self, occupation=occupation, **kwargs)
-        if "phase_mod180" in self.data:
-            owner = _stage_owner("calibration")
-            if "results" not in self.data:
-                self.data = owner.analyze_calibration(self.batch_expts)
-            owner.display_calibration_results(self.data, kwargs.get("ncols", None))
-            return owner.display_calibration_summary(self.data)
+        for key, stage in (("matrix", "orthogonality"),
+                           ("spectrum", "spectrum"),
+                           ("phase_mod180", "calibration")):
+            if key in self.data:
+                raise TypeError(_stage_migration_message(stage))
         return super().display(data=self.data, **kwargs)
 
     @staticmethod
@@ -3749,62 +3561,37 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
 
 
 # ---------------------------------------------------------------------------
-# Transitional: analyze(stage=...) for stages that now own their own Experiment.
+# Where the four aggregate stages went.
 #
-# jonginn's acquisition and post-processing notebooks still enter through
-# ``EncodingHamiltonianSpectroscopyExperiment.analyze(stage=...)``, so the string
-# dispatch keeps working while the stages move out one at a time.
-# ``analysis_notebooks/guan/MBR_analysis.py`` is migrated to the new classes as
-# each one lands, and is the worked example to copy from. This whole block goes
-# away once no consumer passes ``stage``.
-#
-# Lazy for the same reason ``__getattr__`` below is: every stage module imports
-# its base class from here, so a top-level import would close the cycle.
-_STAGE_OWNERS = {
-    "spectrum": ("mbr_spectrum", "MBRSpectrumExperiment"),
-    "calibration": ("mbr_phase_correction", "MBRPhaseCorrectionExperiment"),
-    "orthogonality": ("mbr_orthogonality", "MBROrthogonalityExperiment"),
-    "propagator": ("mbr_propagator", "MBRPropagatorExperiment"),
-}
-
-# Methods that left the god class, so ``EncSpec.<name>`` keeps resolving.
-# One row per moved method, not per class: the notebooks address the methods.
-_MOVED_METHODS = {
-    "_postprocess_reconstruction": "spectrum",
-    "analyze_level_statistics": "spectrum",
-    "analyze_matrix_pencil_occupation": "spectrum",
-    "analyze_sff": "spectrum",
-    "display_level_statistics": "spectrum",
-    "display_local_density_of_states": "spectrum",
-    "display_matrix_pencil": "spectrum",
-    "display_matrix_pencil_occupation": "spectrum",
-    "display_occupation": "spectrum",
-    "display_occupations": "spectrum",
-    "display_result": "spectrum",
-    "display_sff": "spectrum",
-    "reconstruct_pair_spectroscopy": "spectrum",
-    "reconstruct_spectroscopy": "spectrum",
-    "spectroscopy_batch": "spectrum",
-    "subsample_spectroscopy_shots": "spectrum",
-    "_calibration_data": "calibration",
-    "analyze_calibration": "calibration",
-    "analyze_cycle_phase": "calibration",
-    "calibration_batch": "calibration",
-    "display_calibration_results": "calibration",
-    "display_calibration_summary": "calibration",
-    "display_cycle_phase": "calibration",
-    "phase_correction_from_calibration": "calibration",
-    "display_orthogonality": "orthogonality",
-    "orthogonality_batch": "orthogonality",
-    "reconstruct_orthogonality": "orthogonality",
-    "propagator_batch": "propagator",
-    "reconstruct_propagator": "propagator",
+# `analyze(stage=...)` is gone. It selected between four unrelated analyses on
+# one class; each is now its own Experiment with its own analyze and display.
+# This map exists so the error message can name the replacement, and so
+# consumers can resolve a stage programmatically. It is not a forwarding shim:
+# nothing here re-exports a method under its old address.
+STAGE_CLASSES = {
+    "calibration": "experiments.qsim.mbr_phase_correction"
+                   ".MBRPhaseCorrectionExperiment",
+    "orthogonality": "experiments.qsim.mbr_orthogonality"
+                     ".MBROrthogonalityExperiment",
+    "propagator": "experiments.qsim.mbr_propagator.MBRPropagatorExperiment",
+    "spectrum": "experiments.qsim.mbr_spectrum.MBRSpectrumExperiment",
 }
 
 
-def _stage_owner(stage):
-    module, name = _STAGE_OWNERS[stage]
-    return getattr(importlib.import_module(f"experiments.qsim.{module}"), name)
+def _stage_migration_message(stage):
+    """Name the replacement class, so the traceback is the migration note."""
+    target = STAGE_CLASSES.get(stage)
+    if target is None:
+        return (f"unknown stage {stage!r}; the aggregate analyses are now "
+                f"separate Experiments: {sorted(STAGE_CLASSES)}")
+    module, _, name = target.rpartition(".")
+    return (
+        f"stage={stage!r} is gone. Use {name} instead:\n"
+        f"    from {module} import {name}\n"
+        f"    expt = {name}.from_job_files(paths)   # or .from_job_ids(...)\n"
+        f"    expt.analyze()\n"
+        f"    expt.display()\n"
+        f"See analysis_notebooks/guan/MBR_analysis.py for a worked example.")
 
 
 # ---------------------------------------------------------------------------
