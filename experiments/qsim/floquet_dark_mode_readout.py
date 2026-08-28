@@ -5558,9 +5558,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         There are two different methods to calculate the energy spectrum
         
         1. finite_difference
-        
+
         - Calculates Hamiltonian using three different time stamps
         - H = i/2pi dU/dt \\approx i/2pi (-3 U(0) + 4 U(q)-U(2q)) / 2qT_floquet
+        - This result is omitted when no [0, q, 2q] triple was acquired.
         
         2. eigen phase
         normalize endpoint contrast; generalized eigenvalues against the full
@@ -5645,45 +5646,85 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         endpoint_denominator = endpoint_factors[:, None] * endpoint_factors[None, :]
         endpoint_normalized_matrices = matrices / endpoint_denominator[None, :, :]
 
+        step_cycles = None
         if finite_difference_cycles is None:
-            step_cycles = None
             for cycle in sorted(cycle_index):
                 if cycle > 0 and cycle % 2 == 0 and 2 * cycle in cycle_index:
                     step_cycles = cycle
                     break
-            if step_cycles is None:
-                raise ValueError("need an even cycle triple [0, s, 2*s]")
-            finite_difference_cycles = [0, step_cycles, 2 * step_cycles]
+            if step_cycles is not None:
+                finite_difference_cycles = [0, step_cycles, 2 * step_cycles]
         else:
             finite_difference_cycles = [int(cycle) for cycle in finite_difference_cycles]
             if len(finite_difference_cycles) != 3:
                 raise ValueError("finite_difference_cycles must be [0, s, 2*s]")
             step_cycles = finite_difference_cycles[1]
-        expected_cycles = [0, step_cycles, 2 * step_cycles]
-        if step_cycles <= 0 or step_cycles % 2 != 0 or finite_difference_cycles != expected_cycles:
-            raise ValueError("finite_difference_cycles must be even [0, s, 2*s]")
-        for cycle in expected_cycles:
-            if cycle not in cycle_index:
-                raise ValueError(f"propagator matrix q={cycle} is missing")
-        
-        
-        M_step = matrices[cycle_index[step_cycles]]
-        M_twostep = matrices[cycle_index[2 * step_cycles]]
-        step_time_us = step_cycles * floquet_cycle_us
-        derivative = (-3. * M0 + 4. * M_step - M_twostep) / (2. * step_time_us)
-        measured_generator_MHz = 1j * derivative / (2. * np.pi)
-        effective_hamiltonian_MHz = np.linalg.solve(M0, measured_generator_MHz)
-        fd_values = generalized_eig(measured_generator_MHz, M0, right=False)
-        if not np.all(np.isfinite(fd_values)):
-            raise ValueError("finite-difference eigenfrequencies are not finite")
-        fd_values = fd_values[np.argsort(fd_values.real)]
 
-        predicted_twostep = M_step @ np.linalg.solve(M0, M_step)
-        semigroup_residual = np.linalg.norm(M_twostep - predicted_twostep)
-        semigroup_residual /= max(np.linalg.norm(M_twostep), 1e-10)
+        finite_difference = None
+        if finite_difference_cycles is not None:
+            expected_cycles = [0, step_cycles, 2 * step_cycles]
+            if (step_cycles <= 0 or step_cycles % 2 != 0
+                    or finite_difference_cycles != expected_cycles):
+                raise ValueError(
+                    "finite_difference_cycles must be even [0, s, 2*s]"
+                )
+            for cycle in expected_cycles:
+                if cycle not in cycle_index:
+                    raise ValueError(f"propagator matrix q={cycle} is missing")
+
+            M_step = matrices[cycle_index[step_cycles]]
+            M_twostep = matrices[cycle_index[2 * step_cycles]]
+            step_time_us = step_cycles * floquet_cycle_us
+            derivative = (
+                -3. * M0 + 4. * M_step - M_twostep
+            ) / (2. * step_time_us)
+            measured_generator_MHz = 1j * derivative / (2. * np.pi)
+            effective_hamiltonian_MHz = np.linalg.solve(
+                M0, measured_generator_MHz
+            )
+            fd_values = generalized_eig(
+                measured_generator_MHz, M0, right=False
+            )
+            if not np.all(np.isfinite(fd_values)):
+                raise ValueError(
+                    "finite-difference eigenfrequencies are not finite"
+                )
+            fd_values = fd_values[np.argsort(fd_values.real)]
+
+            predicted_twostep = M_step @ np.linalg.solve(M0, M_step)
+            semigroup_residual = np.linalg.norm(
+                M_twostep - predicted_twostep
+            )
+            semigroup_residual /= max(np.linalg.norm(M_twostep), 1e-10)
+            finite_difference = AttrDict(dict(
+                cycles=np.asarray(expected_cycles),
+                step_cycles=step_cycles,
+                step_time_us=step_time_us,
+                derivative_matrix_per_us=derivative,
+                access_dressed_generator_MHz=measured_generator_MHz,
+                endpoint_normalized_generator_MHz=(
+                    measured_generator_MHz / endpoint_denominator
+                ),
+                effective_hamiltonian_MHz=effective_hamiltonian_MHz,
+                hamiltonian_gauge="M0^-1 K = E^-1 H E",
+                complex_eigenfrequencies_MHz=fd_values,
+                eigenfrequencies_MHz=fd_values.real,
+                semigroup_relative_residual=float(semigroup_residual),
+            ))
 
         if eigenphase_cycle is None:
-            eigenphase_cycle = step_cycles
+            if step_cycles is not None:
+                eigenphase_cycle = step_cycles
+            else:
+                even_cycles = sorted(
+                    cycle for cycle in cycle_index
+                    if cycle > 0 and cycle % 2 == 0
+                )
+                if not even_cycles:
+                    raise ValueError(
+                        "need an available positive even eigenphase cycle"
+                    )
+                eigenphase_cycle = even_cycles[0]
         eigenphase_cycle = int(eigenphase_cycle)
         if eigenphase_cycle <= 0 or eigenphase_cycle % 2 != 0 or eigenphase_cycle not in cycle_index:
             raise ValueError("eigenphase_cycle must be an available positive even cycle")
@@ -5711,19 +5752,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             zero_cycle_condition_number=condition_number,
             endpoint_normalized_zero_cycle_identity_residual=float(identity_residual),
             calibration_diagonal_relative_mismatch=float(calibration_mismatch),
-            finite_difference=AttrDict(dict(
-                cycles=np.asarray(expected_cycles),
-                step_cycles=step_cycles,
-                step_time_us=step_time_us,
-                derivative_matrix_per_us=derivative,
-                access_dressed_generator_MHz=measured_generator_MHz,
-                endpoint_normalized_generator_MHz=measured_generator_MHz / endpoint_denominator,
-                effective_hamiltonian_MHz=effective_hamiltonian_MHz,
-                hamiltonian_gauge="M0^-1 K = E^-1 H E",
-                complex_eigenfrequencies_MHz=fd_values,
-                eigenfrequencies_MHz=fd_values.real,
-                semigroup_relative_residual=float(semigroup_residual),
-            )),
+            finite_difference=finite_difference,
             eigenphase=AttrDict(dict(
                 cycle=eigenphase_cycle,
                 generalized_eigenvalues=eigenphase_values,
