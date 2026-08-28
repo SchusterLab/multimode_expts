@@ -3277,7 +3277,36 @@ class BatchRunner(CharacterizationRunner):
         return batch_expt
 
 
-class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
+class _StageForwarding(type):
+    """Forward class-attribute lookups for methods that moved to a stage class.
+
+    The acquisition notebooks say ``EncSpec.orthogonality_batch``, which is
+    attribute access on the *class*. The module-level ``__getattr__`` at the
+    bottom of this file handles moved classes and cannot see it, so a stage
+    split silently breaks those call sites. A metaclass ``__getattr__`` runs
+    only after normal lookup fails, so it costs nothing on real attributes.
+
+    Lazy for the usual reason: every stage module imports this class as its
+    base, so resolving at class-creation time would close the cycle. The guard
+    against a name the stage class does not actually define matters -- stage
+    classes inherit this metaclass, so a blind ``getattr`` would recurse.
+
+    Transitional, and it goes away with the ``stage=`` dispatch, once consumers
+    address the owning classes directly.
+    """
+
+    def __getattr__(cls, name):
+        stage = _MOVED_METHODS.get(name)
+        if stage is not None:
+            owner = _stage_owner(stage)
+            if name in vars(owner):
+                return vars(owner)[name].__get__(None, owner)
+        raise AttributeError(
+            f"type object {cls.__name__!r} has no attribute {name!r}")
+
+
+class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment,
+                                                metaclass=_StageForwarding):
     """Per-job and aggregate analysis for encoding-calibrated spectroscopy."""
 
     @classmethod
@@ -5192,6 +5221,16 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 _STAGE_OWNERS = {
     "orthogonality": ("mbr_orthogonality", "MBROrthogonalityExperiment"),
     "propagator": ("mbr_propagator", "MBRPropagatorExperiment"),
+}
+
+# Methods that left the god class, so ``EncSpec.<name>`` keeps resolving.
+# One row per moved method, not per class: the notebooks address the methods.
+_MOVED_METHODS = {
+    "display_orthogonality": "orthogonality",
+    "orthogonality_batch": "orthogonality",
+    "reconstruct_orthogonality": "orthogonality",
+    "propagator_batch": "propagator",
+    "reconstruct_propagator": "propagator",
 }
 
 

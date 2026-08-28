@@ -226,3 +226,62 @@ def test_the_god_analyze_delegates_propagator_with_its_arguments(monkeypatch):
 
     assert expt.analyze(stage="propagator", occupations=order) == "reconstructed"
     assert seen == dict(expts=["job-a", "job-b"], occupations=order)
+
+
+# ---------------------------------------------------------------------------
+# The old class-level addresses.
+#
+# jonginn's acquisition notebook says `EncSpec.orthogonality_batch(...)` --
+# attribute access on the god class, not on a module. The module-level
+# __getattr__ that covers the moved *classes* cannot see it, so the first stage
+# split broke that call site silently: nothing in the repo calls it, and no
+# test looked. This pins every method the notebooks address by class.
+
+NOTEBOOK_CLASS_ATTRS = [
+    # measurement_notebooks/jonginn/qsim_experiments.ipynb
+    "_calibration_data", "_cycle_branches", "_saved_correction",
+    "_saved_parameters", "analyze_spectrum", "build_phase_correction",
+    "calibration_batch", "display_cycle_phase", "display_occupation",
+    "from_job_ids", "hardware_parameters", "orthogonality_batch",
+    "phase_correction_from_calibration", "spectroscopy_batch",
+    # measurement_notebooks/jonginn/data_postprocess.ipynb
+    "_from_expts", "analyze_matrix_pencil_trace",
+    "display_local_density_of_states", "merge_spectra",
+    "subsample_spectroscopy_shots",
+]
+
+
+@pytest.mark.parametrize("name", NOTEBOOK_CLASS_ATTRS)
+def test_the_notebook_class_address_still_resolves(name):
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    assert getattr(God, name) is not None
+
+
+@pytest.mark.parametrize("stage,method", CASES)
+def test_the_moved_method_forwards_to_its_owner(stage, method):
+    """Forwarding must reach the owner, not a stale copy."""
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    spec = BY_STAGE[stage]
+    owner = getattr(
+        importlib.import_module(f"experiments.qsim.{spec['module']}"),
+        spec["cls"])
+    assert getattr(God, method) == getattr(owner, method)
+
+
+def test_an_unknown_class_attribute_still_raises():
+    """The metaclass must not turn typos into something else."""
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    with pytest.raises(AttributeError, match="no attribute 'no_such_method'"):
+        God.no_such_method
+
+
+def test_forwarding_does_not_recurse_through_the_subclasses():
+    """Stage classes inherit the metaclass; a blind getattr would loop."""
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+    assert not hasattr(MBROrthogonalityExperiment, "no_such_method")
