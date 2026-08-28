@@ -25,10 +25,9 @@ The chain, in the order ``analyze`` runs it:
 4. spectrum, Hamiltonian and theory (``analyze_spectrum``, inherited alias);
 5. optionally Matrix Pencil instead of the FFT peak fit.
 
-``analyze`` still takes its knobs through ``**kwargs``, because it is the moved
-branch body unchanged. Turning those into an explicit signature is the obvious
-next step and is a real edit, so it gets its own commit with the golden as the
-net.
+``analyze`` takes its knobs as named parameters, so they show up in a
+notebook's ``?`` and a misspelling raises. The computation is unchanged and the
+golden baseline pins it; only the plumbing from argument to use was rewritten.
 
 Usage -- ``analysis_notebooks/guan/MBR_analysis.py`` is the worked example::
 
@@ -50,6 +49,7 @@ which no longer has that method, so it names this class. Declared in
 ``tests/test_mbr_stage_split.py``.
 """
 import copy
+import inspect
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
@@ -69,49 +69,120 @@ from experiments.qsim.floquet_dark_mode_readout import (
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 
 
+# Matrix-Pencil knobs keep the historical ``mpm_`` prefix at the call site and
+# lose it on the way through. The 19 defaults the old code spelled out here were
+# each identical to analyze_matrix_pencil's own -- verified, not assumed -- so
+# forwarding only what the caller passed is the same computation with one place
+# for a default to live instead of two that can drift apart.
+_MATRIX_PENCIL_PREFIX = "mpm_"
+_MATRIX_PENCIL_NAMES = frozenset(
+    inspect.signature(matrix_pencil_analysis.analyze_matrix_pencil)
+    .parameters) - {"reconstruction", "spectrum"}
+
+
+def _matrix_pencil_options(options):
+    """Strip the ``mpm_`` prefix; reject anything not a real option.
+
+    The old ``kwargs.get("mpm_...")`` chain silently ignored a typo, so a
+    mis-spelled tolerance looked like it worked and quietly did nothing.
+    """
+    stripped = {}
+    for name, value in options.items():
+        bare = name[len(_MATRIX_PENCIL_PREFIX):] if name.startswith(
+            _MATRIX_PENCIL_PREFIX) else name
+        if bare not in _MATRIX_PENCIL_NAMES:
+            raise TypeError(
+                f"analyze() got an unexpected keyword argument {name!r}. "
+                "Matrix-Pencil options are "
+                + ", ".join(sorted(_MATRIX_PENCIL_PREFIX + n
+                                   for n in _MATRIX_PENCIL_NAMES)))
+        stripped[bare] = value
+    return stripped
+
+
 class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
     """Aggregate: one fixed-photon-number sector's spectrum from its jobs."""
 
-    def analyze(self, data=None, **kwargs):
-        """Reconstruct, phase-correct, and transform to a spectrum.
+    def analyze(self,
+                data=None,
+                occupations=None,
+                calibration=None,
+                cycle_branches=0,
+                second_branch=False,
+                phase_frame="as_acquired",
+                manual_kerr_MHz=None,
+                legacy=None,
+                spectrum_method="fft",
+                fft_window="raw",
+                zero_padding=1,
+                shots_per_point=None,
+                shot_seed=None,
+                **matrix_pencil_options):
+        """Reconstruct, phase-correct, and transform one sector to a spectrum.
 
-        Body is the former ``analyze(stage='spectrum')`` branch, unchanged.
+        Same computation as before; the knobs are now in the signature instead
+        of behind ``kwargs.get``, so they are discoverable from a docstring or a
+        ``?`` in a notebook, and a misspelled one raises instead of being
+        silently ignored.
+
+        - ``occupations`` fixes the reconstruction row order. Defaults to the
+          order recorded in the jobs.
+        - ``calibration`` supplies the analyzer phase correction: an analyzed
+          :class:`MBRPhaseCorrectionExperiment`, paths to its jobs, or ``None``
+          to use whatever correction was applied at pulse time.
+        - ``cycle_branches`` picks the 180 deg/cycle branch per occupation --
+          int, list, or ``{occupation: branch}``. ``second_branch=True`` is the
+          shorthand for "add one to every branch" and cannot be combined with a
+          nonzero ``cycle_branches``.
+        - ``phase_frame`` selects the frame the reconstruction is transformed
+          into before the spectrum is taken; ``'as_acquired'`` keeps the frame
+          the data was measured in. ``manual_kerr_MHz`` overrides the Kerr rate
+          used to build the correction, and ``legacy`` handles the pre-marking
+          analyzer convention.
+        - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'`` (``'mpm'`` and
+          ``'rowwise_matrix_pencil'`` are accepted spellings). Matrix Pencil is
+          stored in ``data.matrix_pencil``; the FFT is computed either way.
+        - ``shots_per_point`` subsamples the raw shots, with ``shot_seed`` for
+          reproducibility. ``shot_seed`` alone is an error.
+        - ``**matrix_pencil_options`` are forwarded to
+          :func:`fitting.qsim.matrix_pencil.analyze_matrix_pencil`, spelled with
+          the historical ``mpm_`` prefix (``mpm_pencil_length=...``). Unknown
+          names raise, which the old ``kwargs.get`` chain could not do.
         """
         if data is not None:
             self.data = data
-        spectrum_method = str(kwargs.get("spectrum_method", "fft")).lower()
+        matrix_pencil_options = _matrix_pencil_options(matrix_pencil_options)
+        spectrum_method = str(spectrum_method).lower()
         if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
             spectrum_method = "matrix_pencil"
         if spectrum_method not in ("fft", "matrix_pencil"):
             raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
         analysis_expts = self.batch_expts
         shot_subsampling = None
-        shots_per_point = kwargs.get("shots_per_point", None)
         if shots_per_point is not None:
             analysis_expts, shot_subsampling = self.subsample_spectroscopy_shots(
                 self.batch_expts,
                 shots_per_point,
-                seed=kwargs.get("shot_seed", None),
+                seed=shot_seed,
             )
-        elif kwargs.get("shot_seed", None) is not None:
+        elif shot_seed is not None:
             raise ValueError("shot_seed requires shots_per_point")
-        saved = self._saved_parameters(analysis_expts, 
+        saved = self._saved_parameters(analysis_expts,
                                        getattr(self, "_analysis_station", None))
         if "offdiag_cycles" in analysis_expts[0].cfg.expt:
             acquired_reconstruction = self.reconstruct_pair_spectroscopy(
-                analysis_expts, kwargs.get("occupations"))
+                analysis_expts, occupations)
         else:
             acquired_reconstruction = self.reconstruct_spectroscopy(
-                analysis_expts, kwargs.get("occupations"))
+                analysis_expts, occupations)
         photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
         if len(photon_numbers) != 1:
             raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
         photon_number = photon_numbers.pop()
-        calibration_arg = kwargs.get("calibration", None)
+        calibration_arg = calibration
         calibration = MBRPhaseCorrectionExperiment._calibration_data(
             calibration_arg, getattr(self, "_analysis_station", None))
-        cycle_branches = kwargs.get("cycle_branches", 0)
-        if kwargs.get("second_branch", False):
+        if second_branch:
             cycle_branches = self._cycle_branches(acquired_reconstruction.final_occupations,
                                                   cycle_branches)
             if np.any(cycle_branches):
@@ -119,36 +190,36 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             cycle_branches += 1
         saved_correction = self._saved_correction(analysis_expts)
         postprocessed = self._postprocess_reconstruction(
-            acquired_reconstruction, 
-            saved_correction, 
-            calibration, 
+            acquired_reconstruction,
+            saved_correction,
+            calibration,
             saved.hardware,
-            kwargs.get("phase_frame", "as_acquired"), 
-            kwargs.get("manual_kerr_MHz", None), 
-            cycle_branches, 
-            kwargs.get("legacy", None))
+            phase_frame,
+            manual_kerr_MHz,
+            cycle_branches,
+            legacy)
         spectrum = self.analyze_spectrum(
-            postprocessed.reconstruction, 
-            photon_number, 
+            postprocessed.reconstruction,
+            photon_number,
             saved.detunings,
-            saved.hardware.couplings_MHz, 
+            saved.hardware.couplings_MHz,
             saved.hardware.floquet_cycle_us,
             postprocessed.physical_kerr_MHz,
-            kwargs.get("fft_window", "raw"),
-            kwargs.get("zero_padding", 1),
+            fft_window,
+            zero_padding,
         )
         self.data = AttrDict(dict(
-            calibration=calibration, 
+            calibration=calibration,
             correction=saved_correction,
-            saved_correction=saved_correction, 
+            saved_correction=saved_correction,
             target_correction=postprocessed.target_correction,
-            acquired_reconstruction=acquired_reconstruction, 
+            acquired_reconstruction=acquired_reconstruction,
             reconstruction=postprocessed.reconstruction,
             spectrum=spectrum,
-            hardware=saved.hardware, 
-            photon_number=photon_number, 
+            hardware=saved.hardware,
+            photon_number=photon_number,
             detunings=saved.detunings,
-            mode_labels=saved.mode_labels, 
+            mode_labels=saved.mode_labels,
             phase_frame=postprocessed.phase_frame,
             cycle_branches=postprocessed.cycle_branches,
             analyzer_phase_application_sign=postprocessed.analyzer_phase_application_sign,
@@ -159,25 +230,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             self.data.matrix_pencil = self.analyze_matrix_pencil(
                 postprocessed.reconstruction,
                 spectrum,
-                requested_max_modes=kwargs.get("mpm_requested_max_modes", None),
-                pencil_length=kwargs.get("mpm_pencil_length", None),
-                minimum_consecutive_ranks=kwargs.get("mpm_minimum_consecutive_ranks", 3),
-                minimum_supporting_rows=kwargs.get("mpm_minimum_supporting_rows", 1),
-                track_frequency_tolerance_bins=kwargs.get("mpm_track_frequency_tolerance_bins", 1.5),
-                merge_frequency_tolerance_bins=kwargs.get("mpm_merge_frequency_tolerance_bins", None),
-                dedup_frequency_tolerance_bins=kwargs.get("mpm_dedup_frequency_tolerance_bins", None),
-                track_decay_tolerance_per_us=kwargs.get("mpm_track_decay_tolerance_per_us", None),
-                dedup_decay_tolerance_per_us=kwargs.get("mpm_dedup_decay_tolerance_per_us", None),
-                match_decay=kwargs.get("mpm_match_decay", True),
-                numerical_floor=kwargs.get("mpm_numerical_floor", 1e-10),
-                noise_singular_value_factor=kwargs.get("mpm_noise_singular_value_factor", 2.858), # this is based on the paper; IEEE Transactions on Information Theory 60.8 (2014): 5040-5053.
-                minimum_pole_radius=kwargs.get("mpm_minimum_pole_radius", 0.2),
-                maximum_pole_radius=kwargs.get("mpm_maximum_pole_radius", 1.05),
-                require_early_start=kwargs.get("mpm_require_early_start", True),
-                rank_sweep_extra=kwargs.get("mpm_rank_sweep_extra", None),
-                clip_growth=kwargs.get("mpm_clip_growth", True),
-                least_squares_rcond=kwargs.get("mpm_least_squares_rcond", None),
-                store_rank_sweeps=kwargs.get("mpm_store_rank_sweeps", False),
+                **matrix_pencil_options,
             )
         if shot_subsampling is not None:
             self.data.shot_subsampling = shot_subsampling

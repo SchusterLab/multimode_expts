@@ -16,6 +16,7 @@ that stage: delete its row, do not re-bless it.
 """
 import ast
 import importlib
+import inspect
 import subprocess
 from pathlib import Path
 
@@ -236,10 +237,11 @@ def test_orthogonality_display_rejects_foreign_data():
 # from git, so it survives the branch being deleted from the god class.
 
 BRANCHES = [
-    dict(stage="spectrum", method="analyze", test="stage == 'spectrum'",
-         pin="be90ca8", trailing=["return self.data"],
-         edits=[("_stage_owner('calibration')._calibration_data",
-                 "MBRPhaseCorrectionExperiment._calibration_data")]),
+    # The `analyze` row is retired. Its pin protected the move; the method has
+    # since been rewritten on purpose (explicit signature in place of the
+    # kwargs.get chain), so re-blessing it would only pin the rewrite to
+    # itself. The golden baseline covers that change, which is the right net
+    # for an intentional edit.
     dict(stage="spectrum", method="display", test="'spectrum' in self.data",
          pin="be90ca8", trailing=[], edits=[]),
 ]
@@ -339,3 +341,106 @@ def test_an_unknown_stage_lists_the_real_ones():
     expt.data = {}
     with pytest.raises(TypeError, match="unknown stage"):
         expt.analyze(stage="nonsense")
+
+
+# ---------------------------------------------------------------------------
+# The explicit analyze signature.
+#
+# Two things changed that nothing else covers. The 19 Matrix-Pencil defaults
+# the old code spelled out were each identical to analyze_matrix_pencil's own,
+# so forwarding only what the caller passed is equivalent -- but only if the
+# forwarding actually works. And the old kwargs.get chain silently ignored a
+# typo, which is the failure these lock out.
+
+def _spectrum_expt():
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    return MBRSpectrumExperiment.__new__(MBRSpectrumExperiment)
+
+
+def test_the_analyze_signature_names_its_knobs():
+    """The point of the change: discoverable from the signature, not the body."""
+    import inspect
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+
+    parameters = inspect.signature(MBRSpectrumExperiment.analyze).parameters
+    for name in ("occupations", "calibration", "cycle_branches",
+                 "second_branch", "phase_frame", "manual_kerr_MHz", "legacy",
+                 "spectrum_method", "fft_window", "zero_padding",
+                 "shots_per_point", "shot_seed"):
+        assert name in parameters, f"analyze lost the {name} parameter"
+    assert "kwargs" not in parameters
+
+
+def test_matrix_pencil_options_lose_their_prefix():
+    from experiments.qsim.mbr_spectrum import _matrix_pencil_options
+
+    assert _matrix_pencil_options({"mpm_pencil_length": 7}) == {
+        "pencil_length": 7}
+    assert _matrix_pencil_options({}) == {}
+    # Accepted unprefixed too, since that is what the callee actually names.
+    assert _matrix_pencil_options({"pencil_length": 7}) == {"pencil_length": 7}
+
+
+def test_a_misspelled_matrix_pencil_option_raises():
+    """The old kwargs.get chain ignored this, so the knob silently did nothing."""
+    from experiments.qsim.mbr_spectrum import _matrix_pencil_options
+
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        _matrix_pencil_options({"mpm_pencil_lenght": 7})
+
+
+def test_an_unknown_analyze_argument_raises():
+    expt = _spectrum_expt()
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        expt.analyze(mpm_not_a_real_knob=1)
+    # And a plain misspelling of a real parameter, which **kwargs would swallow.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        expt.analyze(zero_paddding=2)
+
+
+def test_the_forwarded_options_reach_analyze_matrix_pencil():
+    """Equivalence to the old 19-line block rests on this actually forwarding."""
+    from experiments.qsim.mbr_spectrum import _matrix_pencil_options
+    from fitting.qsim import matrix_pencil
+
+    forwarded = _matrix_pencil_options({
+        "mpm_pencil_length": 5,
+        "mpm_minimum_consecutive_ranks": 4,
+        "mpm_store_rank_sweeps": True,
+    })
+    parameters = inspect.signature(matrix_pencil.analyze_matrix_pencil).parameters
+    for name, value in forwarded.items():
+        assert name in parameters
+        assert parameters[name].default != value, (
+            f"{name} test value equals the default, so this proves nothing")
+
+
+def test_every_old_mpm_default_matched_the_callee():
+    """The collapse is only sound because the two sets of defaults agreed.
+
+    Pins that agreement: if analyze_matrix_pencil changes a default, this is
+    the record of what the pre-collapse call site used to pass.
+    """
+    from fitting.qsim import matrix_pencil
+
+    was = {
+        "requested_max_modes": None, "pencil_length": None,
+        "minimum_consecutive_ranks": 3, "minimum_supporting_rows": 1,
+        "track_frequency_tolerance_bins": 1.5,
+        "merge_frequency_tolerance_bins": None,
+        "dedup_frequency_tolerance_bins": None,
+        "track_decay_tolerance_per_us": None,
+        "dedup_decay_tolerance_per_us": None, "match_decay": True,
+        "numerical_floor": 1e-10, "noise_singular_value_factor": 2.858,
+        "minimum_pole_radius": 0.2, "maximum_pole_radius": 1.05,
+        "require_early_start": True, "rank_sweep_extra": None,
+        "clip_growth": True, "least_squares_rcond": None,
+        "store_rank_sweeps": False,
+    }
+    parameters = inspect.signature(matrix_pencil.analyze_matrix_pencil).parameters
+    assert set(was) == set(parameters) - {"reconstruction", "spectrum"}
+    for name, value in was.items():
+        assert parameters[name].default == value, (
+            f"{name}: analyze_matrix_pencil now defaults to "
+            f"{parameters[name].default!r}, but the old call site passed "
+            f"{value!r}. Collapsing the block changed behaviour.")
