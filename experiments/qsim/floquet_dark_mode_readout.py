@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import qutip as qt
+from scipy.linalg import eig as generalized_eig
 from scipy.signal import find_peaks
 from qick import *
 from qick.helpers import gauss
@@ -27,6 +28,7 @@ from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 from copy import copy, deepcopy
 from itertools import product
+from math import comb
 
 from collections import defaultdict
 from numpy.lib.stride_tricks import sliding_window_view
@@ -4976,7 +4978,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         """
         Analyze a single job or an aggregate calibration/spectroscopy experiment.
 
-        ``stage`` selects one of four paths:
+        ``stage`` selects one of five paths:
 
         1. ``None`` calls ``_quadrature`` for one saved job. It converts the two
            preparation-phase measurements into the real return quadrature
@@ -4987,7 +4989,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
            degrees, together with the reconstructed hardware and mode labels.
         3. ``'orthogonality'`` reconstructs the raw zero-cycle cross-return
            matrix between independently selected encoder and decoder paths.
-        4. ``'spectrum'`` reconstructs ``A_alpha=Q_0-iQ_90`` from all chunked
+        4. ``'propagator'`` reconstructs full ``M_q[j,i]`` matrices.  When a
+           calibration experiment is supplied, it also returns the three-point
+           finite-difference Hamiltonian and generalized-eigenvalue frequencies.
+        5. ``'spectrum'`` reconstructs ``A_alpha=Q_0-iQ_90`` from all chunked
            spectroscopy jobs, transforms it to the requested phase frame, and
            calculates the measured FFT and the matching fixed-N Hamiltonian,
            eigenenergies, LDOS weights, and theory spectrum.
@@ -5109,6 +5114,25 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 self.batch_expts,
                 kwargs.get("occupations"),
             )
+            calibration_arg = kwargs.get("calibration", None)
+            if calibration_arg is not None:
+                station = getattr(self, "_analysis_station", None)
+                calibration = self._calibration_data(calibration_arg, station)
+                floquet_cycle_us = kwargs.get("floquet_cycle_us", None)
+                if floquet_cycle_us is None:
+                    self.data.hardware = self._saved_parameters(
+                        self.batch_expts, station
+                    ).hardware
+                    floquet_cycle_us = self.data.hardware.floquet_cycle_us
+                self.data.update(self.analyze_propagator_dynamics(
+                    self.data, calibration, floquet_cycle_us,
+                    finite_difference_cycles=kwargs.get(
+                        "finite_difference_cycles", None
+                    ),
+                    eigenphase_cycle=kwargs.get("eigenphase_cycle", None),
+                ))
+                self.data.calibration = calibration
+                self.data.floquet_cycle_us = float(floquet_cycle_us)
         elif stage == "spectrum":
             spectrum_method = str(kwargs.get("spectrum_method", "fft")).lower()
             if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
@@ -5470,32 +5494,31 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     def reconstruct_propagator(cls,
                                propagator_expts,
                                occupations=None):
-        """Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices."""
+        """
+        Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices.
+        
+        Note that the current convention is that for propagator measurement,
+        phase correction is done in this method, so the final correction phase should be
+        fixed to 0.
+        ``raw_matrices`` is the raw matrix without any phase correction, and
+        ``matrices`` is the matrix with phase correction.
+        """
         first_cfg = propagator_expts[0].cfg.expt
         swap_stors = [int(stor) for stor in first_cfg.swap_stors]
         cycles = [int(cycle) for cycle in first_cfg.propagator_cycles]
-        decoder_order = [
-            tuple(occupation)
-            for occupation in first_cfg.propagator_occupations
-        ]
+        decoder_order = [tuple(occupation) for occupation in first_cfg.propagator_occupations]
 
         columns = {}
         for expt in propagator_expts:
             encoder = tuple(expt.cfg.expt.spectroscopy_occupations)
-            quadrature = np.asarray(
-                cls._quadrature(expt), dtype=float
-            ).reshape(len(cycles), len(decoder_order), 2)
-            columns[encoder] = (
-                quadrature[:, :, 0] - 1j * quadrature[:, :, 1]
-            )
+            quadrature = np.asarray(cls._quadrature(expt), dtype=float).reshape(len(cycles), len(decoder_order), 2)
+            columns[encoder] = (quadrature[:, :, 0] - 1j * quadrature[:, :, 1])
 
         occupation_order = decoder_order if occupations is None else [
             tuple(occupation) for occupation in occupations
         ]
-        decoder_indices = [
-            decoder_order.index(occupation)
-            for occupation in occupation_order
-        ]
+        
+        decoder_indices = [decoder_order.index(occupation) for occupation in occupation_order]
         raw_matrices = np.stack([
             columns[occupation][:, decoder_indices]
             for occupation in occupation_order
@@ -5519,6 +5542,196 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             matrices=matrices,
             decoder_phase_correction_deg=phase_correction,
             matrix_orientation="rows=decoder, columns=encoder",
+        ))
+
+    @classmethod
+    def analyze_propagator_dynamics(cls, 
+                                    reconstruction, 
+                                    calibration,
+                                    floquet_cycle_us,
+                                    finite_difference_cycles=None,
+                                    eigenphase_cycle=None):
+        """
+        Get a short-time Hamiltonian and eigenfrequencies from full M_q.
+
+        The method assumes <i|U(q)|j> = D_i U_q E_j. 
+        There are two different methods to calculate the energy spectrum
+        
+        1. finite_difference
+        
+        - Calculates Hamiltonian using three different time stamps
+        - H = i/2pi dU/dt \\approx i/2pi (-3 U(0) + 4 U(q)-U(2q)) / 2qT_floquet
+        
+        2. eigen phase
+        normalize endpoint contrast; generalized eigenvalues against the full
+        same-batch M_0 remove fixed D and E from the spectrum.
+        """
+        
+        calibration = cls._calibration_data(calibration)
+        if calibration is None or "results" not in calibration:
+            raise ValueError("analyzed calibration results are required")
+        floquet_cycle_us = float(floquet_cycle_us)
+        if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0.:
+            raise ValueError("floquet_cycle_us must be finite and positive")
+
+        occupations = []
+        for raw_occupation in reconstruction.occupations:
+            values = np.asarray(raw_occupation, dtype=float)
+            if values.ndim != 1 or np.any(values < 0) or not np.all(values == np.round(values)):
+                raise ValueError("occupations must be nonnegative integer states")
+            occupations.append(tuple(int(value) for value in values))
+        if not occupations:
+            raise ValueError("occupations cannot be empty")
+        photon_number = sum(occupations[0])
+        mode_count = len(occupations[0])
+        for occupation in occupations:
+            if len(occupation) != mode_count or sum(occupation) != photon_number:
+                raise ValueError("occupations must belong to one fixed-N sector")
+        full_dimension = comb(photon_number + mode_count - 1, photon_number)
+        if len(occupations) != full_dimension or len(set(occupations)) != full_dimension:
+            raise ValueError("eigenanalysis requires the complete fixed-N basis")
+
+        if "mode_labels" in calibration:
+            if list(calibration.mode_labels) != list(reconstruction.mode_labels):
+                raise ValueError("calibration and propagator mode labels differ")
+        if "hardware" in calibration:
+            calibration_cycle_us = calibration.hardware.get("floquet_cycle_us", None)
+            if calibration_cycle_us is not None:
+                if not np.isclose(float(calibration_cycle_us), floquet_cycle_us):
+                    raise ValueError("calibration and propagator cycle times differ")
+
+        cycles = np.asarray(reconstruction.cycles, dtype=int)
+        if len(np.unique(cycles)) != len(cycles):
+            raise ValueError("propagator cycles must be unique")
+        cycle_index = {}
+        for index, cycle in enumerate(cycles):
+            cycle_index[int(cycle)] = index
+        if 0 not in cycle_index:
+            raise ValueError("propagator data needs q=0")
+
+        dimension = len(occupations)
+        matrices = np.asarray(reconstruction.matrices, dtype=complex)
+        if matrices.shape != (len(cycles), dimension, dimension):
+            raise ValueError("propagator matrices do not match the full basis")
+        M0 = matrices[cycle_index[0]]
+        condition_number = float(np.linalg.cond(M0))
+        if not np.isfinite(condition_number) or condition_number > 1e12:
+            raise ValueError("q=0 matrix is singular or too ill-conditioned")
+
+        q0_by_occupation = {}
+        for result in calibration.results:
+            occupation = tuple(result.occupation)
+            if occupation in q0_by_occupation:
+                raise ValueError(f"duplicate calibration result for {occupation}")
+            zero_indices = np.flatnonzero(np.asarray(result.physical_cycles) == 0)
+            if len(zero_indices) != 1:
+                raise ValueError(f"{occupation} calibration needs exactly one q=0 sample")
+            returns = np.asarray(result.complex_return, dtype=complex)
+            q0_by_occupation[occupation] = returns[zero_indices[0]]
+
+        self_returns = []
+        for occupation in occupations:
+            if occupation not in q0_by_occupation:
+                raise ValueError(f"calibration is missing {occupation}")
+            value = complex(q0_by_occupation[occupation])
+            if not np.isfinite(value) or abs(value) <= 1e-10:
+                raise ValueError(f"invalid q=0 calibration return for {occupation}")
+            self_returns.append(value)
+        
+            
+        
+        self_returns = np.asarray(self_returns)
+        endpoint_factors = np.sqrt(self_returns)
+        endpoint_denominator = endpoint_factors[:, None] * endpoint_factors[None, :]
+        endpoint_normalized_matrices = matrices / endpoint_denominator[None, :, :]
+
+        if finite_difference_cycles is None:
+            step_cycles = None
+            for cycle in sorted(cycle_index):
+                if cycle > 0 and cycle % 2 == 0 and 2 * cycle in cycle_index:
+                    step_cycles = cycle
+                    break
+            if step_cycles is None:
+                raise ValueError("need an even cycle triple [0, s, 2*s]")
+            finite_difference_cycles = [0, step_cycles, 2 * step_cycles]
+        else:
+            finite_difference_cycles = [int(cycle) for cycle in finite_difference_cycles]
+            if len(finite_difference_cycles) != 3:
+                raise ValueError("finite_difference_cycles must be [0, s, 2*s]")
+            step_cycles = finite_difference_cycles[1]
+        expected_cycles = [0, step_cycles, 2 * step_cycles]
+        if step_cycles <= 0 or step_cycles % 2 != 0 or finite_difference_cycles != expected_cycles:
+            raise ValueError("finite_difference_cycles must be even [0, s, 2*s]")
+        for cycle in expected_cycles:
+            if cycle not in cycle_index:
+                raise ValueError(f"propagator matrix q={cycle} is missing")
+        
+        
+        M_step = matrices[cycle_index[step_cycles]]
+        M_twostep = matrices[cycle_index[2 * step_cycles]]
+        step_time_us = step_cycles * floquet_cycle_us
+        derivative = (-3. * M0 + 4. * M_step - M_twostep) / (2. * step_time_us)
+        measured_generator_MHz = 1j * derivative / (2. * np.pi)
+        effective_hamiltonian_MHz = np.linalg.solve(M0, measured_generator_MHz)
+        fd_values = generalized_eig(measured_generator_MHz, M0, right=False)
+        if not np.all(np.isfinite(fd_values)):
+            raise ValueError("finite-difference eigenfrequencies are not finite")
+        fd_values = fd_values[np.argsort(fd_values.real)]
+
+        predicted_twostep = M_step @ np.linalg.solve(M0, M_step)
+        semigroup_residual = np.linalg.norm(M_twostep - predicted_twostep)
+        semigroup_residual /= max(np.linalg.norm(M_twostep), 1e-10)
+
+        if eigenphase_cycle is None:
+            eigenphase_cycle = step_cycles
+        eigenphase_cycle = int(eigenphase_cycle)
+        if eigenphase_cycle <= 0 or eigenphase_cycle % 2 != 0 or eigenphase_cycle not in cycle_index:
+            raise ValueError("eigenphase_cycle must be an available positive even cycle")
+        eigenphase_time_us = eigenphase_cycle * floquet_cycle_us
+        eigenphase_values = generalized_eig(
+            matrices[cycle_index[eigenphase_cycle]], M0, right=False
+        )
+        if not np.all(np.isfinite(eigenphase_values)):
+            raise ValueError("eigenphase eigenvalues are not finite")
+        eigenphase_frequencies = -np.angle(eigenphase_values) / (2. * np.pi * eigenphase_time_us)
+        order = np.argsort(eigenphase_frequencies)
+        eigenphase_values = eigenphase_values[order]
+        eigenphase_frequencies = eigenphase_frequencies[order]
+
+        normalized_M0 = endpoint_normalized_matrices[cycle_index[0]]
+        identity_residual = np.linalg.norm(normalized_M0 - np.eye(dimension))
+        identity_residual /= np.sqrt(dimension)
+        calibration_mismatch = np.linalg.norm(np.diag(M0) - self_returns)
+        calibration_mismatch /= max(np.linalg.norm(self_returns), 1e-10)
+        return AttrDict(dict(
+            calibration_self_returns=self_returns,
+            endpoint_factors=endpoint_factors,
+            endpoint_denominator=endpoint_denominator,
+            endpoint_normalized_matrices=endpoint_normalized_matrices,
+            zero_cycle_condition_number=condition_number,
+            endpoint_normalized_zero_cycle_identity_residual=float(identity_residual),
+            calibration_diagonal_relative_mismatch=float(calibration_mismatch),
+            finite_difference=AttrDict(dict(
+                cycles=np.asarray(expected_cycles),
+                step_cycles=step_cycles,
+                step_time_us=step_time_us,
+                derivative_matrix_per_us=derivative,
+                access_dressed_generator_MHz=measured_generator_MHz,
+                endpoint_normalized_generator_MHz=measured_generator_MHz / endpoint_denominator,
+                effective_hamiltonian_MHz=effective_hamiltonian_MHz,
+                hamiltonian_gauge="M0^-1 K = E^-1 H E",
+                complex_eigenfrequencies_MHz=fd_values,
+                eigenfrequencies_MHz=fd_values.real,
+                semigroup_relative_residual=float(semigroup_residual),
+            )),
+            eigenphase=AttrDict(dict(
+                cycle=eigenphase_cycle,
+                generalized_eigenvalues=eigenphase_values,
+                pole_radii=np.abs(eigenphase_values),
+                eigenfrequencies_MHz=eigenphase_frequencies,
+                alias_period_MHz=1. / eigenphase_time_us,
+                single_cycle_branch_ambiguous=(eigenphase_cycle != 1),
+            )),
         ))
 
     @classmethod
