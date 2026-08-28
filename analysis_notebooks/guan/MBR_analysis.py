@@ -26,14 +26,17 @@ from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment as ManyBodyRamsey,
 )
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 # This file is the migration exemplar. The god Experiment is being split one
 # analyze(stage=...) branch at a time into an Experiment per stage, and this
 # notebook moves to each new class as it lands, so there is always one worked
 # example of the current API to copy from.
 #
-# Migrated so far: calibration -> MBRPhaseCorrectionExperiment.
-# Still on the stage= facade: spectrum. It moves when that stage does.
+# Migrated: calibration -> MBRPhaseCorrectionExperiment,
+#           spectrum    -> MBRSpectrumExperiment.
+# ManyBodyRamsey is kept only as the default `load` owner; nothing below passes
+# a `stage` any more.
 
 # Where this machine sees the two shared trees. Configs record Windows paths
 # (output_root C:, vault_root G:), so off-prod every reader needs a mapping.
@@ -143,7 +146,7 @@ CYCLE_BRANCHES = {
 # ## 2. Load
 
 # %%
-expt = load(SPECTROSCOPY_IDS)
+expt = load(SPECTROSCOPY_IDS, MBRSpectrumExperiment)
 calibration = (load(CALIBRATION_IDS, MBRPhaseCorrectionExperiment)
                if CALIBRATION_IDS else None)
 if calibration is not None:
@@ -156,7 +159,6 @@ if calibration is not None:
 
 # %%
 data = expt.analyze(
-    stage="spectrum",
     calibration=calibration,
     cycle_branches=CYCLE_BRANCHES,
     fft_window="raw",

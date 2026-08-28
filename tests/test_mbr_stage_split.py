@@ -25,6 +25,23 @@ GOD = "experiments/qsim/floquet_dark_mode_readout.py"
 GODCLASS = "EncodingHamiltonianSpectroscopyExperiment"
 
 STAGES = [
+    dict(stage="spectrum",
+         module="mbr_spectrum",
+         cls="MBRSpectrumExperiment",
+         pin="be90ca8",
+         methods=["subsample_spectroscopy_shots", "_postprocess_reconstruction",
+                  "reconstruct_pair_spectroscopy", "reconstruct_spectroscopy",
+                  "analyze_matrix_pencil_occupation", "analyze_level_statistics",
+                  "analyze_sff", "display_local_density_of_states",
+                  "display_occupation", "display_occupations",
+                  "display_level_statistics", "display_sff",
+                  "display_matrix_pencil", "display_matrix_pencil_occupation",
+                  "display_result", "spectroscopy_batch"],
+         edits=[
+             ("EncodingHamiltonianSpectroscopyExperiment"
+              ".display_local_density_of_states",
+              "MBRSpectrumExperiment.display_local_density_of_states"),
+         ]),
     dict(stage="calibration",
          module="mbr_phase_correction",
          cls="MBRPhaseCorrectionExperiment",
@@ -318,3 +335,67 @@ def test_forwarding_does_not_recurse_through_the_subclasses():
     """Stage classes inherit the metaclass; a blind getattr would loop."""
     from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
     assert not hasattr(MBROrthogonalityExperiment, "no_such_method")
+
+
+# ---------------------------------------------------------------------------
+# The dispatch bodies themselves.
+#
+# For the spectrum stage the `analyze` and `display` bodies were the bulk of
+# the work -- 104 and 28 lines of branch, not a delegating one-liner. They moved
+# into the new class's analyze/display verbatim, so they are pinned the same way
+# the methods are. Without this, the largest single block of moved code would be
+# the only one with no pin.
+
+BRANCHES = [
+    dict(stage="spectrum", module="mbr_spectrum", cls="MBRSpectrumExperiment",
+         pin="be90ca8", method="analyze", test="stage == 'spectrum'",
+         trailing=["return self.data"],
+         edits=[("_stage_owner('calibration')._calibration_data",
+                 "MBRPhaseCorrectionExperiment._calibration_data")]),
+    dict(stage="spectrum", module="mbr_spectrum", cls="MBRSpectrumExperiment",
+         pin="be90ca8", method="display", test="'spectrum' in self.data",
+         trailing=[], edits=[]),
+]
+
+
+def _branch_body(fn, test_source):
+    """Statements of the one if/elif inside `fn` whose test reads `test_source`."""
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If) and ast.unparse(node.test) == test_source:
+            return [ast.unparse(s) for s in node.body]
+    raise AssertionError(f"no branch tested {test_source!r} in {fn.name}")
+
+
+@pytest.mark.parametrize(
+    "spec", BRANCHES, ids=[f"{b['stage']}.{b['method']}" for b in BRANCHES])
+def test_the_moved_dispatch_body_is_unchanged(spec, before, after):
+    was = _branch_body(before[spec["pin"]][spec["method"]], spec["test"])
+    for target, replacement in spec["edits"]:
+        was = [s.replace(target, replacement) for s in was]
+
+    statements = after[spec["stage"]][spec["method"]].body
+    if (isinstance(statements[0], ast.Expr)
+            and isinstance(statements[0].value, ast.Constant)
+            and isinstance(statements[0].value.value, str)):
+        statements = statements[1:]          # the new docstring
+    now = [ast.unparse(s) for s in statements]
+    # The new method adds a `data` prologue and, for analyze, a return.
+    assert now[0] == "if data is not None:\n    self.data = data"
+    body = now[1:]
+    if spec["trailing"]:
+        assert body[-len(spec["trailing"]):] == spec["trailing"]
+        body = body[:-len(spec["trailing"])]
+    assert body == was
+
+
+@pytest.mark.parametrize(
+    "spec", BRANCHES, ids=[f"{b['stage']}.{b['method']}" for b in BRANCHES])
+def test_the_god_dispatch_now_only_delegates(spec):
+    """The branch must be gone from the god file, not duplicated there."""
+    root = Path(_repo_root())
+    god = _methods((root / GOD).read_text(encoding="utf-8"), GODCLASS)
+    body = _branch_body(god[spec["method"]], spec["test"])
+    assert len(body) == 1, (
+        f"god {spec['method']} still holds {len(body)} statements for "
+        f"{spec['stage']}; it should only delegate")
+    assert "_stage_owner" in body[0]
