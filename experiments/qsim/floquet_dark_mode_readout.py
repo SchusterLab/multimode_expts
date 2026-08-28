@@ -3890,7 +3890,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 kwargs.get("occupations"),
             )
         elif stage == "propagator":
-            self.data = self.reconstruct_propagator(
+            self.data = _stage_owner("propagator").reconstruct_propagator(
                 self.batch_expts,
                 kwargs.get("occupations"),
             )
@@ -4177,61 +4177,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             normalized_power=normalized_power,
             offdiagonal_normalized_power=offdiagonal_normalized_power,
             column_leakage=column_leakage,
-            matrix_orientation="rows=decoder, columns=encoder",
-        ))
-
-    @classmethod
-    def reconstruct_propagator(cls,
-                               propagator_expts,
-                               occupations=None):
-        """Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices."""
-        first_cfg = propagator_expts[0].cfg.expt
-        swap_stors = [int(stor) for stor in first_cfg.swap_stors]
-        cycles = [int(cycle) for cycle in first_cfg.propagator_cycles]
-        decoder_order = [
-            tuple(occupation)
-            for occupation in first_cfg.propagator_occupations
-        ]
-
-        columns = {}
-        for expt in propagator_expts:
-            encoder = tuple(expt.cfg.expt.spectroscopy_occupations)
-            quadrature = np.asarray(
-                cls._quadrature(expt), dtype=float
-            ).reshape(len(cycles), len(decoder_order), 2)
-            columns[encoder] = (
-                quadrature[:, :, 0] - 1j * quadrature[:, :, 1]
-            )
-
-        occupation_order = decoder_order if occupations is None else [
-            tuple(occupation) for occupation in occupations
-        ]
-        decoder_indices = [
-            decoder_order.index(occupation)
-            for occupation in occupation_order
-        ]
-        raw_matrices = np.stack([
-            columns[occupation][:, decoder_indices]
-            for occupation in occupation_order
-        ], axis=2).astype(complex, copy=False)
-        phase_correction = np.asarray(
-            first_cfg.propagator_decoder_phase_correction_deg,
-            dtype=float,
-        )[decoder_indices]
-        matrices = raw_matrices * np.exp(
-            -1j * np.deg2rad(
-                np.asarray(cycles)[:, None, None]
-                * phase_correction[None, :, None]
-            )
-        )
-
-        return AttrDict(dict(
-            cycles=np.asarray(cycles, dtype=int),
-            occupations=occupation_order,
-            mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors],
-            raw_matrices=raw_matrices,
-            matrices=matrices,
-            decoder_phase_correction_deg=phase_correction,
             matrix_orientation="rows=decoder, columns=encoder",
         ))
 
@@ -5322,71 +5267,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         ))
 
     @staticmethod
-    def propagator_batch(default_expt_cfg,
-                         swap_stors,
-                         occupations,
-                         cycles,
-                         phase_by_occupation,
-                         sync_cycles=10,
-                         reps=300):
-        """Build one raw short-time propagator job per encoded occupation."""
-        swap_stors = [int(stor) for stor in swap_stors]
-        occupations = [list(occupation) for occupation in occupations]
-        cycles = [int(cycle) for cycle in cycles]
-        decoder_phase_correction = [
-            float(phase_by_occupation[tuple(occupation)])
-            for occupation in occupations
-        ]
-
-        # Every outer sweep value says exactly what is played:
-        # [Floquet cycle, decoder occupation..., analyzer phase].
-        cycle_decoder_analyzers = [
-            [cycle, *decoder_occupation, analyzer_phase]
-            for cycle in cycles
-            for decoder_occupation in occupations
-            for analyzer_phase in (0., 90.)
-        ]
-
-        defaults = deepcopy(default_expt_cfg)
-        defaults.update(dict(
-            reps=int(reps),
-            storage_reset=swap_stors,
-            swap_stors=swap_stors,
-            detunings=[0.] * len(swap_stors),
-            scramble_sync_cycles=int(sync_cycles),
-            floquet_cycle=0,
-            floquet_hardware_loop=False,
-            update_phases=True,
-            palindrome_scramble=False,
-            spectroscopy_phase_correction_mode="final_analyzer",
-            final_analyzer_phase_per_cycle_deg=0.,
-            propagator_cycles=cycles,
-            propagator_occupations=deepcopy(occupations),
-            propagator_decoder_phase_correction_deg=(
-                decoder_phase_correction
-            ),
-            cycle_decoder_analyzers=cycle_decoder_analyzers,
-            spectroscopy_prep_phases=[0., 180.],
-            swept_params=[
-                "cycle_decoder_analyzer",
-                "spectroscopy_prep_phase",
-            ],
-        ))
-        configs = [
-            dict(spectroscopy_occupations=list(occupation))
-            for occupation in occupations
-        ]
-        points_per_job = 4 * len(cycles) * len(occupations)
-        return AttrDict(dict(
-            default_expt_cfg=defaults,
-            configs=configs,
-            cycles=cycles,
-            occupations=deepcopy(occupations),
-            points_per_job=points_per_job,
-            total_points=points_per_job * len(occupations),
-        ))
-
-    @staticmethod
     def spectroscopy_batch(default_expt_cfg, 
                            swap_stors, 
                            occupations, 
@@ -5473,6 +5353,28 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs,
                              program=NPhotonHamiltonianSpectroscopyProgram))
+
+
+# ---------------------------------------------------------------------------
+# Transitional: analyze(stage=...) for stages that now own their own Experiment.
+#
+# jonginn's acquisition and post-processing notebooks still enter through
+# ``EncodingHamiltonianSpectroscopyExperiment.analyze(stage=...)``, so the string
+# dispatch keeps working while the stages move out one at a time.
+# ``analysis_notebooks/guan/MBR_analysis.py`` is migrated to the new classes as
+# each one lands, and is the worked example to copy from. This whole block goes
+# away once no consumer passes ``stage``.
+#
+# Lazy for the same reason ``__getattr__`` below is: every stage module imports
+# its base class from here, so a top-level import would close the cycle.
+_STAGE_OWNERS = {
+    "propagator": ("mbr_propagator", "MBRPropagatorExperiment"),
+}
+
+
+def _stage_owner(stage):
+    module, name = _STAGE_OWNERS[stage]
+    return getattr(importlib.import_module(f"experiments.qsim.{module}"), name)
 
 
 # ---------------------------------------------------------------------------
