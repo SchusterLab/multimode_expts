@@ -25,6 +25,12 @@ GOD = "experiments/qsim/floquet_dark_mode_readout.py"
 GODCLASS = "EncodingHamiltonianSpectroscopyExperiment"
 
 STAGES = [
+    dict(stage="orthogonality",
+         module="mbr_orthogonality",
+         cls="MBROrthogonalityExperiment",
+         pin="ac03ea1",
+         methods=["reconstruct_orthogonality", "display_orthogonality",
+                  "orthogonality_batch"]),
     dict(stage="propagator",
          module="mbr_propagator",
          cls="MBRPropagatorExperiment",
@@ -118,3 +124,105 @@ def test_the_new_class_can_load_its_own_data(stage):
     assert "analyze" in vars(cls), (
         f"{spec['cls']} must define its own analyze, not inherit the "
         "stage dispatch")
+
+
+# ---------------------------------------------------------------------------
+# Runtime coverage for the stages the golden baseline never reaches.
+#
+# tests/test_mbr_analysis_golden.py only exercises stage='spectrum' and
+# stage='calibration'. Orthogonality and propagator have no recorded fixture,
+# so the AST pin above is their only safety net -- and an AST pin cannot catch
+# a broken *delegation*: the method can be byte-identical in its new home while
+# the facade no longer reaches it, or reaches it with the wrong arguments.
+#
+# These build the smallest data that each display and each facade branch will
+# accept. Synthetic, not physical: they assert plumbing, not numbers.
+
+def _orthogonality_data(size=3):
+    import numpy as np
+    from slab import AttrDict
+
+    matrix = np.eye(size, dtype=complex) + 0.1j * np.tri(size, k=-1)
+    magnitude = np.abs(matrix)
+    diagonal = np.diag(magnitude)
+    return AttrDict(dict(
+        matrix=matrix,
+        occupations=[(size - i, i, 0) for i in range(size)],
+        diagonal_amplitude=diagonal,
+        offdiagonal_normalized_power=(
+            magnitude ** 2 / np.outer(diagonal, diagonal)),
+    ))
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _headless():
+    import matplotlib
+    previous = matplotlib.get_backend()
+    matplotlib.use("Agg", force=True)
+    yield
+    matplotlib.use(previous, force=True)
+
+
+def test_orthogonality_display_runs_on_its_own_class():
+    import matplotlib.pyplot as plt
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+
+    expt = MBROrthogonalityExperiment.__new__(MBROrthogonalityExperiment)
+    expt.data = _orthogonality_data()
+    figure = expt.display()
+    assert figure is not None
+    plt.close(figure)
+
+
+def test_the_god_display_still_reaches_the_moved_orthogonality_plot():
+    """The facade branch keys off `"matrix" in self.data`, not off `stage`."""
+    import matplotlib.pyplot as plt
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+
+    expt = God.__new__(God)
+    expt.data = _orthogonality_data()
+    figure = expt.display()
+    assert figure is not None
+    plt.close(figure)
+
+
+def test_orthogonality_display_rejects_foreign_data():
+    """The guard has to survive the move, or a spectrum plots as a matrix."""
+    from slab import AttrDict
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+
+    expt = MBROrthogonalityExperiment.__new__(MBROrthogonalityExperiment)
+    expt.data = AttrDict(dict(spectrum={}))
+    with pytest.raises(ValueError, match="orthogonality display requires"):
+        expt.display()
+
+
+def test_the_god_analyze_delegates_propagator_with_its_arguments(monkeypatch):
+    """Propagator has no display and no fixture, so pin the call itself.
+
+    A wrong-arity or wrong-order delegation is exactly the failure the AST pin
+    is blind to, and no recorded data would catch it either.
+    """
+    from experiments.qsim.floquet_dark_mode_readout import (
+        EncodingHamiltonianSpectroscopyExperiment as God,
+    )
+    from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+
+    seen = {}
+
+    def spy(cls, expts, occupations=None):
+        seen["expts"] = expts
+        seen["occupations"] = occupations
+        return "reconstructed"
+
+    monkeypatch.setattr(MBRPropagatorExperiment, "reconstruct_propagator",
+                        classmethod(spy))
+    expt = God.__new__(God)
+    expt.data = {}
+    expt.batch_expts = ["job-a", "job-b"]
+    order = [(2, 0, 0), (1, 1, 0)]
+
+    assert expt.analyze(stage="propagator", occupations=order) == "reconstructed"
+    assert seen == dict(expts=["job-a", "job-b"], occupations=order)
