@@ -640,3 +640,114 @@ replaced the hardcoded `refit_occupation` special case.
 One move left: `subsample_spectroscopy_shots` (192 lines) ->
 `fitting/qsim/mbr_reconstruction.py`. It is the largest single move in step 2
 and the only one that creates that module.
+
+## 2026-08-27 (later) -- the god Experiment split by analyze stage
+
+Direction change, on request: the line count was no longer moving much per
+commit, and the goal became a structure that can be opened and poked at with
+data, rather than one more 30-line extraction.
+
+### What made this cheap, and how we knew before starting
+
+The god Experiment turned out to be **offline-only already**: `acquire` lives on
+`DarkBaseExperiment`, not on it. All 2,196 lines are load -> reconstruct ->
+analyze -> display, so none of it is gated on the phase-4 acquisition audit.
+
+A call graph over all 46 methods, grouped by `analyze` stage, showed only two
+cross-stage edges, and one had already evaporated:
+
+| Group | Lines | Reaches out to |
+|---|---|---|
+| shared loading | ~220 | -- |
+| `stage='calibration'` | ~330 | `cls.analyze(stage='calibration')` |
+| `stage='orthogonality'` | ~180 | `_quadrature` |
+| `stage='propagator'` | ~120 | `_quadrature` |
+| `stage='spectrum'` | ~1,050 | `_quadrature`, the calibration |
+| `analyze`/`display` dispatch | ~290 | dissolves into the stages |
+
+`_postprocess_reconstruction` -> `build_phase_correction`/`_cycle_branches` was
+coupling until this morning's `mbr_phase.py` extraction pointed it at
+`fitting/qsim`. That is the second time the numerical extractions have paid for
+themselves in structural freedom rather than in line count.
+
+### Result
+
+| Stage | Module | Class | Lines |
+|---|---|---|---|
+| propagator | `mbr_propagator.py` | `MBRPropagatorExperiment` | 171 |
+| orthogonality | `mbr_orthogonality.py` | `MBROrthogonalityExperiment` | 237 |
+| calibration | `mbr_phase_correction.py` | `MBRPhaseCorrectionExperiment` | 445 |
+| spectrum | `mbr_spectrum.py` | `MBRSpectrumExperiment` | 1,221 |
+
+God file 5,521 -> 3,853, and what is left is almost all pulse code. Full suite
+360 -> 524 tests. Smallest stage first, so the risk ramped up rather than down;
+by the time the spectrum stage moved, the mechanism had been exercised three
+times.
+
+Each class subclasses the god Experiment, which still holds the loading layer.
+Per spec 7.4 no new aggregate base was invented ahead of the duplication that
+would justify it.
+
+### Two forwarding layers, both load-bearing, both transitional
+
+`stage=` still works, delegating through a lazy `_stage_owner()`. jonginn's two
+notebooks enter that way and `analysis_notebooks/guan/MBR_analysis.py` -- which
+is the migration exemplar, not a compatibility surface -- is fully migrated off
+it and is what to copy from.
+
+Beyond that, **two** `__getattr__` hooks are needed, and finding out why cost a
+regression and a golden failure:
+
+1. **Metaclass `__getattr__`** on the god class. jonginn's notebook says
+   `EncSpec.orthogonality_batch(...)`, which is attribute access on the *class*.
+   The module-level `__getattr__` that forwards moved *classes* cannot see it,
+   so the orthogonality split broke that call site silently -- nothing in the
+   repo calls it and no test looked. Now 19 class-level attribute names from the
+   two notebooks are pinned by test, so the next split fails loudly.
+
+2. **Instance `__getattr__`** on the god class. The facade hands `self`, a god
+   instance, to the owning class's `analyze`, whose moved body calls
+   `self.reconstruct_spectroscopy` -- which lives on a subclass. The metaclass
+   does not cover instance lookup. The golden caught this one immediately.
+
+Both guard against forwarding a name the owner does not actually define: stage
+classes inherit both hooks, so a blind `getattr` recurses instead of raising.
+
+### The pin, and what it cannot do
+
+`tests/test_mbr_stage_split.py` AST-pins every moved method to the god class at
+that stage's pre-split commit, and for the spectrum stage also pins the two
+dispatch *bodies* (104 and 28 statements) -- the largest moved block should not
+be the one block without a net. A companion test asserts the god dispatch now
+holds exactly one delegating statement per branch, so code cannot exist in both
+places.
+
+Where a name the move invalidated had to be re-addressed, the substitution is
+**declared** rather than left to weaken the pin, and a test asserts each
+declared edit still matches something at its pin -- an edit that no longer
+applies is a hole, not a harmless leftover.
+
+What an AST pin cannot catch is a broken *delegation*: byte-identical method,
+facade that no longer reaches it or reaches it with the wrong arguments. The
+golden only drives spectrum and calibration, so orthogonality and propagator
+got purpose-built runtime tests: synthetic data through both the new display and
+the facade, the foreign-data guard, and a monkeypatch spy pinning the propagator
+call's arity and argument order.
+
+### Deliberately not done
+
+- **`analyze` still takes `**kwargs`.** It is the moved branch body unchanged.
+  An explicit signature is what makes the spectrum stage pleasant to drive
+  interactively, and it is a real edit, so it wants its own commit with the
+  golden as the net. This is the highest-value next step for the stated goal.
+- **The loading layer stayed on the god class.** Extracting it to
+  `MBRAnalysisBase` cannot be lazy -- it is a *base class* - and it needs
+  `DarkBaseExperiment`, which still lives in the god module. So it requires
+  moving `DarkBaseExperiment` (plus `classify_two_parity_readouts` and
+  `flatten_exp_lists`) out first. That is a real restructure of the dark-mode
+  half, not a fifth mechanical stage split, and it should be decided on its own
+  terms.
+- **The `staticmethod` aliases to `fitting/qsim`** stayed on the god class. All
+  four stage classes inherit them, and `EncSpec.analyze_spectrum` keeps
+  resolving with no forwarding needed, which is strictly better during the
+  transition.

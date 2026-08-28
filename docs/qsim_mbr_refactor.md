@@ -1395,7 +1395,14 @@ green:
 - the `resolve_job_paths` seam (section 9.1) — **done**, `experiments/job_paths.py`;
 - the section 6 naming review;
 - splitting whole measurement families out of the god module (section 7.6) --
-  **done** for seven of the eight.
+  **done** for seven of the eight;
+- splitting the god Experiment by `analyze` stage (sections 7.3/7.4) -- **done**
+  for all four stages: `mbr_propagator.py`, `mbr_orthogonality.py`,
+  `mbr_phase_correction.py`, `mbr_spectrum.py`. The `stage=` dispatch survives
+  as a transitional facade for the acquisition notebooks. Still open: the
+  explicit `analyze` signature, and extracting the loading layer to
+  `MBRAnalysisBase` (which is gated on moving `DarkBaseExperiment` out, since a
+  base class cannot be resolved lazily).
 
 ### Gated externally
 
