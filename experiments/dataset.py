@@ -1,7 +1,7 @@
 from datetime import datetime
 from fractions import Fraction
 import json
-from numbers import Rational
+from numbers import Integral, Rational
 from pathlib import Path
 from typing import List, Optional, Tuple
 import warnings
@@ -357,6 +357,82 @@ class StorageManSwapDataset(MMDataset):
 
     def get_gain(self, stor_name):
         return int(self.get_value(stor_name, 'gain (DAC units)'))
+
+    @staticmethod
+    def multiphoton_swap_name(stor_name, 
+                              photon_number):
+        """
+        Return the ds_storage row used by an N-photon full swap.
+
+        The historical row remains the source of truth for N=1. 
+        Extra photon-number calibrations have the convention with the
+        suffix {stor_name}@N{photon_nunmber}. e.g.,
+            - ``M1-S5@N2`` and ``M1-S5@N3``.
+        """
+        if isinstance(photon_number, bool) or not isinstance(photon_number, Integral):
+            raise TypeError("photon_number must be an integer")
+        photon_number = int(photon_number)
+        if photon_number < 1:
+            raise ValueError("photon_number must be at least one")
+        stor_name = str(stor_name)
+        if not stor_name.startswith("M1-S") or not stor_name.removeprefix("M1-S").isdigit():
+            raise ValueError("stor_name must be an unsuffixed M1-storage row such as 'M1-S5'")
+        if photon_number == 1:
+            return stor_name
+        return f"{stor_name}@N{photon_number}"
+
+    def has_row(self, 
+                row_name):
+        """
+        Return whether ``row_name`` exists in this in-memory dataset.
+        """
+        return bool((self.df[self.indexing_row_name] == row_name).any())
+
+    def initialize_multiphoton_swap(self,
+                                    stor_name,
+                                    photon_number,
+                                    overwrite=False,
+                                    fields=None):
+        """
+        Initialize an N-photon swap row from the legacy N=1 row.
+
+        This only changes the in-memory dataframe.  The caller decides when
+        to create a CFG-M1 snapshot.  Existing N>1 rows are preserved unless
+        ``overwrite=True``.  ``fields`` may contain any subset of
+        ``freq``, ``precision``, ``pi``, ``h_pi``, and ``gain``.
+        """
+        target_name = self.multiphoton_swap_name(stor_name, photon_number)
+
+        field_columns = {
+            'freq': 'freq (MHz)',
+            'precision': 'precision (MHz)',
+            'pi': 'pi (mus)',
+            'h_pi': 'h_pi (mus)',
+            'gain': 'gain (DAC units)',
+        }
+        
+        if fields is None:
+            fields = tuple(field_columns)
+        
+        fields = tuple(fields)
+        unknown_fields = set(fields) - set(field_columns)
+        if unknown_fields:
+            raise ValueError(f"unknown multiphoton swap initialization fields: {sorted(unknown_fields)}")
+        if target_name == str(stor_name):
+            return target_name
+        if self.has_row(target_name) and not overwrite:
+            return target_name
+        scalar_columns = tuple(field_columns[field] for field in fields)
+        copied_values = {
+            column: self.get_value(stor_name, column)
+            for column in scalar_columns
+        }
+        if self.has_row(target_name):
+            for column, value in copied_values.items():
+                self.update_value(target_name, column, value)
+        else:
+            self.append_dataset(target_name, **copied_values)
+        return target_name
 
     # update the data in the csv file
     def update_freq(self, stor_name, freq):
