@@ -150,6 +150,17 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         else:
             raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
 
+        # Extend the target-state preparation with ``pre_sweep_pulse``
+        pre_sweep_pulse = cfg.expt.get('pre_sweep_pulse', None)
+        if pre_sweep_pulse is not None:
+            extra_pre_creator = self.get_prepulse_creator(pre_sweep_pulse)
+            extra_pre_pulse_list = extra_pre_creator.pulse.tolist()
+            if self.pre_pulse_list is None:
+                self.pre_pulse_list = extra_pre_pulse_list
+            else:
+                for row_index in range(len(self.pre_pulse_list)):
+                    self.pre_pulse_list[row_index].extend(extra_pre_pulse_list[row_index])
+
         # Post-pulse list
         if cfg.expt.pulse_type[0] == 'qubit':
             if cfg.expt.pulse_type[1] == 'ef':
@@ -159,7 +170,9 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         elif cfg.expt.pulse_type[0] in ('man', 'storage', 'floquet'):
             # reverse the pulse sequence
             # when qubit starts in e, it plays g1-e1 which is not ideal since photon can be in storage, but I dont know how to do better for now
-            self.post_pulse_list = [sublist[:0:-1] for sublist in self.pre_creator.pulse.tolist()]
+            # 9/1/2026 changed post pulse as the reverse of pre_pulse_list, 
+            # as it is supposed to store all the pulses to climb up the ladder before the ``pulse_to_test``
+            self.post_pulse_list = [sublist[:0:-1] for sublist in self.pre_pulse_list]
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             qubit_state_start = cfg.expt.pulse_type[1][0]
             if qubit_state_start == 'g':
