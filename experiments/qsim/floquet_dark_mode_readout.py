@@ -2878,6 +2878,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     storage_pulse_name = NPhotonHamiltonianSpectroscopyProgram._storage_swap_pulse_name(mode,
                                                                                                          photon_number,
                                                                                                          use_multiphoton_swap,) #i don't see any point setting this as a static method tbh. 
+                    encoder_pulses.append(["storage", storage_pulse_name, "pi", 0.0])
                 if not last_ladder_step:
                     encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,])
 
