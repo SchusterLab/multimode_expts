@@ -2319,12 +2319,9 @@ class ManStorMultiparityChevronRProgram(DarkBaseRProgram):
 
         cfg = AttrDict(self.cfg)
         swap_stor = int(cfg.expt.swap_stor)
-        storage_pulse_name = str(cfg.expt.get(
-            "storage_pulse_name", f"M1-S{swap_stor}"))
+        storage_pulse_name = str(cfg.expt.get("storage_pulse_name", f"M1-S{swap_stor}"))
         cfg.expt.storage_pulse_name = storage_pulse_name
-        pulse_creator = self.get_prepulse_creator([
-            ["storage", storage_pulse_name, "pi", 0.0],
-        ])
+        pulse_creator = self.get_prepulse_creator([["storage", storage_pulse_name, "pi", 0.0],])
         pulse = pulse_creator.pulse
 
         self.chevron_ch = int(pulse[4][0])
@@ -2794,11 +2791,14 @@ class NPhotonHamiltonianSpectroscopyProgram(
     """
 
     @staticmethod
-    def _storage_swap_pulse_name(
-            storage_mode,
-            photon_number,
-            use_multiphoton_swap=False):
-        """Resolve one M1-storage full-swap row without changing N=1."""
+    def _storage_swap_pulse_name(storage_mode,
+                                 photon_number,
+                                 use_multiphoton_swap=False):
+        """
+        Resolve one M1-storage full-swap row without changing N=1.
+        If ``use_multiphoton_swap`` is False, it returns ``M1-S{storage_mode}``.
+        Otherwise, it returns ``M1-S{storage_mode}@{photon_number}``
+        """
         storage_mode = int(storage_mode)
         photon_number = int(photon_number)
         base_name = f"M1-S{storage_mode}"
@@ -2808,73 +2808,53 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
     @staticmethod
     def _storage_mode_from_pulse_name(pulse_name):
-        """Extract the physical storage number from M1-Sj[@Nn]."""
-        suffix = str(pulse_name).split("-S", 1)[1]
-        return int(suffix.split("@", 1)[0])
+        """
+        Extract the physical storage number from M1-Sj[@Nn].
+        """
+        suffix = str(pulse_name).split("-S", 1)[1] # Returns j@Nn
+        return int(suffix.split("@", 1)[0]) #Returns j
 
     @staticmethod
-    def _validate_storage_swap_rows(
-            storage_dataset,
-            occupations,
-            swap_stors,
-            use_multiphoton_swap=False):
-        """Validate every ds_storage row used by one access path."""
+    def _validate_storage_swap_rows(storage_dataset,
+                                    occupations,
+                                    swap_stors,
+                                    use_multiphoton_swap=False):
+        """
+        Validate every ds_storage row used by one access path.
+        Added by Codex just to check whether each entry exists.
+        """
         for stor, occupation in zip(swap_stors, occupations[1:]):
             if occupation == 0:
                 continue
-            stor_name = (
-                NPhotonHamiltonianSpectroscopyProgram
-                ._storage_swap_pulse_name(
-                    stor,
-                    occupation,
-                    use_multiphoton_swap,
-                )
-            )
-            if hasattr(storage_dataset, "has_row") \
-                    and not storage_dataset.has_row(stor_name):
-                raise RuntimeError(
-                    f"{stor_name} is missing from ds_storage; run the "
-                    "N-photon M1-storage calibration first"
-                )
+            stor_name = (NPhotonHamiltonianSpectroscopyProgram._storage_swap_pulse_name(stor, occupation, use_multiphoton_swap,))
+            if hasattr(storage_dataset, "has_row") and not storage_dataset.has_row(stor_name):
+                raise RuntimeError(f"{stor_name} is missing from ds_storage; run the N-photon M1-storage calibration first")
             try:
-                frequency = float(storage_dataset.get_value(
-                    stor_name, "freq (MHz)"))
-                gain = float(storage_dataset.get_value(
-                    stor_name, "gain (DAC units)"))
-                pi_length = float(storage_dataset.get_value(
-                    stor_name, "pi (mus)"))
+                frequency = float(storage_dataset.get_value(stor_name, "freq (MHz)"))
+                gain = float(storage_dataset.get_value(stor_name, "gain (DAC units)"))
+                pi_length = float(storage_dataset.get_value( stor_name, "pi (mus)"))
             except (IndexError, KeyError) as error:
-                raise RuntimeError(
-                    f"{stor_name} is missing from ds_storage; run the "
-                    "N-photon M1-storage calibration first"
-                ) from error
+                raise RuntimeError(f"{stor_name} is missing from ds_storage; run the N-photon M1-storage calibration first") from error
             if not np.isfinite(frequency):
-                raise RuntimeError(
-                    f"{stor_name} needs a finite ds_storage frequency"
-                )
+                raise RuntimeError(f"{stor_name} needs a finite ds_storage frequency")
             if not np.isfinite(gain) or gain <= 0:
-                raise RuntimeError(
-                    f"{stor_name} needs a calibrated nonzero "
-                    "ds_storage gain"
-                )
+                raise RuntimeError(f"{stor_name} needs a calibrated nonzero ds_storage gain")
             if not np.isfinite(pi_length) or pi_length <= 0:
-                raise RuntimeError(
-                    f"{stor_name} needs a calibrated positive "
-                    "ds_storage pi length"
-                )
+                raise RuntimeError(f"{stor_name} needs a calibrated positive ds_storage pi length")
 
     @staticmethod
-    def _get_encoder_pulses(
-            occupations,
-            swap_stors,
-            use_multiphoton_swap=False):
+    def _get_encoder_pulses(occupations,
+                            swap_stors,
+                            use_multiphoton_swap=False):
         """
         Returning encoding pulse sequence as per `prepulse_creator2`.
         So each element in the list follows
             - output = [pulse1, pulse2, ...]
             - pulse1 = ['transition_name', 'which_transition', 'pi or hpi', relative_phase]
         The input of occupation should be n-string in the order of [n_M1] + [n_S for S in swap_stors].
-        The shelving is done except for the final step, which is when last_mode and last_photon is true
+        The shelving is done except for the final step, which is when last_mode and last_photon is true.
+        
+        If ``use_multiphoton_swap`` is True, 
         """
 
         occupied_modes = [(stor, occupation) for stor, occupation in zip(swap_stors, occupations[1:]) if occupation > 0] 
@@ -2895,17 +2875,9 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,]) 
                 encoder_pulses.append(["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0,])
                 if mode > 0 and last_photon:
-                    storage_pulse_name = (
-                        NPhotonHamiltonianSpectroscopyProgram
-                        ._storage_swap_pulse_name(
-                            mode,
-                            photon_number,
-                            use_multiphoton_swap,
-                        )
-                    )
-                    encoder_pulses.append([
-                        "storage", storage_pulse_name, "pi", 0.0,
-                    ])
+                    storage_pulse_name = NPhotonHamiltonianSpectroscopyProgram._storage_swap_pulse_name(mode,
+                                                                                                         photon_number,
+                                                                                                         use_multiphoton_swap,) #i don't see any point setting this as a static method tbh. 
                 if not last_ladder_step:
                     encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,])
 
@@ -3014,72 +2986,37 @@ class NPhotonHamiltonianSpectroscopyProgram(
         if photon_number < 1:
             raise ValueError("spectroscopy_occupations must contain photons")
 
-        use_multiphoton_swap = bool(
-            ecfg.get("use_multiphoton_swap", False))
+        use_multiphoton_swap = bool( ecfg.get("use_multiphoton_swap", False))
         ecfg.use_multiphoton_swap = use_multiphoton_swap
-        final_occupations = list(ecfg.get(
-            "spectroscopy_final_occupations", occupations))
+        final_occupations = ecfg.get("spectroscopy_final_occupations", occupations)
         if len(final_occupations) != len(occupations):
-            raise ValueError(
-                "spectroscopy_final_occupations has the wrong mode count")
-        if any(
-                isinstance(n, (bool, np.bool_))
-                or not isinstance(n, (int, np.integer))
-                for n in final_occupations):
-            raise TypeError(
-                "spectroscopy_final_occupations entries must be "
-                "non-negative integers"
-            )
+            raise ValueError("spectroscopy_final_occupations has the wrong mode count")
+        if any(not isinstance(n, (int, np.integer)) for n in final_occupations):
+            raise TypeError("spectroscopy_final_occupations entries must be non-negative integers")
         final_occupations = [int(n) for n in final_occupations]
-        if any(n < 0 for n in final_occupations):
-            raise ValueError(
-                "spectroscopy_final_occupations entries must be "
-                "non-negative"
-            )
+
         if sum(final_occupations) != photon_number:
-            raise ValueError(
-                "encoder and decoder occupations must have the same "
-                "total photon number"
-            )
-        if max(max(occupations), max(final_occupations)) > 9:
-            raise ValueError(
-                "The current multiphoton transition parser supports "
-                "local occupations only through n=9"
-            )
+            print("[WARNING] encoder and decoder occupations have different total photon numbers")
 
-        self.encoder_pulses = self._get_encoder_pulses(
-            occupations,
-            swap_stors,
-            use_multiphoton_swap,
-        )
-        self.decoder_encoder_pulses = self._get_encoder_pulses(
-            final_occupations,
-            swap_stors,
-            use_multiphoton_swap,
-        )
+        self.encoder_pulses = self._get_encoder_pulses(occupations, swap_stors, use_multiphoton_swap,)
+        self.decoder_encoder_pulses = self._get_encoder_pulses(final_occupations, swap_stors, use_multiphoton_swap,)
 
-        access_pulses = (
-            self.encoder_pulses + self.decoder_encoder_pulses)
-        if any(pulse[1] == "ge_broadband" for pulse in access_pulses):
+        access_pulses = (self.encoder_pulses + self.decoder_encoder_pulses)
+        if any(pulse[1] == "ge_broadband" for pulse in access_pulses): #This is also Codex added stupid unnecessary safety check if the experimentalist is sober.
             pulse_key = "pi_ge_broadband"
             if pulse_key not in self.cfg.device.qubit.pulses:
                 raise KeyError("This occupation-string encoder requires device.qubit.pulses.pi_ge_broadband")
 
             broadband_cfg = self.cfg.device.qubit.pulses[pulse_key]
             for field in ("frequency", "gain", "sigma", "length", "type"):
-                if field not in broadband_cfg or np.asarray(
-                        broadband_cfg[field]).size == 0:
-                    raise RuntimeError(
-                        "device.qubit.pulses.pi_ge_broadband."
-                        f"{field} must contain one value"
-                    )
+                if field not in broadband_cfg or np.asarray(broadband_cfg[field]).size == 0:
+                    raise RuntimeError(f"device.qubit.pulses.pi_ge_broadband.{field} must contain one value")
             gain = np.asarray(broadband_cfg.get("gain", []), dtype=float).reshape(-1)
             
             if gain.size == 0 or gain[0] <= 0:
                 raise RuntimeError("device.qubit.pulses.pi_ge_broadband.gain must be a configured nonzero value")
 
-        max_local_occupation = max(
-            max(occupations), max(final_occupations))
+        max_local_occupation = max(max(occupations), max(final_occupations))
         multiphoton_pi = self.cfg.device.multiphoton.pi
         for transition in ("en-fn", "fn-gn+1"):
             if transition not in multiphoton_pi:
@@ -3092,23 +3029,17 @@ class NPhotonHamiltonianSpectroscopyProgram(
 
         storage_dataset = self.cfg.device.storage._ds_storage
         for path_occupations in (occupations, final_occupations):
-            self._validate_storage_swap_rows(
-                storage_dataset,
-                path_occupations,
-                swap_stors,
-                use_multiphoton_swap,
-            )
+            self._validate_storage_swap_rows(storage_dataset,path_occupations,swap_stors,use_multiphoton_swap,)
 
-        if ecfg.get("palindrome_scramble", False) \
-                and int(ecfg.floquet_cycle) % 2:
+        if ecfg.get("palindrome_scramble", False) and int(ecfg.floquet_cycle) % 2:
             raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
+        
         for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark","perform_wigner", "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
-        analyzer_phase = float(
-            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        analyzer_phase = float(ecfg.get("spectroscopy_analyzer_phase", 0.0))
         phase_correction_mode = str(ecfg.get("spectroscopy_phase_correction_mode", "decoder"))
         if phase_correction_mode not in ("decoder", "final_analyzer"):
             raise ValueError("spectroscopy_phase_correction_mode must be 'decoder' or 'final_analyzer'")
@@ -3236,6 +3167,10 @@ class HardwareFloquetDepthSweepMixin:
         Requires ``_sff_register_map``, which follows the same convention as
         ``_gen_regmap`` and ``_ro_regmap``; e.g.
             - _sff_register_map[(ch, "purpose")] = (page, regnum)
+            
+        It stores allocated custom resiger to ``self._sff_register_map`` as 
+        ``(page, register)`` with the key ``(ch, purpose)``
+        and also returns allocated ``register``
         """
         page = int(page)
         register_key = (ch, purpose)
@@ -3290,14 +3225,15 @@ class HardwareFloquetDepthSweepMixin:
 
         return register
 
-    def _prepare_pulse_with_phase_updated_by_depth(
-            self,
-            pulse_description,
-            phase_at_first_depth_deg,
-            phase_change_per_depth_point_deg,
-            pulse_name):
+    def _prepare_pulse_with_phase_updated_by_depth(self,
+                                                   pulse_description,
+                                                   phase_at_first_depth_deg,
+                                                   phase_change_per_depth_point_deg,
+                                                   pulse_name):
         """
         Compile one pulse whose phase must change at every depth point.
+        The primary purpose of this method is to prepare and store the 
+        decoding pulses to do real time phase update.
 
         ``initialize()`` runs only once for the whole RAverager sweep, so
         Python cannot recalculate the pulse phase at every depth.  Instead,
@@ -3307,27 +3243,38 @@ class HardwareFloquetDepthSweepMixin:
 
         This method only prepares the waveform and phase register.  It does
         not play the pulse.
+        
+        Note: ``prepulse_creator2`` contains ``self.pulse`` as 
+            - [[frequency], [gain], [length (us)], [phases], [drive channel], [shape], [ramp sigma]]
+        
+        Args:
+            - pulse_description: one of our ununified pulse convention: e.g. ["storage", "M1-S5", "pi", 180.0]
+            - phase_at_first_depth_deg: phase at first (phi_first)
+            - phase_change_per_depth_point_deg: phase per each step (phi_step); 
+                - per each step, the phase is phi_first + n_step * phi_step
+        
+        Return: {"channel": channel, # Channel for the pulse
+                "phase_accumulator": (register_page, phase_accumulator_register,), #Register page and regnum for phase accumulation
+                "phase_increment_reg_val": phase_increment_reg_val,
+                "qick_pulse_registers": qick_pulse_registers,}
+        
+            
         """
         # The phase in the ordinary pulse description is deliberately zero.
         # The custom phase accumulator supplies the actual phase at run time.
         pulse_description_without_fixed_phase = list(pulse_description)
         pulse_description_without_fixed_phase[3] = 0.0
-        pulse_data = self.get_prepulse_creator(
-            [pulse_description_without_fixed_phase]
-        ).pulse
-        (
-            pulse_frequencies_mhz,
-            pulse_gains,
-            pulse_lengths_us,
-            _unused_fixed_phases_deg,
-            pulse_channels,
-            pulse_shapes,
-            pulse_sigmas_us,
-        ) = pulse_data
+        pulse_data = self.get_prepulse_creator([pulse_description_without_fixed_phase]).pulse
+        (pulse_frequencies_mhz,
+         pulse_gains,
+         pulse_lengths_us,
+         _unused_fixed_phases_deg,
+         pulse_channels,
+         pulse_shapes,
+         pulse_sigmas_us,) = pulse_data
+        
         if len(pulse_frequencies_mhz) != 1:
-            raise RuntimeError(
-                f"SFF pulse {pulse_name!r} did not compile to one pulse"
-            )
+            raise RuntimeError(f"SFF pulse {pulse_name!r} did not compile to one pulse")
 
         channel = pulse_channels[0]
         if isinstance(channel, list):
@@ -3335,151 +3282,93 @@ class HardwareFloquetDepthSweepMixin:
         channel = int(channel)
         register_page = self.ch_page(channel)
 
-        if register_page == 0:
-            raise RuntimeError(
-                "depth-dependent SFF pulse channels cannot use tProc page 0"
-            )
+        if register_page == 0: #This is just a conservative safety check to avoid using page 0 for a pulse register.
+            raise RuntimeError("Pulse register page must not be 0")
+        
         generator_manager = self._gen_mgrs[channel]
         generator_manager_name = generator_manager.__class__.__name__
         if generator_manager_name != "FullSpeedGenManager":
-            raise RuntimeError(
-                "depth-dependent SFF phases require a full-speed generator; "
-                f"channel {channel} uses {generator_manager_name}"
-            )
+            raise RuntimeError(f"depth-dependent SFF phases require a full-speed generator; channel {channel} uses {generator_manager_name}")
 
-        phase_accumulator_register = self._allocate_custom_register(
-            ch=channel,
-            purpose=f"phase_updated_by_depth_{pulse_name}",
-            page=register_page,
-        )
-        # deg2reg returns the wrapped hardware phase word.  Therefore a
+        phase_accumulator_register = self._allocate_custom_register(ch=channel,
+                                                                    purpose=f"phase_updated_by_depth_{pulse_name}",
+                                                                    page=register_page,)
+        # deg2reg returns the wrapped hardware phase register value. Therefore a
         # negative phase change is represented by its equivalent positive
-        # phase word, and repeated mathi additions still give the intended
+        # phase register value, and repeated mathi additions still give the intended
         # phase evolution modulo the generator's phase width.
-        phase_increment_word = int(self.deg2reg(
-            phase_change_per_depth_point_deg,
-            gen_ch=channel,
-        ))
-        if not 0 <= phase_increment_word < 2 ** 31:
-            raise RuntimeError(
-                f"phase increment word for {pulse_name} does not fit mathi"
-            )
+        phase_increment_reg_val = self.deg2reg(phase_change_per_depth_point_deg,gen_ch=channel,)
+        if not 0 <= phase_increment_reg_val < 2 ** 31:
+            raise RuntimeError(f"phase increment register value for {pulse_name} does not fit mathi")
 
-        phase_at_first_depth_word = int(self.deg2reg(
-            self._mod360(phase_at_first_depth_deg),
-            gen_ch=channel,
-        ))
-        self.safe_regwi(
-            register_page,
-            phase_accumulator_register,
-            phase_at_first_depth_word,
-        )
+        phase_at_first_depth_reg_val = self.deg2reg(self._mod360(phase_at_first_depth_deg), gen_ch=channel,)
+        self.safe_regwi(register_page,
+                        phase_accumulator_register,
+                        phase_at_first_depth_reg_val,)
 
         pulse_shape = pulse_shapes[0]
         pulse_frequency_mhz = pulse_frequencies_mhz[0]
         pulse_gain = pulse_gains[0]
         pulse_length_us = pulse_lengths_us[0]
         pulse_sigma_us = pulse_sigmas_us[0]
-        qick_pulse_registers = dict(
-            ch=channel,
-            freq=self.freq2reg(
-                pulse_frequency_mhz,
-                gen_ch=channel,
-            ),
-            phase=0,
-            gain=pulse_gain,
-        )
+        
+        qick_pulse_registers = dict(ch=channel,
+                                    freq=self.freq2reg(pulse_frequency_mhz, gen_ch=channel),
+                                    phase=0,
+                                    gain=pulse_gain)
 
         if pulse_shape in ("gaussian", "gauss", "g"):
-            sigma_cycles = self.us2cycles(
-                pulse_sigma_us,
-                gen_ch=channel,
-            )
-            waveform_name = (
-                f"sff_depth_phase_g_{pulse_name}_{channel}_{sigma_cycles}"
-            )
-            self.add_gauss(
-                ch=channel,
-                name=waveform_name,
-                sigma=sigma_cycles,
-                length=4 * sigma_cycles,
-            )
-            qick_pulse_registers.update(
-                style="arb",
-                waveform=waveform_name,
-            )
+            sigma_cycles = self.us2cycles(pulse_sigma_us,gen_ch=channel,)
+            waveform_name = (f"sff_depth_phase_g_{pulse_name}_{channel}_{sigma_cycles}")
+            self.add_gauss(ch=channel,name=waveform_name,sigma=sigma_cycles,length=4 * sigma_cycles,)
+            qick_pulse_registers.update(style="arb", waveform=waveform_name,)
         elif pulse_shape in ("flat_top", "f"):
-            sigma_cycles = self.us2cycles(
-                pulse_sigma_us,
-                gen_ch=channel,
-            )
-            gaussian_length_multiplier = (
-                6 if channel in (0, 1, 3) else 4
-            )
-            waveform_name = (
-                f"sff_depth_phase_ft_{pulse_name}_{channel}_{sigma_cycles}"
-            )
-            self.add_gauss(
-                ch=channel,
-                name=waveform_name,
-                sigma=sigma_cycles,
-                length=gaussian_length_multiplier * sigma_cycles,
-            )
-            qick_pulse_registers.update(
-                style="flat_top",
-                waveform=waveform_name,
-                length=self.us2cycles(
-                    pulse_length_us,
-                    gen_ch=channel,
-                ),
-            )
-        elif isinstance(pulse_shape, list):
-            raise ValueError(
-                "optimal-control pulses are not supported as "
-                f"depth-dependent SFF phase pulses ({pulse_name})"
-            )
-        else:
-            qick_pulse_registers.update(
-                style="const",
-                length=self.us2cycles(
-                    pulse_length_us,
-                    gen_ch=channel,
-                ),
-            )
+            sigma_cycles = self.us2cycles(pulse_sigma_us,gen_ch=channel,)
+            gaussian_length_multiplier = (6 if channel in (0, 1, 3) else 4) # This needs elaboration. I think the current program is really messed up with this gaussian length
+            
+            waveform_name = (f"sff_depth_phase_ft_{pulse_name}_{channel}_{sigma_cycles}")
+            self.add_gauss(ch=channel,
+                           name=waveform_name,
+                           sigma=sigma_cycles,
+                           length=gaussian_length_multiplier * sigma_cycles,)
+            qick_pulse_registers.update(style="flat_top",
+                                        waveform=waveform_name, 
+                                        length=self.us2cycles(pulse_length_us,gen_ch=channel))
 
-        return {
-            "channel": channel,
-            "phase_accumulator": (
-                register_page,
-                phase_accumulator_register,
-            ),
-            "phase_increment_word": phase_increment_word,
-            "qick_pulse_registers": qick_pulse_registers,
-        }
+        elif isinstance(pulse_shape, list):
+            raise ValueError(f"optimal-control pulses are not supported as depth-dependent SFF phase pulses ({pulse_name})")
+
+        else:
+            qick_pulse_registers.update(style="const",length=self.us2cycles(pulse_length_us,gen_ch=channel))
+
+        return {"channel": channel,
+                "phase_accumulator": (register_page, phase_accumulator_register,),
+                "phase_increment_reg_val": phase_increment_reg_val,
+                "qick_pulse_registers": qick_pulse_registers,}
 
     def _play_pulse_with_current_depth_phase(self, depth_phase_pulse):
-        """Copy the current phase accumulator into the generator and pulse."""
+        """
+        Copy the current phase accumulator into the generator and pulse.
+        """
         channel = depth_phase_pulse["channel"]
-        register_page, phase_accumulator_register = (
-            depth_phase_pulse["phase_accumulator"]
-        )
+        register_page, phase_accumulator_register = depth_phase_pulse["phase_accumulator"]
 
         # set_pulse_registers writes phase=0, so the phase accumulator must be
         # copied into the generator phase register after this call.
-        self.set_pulse_registers(
-            **depth_phase_pulse["qick_pulse_registers"]
-        )
-        self.mathi(
-            register_page,
-            self.sreg(channel, "phase"),
-            phase_accumulator_register,
-            "+",
-            0,
-        )
+        self.set_pulse_registers(**depth_phase_pulse["qick_pulse_registers"])
+        self.mathi(register_page,
+                   self.sreg(channel, "phase"),
+                   phase_accumulator_register,
+                   "+",
+                   0)
         self.pulse(channel)
-        self.sync_all(self.us2cycles(0.01))
+        self.sync_all(self.us2cycles(0.01)) # same as self.custome_pulse(). it needs to be refined soon.
 
-    def _prepare_floquet_loop(self, swap_stors, detunings):
+    def _prepare_floquet_loop(self, 
+                              swap_stors, 
+                              detunings):
+        
+        
         ecfg = self.cfg.expt
         phase_offsets = [0.0] * len(swap_stors)
         update_phases = bool(ecfg.get("update_phases", True))
@@ -3487,8 +3376,7 @@ class HardwareFloquetDepthSweepMixin:
         self._sff_floquet_pulse_args = []
         for index, stor in enumerate(swap_stors):
             pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
-            pulse_args["freq"] += self.freq2reg(
-                detunings[index], gen_ch=pulse_args["ch"])
+            pulse_args["freq"] += self.freq2reg(detunings[index], gen_ch=pulse_args["ch"])
             self._sff_floquet_pulse_args.append(pulse_args)
 
         first_cycle_phases = []
@@ -3504,84 +3392,55 @@ class HardwareFloquetDepthSweepMixin:
         phase_steps = [self._mod360(phase) for phase in phase_offsets]
 
         self._sff_floquet_phase_registers = []
-        for stor, pulse_args, phase_step in zip(
-                swap_stors,
-                self._sff_floquet_pulse_args,
-                phase_steps):
+        for stor, pulse_args, phase_step in zip(swap_stors,self._sff_floquet_pulse_args,phase_steps):
             ch = int(pulse_args["ch"])
-            if self._gen_mgrs[ch].__class__.__name__ != "FullSpeedGenManager":
-                raise RuntimeError(
-                    "the SFF Floquet loop requires full-speed generators; "
-                    f"channel {ch} uses "
-                    f"{self._gen_mgrs[ch].__class__.__name__}"
-                )
+            if self._gen_mgrs[ch].__class__.__name__ != "FullSpeedGenManager": #Codex says frequency and phase are separated only in ``FullSpeedGenManager``
+                raise RuntimeError(f"the SFF Floquet loop requires full-speed generators; channel {ch} uses {self._gen_mgrs[ch].__class__.__name__}")
             page = self.ch_page(ch)
             if page == 0:
-                raise RuntimeError(
-                    "SFF Floquet pulse channels cannot use tProc page 0"
-                )
-            phase_register = self._allocate_custom_register(
-                ch=ch,
-                purpose=f"floquet_phase_S{stor}",
-                page=page,
-            )
-            step_register_value = int(self.deg2reg(
-                phase_step, gen_ch=ch))
+                raise RuntimeError("Pulse register page must not be 0")
+            phase_register = self._allocate_custom_register(ch=ch,
+                                                            purpose=f"floquet_phase_S{stor}",
+                                                            page=page)
+            step_register_value = int(self.deg2reg(phase_step, gen_ch=ch))
             if not -(2 ** 30) <= step_register_value < 2 ** 31:
                 raise RuntimeError("Floquet phase step does not fit mathi")
-            self._sff_floquet_phase_registers.append(
-                (page, phase_register, step_register_value)
-            )
+            self._sff_floquet_phase_registers.append((page, phase_register, step_register_value))
 
         # Page zero has ample ordinary registers and avoids competing with the
         # flux/qubit phase accumulators on the shared generator page.
         self._sff_depth_page = 0
-        self._sff_depth_register = self._allocate_custom_register(
-            ch=None,
-            purpose="floquet_depth",
-            page=self._sff_depth_page,
-        )
-        self._sff_loop_register = self._allocate_custom_register(
-            ch=None,
-            purpose="floquet_loop_counter",
-            page=self._sff_depth_page,
-        )
-        self.safe_regwi(
-            self._sff_depth_page,
-            self._sff_depth_register,
-            self._sff_cycle_start,
-        )
+        self._sff_depth_register = self._allocate_custom_register(ch=None,
+                                                                  purpose="floquet_depth",
+                                                                  page=self._sff_depth_page)
+        self._sff_loop_register = self._allocate_custom_register(ch=None,
+                                                                 purpose="floquet_loop_counter",
+                                                                 page=self._sff_depth_page,)
+        self.safe_regwi(self._sff_depth_page,
+                        self._sff_depth_register,
+                        self._sff_cycle_start)
 
         self._sff_first_cycle_phases = first_cycle_phases
         self._sff_loop_label = "DISORDER_SFF_FLOQUET_LOOP"
 
     def _play_floquet_depth(self):
         """Play the current depth register as a counted Floquet loop."""
-        for pulse_args, first_phase, registers in zip(
-                self._sff_floquet_pulse_args,
-                self._sff_first_cycle_phases,
-                self._sff_floquet_phase_registers):
+        for pulse_args, first_phase, registers in zip(self._sff_floquet_pulse_args,
+                                                      self._sff_first_cycle_phases,
+                                                      self._sff_floquet_phase_registers):
             page, phase_register, _ = registers
-            self.safe_regwi(
-                page,
-                phase_register,
-                self.deg2reg(first_phase, gen_ch=pulse_args["ch"]),
-            )
+            self.safe_regwi(page,phase_register,self.deg2reg(first_phase, gen_ch=pulse_args["ch"]))
 
-        self.mathi(
-            self._sff_depth_page,
-            self._sff_loop_register,
-            self._sff_depth_register,
-            "+",
-            0,
-        )
-        self.mathi(
-            self._sff_depth_page,
-            self._sff_loop_register,
-            self._sff_loop_register,
-            "-",
-            1,
-        )
+        self.mathi(self._sff_depth_page,
+                   self._sff_loop_register,
+                   self._sff_depth_register,
+                   "+",
+                   0)
+        self.mathi(self._sff_depth_page,
+                   self._sff_loop_register,
+                   self._sff_loop_register,
+                   "-",
+                   1)
 
         first_pulse = self._sff_floquet_pulse_args[0]
         first_pulse["phase"] = 0
@@ -3592,8 +3451,8 @@ class HardwareFloquetDepthSweepMixin:
         self.label(loop_label)
         sync_cycles = int(self.cfg.expt.get("scramble_sync_cycles", 10))
 
-        for index, pulse_args in enumerate(
-                self._sff_floquet_pulse_args):
+        for index, pulse_args in enumerate(self._sff_floquet_pulse_args):
+            
             ch = int(pulse_args["ch"])
             page, phase_register, step_register_value = (
                 self._sff_floquet_phase_registers[index])
@@ -3639,7 +3498,7 @@ class HardwareFloquetDepthSweepMixin:
                 phase_accumulator_register,
                 phase_accumulator_register,
                 "+",
-                depth_phase_pulse["phase_increment_word"],
+                depth_phase_pulse["phase_increment_reg_val"],
             )
 
 class DisorderSFFSequenceMixin:
