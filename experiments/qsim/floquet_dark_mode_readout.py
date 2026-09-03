@@ -3178,11 +3178,9 @@ class HardwareFloquetDepthSweepMixin:
             index = swap_stors.index(stor)
             first_cycle_phases.append(self._mod360(phase_offsets[index]))
             if update_phases:
-                self._advance_phase_offsets(
-                    phase_offsets=phase_offsets,
-                    swap_stors=swap_stors,
-                    pulsed_stor=stor,
-                )
+                self._advance_phase_offsets(phase_offsets=phase_offsets,
+                                            swap_stors=swap_stors,
+                                            pulsed_stor=stor)
         phase_steps = [self._mod360(phase) for phase in phase_offsets]
 
         self._sff_floquet_phase_registers = []
@@ -3234,7 +3232,7 @@ class HardwareFloquetDepthSweepMixin:
                    self._sff_loop_register,
                    self._sff_loop_register,
                    "-",
-                   1)
+                   1) #subtract -1 to repeat n_depth of floquet pulses
 
         first_pulse = self._sff_floquet_pulse_args[0]
         first_pulse["phase"] = 0
@@ -3242,83 +3240,77 @@ class HardwareFloquetDepthSweepMixin:
         loop_index = getattr(self, "_sff_loop_index", 0)
         self._sff_loop_index = loop_index + 1
         loop_label = f"{self._sff_loop_label}_{loop_index}"
-        self.label(loop_label)
+        
+        
+        #--------------- FloquetHardware Loop Starts
+        self.label(loop_label) 
         sync_cycles = int(self.cfg.expt.get("scramble_sync_cycles", 10))
 
         for index, pulse_args in enumerate(self._sff_floquet_pulse_args):
             
             ch = int(pulse_args["ch"])
-            page, phase_register, step_register_value = (
-                self._sff_floquet_phase_registers[index])
-            self.mathi(
-                page, self.sreg(ch, "phase"), phase_register, "+", 0)
+            page, phase_register, step_register_value = self._sff_floquet_phase_registers[index]
+            self.mathi(page, 
+                       self.sreg(ch, "phase"), 
+                       phase_register,
+                       "+", 
+                       0)
             self.pulse(ch)
-            self.mathi(
-                page,
-                phase_register,
-                phase_register,
-                "+",
-                step_register_value,
-            )
+            self.mathi(page,
+                       phase_register,
+                       phase_register,
+                       "+",
+                       step_register_value)
 
-            next_pulse = self._sff_floquet_pulse_args[
-                (index + 1) % len(self._sff_floquet_pulse_args)]
+            next_pulse = self._sff_floquet_pulse_args[(index + 1) % len(self._sff_floquet_pulse_args)]
             next_pulse["phase"] = 0
             self.set_pulse_registers(**next_pulse)
             self.sync_all(sync_cycles)
 
-        self.loopnz(
-            self._sff_depth_page,
-            self._sff_loop_register,
-            loop_label,
-        )
+        self.loopnz(self._sff_depth_page, self._sff_loop_register, loop_label)
+        
+        #--------------- FloquetHardware Loop Ends
         self.sync_all()
 
     def _advance_sff_depth(self):
         """Advance depth and every phase that is linear in depth."""
-        self.mathi(
-            self._sff_depth_page,
-            self._sff_depth_register,
-            self._sff_depth_register,
-            "+",
-            self._sff_cycle_step,
-        )
+        self.mathi(self._sff_depth_page,
+                   self._sff_depth_register,
+                   self._sff_depth_register,
+                   "+",
+                   self._sff_cycle_step)
+
         for depth_phase_pulse in self._sff_pulses_with_phase_updated_by_depth:
-            register_page, phase_accumulator_register = (
-                depth_phase_pulse["phase_accumulator"]
-            )
-            self.mathi(
-                register_page,
-                phase_accumulator_register,
-                phase_accumulator_register,
-                "+",
-                depth_phase_pulse["phase_increment_reg_val"],
-            )
+            register_page, phase_accumulator_register = depth_phase_pulse["phase_accumulator"]
+            
+            
+            self.mathi(register_page,
+                       phase_accumulator_register,
+                       phase_accumulator_register,
+                       "+",
+                       depth_phase_pulse["phase_increment_reg_val"])
 
 class DisorderSFFSequenceMixin:
-    """Configure and play the four access-path quadratures for SFF.
+    """
+    NOT PERUSED AND MAYBE DELETED IN A NEAR FUTURE
+    
+    Configure and play the four access-path quadratures for SFF.
 
     The established fixed-depth spectroscopy program remains unchanged.  The
     SFF path only borrows its pure pulse-list builders and otherwise keeps a
     separate RAverager implementation.
+    
+    NOT PERUSED AND MAYBE DELETED IN A NEAR FUTURE
     """
 
-    _get_encoder_pulses = staticmethod(
-        NPhotonHamiltonianSpectroscopyProgram._get_encoder_pulses)
-    _storage_mode_from_pulse_name = staticmethod(
-        NPhotonHamiltonianSpectroscopyProgram
-        ._storage_mode_from_pulse_name)
-    _validate_storage_swap_rows = staticmethod(
-        NPhotonHamiltonianSpectroscopyProgram
-        ._validate_storage_swap_rows)
-    _get_inverse_pulses = staticmethod(
-        NPhotonHamiltonianSpectroscopyProgram._get_inverse_pulses)
-    _add_wait_after_storage_pulses = (
-        NPhotonHamiltonianSpectroscopyProgram._add_wait_after_storage_pulses)
+    _get_encoder_pulses = staticmethod(NPhotonHamiltonianSpectroscopyProgram._get_encoder_pulses)
+    _storage_mode_from_pulse_name = staticmethod(NPhotonHamiltonianSpectroscopyProgram._storage_mode_from_pulse_name)
+    _validate_storage_swap_rows = staticmethod(NPhotonHamiltonianSpectroscopyProgram._validate_storage_swap_rows)
+    _get_inverse_pulses = staticmethod(NPhotonHamiltonianSpectroscopyProgram._get_inverse_pulses)
+    _add_wait_after_storage_pulses = (NPhotonHamiltonianSpectroscopyProgram._add_wait_after_storage_pulses)
     _mod360 = DarkBaseProgram._mod360
     _advance_phase_offsets = DarkBaseProgram._advance_phase_offsets
-    _advance_storage_phase_offsets = (
-        DarkBaseProgram._advance_storage_phase_offsets)
+    _advance_storage_phase_offsets = DarkBaseProgram._advance_storage_phase_offsets
     calculate_floquet_cycle_us = DarkBaseProgram.calculate_floquet_cycle_us
 
     def _configure_sff_experiment(self):
@@ -3355,24 +3347,18 @@ class DisorderSFFSequenceMixin:
                 "spectroscopy_occupations must be non-negative and non-vacuum"
             )
         if max(occupations) > 9:
-            raise ValueError(
-                "The current multiphoton transition parser supports "
-                "local occupations only through n=9"
-            )
+            raise ValueError("The current multiphoton transition parser supports local occupations only through n=9")
         if ecfg.get("palindrome_scramble", False):
             raise ValueError("the SFF hardware depth sweep does not support palindrome_scramble")
         if ecfg.get("pre_selection_reset", False):
             raise ValueError("SFF A/B replicas do not support pre_selection_reset")
-        for flag in (
-                "load_man_dark", "swap_man_dark", "swap_man_large_dark",
-                "perform_wigner", "parity_check", "pre_selection_parity",
-                "parity_readout", "multiparity_readout"):
+        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark",
+                     "perform_wigner", "parity_check", "pre_selection_parity",
+                     "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with disorder SFF")
         if int(ecfg.get("scramble_sync_cycles", 10)) < 10:
-            raise ValueError(
-                "scramble_sync_cycles must be at least 10 for register setup"
-            )
+            raise ValueError("scramble_sync_cycles must be at least 10 for register setup")
 
         self._sff_cycle_start = int(ecfg.start)
         self._sff_cycle_step = int(ecfg.step)
@@ -3657,7 +3643,10 @@ class DisorderSFFDepthSweepProgram(
         DisorderSFFSequenceMixin,
         HardwareFloquetDepthSweepMixin,
         DarkBaseRProgram):
-    """Hardware depth sweep for one occupation and disorder realization.
+    """
+    NOT PERUSED AND MAYBE DELETED IN A NEAR FUTURE
+    
+    Hardware depth sweep for one occupation and disorder realization.
 
     At every depth the program executes four access-path quadratures:
 
@@ -3666,6 +3655,7 @@ class DisorderSFFDepthSweepProgram(
     The sequence mixin owns the spectroscopy access paths, the hardware mixin
     owns tProc registers and the counted Floquet loop, and this concrete class
     only connects those pieces to the RAverager lifecycle.
+    NOT PERUSED AND MAYBE DELETED IN A NEAR FUTURE
     """
 
     def initialize(self):
