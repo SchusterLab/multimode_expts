@@ -180,6 +180,12 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             else:  # 'e' or 'f'
                 self.post_pulse_list = [[sublist[-1]] for sublist in self.pre_creator.pulse.tolist()]
 
+        # Use custome post_pulse instead of the above-created post_pusle
+        post_sweep_pulse = cfg.expt.get('post_sweep_pulse', None)
+        if post_sweep_pulse is not None:
+            post_creator = self.get_prepulse_creator(post_sweep_pulse)
+            self.post_pulse_list = post_creator.pulse.tolist()
+
         self.sync_all(200)
 
 
