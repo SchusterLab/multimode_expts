@@ -434,10 +434,14 @@ class DarkBaseProgram(QsimBaseProgram):
 
         self.sync_all(200)
 
-    def calculate_floquet_cycle_us(self):
+    def calculate_floquet_cycle_us(self, swap_stors=None):
+        """Scheduled cycle duration, including QICK v1 sync_all quantization."""
         ecfg = self.cfg.expt
-        cycle_us = len(ecfg.swap_stors) * self.cycles2us(ecfg.get("scramble_sync_cycles", 10))
-        for stor in ecfg.swap_stors:
+        if swap_stors is None:
+            swap_stors = ecfg.swap_stors
+        sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
+        cycle_tproc_cycles = 0
+        for stor in swap_stors:
             index = stor - 1
             ch = self.m1s_ch[index]
             waveform_mode = self.m1s_waveform_mode[index]
@@ -453,8 +457,11 @@ class DarkBaseProgram(QsimBaseProgram):
             else:
                 ramp_cycles = self.pi_m1_sigma_low if self.m1s_is_low_freq[index] else self.pi_m1_sigma_high
                 pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
-            cycle_us += self.cycles2us(pulse_cycles, gen_ch=ch)
-        return cycle_us
+            # Use the same ratio-first timestamp arithmetic as pulse()/raw set.
+            # sync_all emits synci(int(pulse_end_timestamp + sync_cycles)).
+            clock_ratio = float(self.tproccfg["f_time"]) / float(self.soccfg["gens"][ch]["f_fabric"])
+            cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
+        return self.cycles2us(cycle_tproc_cycles)
 
     def multi_parity_readout(self, 
                              name='multiparity_readout', 
@@ -1066,45 +1073,10 @@ class DarkBaseProgram(QsimBaseProgram):
             )
             all_pulse_args.append(pulse_args)
 
-        pulse_us_by_stor = []
-        for i_stor, stor in enumerate(swap_stors):
-            stor_name = f"M1-S{stor}"
-            waveform_mode = self.m1s_waveform_mode[stor - 1]
-            if waveform_mode == "gauss":
-                sig_us = ecfg.get("floquet_gauss_sigma", None)
-                if sig_us is None:
-                    sig_us = self.swap_ds.get_gauss_sigma(stor_name)
-                pulse_us = float(sig_us) * float(
-                    self.swap_ds.get_gauss_n_sigma(stor_name)
-                )
-            elif waveform_mode == "preload_flattop":
-                ch = self.m1s_ch[stor - 1]
-                flat_cycles = self.us2cycles(
-                    self.swap_ds.get_len(stor_name), gen_ch=ch)
-                ramp_cycles = self.us2cycles(
-                    self.swap_ds.get_ramp_sigma(stor_name), gen_ch=ch)
-                pulse_us = self.cycles2us(
-                    flat_cycles + 6 * ramp_cycles, gen_ch=ch)
-            else:
-                # QICK flat_top length is only the plateau.  The registered
-                # pi_m1si_low/high Gaussian ramp is 6 sigma in total and is
-                # part of the physical time over which a detuned frame
-                # advances.
-                ramp_sigma_us = float(
-                    self.cfg.device.manipulate.ramp_sigma)
-                pulse_us = (
-                    float(self.swap_ds.get_len(stor_name))
-                    + 6.0 * ramp_sigma_us
-                )
-            pulse_us_by_stor.append(pulse_us)
-
         forward_sequence = list(range(len(swap_stors)))
         reverse_sequence = list(reversed(forward_sequence))
 
-        scramble_sync_us = float(self.cycles2us(scramble_sync_cycles))
-        scramble_elapsed_us = floquet_cycle * (
-            sum(pulse_us_by_stor) + len(swap_stors) * scramble_sync_us
-        )
+        scramble_elapsed_us = floquet_cycle * self.calculate_floquet_cycle_us(swap_stors)
 
         self.sync_all()
 
@@ -9078,6 +9050,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             ramp_sigma = ramp_sigma[0]
         pulse_us = []
         pi_fracs = []
+        cycle_tproc_cycles = 0
         for stor in swap_stors:
             pulse_name = f"M1-S{stor}"
             if station.ds_floquet.get_freq(pulse_name) < 1800:
@@ -9102,11 +9075,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 ramp_cycles = station.soccfg.us2cycles(ramp_sigma, gen_ch=gen_ch)
                 pulse_cycles = flat_cycles + 6 * ramp_cycles
             pulse_us.append(station.soccfg.cycles2us(pulse_cycles, gen_ch=gen_ch))
+            clock_ratio = float(station.soccfg["tprocs"][0]["f_time"]) / float(station.soccfg["gens"][gen_ch]["f_fabric"])
+            cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
             pi_fracs.append(station.ds_floquet.get_pi_frac(pulse_name))
 
-        sync_us = station.soccfg.cycles2us(sync_cycles)
-        # Actual hardware time of one entire Floquet/Trotter cycle.
-        floquet_cycle_us = sum(pulse_us) + len(swap_stors) * sync_us
+        # Match the integer synci advances, not the unquantized pulse+gap sum.
+        floquet_cycle_us = station.soccfg.cycles2us(cycle_tproc_cycles)
         if not np.all(np.isfinite(pulse_us + pi_fracs)) or min(pulse_us + pi_fracs) <= 0.:
             raise ValueError("Floquet pulse lengths and pi fractions must be finite and positive")
         if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0.:
