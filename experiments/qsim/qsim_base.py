@@ -135,12 +135,24 @@ class QsimBaseProgram(MMAveragerProgram):
                 continue
             stor_name = f"M1-S{i_stor+1}"
             ch = self.m1s_ch[i_stor]
-            sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
-            if sig_us is None:
-                sig_us = self.swap_ds.get_gauss_sigma(stor_name)
-            n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
-            sigma = self.us2cycles(sig_us, gen_ch=ch)
-            self.add_gauss(ch=ch, name=self.m1s_wf_name[i_stor], sigma=sigma, length=sigma * n_sig)
+            waveform_mode = self.m1s_waveform_mode[i_stor]
+            
+            if waveform_mode == 'gauss':
+                sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
+                if sig_us is None:
+                    sig_us = self.swap_ds.get_gauss_sigma(stor_name)
+                n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
+                sigma = self.us2cycles(sig_us, gen_ch=ch)
+                self.add_gauss(ch=ch,
+                               name=self.m1s_wf_name[i_stor],
+                               sigma=sigma,
+                               length=sigma * n_sig)
+                
+            elif waveform_mode == 'preload_flattop':
+                self.add_preloaded_flat_top(ch=ch,
+                                            name=self.m1s_wf_name[i_stor],
+                                            flat_length_us=self.swap_ds.get_len(stor_name),
+                                            ramp_sigma_us=self.swap_ds.get_ramp_sigma(stor_name))
 
         self.m1s_kwargs = []
         for stor in range(7):
