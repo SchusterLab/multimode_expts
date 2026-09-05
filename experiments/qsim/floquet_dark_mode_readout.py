@@ -379,6 +379,30 @@ def _prepare_preloaded_floquet_register_bank(program,
     return bank, register_page, next_register
 
 
+def _play_preloaded_floquet_register_bank_entry(program, entry):
+    """
+    Emit one raw arb ``set`` while preserving QICK pulse timestamps.
+    """
+    channel = entry["channel"]
+    current_timestamp = float(program.get_timestamp(gen_ch=channel))
+    if not np.isclose(current_timestamp, 0.0):
+        raise RuntimeError(
+            "preload_flattop raw pulse must start after sync_all()"
+        )
+
+    program.set(entry["tproc_channel"],
+                entry["register_page"],
+                entry["frequency_register"],
+                entry["phase_register"],
+                entry["address_register"],
+                entry["gain_register"],
+                entry["mode_register"],
+                0,
+                f"preloaded arb {entry['waveform_name']} on channel {channel}")
+    program.set_timestamp(entry["pulse_duration_tproc_cycles"],
+                          gen_ch=channel)
+
+
 class DarkBaseProgram(QsimBaseProgram):
     
     def initialize(self):
