@@ -578,6 +578,40 @@ class MM_base:
                                                     gen_ch=self.tempch),
                                 waveform=wf_name)
 
+            elif pulse_data[5][jj] == "preload_flattop":
+                
+                flat_cycles = self.us2cycles(pulse_data[2][jj], gen_ch=self.tempch)
+                sigma_cycles = self.us2cycles(pulse_data[6][jj], gen_ch=self.tempch)
+                
+                
+                if dedupe:
+                    wf_name = f"cp_pft_{self.tempch}_{flat_cycles}_{sigma_cycles}"
+                    if wf_name not in self._cp_loaded_envs:
+                        self.add_preloaded_flat_top(
+                            ch=self.tempch,
+                            name=wf_name,
+                            flat_length_us=pulse_data[2][jj],
+                            ramp_sigma_us=pulse_data[6][jj],
+                        )
+                        self._cp_loaded_envs.add(wf_name)
+                else:
+                    wf_name = "temp_preload_flattop" + str(jj) + prefix
+                    self.add_preloaded_flat_top(
+                        ch=self.tempch,
+                        name=wf_name,
+                        flat_length_us=pulse_data[2][jj],
+                        ramp_sigma_us=pulse_data[6][jj],
+                    )
+                self.sync_all(self.us2cycles(0.01))
+                self.setup_and_pulse(
+                    ch=self.tempch,
+                    style="arb",
+                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                    gain=pulse_data[1][jj],
+                    waveform=wf_name,
+                )
+
             # check if pulse_data[5][jj] is a list or not
             elif isinstance(pulse_data[5][jj], list) and pulse_data[5][jj][0] == 'opt_cont':
                 if waveform_preload is None:
