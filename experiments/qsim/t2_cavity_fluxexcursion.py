@@ -1104,11 +1104,12 @@ class FloquetChevronAmpProgram(QsimBaseProgram):
         ch = m1s_kwarg['ch']
         m1s_kwarg['freq'] = self.freq2reg(self.m1s_freq_MHz[i_stor] + self.cfg.expt.detune, gen_ch=ch)
         m1s_kwarg['gain'] = self.cfg.expt.gain
+        sync_cycles = int(self.cfg.expt.get("scramble_sync_cycles", 10))
         # print("freq", self.reg2freq(m1s_kwarg['freq'], gen_ch=ch), "length", self.cfg.expt.length)
         self.set_pulse_registers(**m1s_kwarg)
         for i in range(self.m1s_pi_fracs[i_stor]):
             self.pulse(ch)
-            self.sync_all()
+            self.sync_all(sync_cycles)
         self.sync_all()
 
 
