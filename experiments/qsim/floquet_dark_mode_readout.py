@@ -278,36 +278,8 @@ class DarkBaseProgram(QsimBaseProgram):
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
-        
-        # Register a gaussian envelope for each mode flagged 'arb'; per-mode sigma
-        # comes from the dataset (cfg.expt.floquet_gauss_sigma overrides if given).
-        # flat_top modes reuse MM_base's pi_m1si_low/high ramp waveforms (no buffer cost).
-        for i_stor in range(7):
-            if self.m1s_style[i_stor] != 'arb':
-                continue
-            stor_name = f"M1-S{i_stor+1}"
-            ch = self.m1s_ch[i_stor]
-            sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
-            if sig_us is None:
-                sig_us = self.swap_ds.get_gauss_sigma(stor_name)
-            n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
-            sigma = self.us2cycles(sig_us, gen_ch=ch)
-            self.add_gauss(ch=ch, name=self.m1s_wf_name[i_stor], sigma=sigma, length=sigma * n_sig)
+        self._initialize_floquet_pulses()
 
-        self.m1s_kwargs = []
-        for stor in range(7):
-            kw = {
-                'ch': self.m1s_ch[stor],
-                'style': self.m1s_style[stor],
-                'freq': self.m1s_freq[stor],
-                'phase': 0,
-                'gain': self.m1s_gain[stor],
-                'waveform': self.m1s_wf_name[stor],
-            }
-            if self.m1s_style[stor] != 'arb':   # flat_top / const need the plateau length
-                kw['length'] = self.m1s_length[stor]
-            self.m1s_kwargs.append(kw)
-            
         if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
             self.displace_man(setup=True, play=False)
 
@@ -319,11 +291,16 @@ class DarkBaseProgram(QsimBaseProgram):
         for stor in ecfg.swap_stors:
             index = stor - 1
             ch = self.m1s_ch[index]
-            if self.m1s_style[index] == "arb": #I think naming this as 'arb' is not really a good convention
+            waveform_mode = self.m1s_waveform_mode[index]
+            if waveform_mode == "gauss":
                 sigma_us = ecfg.get("floquet_gauss_sigma", None) # I suspect this is needed now. Could be deleted
                 if sigma_us is None:
                     sigma_us = self.swap_ds.get_gauss_sigma(f"M1-S{stor}")
                 pulse_cycles = self.us2cycles(sigma_us, gen_ch=ch) * self.swap_ds.get_gauss_n_sigma(f"M1-S{stor}")
+            elif waveform_mode == "preload_flattop":
+                ramp_sigma_us = self.swap_ds.get_ramp_sigma(f"M1-S{stor}")
+                ramp_cycles = self.us2cycles(ramp_sigma_us, gen_ch=ch)
+                pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
             else:
                 ramp_cycles = self.pi_m1_sigma_low if self.m1s_is_low_freq[index] else self.pi_m1_sigma_high
                 pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
@@ -2042,10 +2019,11 @@ class DarkBaseRProgram(MMRAveragerProgram):
     """
 
     _pre_selection_filtering = True
-
-    retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters #borrowing methods
-    prep_man_fock_state = DarkBaseProgram.prep_man_fock_state #borrowing methods
-    multi_parity_readout = DarkBaseProgram.multi_parity_readout #borrowing methods
+    #--------------- borrowing methods
+    retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters 
+    _initialize_floquet_pulses = QsimBaseProgram._initialize_floquet_pulses
+    prep_man_fock_state = DarkBaseProgram.prep_man_fock_state 
+    multi_parity_readout = DarkBaseProgram.multi_parity_readout 
     body = DarkBaseProgram.body #borrowing methods
 
     def __init__(self, soccfg, cfg):
@@ -2068,38 +2046,7 @@ class DarkBaseRProgram(MMRAveragerProgram):
         man_mode_no = self.cfg.expt.get("man_mode_no", 1)
         self.man_mode_idx = man_mode_no - 1
 
-        for stor in range(7):
-            if self.m1s_style[stor] != "arb":
-                continue
-
-            stor_name = f"M1-S{stor + 1}"
-            ch = self.m1s_ch[stor]
-            sigma_us = self.cfg.expt.get("floquet_gauss_sigma", None)
-            if sigma_us is None:
-                sigma_us = self.swap_ds.get_gauss_sigma(stor_name)
-            n_sigma = self.swap_ds.get_gauss_n_sigma(stor_name)
-            sigma = self.us2cycles(sigma_us, gen_ch=ch)
-
-            self.add_gauss(
-                ch=ch,
-                name=self.m1s_wf_name[stor],
-                sigma=sigma,
-                length=sigma * n_sigma,
-            )
-
-        self.m1s_kwargs = []
-        for stor in range(7):
-            pulse_kwargs = {
-                "ch": self.m1s_ch[stor],
-                "style": self.m1s_style[stor],
-                "freq": self.m1s_freq[stor],
-                "phase": 0,
-                "gain": self.m1s_gain[stor],
-                "waveform": self.m1s_wf_name[stor],
-            }
-            if self.m1s_style[stor] != "arb":
-                pulse_kwargs["length"] = self.m1s_length[stor]
-            self.m1s_kwargs.append(pulse_kwargs)
+        self._initialize_floquet_pulses()
 
         self.sync_all(200)
 
