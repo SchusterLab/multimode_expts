@@ -127,12 +127,9 @@ class QsimBaseProgram(MMAveragerProgram):
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
         
-        # Register a gaussian envelope for each mode flagged 'arb'; per-mode sigma
-        # comes from the dataset (cfg.expt.floquet_gauss_sigma overrides if given).
-        # flat_top modes reuse MM_base's pi_m1si_low/high ramp waveforms (no buffer cost).
+        # Register one complete arb envelope for gauss and preload_flattop modes.
+        # Native flat_top modes keep reusing MM_base's pi_m1si_low/high ramps.
         for i_stor in range(7):
-            if self.m1s_style[i_stor] != 'arb':
-                continue
             stor_name = f"M1-S{i_stor+1}"
             ch = self.m1s_ch[i_stor]
             waveform_mode = self.m1s_waveform_mode[i_stor]
