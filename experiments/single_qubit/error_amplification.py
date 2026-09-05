@@ -53,6 +53,11 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                               sigma=_sigma,
                               length=_sigma*n_sigma, 
                               )
+        elif self.pulse_to_test[5] == 'preload_flattop':
+            self.add_preloaded_flat_top(ch=self.pulse_to_test[4],
+                                        name="pulse_to_test",
+                                        flat_length_us=self.pulse_to_test[2],
+                                        ramp_sigma_us=self.pulse_to_test[6])
 
         # initialize registers
         if cfg.expt.parameter_to_test == 'gain':
@@ -86,8 +91,10 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             self.pulse_style = "arb"
         elif self.pulse_to_test[5] == 'flat_top':
             self.pulse_style = "flat_top"
+        elif self.pulse_to_test[5] == 'preload_flattop':
+            self.pulse_style = "arb"
         else:
-            raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
+            raise ValueError("Invalid pulse style. Must be 'gauss', 'flat_top', or 'preload_flattop'.")
 
         # Precompute freq and length for set_pulse_registers
         self._freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
@@ -96,8 +103,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # n_pulses and pi_frac
         self.n_pulses = cfg.expt.get('n_pulses', 1)
-        sync_delay = cfg.expt.get("floquet_sync_delay", 
-                                  cfg.expt.get("scramble_sync_cycles", 0))
+        sync_delay = cfg.expt.get("scramble_sync_cycles",cfg.expt.get("floquet_sync_delay", 10))
         self.floquet_sync_delay = 0 if sync_delay is None else int(sync_delay)
 
         if cfg.expt.pulse_type[2] == 'pi':
