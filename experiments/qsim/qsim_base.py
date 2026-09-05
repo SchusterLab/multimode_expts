@@ -50,20 +50,29 @@ class QsimBaseProgram(MMAveragerProgram):
         self.m1s_length = [self.us2cycles(self.swap_ds.get_len(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
         self.m1s_gain = [self.swap_ds.get_gain(stor_name) for stor_name in stor_names]
-        # Per-mode envelope style, read from the dataset. cfg.expt.floquet_waveform
-        # optionally overrides it globally (A/B testing); default = the dataset row.
-        _wf_override = self.cfg.expt.get("floquet_waveform", None)
-        def _style_for(stor_name):
-            w = _wf_override if _wf_override is not None else self.swap_ds.get_waveform(stor_name)
-            return 'arb' if w in ('gauss', 'gaussian', 'arb') else 'flat_top'
-        self.m1s_style = [_style_for(sn) for sn in stor_names]
-        # gauss modes get a per-mode envelope name; flat_top reuses MM_base's ramps
-        self.m1s_wf_name = [
-            (f"pi_m1s{i+1}_gauss_low" if self.m1s_is_low_freq[i] else f"pi_m1s{i+1}_gauss_high")
-            if self.m1s_style[i] == 'arb'
-            else ("pi_m1si_low" if self.m1s_is_low_freq[i] else "pi_m1si_high")
-            for i in range(7)
-        ]
+        # Use each mode's calibrated waveform from the dataset.
+        self.m1s_waveform_mode = []
+        for stor_name in stor_names:
+            waveform = self.swap_ds.get_waveform(stor_name)
+            if waveform in ('gauss', 'gaussian', 'arb'):
+                waveform = 'gauss'
+            elif waveform != 'preload_flattop':
+                waveform = 'flat_top'
+            self.m1s_waveform_mode.append(waveform)
+
+        self.m1s_style = ['flat_top' if mode == 'flat_top' else 'arb'
+                          for mode in self.m1s_waveform_mode]
+
+        self.m1s_wf_name = []
+        for index, waveform_mode in enumerate(self.m1s_waveform_mode):
+            suffix = 'low' if self.m1s_is_low_freq[index] else 'high'
+            if waveform_mode == 'gauss':
+                waveform_name = f"pi_m1s{index + 1}_gauss_{suffix}"
+            elif waveform_mode == 'preload_flattop':
+                waveform_name = f"pi_m1s{index + 1}_preload_flattop_{suffix}"
+            else:
+                waveform_name = f"pi_m1si_{suffix}"
+            self.m1s_wf_name.append(waveform_name)
             
     
 
