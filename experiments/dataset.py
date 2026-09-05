@@ -870,14 +870,20 @@ class FloquetStorageSwapDataset(MMDataset):
         self.update_value(stor_name, 'gauss_n_sigma', int(n_sigma))
 
     def get_pulse_envelope(self, stor_name):
-        """(style, sigma_us, total_length_us) for this mode's current waveform.
+        """
+        (style, sigma_us, total_length_us) for this mode's current waveform.
+        Used in prepulse_creator2
 
         gauss  -> ('gauss', gauss_sigma, gauss_sigma * gauss_n_sigma)
+        preload_flattop -> ('preload_flattop', ramp_sigma, flat length)
         else   -> ('flat_top', ramp_sigma, len)   (legacy behaviour)
         """
-        if self.get_waveform(stor_name) in ('gauss', 'gaussian', 'arb'):
+        waveform = self.get_waveform(stor_name)
+        if waveform in ('gauss', 'gaussian', 'arb'):
             sigma = self.get_gauss_sigma(stor_name)
             return 'gauss', sigma, sigma * self.get_gauss_n_sigma(stor_name)
+        if waveform == 'preload_flattop':
+            return 'preload_flattop', self.get_ramp_sigma(stor_name), self.get_len(stor_name)
         return 'flat_top', self.get_ramp_sigma(stor_name), self.get_len(stor_name)
 
     def import_from_swap_dataset(
