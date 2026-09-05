@@ -112,21 +112,8 @@ class QsimBaseProgram(MMAveragerProgram):
                 waveform="displace")
 
 
-    def initialize(self):
-        """
-        MM_base_init to pull basic info 
-        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
-        """
-        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
-        #TODO: this should use a config key to determine whether
-        # to use floquet or gate (pi or pi/2) datasets
-        self.swap_ds = self.cfg.device.storage._ds_floquet
-        self.retrieve_swap_parameters()
-
-        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
-
-        
+    def _initialize_floquet_pulses(self):
+        """Register Floquet waveforms and build their pulse arguments."""
         # Register one complete arb envelope for gauss and preload_flattop modes.
         # Native flat_top modes keep reusing MM_base's pi_m1si_low/high ramps.
         for i_stor in range(7):
@@ -164,7 +151,24 @@ class QsimBaseProgram(MMAveragerProgram):
             if self.m1s_style[stor] != 'arb':   # flat_top / const need the plateau length
                 kw['length'] = self.m1s_length[stor]
             self.m1s_kwargs.append(kw)
-            
+
+
+    def initialize(self):
+        """
+        MM_base_init to pull basic info
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
+        """
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        #TODO: this should use a config key to determine whether
+        # to use floquet or gate (pi or pi/2) datasets
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
+        self._initialize_floquet_pulses()
+
         if self.cfg.expt.perform_wigner:
             self.displace_man(setup=True, play=False)
 
