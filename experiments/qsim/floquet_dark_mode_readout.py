@@ -9080,20 +9080,28 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         pi_fracs = []
         for stor in swap_stors:
             pulse_name = f"M1-S{stor}"
+            if station.ds_floquet.get_freq(pulse_name) < 1800:
+                gen_ch = station.hardware_cfg.hw.soc.dacs.flux_low.ch[0]
+            else:
+                gen_ch = station.hardware_cfg.hw.soc.dacs.flux_high.ch[0]
             waveform = floquet_waveform if floquet_waveform is not None else station.ds_floquet.get_waveform(pulse_name)
+            # Match calculate_floquet_cycle_us: round each envelope segment
+            # to its generator clock before adding the tProc sync interval.
             if waveform in ("gauss", "gaussian", "arb"):
                 sigma = floquet_gauss_sigma
                 if sigma is None:
                     sigma = station.ds_floquet.get_gauss_sigma(pulse_name)
-                length = sigma * station.ds_floquet.get_gauss_n_sigma(pulse_name)
+                sigma_cycles = station.soccfg.us2cycles(sigma, gen_ch=gen_ch)
+                pulse_cycles = sigma_cycles * station.ds_floquet.get_gauss_n_sigma(pulse_name)
             elif waveform == "preload_flattop":
-                length = (
-                    station.ds_floquet.get_len(pulse_name)
-                    + 6. * station.ds_floquet.get_ramp_sigma(pulse_name)
-                )
+                flat_cycles = station.soccfg.us2cycles(station.ds_floquet.get_len(pulse_name), gen_ch=gen_ch)
+                ramp_cycles = station.soccfg.us2cycles(station.ds_floquet.get_ramp_sigma(pulse_name), gen_ch=gen_ch)
+                pulse_cycles = flat_cycles + 6 * ramp_cycles
             else:
-                length = station.ds_floquet.get_len(pulse_name) + 6. * ramp_sigma
-            pulse_us.append(length)
+                flat_cycles = station.soccfg.us2cycles(station.ds_floquet.get_len(pulse_name), gen_ch=gen_ch)
+                ramp_cycles = station.soccfg.us2cycles(ramp_sigma, gen_ch=gen_ch)
+                pulse_cycles = flat_cycles + 6 * ramp_cycles
+            pulse_us.append(station.soccfg.cycles2us(pulse_cycles, gen_ch=gen_ch))
             pi_fracs.append(station.ds_floquet.get_pi_frac(pulse_name))
 
         sync_us = station.soccfg.cycles2us(sync_cycles)
