@@ -266,7 +266,7 @@ class SidebandRamseyExperiment(Experiment):
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgi']
                 try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                    captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 except ValueError:
                     print('Fit Failed ; aborting')
                 plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
@@ -292,7 +292,7 @@ class SidebandRamseyExperiment(Experiment):
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgq']
                 try:
-                    captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                    captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 except ValueError:
                     print('Fit Failed ; aborting')
 

@@ -1,4 +1,4 @@
-"""One-shot path migrator for measurement_notebooks/QEC/*.ipynb.
+r"""One-shot path migrator for measurement_notebooks/QEC/*.ipynb.
 
 Rules applied to CODE CELL source only (markdown cells and `outputs` arrays
 are left alone):

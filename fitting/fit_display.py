@@ -595,7 +595,7 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         # print(p)
         if isinstance(p, (list, np.ndarray)): 
             pCov = data['fit_err_avgi']
-            captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
             plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
             plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -619,7 +619,7 @@ def Ramsey_display(data, attrs, ramsey_freq=0.02, initial_freq=3500, fit=True, f
         p = data['fit_avgq']
         if isinstance(p, (list, np.ndarray)): 
             pCov = data['fit_err_avgq']
-            captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label=captionStr)
             plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
             plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -706,7 +706,7 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
             p = data['fit_avgi']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgi']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 axi.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label = label , color=color)
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -727,7 +727,7 @@ def multiple_Ramsey_display(prev_data, expt_path, file_list, label_list, color_l
             p = data['fit_avgq']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgq']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 axq.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label = label , color=color)
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -812,7 +812,7 @@ def cross_kerr_display(expt_path, prev_data, file_list, label_list, color_list, 
             p = data['fit_avgi']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgi']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 axi.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label = label , color=color)
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -833,7 +833,7 @@ def cross_kerr_display(expt_path, prev_data, file_list, label_list, color_list, 
             p = data['fit_avgq']
             if isinstance(p, (list, np.ndarray)): 
                 pCov = data['fit_err_avgq']
-                captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+                captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
                 axq.plot(data["xpts"][:-1], fitter.decaysin(data["xpts"][:-1], *p), label = label , color=color)
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
                 #plt.plot(data["xpts"][:-1], fitter.expfunc(data['xpts'][:-1], p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -1601,7 +1601,7 @@ def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, read
     if fit:
         p = data['fit_avgi']
         pCov = data['fit_err_avgi']
-        captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+        captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
         plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
         plt.xlabel('Time [us]')
         plt.legend()
@@ -1613,7 +1613,7 @@ def t1_display(data, attrs, fit=True, active_reset = False, threshold = -4, read
     if fit:
         p = data['fit_avgq']
         pCov = data['fit_err_avgq']
-        captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+        captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
         plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgq"]), label=captionStr)
         plt.xlabel('Time [us]')
         plt.legend()
@@ -1822,7 +1822,7 @@ class MM_DualRail_Analysis:
             # print(p)
             # if isinstance(p, (list, np.ndarray)): 
                 # pCov = data['fit_err_avgi']
-            captionStr = f'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_2$ Ramsey fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(xdata, fitter.decaysin(xdata, *p), label=captionStr)
             plt.plot(xdata, fitter.expfunc(xdata, p[4], p[0], p[5], p[3]), color='0.2', linestyle='--')
             plt.plot(xdata, fitter.expfunc(xdata, p[4], -p[0], p[5], p[3]), color='0.2', linestyle='--')
@@ -1863,7 +1863,7 @@ class MM_DualRail_Analysis:
         abs_err = rel_err * np.exp(-1 / fit[3])
         fid = np.exp(-1 / fit[3])
         fid_err = abs_err
-        captionStr = f'$t$ fit [gates]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\pm$ {abs_err*100:.6f} %'
+        captionStr = f'$t$ fit [gates]: {p[3]:.3} $\\pm$ {np.sqrt(pCov[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit[3])*100:.6f} $\\pm$ {abs_err*100:.6f} %'
 
         p_post = fit_post
         pCov_post = err_post
@@ -1871,7 +1871,7 @@ class MM_DualRail_Analysis:
         abs_err_post = rel_err_post * np.exp(-1 / fit_post[3])
         fid_post = np.exp(-1 / fit_post[3])
         fid_err_post = abs_err_post
-        captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\pm$ {abs_err_post*100:.6f}%'
+        captionStr_post = f'$t$ fit [gates]: {p_post[3]:.3} $\\pm$ {np.sqrt(pCov_post[3][3]):.3}\nFidelity per gate: {np.exp(-1 / fit_post[3])*100:.6f} $\\pm$ {abs_err_post*100:.6f}%'
 
         ax1.plot(xpts, fitter.expfunc(xpts, *fit), label=captionStr, color=colors[0])
         ax1.plot(xpts, [fitter.expfunc(x, *fit_post) for x in xpts], label=captionStr_post, color = colors[1])

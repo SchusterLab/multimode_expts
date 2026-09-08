@@ -475,7 +475,7 @@ class DarkBaseProgram(QsimBaseProgram):
         
         
     def prep_man_fock_state(self, man_no, state, broadband=False):
-        """
+        r"""
         Override the one in MMbase, just for the debugging purpose. 
         The program is curretly not perfect, as it simply divides the pulse length by \sqrt{n}
         -----------
@@ -1190,7 +1190,7 @@ class DarkBaseProgram(QsimBaseProgram):
         update_phases=True,
         label="",
     ):
-        """
+        r"""
         Play n_frac copies of the calibrated M1-S{stor} fractional pulse.
 
         logical_phase_deg:
@@ -1351,7 +1351,7 @@ class DarkBaseProgram(QsimBaseProgram):
                 )
 
     def _prepare_dark_mode(self, phase_offsets, disorder_phase_offsets=None):
-        """
+        r"""
         Prepare the same dark/normal mode that the old readout block measures.
 
         Old readout map:

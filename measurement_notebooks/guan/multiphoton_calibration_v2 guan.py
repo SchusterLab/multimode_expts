@@ -2795,7 +2795,7 @@ for i in range(len(data_tot)):
 
 # open simulation data
 if 'pulse' in filename:
-    filename_th = filename.replace('pulse', 'pop_sim\populations')
+    filename_th = filename.replace('pulse', r'pop_sim\populations')
 else:
     filename_th = filename.replace('optimal_control\\', 'optimal_control\\pop_sim\\populations_')
 data_th = np.load(filename_th, allow_pickle=True)

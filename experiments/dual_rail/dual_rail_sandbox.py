@@ -705,7 +705,7 @@ class DualRailSandboxExperiment(Experiment):
                                 t_fit = np.linspace(np.min(times), np.max(times), 100)
                                 ax.plot(t_fit, expfunc1(t_fit, *pOpt), '--',
                                        color=self.STATE_COLORS[measured_state], linewidth=2,
-                                       label=f'{measured_state} fit: $T={T:.3g}\pm{T_err:.3g}$ ms')
+                                       label=rf'{measured_state} fit: $T={T:.3g}\pm{T_err:.3g}$ ms')
                             except Exception as e:
                                 print(f"Fit failed for {prepared_state} measured as {measured_state}: {e}")
 

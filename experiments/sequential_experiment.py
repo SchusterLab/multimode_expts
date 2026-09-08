@@ -91,7 +91,7 @@ def fit_t1(data, fit=True, title="$T_1$", **kwargs):
     data['fit_avgi'], data['fit_err_avgi'] = fitter.fitexp(data['xpts'][:-1], data['avgi'][:-1], fitparams=None)
     p = data['fit_avgi']
     pCov = data['fit_err_avgi']
-    captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+    captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
     #print(captionStr)
     return p[3], np.sqrt(pCov[3][3])
 
@@ -3382,7 +3382,7 @@ def storage_t1_optimization(soccfg=None, path=None, prefix=None, config_file=Non
         run_exp.go(analyze=False, display=False, progress=True, save=True)
         temp_data2 = run_exp.data
         t1, t1_err = fit_t1(temp_data2)
-        print(f'$T_1$ fit [us]: {t1:.3} $\pm$ {t1_err:.3}')
+        print(rf'$T_1$ fit [us]: {t1:.3} $\pm$ {t1_err:.3}')
 
 
         

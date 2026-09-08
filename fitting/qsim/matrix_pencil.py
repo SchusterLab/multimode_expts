@@ -160,7 +160,7 @@ def analyze_matrix_pencil(reconstruction,
         return (np.asarray(frequency_MHz) + nyquist_MHz) % sampling_frequency_MHz - nyquist_MHz
 
     def frequency_distance(first_MHz, second_MHz):
-        """
+        r"""
         Calculate thre frequency diffrence between first_MHz and second MHz.
         The first_MHz can be a list or an array, when the return is the 
         list of difference. 

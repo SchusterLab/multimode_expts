@@ -190,7 +190,7 @@ class T1RingdownExperiment(Experiment):
         if fit:
             p = data['fit_avgi']
             pCov = data['fit_err_avgi']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgi [us]: {data["fit_avgi"][3]}')
@@ -199,7 +199,7 @@ class T1RingdownExperiment(Experiment):
         if fit:
             p = data['fit_avgq']
             pCov = data['fit_err_avgq']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgq"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')
@@ -208,7 +208,7 @@ class T1RingdownExperiment(Experiment):
         if fit:
             p = data['fit_amps']
             pCov = data['fit_err_amps']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_amps"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 amp [us]: {data["fit_amps"][3]}')
