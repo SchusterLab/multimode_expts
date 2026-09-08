@@ -18,75 +18,6 @@ from slab.dsfit import *
 import fitting.fitting as fitter
 
 
-def normalize_data(axi, axq, data, normalize): 
-    '''
-    Display avgi and avgq data with the g,e,f corresponding i,q values
-    '''
-    # change tick labels
-    # Get current y-axis ticks
-    
-    for idx, ax in enumerate([axi, axq]):
-        ticks = ax.get_yticks()
-
-        #set limits 
-        ax.set_ylim(min(data[normalize[1]][idx], data[normalize[2]][idx]),
-                    max(data[normalize[1]][idx], data[normalize[2]][idx]))
-        #get tick labels
-        ticks = ax.get_yticks()
-
-        # Create new tick labels, replacing the first and last with custom text
-        new_labels = list(ticks)#[item.get_text() for item in ax.get_xticklabels()]
-        
-        if data[normalize[1]][idx] > data[normalize[2]][idx] :
-            new_labels[0] = normalize[2][0] # min
-            new_labels[-1] = normalize[1][0] # max
-        else:
-            new_labels[0] = normalize[1][0] # min 
-            new_labels[-1] = normalize[2][0] # max
-
-        # Apply the new tick labels
-        ax.set_yticks(ax.get_yticks().tolist()) # need to set this first 
-        ax.set_yticklabels(new_labels)
-    return axi, axq
-
-def filter_data(II, threshold, readout_per_experiment=2):
-    # assume the last one is experiment data, the last but one is for post selection
-    result = []
-    
-    
-    for k in range(len(II) // readout_per_experiment):
-        index_4k_plus_2 = readout_per_experiment * k + readout_per_experiment-2
-        index_4k_plus_3 = readout_per_experiment * k + readout_per_experiment-1
-        
-        # Ensure the indices are within the list bounds
-        if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
-            # Check if the value at 4k+2 exceeds the threshold
-            if II[index_4k_plus_2] > threshold:
-                # Add the value at 4k+3 to the result list
-                result.append(II[index_4k_plus_3])
-    
-    return result
-
-def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
-    # assume the last one is experiment data, the last but one is for post selection
-    result_Ig = []
-    result_Ie = []
-    
-    
-    for k in range(len(II) // readout_per_experiment):
-        index_4k_plus_2 = readout_per_experiment * k + readout_per_experiment-2
-        index_4k_plus_3 = readout_per_experiment * k + readout_per_experiment-1
-        
-        # Ensure the indices are within the list bounds
-        if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
-            # Check if the value at 4k+2 exceeds the threshold
-            if II[index_4k_plus_2] < threshold:
-                # Add the value at 4k+3 to the result list
-                result_Ig.append(II[index_4k_plus_3])
-                result_Ie.append(IQ[index_4k_plus_3])
-    
-    return np.array(result_Ig), np.array(result_Ie)
-
 ## histgram
 def hist(data, plot=True, span=None, verbose=True, active_reset=True, readout_per_round=2, threshold=-4, plot_e=True):
     """
@@ -431,75 +362,6 @@ def phase_sweep_display(temp_data, attrs, normalize=[False, 'g_data', 'e_data'],
     plt.show()
 
 ## Ramsey
-def filter_data(II, threshold, readout_per_experiment=2):
-    # assume the last one is experiment data, the last but one is for post selection
-    result = []
-    
-    
-    for k in range(len(II) // readout_per_experiment):
-        index_4k_plus_2 = readout_per_experiment * k + readout_per_experiment-2
-        index_4k_plus_3 = readout_per_experiment * k + readout_per_experiment-1
-        
-        # Ensure the indices are within the list bounds
-        if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
-            # Check if the value at 4k+2 exceeds the threshold
-            if II[index_4k_plus_2] < threshold:
-                # Add the value at 4k+3 to the result list
-                result.append(II[index_4k_plus_3])
-    
-    return result
-
-def filter_data_IQ(II, IQ, threshold, readout_per_experiment=2):
-    # assume the last one is experiment data, the last but one is for post selection
-    result_Ig = []
-    result_Ie = []
-    
-    
-    for k in range(len(II) // readout_per_experiment):
-        index_4k_plus_2 = readout_per_experiment * k + readout_per_experiment-2
-        index_4k_plus_3 = readout_per_experiment * k + readout_per_experiment-1
-        
-        # Ensure the indices are within the list bounds
-        if index_4k_plus_2 < len(II) and index_4k_plus_3 < len(II):
-            # Check if the value at 4k+2 exceeds the threshold
-            if II[index_4k_plus_2] < threshold:
-                # Add the value at 4k+3 to the result list
-                result_Ig.append(II[index_4k_plus_3])
-                result_Ie.append(IQ[index_4k_plus_3])
-    
-    return np.array(result_Ig), np.array(result_Ie)
-
-def post_select_raverager_data(temp_data, attrs, threshold, readouts_per_rep):
-    read_num = readouts_per_rep
-    rounds = attrs['config']['expt']['rounds']
-    reps = attrs['config']['expt']['reps']
-    expts = attrs['config']['expt']['expts']
-    I_data = np.array(temp_data['idata'])
-    Q_data = np.array(temp_data['qdata'])
-
-    # reshape data into (read_num x rounds x reps x expts)
-    # I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps, read_num)), (3, 0, 2, 1)), (read_num, rounds*reps, expts))
-    # Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps, read_num)), (3, 0, 2, 1)), (read_num, rounds*reps, expts))
-
-    I_data = np.reshape(np.transpose(np.reshape(I_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds*reps * read_num))
-    Q_data = np.reshape(np.transpose(np.reshape(Q_data, (rounds, expts, reps, read_num)), (1, 0, 2, 3)), (expts, rounds*reps * read_num))
-
-    # ## Read tomography code for reshaping if rounds neq 1
-    # I_data_ = np.reshape(I_data, (xpts, reps*read_num))
-    # Q_data_ = np.reshape(Q_data, (xpts, reps*read_num))
-
-    # now we do post selection
-    Ilist = []
-    Qlist = []
-    for ii in range(len(I_data)-1):
-        Ig, Qg = filter_data_IQ(I_data[ii], Q_data[ii], threshold, readout_per_experiment=read_num)
-        #print(len(Ig))
-        Ilist.append(np.mean(Ig))
-        Qlist.append(np.mean(Qg))
-
-    return Ilist, Qlist
-
-
 def plot_ramsey_sideband(data_list, attrs_list, y_list,
                    active_reset = False, threshold = 4, readouts_per_rep = 4, title='Ramsey', xlabel='Time (us)', ylabel='Alpha', hlines=None, vlines=None):
     '''
@@ -1054,45 +916,6 @@ def cavity_spec_display(data, findpeaks=False, verbose=True, fitparams=None, fit
     plt.show()
 
 ## Qubit spectroscopy
-def qubit_spectroscopy_display(data, fit=True, signs=[1,1,1], hlines=None, vlines=None,  title='Qubit SPectroscopy'):
-    xdata = data['xpts'][1:-1]
-    data['fit_amps'], data['fit_err_amps'] = fitter.fitlor(xdata, signs[0]*data['amps'][1:-1])
-    data['fit_avgi'], data['fit_err_avgi'] = fitter.fitlor(xdata, signs[1]*data['avgi'][1:-1])
-    data['fit_avgq'], data['fit_err_avgq'] = fitter.fitlor(xdata, signs[2]*data['avgq'][1:-1])
-
-    xpts = data['xpts'][1:-1]
-
-    plt.figure(figsize=(9, 11))
-    plt.subplot(311, title=title, ylabel="Amplitude [ADC units]")
-    plt.plot(xpts, data["amps"][1:-1],'o-')
-    if vlines is not None:
-        for vline in vlines:
-            plt.axvline(vline, color='r', ls='--')
-    if hlines is not None:
-        for hline in hlines:
-            plt.axhline(hline, color='r', ls='--') 
-    if fit:
-        plt.plot(xpts, signs[0]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_amps"]))
-        print(f'Found peak in amps at [MHz] {data["fit_amps"][2]}, HWHM {data["fit_amps"][3]}')
-
-    plt.subplot(312, ylabel="I [ADC units]")
-    plt.plot(xpts, data["avgi"][1:-1],'o-')
-    if fit:
-        plt.plot(xpts, signs[1]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgi"]))
-        print(f'Found peak in I at [MHz] {data["fit_avgi"][2]}, HWHM {data["fit_avgi"][3]}')
-    plt.subplot(313, xlabel="Pulse Frequency (MHz)", ylabel="Q [ADC units]")
-    plt.plot(xpts, data["avgq"][1:-1],'o-')
-    # plt.axvline(3476, c='k', ls='--')
-    # plt.axvline(3376+50, c='k', ls='--')
-    # plt.axvline(3376, c='k', ls='--')
-    if fit:
-        plt.plot(xpts, signs[2]*fitter.lorfunc(data["xpts"][1:-1], *data["fit_avgq"]))
-        # plt.axvline(3593.2, c='k', ls='--')
-        print(f'Found peak in Q at [MHz] {data["fit_avgq"][2]}, HWHM {data["fit_avgq"][3]}')
-
-    plt.tight_layout()
-    plt.show()
-
 def plot_spectroscopy_sweep(x_timelist, y_freqlist, z_datalist, hlines=None, vlines=None, title="f0-g1 spectroscopy Sweep"):
     plt.figure(figsize = (15,6))
     plt.subplot(111,xlabel='Frequency (MHz)',ylabel='DC flux bias (mA)')
