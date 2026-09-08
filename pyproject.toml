@@ -70,6 +70,9 @@ worker = "python -u -m job_server.worker"
 monitor = "python -m job_server.monitor_jobqueue"
 
 [tool.ruff.lint]
+# W605: catch `"$\pm$"`-style labels that raise SyntaxWarning at import time.
+# Fix is `ruff check --select W605 --fix` (adds an `r` prefix).
+extend-select = ["W605"]
 # dict(a=1, b=2) is idiomatic here for building config/param maps; keep it.
 ignore = ["C408"]
 
