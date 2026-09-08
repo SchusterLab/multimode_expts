@@ -21,9 +21,9 @@ from pathlib import Path
 import h5py
 import matplotlib.pyplot as plt
 
-from slab import AttrDict
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from slab import AttrDict
 
 # ===========================================================================
 # MIGRATION REFERENCE -- read this if your notebook broke.

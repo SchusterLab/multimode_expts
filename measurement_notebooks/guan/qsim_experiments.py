@@ -762,7 +762,7 @@ scramble_runner = CharacterizationRunner(
     job_client=client,
 )
 
-floquet_cycles = np.arange(0, 201, step=4)o
+floquet_cycles = np.arange(0, 201, step=4)
 
 meas_stors = [0,4,5]
 swap_stors = [4,5]
@@ -1054,8 +1054,8 @@ expt_params = dict(
     active_reset = False,
     man_reset = True, 
     storage_reset = True, 
-    init_advance_phases = list(range(-10,10,0.5)), # advance phase of each successive pulse [degrees]
-    ro_advance_phases = list(range(-1k,30,1)), # advance phase of each successive pulse [degrees]
+    init_advance_phases = list(np.arange(-10,10,0.5)), # advance phase of each successive pulse [degrees]
+    ro_advance_phases = list(range(-10,30,1)), # advance phase of each successive pulse [degrees]
     # advance_phase=0,
     swept_params = ['advance_phase', 'floquet_cycle'],
     # swept_params = ['floquet_cycle'],
