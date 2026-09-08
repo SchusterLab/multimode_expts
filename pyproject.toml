@@ -69,6 +69,10 @@ server = "python -m uvicorn job_server.server:app --host 127.0.0.1 --port 8000"
 worker = "python -u -m job_server.worker"
 monitor = "python -m job_server.monitor_jobqueue"
 
+[tool.ruff.lint]
+# dict(a=1, b=2) is idiomatic here for building config/param maps; keep it.
+ignore = ["C408"]
+
 [tool.ruff.format]
 quote-style = "preserve" # don't enforce single or double quotes
 
