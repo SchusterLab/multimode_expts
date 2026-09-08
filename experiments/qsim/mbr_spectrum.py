@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Many-body Ramsey spectrum: reconstruction, spectrum, and every plot of it.
 
 Spec sections 7.3/7.4: ``analyze(stage='spectrum')`` on the god Experiment
@@ -55,11 +54,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 
-from slab import AttrDict
 from experiments.MM_base import MMAveragerProgram
-from fitting.qsim import level_statistics as level_statistics_analysis
-from fitting.qsim import matrix_pencil as matrix_pencil_analysis
-from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
     EncodingPropagatorProgram,
@@ -67,7 +62,10 @@ from experiments.qsim.floquet_dark_mode_readout import (
     flatten_exp_lists,
 )
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-
+from fitting.qsim import level_statistics as level_statistics_analysis
+from fitting.qsim import matrix_pencil as matrix_pencil_analysis
+from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
+from slab import AttrDict
 
 # Matrix-Pencil knobs keep the historical ``mpm_`` prefix at the call site and
 # lose it on the way through. The 19 defaults the old code spelled out here were
@@ -88,8 +86,7 @@ def _matrix_pencil_options(options):
     """
     stripped = {}
     for name, value in options.items():
-        bare = name[len(_MATRIX_PENCIL_PREFIX):] if name.startswith(
-            _MATRIX_PENCIL_PREFIX) else name
+        bare = name.removeprefix(_MATRIX_PENCIL_PREFIX)
         if bare not in _MATRIX_PENCIL_NAMES:
             raise TypeError(
                 f"analyze() got an unexpected keyword argument {name!r}. "
