@@ -69,7 +69,19 @@ class SidebandStarkAmplificationProgram(QsimBaseProgram):
     """
 
     def core_pulses(self):
-        _scramble_sync_cycles = self.cfg.expt.get("scramble_sync_cycles", 10)
+        _scramble_sync_cycles = self.cfg.expt.get("scramble_sync_cycles", None)
+        
+        #---------- Legacy setting. Default is False
+        _use_legacy_branch = self.cfg.expt.get("use_legacy_branch", False)
+        
+        _l_sync_on = self.cfg.expt.get("include_10cycles_buffer", False)
+        _l_sync_on_hpi = self.cfg.expt.get("include_10cycles_buffer_in_pi_half", False)
+        
+        _legacy_pi_sync = (_use_legacy_branch and _l_sync_on)
+        _legacy_hpi_sync = (_legacy_pi_sync and _l_sync_on_hpi)
+        
+        
+        
         i_storA = self.cfg.expt.stor_A - 1
         i_storB = self.cfg.expt.stor_B - 1
         m1s_kwarg_A = self.m1s_kwargs[i_storA]
@@ -88,8 +100,10 @@ class SidebandStarkAmplificationProgram(QsimBaseProgram):
         self.set_pulse_registers(**m1s_kwarg_A)
         for i in range(pi_frac_A // 2):
             self.pulse(ch_A)
-            if self.cfg.expt.get("include_10cycles_buffer", False) and self.cfg.expt.get("include_10cycles_buffer_in_pi_half", False):
+            if _legacy_hpi_sync or (_scramble_sync_cycles is not None):
                 self.sync_all(_scramble_sync_cycles)
+            else:
+                print("[WARNING] NO GAP between floquet pulses")
         self.sync_all()
         
 
@@ -104,8 +118,10 @@ class SidebandStarkAmplificationProgram(QsimBaseProgram):
                 phase = phase % 360
                 _phase_reg = self.deg2reg(phase, gen_ch=ch_B)
                 self.safe_regwi(channel_page_B, r_phase_B, _phase_reg)
-                if self.cfg.expt.get("include_10cycles_buffer", False):
+                if _legacy_pi_sync or (_scramble_sync_cycles is not None):
                     self.sync_all(_scramble_sync_cycles)
+                else:
+                    print("[WARNING] NO GAP between floquet pulses")
         advance_phase_A = self.deg2reg(2 * n_pulse_B * self.cfg.expt.advance_phase)
         self.sync_all()
         
@@ -115,8 +131,10 @@ class SidebandStarkAmplificationProgram(QsimBaseProgram):
         self.set_pulse_registers(**m1s_kwarg_A_advanced)
         for i in range(pi_frac_A // 2):
             self.pulse(m1s_kwarg_A_advanced['ch'])
-            if self.cfg.expt.get("include_10cycles_buffer", False) and self.cfg.expt.get("include_10cycles_buffer_in_pi_half", False):
+            if _legacy_hpi_sync or (_scramble_sync_cycles is not None):
                 self.sync_all(_scramble_sync_cycles)
+            else:
+                print("[WARNING] NO GAP between floquet pulses")
         self.sync_all()
 
 class SidebandStarkAmplificationExperiment(QsimBaseExperiment):
