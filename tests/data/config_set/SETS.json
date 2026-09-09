@@ -1,0 +1,14 @@
+{
+  "august_n3": {
+    "floquet_file": "CFG-FL-20260814-00076",
+    "hardware_config": "CFG-HW-20260814-00074",
+    "multiphoton_config": "CFG-MP-20260121-00001",
+    "storage_man_file": "CFG-M1-20260814-00121"
+  },
+  "preload_current": {
+    "floquet_file": "CFG-FL-20260908-00001",
+    "hardware_config": "CFG-HW-20260907-00001",
+    "multiphoton_config": "CFG-MP-20260121-00001",
+    "storage_man_file": "CFG-M1-20260907-00044"
+  }
+}
