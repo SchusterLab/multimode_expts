@@ -29,6 +29,7 @@ class DarkBaseRProgram(MMRAveragerProgram):
     _pre_selection_filtering = True
 
     retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters #borrowing methods
+    _initialize_floquet_pulses = QsimBaseProgram._initialize_floquet_pulses
     prep_man_fock_state = DarkBaseProgram.prep_man_fock_state #borrowing methods
     multi_parity_readout = DarkBaseProgram.multi_parity_readout #borrowing methods
     body = DarkBaseProgram.body #borrowing methods
@@ -53,38 +54,7 @@ class DarkBaseRProgram(MMRAveragerProgram):
         man_mode_no = self.cfg.expt.get("man_mode_no", 1)
         self.man_mode_idx = man_mode_no - 1
 
-        for stor in range(7):
-            if self.m1s_style[stor] != "arb":
-                continue
-
-            stor_name = f"M1-S{stor + 1}"
-            ch = self.m1s_ch[stor]
-            sigma_us = self.cfg.expt.get("floquet_gauss_sigma", None)
-            if sigma_us is None:
-                sigma_us = self.swap_ds.get_gauss_sigma(stor_name)
-            n_sigma = self.swap_ds.get_gauss_n_sigma(stor_name)
-            sigma = self.us2cycles(sigma_us, gen_ch=ch)
-
-            self.add_gauss(
-                ch=ch,
-                name=self.m1s_wf_name[stor],
-                sigma=sigma,
-                length=sigma * n_sigma,
-            )
-
-        self.m1s_kwargs = []
-        for stor in range(7):
-            pulse_kwargs = {
-                "ch": self.m1s_ch[stor],
-                "style": self.m1s_style[stor],
-                "freq": self.m1s_freq[stor],
-                "phase": 0,
-                "gain": self.m1s_gain[stor],
-                "waveform": self.m1s_wf_name[stor],
-            }
-            if self.m1s_style[stor] != "arb":
-                pulse_kwargs["length"] = self.m1s_length[stor]
-            self.m1s_kwargs.append(pulse_kwargs)
+        self._initialize_floquet_pulses()
 
         self.sync_all(200)
 
@@ -97,9 +67,9 @@ class ManStorMultiparityChevronRProgram(DarkBaseRProgram):
 
         cfg = AttrDict(self.cfg)
         swap_stor = int(cfg.expt.swap_stor)
-        pulse_creator = self.get_prepulse_creator([
-            ["storage", f"M1-S{swap_stor}", "pi", 0.0],
-        ])
+        storage_pulse_name = str(cfg.expt.get("storage_pulse_name", f"M1-S{swap_stor}"))
+        cfg.expt.storage_pulse_name = storage_pulse_name
+        pulse_creator = self.get_prepulse_creator([["storage", storage_pulse_name, "pi", 0.0],])
         pulse = pulse_creator.pulse
 
         self.chevron_ch = int(pulse[4][0])
