@@ -104,7 +104,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 data=None,
                 occupations=None,
                 calibration=None,
-                cycle_branches=0,
+                cycle_branches: int | list | dict = 0,
                 second_branch=False,
                 phase_frame="as_acquired",
                 manual_kerr_MHz=None,

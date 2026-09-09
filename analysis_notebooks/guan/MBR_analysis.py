@@ -86,7 +86,7 @@ from slab import AttrDict
 
 # Where this machine sees the two shared trees. Configs record Windows paths
 # (output_root C:, vault_root G:), so off-prod every reader needs a mapping.
-DATA_ROOT = Path(os.environ.get("MULTIMODE_DATA_ROOT", "/Volumes/experiments"))
+DATA_ROOT = Path(os.environ.get("MULTIMODE_DATA_ROOT", "/Volumes/pippin/experiments"))
 VAULT_ROOT = Path(os.environ.get(
     "MULTIMODE_VAULT_ROOT",
     Path.home() / "Google Drive/Shared drives/SLab/Multimode",
@@ -136,7 +136,7 @@ def vault_paths(ids):
 def load_h5(path, load_shots=False):
     """-> (cfg, data). Skips idata/qdata unless asked; they are ~99% of the file."""
     with h5py.File(path, "r") as handle:
-        cfg = AttrDict(json.loads(handle.attrs["config"]))
+        cfg = AttrDict(json.loads(str(handle.attrs["config"])))
         skip = () if load_shots else ("idata", "qdata")
         data = AttrDict({k: handle[k][()] for k in handle if k not in skip})
     return cfg, data
