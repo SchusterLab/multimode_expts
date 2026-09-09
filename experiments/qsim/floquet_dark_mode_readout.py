@@ -5274,7 +5274,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             if np.any(branches):
                 raise ValueError("use either cycle_branches or second_branch, not both")
             branches += 1
-        return cls.build_phase_correction(calibration.occupations, calibration.phase_mod180, branches, calibration.hardware.physical_kerr_MHz, calibration.hardware.floquet_cycle_us)
+        return cls.build_phase_correction(calibration.occupations, 
+                                          calibration.phase_mod180, branches, 
+                                          calibration.hardware.physical_kerr_MHz, 
+                                          calibration.hardware.floquet_cycle_us)
 
     @classmethod
     def _saved_correction(cls, expts):
@@ -5413,201 +5416,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              analyzer_phase_application_sign=application_sign, 
                              legacy_analyzer_migration=legacy_migration))
 
-    @classmethod
-    def subsample_spectroscopy_shots(cls,
-                                     spectroscopy_expts,
-                                     shots_per_point,
-                                     seed=None):
-        """
-        Rebuild saved spectroscopy averages from fewer final-readout shots.
-
-        Every saved sweep point contains interleaved readout lanes in ``idata``
-        and ``qdata``. The final science measurement is the last lane of each
-        repetition. This method draws ``shots_per_point`` paired I/Q samples
-        from that lane without replacement and replaces only ``avgi``,
-        ``avgq``, ``amps``, and ``phases`` in lightweight experiment copies.
-        The original experiments and their raw-shot arrays are not modified.
-
-        QICK's saved averaged values and ``collect_shots`` may use different ADC
-        offsets or averaging rounds. For each point, the subset fluctuation
-        relative to the complete raw-shot mean is therefore added to the saved
-        average. Selecting every available shot then reproduces the saved
-        ``avgi`` and ``avgq`` exactly without assuming a particular QICK offset.
-
-        ``shots_per_point`` is the number of final-readout shots used for each
-        saved ``(Floquet cycle, preparation phase)`` point. ``seed`` makes the
-        random subset reproducible. Pre-selected acquisitions are rejected
-        because their saved average is conditioned on herald lanes and cannot
-        be reproduced by unconditioned final-lane sampling.
-
-        Returns ``(subsampled_expts, metadata)``. The metadata records the
-        requested shot count, seed, available-shot range, and raw-versus-saved
-        averaging diagnostics for every child job.
-        """
-
-        if isinstance(shots_per_point, (bool, np.bool_)):
-            raise ValueError("shots_per_point must be a positive integer")
-        if not isinstance(shots_per_point, (int, np.integer)) or shots_per_point < 1:
-            raise ValueError("shots_per_point must be a positive integer")
-        shots_per_point = int(shots_per_point)
-        spectroscopy_expts = list(flatten_exp_lists(spectroscopy_expts))
-        if not spectroscopy_expts:
-            raise ValueError("spectroscopy_expts cannot be empty")
-
-        rng = np.random.default_rng(seed)
-        subsampled_expts = []
-        job_summaries = []
-        available_shots = []
-
-        for job_index, expt in enumerate(spectroscopy_expts):
-            if (expt.cfg.expt.get("active_reset", False)
-                    and expt.cfg.expt.get("pre_selection_reset", False)):
-                raise ValueError(
-                    "shot subsampling does not support pre_selection_reset; "
-                    "the saved average is conditioned on herald readouts"
-                )
-            if "idata" not in expt.data or "qdata" not in expt.data:
-                raise ValueError(f"spectroscopy job {job_index} has no saved single-shot IQ data")
-            if "avgi" not in expt.data or "avgq" not in expt.data:
-                raise ValueError(f"spectroscopy job {job_index} has no saved averaged IQ data")
-
-            saved_avgi = np.asarray(expt.data["avgi"], dtype=float)
-            saved_avgq = np.asarray(expt.data["avgq"], dtype=float)
-            if saved_avgi.shape != saved_avgq.shape:
-                raise ValueError(f"spectroscopy job {job_index} has mismatched avgi/avgq shapes")
-            point_count = saved_avgi.size
-
-            def point_rows(values, name):
-                try:
-                    array = np.asarray(values)
-                except ValueError:
-                    array = None
-                if array is not None and array.ndim >= 2 and array.shape[0] == point_count:
-                    return [np.asarray(array[index], dtype=float).reshape(-1)
-                            for index in range(point_count)]
-                if point_count == 1 and array is not None and array.dtype != object:
-                    return [np.asarray(array, dtype=float).reshape(-1)]
-                if len(values) == point_count:
-                    return [np.asarray(values[index], dtype=float).reshape(-1)
-                            for index in range(point_count)]
-                raise ValueError(
-                    f"spectroscopy job {job_index} has {name} that does not "
-                    f"match its {point_count} sweep points"
-                )
-
-            idata_rows = point_rows(expt.data["idata"], "idata")
-            qdata_rows = point_rows(expt.data["qdata"], "qdata")
-
-            read_num = int(expt.cfg.get("read_num", 0))
-            if read_num < 1:
-                read_num = 1
-                if expt.cfg.expt.get("parity_check", False):
-                    read_num += 1
-                if expt.cfg.expt.get("active_reset", False):
-                    reset_params = MMAveragerProgram.get_active_reset_params(expt.cfg)
-                    read_num += MMAveragerProgram.active_reset_read_num(**reset_params)
-                if expt.cfg.expt.get("multiparity_readout", False):
-                    read_num += 1
-            final_lane = read_num - 1
-
-            final_i_rows = []
-            final_q_rows = []
-            for point_index, (idata, qdata) in enumerate(zip(idata_rows, qdata_rows)):
-                if len(idata) != len(qdata):
-                    raise ValueError(
-                        f"spectroscopy job {job_index}, point {point_index} has "
-                        "different I/Q shot counts"
-                    )
-                if len(idata) % read_num:
-                    raise ValueError(
-                        f"spectroscopy job {job_index}, point {point_index} raw "
-                        f"length {len(idata)} is not divisible by read_num={read_num}"
-                    )
-                final_i = idata[final_lane::read_num]
-                final_q = qdata[final_lane::read_num]
-                if len(final_i) < shots_per_point:
-                    raise ValueError(
-                        f"spectroscopy job {job_index}, point {point_index} has "
-                        f"only {len(final_i)} final-readout shots; requested "
-                        f"{shots_per_point}"
-                    )
-                final_i_rows.append(final_i)
-                final_q_rows.append(final_q)
-                available_shots.append(len(final_i))
-
-            saved_avgi_flat = saved_avgi.reshape(-1)
-            saved_avgq_flat = saved_avgq.reshape(-1)
-            full_i_mean = np.asarray([np.mean(values) for values in final_i_rows])
-            full_q_mean = np.asarray([np.mean(values) for values in final_q_rows])
-            full_raw_minus_saved_avgi = full_i_mean - saved_avgi_flat
-            full_raw_minus_saved_avgq = full_q_mean - saved_avgq_flat
-
-            sampled_avgi = np.empty(point_count, dtype=float)
-            sampled_avgq = np.empty(point_count, dtype=float)
-            for point_index, (final_i, final_q) in enumerate(zip(final_i_rows, final_q_rows)):
-                selected_indices = rng.choice(len(final_i),
-                                              size=shots_per_point,
-                                              replace=False)
-                sampled_avgi[point_index] = (
-                    saved_avgi_flat[point_index]
-                    + np.mean(final_i[selected_indices])
-                    - full_i_mean[point_index]
-                )
-                sampled_avgq[point_index] = (
-                    saved_avgq_flat[point_index]
-                    + np.mean(final_q[selected_indices])
-                    - full_q_mean[point_index]
-                )
-
-            sampled_avgi = sampled_avgi.reshape(saved_avgi.shape)
-            sampled_avgq = sampled_avgq.reshape(saved_avgq.shape)
-            sampled_data = AttrDict(dict(expt.data))
-            sampled_data["avgi"] = sampled_avgi
-            sampled_data["avgq"] = sampled_avgq
-            sampled_data["amps"] = np.abs(sampled_avgi + 1j * sampled_avgq)
-            sampled_data["phases"] = np.angle(sampled_avgi + 1j * sampled_avgq)
-            sampled_data.pop("Pe", None)
-            sampled_data.pop("return_quadrature", None)
-
-            sampled_expt = copy(expt)
-            sampled_expt.data = sampled_data
-            subsampled_expts.append(sampled_expt)
-            job_summaries.append(AttrDict(dict(
-                job_index=job_index,
-                read_num=read_num,
-                point_count=point_count,
-                minimum_available_shots=min(len(values) for values in final_i_rows),
-                maximum_available_shots=max(len(values) for values in final_i_rows),
-                median_full_raw_minus_saved_avgi=float(
-                    np.median(full_raw_minus_saved_avgi)
-                ),
-                median_full_raw_minus_saved_avgq=float(
-                    np.median(full_raw_minus_saved_avgq)
-                ),
-                maximum_full_raw_minus_saved_avgi_scatter=float(
-                    np.max(np.abs(
-                        full_raw_minus_saved_avgi
-                        - np.median(full_raw_minus_saved_avgi)
-                    ))
-                ),
-                maximum_full_raw_minus_saved_avgq_scatter=float(
-                    np.max(np.abs(
-                        full_raw_minus_saved_avgq
-                        - np.median(full_raw_minus_saved_avgq)
-                    ))
-                ),
-            )))
-
-        metadata = AttrDict(dict(
-            shots_per_point=shots_per_point,
-            seed=seed,
-            replace=False,
-            minimum_available_shots=min(available_shots),
-            maximum_available_shots=max(available_shots),
-            job_summaries=job_summaries,
-        ))
-        return subsampled_expts, metadata
-
     def analyze(self, 
                 data=None, 
                 **kwargs):
@@ -5693,12 +5501,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
           ``mpm_merge_frequency_tolerance_floor_kHz`` defaults to 0.1.  This
           does not alter within-row rank tracking because calibration error is
           common to every pole estimate in one row.
-        - ``mpm_candidate_familywise_alpha`` enables a time-domain drop-one
-          complex least-squares screen before cross-row merging.  The threshold
-          is Bonferroni-adjusted over the returned MPM candidates.  Because the
-          candidates were discovered on the same data, this is conditional
-          evidence rather than an unconditional familywise-error guarantee.
-          ``mpm_rank_sweep_extra=2`` prevents the stability sweep from running
+        - ``mpm_rank_sweep_extra=2`` prevents the stability sweep from running
           far into the numerical-noise ranks when three-rank persistence is
           requested.
 
@@ -5907,7 +5710,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                     row_frequency_standard_errors_MHz=row_calibration_se_MHz,
                     merge_frequency_tolerance_sigma=kwargs.get("mpm_calibration_sigma_multiplier", 3.0),
                     merge_frequency_tolerance_floor_MHz=merge_floor_MHz,
-                    candidate_familywise_alpha=kwargs.get("mpm_candidate_familywise_alpha", None),
                     track_decay_tolerance_per_us=kwargs.get("mpm_track_decay_tolerance_per_us", None),
                     dedup_decay_tolerance_per_us=kwargs.get("mpm_dedup_decay_tolerance_per_us", None),
                     match_decay=kwargs.get("mpm_match_decay", True),
@@ -6681,6 +6483,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
         # The pulse program adds detuning to the positive storage-M1 sideband, so the rotating-frame onsite energy is -detuning.
         onsite_MHz = np.concatenate(([0.], -detunings))
+        
+        #------------------------------------------------------------------------------- 
         # updating Hamiltonian indices by estimating
         # <n_i|H_{diag}|n_j> = \delta_{ij}(delta_i n_i+Kerr/2*n_M*(n_M-1) 
         #Specifically, the algorithm is
@@ -6792,8 +6596,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                               dedup_frequency_tolerance_MHz=None,
                               row_frequency_standard_errors_MHz=None,
                               merge_frequency_tolerance_sigma=3.0,
-                              merge_frequency_tolerance_floor_MHz=1e-4,
-                              candidate_familywise_alpha=None):
+                              merge_frequency_tolerance_floor_MHz=1e-4):
         """
         Find shared damped-exponential poles independently in each occupation.
 
@@ -6902,8 +6705,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
         elif not np.isfinite(dedup_frequency_tolerance_MHz) or dedup_frequency_tolerance_MHz <= 0.:
             raise ValueError("dedup_frequency_tolerance_MHz must be finite and positive")
-        if candidate_familywise_alpha is not None and not 0. < candidate_familywise_alpha < 1.:
-            raise ValueError("candidate_familywise_alpha must be None or between 0 and 1")
         if not np.isfinite(numerical_floor) or numerical_floor <= 0.:
             raise ValueError("numerical_floor must be finite and positive")
         row_normalization = np.asarray([A[row, 0] if diagonal[row] else 1. for row in range(len(A))])[:, None]
@@ -7006,12 +6807,8 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 rank_sweep_extra=rank_sweep_extra,
                 clip_growth=clip_growth,
                 least_squares_rcond=least_squares_rcond,
-                store_rank_sweeps=store_rank_sweeps,
-                candidate_familywise_alpha=candidate_familywise_alpha)
+                store_rank_sweeps=store_rank_sweeps)
 
-            # analyze_matrix_pencil_trace also supports standalone use.  Ignore its
-            # row-local acceptance here and apply one Bonferroni threshold after
-            # candidates from every row have been collected.
             for candidate in trace_analysis.raw_candidates:
                 candidate.row_index = row_index
                 candidate.occupation = occupations[row_index]
@@ -7020,27 +6817,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             diagnostic.occupation = occupations[row_index]
             row_diagnostics.append(diagnostic)
 
-        if candidate_familywise_alpha is None:
-            p_threshold = None
-            row_candidates = list(raw_row_candidates)
-        else:
-            p_threshold = candidate_familywise_alpha / max(len(raw_row_candidates), 1)
-            row_candidates = [candidate for candidate in raw_row_candidates if candidate.conditional_p_value <= p_threshold]
-        accepted_candidate_ids = {id(candidate) for candidate in row_candidates}
-        for diagnostic in row_diagnostics:
-            diagnostic.candidates = [candidate for candidate in diagnostic.raw_candidates if id(candidate) in accepted_candidate_ids]
-            diagnostic.candidate_familywise_alpha = candidate_familywise_alpha
-            diagnostic.candidate_p_value_threshold = p_threshold
+        row_candidates = list(raw_row_candidates)
 
         #--- B. Sortitng and MPM iteraction initiation--------------------------------------------------
-        #--- 1. Order row candidates by fitted evidence when enabled, then
-        #       merge compatible frequencies across different rows.
-        use_evidence = candidate_familywise_alpha is not None
-        if use_evidence:
-            ordered_candidates = sorted(row_candidates,
-                                        key=lambda candidate: (-candidate.partial_snr, -candidate.confidence))
-        else:
-            ordered_candidates = sorted(row_candidates, key=lambda candidate: -candidate.confidence)
+        #--- 1. Order row candidates by rank stability, then merge across rows.
+        ordered_candidates = sorted(row_candidates, key=lambda candidate: -candidate.confidence)
 
         clusters = []
         for candidate in ordered_candidates:
@@ -7077,11 +6858,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 clusters.append(cluster)
             cluster.members.append(candidate)
 
-            if use_evidence:
-                cluster.member_weights = np.asarray([max(member.partial_snr ** 2, np.finfo(float).eps) for member in cluster.members])
-            else:
-                cluster.member_weights = np.asarray([max(member.confidence, np.finfo(float).eps) for member in cluster.members])
-            cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], cluster.member_weights)
+            cluster.member_weights = np.asarray([max(member.confidence, np.finfo(float).eps) for member in cluster.members])
+            cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], 
+                                                              cluster.member_weights)
 
             if calibration_merge:
                 normalized_weights = cluster.member_weights / np.sum(cluster.member_weights)
@@ -7145,9 +6924,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 merge_tolerances_MHz = np.full(len(members), merge_frequency_tolerance_MHz)
                 normalized_frequency_scatter = frequency_scatter_MHz / merge_frequency_tolerance_MHz
             rank_confidence = len(supporting_rows) * np.median(rank_spans) / (1. + normalized_frequency_scatter)
-            combined_partial_snr = (float(np.sqrt(np.sum([member.partial_snr ** 2 for member in members])))
-                                    if use_evidence else np.nan)
-            selection_score = combined_partial_snr if use_evidence else float(rank_confidence)
+            selection_score = float(rank_confidence)
             merged_candidates.append(AttrDict({
                 "frequency_MHz": frequency_MHz,
                 "raw_decay_per_us": raw_decay_per_us,
@@ -7161,7 +6938,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 "frequency_standard_error_MHz": cluster.frequency_standard_error_MHz,
                 "merge_tolerances_MHz": merge_tolerances_MHz,
                 "decay_scatter_per_us": float(np.max(np.abs(decay_values - raw_decay_per_us))),
-                "combined_partial_snr": combined_partial_snr,
                 "rank_confidence": float(rank_confidence),
                 "selection_score": selection_score,
                 "confidence": float(rank_confidence),
@@ -7178,17 +6954,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         selected_candidates = merged_candidates[:min(requested_max_modes, sample_count - 1)]
         selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
         if not selected_candidates:
-            if candidate_familywise_alpha is not None and \
-                    raw_row_candidates and not row_candidates:
-                raise RuntimeError(
-                    f"all {len(raw_row_candidates)} stable rowwise "
-                    "Matrix-Pencil candidates failed the conditional "
-                    "drop-one fit screen at p <= "
-                    f"{p_threshold:.6g}"
-                )
             if row_candidates and rejected_clusters:
                 raise RuntimeError(
-                    "all fit-accepted Matrix-Pencil candidates failed "
+                    "all stable Matrix-Pencil candidates failed "
                     "minimum_supporting_rows"
                 )
             raise RuntimeError(
@@ -7270,8 +7038,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                  row_frequency_error_groups=None if error_group_by_row is None else list(error_group_by_row),
                                  merge_frequency_tolerance_sigma=float(merge_frequency_tolerance_sigma),
                                  merge_frequency_tolerance_floor_MHz=float(merge_frequency_tolerance_floor_MHz),
-                                 candidate_familywise_alpha=candidate_familywise_alpha,
-                                 candidate_p_value_threshold=p_threshold,
                                  track_decay_tolerance_per_us=float(track_decay_tolerance_per_us),
                                  dedup_decay_tolerance_per_us=float(dedup_decay_tolerance_per_us),
                                  match_decay=bool(match_decay),
@@ -7317,12 +7083,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                 measured=np.asarray(spectrum.measured),
                                 reconstructed=reconstructed,
                                 complete_basis=bool(spectrum.complete_basis)))
-        rejected_row_candidates = [candidate for candidate in raw_row_candidates
-                                   if id(candidate) not in accepted_candidate_ids]
         candidate_summary = AttrDict({
             "raw_per_row": raw_row_candidates,
             "per_row": row_candidates,
-            "rejected_per_row": rejected_row_candidates,
+            "rejected_per_row": [],
             "clusters": clusters,
             "rejected_clusters": rejected_clusters,
             "merged": merged_candidates,
@@ -7387,8 +7151,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                     clip_growth=True,
                                     least_squares_rcond=None,
                                     store_rank_sweeps=False,
-                                    dedup_frequency_tolerance_MHz=None,
-                                    candidate_familywise_alpha=None):
+                                    dedup_frequency_tolerance_MHz=None):
         """
         Apply the rowwise Matrix-Pencil analysis to one complex time trace.
 
@@ -7452,8 +7215,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
         elif not np.isfinite(dedup_frequency_tolerance_MHz) or dedup_frequency_tolerance_MHz <= 0.:
             raise ValueError("dedup_frequency_tolerance_MHz must be finite and positive")
-        if candidate_familywise_alpha is not None and not 0. < candidate_familywise_alpha < 1.:
-            raise ValueError("candidate_familywise_alpha must be None or between 0 and 1")
         if not np.isfinite(noise_singular_value_factor) or noise_singular_value_factor <= 0.:
             raise ValueError("noise_singular_value_factor must be finite and positive")
         if not np.isfinite(minimum_pole_radius) or not np.isfinite(maximum_pole_radius) or minimum_pole_radius <= 0. or maximum_pole_radius <= minimum_pole_radius:
@@ -7695,81 +7456,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             row_diagnostics.append(diagnostic)
             
         raw_candidates = list(row_candidates)
-        evidence = None
-        p_threshold = None
-        row_candidates = raw_candidates
-
-        if candidate_familywise_alpha is not None and raw_candidates:
-            # Jointly fit every MPM candidate, then remove one pole at a time.
-            # A real pole should produce a resolvable increase in the time-domain residual.
-            fit_frequencies_MHz = np.asarray([candidate.frequency_MHz for candidate in raw_candidates])
-            raw_fit_decay = np.asarray([candidate.decay_per_us for candidate in raw_candidates])
-            fit_decay = np.maximum(raw_fit_decay, 0.) if clip_growth else raw_fit_decay
-            fit_poles = np.exp((-fit_decay - 2j * np.pi * fit_frequencies_MHz) * sample_time_us)
-            fit_design = fit_poles[None, :] ** np.arange(sample_count)[:, None]
-            fit_rcond = np.finfo(float).eps * max(fit_design.shape) if least_squares_rcond is None else least_squares_rcond
-
-            fit_amplitudes, _, fit_rank, _ = np.linalg.lstsq(fit_design, normalized_return, rcond=fit_rcond)
-            fit_return = fit_design @ fit_amplitudes
-            fit_residual = normalized_return - fit_return
-            fit_rss = float(np.vdot(fit_residual, fit_residual).real)
-            fit_dof = sample_count - int(fit_rank)
-            noise_variance = max(fit_rss / fit_dof, np.finfo(float).tiny) if fit_dof > 0 else np.inf
-            design_pinv = np.linalg.pinv(fit_design, rcond=fit_rcond)
-            gram_inverse = design_pinv @ design_pinv.conj().T
-
-            for candidate_index, candidate in enumerate(raw_candidates):
-                reduced_design = np.delete(fit_design, candidate_index, axis=1)
-                if reduced_design.shape[1]:
-                    reduced_amplitudes, _, reduced_rank, _ = np.linalg.lstsq(reduced_design, normalized_return, rcond=fit_rcond)
-                    reduced_residual = normalized_return - reduced_design @ reduced_amplitudes
-                else:
-                    reduced_rank = 0
-                    reduced_residual = normalized_return
-
-                reduced_rss = float(np.vdot(reduced_residual, reduced_residual).real)
-                delta_rss = max(0., reduced_rss - fit_rss)
-                added_rank = int(fit_rank) - int(reduced_rank)
-                if np.isfinite(noise_variance) and added_rank == 1:
-                    partial_f = delta_rss / noise_variance
-                    p_value = (1. + partial_f / fit_dof) ** (-fit_dof)
-                    partial_snr = np.sqrt(partial_f)
-                else:
-                    partial_f = 0.
-                    p_value = 1.
-                    partial_snr = 0.
-
-                gram_diagonal = max(0., float(np.real(gram_inverse[candidate_index, candidate_index])))
-                amplitude_se = np.sqrt(noise_variance * gram_diagonal) if np.isfinite(noise_variance) else np.inf
-                candidate.normalized_amplitude = fit_amplitudes[candidate_index]
-                candidate.amplitude_magnitude = float(abs(fit_amplitudes[candidate_index]))
-                candidate.amplitude_standard_error = float(amplitude_se)
-                candidate.drop_one_delta_rss = float(delta_rss)
-                candidate.added_complex_rank = added_rank
-                candidate.partial_f = float(partial_f)
-                candidate.partial_snr = float(partial_snr)
-                candidate.conditional_p_value = float(p_value)
-
-            p_threshold = candidate_familywise_alpha / len(raw_candidates)
-            row_candidates = [candidate for candidate in raw_candidates if candidate.conditional_p_value <= p_threshold]
-            row_candidates.sort(key=lambda candidate: (-candidate.partial_snr, -candidate.confidence))
-            evidence = {
-                "design": fit_design,
-                "amplitudes": fit_amplitudes,
-                "fitted": fit_return,
-                "residual": fit_residual,
-                "residual_sum_squares": fit_rss,
-                "complex_degrees_of_freedom": fit_dof,
-                "design_rank": int(fit_rank),
-                "effective_rcond": float(fit_rcond),
-            }
-
         diagnostic = row_diagnostics[0]
         diagnostic.raw_candidates = raw_candidates
         diagnostic.candidates = row_candidates
-        diagnostic.candidate_familywise_alpha = candidate_familywise_alpha
-        diagnostic.candidate_p_value_threshold = p_threshold
-        diagnostic.candidate_evidence_fit = evidence
 
         selected_candidates = row_candidates[:min(requested_max_modes, sample_count - 1)]
         selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
@@ -7794,8 +7483,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         fitted_return = normalized_fitted_return * initial_return
         residual = trace - fitted_return
         relative_residual = float(np.linalg.norm(residual) / np.linalg.norm(trace))
-        accepted_candidate_ids = {id(candidate) for candidate in row_candidates}
-        rejected_candidates = [candidate for candidate in raw_candidates if id(candidate) not in accepted_candidate_ids]
         return AttrDict(dict(method="matrix_pencil_trace",
                              trace=trace,
                              time_us=time_us,
@@ -7803,10 +7490,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              normalized_return=normalized_return,
                              raw_candidates=raw_candidates,
                              candidates=row_candidates,
-                             rejected_candidates=rejected_candidates,
-                             candidate_familywise_alpha=candidate_familywise_alpha,
-                             candidate_p_value_threshold=p_threshold,
-                             candidate_evidence_fit=evidence,
+                             rejected_candidates=[],
                              selected_candidates=selected_candidates,
                              selected_frequencies_MHz=selected_frequencies_MHz,
                              selected_raw_decay_per_us=raw_decay_per_us,
@@ -7835,8 +7519,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                                     dedup_frequency_tolerance_bins=float(dedup_frequency_tolerance_bins),
                                                     track_frequency_tolerance_MHz=float(track_frequency_tolerance_MHz),
                                                     dedup_frequency_tolerance_MHz=float(dedup_frequency_tolerance_MHz),
-                                                    candidate_familywise_alpha=candidate_familywise_alpha,
-                                                    candidate_p_value_threshold=p_threshold,
                                                     track_decay_tolerance_per_us=float(track_decay_tolerance_per_us),
                                                     dedup_decay_tolerance_per_us=float(dedup_decay_tolerance_per_us),
                                                     match_decay=bool(match_decay),
@@ -8829,10 +8511,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if show_poles:
             rowwise_frequencies_MHz = [candidate.frequency_MHz for candidate in matrix_pencil.candidates.per_row]
             rowwise_indices = [candidate.row_index for candidate in matrix_pencil.candidates.per_row]
-            if "candidate_familywise_alpha" in matrix_pencil.settings and matrix_pencil.settings.candidate_familywise_alpha is not None:
-                candidate_label = "fit-supported rowwise Matrix-Pencil poles"
-            else:
-                candidate_label = "rowwise Matrix-Pencil poles"
+            candidate_label = "rowwise Matrix-Pencil poles"
             measured_axis.scatter(rowwise_frequencies_MHz, rowwise_indices, s=20, facecolors="none", edgecolors="cyan", linewidths=0.8, label=candidate_label)
             measured_axis.legend()
         measured_axis.set_ylabel(f"occupation {data.mode_labels}")
@@ -9446,952 +9125,3 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs,
                              program=NPhotonHamiltonianSpectroscopyProgram))
-
-
-class DisorderSFFExperiment(EncodingHamiltonianSpectroscopyExperiment):
-    """Direct disorder-ensemble spectral-form-factor acquisition.
-
-    The production job has two deliberately separate parts:
-
-    * one high-statistics, disorder-free depth-zero visibility job measuring
-      the complex access-path gain of every fixed-N occupation;
-    * chunked disorder jobs whose program hardware-sweeps positive Floquet
-      depths and saves two independent raw-shot replicas of every diagonal
-      return.
-
-    Four phase settings are packed into each RAverager program in the order
-    ``(theta, phi) = (0,0), (180,0), (0,90), (180,90)``.  For each replica,
-
-    ``Q_phi = Pe(theta=0, phi) - Pe(theta=180, phi)`` and
-    ``A = Q_0 - 1j*Q_90``.
-
-    ``analyze`` divides each occupation by the independent visibility,
-    constructs ``z=Tr(U)/D``, and uses the cross-replica estimator
-    ``Re[z_A z_B*]``.  It never squares a noisy trace against itself.
-    """
-
-    SFF_PHASE_SETTINGS = np.asarray([
-        [0.0, 0.0],
-        [180.0, 0.0],
-        [0.0, 90.0],
-        [180.0, 90.0],
-    ])
-
-    @staticmethod
-    def _positive_integer(value, name):
-        if isinstance(value, (bool, np.bool_)) or not isinstance(
-                value, (int, np.integer)) or int(value) < 1:
-            raise ValueError(f"{name} must be a positive integer")
-        return int(value)
-
-    @classmethod
-    def _validate_complete_basis(cls, occupations, swap_stors):
-        occupations = np.asarray(occupations, dtype=object)
-        mode_count = len(swap_stors) + 1
-        if occupations.ndim != 2 or occupations.shape[1] != mode_count:
-            raise ValueError(
-                f"occupations must have shape (D, {mode_count})"
-            )
-        if any(isinstance(n, (bool, np.bool_)) or not isinstance(
-                n, (int, np.integer)) for n in occupations.reshape(-1)):
-            raise TypeError("occupation entries must be integers")
-        occupations = occupations.astype(int)
-        if np.any(occupations < 0):
-            raise ValueError("occupation entries must be non-negative")
-        photon_numbers = occupations.sum(axis=1)
-        if len(occupations) == 0 or np.any(
-                photon_numbers != photon_numbers[0]):
-            raise ValueError("all occupations must have one common photon number")
-        photon_number = int(photon_numbers[0])
-        if photon_number < 1:
-            raise ValueError("the disorder SFF basis must be non-vacuum")
-        rows = [tuple(row) for row in occupations]
-        if len(set(rows)) != len(rows):
-            raise ValueError("occupations contain duplicate rows")
-        expected_dimension = comb(
-            photon_number + mode_count - 1, photon_number)
-        if len(rows) != expected_dimension:
-            raise ValueError(
-                "disorder SFF requires the complete fixed-N diagonal basis: "
-                f"expected {expected_dimension} rows for N={photon_number}, "
-                f"got {len(rows)}"
-            )
-        expected_rows = set(product(
-            range(photon_number + 1), repeat=mode_count))
-        expected_rows = {row for row in expected_rows
-                         if sum(row) == photon_number}
-        missing = expected_rows.difference(rows)
-        extra = set(rows).difference(expected_rows)
-        if missing or extra:
-            raise ValueError(
-                "occupations are not the complete fixed-N basis; "
-                f"missing={sorted(missing)}, extra={sorted(extra)}"
-            )
-        return occupations, photon_number
-
-    @staticmethod
-    def _phase_corrections(occupations, phase_by_occupation):
-        corrections = []
-        for occupation in occupations:
-            key = tuple(int(n) for n in occupation)
-            if key not in phase_by_occupation:
-                raise ValueError(f"missing phase correction for {key}")
-            phase = float(phase_by_occupation[key])
-            if not np.isfinite(phase):
-                raise ValueError(f"phase correction for {key} is not finite")
-            corrections.append(phase)
-        return np.asarray(corrections, dtype=float)
-
-    @classmethod
-    def batch(cls,
-              default_expt_cfg,
-              swap_stors,
-              occupations,
-              cycles,
-              phase_by_occupation,
-              realization_detunings_MHz,
-              realization_seeds=None,
-              realization_ids=None,
-              sync_cycles=10,
-              shots_per_replica=1,
-              visibility_reps=1000,
-              realizations_per_job=5,
-              include_visibility=True):
-        """Build queue configs for a direct full-basis disorder SFF campaign.
-
-        ``cycles`` may contain zero, but its strictly positive entries must be
-        a uniform integer grid.  Zero is represented by the independent
-        visibility job and is not sent through the destructive RAverager loop.
-        ``realization_detunings_MHz`` contains the physical detuning vector of
-        every disorder realization in ``swap_stors`` order.
-        """
-        raw_swap_stors = list(swap_stors)
-        if any(isinstance(stor, (bool, np.bool_)) or not isinstance(
-                stor, (int, np.integer)) for stor in raw_swap_stors):
-            raise TypeError("swap_stors entries must be integers in 1..7")
-        swap_stors = [int(stor) for stor in raw_swap_stors]
-        if len(swap_stors) < 1 or len(set(swap_stors)) != len(swap_stors):
-            raise ValueError("swap_stors must be a nonempty list of distinct modes")
-        if any(stor < 1 or stor > 7 for stor in swap_stors):
-            raise ValueError("swap_stors entries must be in 1..7")
-        occupations, photon_number = cls._validate_complete_basis(
-            occupations, swap_stors)
-        phase_corrections = cls._phase_corrections(
-            occupations, phase_by_occupation)
-
-        cycles_array = np.asarray(cycles, dtype=object)
-        if cycles_array.ndim != 1 or len(cycles_array) == 0:
-            raise ValueError("cycles must be a nonempty one-dimensional array")
-        if any(isinstance(cycle, (bool, np.bool_)) or not isinstance(
-                cycle, (int, np.integer)) for cycle in cycles_array):
-            raise TypeError("cycles must contain integers")
-        cycles_array = cycles_array.astype(int)
-        if np.any(cycles_array < 0):
-            raise ValueError("cycles must be non-negative")
-        if len(np.unique(cycles_array)) != len(cycles_array) or np.any(
-                np.diff(cycles_array) <= 0):
-            raise ValueError("cycles must be unique and strictly increasing")
-        positive_cycles = cycles_array[cycles_array > 0]
-        if len(positive_cycles) == 0:
-            raise ValueError("cycles must contain at least one positive depth")
-        if len(positive_cycles) == 1:
-            cycle_step = 1
-        else:
-            cycle_steps = np.diff(positive_cycles)
-            if np.any(cycle_steps != cycle_steps[0]):
-                raise ValueError(
-                    "positive cycles must be uniformly spaced for the "
-                    "RAverager depth sweep"
-                )
-            cycle_step = int(cycle_steps[0])
-
-        detunings = np.asarray(realization_detunings_MHz, dtype=float)
-        if detunings.ndim != 2 or detunings.shape[1] != len(swap_stors):
-            raise ValueError(
-                "realization_detunings_MHz must have shape "
-                f"(R, {len(swap_stors)})"
-            )
-        if len(detunings) == 0 or not np.all(np.isfinite(detunings)):
-            raise ValueError(
-                "realization_detunings_MHz must be nonempty and finite")
-        realization_count = len(detunings)
-
-        if realization_ids is None:
-            realization_ids = np.arange(realization_count, dtype=np.int64)
-        realization_ids = np.asarray(realization_ids)
-        if realization_ids.shape != (realization_count,) or not np.issubdtype(
-                realization_ids.dtype, np.integer):
-            raise ValueError(
-                "realization_ids must be an integer vector with one entry "
-                "per detuning row"
-            )
-        realization_ids = realization_ids.astype(np.int64)
-        if len(np.unique(realization_ids)) != realization_count:
-            raise ValueError("realization_ids must be unique")
-
-        if realization_seeds is None:
-            realization_seeds = realization_ids
-        realization_seeds = np.asarray(realization_seeds)
-        if realization_seeds.shape != (realization_count,) or not np.issubdtype(
-                realization_seeds.dtype, np.integer):
-            raise ValueError(
-                "realization_seeds must be an integer vector with one entry "
-                "per detuning row"
-            )
-        realization_seeds = realization_seeds.astype(np.int64)
-
-        shots_per_replica = cls._positive_integer(
-            shots_per_replica, "shots_per_replica")
-        visibility_reps = cls._positive_integer(
-            visibility_reps, "visibility_reps")
-        realizations_per_job = cls._positive_integer(
-            realizations_per_job, "realizations_per_job")
-        sync_cycles = int(sync_cycles)
-        if sync_cycles < 10:
-            raise ValueError(
-                "sync_cycles must be at least 10 for Floquet register setup"
-            )
-
-        defaults = deepcopy(default_expt_cfg)
-        defaults.update(dict(
-            reps=2 * shots_per_replica,
-            rounds=1,
-            expts=len(positive_cycles),
-            start=int(positive_cycles[0]),
-            step=cycle_step,
-            storage_reset=list(swap_stors),
-            swap_stors=list(swap_stors),
-            scramble_sync_cycles=sync_cycles,
-            floquet_hardware_loop=False,
-            update_phases=True,
-            palindrome_scramble=False,
-            parity_check=False,
-            pre_selection_parity=False,
-            pre_selection_reset=False,
-            parity_readout=False,
-            multiparity_readout=False,
-            perform_wigner=False,
-            spectroscopy_phase_correction_mode="final_analyzer",
-            spectroscopy_prep_phase=0.0,
-            spectroscopy_analyzer_phase=0.0,
-            final_analyzer_phase_per_cycle_deg=0.0,
-            sff_phase_settings=cls.SFF_PHASE_SETTINGS.tolist(),
-            sff_occupations=occupations.tolist(),
-            sff_phase_corrections_deg=phase_corrections.tolist(),
-            sff_requested_cycles=cycles_array.tolist(),
-            sff_positive_cycles=positive_cycles.tolist(),
-            sff_photon_number=photon_number,
-            sff_shots_per_replica=shots_per_replica,
-            sff_visibility_reps=visibility_reps,
-            sff_schema_version=1,
-            dedupe_waveforms=True,
-        ))
-
-        configs = []
-        if include_visibility:
-            configs.append(dict(
-                sff_job_kind="visibility",
-                sff_realization_ids=[],
-                sff_disorder_seeds=[],
-                sff_detunings_MHz=[],
-            ))
-        for start in range(0, realization_count, realizations_per_job):
-            stop = min(start + realizations_per_job, realization_count)
-            configs.append(dict(
-                sff_job_kind="disorder",
-                sff_realization_ids=realization_ids[start:stop].tolist(),
-                sff_disorder_seeds=realization_seeds[start:stop].tolist(),
-                sff_detunings_MHz=detunings[start:stop].tolist(),
-            ))
-
-        dimension = len(occupations)
-        setting_count = len(cls.SFF_PHASE_SETTINGS)
-        disorder_elementary_shots = (
-            realization_count * dimension * len(positive_cycles)
-            * setting_count * 2 * shots_per_replica
-        )
-        visibility_elementary_shots = (
-            dimension * setting_count * visibility_reps
-            if include_visibility else 0
-        )
-        return AttrDict(dict(
-            default_expt_cfg=defaults,
-            configs=configs,
-            program=DisorderSFFDepthSweepProgram,
-            experiment=cls,
-            occupations=occupations.copy(),
-            cycles=cycles_array.copy(),
-            positive_cycles=positive_cycles.copy(),
-            realization_count=realization_count,
-            hilbert_dimension=dimension,
-            program_loads_per_realization=dimension,
-            disorder_elementary_shots=disorder_elementary_shots,
-            visibility_elementary_shots=visibility_elementary_shots,
-            total_elementary_shots=(
-                disorder_elementary_shots
-                + visibility_elementary_shots
-            ),
-        ))
-
-    @staticmethod
-    def _read_num(cfg):
-        read_num = 1
-        if cfg.expt.get("parity_check", False):
-            read_num += 1
-        if cfg.expt.get("active_reset", False):
-            params = MMRAveragerProgram.get_active_reset_params(cfg)
-            read_num += MMRAveragerProgram.active_reset_read_num(**params)
-        if cfg.expt.get("multiparity_readout", False):
-            read_num += 1
-        return read_num
-
-    @classmethod
-    def _replica_returns_from_raw(cls, prog, avgi, avgq,
-                                  cycle_count, reps, read_num, cfg):
-        setting_count = len(cls.SFF_PHASE_SETTINGS)
-        idata, qdata = prog.collect_shots()
-        expected_values = cycle_count * reps * setting_count * read_num
-        if np.asarray(idata).size != expected_values:
-            raise RuntimeError(
-                "unexpected SFF I-buffer size: "
-                f"got {np.asarray(idata).size}, expected {expected_values}"
-            )
-        if np.asarray(qdata).size != expected_values:
-            raise RuntimeError(
-                "unexpected SFF Q-buffer size: "
-                f"got {np.asarray(qdata).size}, expected {expected_values}"
-            )
-
-        final_i = np.asarray(idata, dtype=float).reshape(
-            1, cycle_count, reps, setting_count, read_num
-        )[0, ..., -1]
-        np.asarray(qdata, dtype=float).reshape(
-            1, cycle_count, reps, setting_count, read_num
-        )
-
-        saved_i = np.empty((cycle_count, setting_count), dtype=float)
-        for setting_index in range(setting_count):
-            readout_index = (setting_index + 1) * read_num - 1
-            values = np.asarray(
-                avgi[0][readout_index], dtype=float).reshape(-1)
-            if len(values) != cycle_count:
-                raise RuntimeError(
-                    "unexpected SFF averaged-I shape for readout lane "
-                    f"{readout_index}: got {values.shape}, expected "
-                    f"({cycle_count},)"
-                )
-            saved_i[:, setting_index] = values
-
-        # collect_shots and firmware averages can differ by a fixed ADC offset.
-        # Preserve shot fluctuations while forcing their complete mean back to
-        # the saved averaged value, exactly as subsample_spectroscopy_shots.
-        raw_mean = np.mean(final_i, axis=1)
-        corrected_i = final_i + (
-            saved_i - raw_mean)[:, np.newaxis, :]
-
-        q = int(cfg.expt.qubits[0])
-        Ig = float(np.asarray(cfg.device.readout.Ig[q]).reshape(-1)[0])
-        Ie = float(np.asarray(cfg.device.readout.Ie[q]).reshape(-1)[0])
-        if np.isclose(Ig, Ie):
-            raise ValueError("Ig and Ie are identical; recalibrate readout")
-        Pe = (corrected_i - Ig) / (Ie - Ig)
-
-        replica_pe = np.asarray([
-            np.mean(Pe[:, 0::2, :], axis=1),
-            np.mean(Pe[:, 1::2, :], axis=1),
-        ])
-        settings = [tuple(setting) for setting in cls.SFF_PHASE_SETTINGS]
-        setting_index = {setting: index
-                         for index, setting in enumerate(settings)}
-        q0 = (
-            replica_pe[..., setting_index[(0.0, 0.0)]]
-            - replica_pe[..., setting_index[(180.0, 0.0)]]
-        )
-        q90 = (
-            replica_pe[..., setting_index[(0.0, 90.0)]]
-            - replica_pe[..., setting_index[(180.0, 90.0)]]
-        )
-        return q0 - 1j * q90
-
-    def _acquire_visibility(self, progress=False, debug=False):
-        ecfg = self.cfg.expt
-        occupations = np.asarray(ecfg.sff_occupations, dtype=int)
-        corrections = np.asarray(
-            ecfg.sff_phase_corrections_deg, dtype=float)
-        swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        read_num = self._read_num(self.cfg)
-        self.cfg.read_num = read_num
-        visibility = np.empty(len(occupations), dtype=complex)
-        q = int(ecfg.qubits[0])
-        Ig = float(np.asarray(self.cfg.device.readout.Ig[q]).reshape(-1)[0])
-        Ie = float(np.asarray(self.cfg.device.readout.Ie[q]).reshape(-1)[0])
-        if np.isclose(Ig, Ie):
-            raise ValueError("Ig and Ie are identical; recalibrate readout")
-
-        ecfg.reps = int(ecfg.sff_visibility_reps)
-        ecfg.rounds = 1
-        self.cfg.reps = int(ecfg.reps)
-        self.cfg.rounds = 1
-        ecfg.floquet_cycle = 0
-        ecfg.detunings = [0.0] * len(swap_stors)
-        for occupation_index in tqdm(
-                range(len(occupations)), disable=not progress):
-            ecfg.spectroscopy_occupations = occupations[
-                occupation_index].tolist()
-            ecfg.spectroscopy_final_occupations = occupations[
-                occupation_index].tolist()
-            ecfg.final_analyzer_phase_per_cycle_deg = float(
-                corrections[occupation_index])
-            Pe = {}
-            for theta, phi in self.SFF_PHASE_SETTINGS:
-                ecfg.spectroscopy_prep_phase = float(theta)
-                ecfg.spectroscopy_analyzer_phase = float(phi)
-                prog = NPhotonHamiltonianSpectroscopyProgram(
-                    soccfg=self.soccfg, cfg=self.cfg)
-                avgi, avgq = prog.acquire(
-                    self.im[self.cfg.aliases.soc],
-                    threshold=None,
-                    load_pulses=True,
-                    progress=False,
-                    debug=debug,
-                    readouts_per_experiment=read_num,
-                )
-                signal = float(np.asarray(avgi[0][-1]).reshape(-1)[0])
-                Pe[(float(theta), float(phi))] = (
-                    signal - Ig) / (Ie - Ig)
-                self.prog = prog
-            q0 = Pe[(0.0, 0.0)] - Pe[(180.0, 0.0)]
-            q90 = Pe[(0.0, 90.0)] - Pe[(180.0, 90.0)]
-            visibility[occupation_index] = q0 - 1j * q90
-
-        data = AttrDict(dict(
-            sff_schema_version=np.asarray([1], dtype=int),
-            sff_job_kind_code=np.asarray([0], dtype=np.int8),
-            occupations=occupations,
-            swap_stors=np.asarray(swap_stors, dtype=int),
-            phase_corrections_deg=corrections,
-            phase_settings=self.SFF_PHASE_SETTINGS.copy(),
-            cycles=np.asarray([0], dtype=int),
-            visibility_real=np.real(visibility),
-            visibility_imag=np.imag(visibility),
-            visibility_reps=np.asarray(
-                [int(ecfg.sff_visibility_reps)], dtype=int),
-        ))
-        self.data = data
-        return data
-
-    def _acquire_disorder(self, progress=False, debug=False):
-        ecfg = self.cfg.expt
-        occupations = np.asarray(ecfg.sff_occupations, dtype=int)
-        corrections = np.asarray(
-            ecfg.sff_phase_corrections_deg, dtype=float)
-        cycles = np.asarray(ecfg.sff_positive_cycles, dtype=int)
-        realization_ids = np.asarray(ecfg.sff_realization_ids, dtype=np.int64)
-        seeds = np.asarray(ecfg.sff_disorder_seeds, dtype=np.int64)
-        detunings = np.asarray(ecfg.sff_detunings_MHz, dtype=float)
-        if detunings.shape != (len(realization_ids), len(ecfg.swap_stors)):
-            raise ValueError(
-                "this disorder job has inconsistent realization IDs and "
-                "detuning rows"
-            )
-        if seeds.shape != realization_ids.shape:
-            raise ValueError(
-                "this disorder job has inconsistent realization IDs and seeds"
-            )
-
-        read_num = self._read_num(self.cfg)
-        self.cfg.read_num = read_num
-        reps = int(ecfg.reps)
-        shots_per_replica = int(ecfg.sff_shots_per_replica)
-        self.cfg.reps = reps
-        self.cfg.rounds = 1
-        self.cfg.expts = len(cycles)
-        self.cfg.start = int(cycles[0])
-        self.cfg.step = int(cycles[1] - cycles[0]) \
-            if len(cycles) > 1 else int(ecfg.step)
-        if reps != 2 * shots_per_replica:
-            raise ValueError(
-                "reps must equal 2*sff_shots_per_replica for A/B pairing"
-            )
-        if ecfg.get("pre_selection_reset", False):
-            raise ValueError("SFF A/B replicas do not support pre_selection_reset")
-
-        returns = np.empty(
-            (len(realization_ids), 2, len(occupations), len(cycles)),
-            dtype=complex,
-        )
-        floquet_cycle_us = None
-        for realization_index in tqdm(
-                range(len(realization_ids)), disable=not progress):
-            ecfg.detunings = detunings[realization_index].tolist()
-            for occupation_index, occupation in enumerate(occupations):
-                ecfg.spectroscopy_occupations = occupation.tolist()
-                ecfg.spectroscopy_final_occupations = occupation.tolist()
-                ecfg.final_analyzer_phase_per_cycle_deg = float(
-                    corrections[occupation_index])
-                self.prog = self.ProgramClass(
-                    soccfg=self.soccfg, cfg=self.cfg)
-                xpts, avgi, avgq = self.prog.acquire(
-                    self.im[self.cfg.aliases.soc],
-                    threshold=None,
-                    load_pulses=True,
-                    progress=False,
-                    debug=debug,
-                    readouts_per_experiment=(
-                        len(self.SFF_PHASE_SETTINGS) * read_num),
-                )
-                if not np.array_equal(
-                        np.asarray(xpts, dtype=int), cycles):
-                    raise RuntimeError(
-                        "SFF RAverager returned the wrong cycle grid: "
-                        f"got {np.asarray(xpts)}, expected {cycles}"
-                    )
-                returns[realization_index, :, occupation_index, :] = (
-                    self._replica_returns_from_raw(
-                        self.prog, avgi, avgq,
-                        cycle_count=len(cycles),
-                        reps=reps,
-                        read_num=read_num,
-                        cfg=self.cfg,
-                    )
-                )
-                this_cycle_us = float(self.prog.floquet_cycle_us)
-                if floquet_cycle_us is None:
-                    floquet_cycle_us = this_cycle_us
-                elif not np.isclose(floquet_cycle_us, this_cycle_us):
-                    raise RuntimeError(
-                        "Floquet cycle duration changed within one SFF job"
-                    )
-
-        data = AttrDict(dict(
-            sff_schema_version=np.asarray([1], dtype=int),
-            sff_job_kind_code=np.asarray([1], dtype=np.int8),
-            realization_ids=realization_ids,
-            disorder_seeds=seeds,
-            detunings_MHz=detunings,
-            occupations=occupations,
-            swap_stors=np.asarray(ecfg.swap_stors, dtype=int),
-            phase_corrections_deg=corrections,
-            phase_settings=self.SFF_PHASE_SETTINGS.copy(),
-            cycles=cycles,
-            replica_returns_real=np.real(returns),
-            replica_returns_imag=np.imag(returns),
-            shots_per_replica=np.asarray(
-                [shots_per_replica], dtype=int),
-            floquet_cycle_us=np.asarray(
-                [floquet_cycle_us], dtype=float),
-        ))
-        self.data = data
-        return data
-
-    def acquire(self, progress=False, debug=False):
-        ensure_list_in_cfg(self.cfg)
-        kind = str(self.cfg.expt.sff_job_kind).lower()
-        if kind == "visibility":
-            return self._acquire_visibility(
-                progress=progress, debug=debug)
-        if kind == "disorder":
-            return self._acquire_disorder(
-                progress=progress, debug=debug)
-        raise ValueError(
-            "sff_job_kind must be 'visibility' or 'disorder'"
-        )
-
-    @staticmethod
-    def _visibility_vector(visibility):
-        if visibility is None:
-            return None
-        if not isinstance(visibility, dict) and hasattr(visibility, "data"):
-            visibility = visibility.data
-        if isinstance(visibility, dict):
-            if "visibility_real" not in visibility or \
-                    "visibility_imag" not in visibility:
-                raise ValueError(
-                    "visibility data needs visibility_real and visibility_imag"
-                )
-            return (
-                np.asarray(visibility["visibility_real"], dtype=float)
-                + 1j * np.asarray(
-                    visibility["visibility_imag"], dtype=float)
-            )
-        return np.asarray(visibility, dtype=complex)
-
-    @staticmethod
-    def _visibility_occupation_order(visibility):
-        if visibility is None:
-            return None
-        if not isinstance(visibility, dict) and hasattr(visibility, "data"):
-            visibility = visibility.data
-        if isinstance(visibility, dict) and "occupations" in visibility:
-            return np.asarray(visibility["occupations"], dtype=int)
-        return None
-
-    @classmethod
-    def analyze_ensemble(cls, expts, visibility=None,
-                         bootstrap_samples=0, bootstrap_seed=None,
-                         include_zero=True):
-        """Analyze completed child jobs with an unbiased cross-replica SFF.
-
-        The reported ``sff_full`` is normalized by ``D**2``.  The unnormalized
-        convention is also stored.  ``sff_disconnected`` uses different
-        disorder realizations in its cross product, so ``sff_connected`` is
-        not contaminated by the same-realization term.  Connected quantities
-        require a common phase convention across realizations; ``sff_full``
-        itself is invariant under a realization-wide phase.
-        """
-        if hasattr(expts, "batch_expts"):
-            expts = expts.batch_expts
-        elif not isinstance(expts, (list, tuple, set)):
-            expts = [expts]
-        expts = list(flatten_exp_lists(expts))
-        if not expts:
-            raise ValueError("SFF experiment jobs cannot be empty")
-        visibility_candidates = []
-        disorder_expts = []
-        for expt in expts:
-            schema_version = int(np.asarray(
-                expt.data.get("sff_schema_version", [-1])
-            ).reshape(-1)[0])
-            if schema_version != 1:
-                raise ValueError(
-                    f"unsupported SFF schema version {schema_version}"
-                )
-            code = int(np.asarray(
-                expt.data.get("sff_job_kind_code", [-1])).reshape(-1)[0])
-            if code == 0:
-                visibility_candidates.append((
-                    cls._visibility_vector(expt.data),
-                    cls._visibility_occupation_order(expt.data),
-                ))
-            elif code == 1:
-                disorder_expts.append(expt)
-            else:
-                raise ValueError("an input job is not a disorder SFF job")
-        if not disorder_expts:
-            raise ValueError("no disorder SFF child jobs were supplied")
-
-        visibility_vector = cls._visibility_vector(visibility)
-        visibility_occupations = cls._visibility_occupation_order(
-            visibility)
-        if visibility_vector is None:
-            if not visibility_candidates:
-                raise ValueError(
-                    "an independent depth-zero visibility job is required"
-                )
-            visibility_vector, visibility_occupations = (
-                visibility_candidates[0])
-            for candidate, candidate_occupations in visibility_candidates[1:]:
-                if not np.allclose(candidate, visibility_vector) or not \
-                        np.array_equal(
-                            candidate_occupations, visibility_occupations):
-                    raise ValueError(
-                        "multiple visibility jobs disagree; select one "
-                        "explicitly"
-                    )
-
-        reference_occupations = np.asarray(
-            disorder_expts[0].data["occupations"], dtype=int)
-        reference_cycles = np.asarray(
-            disorder_expts[0].data["cycles"], dtype=int)
-        reference_swap_stors = np.asarray(
-            disorder_expts[0].data["swap_stors"], dtype=int)
-        reference_phase_corrections = np.asarray(
-            disorder_expts[0].data["phase_corrections_deg"], dtype=float)
-        reference_phase_settings = np.asarray(
-            disorder_expts[0].data["phase_settings"], dtype=float)
-        if reference_phase_corrections.shape != (
-                len(reference_occupations),) or not np.all(
-                    np.isfinite(reference_phase_corrections)):
-            raise ValueError(
-                "phase_corrections_deg must contain one finite value per "
-                "occupation"
-            )
-        if not np.array_equal(
-                reference_phase_settings, cls.SFF_PHASE_SETTINGS):
-            raise ValueError("saved SFF phase-setting order is not supported")
-        if visibility_occupations is not None and not np.array_equal(
-                visibility_occupations, reference_occupations):
-            raise ValueError(
-                "visibility occupation order does not match disorder jobs"
-            )
-        all_ids = []
-        all_seeds = []
-        all_detunings = []
-        all_returns = []
-        cycle_us_values = []
-        for expt in disorder_expts:
-            data = expt.data
-            occupations = np.asarray(data["occupations"], dtype=int)
-            cycles = np.asarray(data["cycles"], dtype=int)
-            swap_stors = np.asarray(data["swap_stors"], dtype=int)
-            phase_corrections = np.asarray(
-                data["phase_corrections_deg"], dtype=float)
-            phase_settings = np.asarray(
-                data["phase_settings"], dtype=float)
-            if not np.array_equal(occupations, reference_occupations):
-                raise ValueError("SFF child jobs use different occupation bases")
-            if not np.array_equal(cycles, reference_cycles):
-                raise ValueError("SFF child jobs use different cycle grids")
-            if not np.array_equal(swap_stors, reference_swap_stors):
-                raise ValueError("SFF child jobs use different swap_stors")
-            if not np.allclose(
-                    phase_corrections, reference_phase_corrections):
-                raise ValueError(
-                    "SFF child jobs use different phase corrections"
-                )
-            if not np.array_equal(
-                    phase_settings, reference_phase_settings):
-                raise ValueError("SFF child jobs use different phase settings")
-            returns = (
-                np.asarray(data["replica_returns_real"], dtype=float)
-                + 1j * np.asarray(
-                    data["replica_returns_imag"], dtype=float)
-            )
-            if returns.ndim != 4 or returns.shape[1:] != (
-                    2, len(reference_occupations), len(reference_cycles)):
-                raise ValueError(
-                    "replica returns must have shape (R, 2, D, Q)"
-                )
-            realization_ids_job = np.asarray(
-                data["realization_ids"], dtype=np.int64)
-            disorder_seeds_job = np.asarray(
-                data["disorder_seeds"], dtype=np.int64)
-            detunings_job = np.asarray(
-                data["detunings_MHz"], dtype=float)
-            if realization_ids_job.shape != (len(returns),) or \
-                    disorder_seeds_job.shape != (len(returns),):
-                raise ValueError(
-                    "realization IDs and seeds must match the return count"
-                )
-            if detunings_job.shape != (
-                    len(returns), len(reference_swap_stors)) or not np.all(
-                        np.isfinite(detunings_job)):
-                raise ValueError(
-                    "detunings_MHz has the wrong shape or non-finite values"
-                )
-            all_returns.append(returns)
-            all_ids.append(realization_ids_job)
-            all_seeds.append(disorder_seeds_job)
-            all_detunings.append(detunings_job)
-            cycle_us_values.append(float(np.asarray(
-                data["floquet_cycle_us"]).reshape(-1)[0]))
-
-        returns = np.concatenate(all_returns, axis=0)
-        realization_ids = np.concatenate(all_ids)
-        seeds = np.concatenate(all_seeds)
-        detunings = np.concatenate(all_detunings, axis=0)
-        if len(np.unique(realization_ids)) != len(realization_ids):
-            raise ValueError("duplicate realization IDs appear across SFF jobs")
-        if not np.all(np.isfinite(returns)):
-            raise ValueError("SFF replica returns contain non-finite values")
-        if not np.allclose(cycle_us_values, cycle_us_values[0]):
-            raise ValueError("SFF child jobs use different Floquet cycle times")
-        if returns.shape[0] < 2:
-            raise ValueError(
-                "at least two disorder realizations are required for the "
-                "connected/disconnected SFF decomposition"
-            )
-
-        visibility_vector = np.asarray(
-            visibility_vector, dtype=complex).reshape(-1)
-        if visibility_vector.shape != (len(reference_occupations),):
-            raise ValueError(
-                "visibility must contain one complex gain per occupation"
-            )
-        if not np.all(np.isfinite(visibility_vector)) or np.any(
-                np.isclose(np.abs(visibility_vector), 0.0)):
-            raise ValueError("visibility gains must be finite and nonzero")
-
-        normalized_returns = (
-            returns / visibility_vector[np.newaxis, np.newaxis, :, np.newaxis]
-        )
-        dimension = len(reference_occupations)
-        trace_replicas = np.sum(normalized_returns, axis=2) / dimension
-        zA = trace_replicas[:, 0, :]
-        zB = trace_replicas[:, 1, :]
-        realization_count = len(zA)
-        same_realization_pair = zA * np.conj(zB)
-        full_complex = np.mean(same_realization_pair, axis=0)
-        disconnected_complex = (
-            np.sum(zA, axis=0) * np.conj(np.sum(zB, axis=0))
-            - np.sum(same_realization_pair, axis=0)
-        ) / (realization_count * (realization_count - 1))
-        connected_complex = full_complex - disconnected_complex
-        naive = 0.5 * np.mean(
-            np.abs(zA) ** 2 + np.abs(zB) ** 2, axis=0)
-        full_standard_error = np.std(
-            np.real(same_realization_pair), axis=0, ddof=1
-        ) / np.sqrt(realization_count)
-
-        analysis_cycles = reference_cycles.copy()
-        full = np.real(full_complex)
-        disconnected = np.real(disconnected_complex)
-        connected = np.real(connected_complex)
-        pair_imaginary = np.imag(full_complex)
-        disconnected_imaginary = np.imag(disconnected_complex)
-        noise_bias = naive - full
-        bootstrap_low = np.asarray([], dtype=float)
-        bootstrap_high = np.asarray([], dtype=float)
-        bootstrap_connected_low = np.asarray([], dtype=float)
-        bootstrap_connected_high = np.asarray([], dtype=float)
-        bootstrap_samples = int(bootstrap_samples)
-        if bootstrap_samples < 0:
-            raise ValueError("bootstrap_samples must be non-negative")
-        if bootstrap_samples:
-            rng = np.random.default_rng(bootstrap_seed)
-            bootstrap_full = np.empty(
-                (bootstrap_samples, len(reference_cycles)), dtype=float)
-            bootstrap_connected = np.empty_like(bootstrap_full)
-            for sample_index in range(bootstrap_samples):
-                indices = rng.integers(
-                    0, realization_count, size=realization_count)
-                sample_A = zA[indices]
-                sample_B = zB[indices]
-                sample_pair = sample_A * np.conj(sample_B)
-                sample_full = np.mean(sample_pair, axis=0)
-                sample_disconnected = (
-                    np.sum(sample_A, axis=0)
-                    * np.conj(np.sum(sample_B, axis=0))
-                    - np.sum(sample_pair, axis=0)
-                ) / (realization_count * (realization_count - 1))
-                bootstrap_full[sample_index] = np.real(sample_full)
-                bootstrap_connected[sample_index] = np.real(
-                    sample_full - sample_disconnected)
-            bootstrap_low, bootstrap_high = np.percentile(
-                bootstrap_full, [2.5, 97.5], axis=0)
-            bootstrap_connected_low, bootstrap_connected_high = np.percentile(
-                bootstrap_connected, [2.5, 97.5], axis=0)
-
-        if include_zero and (len(analysis_cycles) == 0
-                             or analysis_cycles[0] != 0):
-            analysis_cycles = np.concatenate(([0], analysis_cycles))
-            full = np.concatenate(([1.0], full))
-            disconnected = np.concatenate(([1.0], disconnected))
-            connected = np.concatenate(([0.0], connected))
-            naive = np.concatenate(([1.0], naive))
-            noise_bias = np.concatenate(([0.0], noise_bias))
-            pair_imaginary = np.concatenate(([0.0], pair_imaginary))
-            disconnected_imaginary = np.concatenate(
-                ([0.0], disconnected_imaginary))
-            full_standard_error = np.concatenate(
-                ([0.0], full_standard_error))
-            trace_replicas = np.concatenate((
-                np.ones(
-                    (realization_count, 2, 1), dtype=complex),
-                trace_replicas,
-            ), axis=2)
-            if bootstrap_samples:
-                bootstrap_low = np.concatenate(([1.0], bootstrap_low))
-                bootstrap_high = np.concatenate(([1.0], bootstrap_high))
-                bootstrap_connected_low = np.concatenate(
-                    ([0.0], bootstrap_connected_low))
-                bootstrap_connected_high = np.concatenate(
-                    ([0.0], bootstrap_connected_high))
-
-        result = AttrDict(dict(
-            sff_schema_version=np.asarray([1], dtype=int),
-            cycles=analysis_cycles,
-            time_us=analysis_cycles * cycle_us_values[0],
-            occupations=reference_occupations,
-            swap_stors=reference_swap_stors,
-            phase_corrections_deg=reference_phase_corrections,
-            phase_settings=reference_phase_settings,
-            realization_ids=realization_ids,
-            disorder_seeds=seeds,
-            detunings_MHz=detunings,
-            visibility_real=np.real(visibility_vector),
-            visibility_imag=np.imag(visibility_vector),
-            trace_replica_real=np.real(trace_replicas),
-            trace_replica_imag=np.imag(trace_replicas),
-            sff_full=full,
-            sff_disconnected=disconnected,
-            sff_connected=connected,
-            sff_naive=naive,
-            sff_noise_bias=noise_bias,
-            sff_pair_imaginary=pair_imaginary,
-            sff_disconnected_imaginary=disconnected_imaginary,
-            sff_full_standard_error=full_standard_error,
-            sff_full_unnormalized=full * dimension ** 2,
-            sff_disconnected_unnormalized=(
-                disconnected * dimension ** 2),
-            sff_connected_unnormalized=connected * dimension ** 2,
-            bootstrap_95_low=bootstrap_low,
-            bootstrap_95_high=bootstrap_high,
-            bootstrap_connected_95_low=bootstrap_connected_low,
-            bootstrap_connected_95_high=bootstrap_connected_high,
-            bootstrap_samples=np.asarray([bootstrap_samples], dtype=int),
-            hilbert_dimension=np.asarray([dimension], dtype=int),
-            realization_count=np.asarray(
-                [realization_count], dtype=int),
-            floquet_cycle_us=np.asarray(
-                [cycle_us_values[0]], dtype=float),
-        ))
-        return result
-
-    def analyze(self, data=None, **kwargs):
-        if data is not None:
-            self.data = data
-        if hasattr(self, "batch_expts"):
-            self.data = self.analyze_ensemble(
-                self.batch_expts,
-                visibility=kwargs.get("visibility", None),
-                bootstrap_samples=kwargs.get("bootstrap_samples", 0),
-                bootstrap_seed=kwargs.get("bootstrap_seed", None),
-                include_zero=kwargs.get("include_zero", True),
-            )
-        return self.data
-
-
-class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
-    """Fit Floquet Kerr with the existing cavity-Ramsey gain-sweep analysis."""
-
-    def acquire(self, progress=False, debug=False):
-        data = super().acquire(progress=progress, debug=debug)
-        data["floquet_cycle_us"] = self.prog.floquet_cycle_us
-        self.cfg.expt.floquet_cycle_us = self.prog.floquet_cycle_us
-        return data
-
-    def _ramsey_fitter(self, data):
-        cfg = deepcopy(self.cfg)
-        gain_to_alpha = cfg.device.manipulate.gain_to_alpha
-        if isinstance(gain_to_alpha, (list, tuple, np.ndarray)):
-            gain_to_alpha = gain_to_alpha[cfg.expt.man_mode_no - 1]
-        cfg.device.manipulate.gain_to_alpha = [gain_to_alpha]
-        return CavityRamseyGainSweepFitting(data, config=cfg)
-
-    def analyze(self, data=None, fit=True, **kwargs):
-        if data is not None:
-            self.data = data
-        if not fit:
-            return self.data
-        cycle_pairs = np.asarray(self.data.get("cycle_pairs", self.data["xpts"]))
-        displace_gains = np.asarray(self.data.get("displace_gains", self.data["ypts"]))
-        time_us = 2 * cycle_pairs * self.data["floquet_cycle_us"]
-        ramsey_data = AttrDict(dict(
-            gain_list=displace_gains,
-            xpts=np.tile(time_us, (len(displace_gains), 1)),
-            g_avgi=self.data["avgi"], g_avgq=self.data["avgq"],
-            g_amps=self.data["amps"], g_phases=self.data["phases"],
-            e_avgi=self.data["avgi"], e_avgq=self.data["avgq"],
-            e_amps=self.data["amps"], e_phases=self.data["phases"],
-        ))
-        self._ramsey_fitter(ramsey_data).analyze(fit=True, **kwargs)
-        self.data.update(ramsey_data)
-        self.data["cycle_pairs"] = cycle_pairs
-        self.data["displace_gains"] = displace_gains
-        return self.data
-
-    def display(self, data=None, **kwargs):
-        if data is not None:
-            self.data = data
-        if "Kerr" not in self.data:
-            self.analyze()
-        return self._ramsey_fitter(self.data).display(**kwargs)
-
-    def save_data(self, data=None):
-        if data is None:
-            data = self.data
-        peaks = {key: data.pop(key) for key in ["time_peak_g", "time_peak_e"] if key in data}
-        fname = super().save_data(data)
-        data.update(peaks)
-        return fname
