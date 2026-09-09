@@ -2218,6 +2218,48 @@ class DarkBaseProgram(QsimBaseProgram):
         self.measure_wrapper()
 
 
+class DarkBaseRProgram(MMRAveragerProgram):
+    """RAverager counterpart of ``DarkBaseProgram``.
+
+    The pulse-building methods below do not depend on the AveragerProgram
+    software loop, so both program types use the same implementations.
+    Concrete RAverager programs only need to define ``core_pulses`` and
+    ``update``.
+    """
+
+    _pre_selection_filtering = True
+
+    retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters #borrowing methods
+    _initialize_floquet_pulses = QsimBaseProgram._initialize_floquet_pulses
+    prep_man_fock_state = DarkBaseProgram.prep_man_fock_state #borrowing methods
+    multi_parity_readout = DarkBaseProgram.multi_parity_readout #borrowing methods
+    body = DarkBaseProgram.body #borrowing methods
+
+    def __init__(self, soccfg, cfg):
+        self.cfg = AttrDict(cfg)
+        self.cfg.update(self.cfg.expt)
+        super().__init__(soccfg, self.cfg)
+
+    def initialize(self):
+        self.MM_base_initialize()
+
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        self.storage_phase_matrix = self.cfg.expt.get(
+            "storage_phase_matrix", None)
+        if self.storage_phase_matrix is not None:
+            self.storage_phase_matrix = np.asarray(
+                self.storage_phase_matrix, dtype=float)
+
+        man_mode_no = self.cfg.expt.get("man_mode_no", 1)
+        self.man_mode_idx = man_mode_no - 1
+
+        self._initialize_floquet_pulses()
+
+        self.sync_all(200)
+
+
 class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram):
     # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
     # Dark load, scramble, and readout share one mutable phase_offsets list.
@@ -3858,7 +3900,6 @@ def _stage_migration_message(stage):
 # the ``experiments`` namespace by its own module instead, exactly once.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "dark_mode_broadband_ge_validation",
-    "DarkBaseRProgram": "dark_mode_multiparity_chevron",
     "DarkT1Experiment": "dark_mode_t1",
     "DarkT1Program": "dark_mode_t1",
     "FloquetDisplacementKerrExperiment": "floquet_displacement_kerr",
