@@ -258,6 +258,155 @@ class DarkBaseExperiment(QsimBaseExperiment):
         return out
         
 
+def _prepare_preloaded_floquet_register_bank(program,
+                                             pulse_args_list,
+                                             first_cycle_phases_deg,
+                                             phase_steps_deg,
+                                             reserved_registers=0):
+    """
+    Load complete arb Floquet pulse parameters into one unused register page.
+
+    Caution:
+        - Raw set uses an explicitly selected page, not ch_page(channel).
+        - QICK v1 has eight pages (0..7); this helper searches pages 7..1,
+          leaving page 0 for global counters.
+        - All pulse settings currently share one page, with six registers per pulse.
+          Pulse registers plus reserved_registers must fit in registers 1..31.
+
+    Args:
+        - ``pulse_args_list``: one pulse-settings entry per pulse in a Floquet cycle.
+        - ``first_cycle_phases_deg``: each pulse's phase on its first occurrence, in degrees.
+        - ``phase_steps_deg``: each pulse's phase increment between Floquet cycles, in degrees.
+        - ``reserved_registers``: capacity reserved for caller registers, such as a loop counter.
+    """
+    pulse_count = len(pulse_args_list)
+    if len(first_cycle_phases_deg) != pulse_count or len(phase_steps_deg) != pulse_count:
+        raise ValueError("Floquet pulse, phase, and phase-step counts differ")
+
+    # TODO: When the next pulse no longer fits, allocate another unused page.
+    # Keep each pulse's six registers on one page, preserve the caller's
+    # reserved counter location, and track bank reservations to prevent reuse.
+    registers_per_pulse = 6
+    required_registers = registers_per_pulse * pulse_count + int(reserved_registers)
+    if required_registers > 31:
+        raise RuntimeError("preload_flattop needs more than one tProc register page")
+
+    register_maps = list(program._gen_regmap.values())
+    register_maps += list(program._ro_regmap.values())
+    register_maps += list(getattr(program, "_sff_register_map", {}).values())
+    occupied_pages = {int(page) for page, register in register_maps if int(register) > 0}
+    
+    
+    # Raw ``set`` operands must share a page. Use a page with no generator,
+    # readout, or SFF custom registers, and leave page 0 to global counters.
+    register_page = next((page for page in range(7, 0, -1) if page not in occupied_pages),None)
+    if register_page is None:
+        raise RuntimeError("preload_flattop could not find an unused tProc register page")
+
+    bank = []
+    next_register = 1
+    pulse_phase_rows = zip(pulse_args_list, first_cycle_phases_deg, phase_steps_deg)
+    
+    for pulse_args, phase_deg, phase_step_deg in pulse_phase_rows:
+        channel = int(pulse_args["ch"])
+        generator_manager = program._gen_mgrs[channel]
+        if generator_manager.__class__.__name__ != "FullSpeedGenManager":
+            raise RuntimeError("preload_flattop register banks require a full-speed "
+                               f"generator; channel {channel} uses "
+                               f"{generator_manager.__class__.__name__}")
+
+        parameters = dict(generator_manager.defaults)
+        parameters.update(pulse_args)
+        if parameters.get("style") != "arb":
+            raise RuntimeError("preload_flattop register-bank pulses must use arb style")
+
+        waveform_name = parameters["waveform"]
+        waveform = generator_manager.envelopes[waveform_name]
+        samples_per_clock = int(program.soccfg["gens"][channel]["samps_per_clk"])
+        waveform_samples = int(waveform["data"].shape[0])
+        if waveform_samples % samples_per_clock:
+            raise RuntimeError(f"waveform {waveform_name!r} is not aligned to generator fabric clocks")
+        
+        
+        waveform_length = waveform_samples // samples_per_clock
+        waveform_address = int(waveform["addr"]) // samples_per_clock
+        mode_word = generator_manager.get_mode_code(
+            phrst=parameters.get("phrst"),
+            stdysel=parameters.get("stdysel"),
+            mode=parameters.get("mode"),
+            outsel=parameters.get("outsel"),
+            length=waveform_length,
+        )
+
+        frequency_register = next_register
+        phase_register = next_register + 1
+        address_register = next_register + 2
+        gain_register = next_register + 3
+        mode_register = next_register + 4
+        phase_step_register = next_register + 5
+        next_register += registers_per_pulse
+
+        first_phase_register_value = int(program.deg2reg(phase_deg, gen_ch=channel))
+        phase_step_register_value = int(program.deg2reg(phase_step_deg, gen_ch=channel))
+        
+        
+        register_values = (
+            (frequency_register, int(parameters["freq"])),
+            (phase_register, first_phase_register_value),
+            (address_register, waveform_address),
+            (gain_register, int(parameters["gain"])),
+            (mode_register, int(mode_word)),
+            (phase_step_register, phase_step_register_value),
+        )
+        
+        
+        for register, value in register_values:
+            program.safe_regwi(register_page, register, value)
+
+        pulse_duration_tproc_cycles = waveform_length * (float(program.tproccfg["f_time"]) / float(program.soccfg["gens"][channel]["f_fabric"]))
+        
+        bank.append({
+            "channel": channel,
+            "tproc_channel": int(generator_manager.tproc_ch),
+            "register_page": register_page,
+            "frequency_register": frequency_register,
+            "phase_register": phase_register,
+            "address_register": address_register,
+            "gain_register": gain_register,
+            "mode_register": mode_register,
+            "phase_step_register": phase_step_register,
+            "first_phase_register_value": first_phase_register_value,
+            "pulse_duration_tproc_cycles": pulse_duration_tproc_cycles,
+            "waveform_name": waveform_name,
+        })
+
+    return bank, register_page, next_register
+
+
+def _play_preloaded_floquet_register_bank_entry(program, entry):
+    """
+    Emit one raw arb ``set`` while preserving QICK pulse timestamps.
+    """
+    channel = entry["channel"]
+    current_timestamp = float(program.get_timestamp(gen_ch=channel))
+    if not np.isclose(current_timestamp, 0.0):
+        raise RuntimeError(
+            "preload_flattop raw pulse must start after sync_all()"
+        )
+
+    program.set(entry["tproc_channel"],
+                entry["register_page"],
+                entry["frequency_register"],
+                entry["phase_register"],
+                entry["address_register"],
+                entry["gain_register"],
+                entry["mode_register"],
+                0,
+                f"preloaded arb {entry['waveform_name']} on channel {channel}")
+    program.set_timestamp(entry["pulse_duration_tproc_cycles"],
+                          gen_ch=channel)
+
+
 class DarkBaseProgram(QsimBaseProgram):
     
     def initialize(self):
@@ -282,11 +431,6 @@ class DarkBaseProgram(QsimBaseProgram):
         man_mode_no = self.cfg.expt.get('man_mode_no', 1)
         self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
 
-        
-        # Envelope registration and m1s_kwargs live on QsimBaseProgram, which
-        # knows all three waveform modes. This used to be duplicated here and
-        # handled only gauss, which silently registered a gaussian under a
-        # preload_flattop mode's waveform name once the dataset switched.
         self._initialize_floquet_pulses()
 
         if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
@@ -306,7 +450,7 @@ class DarkBaseProgram(QsimBaseProgram):
             ch = self.m1s_ch[index]
             waveform_mode = self.m1s_waveform_mode[index]
             if waveform_mode == "gauss":
-                sigma_us = ecfg.get("floquet_gauss_sigma", None)
+                sigma_us = ecfg.get("floquet_gauss_sigma", None) # I suspect this is needed now. Could be deleted
                 if sigma_us is None:
                     sigma_us = self.swap_ds.get_gauss_sigma(f"M1-S{stor}")
                 pulse_cycles = self.us2cycles(sigma_us, gen_ch=ch) * self.swap_ds.get_gauss_n_sigma(f"M1-S{stor}")
@@ -713,6 +857,15 @@ class DarkBaseProgram(QsimBaseProgram):
             for pulse_args in pulse_args_by_stor.values():
                 pulse_args["gain"] = 0
 
+        register_bank = {}
+        preloaded_stors = [stor for stor in swap_stors
+                           if self.m1s_waveform_mode[stor - 1] == "preload_flattop"]
+        if preloaded_stors and (n_cycle_pair > 0 or extra_forward):
+            bank, _, _ = _prepare_preloaded_floquet_register_bank(
+                self, [pulse_args_by_stor[stor] for stor in preloaded_stors],
+                [0.0] * len(preloaded_stors), [0.0] * len(preloaded_stors))
+            register_bank = dict(zip(preloaded_stors, bank))
+
         self.sync_all()
 
         for pair_index in range(n_cycle_pair):
@@ -726,7 +879,12 @@ class DarkBaseProgram(QsimBaseProgram):
                 pulse_args = pulse_args_by_stor[stor]
                 pulse_args["phase"] = self.deg2reg(
                     phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
+                if stor in register_bank:
+                    entry = register_bank[stor]
+                    self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                else:
+                    self.setup_and_pulse(**pulse_args)
                 self.sync_all(sync_cycles)
 
                 if update_phases:
@@ -746,7 +904,12 @@ class DarkBaseProgram(QsimBaseProgram):
                 pulse_args = pulse_args_by_stor[stor]
                 pulse_args["phase"] = self.deg2reg(
                     inverse_phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
+                if stor in register_bank:
+                    entry = register_bank[stor]
+                    self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                else:
+                    self.setup_and_pulse(**pulse_args)
                 self.sync_all(sync_cycles)
 
                 if update_phases:
@@ -773,7 +936,12 @@ class DarkBaseProgram(QsimBaseProgram):
                 pulse_args = pulse_args_by_stor[stor]
                 pulse_args["phase"] = self.deg2reg(
                     phase_deg, gen_ch=pulse_args["ch"])
-                self.setup_and_pulse(**pulse_args)
+                if stor in register_bank:
+                    entry = register_bank[stor]
+                    self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                else:
+                    self.setup_and_pulse(**pulse_args)
                 self.sync_all(sync_cycles)
                 if update_phases:
                     self._advance_phase_offsets(
@@ -960,64 +1128,80 @@ class DarkBaseProgram(QsimBaseProgram):
                 )
             ]
 
-            phase_registers = []
-            next_register_by_page = {}
-            # Raw registers must be on the same page as the generator phase.
-            for pulse_args in all_pulse_args:
-                ch = pulse_args["ch"]
-                page = self.ch_page(ch)
-                if page == 0:
-                    raise RuntimeError(
-                        "floquet_hardware_loop cannot use page 0 scratch registers"
-                    )
-
-                phase_register = next_register_by_page.get(page, 1)
-                phase_step_register = phase_register + 1
-                next_register_by_page[page] = phase_step_register + 1
-                phase_registers.append(
-                    (page, phase_register, phase_step_register)
-                )
-
-            loop_page = phase_registers[0][0]
-            loop_register = next_register_by_page.get(loop_page, 1)
-            next_register_by_page[loop_page] = loop_register + 1
-
-            register_maps = list(self._gen_regmap.values()) + list(
-                self._ro_regmap.values()
+            use_preloaded_register_bank = all(
+                self.m1s_waveform_mode[stor - 1] == "preload_flattop"
+                for stor in swap_stors
             )
-            for page, next_register in next_register_by_page.items():
-                first_special_register = min(
-                    register
-                    for register_page, register in register_maps
-                    if register_page == page and register > 0
+            if use_preloaded_register_bank:
+                result = _prepare_preloaded_floquet_register_bank(
+                    self,
+                    all_pulse_args,
+                    first_cycle_phases,
+                    phase_step_per_cycle,
+                    reserved_registers=1,
                 )
-                if next_register > first_special_register:
-                    raise RuntimeError(
-                        "floquet_hardware_loop does not have enough scratch "
-                        f"registers on page {page}"
+                register_bank, loop_page, loop_register = result
+            else:
+                phase_registers = []
+                next_register_by_page = {}
+                for pulse_args in all_pulse_args:
+                    ch = pulse_args["ch"]
+                    page = self.ch_page(ch)
+                    if page == 0:
+                        raise RuntimeError(
+                            "floquet_hardware_loop cannot use page 0 scratch "
+                            "registers"
+                        )
+
+                    phase_register = next_register_by_page.get(page, 1)
+                    phase_step_register = phase_register + 1
+                    next_register_by_page[page] = phase_step_register + 1
+                    phase_registers.append(
+                        (page, phase_register, phase_step_register)
                     )
 
-            for i_stor, pulse_args in enumerate(all_pulse_args):
-                ch = pulse_args["ch"]
-                gen_manager_name = self._gen_mgrs[ch].__class__.__name__
-                if gen_manager_name != "FullSpeedGenManager":
-                    raise RuntimeError(
-                        "floquet_hardware_loop requires a full-speed generator; "
-                        f"channel {ch} uses {gen_manager_name}"
-                    )
+                loop_page = phase_registers[0][0]
+                loop_register = next_register_by_page.get(loop_page, 1)
+                next_register_by_page[loop_page] = loop_register + 1
 
-                page, phase_register, phase_step_register = \
-                    phase_registers[i_stor]
-                self.safe_regwi(
-                    page,
-                    phase_register,
-                    self.deg2reg(first_cycle_phases[i_stor], gen_ch=ch),
+                register_maps = list(self._gen_regmap.values()) + list(
+                    self._ro_regmap.values()
                 )
-                self.safe_regwi(
-                    page,
-                    phase_step_register,
-                    self.deg2reg(phase_step_per_cycle[i_stor], gen_ch=ch),
-                )
+                for page, next_register in next_register_by_page.items():
+                    first_special_register = min(
+                        register
+                        for register_page, register in register_maps
+                        if register_page == page and register > 0
+                    )
+                    if next_register > first_special_register:
+                        raise RuntimeError(
+                            "floquet_hardware_loop does not have enough "
+                            f"scratch registers on page {page}"
+                        )
+
+                for i_stor, pulse_args in enumerate(all_pulse_args):
+                    ch = pulse_args["ch"]
+                    gen_manager_name = self._gen_mgrs[ch].__class__.__name__
+                    if gen_manager_name != "FullSpeedGenManager":
+                        raise RuntimeError(
+                            "floquet_hardware_loop requires a full-speed "
+                            f"generator; channel {ch} uses {gen_manager_name}"
+                        )
+
+                    page, phase_register, phase_step_register = \
+                        phase_registers[i_stor]
+                    self.safe_regwi(
+                        page,
+                        phase_register,
+                        self.deg2reg(
+                            first_cycle_phases[i_stor], gen_ch=ch),
+                    )
+                    self.safe_regwi(
+                        page,
+                        phase_step_register,
+                        self.deg2reg(
+                            phase_step_per_cycle[i_stor], gen_ch=ch),
+                    )
 
             self.safe_regwi(loop_page, loop_register, floquet_cycle - 1)
 
@@ -1025,28 +1209,16 @@ class DarkBaseProgram(QsimBaseProgram):
             self._floquet_loop_number = floquet_loop_number + 1
             floquet_loop_label = f"FLOQUET_LOOP_{floquet_loop_number}"
 
-            # Configure the next waveform while the current pulse is playing.
-            # This leaves the original 10-cycle setup margin unchanged.
-            first_pulse_args = all_pulse_args[forward_sequence[0]]
-            first_pulse_args["phase"] = 0
-            self.set_pulse_registers(**first_pulse_args)
+            if not use_preloaded_register_bank:
+                # Configure the next legacy waveform while the current pulse
+                # is playing.  The setup margin remains unchanged.
+                first_pulse_args = all_pulse_args[forward_sequence[0]]
+                first_pulse_args["phase"] = 0
+                self.set_pulse_registers(**first_pulse_args)
             self.label(floquet_loop_label)
 
             for step_idx, i_stor in enumerate(forward_sequence):
                 stor = swap_stors[i_stor]
-                pulse_args = all_pulse_args[i_stor]
-                ch = pulse_args["ch"]
-                page, phase_register, phase_step_register = \
-                    phase_registers[i_stor]
-
-                self.mathi(
-                    page,
-                    self.sreg(ch, "phase"),
-                    phase_register,
-                    "+",
-                    0,
-                )
-
                 if ecfg.get("debug", False):
                     print(
                         f"[DarkScramble] hardware step={step_idx}, "
@@ -1055,21 +1227,43 @@ class DarkBaseProgram(QsimBaseProgram):
                         f"phase_step_deg={phase_step_per_cycle[i_stor]:.3f}"
                     )
 
-                self.pulse(ch)
-                self.math(
-                    page,
-                    phase_register,
-                    phase_register,
-                    "+",
-                    phase_step_register,
-                )
+                if use_preloaded_register_bank:
+                    entry = register_bank[i_stor]
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                    self.math(
+                        entry["register_page"],
+                        entry["phase_register"],
+                        entry["phase_register"],
+                        "+",
+                        entry["phase_step_register"],
+                    )
+                else:
+                    pulse_args = all_pulse_args[i_stor]
+                    ch = pulse_args["ch"]
+                    page, phase_register, phase_step_register = \
+                        phase_registers[i_stor]
+                    self.mathi(
+                        page,
+                        self.sreg(ch, "phase"),
+                        phase_register,
+                        "+",
+                        0,
+                    )
+                    self.pulse(ch)
+                    self.math(
+                        page,
+                        phase_register,
+                        phase_register,
+                        "+",
+                        phase_step_register,
+                    )
 
-                next_i_stor = forward_sequence[
-                    (step_idx + 1) % len(forward_sequence)
-                ]
-                next_pulse_args = all_pulse_args[next_i_stor]
-                next_pulse_args["phase"] = 0
-                self.set_pulse_registers(**next_pulse_args)
+                    next_i_stor = forward_sequence[
+                        (step_idx + 1) % len(forward_sequence)
+                    ]
+                    next_pulse_args = all_pulse_args[next_i_stor]
+                    next_pulse_args["phase"] = 0
+                    self.set_pulse_registers(**next_pulse_args)
                 self.sync_all(scramble_sync_cycles)
 
             self.loopnz(loop_page, loop_register, floquet_loop_label)
@@ -1089,6 +1283,16 @@ class DarkBaseProgram(QsimBaseProgram):
                             pulsed_stor=stor,
                         )
         else:
+            # Keep pulse settings in registers; only write each Python-computed phase.
+            register_bank = {}
+            preloaded_indices = [i for i, stor in enumerate(swap_stors)
+                                 if self.m1s_waveform_mode[stor - 1] == "preload_flattop"]
+            if floquet_cycle > 0 and preloaded_indices:
+                bank, _, _ = _prepare_preloaded_floquet_register_bank(
+                    self, [all_pulse_args[i] for i in preloaded_indices],
+                    [0.0] * len(preloaded_indices), [0.0] * len(preloaded_indices))
+                register_bank = dict(zip(preloaded_indices, bank))
+
             for kk in range(floquet_cycle):
                 if palindrome_scramble and kk % 2:
                     cycle_sequence = reverse_sequence
@@ -1112,7 +1316,12 @@ class DarkBaseProgram(QsimBaseProgram):
                             f"stark_phase={phase_offsets[i_stor]:.3f}"
                         )
 
-                    self.setup_and_pulse(**pulse_args)
+                    if i_stor in register_bank:
+                        entry = register_bank[i_stor]
+                        self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                        _play_preloaded_floquet_register_bank_entry(self, entry)
+                    else:
+                        self.setup_and_pulse(**pulse_args)
                     self.sync_all(scramble_sync_cycles)
 
                     if decoder_phase_offsets is not None:
@@ -1285,6 +1494,12 @@ class DarkBaseProgram(QsimBaseProgram):
             self.sync_all(sync_cycles)
             self.loopnz(page, loop_register, loop_label)
         else:
+            entry = None
+            if self.m1s_waveform_mode[stor - 1] == "preload_flattop":
+                bank, _, _ = _prepare_preloaded_floquet_register_bank(
+                    self, [pulse_args], [first_phase_deg], [0.0])
+                entry = bank[0]
+
             for kk in range(n_frac):
                 phase_deg = self._mod360(
                     first_phase_deg + kk * phase_step_deg)
@@ -1292,7 +1507,11 @@ class DarkBaseProgram(QsimBaseProgram):
                     phase_deg,
                     gen_ch=pulse_args["ch"],
                 )
-                self.setup_and_pulse(**pulse_args)
+                if entry is not None:
+                    self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                else:
+                    self.setup_and_pulse(**pulse_args)
                 self.sync_all(sync_cycles)
 
         if update_phases:
