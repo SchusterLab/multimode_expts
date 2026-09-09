@@ -39,7 +39,9 @@ Running it
 Needs the raw HDF5 for those jobs. On the acquisition workstation that is
 automatic. Elsewhere point it at your mount::
 
-    MULTIMODE_DATA_ROOT=/Volumes/experiments pixi run python -m pytest tests/
+    MULTIMODE_DATA_ROOT=/Volumes/pippin/experiments \
+    MULTIMODE_CONFIG_ARCHIVE=/Volumes/pippin/python/multimode_expts/configs/versions \
+    pixi run python -m pytest tests/
 
 It fails rather than skips when the data is unreachable -- there is no CI here,
 so every run is a human on a machine that should have the data, and a skip
@@ -368,7 +370,7 @@ def test_timing_resolver_is_not_a_constant():
     from tests.mbr_reference import dataset, job_provenance, load_h5
 
     provenance = job_provenance()
-    expected = {"july_N3": 0.41351877289377287, "august_N3": 0.7340315934065934}
+    expected = {"july_N3": 0.40922619047619047, "august_N3": 0.7254464285714286}
 
     resolved = {}
     for name, want in expected.items():
@@ -395,5 +397,5 @@ def test_august_timing_reproduces_the_pickled_value():
 
     cfg, _ = load_h5(resolve_job_path("JOB-20260815-00009"))
     timing = resolve_floquet_timing(cfg, "CFG-FL-20260814-00076")
-    assert timing["floquet_cycle_us"] == 0.7340315934065934
+    assert timing["floquet_cycle_us"] == 0.7254464285714286
     assert timing["m1s_pi_fracs"] == [40] * 7

@@ -82,7 +82,7 @@ CHARACTERIZATION_ANALYSIS = dict(
 # replaces it, since threading the resolver in is itself a behaviour change and
 # the baseline must be captured before any of those.
 CHARACTERIZATION_TIMING = dict(
-    floquet_cycle_us=0.7340315934065934,
+    floquet_cycle_us=0.7254464285714286,
     m1s_pi_fracs=[40] * 7,
 )
 

@@ -129,11 +129,15 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
 
     waveform_override = ecfg.get("floquet_waveform", None)
 
-    def style(name):
+    def waveform_mode(name):
         waveform = waveform_override if waveform_override is not None else swap_ds.get_waveform(name)
-        return "arb" if waveform in ("gauss", "gaussian", "arb") else "flat_top"
+        if waveform in ("gauss", "gaussian", "arb"):
+            return "gauss"
+        if waveform == "preload_flattop":
+            return "preload_flattop"
+        return "flat_top"
 
-    styles = [style(name) for name in stor_names]
+    modes = [waveform_mode(name) for name in stor_names]
 
     # --- calculate_floquet_cycle_us, offline ---
     ramp_sigma = cfg["device"]["manipulate"]["ramp_sigma"]
@@ -141,21 +145,32 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
     ramp_cycles_high = soccfg.us2cycles(ramp_sigma, gen_ch=flux_high_ch)
 
     swap_stors = list(ecfg["swap_stors"])
-    sync_cycles = ecfg.get("scramble_sync_cycles", 10)
-    cycle_us = len(swap_stors) * soccfg.cycles2us(sync_cycles)
+    sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
+    # The tProc advances its timestamp by int(pulse_end + sync) per pulse, so
+    # the cycle is a sum of integer synci advances, not of exact pulse
+    # durations. Mirrors DarkBaseProgram.calculate_floquet_cycle_us; the
+    # unquantized sum this replaced ran ~1.2% long on the August configs.
+    cycle_tproc_cycles = 0
     for stor in swap_stors:
         index = stor - 1
         channel = channels[index]
-        if styles[index] == "arb":
+        if modes[index] == "gauss":
             sigma_us = ecfg.get("floquet_gauss_sigma", None)
             if sigma_us is None:
                 sigma_us = swap_ds.get_gauss_sigma(f"M1-S{stor}")
             pulse_cycles = (soccfg.us2cycles(sigma_us, gen_ch=channel)
                             * swap_ds.get_gauss_n_sigma(f"M1-S{stor}"))
+        elif modes[index] == "preload_flattop":
+            ramp = soccfg.us2cycles(swap_ds.get_ramp_sigma(f"M1-S{stor}"),
+                                    gen_ch=channel)
+            pulse_cycles = lengths[index] + 6 * ramp
         else:
             ramp = ramp_cycles_low if is_low[index] else ramp_cycles_high
             pulse_cycles = lengths[index] + 6 * ramp
-        cycle_us += soccfg.cycles2us(pulse_cycles, gen_ch=channel)
+        clock_ratio = (float(soccfg["tprocs"][0]["f_time"])
+                       / float(soccfg["gens"][channel]["f_fabric"]))
+        cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
+    cycle_us = soccfg.cycles2us(cycle_tproc_cycles)
 
     if not np.isfinite(cycle_us) or cycle_us <= 0.:
         raise TimingResolutionError(

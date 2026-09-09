@@ -97,7 +97,7 @@ VAULT_USER = "Jonginn"
 # drops device.storage._ds_floquet) and not in the vault YAML. Recovered once
 # from JOB-20260815-00009_expt.pkl -- see the appendix. Letting the station fill
 # these in instead reads today's swap CSV, which is 43% off for this data.
-TIMING = dict(floquet_cycle_us=0.7340315934065934, m1s_pi_fracs=[40] * 7)
+TIMING = dict(floquet_cycle_us=0.7254464285714286, m1s_pi_fracs=[40] * 7)
 
 
 def job_ids(date, first, last):

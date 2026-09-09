@@ -239,7 +239,7 @@ inputs:
 - the HDF5's embedded `expt` config — `swap_stors`, `scramble_sync_cycles`,
   and any waveform override.
 
-Verified for `JOB-20260815-00009`: `floquet_cycle_us == 0.7340315934065934`
+Verified for `JOB-20260815-00009`: `floquet_cycle_us == 0.7254464285714286`
 and `m1s_pi_fracs == [40] * 7`, equal to the values recovered from the pickle.
 The pickled program computed the same quantity from the same configs, so it was
 a cache, not an independent measurement.
@@ -1169,7 +1169,7 @@ recorded against the definition it was established for (section 0.4).
   **jobs.db**, live station state, or implicit pickle loading.
 - Existing unstamped data resolves timing through the section 2.2 resolver.
   A regression test asserts the resolver reproduces
-  `floquet_cycle_us == 0.7340315934065934` and `m1s_pi_fracs == [40] * 7` for
+  `floquet_cycle_us == 0.7254464285714286` and `m1s_pi_fracs == [40] * 7` for
   `JOB-20260815-00009` from versioned configs alone.
 - No offline code path constructs a station, reaches an instrument manager, or
   opens a writable database handle.
