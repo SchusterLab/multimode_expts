@@ -315,13 +315,63 @@ class MM_base:
         for i in range(len(test_pulse[0])):
             if test_pulse[5][i] == 'g' or test_pulse[5][i] == 'gauss' or test_pulse[5][i] == 'gaussian':
                 t += test_pulse[-1][i] * 4
-            elif test_pulse[5][i] == 'flat_top' or test_pulse[5][i] == 'f':
+            elif test_pulse[5][i] in ('flat_top', 'f', 'preload_flattop'):
                 t += test_pulse[-1][i] * 6 + test_pulse[2][i]
             t+= 0.01 # 10ns delay
         if cycles:
             # QickConfig(im[yaml_cfg['aliases']['soc']].get_cfg())
             return int(round(t / cycles2us))
         return t
+
+    def add_preloaded_flat_top(self, ch, name, flat_length_us, ramp_sigma_us):
+        """
+        Store a complete Gaussian-ramped flat top as one arb envelope.
+
+        ``flat_length_us`` is the plateau length used by QICK's native
+        ``flat_top`` style.  The two ramps together are the same six-sigma
+        Gaussian envelope used by the existing M1-storage pulses.
+        
+        Specifically, it first adds gauss that would work as a ramp, 
+        then replace the waveform in the ``self.envelopes`` with the flat top,
+        then moves ``next_addr`` pointer by the samples in plateau.
+        
+        Detailed algorithm is similar to add_gauss
+        """
+        sigma_cycles = self.us2cycles(ramp_sigma_us, gen_ch=ch)
+        flat_cycles = self.us2cycles(flat_length_us, gen_ch=ch)
+        if sigma_cycles < 1:
+            raise ValueError("preload_flattop ramp_sigma is shorter than one generator cycle")
+        if flat_cycles < 0:
+            raise ValueError("preload_flattop length must be non-negative")
+
+        samples_per_clock = int(self.soccfg['gens'][ch]['samps_per_clk'])
+        envelope_book = self.envelopes[ch] #exists in AveragerProgram, which is inherit by MMAveragerProgram and such
+        if name in envelope_book['envs']:
+            raise ValueError(f"waveform {name!r} is already defined on channel {ch}")
+        total_samples = (6 * sigma_cycles + flat_cycles) * samples_per_clock
+        maximum_samples = self.soccfg['gens'][ch].get('maxlen', None)
+        final_next_address = envelope_book['next_addr'] + total_samples
+        if maximum_samples is not None and final_next_address > maximum_samples:
+            raise RuntimeError(f"preload_flattop waveforms exceed channel {ch} envelope memory")
+
+        # Let the installed QICK version construct the ramp.  In particular,
+        # this preserves the GAUSS_BUG behavior of the 0.2.291 hardware
+        # environment instead of reimplementing it here.
+        self.add_gauss(ch=ch, name=name, sigma=sigma_cycles, length=6 * sigma_cycles)
+        envelope = envelope_book['envs'][name]
+        ramp = envelope['data']
+
+        half_ramp = len(ramp) // 2
+        plateau_samples = flat_cycles * samples_per_clock
+        
+        plateau = np.zeros((plateau_samples, 2), dtype=ramp.dtype)
+        plateau[:, 0] = self.soccfg.get_maxv(ch)
+        #replace the envelope added by add_gauss with the flat top pulse
+        envelope['data'] = np.concatenate((ramp[:half_ramp], plateau, ramp[half_ramp:])) 
+
+        envelope_book['next_addr'] += plateau_samples #add the number of amples to the next addr
+
+        return 6 * sigma_cycles + flat_cycles
 
     def initialize_waveforms(self):
         '''
@@ -527,6 +577,40 @@ class MM_base:
                                 length=self.us2cycles(pulse_data[2][jj],
                                                     gen_ch=self.tempch),
                                 waveform=wf_name)
+
+            elif pulse_data[5][jj] == "preload_flattop":
+                
+                flat_cycles = self.us2cycles(pulse_data[2][jj], gen_ch=self.tempch)
+                sigma_cycles = self.us2cycles(pulse_data[6][jj], gen_ch=self.tempch)
+                
+                
+                if dedupe:
+                    wf_name = f"cp_pft_{self.tempch}_{flat_cycles}_{sigma_cycles}"
+                    if wf_name not in self._cp_loaded_envs:
+                        self.add_preloaded_flat_top(
+                            ch=self.tempch,
+                            name=wf_name,
+                            flat_length_us=pulse_data[2][jj],
+                            ramp_sigma_us=pulse_data[6][jj],
+                        )
+                        self._cp_loaded_envs.add(wf_name)
+                else:
+                    wf_name = "temp_preload_flattop" + str(jj) + prefix
+                    self.add_preloaded_flat_top(
+                        ch=self.tempch,
+                        name=wf_name,
+                        flat_length_us=pulse_data[2][jj],
+                        ramp_sigma_us=pulse_data[6][jj],
+                    )
+                self.sync_all(self.us2cycles(0.01))
+                self.setup_and_pulse(
+                    ch=self.tempch,
+                    style="arb",
+                    freq=self.freq2reg(pulse_data[0][jj], gen_ch=self.tempch),
+                    phase=self.deg2reg(pulse_data[3][jj], gen_ch=self.tempch),
+                    gain=pulse_data[1][jj],
+                    waveform=wf_name,
+                )
 
             # check if pulse_data[5][jj] is a list or not
             elif isinstance(pulse_data[5][jj], list) and pulse_data[5][jj][0] == 'opt_cont':
@@ -2700,7 +2784,8 @@ class prepulse_creator2:
         freq = self.dataset_floquet.get_freq(stor_name)
         flux_low_ch = self.cfg.hw.soc.dacs.flux_low.ch[0]
         flux_high_ch = self.cfg.hw.soc.dacs.flux_high.ch[0]
-        ch = flux_low_ch if freq<1000 else flux_high_ch
+        ch = flux_low_ch if freq<1000 else flux_high_ch 
+        #This hardcoded 1000 should be changed soon
 
         # Envelope comes from the dataset row, so the swap is played with whatever it
         # was calibrated as. get_pulse_envelope returns (style, sigma, length):

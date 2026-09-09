@@ -50,20 +50,29 @@ class QsimBaseProgram(MMAveragerProgram):
         self.m1s_length = [self.us2cycles(self.swap_ds.get_len(stor_name), gen_ch=ch)
             for stor_name, ch in zip(stor_names, self.m1s_ch)]
         self.m1s_gain = [self.swap_ds.get_gain(stor_name) for stor_name in stor_names]
-        # Per-mode envelope style, read from the dataset. cfg.expt.floquet_waveform
-        # optionally overrides it globally (A/B testing); default = the dataset row.
-        _wf_override = self.cfg.expt.get("floquet_waveform", None)
-        def _style_for(stor_name):
-            w = _wf_override if _wf_override is not None else self.swap_ds.get_waveform(stor_name)
-            return 'arb' if w in ('gauss', 'gaussian', 'arb') else 'flat_top'
-        self.m1s_style = [_style_for(sn) for sn in stor_names]
-        # gauss modes get a per-mode envelope name; flat_top reuses MM_base's ramps
-        self.m1s_wf_name = [
-            (f"pi_m1s{i+1}_gauss_low" if self.m1s_is_low_freq[i] else f"pi_m1s{i+1}_gauss_high")
-            if self.m1s_style[i] == 'arb'
-            else ("pi_m1si_low" if self.m1s_is_low_freq[i] else "pi_m1si_high")
-            for i in range(7)
-        ]
+        # Use each mode's calibrated waveform from the dataset.
+        self.m1s_waveform_mode = []
+        for stor_name in stor_names:
+            waveform = self.swap_ds.get_waveform(stor_name)
+            if waveform in ('gauss', 'gaussian', 'arb'):
+                waveform = 'gauss'
+            elif waveform != 'preload_flattop':
+                waveform = 'flat_top'
+            self.m1s_waveform_mode.append(waveform)
+
+        self.m1s_style = ['flat_top' if mode == 'flat_top' else 'arb'
+                          for mode in self.m1s_waveform_mode]
+
+        self.m1s_wf_name = []
+        for index, waveform_mode in enumerate(self.m1s_waveform_mode):
+            suffix = 'low' if self.m1s_is_low_freq[index] else 'high'
+            if waveform_mode == 'gauss':
+                waveform_name = f"pi_m1s{index + 1}_gauss_{suffix}"
+            elif waveform_mode == 'preload_flattop':
+                waveform_name = f"pi_m1s{index + 1}_preload_flattop_{suffix}"
+            else:
+                waveform_name = f"pi_m1si_{suffix}"
+            self.m1s_wf_name.append(waveform_name)
             
     
 
@@ -103,35 +112,31 @@ class QsimBaseProgram(MMAveragerProgram):
                 waveform="displace")
 
 
-    def initialize(self):
-        """
-        MM_base_init to pull basic info 
-        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
-        """
-        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
-        #TODO: this should use a config key to determine whether
-        # to use floquet or gate (pi or pi/2) datasets
-        self.swap_ds = self.cfg.device.storage._ds_floquet
-        self.retrieve_swap_parameters()
-
-        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
-
-        
-        # Register a gaussian envelope for each mode flagged 'arb'; per-mode sigma
-        # comes from the dataset (cfg.expt.floquet_gauss_sigma overrides if given).
-        # flat_top modes reuse MM_base's pi_m1si_low/high ramp waveforms (no buffer cost).
+    def _initialize_floquet_pulses(self):
+        """Register Floquet waveforms and build their pulse arguments."""
+        # Register one complete arb envelope for gauss and preload_flattop modes.
+        # Native flat_top modes keep reusing MM_base's pi_m1si_low/high ramps.
         for i_stor in range(7):
-            if self.m1s_style[i_stor] != 'arb':
-                continue
             stor_name = f"M1-S{i_stor+1}"
             ch = self.m1s_ch[i_stor]
-            sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
-            if sig_us is None:
-                sig_us = self.swap_ds.get_gauss_sigma(stor_name)
-            n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
-            sigma = self.us2cycles(sig_us, gen_ch=ch)
-            self.add_gauss(ch=ch, name=self.m1s_wf_name[i_stor], sigma=sigma, length=sigma * n_sig)
+            waveform_mode = self.m1s_waveform_mode[i_stor]
+            
+            if waveform_mode == 'gauss':
+                sig_us = self.cfg.expt.get("floquet_gauss_sigma", None)
+                if sig_us is None:
+                    sig_us = self.swap_ds.get_gauss_sigma(stor_name)
+                n_sig = self.swap_ds.get_gauss_n_sigma(stor_name)
+                sigma = self.us2cycles(sig_us, gen_ch=ch)
+                self.add_gauss(ch=ch,
+                               name=self.m1s_wf_name[i_stor],
+                               sigma=sigma,
+                               length=sigma * n_sig)
+                
+            elif waveform_mode == 'preload_flattop':
+                self.add_preloaded_flat_top(ch=ch,
+                                            name=self.m1s_wf_name[i_stor],
+                                            flat_length_us=self.swap_ds.get_len(stor_name),
+                                            ramp_sigma_us=self.swap_ds.get_ramp_sigma(stor_name))
 
         self.m1s_kwargs = []
         for stor in range(7):
@@ -146,7 +151,24 @@ class QsimBaseProgram(MMAveragerProgram):
             if self.m1s_style[stor] != 'arb':   # flat_top / const need the plateau length
                 kw['length'] = self.m1s_length[stor]
             self.m1s_kwargs.append(kw)
-            
+
+
+    def initialize(self):
+        """
+        MM_base_init to pull basic info
+        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
+        """
+        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
+        #TODO: this should use a config key to determine whether
+        # to use floquet or gate (pi or pi/2) datasets
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
+        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
+
+        self._initialize_floquet_pulses()
+
         if self.cfg.expt.perform_wigner:
             self.displace_man(setup=True, play=False)
 

@@ -53,6 +53,11 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
                               sigma=_sigma,
                               length=_sigma*n_sigma, 
                               )
+        elif self.pulse_to_test[5] == 'preload_flattop':
+            self.add_preloaded_flat_top(ch=self.pulse_to_test[4],
+                                        name="pulse_to_test",
+                                        flat_length_us=self.pulse_to_test[2],
+                                        ramp_sigma_us=self.pulse_to_test[6])
 
         # initialize registers
         if cfg.expt.parameter_to_test == 'gain':
@@ -86,8 +91,10 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
             self.pulse_style = "arb"
         elif self.pulse_to_test[5] == 'flat_top':
             self.pulse_style = "flat_top"
+        elif self.pulse_to_test[5] == 'preload_flattop':
+            self.pulse_style = "arb"
         else:
-            raise ValueError("Invalid pulse style. Must be 'gauss' or 'flat_top'.")
+            raise ValueError("Invalid pulse style. Must be 'gauss', 'flat_top', or 'preload_flattop'.")
 
         # Precompute freq and length for set_pulse_registers
         self._freq = self.freq2reg(self.pulse_to_test[0], gen_ch=self.pulse_to_test[4])
@@ -96,8 +103,7 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
 
         # n_pulses and pi_frac
         self.n_pulses = cfg.expt.get('n_pulses', 1)
-        sync_delay = cfg.expt.get("floquet_sync_delay", 
-                                  cfg.expt.get("scramble_sync_cycles", 0))
+        sync_delay = cfg.expt.get("scramble_sync_cycles",cfg.expt.get("floquet_sync_delay", 10))
         self.floquet_sync_delay = 0 if sync_delay is None else int(sync_delay)
 
         if cfg.expt.pulse_type[2] == 'pi':
@@ -150,6 +156,17 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         else:
             raise ValueError("Invalid pulse type. Must be 'qubit', 'man', 'storage', or 'multiphoton'.")
 
+        # Extend the target-state preparation with ``pre_sweep_pulse``
+        pre_sweep_pulse = cfg.expt.get('pre_sweep_pulse', None)
+        if pre_sweep_pulse is not None:
+            extra_pre_creator = self.get_prepulse_creator(pre_sweep_pulse)
+            extra_pre_pulse_list = extra_pre_creator.pulse.tolist()
+            if self.pre_pulse_list is None:
+                self.pre_pulse_list = extra_pre_pulse_list
+            else:
+                for row_index in range(len(self.pre_pulse_list)):
+                    self.pre_pulse_list[row_index].extend(extra_pre_pulse_list[row_index])
+
         # Post-pulse list
         if cfg.expt.pulse_type[0] == 'qubit':
             if cfg.expt.pulse_type[1] == 'ef':
@@ -159,13 +176,21 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         elif cfg.expt.pulse_type[0] in ('man', 'storage', 'floquet'):
             # reverse the pulse sequence
             # when qubit starts in e, it plays g1-e1 which is not ideal since photon can be in storage, but I dont know how to do better for now
-            self.post_pulse_list = [sublist[:0:-1] for sublist in self.pre_creator.pulse.tolist()]
+            # 9/1/2026 changed post pulse as the reverse of pre_pulse_list, 
+            # as it is supposed to store all the pulses to climb up the ladder before the ``pulse_to_test``
+            self.post_pulse_list = [sublist[:0:-1] for sublist in self.pre_pulse_list]
         elif cfg.expt.pulse_type[0] == 'multiphoton':
             qubit_state_start = cfg.expt.pulse_type[1][0]
             if qubit_state_start == 'g':
                 self.post_pulse_list = None
             else:  # 'e' or 'f'
                 self.post_pulse_list = [[sublist[-1]] for sublist in self.pre_creator.pulse.tolist()]
+
+        # Use custome post_pulse instead of the above-created post_pusle
+        post_sweep_pulse = cfg.expt.get('post_sweep_pulse', None)
+        if post_sweep_pulse is not None:
+            post_creator = self.get_prepulse_creator(post_sweep_pulse)
+            self.post_pulse_list = post_creator.pulse.tolist()
 
         self.sync_all(200)
 
