@@ -2117,14 +2117,70 @@ class NPhotonHamiltonianSpectroscopyProgram(
     """
 
     @staticmethod
-    def _get_encoder_pulses(occupations, swap_stors):
+    def _storage_swap_pulse_name(storage_mode,
+                                 photon_number,
+                                 use_multiphoton_swap=False):
+        """
+        Resolve one M1-storage full-swap row without changing N=1.
+        If ``use_multiphoton_swap`` is False, it returns ``M1-S{storage_mode}``.
+        Otherwise, it returns ``M1-S{storage_mode}@{photon_number}``
+        """
+        storage_mode = int(storage_mode)
+        photon_number = int(photon_number)
+        base_name = f"M1-S{storage_mode}"
+        if not use_multiphoton_swap or photon_number == 1:
+            return base_name
+        return f"{base_name}@N{photon_number}"
+
+    @staticmethod
+    def _storage_mode_from_pulse_name(pulse_name):
+        """
+        Extract the physical storage number from M1-Sj[@Nn].
+        """
+        suffix = str(pulse_name).split("-S", 1)[1] # Returns j@Nn
+        return int(suffix.split("@", 1)[0]) #Returns j
+
+    @staticmethod
+    def _validate_storage_swap_rows(storage_dataset,
+                                    occupations,
+                                    swap_stors,
+                                    use_multiphoton_swap=False):
+        """
+        Validate every ds_storage row used by one access path.
+        Added by Codex just to check whether each entry exists.
+        """
+        for stor, occupation in zip(swap_stors, occupations[1:]):
+            if occupation == 0:
+                continue
+            stor_name = (NPhotonHamiltonianSpectroscopyProgram._storage_swap_pulse_name(stor, occupation, use_multiphoton_swap,))
+            if hasattr(storage_dataset, "has_row") and not storage_dataset.has_row(stor_name):
+                raise RuntimeError(f"{stor_name} is missing from ds_storage; run the N-photon M1-storage calibration first")
+            try:
+                frequency = float(storage_dataset.get_value(stor_name, "freq (MHz)"))
+                gain = float(storage_dataset.get_value(stor_name, "gain (DAC units)"))
+                pi_length = float(storage_dataset.get_value( stor_name, "pi (mus)"))
+            except (IndexError, KeyError) as error:
+                raise RuntimeError(f"{stor_name} is missing from ds_storage; run the N-photon M1-storage calibration first") from error
+            if not np.isfinite(frequency):
+                raise RuntimeError(f"{stor_name} needs a finite ds_storage frequency")
+            if not np.isfinite(gain) or gain <= 0:
+                raise RuntimeError(f"{stor_name} needs a calibrated nonzero ds_storage gain")
+            if not np.isfinite(pi_length) or pi_length <= 0:
+                raise RuntimeError(f"{stor_name} needs a calibrated positive ds_storage pi length")
+
+    @staticmethod
+    def _get_encoder_pulses(occupations,
+                            swap_stors,
+                            use_multiphoton_swap=False):
         """
         Returning encoding pulse sequence as per `prepulse_creator2`.
         So each element in the list follows
             - output = [pulse1, pulse2, ...]
             - pulse1 = ['transition_name', 'which_transition', 'pi or hpi', relative_phase]
         The input of occupation should be n-string in the order of [n_M1] + [n_S for S in swap_stors].
-        The shelving is done except for the final step, which is when last_mode and last_photon is true
+        The shelving is done except for the final step, which is when last_mode and last_photon is true.
+        
+        If ``use_multiphoton_swap`` is True, 
         """
 
         occupied_modes = [(stor, occupation) for stor, occupation in zip(swap_stors, occupations[1:]) if occupation > 0] 
@@ -2145,7 +2201,10 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,]) 
                 encoder_pulses.append(["multiphoton", f"f{n}-g{n + 1}", "pi", 0.0,])
                 if mode > 0 and last_photon:
-                    encoder_pulses.append(["storage", f"M1-S{mode}", "pi", 0.0,]) 
+                    storage_pulse_name = NPhotonHamiltonianSpectroscopyProgram._storage_swap_pulse_name(mode,
+                                                                                                         photon_number,
+                                                                                                         use_multiphoton_swap,) #i don't see any point setting this as a static method tbh. 
+                    encoder_pulses.append(["storage", storage_pulse_name, "pi", 0.0])
                 if not last_ladder_step:
                     encoder_pulses.append(["qubit", "ge_broadband", "pi", 0.0,])
 
@@ -2253,33 +2312,38 @@ class NPhotonHamiltonianSpectroscopyProgram(
         photon_number = sum(occupations)
         if photon_number < 1:
             raise ValueError("spectroscopy_occupations must contain photons")
-        if max(occupations) > 9:
-            raise ValueError("The current multiphoton transition parser supports local occupations only through n=9")
 
-        self.encoder_pulses = self._get_encoder_pulses(
-            occupations, swap_stors)
+        use_multiphoton_swap = bool( ecfg.get("use_multiphoton_swap", False))
+        ecfg.use_multiphoton_swap = use_multiphoton_swap
         final_occupations = ecfg.get("spectroscopy_final_occupations", occupations)
-        self.decoder_encoder_pulses = self._get_encoder_pulses(final_occupations, swap_stors)
+        if len(final_occupations) != len(occupations):
+            raise ValueError("spectroscopy_final_occupations has the wrong mode count")
+        if any(not isinstance(n, (int, np.integer)) for n in final_occupations):
+            raise TypeError("spectroscopy_final_occupations entries must be non-negative integers")
+        final_occupations = [int(n) for n in final_occupations]
 
-        if any(pulse[1] == "ge_broadband" for pulse in self.encoder_pulses):
+        if sum(final_occupations) != photon_number:
+            print("[WARNING] encoder and decoder occupations have different total photon numbers")
+
+        self.encoder_pulses = self._get_encoder_pulses(occupations, swap_stors, use_multiphoton_swap,)
+        self.decoder_encoder_pulses = self._get_encoder_pulses(final_occupations, swap_stors, use_multiphoton_swap,)
+
+        access_pulses = (self.encoder_pulses + self.decoder_encoder_pulses)
+        if any(pulse[1] == "ge_broadband" for pulse in access_pulses): #This is also Codex added stupid unnecessary safety check if the experimentalist is sober.
             pulse_key = "pi_ge_broadband"
             if pulse_key not in self.cfg.device.qubit.pulses:
                 raise KeyError("This occupation-string encoder requires device.qubit.pulses.pi_ge_broadband")
 
             broadband_cfg = self.cfg.device.qubit.pulses[pulse_key]
             for field in ("frequency", "gain", "sigma", "length", "type"):
-                if field not in broadband_cfg or np.asarray(
-                        broadband_cfg[field]).size == 0:
-                    raise RuntimeError(
-                        "device.qubit.pulses.pi_ge_broadband."
-                        f"{field} must contain one value"
-                    )
+                if field not in broadband_cfg or np.asarray(broadband_cfg[field]).size == 0:
+                    raise RuntimeError(f"device.qubit.pulses.pi_ge_broadband.{field} must contain one value")
             gain = np.asarray(broadband_cfg.get("gain", []), dtype=float).reshape(-1)
             
             if gain.size == 0 or gain[0] <= 0:
                 raise RuntimeError("device.qubit.pulses.pi_ge_broadband.gain must be a configured nonzero value")
 
-        max_local_occupation = max(occupations)
+        max_local_occupation = max(max(occupations), max(final_occupations))
         multiphoton_pi = self.cfg.device.multiphoton.pi
         for transition in ("en-fn", "fn-gn+1"):
             if transition not in multiphoton_pi:
@@ -2291,30 +2355,24 @@ class NPhotonHamiltonianSpectroscopyProgram(
                     raise RuntimeError(f"device.multiphoton.pi.{transition}.{field} needs at least {max_local_occupation} entries for spectroscopy_occupations={occupations}")
 
         storage_dataset = self.cfg.device.storage._ds_storage
-        for stor, occupation in zip(swap_stors, occupations[1:]):
-            if occupation == 0:
-                continue
-            stor_name = f"M1-S{stor}"
-            if storage_dataset.get_gain(stor_name) <= 0:
-                raise RuntimeError(f"{stor_name} needs a calibrated nonzero ds_storage gain")
-            if storage_dataset.get_pi(stor_name) <= 0:
-                raise RuntimeError(f"{stor_name} needs a calibrated ds_storage pi length")
+        for path_occupations in (occupations, final_occupations):
+            self._validate_storage_swap_rows(storage_dataset,path_occupations,swap_stors,use_multiphoton_swap,)
 
-        if ecfg.get("palindrome_scramble", False) \
-                and int(ecfg.floquet_cycle) % 2:
+        if ecfg.get("palindrome_scramble", False) and int(ecfg.floquet_cycle) % 2:
             raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
+        
         for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark","perform_wigner", "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
-        analyzer_phase = float(
-            ecfg.get("spectroscopy_analyzer_phase", 0.0))
+        analyzer_phase = float(ecfg.get("spectroscopy_analyzer_phase", 0.0))
         phase_correction_mode = str(ecfg.get("spectroscopy_phase_correction_mode", "decoder"))
         if phase_correction_mode not in ("decoder", "final_analyzer"):
             raise ValueError("spectroscopy_phase_correction_mode must be 'decoder' or 'final_analyzer'")
 
         ecfg.spectroscopy_occupations = occupations
+        ecfg.spectroscopy_final_occupations = final_occupations
         ecfg.spectroscopy_prep_phase = prep_phase % 360.0
         ecfg.spectroscopy_analyzer_phase = analyzer_phase % 360.0
         ecfg.spectroscopy_phase_correction_mode = phase_correction_mode
@@ -2350,7 +2408,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
             if pulse[0] != "storage":
                 continue
 
-            stor = int(pulse[1].split("-S")[1])
+            stor = self._storage_mode_from_pulse_name(pulse[1])
             stor_index = swap_stors.index(stor)
             pulse[3] = self._mod360(pulse[3] + storage_phase_offsets[stor_index])
             self._advance_storage_phase_offsets(phase_offsets=storage_phase_offsets,swap_stors=swap_stors,pulsed_stor=stor)
@@ -2386,7 +2444,7 @@ class NPhotonHamiltonianSpectroscopyProgram(
                 pulse[3] = self._mod360(pulse[3] - decoder_phase_deg[0])
 
             elif pulse[0] == "storage":
-                stor = int(pulse[1].split("-S")[1])
+                stor = self._storage_mode_from_pulse_name(pulse[1])
                 stor_index = swap_stors.index(stor)
                 pulse[3] = self._mod360(
                     pulse[3]
@@ -2441,10 +2499,9 @@ class EncodingOrthogonalityProgram(
         ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
         ecfg.final_analyzer_phase_per_cycle_deg = 0.
         ecfg.floquet_cycle = 0
+        ecfg.spectroscopy_final_occupations = decoder_occupation
 
         super().initialize()
-        self.decoder_encoder_pulses = self._get_encoder_pulses(
-            decoder_occupation, swap_stors)
 
     def _get_inverse_pulses(self, _):
         """
@@ -2464,21 +2521,16 @@ class EncodingPropagatorProgram(
     def initialize(self):
         ecfg = self.cfg.expt
         cycle_decoder_analyzer = list(ecfg.cycle_decoder_analyzer)
-        decoder_occupation = [
-            int(n) for n in cycle_decoder_analyzer[1:-1]
-        ]
+        decoder_occupation = list(cycle_decoder_analyzer[1:-1])
 
         ecfg.floquet_cycle = int(cycle_decoder_analyzer[0])
         ecfg.spectroscopy_analyzer_phase = float(
             cycle_decoder_analyzer[-1])
         ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
         ecfg.final_analyzer_phase_per_cycle_deg = 0.
+        ecfg.spectroscopy_final_occupations = decoder_occupation
 
         super().initialize()
-        self.decoder_encoder_pulses = self._get_encoder_pulses(
-            decoder_occupation,
-            [int(stor) for stor in ecfg.swap_stors],
-        )
 
     def _get_inverse_pulses(self, _):
         # The parent body requests inverse(encoder); decode the selected row.
@@ -2819,7 +2871,7 @@ class FloquetPhaseAccumulationProgram(
             if pulse[0] != "storage":
                 continue
 
-            stor = int(pulse[1].split("-S")[1])
+            stor = self._storage_mode_from_pulse_name(pulse[1])
             stor_index = swap_stors.index(stor)
             pulse[3] = self._mod360(
                 pulse[3] + storage_phase_offsets[stor_index]
@@ -2863,7 +2915,7 @@ class FloquetPhaseAccumulationProgram(
             if pulse[0] != "storage":
                 continue
 
-            stor = int(pulse[1].split("-S")[1])
+            stor = self._storage_mode_from_pulse_name(pulse[1])
             stor_index = swap_stors.index(stor)
             pulse[3] = self._mod360(
                 pulse[3] + storage_phase_offsets[stor_index]
