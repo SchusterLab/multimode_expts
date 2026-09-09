@@ -3585,10 +3585,6 @@ def _stage_migration_message(stage):
 # the ``experiments`` namespace by its own module instead, exactly once.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "dark_mode_broadband_ge_validation",
-    "CENTRAL_RETURN_ALLOWED_TOTAL_PHOTONS": "central_boson_local_return",
-    "CENTRAL_RETURN_PRIMARY_PHOTONS": "central_boson_local_return",
-    "CentralBosonLocalReturnExperiment": "central_boson_local_return",
-    "CentralBosonLocalReturnProgram": "central_boson_local_return",
     "DarkBaseRProgram": "dark_mode_multiparity_chevron",
     "DarkT1Experiment": "dark_mode_t1",
     "DarkT1Program": "dark_mode_t1",
@@ -3600,8 +3596,6 @@ _MOVED_TO = {
     "SidebandStarkAmplificationModifiedProgram_newold": "sideband_stark_shift_cal",
     "SidebandStarkAmplificationModifiedProgram_old": "sideband_stark_shift_cal",
     "StorageSwapPhaseAccumulationProgram": "storage_swap_phase_cal",
-    "configure_central_return_metadata": "central_boson_local_return",
-    "validate_central_return_occupations": "central_boson_local_return",
 }
 
 
