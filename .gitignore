@@ -218,3 +218,8 @@ measurement_notebooks/jonginn/data_postprocess.ipynb.bak
 output/
 tmp/
 tests/
+measurement_notebooks/jonginn/qsim_experiments_highkerr_untracked.ipynb
+docs/.obsidian/app.json
+docs/.obsidian/appearance.json
+docs/.obsidian/core-plugins.json
+docs/.obsidian/workspace.json
