@@ -1,9 +1,17 @@
+"""Manipulate-mode active-reset verification after one-photon preparation."""
+
 from slab import AttrDict
 
 from experiments.MM_base import MM_base, MMAveragerProgram
 
 
-class MActiveResetVerificationProgram(MMAveragerProgram):
+class ManActiveResetVerificationProgram(MMAveragerProgram):
+    """
+    Prepare one manipulate photon before optional active reset.
+
+    Apply configured pre/post pulses after reset, then measure the result.
+    """
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)

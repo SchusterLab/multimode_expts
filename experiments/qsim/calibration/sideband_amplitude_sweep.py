@@ -1,3 +1,5 @@
+"""Flux-driven sideband amplitude sweeps with configurable preparation and readout."""
+
 import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict, Experiment
@@ -7,7 +9,11 @@ import fitting.fitting as fitter
 from experiments.MM_base import MMAveragerProgram, MM_base
 
 
-class SidebandGeneralAmpProgram(MMAveragerProgram):
+class SidebandAmplitudeSweepProgram(MMAveragerProgram):
+    """
+    Apply one flat-top sideband pulse at expt.gain on the selected flux channel.
+    """
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -82,21 +88,12 @@ class SidebandGeneralAmpProgram(MMAveragerProgram):
         self.measure_wrapper()
 
 
-class SidebandGeneralAmpExperiment(Experiment):
+class SidebandAmplitudeSweepExperiment(Experiment):
     """
-    Length Rabi Experiment
-    Experimental Config
-    expt = dict(
-        start: start length [us],
-        step: length step, 
-        expts: number of different length experiments, 
-        reps: number of reps,
-        gain: gain to use for the qubit pulse
-        pulse_type: 'gauss' or 'const'
-        checkZZ: True/False for putting another qubit in e (specify as qA)
-        checkEF: does ramsey on the EF transition instead of ge
-        qubits: if not checkZZ, just specify [1 qubit]. if checkZZ: [qA in e , qB sweeps length rabi]
-    )
+    Sweep sideband pulse gain and collect readout and optional reset shots.
+
+    Gain values are expt.start + expt.step * arange(expt.expts).
+    Optional analysis fits decaying oscillations in the measured response.
     """
 
     def __init__(self, soccfg=None, path='', prefix='SidebandGeneral', config_file=None, progress=None):
@@ -136,7 +133,7 @@ class SidebandGeneralAmpExperiment(Experiment):
                 # print(f'Updated post pulse phase to {wait_phase} deg')
                 # print(self.cfg.expt.post_sweep_pulse)
             self.cfg.expt.gain = gain
-            gainrabi = SidebandGeneralAmpProgram(
+            gainrabi = SidebandAmplitudeSweepProgram(
                 soccfg=self.soccfg, cfg=self.cfg)
             self.prog = gainrabi
             avgi, avgq = gainrabi.acquire(

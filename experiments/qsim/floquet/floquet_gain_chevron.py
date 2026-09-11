@@ -1,10 +1,15 @@
+"""Floquet storage-swap gain chevrons with one-dimensional oscillation fitting."""
+
 import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 
 
-class FloquetChevronAmpProgram(QsimBaseProgram):
+class FloquetGainChevronProgram(QsimBaseProgram):
     """
-    Do a chevron experiment with n floquet pulses
+    Apply repeated Floquet swap pulses to expt.init_stor.
+
+    Use expt.gain and expt.detune with the selected storage mode's configured
+    pulse count and waveform.
     """
 
     def core_pulses(self):
@@ -22,7 +27,13 @@ class FloquetChevronAmpProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class FloquetAmpChevronExperiment(QsimBaseExperiment):
+class FloquetGainChevronExperiment(QsimBaseExperiment):
+    """
+    Run Floquet chevron sweeps and fit one-dimensional gain traces.
+
+    Support sine or decaying-sine fits; two-dimensional fitting is not implemented.
+    """
+
     def analyze(self, data=None, fit=True, fit_func="sin"):
         if data is None:
             data = self.data

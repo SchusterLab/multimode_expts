@@ -1,9 +1,24 @@
+"""f0/g1 spectroscopy for calibrating flux-drive amplitude from resonance shifts.
+
+The pulse program supports spectroscopy with or without flux modulation.
+The notebook sweeps frequency and flux-drive gain; resonance-boundary fitting
+and conversion from gain to current remain in the notebook.
+"""
+
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseProgram
 
 
-class AmplitudeCalibration(QsimBaseProgram):
+class FluxDriveF0g1SpectroscopyProgram(QsimBaseProgram):
+    """
+    Probe the f0/g1 transition with optional flux modulation.
+
+    Prepare the qubit in f and apply a spectroscopy pulse at expt.freq.
+    expt.gain controls the probe; expt.flux_drive_gain controls the flux drive.
+    Modulation can run periodically from initialization or during the core sequence.
+    """
+
     def initialize(self):
         super().initialize()
         # flux line modulation

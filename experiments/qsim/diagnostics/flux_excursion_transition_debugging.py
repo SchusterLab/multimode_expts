@@ -1,9 +1,18 @@
+"""Flux-excursion diagnostics with configurable state preparation and mapping."""
+
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseProgram
 
 
-class ExcursionTransitionDebuggingProgram(QsimBaseProgram):
+class FluxExcursionTransitionDebuggingProgram(QsimBaseProgram):
+    """
+    Probe flux-excursion response with configurable preparation and mapping.
+
+    Support manipulate-photon preparation, population mapping, and a
+    flux-only branch with optional qubit excitation.
+    """
+
     def initialize(self):
         super().initialize()
 

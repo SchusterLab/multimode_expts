@@ -1,9 +1,17 @@
+"""f0/g1 Ramsey phase measurements during a flux excursion."""
+
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseProgram
 
 
-class Manf0g1RamseyProgram(QsimBaseProgram):
+class ManF0g1FluxExcursionRamseyProgram(QsimBaseProgram):
+    """
+    Probe f0/g1 relative phase accumulated during a flux excursion.
+
+    Prepare coherence with an M1 half-pi pulse. When postpulse is False,
+    apply the closing M1 half-pi pulse here, with optional virtual Ramsey phase.
+    """
 
     def core_pulses(self):
         cfg = AttrDict(self.cfg)

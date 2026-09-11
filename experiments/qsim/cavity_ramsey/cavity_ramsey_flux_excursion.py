@@ -1,3 +1,11 @@
+"""
+Cavity Ramsey flux-excursion sequences and their existing analysis wrappers.
+
+CavityRamseyKerrFitExperiment fits Ramsey frequency versus photon number.
+CavityFluxExcursionRamseyProgram supplies the pulse sequence; its experiment
+wrapper selects that program and exposes the gain-sweep peak-fit interface.
+"""
+
 import numpy as np
 from lmfit import Model
 from scipy.ndimage import gaussian_filter1d
@@ -9,10 +17,17 @@ from experiments.qsim.qsim_base import QsimBaseExperiment
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
 
 
-class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment, 
+class CavityRamseyKerrFitExperiment(KerrCavityRamseyExperiment, 
                                     QsimBaseExperiment):
     
     
+
+    """
+    Fit cavity Ramsey traces across displacement gains to estimate Kerr.
+
+    Fit each trace frequency, subtract the virtual Ramsey frequency,
+    and fit the result versus mean photon number to obtain kc and delta.
+    """
 
     @staticmethod
     def estimate_periodicity(y, sampling_rate=1.0):
@@ -156,7 +171,9 @@ class KerrCavityRamseyExperimentMod(KerrCavityRamseyExperiment,
                 'linear_fit_result': None,
             }
 
-class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
+class CavityFluxExcursionRamseyProgram(KerrEngBaseProgram):
+    """Apply cavity Ramsey preparation and readout around a flux excursion."""
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -367,10 +384,12 @@ class KerrCavityRamseyExcursionProgram(KerrEngBaseProgram):
         self.measure_wrapper()
 
 
-class KerrCavityRamseyExcursionExperiment(KerrCavityRamseyExperimentMod):
+class CavityFluxExcursionRamseyExperiment(CavityRamseyKerrFitExperiment):
 # class KerrCavityRamseyExcursionExperiment(KerrCavityRamseyExperiment):
+    """Select the flux-excursion Ramsey program and expose gain-sweep peak analysis."""
+
     def __init__(self, *args, **kwargs):
-        kwargs["program"] = KerrCavityRamseyExcursionProgram
+        kwargs["program"] = CavityFluxExcursionRamseyProgram
         super().__init__(*args, **kwargs)
         
     def fitter_compatibility(self):

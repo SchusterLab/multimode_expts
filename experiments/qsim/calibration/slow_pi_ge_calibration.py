@@ -1,9 +1,13 @@
+"""Length Rabi and Ramsey sequences for calibrating the slow qubit ge pulse."""
+
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseProgram
 
 
-class SlowLengthRabiProgram(QsimBaseProgram):
+class SlowPiGeLengthRabiProgram(QsimBaseProgram):
+    """Apply the slow qubit ge pulse with length_to_sweep as its duration."""
+
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
@@ -40,6 +44,13 @@ class SlowLengthRabiProgram(QsimBaseProgram):
 
 
 class SlowPiGeRamseyProgram(QsimBaseProgram):
+    """
+    Apply two slow ge half-pi pulses separated by expt.wait_time.
+
+    Use expt.hpi_length for each pulse and advance the second pulse phase
+    according to expt.ramsey_freq and the wait time.
+    """
+
     def initialize(self):
         super().initialize()
 

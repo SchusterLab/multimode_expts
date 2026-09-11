@@ -1,9 +1,17 @@
+"""Test pulses for the configured Qsim parity-readout sequence.
+
+The local program applies qubit ge and M1 pi pulses. Optional parity/Wigner
+pulses and measurement are controlled by the inherited QsimBaseProgram sequence.
+"""
+
 from slab import AttrDict
 
 from experiments.qsim.qsim_base import QsimBaseProgram
 
 
-class ParityDebuggingProgram(QsimBaseProgram):
+class ParityReadoutDebuggingProgram(QsimBaseProgram):
+    """Apply qubit ge and M1 pi pulses for parity-readout debugging."""
+
     def core_pulses(self):
         pulse_cfg = [
             ['qubit', 'ge', 'pi', 0,],
