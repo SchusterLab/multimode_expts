@@ -100,7 +100,7 @@ def data_root() -> Path:
         raise JobPathError(
             f"Experiment data root does not exist: {root} (from {source}).\n"
             f"Set {DATA_ROOT_ENV} to the mounted data tree, e.g.\n"
-            f"  {DATA_ROOT_ENV}=/Volumes/experiments"
+            f"  {DATA_ROOT_ENV}=/Volumes/pippin/experiments"
         )
     return root
 
