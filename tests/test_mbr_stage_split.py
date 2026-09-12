@@ -438,7 +438,10 @@ def test_every_old_mpm_default_matched_the_callee():
         "store_rank_sweeps": False,
     }
     parameters = inspect.signature(matrix_pencil.analyze_matrix_pencil).parameters
-    assert set(was) == set(parameters) - {"reconstruction", "spectrum"}
+    # Subset, not equality: new options may be added (e.g. the
+    # calibration-derived merge tolerance). What must not drift is the
+    # default of anything the pre-collapse call site passed.
+    assert set(was) <= set(parameters)
     for name, value in was.items():
         assert parameters[name].default == value, (
             f"{name}: analyze_matrix_pencil now defaults to "

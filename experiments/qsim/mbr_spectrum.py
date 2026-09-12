@@ -114,6 +114,8 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 zero_padding=1,
                 shots_per_point=None,
                 shot_seed=None,
+                mpm_calibration_sigma_multiplier=3.0,
+                mpm_merge_frequency_tolerance_floor_kHz=0.1,
                 **matrix_pencil_options):
         """Reconstruct, phase-correct, and transform one sector to a spectrum.
 
@@ -224,6 +226,44 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             spectrum_method=spectrum_method,
         ))
         if spectrum_method == "matrix_pencil":
+            merge_tolerance_bins = matrix_pencil_options.get("merge_frequency_tolerance_bins")
+            row_calibration_se_MHz = None
+            if isinstance(merge_tolerance_bins, str):
+                if merge_tolerance_bins.lower() != "calibration":
+                    raise ValueError("mpm_merge_frequency_tolerance_bins must be numeric, None, or 'calibration'")
+                if calibration is None:
+                    raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
+
+                calibration_occupations = [tuple(occupation) for occupation in calibration.occupations]
+                phase_slope_se = np.asarray(calibration.phase_error, dtype=float)
+                if phase_slope_se.shape != (len(calibration_occupations),):
+                    raise ValueError("calibration.phase_error must contain one slope standard error per occupation")
+
+                calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
+                if not np.isfinite(calibration_cycle_us) or calibration_cycle_us <= 0.:
+                    raise ValueError("calibration Floquet cycle must be finite and positive")
+
+                calibration_se_MHz = {
+                    occupation: abs(float(slope_se)) / (360. * calibration_cycle_us)
+                    for occupation, slope_se in zip(calibration_occupations, phase_slope_se)
+                }
+                reconstruction = postprocessed.reconstruction
+                if "final_occupations" in reconstruction:
+                    final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
+                else:
+                    final_occupations = [tuple(occupation) for occupation in reconstruction.occupations]
+                missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
+                if missing_errors:
+                    raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
+                row_calibration_se_MHz = np.asarray([calibration_se_MHz[occupation] for occupation in final_occupations])
+                merge_tolerance_bins = None
+
+            merge_floor_MHz = 1e-3 * mpm_merge_frequency_tolerance_floor_kHz
+            matrix_pencil_options["merge_frequency_tolerance_bins"] = merge_tolerance_bins
+            if row_calibration_se_MHz is not None:
+                matrix_pencil_options["row_frequency_standard_errors_MHz"] = row_calibration_se_MHz
+            matrix_pencil_options.setdefault("merge_frequency_tolerance_sigma", mpm_calibration_sigma_multiplier)
+            matrix_pencil_options.setdefault("merge_frequency_tolerance_floor_MHz", merge_floor_MHz)
             self.data.matrix_pencil = self.analyze_matrix_pencil(
                 postprocessed.reconstruction,
                 spectrum,

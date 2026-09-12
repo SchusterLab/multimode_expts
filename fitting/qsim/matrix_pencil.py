@@ -38,7 +38,11 @@ def analyze_matrix_pencil(reconstruction,
                           rank_sweep_extra=None,
                           clip_growth=True,
                           least_squares_rcond=None,
-                          store_rank_sweeps=False):
+                          store_rank_sweeps=False,
+                          dedup_frequency_tolerance_MHz=None,
+                          row_frequency_standard_errors_MHz=None,
+                          merge_frequency_tolerance_sigma=3.0,
+                          merge_frequency_tolerance_floor_MHz=1e-4):
     """
     Find shared damped-exponential poles independently in each occupation.
 
@@ -74,8 +78,10 @@ def analyze_matrix_pencil(reconstruction,
     A = np.asarray(reconstruction.A, dtype=complex)
     time_us = np.asarray(spectrum.time_us, dtype=float)
     occupations = [tuple(occupation) for occupation in reconstruction.occupations]
-    final_occupations = [tuple(occupation) for occupation in reconstruction.get(
-        "final_occupations", occupations)]
+    if "final_occupations" in reconstruction:
+        final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
+    else:
+        final_occupations = list(occupations)
     diagonal = np.asarray([initial == final for initial, final in zip(occupations, final_occupations)])
     if requested_max_modes is None:
         requested_max_modes = len(spectrum.fock_basis)
@@ -111,14 +117,40 @@ def analyze_matrix_pencil(reconstruction,
         raise ValueError("rank_sweep_extra must be None or a nonnegative integer")
     if not np.isfinite(track_frequency_tolerance_bins) or track_frequency_tolerance_bins <= 0.:
         raise ValueError("track_frequency_tolerance_bins must be finite and positive")
-    if merge_frequency_tolerance_bins is None:
-        merge_frequency_tolerance_bins = track_frequency_tolerance_bins
-    if dedup_frequency_tolerance_bins is None:
-        dedup_frequency_tolerance_bins = track_frequency_tolerance_bins
-    if not np.isfinite(merge_frequency_tolerance_bins) or merge_frequency_tolerance_bins <= 0.:
-        raise ValueError("merge_frequency_tolerance_bins must be finite and positive")
-    if not np.isfinite(dedup_frequency_tolerance_bins) or dedup_frequency_tolerance_bins <= 0.:
-        raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
+    calibration_merge = row_frequency_standard_errors_MHz is not None
+    if calibration_merge:
+        row_se_MHz = np.asarray(row_frequency_standard_errors_MHz, dtype=float)
+        if row_se_MHz.shape != (len(A),):
+            raise ValueError("row_frequency_standard_errors_MHz must contain one value per reconstruction row")
+        if np.any(row_se_MHz < 0.) or not np.all(np.isfinite(row_se_MHz)):
+            raise ValueError("row frequency standard errors must be finite and nonnegative")
+
+        error_group_by_row = list(final_occupations)
+        group_se_MHz = {}
+        for group, standard_error_MHz in zip(error_group_by_row, row_se_MHz):
+            if group in group_se_MHz and not np.isclose(group_se_MHz[group], standard_error_MHz,
+                                                         rtol=1e-12, atol=0.):
+                raise ValueError("rows with the same final occupation must use the same calibration frequency standard error")
+            group_se_MHz[group] = float(standard_error_MHz)
+        if not np.isfinite(merge_frequency_tolerance_sigma) or merge_frequency_tolerance_sigma <= 0.:
+            raise ValueError("merge_frequency_tolerance_sigma must be finite and positive")
+        if not np.isfinite(merge_frequency_tolerance_floor_MHz) or merge_frequency_tolerance_floor_MHz <= 0.:
+            raise ValueError("merge_frequency_tolerance_floor_MHz must be finite and positive")
+    else:
+        row_se_MHz = None
+        error_group_by_row = None
+        group_se_MHz = None
+        if merge_frequency_tolerance_bins is None:
+            merge_frequency_tolerance_bins = track_frequency_tolerance_bins
+        if not np.isfinite(merge_frequency_tolerance_bins) or merge_frequency_tolerance_bins <= 0.:
+            raise ValueError("merge_frequency_tolerance_bins must be finite and positive")
+    if dedup_frequency_tolerance_MHz is None:
+        if dedup_frequency_tolerance_bins is None:
+            dedup_frequency_tolerance_bins = track_frequency_tolerance_bins
+        if not np.isfinite(dedup_frequency_tolerance_bins) or dedup_frequency_tolerance_bins <= 0.:
+            raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
+    elif not np.isfinite(dedup_frequency_tolerance_MHz) or dedup_frequency_tolerance_MHz <= 0.:
+        raise ValueError("dedup_frequency_tolerance_MHz must be finite and positive")
     if not np.isfinite(numerical_floor) or numerical_floor <= 0.:
         raise ValueError("numerical_floor must be finite and positive")
     row_normalization = np.asarray([A[row, 0] if diagonal[row] else 1. for row in range(len(A))])[:, None]
@@ -137,8 +169,15 @@ def analyze_matrix_pencil(reconstruction,
     nyquist_MHz = 0.5 * sampling_frequency_MHz
     fft_resolution_MHz = 1. / (sample_count * sample_time_us)
     track_frequency_tolerance_MHz = track_frequency_tolerance_bins * fft_resolution_MHz
-    merge_frequency_tolerance_MHz = merge_frequency_tolerance_bins * fft_resolution_MHz
-    dedup_frequency_tolerance_MHz = dedup_frequency_tolerance_bins * fft_resolution_MHz
+    if calibration_merge:
+        merge_frequency_tolerance_MHz = np.nan
+        merge_frequency_tolerance_bins = np.nan
+    else:
+        merge_frequency_tolerance_MHz = merge_frequency_tolerance_bins * fft_resolution_MHz
+    if dedup_frequency_tolerance_MHz is None:
+        dedup_frequency_tolerance_MHz = dedup_frequency_tolerance_bins * fft_resolution_MHz
+    else:
+        dedup_frequency_tolerance_bins = dedup_frequency_tolerance_MHz / fft_resolution_MHz
     if track_decay_tolerance_per_us is None:
         track_decay_tolerance_per_us = 2. * np.pi * track_frequency_tolerance_MHz
     if dedup_decay_tolerance_per_us is None:
@@ -190,7 +229,7 @@ def analyze_matrix_pencil(reconstruction,
             return float(wrap_frequency(np.median(frequencies_MHz)))
         return float(wrap_frequency(np.angle(weighted_vector) * sampling_frequency_MHz / (2. * np.pi)))
 
-    row_candidates = []
+    raw_row_candidates = []
     row_diagnostics = []
     #--- A. Row MPM iteraction initiation--------------------------------------------------
     for row_index, row in enumerate(normalized_A):
@@ -202,6 +241,7 @@ def analyze_matrix_pencil(reconstruction,
             minimum_consecutive_ranks=minimum_consecutive_ranks,
             track_frequency_tolerance_bins=track_frequency_tolerance_bins,
             dedup_frequency_tolerance_bins=dedup_frequency_tolerance_bins,
+            dedup_frequency_tolerance_MHz=dedup_frequency_tolerance_MHz,
             track_decay_tolerance_per_us=track_decay_tolerance_per_us,
             dedup_decay_tolerance_per_us=dedup_decay_tolerance_per_us,
             match_decay=match_decay,
@@ -215,18 +255,20 @@ def analyze_matrix_pencil(reconstruction,
             least_squares_rcond=least_squares_rcond,
             store_rank_sweeps=store_rank_sweeps)
 
-        for candidate in trace_analysis.candidates:
+        for candidate in trace_analysis.raw_candidates:
             candidate.row_index = row_index
             candidate.occupation = occupations[row_index]
-            row_candidates.append(candidate)
+            raw_row_candidates.append(candidate)
         diagnostic = trace_analysis.diagnostic
         diagnostic.occupation = occupations[row_index]
         row_diagnostics.append(diagnostic)
+
+    row_candidates = list(raw_row_candidates)
+
     #--- B. Sortitng and MPM iteraction initiation--------------------------------------------------
-    #--- 1. Order row_candidates in the order of confidence and then merge them
-    #       when the frequency distance is smaller than merge_frequency_tolerance_MHz
-    ordered_candidates = sorted(row_candidates, 
-                                key=lambda candidate: -candidate.confidence)
+    #--- 1. Order row candidates by rank stability, then merge across rows.
+    ordered_candidates = sorted(row_candidates, key=lambda candidate: -candidate.confidence)
+
     clusters = []
     for candidate in ordered_candidates:
         compatible_clusters = []
@@ -234,54 +276,137 @@ def analyze_matrix_pencil(reconstruction,
             existing_rows = {member.row_index for member in cluster.members}
             if candidate.row_index in existing_rows:
                 continue
-            distance_MHz = frequency_distance(candidate.frequency_MHz, 
-                                              cluster.frequency_MHz)
-            if distance_MHz <= merge_frequency_tolerance_MHz:
-                compatible_clusters.append((distance_MHz, cluster_index))
-        if not compatible_clusters:
-            clusters.append(AttrDict(dict(frequency_MHz=candidate.frequency_MHz, 
-                                          members=[candidate])))
-            continue
-        _, nearest_cluster_index = min(compatible_clusters)
-        cluster = clusters[nearest_cluster_index]
+            distance_MHz = frequency_distance(candidate.frequency_MHz, cluster.frequency_MHz)
+            if calibration_merge:
+                group = error_group_by_row[candidate.row_index]
+                if group in cluster.calibration_group_weights:
+                    own_weight = cluster.calibration_group_weights[group]
+                else:
+                    own_weight = 0.
+                variance_MHz2 = (
+                    (1. - own_weight) ** 2 * group_se_MHz[group] ** 2
+                    + np.sum([(weight * group_se_MHz[other_group]) ** 2
+                              for other_group, weight in cluster.calibration_group_weights.items()
+                              if other_group != group])
+                )
+                tolerance_MHz = max(merge_frequency_tolerance_floor_MHz,
+                                    merge_frequency_tolerance_sigma * np.sqrt(variance_MHz2))
+            else:
+                tolerance_MHz = merge_frequency_tolerance_MHz
+            if distance_MHz <= tolerance_MHz:
+                compatible_clusters.append((distance_MHz / tolerance_MHz, distance_MHz, cluster_index))
+
+        if compatible_clusters:
+            _, _, nearest_cluster_index = min(compatible_clusters)
+            cluster = clusters[nearest_cluster_index]
+        else:
+            cluster = AttrDict({"members": []})
+            clusters.append(cluster)
         cluster.members.append(candidate)
+
+        cluster.member_weights = np.asarray([max(member.confidence, np.finfo(float).eps) for member in cluster.members])
         cluster.frequency_MHz = circular_frequency_center([member.frequency_MHz for member in cluster.members], 
-                                                          [member.confidence for member in cluster.members])
+                                                          cluster.member_weights)
+
+        if calibration_merge:
+            normalized_weights = cluster.member_weights / np.sum(cluster.member_weights)
+            group_weights = {}
+            for member, weight in zip(cluster.members, normalized_weights):
+                group = error_group_by_row[member.row_index]
+                if group in group_weights:
+                    group_weights[group] += float(weight)
+                else:
+                    group_weights[group] = float(weight)
+            cluster.calibration_group_weights = group_weights
+            cluster.frequency_standard_error_MHz = float(np.sqrt(np.sum([
+                (weight * group_se_MHz[group]) ** 2 for group, weight in group_weights.items()
+            ])))
+        else:
+            cluster.calibration_group_weights = None
+            cluster.frequency_standard_error_MHz = np.nan
 
     #--- 2. Discard candidates which appeared less than `minimum_supporting_rows`; 
     #       e.g. if if `minimum_supporting_rows` = 2 and the pole has appeard in only one row, it is discarded
     merged_candidates = []
+    rejected_clusters = []
     for cluster in clusters:
         members = cluster.members
         supporting_rows = sorted({member.row_index for member in members})
         if len(supporting_rows) < minimum_supporting_rows:
+            cluster.rejection_reason = "fewer than minimum_supporting_rows"
+            rejected_clusters.append(cluster)
             continue
-        member_weights = np.asarray([member.confidence for member in members])
+        member_weights = cluster.member_weights
         frequency_MHz = circular_frequency_center([member.frequency_MHz for member in members], member_weights)
         frequency_scatter_MHz = float(np.max([frequency_distance(member.frequency_MHz, frequency_MHz) for member in members]))
         decay_values = np.asarray([member.decay_per_us for member in members])
         raw_decay_per_us = float(np.median(decay_values))
         decay_per_us = max(0., raw_decay_per_us) if clip_growth else raw_decay_per_us
         rank_spans = np.asarray([member.rank_span for member in members])
-        confidence = len(supporting_rows) * np.median(rank_spans) / (1. + frequency_scatter_MHz / merge_frequency_tolerance_MHz)
-        merged_candidates.append(AttrDict(dict(frequency_MHz=frequency_MHz,
-                                               raw_decay_per_us=raw_decay_per_us,
-                                               decay_per_us=decay_per_us,
-                                               implied_growth=raw_decay_per_us < 0.,
-                                               supporting_rows=supporting_rows,
-                                               supporting_occupations=[occupations[row] for row in supporting_rows],
-                                               median_rank_span=float(np.median(rank_spans)),
-                                               frequency_scatter_MHz=frequency_scatter_MHz,
-                                               decay_scatter_per_us=float(np.max(np.abs(decay_values - raw_decay_per_us))),
-                                               confidence=float(confidence),
-                                               members=members)))
+        if calibration_merge:
+            merge_tolerances_MHz = []
+            for member in members:
+                group = error_group_by_row[member.row_index]
+                if group in cluster.calibration_group_weights:
+                    own_weight = cluster.calibration_group_weights[group]
+                else:
+                    own_weight = 0.
+                variance_MHz2 = (
+                    (1. - own_weight) ** 2 * group_se_MHz[group] ** 2
+                    + np.sum([(weight * group_se_MHz[other_group]) ** 2
+                              for other_group, weight in cluster.calibration_group_weights.items()
+                              if other_group != group])
+                )
+                merge_tolerances_MHz.append(max(
+                    merge_frequency_tolerance_floor_MHz,
+                    merge_frequency_tolerance_sigma * np.sqrt(variance_MHz2)
+                ))
+            merge_tolerances_MHz = np.asarray(merge_tolerances_MHz)
+            normalized_frequency_scatter = float(np.max([
+                frequency_distance(member.frequency_MHz, frequency_MHz) / tolerance_MHz
+                for member, tolerance_MHz in zip(members, merge_tolerances_MHz)
+            ]))
+        else:
+            merge_tolerances_MHz = np.full(len(members), merge_frequency_tolerance_MHz)
+            normalized_frequency_scatter = frequency_scatter_MHz / merge_frequency_tolerance_MHz
+        rank_confidence = len(supporting_rows) * np.median(rank_spans) / (1. + normalized_frequency_scatter)
+        selection_score = float(rank_confidence)
+        merged_candidates.append(AttrDict({
+            "frequency_MHz": frequency_MHz,
+            "raw_decay_per_us": raw_decay_per_us,
+            "decay_per_us": decay_per_us,
+            "implied_growth": raw_decay_per_us < 0.,
+            "supporting_rows": supporting_rows,
+            "supporting_occupations": [occupations[row] for row in supporting_rows],
+            "median_rank_span": float(np.median(rank_spans)),
+            "frequency_scatter_MHz": frequency_scatter_MHz,
+            "normalized_frequency_scatter": normalized_frequency_scatter,
+            "frequency_standard_error_MHz": cluster.frequency_standard_error_MHz,
+            "merge_tolerances_MHz": merge_tolerances_MHz,
+            "decay_scatter_per_us": float(np.max(np.abs(decay_values - raw_decay_per_us))),
+            "rank_confidence": float(rank_confidence),
+            "selection_score": selection_score,
+            "confidence": float(rank_confidence),
+            "members": members,
+        }))
 
     #--- 3. Select upto `requested_max_modes`
-    merged_candidates.sort(key=lambda candidate: (-candidate.confidence, -len(candidate.supporting_rows), candidate.frequency_scatter_MHz))
+    merged_candidates.sort(key=lambda candidate: (
+        -candidate.selection_score,
+        -candidate.rank_confidence,
+        -len(candidate.supporting_rows),
+        candidate.frequency_scatter_MHz,
+    ))
     selected_candidates = merged_candidates[:min(requested_max_modes, sample_count - 1)]
     selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
     if not selected_candidates:
-        raise RuntimeError("no stable rowwise Matrix-Pencil candidates were found")
+        if row_candidates and rejected_clusters:
+            raise RuntimeError(
+                "all stable Matrix-Pencil candidates failed "
+                "minimum_supporting_rows"
+            )
+        raise RuntimeError(
+            "no stable rowwise Matrix-Pencil candidates were found")
 
 
     #--- 4. Extract amplitude of each pole using lstsq, which estimates x for A x = b with least square difference.
@@ -354,6 +479,11 @@ def analyze_matrix_pencil(reconstruction,
                              track_frequency_tolerance_MHz=float(track_frequency_tolerance_MHz),
                              merge_frequency_tolerance_MHz=float(merge_frequency_tolerance_MHz),
                              dedup_frequency_tolerance_MHz=float(dedup_frequency_tolerance_MHz),
+                             merge_frequency_tolerance_mode="calibration_standard_error" if calibration_merge else "fft_bins",
+                             row_frequency_standard_errors_MHz=None if row_se_MHz is None else row_se_MHz.copy(),
+                             row_frequency_error_groups=None if error_group_by_row is None else list(error_group_by_row),
+                             merge_frequency_tolerance_sigma=float(merge_frequency_tolerance_sigma),
+                             merge_frequency_tolerance_floor_MHz=float(merge_frequency_tolerance_floor_MHz),
                              track_decay_tolerance_per_us=float(track_decay_tolerance_per_us),
                              dedup_decay_tolerance_per_us=float(dedup_decay_tolerance_per_us),
                              match_decay=bool(match_decay),
@@ -370,6 +500,8 @@ def analyze_matrix_pencil(reconstruction,
     modes = AttrDict(dict(frequencies_MHz=selected_frequencies_MHz,
                           decay_per_us=selected_decay_per_us,
                           poles=shared_poles,
+                          frequency_standard_errors_MHz=np.asarray([candidate.frequency_standard_error_MHz for candidate in selected_candidates]),
+                          selection_scores=np.asarray([candidate.selection_score for candidate in selected_candidates]),
                           supporting_row_counts=supporting_row_counts,
                           supporting_rows=[candidate.supporting_rows for candidate in selected_candidates],
                           supporting_occupations=[candidate.supporting_occupations for candidate in selected_candidates],
@@ -397,6 +529,15 @@ def analyze_matrix_pencil(reconstruction,
                             measured=np.asarray(spectrum.measured),
                             reconstructed=reconstructed,
                             complete_basis=bool(spectrum.complete_basis)))
+    candidate_summary = AttrDict({
+        "raw_per_row": raw_row_candidates,
+        "per_row": row_candidates,
+        "rejected_per_row": [],
+        "clusters": clusters,
+        "rejected_clusters": rejected_clusters,
+        "merged": merged_candidates,
+        "selected": selected_candidates,
+    })
     return AttrDict(dict(method="matrix_pencil",
                          occupations=occupations,
                          row_normalization=row_normalization[:, 0],
@@ -410,9 +551,7 @@ def analyze_matrix_pencil(reconstruction,
                          modes=modes,
                          fit=fit,
                          spectra=spectra,
-                         candidates=AttrDict(dict(per_row=row_candidates,
-                                                  merged=merged_candidates,
-                                                  selected=selected_candidates)),
+                         candidates=candidate_summary,
                          row_diagnostics=row_diagnostics,
                          selected_frequencies_MHz=selected_frequencies_MHz,
                          selected_decay_per_us=selected_decay_per_us,
@@ -458,7 +597,8 @@ def analyze_matrix_pencil_trace(trace,
                                 rank_sweep_extra=None,
                                 clip_growth=True,
                                 least_squares_rcond=None,
-                                store_rank_sweeps=False):
+                                store_rank_sweeps=False,
+                                dedup_frequency_tolerance_MHz=None):
     """
     Apply the rowwise Matrix-Pencil analysis to one complex time trace.
 
@@ -515,10 +655,13 @@ def analyze_matrix_pencil_trace(trace,
         raise ValueError("rank_sweep_extra must be None or a nonnegative integer")
     if not np.isfinite(track_frequency_tolerance_bins) or track_frequency_tolerance_bins <= 0.:
         raise ValueError("track_frequency_tolerance_bins must be finite and positive")
-    if dedup_frequency_tolerance_bins is None:
-        dedup_frequency_tolerance_bins = track_frequency_tolerance_bins
-    if not np.isfinite(dedup_frequency_tolerance_bins) or dedup_frequency_tolerance_bins <= 0.:
-        raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
+    if dedup_frequency_tolerance_MHz is None:
+        if dedup_frequency_tolerance_bins is None:
+            dedup_frequency_tolerance_bins = track_frequency_tolerance_bins
+        if not np.isfinite(dedup_frequency_tolerance_bins) or dedup_frequency_tolerance_bins <= 0.:
+            raise ValueError("dedup_frequency_tolerance_bins must be finite and positive")
+    elif not np.isfinite(dedup_frequency_tolerance_MHz) or dedup_frequency_tolerance_MHz <= 0.:
+        raise ValueError("dedup_frequency_tolerance_MHz must be finite and positive")
     if not np.isfinite(noise_singular_value_factor) or noise_singular_value_factor <= 0.:
         raise ValueError("noise_singular_value_factor must be finite and positive")
     if not np.isfinite(minimum_pole_radius) or not np.isfinite(maximum_pole_radius) or minimum_pole_radius <= 0. or maximum_pole_radius <= minimum_pole_radius:
@@ -531,7 +674,10 @@ def analyze_matrix_pencil_trace(trace,
     nyquist_MHz = 0.5 * sampling_frequency_MHz
     fft_resolution_MHz = 1. / (sample_count * sample_time_us)
     track_frequency_tolerance_MHz = track_frequency_tolerance_bins * fft_resolution_MHz
-    dedup_frequency_tolerance_MHz = dedup_frequency_tolerance_bins * fft_resolution_MHz
+    if dedup_frequency_tolerance_MHz is None:
+        dedup_frequency_tolerance_MHz = dedup_frequency_tolerance_bins * fft_resolution_MHz
+    else:
+        dedup_frequency_tolerance_bins = dedup_frequency_tolerance_MHz / fft_resolution_MHz
     if track_decay_tolerance_per_us is None:
         track_decay_tolerance_per_us = 2. * np.pi * track_frequency_tolerance_MHz
     if dedup_decay_tolerance_per_us is None:
@@ -714,6 +860,7 @@ def analyze_matrix_pencil_trace(trace,
                                             occupation=occupations[row_index],
                                             frequency_MHz=frequency_MHz,
                                             decay_per_us=median_decay_per_us,
+                                            implied_growth=median_decay_per_us < 0.,
                                             pole_radius=float(np.median(pole_history.pole_radii)),
                                             first_rank=pole_history.ranks[0],
                                             last_rank=pole_history.ranks[-1],
@@ -736,7 +883,9 @@ def analyze_matrix_pencil_trace(trace,
                 duplicate = frequency_distance(candidate.frequency_MHz, 
                                                existing.frequency_MHz) <= dedup_frequency_tolerance_MHz
                 if match_decay:
-                    duplicate = duplicate and np.abs(candidate.decay_per_us - existing.decay_per_us) <= dedup_decay_tolerance_per_us
+                    candidate_decay = max(0., candidate.decay_per_us) if clip_growth else candidate.decay_per_us
+                    existing_decay = max(0., existing.decay_per_us) if clip_growth else existing.decay_per_us
+                    duplicate = duplicate and abs(candidate_decay - existing_decay) <= dedup_decay_tolerance_per_us
                 if duplicate:
                     break
             if not duplicate:
@@ -752,6 +901,11 @@ def analyze_matrix_pencil_trace(trace,
             diagnostic.rank_solutions = rank_solutions
             diagnostic.tracks = pole_histories
         row_diagnostics.append(diagnostic)
+
+    raw_candidates = list(row_candidates)
+    diagnostic = row_diagnostics[0]
+    diagnostic.raw_candidates = raw_candidates
+    diagnostic.candidates = row_candidates
 
     selected_candidates = row_candidates[:min(requested_max_modes, sample_count - 1)]
     selected_candidates.sort(key=lambda candidate: candidate.frequency_MHz)
@@ -776,14 +930,14 @@ def analyze_matrix_pencil_trace(trace,
     fitted_return = normalized_fitted_return * initial_return
     residual = trace - fitted_return
     relative_residual = float(np.linalg.norm(residual) / np.linalg.norm(trace))
-    diagnostic = row_diagnostics[0]
-
     return AttrDict(dict(method="matrix_pencil_trace",
                          trace=trace,
                          time_us=time_us,
                          initial_return=initial_return,
                          normalized_return=normalized_return,
+                         raw_candidates=raw_candidates,
                          candidates=row_candidates,
+                         rejected_candidates=[],
                          selected_candidates=selected_candidates,
                          selected_frequencies_MHz=selected_frequencies_MHz,
                          selected_raw_decay_per_us=raw_decay_per_us,
