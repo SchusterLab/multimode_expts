@@ -1,0 +1,535 @@
+{
+  "job_start": "JOB-20260905-00075",
+  "job_end": "JOB-20260905-00174",
+  "campaigns": [
+    {
+      "campaign_id": 0,
+      "parameters": {
+        "photon_number": 3,
+        "swap_stors": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "physical_kerr_MHz": -0.0037627375618815074,
+        "man_mode_no": 1,
+        "scramble_sync_cycles": 1,
+        "use_multiphoton_swap": false,
+        "floquet_gauss_sigma": null,
+        "m1s_pi_fracs": [
+          40,
+          40,
+          40,
+          40
+        ],
+        "m1s_length": [
+          15,
+          15,
+          15,
+          15
+        ],
+        "m1s_gain": [
+          3401,
+          3456,
+          3680,
+          9018
+        ],
+        "m1s_freq": [
+          235774994,
+          351106302,
+          469492974,
+          590331037
+        ],
+        "m1s_ch": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "m1s_waveform_mode": [
+          "preload_flattop",
+          "preload_flattop",
+          "preload_flattop",
+          "preload_flattop"
+        ],
+        "pi_m1_sigma_low": 2,
+        "pi_m1_sigma_high": 2,
+        "tproc_clock_MHz": 430.08,
+        "generator_clocks_MHz": [
+          399.36,
+          399.36,
+          399.36,
+          399.36
+        ],
+        "saved_pulse_rows": [
+          [
+            {
+              "stor_name": "M1-S1",
+              "pi_frac": 40,
+              "freq (MHz)": 350.76998781293867,
+              "gain (DAC units)": 3401,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 0.0,
+              "phase_from_M1-S2 (deg)": 1.53577252816131,
+              "phase_from_M1-S3 (deg)": -0.6364594098828977,
+              "phase_from_M1-S4 (deg)": -1.4949052622523311,
+              "phase_from_M1-S5 (deg)": -5.540441751020322,
+              "phase_from_M1-S6 (deg)": 4.502921615050873,
+              "phase_from_M1-S7 (deg)": 7.525691190366179,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S2",
+              "pi_frac": 40,
+              "freq (MHz)": 522.3520582559853,
+              "gain (DAC units)": 3456,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": -1.7986362406179133,
+              "phase_from_M1-S2 (deg)": 0.0,
+              "phase_from_M1-S3 (deg)": -2.3395296364521876,
+              "phase_from_M1-S4 (deg)": -3.323843665593726,
+              "phase_from_M1-S5 (deg)": -6.962450672688563,
+              "phase_from_M1-S6 (deg)": -25.71503765621945,
+              "phase_from_M1-S7 (deg)": 3.992331259048585,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S3",
+              "pi_frac": 40,
+              "freq (MHz)": 698.4796894705671,
+              "gain (DAC units)": 3680,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 0.3778884062385863,
+              "phase_from_M1-S2 (deg)": 2.333650494080313,
+              "phase_from_M1-S3 (deg)": 0.0,
+              "phase_from_M1-S4 (deg)": -1.074806364626566,
+              "phase_from_M1-S5 (deg)": -4.681372997362341,
+              "phase_from_M1-S6 (deg)": 4.630528113629175,
+              "phase_from_M1-S7 (deg)": 6.031609906591123,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S4",
+              "pi_frac": 40,
+              "freq (MHz)": 878.2543353952215,
+              "gain (DAC units)": 9018,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 1.4311365339841995,
+              "phase_from_M1-S2 (deg)": 3.3632731745489703,
+              "phase_from_M1-S3 (deg)": 0.7144252009511316,
+              "phase_from_M1-S4 (deg)": 0.0,
+              "phase_from_M1-S5 (deg)": -4.322448359638879,
+              "phase_from_M1-S6 (deg)": 0.7913789987387028,
+              "phase_from_M1-S7 (deg)": 6.361821594160705,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ]
+        ]
+      },
+      "calibration_job_ids": [
+        "JOB-20260905-00075",
+        "JOB-20260905-00076",
+        "JOB-20260905-00077",
+        "JOB-20260905-00078",
+        "JOB-20260905-00079",
+        "JOB-20260905-00080",
+        "JOB-20260905-00081",
+        "JOB-20260905-00082",
+        "JOB-20260905-00083",
+        "JOB-20260905-00084",
+        "JOB-20260905-00085",
+        "JOB-20260905-00086",
+        "JOB-20260905-00087",
+        "JOB-20260905-00088",
+        "JOB-20260905-00089",
+        "JOB-20260905-00090",
+        "JOB-20260905-00091",
+        "JOB-20260905-00092",
+        "JOB-20260905-00093",
+        "JOB-20260905-00094",
+        "JOB-20260905-00095",
+        "JOB-20260905-00096",
+        "JOB-20260905-00097",
+        "JOB-20260905-00098",
+        "JOB-20260905-00099",
+        "JOB-20260905-00100",
+        "JOB-20260905-00101",
+        "JOB-20260905-00102",
+        "JOB-20260905-00103",
+        "JOB-20260905-00104",
+        "JOB-20260905-00105",
+        "JOB-20260905-00106",
+        "JOB-20260905-00107",
+        "JOB-20260905-00108",
+        "JOB-20260905-00109",
+        "JOB-20260905-00110",
+        "JOB-20260905-00111",
+        "JOB-20260905-00112",
+        "JOB-20260905-00113",
+        "JOB-20260905-00114",
+        "JOB-20260905-00115",
+        "JOB-20260905-00116",
+        "JOB-20260905-00117",
+        "JOB-20260905-00118",
+        "JOB-20260905-00119",
+        "JOB-20260905-00120",
+        "JOB-20260905-00121",
+        "JOB-20260905-00122",
+        "JOB-20260905-00123",
+        "JOB-20260905-00124",
+        "JOB-20260905-00125",
+        "JOB-20260905-00126",
+        "JOB-20260905-00127",
+        "JOB-20260905-00128",
+        "JOB-20260905-00129",
+        "JOB-20260905-00130",
+        "JOB-20260905-00131",
+        "JOB-20260905-00132",
+        "JOB-20260905-00133",
+        "JOB-20260905-00134",
+        "JOB-20260905-00135",
+        "JOB-20260905-00136",
+        "JOB-20260905-00137",
+        "JOB-20260905-00138",
+        "JOB-20260905-00139",
+        "JOB-20260905-00140",
+        "JOB-20260905-00141",
+        "JOB-20260905-00142",
+        "JOB-20260905-00143",
+        "JOB-20260905-00144"
+      ],
+      "job_ids_by_realization": {
+        "0": [
+          "JOB-20260905-00145",
+          "JOB-20260905-00146",
+          "JOB-20260905-00147",
+          "JOB-20260905-00148",
+          "JOB-20260905-00149",
+          "JOB-20260905-00150",
+          "JOB-20260905-00151",
+          "JOB-20260905-00152",
+          "JOB-20260905-00153",
+          "JOB-20260905-00154",
+          "JOB-20260905-00155",
+          "JOB-20260905-00156",
+          "JOB-20260905-00157",
+          "JOB-20260905-00158",
+          "JOB-20260905-00159"
+        ],
+        "1": [
+          "JOB-20260905-00160",
+          "JOB-20260905-00161",
+          "JOB-20260905-00162",
+          "JOB-20260905-00163",
+          "JOB-20260905-00164",
+          "JOB-20260905-00165",
+          "JOB-20260905-00166",
+          "JOB-20260905-00167",
+          "JOB-20260905-00168",
+          "JOB-20260905-00169",
+          "JOB-20260905-00170",
+          "JOB-20260905-00171",
+          "JOB-20260905-00172",
+          "JOB-20260905-00173",
+          "JOB-20260905-00174"
+        ]
+      },
+      "realizations": {
+        "0": {
+          "identity": {
+            "saved_realization": 0,
+            "seed": 20260903,
+            "detunings_MHz": [
+              -0.0007917256338224534,
+              0.023238743099869966,
+              -0.07907407871256952,
+              0.056627061246522004
+            ],
+            "target_onsite_MHz": [
+              0.0007917256338224534,
+              -0.023238743099869966,
+              0.07907407871256952,
+              -0.056627061246522004
+            ]
+          },
+          "timing": {
+            "cycle_us": 0.2139136904761905,
+            "last_cycle": 364,
+            "last_time_us": 77.86458333333334,
+            "cycle_count": 364,
+            "clock_MHz": 430.08,
+            "ticks_per_cycle": 92,
+            "source": "saved prog_list: FLOQUET_LOOP set/synci instructions"
+          }
+        },
+        "1": {
+          "identity": {
+            "saved_realization": 1,
+            "seed": 20260904,
+            "detunings_MHz": [
+              -0.062139704609099934,
+              0.07063630609823338,
+              -0.027839329266633208,
+              0.019342727777499766
+            ],
+            "target_onsite_MHz": [
+              0.062139704609099934,
+              -0.07063630609823338,
+              0.027839329266633208,
+              -0.019342727777499766
+            ]
+          },
+          "timing": {
+            "cycle_us": 0.2139136904761905,
+            "last_cycle": 364,
+            "last_time_us": 77.86458333333334,
+            "cycle_count": 364,
+            "clock_MHz": 430.08,
+            "ticks_per_cycle": 92,
+            "source": "saved prog_list: FLOQUET_LOOP set/synci instructions"
+          }
+        }
+      },
+      "issues": []
+    }
+  ],
+  "calibrations": [
+    {
+      "job_ids": [
+        "JOB-20260905-00075",
+        "JOB-20260905-00076",
+        "JOB-20260905-00077",
+        "JOB-20260905-00078",
+        "JOB-20260905-00079",
+        "JOB-20260905-00080",
+        "JOB-20260905-00081",
+        "JOB-20260905-00082",
+        "JOB-20260905-00083",
+        "JOB-20260905-00084",
+        "JOB-20260905-00085",
+        "JOB-20260905-00086",
+        "JOB-20260905-00087",
+        "JOB-20260905-00088",
+        "JOB-20260905-00089",
+        "JOB-20260905-00090",
+        "JOB-20260905-00091",
+        "JOB-20260905-00092",
+        "JOB-20260905-00093",
+        "JOB-20260905-00094",
+        "JOB-20260905-00095",
+        "JOB-20260905-00096",
+        "JOB-20260905-00097",
+        "JOB-20260905-00098",
+        "JOB-20260905-00099",
+        "JOB-20260905-00100",
+        "JOB-20260905-00101",
+        "JOB-20260905-00102",
+        "JOB-20260905-00103",
+        "JOB-20260905-00104",
+        "JOB-20260905-00105",
+        "JOB-20260905-00106",
+        "JOB-20260905-00107",
+        "JOB-20260905-00108",
+        "JOB-20260905-00109",
+        "JOB-20260905-00110",
+        "JOB-20260905-00111",
+        "JOB-20260905-00112",
+        "JOB-20260905-00113",
+        "JOB-20260905-00114",
+        "JOB-20260905-00115",
+        "JOB-20260905-00116",
+        "JOB-20260905-00117",
+        "JOB-20260905-00118",
+        "JOB-20260905-00119",
+        "JOB-20260905-00120",
+        "JOB-20260905-00121",
+        "JOB-20260905-00122",
+        "JOB-20260905-00123",
+        "JOB-20260905-00124",
+        "JOB-20260905-00125",
+        "JOB-20260905-00126",
+        "JOB-20260905-00127",
+        "JOB-20260905-00128",
+        "JOB-20260905-00129",
+        "JOB-20260905-00130",
+        "JOB-20260905-00131",
+        "JOB-20260905-00132",
+        "JOB-20260905-00133",
+        "JOB-20260905-00134",
+        "JOB-20260905-00135",
+        "JOB-20260905-00136",
+        "JOB-20260905-00137",
+        "JOB-20260905-00138",
+        "JOB-20260905-00139",
+        "JOB-20260905-00140",
+        "JOB-20260905-00141",
+        "JOB-20260905-00142",
+        "JOB-20260905-00143",
+        "JOB-20260905-00144"
+      ],
+      "parameters": {
+        "photon_number": 3,
+        "swap_stors": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "physical_kerr_MHz": -0.0037627375618815074,
+        "man_mode_no": 1,
+        "scramble_sync_cycles": 1,
+        "use_multiphoton_swap": false,
+        "floquet_gauss_sigma": null,
+        "m1s_pi_fracs": [
+          40,
+          40,
+          40,
+          40
+        ],
+        "m1s_length": [
+          15,
+          15,
+          15,
+          15
+        ],
+        "m1s_gain": [
+          3401,
+          3456,
+          3680,
+          9018
+        ],
+        "m1s_freq": [
+          235774994,
+          351106302,
+          469492974,
+          590331037
+        ],
+        "m1s_ch": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "m1s_waveform_mode": [
+          "preload_flattop",
+          "preload_flattop",
+          "preload_flattop",
+          "preload_flattop"
+        ],
+        "pi_m1_sigma_low": 2,
+        "pi_m1_sigma_high": 2,
+        "tproc_clock_MHz": 430.08,
+        "generator_clocks_MHz": [
+          399.36,
+          399.36,
+          399.36,
+          399.36
+        ],
+        "saved_pulse_rows": [
+          [
+            {
+              "stor_name": "M1-S1",
+              "pi_frac": 40,
+              "freq (MHz)": 350.76998781293867,
+              "gain (DAC units)": 3401,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 0.0,
+              "phase_from_M1-S2 (deg)": 1.53577252816131,
+              "phase_from_M1-S3 (deg)": -0.6364594098828977,
+              "phase_from_M1-S4 (deg)": -1.4949052622523311,
+              "phase_from_M1-S5 (deg)": -5.540441751020322,
+              "phase_from_M1-S6 (deg)": 4.502921615050873,
+              "phase_from_M1-S7 (deg)": 7.525691190366179,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S2",
+              "pi_frac": 40,
+              "freq (MHz)": 522.3520582559853,
+              "gain (DAC units)": 3456,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": -1.7986362406179133,
+              "phase_from_M1-S2 (deg)": 0.0,
+              "phase_from_M1-S3 (deg)": -2.3395296364521876,
+              "phase_from_M1-S4 (deg)": -3.323843665593726,
+              "phase_from_M1-S5 (deg)": -6.962450672688563,
+              "phase_from_M1-S6 (deg)": -25.71503765621945,
+              "phase_from_M1-S7 (deg)": 3.992331259048585,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S3",
+              "pi_frac": 40,
+              "freq (MHz)": 698.4796894705671,
+              "gain (DAC units)": 3680,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 0.3778884062385863,
+              "phase_from_M1-S2 (deg)": 2.333650494080313,
+              "phase_from_M1-S3 (deg)": 0.0,
+              "phase_from_M1-S4 (deg)": -1.074806364626566,
+              "phase_from_M1-S5 (deg)": -4.681372997362341,
+              "phase_from_M1-S6 (deg)": 4.630528113629175,
+              "phase_from_M1-S7 (deg)": 6.031609906591123,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ],
+          [
+            {
+              "stor_name": "M1-S4",
+              "pi_frac": 40,
+              "freq (MHz)": 878.2543353952215,
+              "gain (DAC units)": 9018,
+              "len (mus)": 0.037,
+              "ramp_sigma (mus)": 0.002,
+              "phase_from_M1-S1 (deg)": 1.4311365339841995,
+              "phase_from_M1-S2 (deg)": 3.3632731745489703,
+              "phase_from_M1-S3 (deg)": 0.7144252009511316,
+              "phase_from_M1-S4 (deg)": 0.0,
+              "phase_from_M1-S5 (deg)": -4.322448359638879,
+              "phase_from_M1-S6 (deg)": 0.7913789987387028,
+              "phase_from_M1-S7 (deg)": 6.361821594160705,
+              "gauss_n_sigma": 4.0,
+              "waveform": "preload_flattop",
+              "gauss_sigma (mus)": 0.02
+            }
+          ]
+        ]
+      },
+      "complete": true
+    }
+  ],
+  "excluded": [],
+  "issues": []
+}
