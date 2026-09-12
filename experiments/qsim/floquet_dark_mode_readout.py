@@ -3895,9 +3895,10 @@ def _stage_migration_message(stage):
 # which matters: every new module imports the still-resident base classes from
 # here, so a top-level re-import would be circular.
 #
-# Deliberately invisible to ``inspect.getmembers``, and therefore to the
-# flattening exporter in ``experiments/__init__.py``. Each name is exported to
-# the ``experiments`` namespace by its own module instead, exactly once.
+# Note: ``__dir__`` advertises these names, so the flattening exporter in
+# ``experiments/__init__.py`` does re-export them to the ``experiments``
+# namespace. That is harmless -- it resolves to the very same class object the
+# defining module exports, so the second write is idempotent.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "dark_mode_broadband_ge_validation",
     "DarkT1Experiment": "dark_mode_t1",
