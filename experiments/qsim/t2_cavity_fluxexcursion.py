@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-import importlib
-
 import matplotlib.pyplot as plt
 import numpy as np
 from qick import *
@@ -371,51 +369,3 @@ class SidebandScrambleDarkProgram(SidebandScrambleProgram):
                 self.sync_all(10)
             
             self.sync_all()
-
-
-# ---------------------------------------------------------------------------
-# Compatibility: the flux-excursion families that moved to their own modules,
-# and were renamed on the way out. Same mechanism as
-# ``floquet_dark_mode_readout._MOVED_TO``, with one addition -- the value
-# carries the new class name too, because these moves renamed.
-#
-# This is not a convenience alias. ``pickle.load`` resolves a saved object
-# through ``getattr(module, recorded_name)``, and every experiment pickle
-# written before the move records the old module and the old name. Dropping
-# these entries would make those pickles unloadable, which
-# ``measurement_notebooks/jonginn/data_postprocess.ipynb`` still depends on
-# for the flux-excursion analysis. HDF5 output is unaffected either way.
-#
-# Note: ``__dir__`` advertises these names, so the flattening exporter in
-# ``experiments/__init__.py`` does re-export them to the ``experiments``
-# namespace. That is harmless -- it resolves to the very same class object the
-# defining module exports, so the second write is idempotent.
-_MOVED_TO = {
-    "AmplitudeCalibration": ("flux_amplitude_calibration", "FluxDriveF0g1SpectroscopyProgram"),
-    "ExcursionTransitionDebuggingProgram": ("flux_excursion_transition_debugging", "FluxExcursionTransitionDebuggingProgram"),
-    "FloquetAmpChevronExperiment": ("floquet_gain_chevron", "FloquetGainChevronExperiment"),
-    "FloquetChevronAmpProgram": ("floquet_gain_chevron", "FloquetGainChevronProgram"),
-    "KerrCavityRamseyExcursionExperiment": ("cavity_ramsey_flux_excursion", "CavityFluxExcursionRamseyExperiment"),
-    "KerrCavityRamseyExcursionProgram": ("cavity_ramsey_flux_excursion", "CavityFluxExcursionRamseyProgram"),
-    "KerrCavityRamseyExperimentMod": ("cavity_ramsey_flux_excursion", "CavityRamseyKerrFitExperiment"),
-    "MActiveResetVerificationProgram": ("man_reset_verification", "ManActiveResetVerificationProgram"),
-    "Manf0g1RamseyProgram": ("man_f0g1_ramsey", "ManF0g1FluxExcursionRamseyProgram"),
-    "ParityDebuggingProgram": ("parity_readout_debugging", "ParityReadoutDebuggingProgram"),
-    "SidebandGeneralAmpExperiment": ("sideband_amplitude_sweep", "SidebandAmplitudeSweepExperiment"),
-    "SidebandGeneralAmpProgram": ("sideband_amplitude_sweep", "SidebandAmplitudeSweepProgram"),
-    "SlowLengthRabiProgram": ("slow_pi_ge_calibration", "SlowPiGeLengthRabiProgram"),
-    "SlowPiGeRamseyProgram": ("slow_pi_ge_calibration", "SlowPiGeRamseyProgram"),
-}
-
-
-def __getattr__(name):
-    moved = _MOVED_TO.get(name)
-    if moved is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module, new_name = moved
-    return getattr(
-        importlib.import_module(f"experiments.qsim.{module}"), new_name)
-
-
-def __dir__():
-    return sorted(list(globals()) + list(_MOVED_TO))
