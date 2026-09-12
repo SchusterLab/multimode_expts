@@ -1,4 +1,20 @@
-# MBR refactor worklog
+# Historical record: MBR refactor worklog
+
+> **Status: historical by construction.**
+>
+> A dated session log. Each entry describes what landed at that point and what
+> the author expected to do next; the "what is next" lines are superseded by
+> whatever the following entry, or the merge, actually did.
+>
+> Anything below that reads as a plan, an intention, or a loose end is a
+> record of what was thought at the time, **not an instruction for present or
+> future work**. Do not act on it. Current direction lives in
+> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> evidence in
+> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> those two supersede every other refactor doc in this repo.
+
+## MBR refactor worklog
 
 Running handoff for the refactor in `docs/qsim_mbr_refactor.md`. Newest entry
 last. Each entry says what landed, how to check it, and what is next, so a

@@ -1,4 +1,27 @@
-# Qsim many-body Ramsey and Floquet/dark-mode refactor specification
+# Historical record: MBR and Floquet/dark-mode refactor specification
+
+> **Status: historical. Superseded as guidance.**
+>
+> The detailed spec that drove the MBR extraction on this branch. Its
+> reasoning about correctness, data contracts and the acquire/analyze/display
+> locality invariant is still the best long-form account of why the refactor
+> is shaped the way it is, and appendices B and C record verified facts about
+> live data that are worth keeping.
+>
+> Treat the line counts, module inventories and migration order as stale: they
+> predate the merge with Jonginn's branch. Sections 10, 12 and 14 in
+> particular describe an ordering and a set of open questions that have since
+> been overtaken.
+>
+> Anything below that reads as a plan, an intention, or a loose end is a
+> record of what was thought at the time, **not an instruction for present or
+> future work**. Do not act on it. Current direction lives in
+> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> evidence in
+> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> those two supersede every other refactor doc in this repo.
+
+## Qsim many-body Ramsey and Floquet/dark-mode refactor specification
 
 **experiments/qsim/floquet_dark_mode_readout.py** was an 8,272-line
 mixed-responsibility module containing 31 classes. Its two largest classes,

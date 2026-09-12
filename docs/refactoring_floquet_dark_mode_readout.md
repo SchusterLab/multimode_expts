@@ -1,5 +1,23 @@
+# Historical record: rationale for the 2026-09 dark-mode module deletions
 
-# 1.  Which lines I have deleted
+> **Status: historical. Superseded as guidance.**
+>
+> Written by Jonginn to explain, chunk by chunk, what he deleted from
+> `floquet_dark_mode_readout.py` while the parallel refactor was underway, then
+> annotated jointly with the verdicts we reached in discussion. Section 1's
+> verdicts are the decisions of record for those specific deletions. Section 2
+> was headed "tentative plans, not implemented yet" and should be read as his
+> thinking at the time, not as a work queue.
+>
+> Anything below that reads as a plan, an intention, or a loose end is a
+> record of what was thought at the time, **not an instruction for present or
+> future work**. Do not act on it. Current direction lives in
+> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> evidence in
+> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> those two supersede every other refactor doc in this repo.
+
+## 1.  Which lines I have deleted
 
 ### 1-1. ``subsample_spectroscopy_shots`` in ``EncodingHamiltonianSpectroscopyExperiment``
 

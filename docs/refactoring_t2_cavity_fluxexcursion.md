@@ -1,4 +1,35 @@
-# Refactoring t2_cavity_fluxexcursion
+# Historical record: the t2_cavity_fluxexcursion split, as originally specified
+
+> **Status: historical. Superseded as guidance; the work it describes has
+> landed and then been reworked.**
+>
+> This was the spec for splitting classes out of `t2_cavity_fluxexcursion.py`.
+> What actually happened differs, so do not use this as a map of the tree:
+>
+> - It promised a pure move ("copying their existing code unchanged"). The
+>   move also renamed 13 of the 14 classes and added docstrings. The bodies
+>   were later verified identical modulo those renames.
+> - Destinations here read `experiments/calibration/...` etc. The code landed
+>   under `experiments/qsim/<role>/...` and was then flattened to
+>   `experiments/qsim/*.py`: subpackages are grouped by project, not by role,
+>   and `experiments/__init__.py` only exports one level deep.
+> - The "notebook copies" section describes `*_refactored.ipynb` duplicates.
+>   Those were whole-file forks; they have replaced their originals and the
+>   suffixed copies are gone.
+> - Its closing question, whether to delete the originals, is answered: they
+>   are deleted outright. Old names are not aliased: experiment pickles are
+>   ephemeral by policy, so an old one is loaded by checking out the commit
+>   it was written under.
+>
+> Anything below that reads as a plan, an intention, or a loose end is a
+> record of what was thought at the time, **not an instruction for present or
+> future work**. Do not act on it. Current direction lives in
+> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> evidence in
+> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> those two supersede every other refactor doc in this repo.
+
+## Refactoring t2_cavity_fluxexcursion
 
 ## Scope
 
