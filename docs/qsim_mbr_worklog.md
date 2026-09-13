@@ -849,3 +849,108 @@ Open, in the order they seem worth doing:
    `mbr_reconstruction.py`, the last item on the old step-2 worklist.
 4. The section 6 naming review, which now has to reckon with the god class name
    being recorded provenance.
+
+## 2026-09-12 — the pulse layer torn apart; the god file is gone
+
+The god module went 3,926 -> 443 lines, and what remains is one coherent
+class: the Experiment that loads saved MBR jobs and does the per-job
+quadrature. Nine commits, each one move, each verified.
+
+### The net came first, because the old net could not see pulses
+
+`test_mbr_acquire_mock` proves a stage still builds, compiles and acquires.
+That is exactly the check a pulse bug survives: a wrong swap compiles and
+"acquires" like a right one. So nothing in the suite could certify a move of
+pulse code.
+
+The whole observable output of the pulse layer is the instruction listing
+plus the waveform table, and `prog.asm()` is deterministic given a pinned
+config set (verified over repeated runs before pinning). `tests/asm_golden.py`
+now renders both — full ASM text plus a per-envelope sample digest, because
+the ASM names a waveform and carries none of its samples — for 24 programs
+across the two committed config sets, gzipped to 96 KiB. A mutation check (one
+unit of swap gain, taken from the calibration the way the program takes it)
+pins that the comparison is sensitive rather than vacuous.
+
+Every extraction below left all 24 listings byte-identical. Regenerate with
+`pixi run python -m tests.asm_golden`; the diff is the review.
+
+### Where the 1,800-line program base went
+
+| Destination | What | Why there |
+|---|---|---|
+| `floquet_register_bank.py` | preloaded tProc register banks | self-contained page/register bookkeeping; already free functions; two program bases and `mbr_sff` address it |
+| `floquet_phase_frame.py` | the rotating-frame ledger | pure arithmetic, so now unit-testable — and a wrong phase is the failure that still compiles and acquires |
+| `manipulate_mode_pulses.py` | parity readout, Fock prep, manipulate reset | knows nothing about Floquet or dark modes; two of the three are MM_base overrides, so a mixin is the point |
+| `floquet_train.py` | the swap trains, in all three emission modes | the drive itself, plus the ledger contract every mode honours |
+| `dark_mode_encoding.py` | load and read a collective mode | read is written once, load is derived as its adjoint |
+| `dark_base.py` | `DarkBaseExperiment`, `DarkBase{,R}Program`, parity classifier | the sweep driver and the program template |
+| `deprecated/dark_scramble_legacy.py` | five superseded scramble programs | saved data still refers to them |
+| stage modules | each stage's acquisition Program | one measurement, one file, acquire beside analyse |
+| `floquet_phase_calibration.py` | the two diagonal-phase calibrations | unreferenced today, but their output feeds the live stages |
+| `experiments/batch_runner.py` | `BatchRunner` | infrastructure; nothing in it knows what is measured |
+
+### Three things worth not rediscovering
+
+**The RAverager base takes two of three manipulate-mode methods on purpose.**
+`DarkBaseRProgram` borrowed `prep_man_fock_state` and `multi_parity_readout`
+but not `man_reset`, so its `active_reset` path plays *MM_base's* reset.
+Inheriting the mixin instead would silently change which reset every
+RAverager program emits, with nothing else in the suite objecting. Resolution
+was checked before and after and is now pinned in
+`tests/test_pulse_layer_layout.py`.
+
+**The two matrix ledgers were one loop twice; the Floquet ledger is not.**
+`advance_matrix_offsets` now serves both the ds_storage and the decoder
+ledger. What is deliberately *not* unified is the Floquet ledger's skip of
+the mode just pulsed — that mode's phase rides on the pulse, while the
+matrices may carry a calibrated diagonal. Unifying them would be a silent
+physics change; a test pins each side.
+
+**The queue records `program_module` per job.** Moving a Program class is
+therefore not purely internal: a job recorded before the move is re-imported
+by the module string it was submitted with. The `_MOVED_TO` map covers every
+moved name for exactly this reason, and its values are now absolute module
+paths.
+
+### Also landed
+
+- `subsample_spectroscopy_shots` -> `fitting/qsim/mbr_reconstruction.py`, the
+  last item on the old step-2 worklist. It re-derived the readout-lane count
+  with a copy of `acquire`'s arithmetic; that is now
+  `dark_base.readout_lane_count`, called by both. 16 new tests pin the
+  identity the implementation exists for: selecting every available shot
+  reproduces the saved average exactly, whatever offset the two averaging
+  paths differ by.
+- Explicit signatures for the other three stages' `analyze`/`display`. Their
+  `**kwargs` were read by nothing, so `analyze(occupation=...)` — singular by
+  accident — analysed the recorded order and produced a plausible plot.
+  `figsize` and `correction_mode` came out of hiding.
+
+### Standing after today
+
+Suite 360 -> 530, one pre-existing failure
+(`test_wigner_analysis_rotate::test_bootstrap_freezes_theta_across_draws`,
+unrelated to MBR and unfixed). No file in `experiments/qsim/` or
+`fitting/qsim/` is over 1.8 kLOC; the largest are `mbr_sff.py` (1,792),
+`mbr_spectrum.py` (1,142) and `fitting/qsim/matrix_pencil.py` (1,085).
+
+Open, in the order they seem worth doing:
+
+1. **The god Experiment's name.** `floquet_dark_mode_readout.py` now holds
+   only `EncodingHamiltonianSpectroscopyExperiment` — the job-loading and
+   per-job quadrature layer, which is what the worklog wanted to extract as
+   `MBRAnalysisBase`. Both the module and the class name are recorded
+   provenance (saved filenames, `ExptClass=` in notebooks, `experiment_module`
+   in the queue), so renaming needs a provenance story: a decision, not a
+   refactor.
+2. `mbr_sff.py` (1,792), whose mixins jonginn marked "NOT PERUSED" and whose
+   known defects are pinned rather than fixed — see
+   `test_sff_rejects_negative_detunings`. Reading it is the prerequisite for
+   splitting it.
+3. `experiments/floquet_timing.py` says it "mirrors
+   `DarkBaseProgram.calculate_floquet_cycle_us`". Two implementations of the
+   cycle duration, one in the pulse layer and one in the analysis resolver.
+   Worth reconciling now that the pulse-layer one has a home.
+4. `mbr_spectrum.py` (1,142) and `fitting/qsim/matrix_pencil.py` (1,085) --
+   analysis, not acquisition, and both already behind the golden.
