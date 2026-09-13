@@ -52,6 +52,8 @@ from slab import AttrDict
 #
 #   EncSpec.spectroscopy_batch             ->  MBRSpectrumExperiment
 #   EncSpec.subsample_spectroscopy_shots   ->  MBRSpectrumExperiment
+#       (a wrapper now; the numerics are
+#        fitting/qsim/mbr_reconstruction.subsample_spectroscopy_shots)
 #   EncSpec.display_occupation             ->  MBRSpectrumExperiment
 #   EncSpec.display_local_density_of_states->  MBRSpectrumExperiment
 #   EncSpec.display_result                 ->  MBRSpectrumExperiment
@@ -68,8 +70,14 @@ from slab import AttrDict
 # What did NOT change, so do not touch it:
 #
 # - Acquisition. `BatchRunner(ExptClass=EncSpec, ...)` is unchanged, and so is
-#   every `ExptClass=...DarkBaseExperiment`. The class name and module are
-#   recorded in job provenance, so they deliberately did not move.
+#   every `ExptClass=...DarkBaseExperiment`. No class was renamed: names are
+#   recorded in job provenance.
+#   Modules *did* move on 2026-09-12 -- `BatchRunner` to
+#   `experiments/batch_runner.py`, `DarkBaseExperiment` to
+#   `experiments/qsim/dark_base.py`, each stage's Program to its stage
+#   module. Old addresses still resolve through
+#   `floquet_dark_mode_readout`'s `__getattr__`, so nothing breaks; new code
+#   should name the owner.
 # - The loading layer: `from_job_ids`, `from_job_files`, `_from_expts`,
 #   `_saved_parameters`, `hardware_parameters`. Still on the same class, and
 #   inherited by all four stage classes -- which is why `from_job_ids` on a

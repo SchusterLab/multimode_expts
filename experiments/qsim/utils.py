@@ -164,3 +164,44 @@ def flatten_exp_lists(items, container_types=(list, tuple, set)):
             yield from flatten_exp_lists(x, container_types)
         else:
             yield x
+
+
+def floquet_pulse_parameters(station, man_mode_no, stor_mode_no):
+    """-> the calibrated M{man}-S{stor} swap parameters, plus prep/meas pulses.
+
+    A reader over ``station.ds_floquet`` for the one-photon Floquet
+    measurements: the swap's frequency, gain, length and fractional-pulse
+    count, which flux channel it uses, and the gate strings that put one
+    photon into the manipulate mode and take it back out to the qubit for a
+    ge measurement.
+
+    Returns ``(freq, gain, length, pi_frac, ch, prepulse, postpulse)`` --
+    positional, because that is the shape six notebooks already unpack.
+
+    This existed as a copy-pasted cell in six notebooks. It is a reader, not
+    an experiment, so a drift between copies would not fail anywhere: it
+    would just mean two notebooks disagreeing about which pulse they played.
+
+    ``ch`` is ``'low'`` or ``'high'``, by a 1000 MHz cut. Note that this is
+    *not* the threshold the pulse layer uses to pick the physical flux
+    channel -- that is ``floquet_timing.FLUX_HIGH_THRESHOLD_MHZ`` at 1800
+    MHz. The two have always differed; this label is only for display and
+    for the notebook's own branching.
+    """
+    from experiments.MM_dual_rail_base import MM_dual_rail_base
+
+    stor_name = f'M{man_mode_no}-S{stor_mode_no}'
+    freq = station.ds_floquet.get_freq(stor_name)
+    gain = station.ds_floquet.get_gain(stor_name)
+    length = station.ds_floquet.get_len(stor_name)
+    pi_frac = station.ds_floquet.get_pi_frac(stor_name)
+    ch = 'low' if freq < 1000 else 'high'
+
+    dual_rail = MM_dual_rail_base(station.hardware_cfg, station.soccfg)
+    prep_man_pi = dual_rail.prep_man_photon(man_mode_no)
+    prepulse = dual_rail.get_prepulse_creator(prep_man_pi).pulse.tolist()
+    # For a ge measurement, undo only f0g1 and ef, in that order.
+    postpulse = dual_rail.get_prepulse_creator(
+        prep_man_pi[-1:-3:-1]).pulse.tolist()
+
+    return freq, gain, length, pi_frac, ch, prepulse, postpulse

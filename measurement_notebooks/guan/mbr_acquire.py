@@ -18,28 +18,34 @@
 # The worked example for acquiring a many-body-Ramsey campaign. Point an agent
 # at this file, or copy the cells you need into your own notebook.
 #
-# `analysis_notebooks/guan/mbr_analyze.py` is the other half; this file
+# `analysis_notebooks/guan/MBR_analysis.py` is the other half; this file
 # acquires, that one loads and analyses.
 #
 # ## What changed
 #
-# Acquisition classes and module paths did **not** move. The class name and
-# module are recorded in job provenance, so renaming them would orphan saved
+# **No class was renamed.** Class names are recorded in job provenance --
+# saved files are `JOB-<id>_<ClassName>.h5` -- so renaming one would orphan
 # data. `BatchRunner(ExptClass=..., ExptProgram=...)` still works exactly as
-# before, and every program in `floquet_dark_mode_readout` is still there.
+# before.
 #
-# What changed is that the four aggregate *analysis* stages became four
-# Experiment classes, and `EncSpec.analyze(stage="...")` is gone. Since each
-# stage now owns its own batch builder, this file addresses stages by name and
-# lets `experiments/qsim/mbr_campaign.py` map name to (owner, program,
-# builder):
+# **Modules did move**, as of 2026-09-12: each stage's Program now lives
+# beside its Experiment, and `BatchRunner` is `experiments/batch_runner.py`.
+# Every old address still resolves -- `floquet_dark_mode_readout` forwards
+# moved names through a module-level `__getattr__`, which matters for more
+# than notebooks, since the queue records `program_module` per job and
+# re-imports by that string. Prefer the new address in new cells.
 #
-# | stage           | owner class                    | program                                    |
-# |-----------------|--------------------------------|--------------------------------------------|
-# | `calibration`   | `MBRPhaseCorrectionExperiment` | `EntireFloquetCyclePhaseCalibrationProgram`|
-# | `spectrum`      | `MBRSpectrumExperiment`        | `NPhotonHamiltonianSpectroscopyProgram`    |
-# | `propagator`    | `MBRPropagatorExperiment`      | `EncodingPropagatorProgram`                |
-# | `orthogonality` | `MBROrthogonalityExperiment`   | `EncodingOrthogonalityProgram`             |
+# The other change is older: the four aggregate *analysis* stages became four
+# Experiment classes and `EncSpec.analyze(stage="...")` is gone. Each stage
+# owns its own batch builder, so this file addresses stages by name and lets
+# `experiments/qsim/mbr_campaign.py` map name to (owner, program, builder):
+#
+# | stage           | owner class                    | program                                     | both now live in            |
+# |-----------------|--------------------------------|---------------------------------------------|-----------------------------|
+# | `calibration`   | `MBRPhaseCorrectionExperiment` | `EntireFloquetCyclePhaseCalibrationProgram` | `mbr_phase_correction.py`   |
+# | `spectrum`      | `MBRSpectrumExperiment`        | `NPhotonHamiltonianSpectroscopyProgram`     | program in `mbr_spectroscopy_program.py` |
+# | `propagator`    | `MBRPropagatorExperiment`      | `EncodingPropagatorProgram`                 | `mbr_propagator.py`         |
+# | `orthogonality` | `MBROrthogonalityExperiment`   | `EncodingOrthogonalityProgram`              | `mbr_orthogonality.py`      |
 #
 # ## Two things that will bite you
 #
@@ -51,7 +57,11 @@
 # **Never set `floquet_waveform` to force an envelope.** The envelope is per
 # mode, read from the swap dataset row (`gauss`, `flat_top` or
 # `preload_flattop`). Overriding it in the expt config no longer changes what
-# plays, so it only makes the recorded config lie about the data.
+# plays, so it only makes the recorded config lie about the data -- and worse
+# than lie: `floquet_timing.py` still *honours* it when it recomputes the
+# cycle duration offline. Set it and acquisition and analysis will disagree
+# about how long a Floquet cycle was, which divides straight into every
+# coupling rate.
 
 # %%
 import matplotlib.pyplot as plt
@@ -189,7 +199,8 @@ orthogonality_expts = run_stage(
 # ```
 #
 # Re-analysing saved jobs later does not need a runner at all -- see
-# `mbr_analyze.py`, which loads by job ID and never acquires.
+# `analysis_notebooks/guan/MBR_analysis.py`, which loads by job ID and never
+# acquires.
 
 # %%
 for label, acquired in [("spectrum", spectrum_expts),
