@@ -954,3 +954,65 @@ Open, in the order they seem worth doing:
    Worth reconciling now that the pulse-layer one has a home.
 4. `mbr_spectrum.py` (1,142) and `fitting/qsim/matrix_pencil.py` (1,085) --
    analysis, not acquisition, and both already behind the golden.
+
+## 2026-09-12 (later) — the notebook side
+
+`measurement_notebooks/guan/qsim_experiments.py` was 2,841 lines covering four
+unrelated projects. Split along the surface map's own destinations:
+`floquet_calibration.py` (637), `dark_mode.py` (1,092),
+`flux_excursion.py` (1,112), `cooling.py` (485). MBR already had `mbramsey.py`
+and `mbr_acquire.py`.
+
+Checked rather than eyeballed: the section slicing accounts for all 2,841
+lines, all four files parse, and a scan for names read before assignment
+returns exactly the 15 the original already had.
+
+### Two cells that were never notebook material
+
+`singleshot_postproc` -> `experiments/readout_calibration.py`. It writes the
+readout config every later experiment reads (angle, threshold, blob centres,
+confusion matrix) and existed as a **byte-identical copy in seven notebooks
+across four users**. Identical today is luck, not design. The two details
+worth pinning, and now pinned: the fitted angle *accumulates* onto the
+existing phase, and `active_reset` decides which of the two confusion-matrix
+fields is filled.
+
+`get_floquet_parameters` -> `qsim/utils.floquet_pulse_parameters`, copied into
+six notebooks. Its `low`/`high` label uses a **1000 MHz** cut, which is not
+the pulse layer's 1800 MHz channel threshold (`FLUX_HIGH_THRESHOLD_MHZ`). The
+two have always differed; a test pins it so that "fixing" it has to be a
+decision.
+
+### Imports that could not have worked
+
+Fifteen imports still used the `multimode_expts.` prefix from a package layout
+this repo does not have. They fail only when the cell runs, which for a
+calibration cell is months later. All fourteen targets were verified under
+the live path before rewriting.
+
+Two real breakages fell out: `from slab.instruments import YokogawaGS200`
+cannot work (that package re-exports no volt sources; the class is in
+`slab.instruments.voltsource`, and `slab/` is vendored so it stays untouched),
+and `flux_excursion.py` called `YokogawaGS200(...)` with no import at all.
+
+`tests/test_notebook_imports.py` now resolves all 128 in-repo imports across
+guan's notebooks and the shared analysis notebook, module *and* attribute, so
+a later refactor that moves a class out from under a notebook fails the suite
+instead of a measurement. Scoped to guan's files and the shared notebook:
+about 40 dead-prefix lines remain in connie's, jonginn's, raph's and QEC's
+sandboxes, which are their owners' to fix.
+
+### Decided, not deferred
+
+The shared `analysis_notebooks/qsim analysis.ipynb` (183 cells, 806 code
+lines, 44 stored plots) **stays an `.ipynb`**. Converting it to Jupytext would
+discard the figures, and those are worth more than the consistency. Its
+imports were repaired in place. This is a deliberate exception to the
+surface map's Jupytext preference.
+
+### Standing
+
+Suite 678 passed, same one pre-existing Wigner failure. The god class name
+was also decided today: `EncodingHamiltonianSpectroscopyExperiment` stays
+where it is, because both its name and its module are recorded provenance and
+the debt is cheaper than the migration.
