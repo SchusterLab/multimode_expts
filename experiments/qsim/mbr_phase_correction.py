@@ -421,8 +421,7 @@ class MBRPhaseCorrectionExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 data=None,
                 occupations=None,
                 cycle_pairs=None,
-                repeats=None,
-                **kwargs):
+                repeats=None):
         """Fit the phase per entire cycle for every calibrated occupation.
 
         Attaches the saved hardware parameters and mode labels, because
@@ -439,7 +438,7 @@ class MBRPhaseCorrectionExperiment(EncodingHamiltonianSpectroscopyExperiment):
         self.data.mode_labels = saved.mode_labels
         return self.data
 
-    def display(self, data=None, ncols=None, **kwargs):
+    def display(self, data=None, ncols=None):
         """Per-occupation IQ/phase fits, then the phase-per-cycle summary."""
         if data is not None:
             self.data = data

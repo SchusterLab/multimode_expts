@@ -162,7 +162,7 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
             total_points=points_per_job * len(occupations),
         ))
 
-    def analyze(self, data=None, occupations=None, **kwargs):
+    def analyze(self, data=None, occupations=None):
         """Reconstruct the propagator matrices from the loaded jobs.
 
         ``occupations`` optionally fixes the row/column order; it defaults to

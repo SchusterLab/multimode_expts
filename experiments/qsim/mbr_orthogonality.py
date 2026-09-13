@@ -100,10 +100,12 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
             matrix_orientation="rows=decoder, columns=encoder",
         ))
 
-    def display_orthogonality(self, 
-                              data=None,
-                              **kwargs):
-        """Plot raw cross return and raw/normalized off-diagonal leakage."""
+    def display_orthogonality(self, data=None, figsize=None):
+        """Plot raw cross return and raw/normalized off-diagonal leakage.
+
+        ``figsize`` defaults to a width that grows with the matrix, so a
+        larger basis stays legible.
+        """
         data = self.data if data is None else data
         if "matrix" not in data:
             raise ValueError(
@@ -126,7 +128,8 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
             ),
         ]
         
-        figsize = kwargs.get("figsize", (max(16, 1.35 * size + 10), 6))
+        if figsize is None:
+            figsize = (max(16, 1.35 * size + 10), 6)
         fig, axes = plt.subplots(
             1, 3, figsize=figsize,
             constrained_layout=True,
@@ -173,7 +176,7 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
                             occupations,
                             sync_cycles=10,
                             reps=300,
-                            **kwargs):
+                            correction_mode="final_analyzer"):
         """
         Build one zero-cycle job for each encoder occupation.
 
@@ -199,7 +202,7 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
             floquet_hardware_loop=False,
             update_phases=False,
             palindrome_scramble=False,
-            spectroscopy_phase_correction_mode=kwargs.get("correction_mode","final_analyzer"),
+            spectroscopy_phase_correction_mode=correction_mode,
             final_analyzer_phase_per_cycle_deg=0.,
             orthogonality_decoder_occupations=deepcopy(occupations),
             orthogonality_analyzer_phases=[0., 90.],
@@ -222,7 +225,7 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
             total_points=4 * len(occupations) ** 2,
         ))
 
-    def analyze(self, data=None, occupations=None, **kwargs):
+    def analyze(self, data=None, occupations=None):
         """Reconstruct the cross-return matrix from the loaded columns.
 
         ``occupations`` optionally fixes the row/column order; it defaults to
@@ -233,11 +236,11 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
         self.data = self.reconstruct_orthogonality(self.batch_expts, occupations)
         return self.data
 
-    def display(self, data=None, **kwargs):
+    def display(self, data=None, figsize=None):
         """Raw, raw off-diagonal, and normalized leakage panels."""
         if data is not None:
             self.data = data
-        return self.display_orthogonality(self.data, **kwargs)
+        return self.display_orthogonality(self.data, figsize=figsize)
 
 
 class EncodingOrthogonalityProgram(

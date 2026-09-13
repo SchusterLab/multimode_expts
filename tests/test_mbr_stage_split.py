@@ -69,8 +69,12 @@ STAGES = [
          module="mbr_orthogonality",
          cls="MBROrthogonalityExperiment",
          pin="ac03ea1",
-         methods=["reconstruct_orthogonality", "display_orthogonality",
-                  "orthogonality_batch"]),
+         # ``display_orthogonality`` and ``orthogonality_batch`` were pinned
+         # here until their `**kwargs` became named parameters. That was an
+         # intentional edit, so their rows are deleted rather than
+         # re-blessed; `test_the_stage_signatures_name_their_knobs` below
+         # covers what replaced them.
+         methods=["reconstruct_orthogonality"]),
     dict(stage="propagator",
          module="mbr_propagator",
          cls="MBRPropagatorExperiment",
@@ -452,3 +456,65 @@ def test_every_old_mpm_default_matched_the_callee():
             f"{name}: analyze_matrix_pencil now defaults to "
             f"{parameters[name].default!r}, but the old call site passed "
             f"{value!r}. Collapsing the block changed behaviour.")
+
+
+# --------------------------------------------------------------------------
+# Explicit signatures. The spectrum stage's `analyze` got this treatment
+# first (see the tests above); these are the other three.
+# --------------------------------------------------------------------------
+
+EXPLICIT = [
+    ("mbr_phase_correction", "MBRPhaseCorrectionExperiment", "analyze",
+     ["data", "occupations", "cycle_pairs", "repeats"]),
+    ("mbr_phase_correction", "MBRPhaseCorrectionExperiment", "display",
+     ["data", "ncols"]),
+    ("mbr_orthogonality", "MBROrthogonalityExperiment", "analyze",
+     ["data", "occupations"]),
+    ("mbr_orthogonality", "MBROrthogonalityExperiment", "display",
+     ["data", "figsize"]),
+    ("mbr_orthogonality", "MBROrthogonalityExperiment",
+     "display_orthogonality", ["data", "figsize"]),
+    ("mbr_orthogonality", "MBROrthogonalityExperiment",
+     "orthogonality_batch",
+     ["default_expt_cfg", "swap_stors", "occupations", "sync_cycles", "reps",
+      "correction_mode"]),
+    ("mbr_propagator", "MBRPropagatorExperiment", "analyze",
+     ["data", "occupations"]),
+]
+
+
+@pytest.mark.parametrize("module,cls,method,expected",
+                         EXPLICIT,
+                         ids=[f"{c}.{m}" for _, c, m, _ in EXPLICIT])
+def test_the_stage_signatures_name_their_knobs(module, cls, method, expected):
+    """No `**kwargs`, so a misspelled argument raises instead of vanishing.
+
+    Every one of these used to end in `**kwargs`, and in most of them the
+    kwargs were read by nothing at all: `expt.analyze(occupation=[...])` --
+    singular by accident -- ran to completion and analysed the default order
+    instead. The failure was a plot that looked plausible.
+    """
+    owner = getattr(importlib.import_module(f"experiments.qsim.{module}"), cls)
+    signature = inspect.signature(getattr(owner, method))
+    names = [name for name, parameter in signature.parameters.items()
+             if name != "self"
+             and parameter.kind is not parameter.VAR_KEYWORD]
+
+    assert names == expected
+    assert not any(p.kind is p.VAR_KEYWORD
+                   for p in signature.parameters.values()), (
+        f"{cls}.{method} still takes **kwargs; an unknown argument there is "
+        f"silently ignored")
+
+
+@pytest.mark.parametrize("module,cls,method",
+                         [(m, c, f) for m, c, f, _ in EXPLICIT],
+                         ids=[f"{c}.{m}" for _, c, m, _ in EXPLICIT])
+def test_an_unknown_stage_argument_raises(module, cls, method):
+    """The behaviour the signature change buys, checked rather than assumed."""
+    owner = getattr(importlib.import_module(f"experiments.qsim.{module}"), cls)
+    bound = getattr(owner, method)
+    # bind_partial, so a required argument left out does not mask the point:
+    # what must fail is the unknown name, not the missing one.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        inspect.signature(bound).bind_partial(definitely_not_a_knob=1)
