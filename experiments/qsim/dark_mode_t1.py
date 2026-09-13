@@ -10,7 +10,7 @@ import numpy as np
 
 import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment
-from experiments.qsim.floquet_dark_mode_readout import DarkBaseProgram
+from experiments.qsim.dark_base import DarkBaseProgram
 
 class DarkT1Program(DarkBaseProgram):
 

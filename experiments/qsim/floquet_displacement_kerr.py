@@ -11,7 +11,7 @@ import numpy as np
 from slab import AttrDict
 
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
-from experiments.qsim.floquet_dark_mode_readout import (
+from experiments.qsim.dark_base import (
     DarkBaseExperiment,
     DarkBaseProgram,
 )

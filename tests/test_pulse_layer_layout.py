@@ -12,11 +12,28 @@ method that only some configurations reach.
 import pytest
 
 from experiments.MM_base import MM_base
-from experiments.qsim.floquet_dark_mode_readout import (
-    DarkBaseProgram,
-    DarkBaseRProgram,
-)
+from experiments.qsim.dark_base import DarkBaseProgram, DarkBaseRProgram
 from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
+
+
+@pytest.mark.parametrize("name", ["DarkBaseExperiment", "DarkBaseProgram",
+                                  "DarkBaseRProgram",
+                                  "classify_two_parity_readouts",
+                                  "flatten_exp_lists"])
+def test_the_old_god_module_address_still_resolves(name):
+    """The acquisition notebooks address these through the god module.
+
+    ``meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment`` is what the
+    submission cells say, and saved files are named after the class, so the
+    old address has to keep working after the move.
+    """
+    from experiments.qsim import floquet_dark_mode_readout as fdmr
+    import experiments.qsim.dark_base as dark_base
+    import experiments.qsim.utils as utils
+
+    moved = getattr(fdmr, name)
+    owner = utils if name == "flatten_exp_lists" else dark_base
+    assert moved is getattr(owner, name)
 
 
 def test_averager_base_plays_the_dark_man_reset():

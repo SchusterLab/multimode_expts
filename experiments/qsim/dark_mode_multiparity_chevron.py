@@ -12,7 +12,7 @@ from tqdm import tqdm_notebook as tqdm
 from experiments.MM_base import MMRAveragerProgram
 from experiments.qsim.utils import ensure_list_in_cfg
 from experiments.qsim.qsim_base import QsimBaseProgram
-from experiments.qsim.floquet_dark_mode_readout import (
+from experiments.qsim.dark_base import (
     DarkBaseExperiment,
     DarkBaseProgram,
     DarkBaseRProgram,

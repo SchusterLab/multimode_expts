@@ -9,7 +9,7 @@ section 6 and are renamed in the naming pass, not here.
 from copy import deepcopy
 
 from experiments.qsim.qsim_base import QsimBaseProgram
-from experiments.qsim.floquet_dark_mode_readout import DarkBaseProgram
+from experiments.qsim.dark_base import DarkBaseProgram
 
 class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
     """

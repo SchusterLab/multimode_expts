@@ -6,7 +6,7 @@ Split out of ``floquet_dark_mode_readout.py`` unchanged.
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.floquet_dark_mode_readout import DarkBaseProgram
+from experiments.qsim.dark_base import DarkBaseProgram
 
 class StorageSwapPhaseAccumulationProgram(DarkBaseProgram):
     """Measure the phase matrix of the ds_storage swap pulses.
