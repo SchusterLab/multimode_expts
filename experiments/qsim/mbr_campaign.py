@@ -52,9 +52,21 @@ from slab import AttrDict
 
 from experiments.floquet_timing import config_archive
 from experiments.qsim import floquet_dark_mode_readout as fdmr
-from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.mbr_orthogonality import (
+    EncodingOrthogonalityProgram,
+    MBROrthogonalityExperiment,
+)
+from experiments.qsim.mbr_phase_correction import (
+    EntireFloquetCyclePhaseCalibrationProgram,
+    MBRPhaseCorrectionExperiment,
+)
+from experiments.qsim.mbr_propagator import (
+    EncodingPropagatorProgram,
+    MBRPropagatorExperiment,
+)
+from experiments.qsim.mbr_spectroscopy_program import (
+    NPhotonHamiltonianSpectroscopyProgram,
+)
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -295,18 +307,22 @@ def _orthogonality_batch(defaults, swap_stors, occupations, sync_cycles=1,
         sync_cycles=sync_cycles, reps=reps, **kwargs)
 
 
+# Each stage's Program now lives in the same module as its Experiment, so
+# both are imported directly. This used to name the Program by string and
+# resolve it off the god module; the indirection bought nothing once the
+# Program moved next to its owner.
 STAGES = {
     "calibration": (MBRPhaseCorrectionExperiment,
-                    "EntireFloquetCyclePhaseCalibrationProgram",
+                    EntireFloquetCyclePhaseCalibrationProgram,
                     _calibration_batch),
     "spectrum": (MBRSpectrumExperiment,
-                 "NPhotonHamiltonianSpectroscopyProgram",
+                 NPhotonHamiltonianSpectroscopyProgram,
                  _spectrum_batch),
     "propagator": (MBRPropagatorExperiment,
-                   "EncodingPropagatorProgram",
+                   EncodingPropagatorProgram,
                    _propagator_batch),
     "orthogonality": (MBROrthogonalityExperiment,
-                      "EncodingOrthogonalityProgram",
+                      EncodingOrthogonalityProgram,
                       _orthogonality_batch),
 }
 
@@ -315,8 +331,7 @@ def build_stage(stage, defaults, swap_stors, occupations, **kwargs):
     """-> (OwnerExperiment, ProgramClass, batch) for one stage."""
     if stage not in STAGES:
         raise KeyError(f"unknown stage {stage!r}; expected {sorted(STAGES)}")
-    owner, program_name, builder = STAGES[stage]
-    program = getattr(fdmr, program_name)
+    owner, program, builder = STAGES[stage]
     batch = builder(defaults, swap_stors, occupations, **kwargs)
     return owner, program, batch
 
