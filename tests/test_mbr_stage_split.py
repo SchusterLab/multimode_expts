@@ -30,7 +30,12 @@ STAGES = [
          module="mbr_spectrum",
          cls="MBRSpectrumExperiment",
          pin="be90ca8",
-         methods=["subsample_spectroscopy_shots", "_postprocess_reconstruction",
+         # ``subsample_spectroscopy_shots`` used to be pinned here. Its
+         # numerics moved on to fitting/qsim/mbr_reconstruction.py and the
+         # method is now a lane-resolving wrapper, so the pin has done its
+         # job for it: the row is deleted rather than re-blessed, per the
+         # note at the top of this file.
+         methods=["_postprocess_reconstruction",
                   "reconstruct_pair_spectroscopy", "reconstruct_spectroscopy",
                   "analyze_matrix_pencil_occupation", "analyze_level_statistics",
                   "analyze_sff", "display_local_density_of_states",
