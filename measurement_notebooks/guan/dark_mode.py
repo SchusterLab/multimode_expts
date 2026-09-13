@@ -353,7 +353,7 @@ for update_phases in [True]: # [False, True]:
 # ### Phase calibration using quantum walk
 
 # %%
-from multimode_expts.experiments.qsim.sideband_scramble import FloquetCalibrationProgram
+from experiments.qsim.sideband_scramble import FloquetCalibrationProgram
 
 # %%
 storA = 2
@@ -853,7 +853,7 @@ plt.pcolormesh(floquet_cycles, init_alphas, s5is)
 # ## Amplitude Rabi
 
 # %%
-from multimode_expts.experiments.qsim.sideband_amp_rabi import SidebandAmpRabiExperiment
+from experiments.qsim.sideband_amp_rabi import SidebandAmpRabiExperiment
 
 # %%
 for init_stor in range(1,8):
@@ -897,7 +897,7 @@ for init_stor in range(1,8):
 # ## Find phase offset for ramsey
 
 # %%
-from multimode_expts.experiments.qsim.sideband_stark import SidebandStarkExperiment, SidebandStarkProgram
+from experiments.qsim.sideband_stark import SidebandStarkExperiment, SidebandStarkProgram
 
 # %%
 # for init_stor in range(1, 8):
@@ -994,8 +994,8 @@ for init_stor in [1]: #range(1,8):
 # ### new base class general 2D
 
 # %%
-from multimode_expts.experiments.qsim.sideband_stark import SidebandStarkProgram
-from multimode_expts.experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.sideband_stark import SidebandStarkProgram
+from experiments.qsim.qsim_base import QsimBaseExperiment
 
 # %%
 for init_stor in [2]: #range(1,8):
@@ -1047,7 +1047,7 @@ for init_stor in [2]: #range(1,8):
 # ### T1
 
 # %%
-from multimode_expts.experiments.qsim.sideband_scramble import StorageT1Program
+from experiments.qsim.sideband_scramble import StorageT1Program
 
 # %%
 init_stor = 0

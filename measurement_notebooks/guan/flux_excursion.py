@@ -781,8 +781,8 @@ for kerr_detune in [-30,-20,-10,-5,0,5,10,20,30]:
 # ## Qubit rabi
 
 # %%
-from multimode_expts.experiments.single_qubit.amplitude_rabi import AmplitudeRabiExperiment, AmplitudeRabiChevronExperiment
-from multimode_expts.experiments.single_qubit.length_rabi import LengthRabiExperiment
+from experiments.single_qubit.amplitude_rabi import AmplitudeRabiExperiment, AmplitudeRabiChevronExperiment
+from experiments.single_qubit.length_rabi import LengthRabiExperiment
 
 # %%
 rabi = LengthRabiExperiment(
@@ -852,6 +852,10 @@ rabi.go(analyze=True, display=True, progress=True, save=True)
 
 # %%
 # coupler
+# Was used here with no import at all; `slab.instruments` does not
+# re-export the volt sources, so name the defining module.
+from slab.instruments.voltsource import YokogawaGS200
+
 dcflux = YokogawaGS200(address="192.168.137.148")
 dcflux.set_output(True)
 dcflux.set_mode('current')
