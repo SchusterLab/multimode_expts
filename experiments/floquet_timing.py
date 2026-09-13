@@ -55,6 +55,69 @@ DEFAULT_ARCHIVE = REPO_ROOT / "configs" / "versions"
 FLUX_HIGH_THRESHOLD_MHZ = 1800
 
 
+def floquet_cycle_us(swap_stors,
+                     *,
+                     swap_ds,
+                     waveform_modes,
+                     channels,
+                     lengths,
+                     ramp_cycles,
+                     sync_cycles,
+                     us2cycles,
+                     cycles2us,
+                     clock_ratio,
+                     gauss_sigma_override=None):
+    """-> scheduled duration of one Floquet cycle, in microseconds.
+
+    One definition, called from two places that cannot share a ``self``: the
+    live program (``DarkBaseProgram.calculate_floquet_cycle_us``) and the
+    offline resolver below, which has a ``QickConfig`` and a versioned CSV but
+    no program. They were line-by-line copies of this arithmetic, which is a
+    bad thing to duplicate: the cycle time divides into every coupling rate,
+    so a drift between them would show up as a wrong Hamiltonian rather than
+    as an error.
+
+    The quantization is the substance. QICK v1's ``sync_all`` emits
+    ``synci(int(pulse_end_timestamp + sync_cycles))``, so a cycle is a sum of
+    *integer* tProc advances, not of exact pulse durations. Taking the exact
+    sum instead ran ~1.2% long on the August configs.
+
+    Args:
+        swap_stors: storage numbers in the order they are pulsed.
+        swap_ds: the Floquet swap dataset (gauss sigma, n_sigma, ramp sigma).
+        waveform_modes, channels, lengths, ramp_cycles: per-storage arrays
+            indexed by ``stor - 1``, i.e. seven entries, not one per pulsed
+            mode. ``ramp_cycles`` is already resolved to the storage's own
+            flux channel.
+        sync_cycles: ``scramble_sync_cycles``, the inter-pulse sync.
+        us2cycles, cycles2us: the firmware's own conversions. Never the
+            identity, so a stub corrupts the result silently.
+        clock_ratio: ``channel -> f_time / f_fabric`` for that generator.
+        gauss_sigma_override: ``cfg.expt.floquet_gauss_sigma`` when set;
+            otherwise each mode's calibrated sigma is used.
+    """
+    cycle_tproc_cycles = 0
+    for stor in swap_stors:
+        index = stor - 1
+        channel = channels[index]
+        mode = waveform_modes[index]
+        if mode == "gauss":
+            sigma_us = gauss_sigma_override
+            if sigma_us is None:
+                sigma_us = swap_ds.get_gauss_sigma(f"M1-S{stor}")
+            pulse_cycles = (us2cycles(sigma_us, channel)
+                            * swap_ds.get_gauss_n_sigma(f"M1-S{stor}"))
+        elif mode == "preload_flattop":
+            ramp = us2cycles(swap_ds.get_ramp_sigma(f"M1-S{stor}"), channel)
+            pulse_cycles = lengths[index] + 6 * ramp
+        else:
+            # M1-Sx flat tops are six sigma of ramp around the plateau.
+            pulse_cycles = lengths[index] + 6 * ramp_cycles[index]
+        cycle_tproc_cycles += int(pulse_cycles * clock_ratio(channel)
+                                  + sync_cycles)
+    return cycles2us(cycle_tproc_cycles)
+
+
 class TimingResolutionError(RuntimeError):
     """Raised when historical timing cannot be resolved unambiguously."""
 
@@ -139,38 +202,27 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
 
     modes = [waveform_mode(name) for name in stor_names]
 
-    # --- calculate_floquet_cycle_us, offline ---
+    # --- the cycle duration, from the shared definition -----------------
     ramp_sigma = cfg["device"]["manipulate"]["ramp_sigma"]
     ramp_cycles_low = soccfg.us2cycles(ramp_sigma, gen_ch=flux_low_ch)
     ramp_cycles_high = soccfg.us2cycles(ramp_sigma, gen_ch=flux_high_ch)
 
     swap_stors = list(ecfg["swap_stors"])
-    sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
-    # The tProc advances its timestamp by int(pulse_end + sync) per pulse, so
-    # the cycle is a sum of integer synci advances, not of exact pulse
-    # durations. Mirrors DarkBaseProgram.calculate_floquet_cycle_us; the
-    # unquantized sum this replaced ran ~1.2% long on the August configs.
-    cycle_tproc_cycles = 0
-    for stor in swap_stors:
-        index = stor - 1
-        channel = channels[index]
-        if modes[index] == "gauss":
-            sigma_us = ecfg.get("floquet_gauss_sigma", None)
-            if sigma_us is None:
-                sigma_us = swap_ds.get_gauss_sigma(f"M1-S{stor}")
-            pulse_cycles = (soccfg.us2cycles(sigma_us, gen_ch=channel)
-                            * swap_ds.get_gauss_n_sigma(f"M1-S{stor}"))
-        elif modes[index] == "preload_flattop":
-            ramp = soccfg.us2cycles(swap_ds.get_ramp_sigma(f"M1-S{stor}"),
-                                    gen_ch=channel)
-            pulse_cycles = lengths[index] + 6 * ramp
-        else:
-            ramp = ramp_cycles_low if is_low[index] else ramp_cycles_high
-            pulse_cycles = lengths[index] + 6 * ramp
-        clock_ratio = (float(soccfg["tprocs"][0]["f_time"])
-                       / float(soccfg["gens"][channel]["f_fabric"]))
-        cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
-    cycle_us = soccfg.cycles2us(cycle_tproc_cycles)
+    cycle_us = floquet_cycle_us(
+        swap_stors,
+        swap_ds=swap_ds,
+        waveform_modes=modes,
+        channels=channels,
+        lengths=lengths,
+        ramp_cycles=[ramp_cycles_low if low else ramp_cycles_high
+                     for low in is_low],
+        sync_cycles=int(ecfg.get("scramble_sync_cycles", 10)),
+        us2cycles=lambda us, ch: soccfg.us2cycles(us, gen_ch=ch),
+        cycles2us=soccfg.cycles2us,
+        clock_ratio=lambda ch: (float(soccfg["tprocs"][0]["f_time"])
+                                / float(soccfg["gens"][ch]["f_fabric"])),
+        gauss_sigma_override=ecfg.get("floquet_gauss_sigma", None),
+    )
 
     if not np.isfinite(cycle_us) or cycle_us <= 0.:
         raise TimingResolutionError(

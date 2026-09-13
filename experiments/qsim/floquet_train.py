@@ -36,6 +36,7 @@ methods.
 """
 from copy import deepcopy
 
+from experiments.floquet_timing import floquet_cycle_us
 from experiments.qsim.floquet_phase_frame import (
     advance_floquet_offsets,
     advance_matrix_offsets,
@@ -52,33 +53,33 @@ class FloquetTrain:
     """Mixin: see the module docstring."""
 
     def calculate_floquet_cycle_us(self, swap_stors=None):
-        """Scheduled cycle duration, including QICK v1 sync_all quantization."""
+        """Scheduled cycle duration, including QICK v1 sync_all quantization.
+
+        Thin adapter over ``floquet_timing.floquet_cycle_us``: it supplies
+        this program's channels, envelopes and firmware conversions. The
+        arithmetic is shared with the offline resolver on purpose -- the
+        cycle time divides into every coupling rate, so the two drifting
+        apart would read as a wrong Hamiltonian, not as an error.
+        """
         ecfg = self.cfg.expt
         if swap_stors is None:
             swap_stors = ecfg.swap_stors
-        sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
-        cycle_tproc_cycles = 0
-        for stor in swap_stors:
-            index = stor - 1
-            ch = self.m1s_ch[index]
-            waveform_mode = self.m1s_waveform_mode[index]
-            if waveform_mode == "gauss":
-                sigma_us = ecfg.get("floquet_gauss_sigma", None) # I suspect this is needed now. Could be deleted
-                if sigma_us is None:
-                    sigma_us = self.swap_ds.get_gauss_sigma(f"M1-S{stor}")
-                pulse_cycles = self.us2cycles(sigma_us, gen_ch=ch) * self.swap_ds.get_gauss_n_sigma(f"M1-S{stor}")
-            elif waveform_mode == "preload_flattop":
-                ramp_sigma_us = self.swap_ds.get_ramp_sigma(f"M1-S{stor}")
-                ramp_cycles = self.us2cycles(ramp_sigma_us, gen_ch=ch)
-                pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
-            else:
-                ramp_cycles = self.pi_m1_sigma_low if self.m1s_is_low_freq[index] else self.pi_m1_sigma_high
-                pulse_cycles = self.m1s_length[index] + 6 * ramp_cycles
-            # Use the same ratio-first timestamp arithmetic as pulse()/raw set.
-            # sync_all emits synci(int(pulse_end_timestamp + sync_cycles)).
-            clock_ratio = float(self.tproccfg["f_time"]) / float(self.soccfg["gens"][ch]["f_fabric"])
-            cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
-        return self.cycles2us(cycle_tproc_cycles)
+        return floquet_cycle_us(
+            swap_stors,
+            swap_ds=self.swap_ds,
+            waveform_modes=self.m1s_waveform_mode,
+            channels=self.m1s_ch,
+            lengths=self.m1s_length,
+            ramp_cycles=[self.pi_m1_sigma_low if is_low
+                         else self.pi_m1_sigma_high
+                         for is_low in self.m1s_is_low_freq],
+            sync_cycles=int(ecfg.get("scramble_sync_cycles", 10)),
+            us2cycles=lambda us, ch: self.us2cycles(us, gen_ch=ch),
+            cycles2us=self.cycles2us,
+            clock_ratio=lambda ch: (float(self.tproccfg["f_time"])
+                                    / float(self.soccfg["gens"][ch]["f_fabric"])),
+            gauss_sigma_override=ecfg.get("floquet_gauss_sigma", None),
+        )
 
     def _mod360(self, phase_deg):
         return mod360(phase_deg)
