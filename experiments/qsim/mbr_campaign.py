@@ -50,6 +50,7 @@ from pathlib import Path
 import numpy as np
 from slab import AttrDict
 
+from experiments.batch_runner import BatchRunner
 from experiments.floquet_timing import config_archive
 from experiments.qsim import floquet_dark_mode_readout as fdmr
 from experiments.qsim.mbr_orthogonality import (
@@ -349,7 +350,7 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
         stage, defaults, swap_stors, occupations, **kwargs)
 
     if job_client is not None:
-        runner = fdmr.BatchRunner(
+        runner = BatchRunner(
             station=station, ExptClass=owner, ExptProgram=program,
             default_expt_cfg=batch.default_expt_cfg,
             job_client=job_client, show=show)
