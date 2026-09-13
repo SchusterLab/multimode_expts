@@ -59,8 +59,8 @@ from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
     EncodingPropagatorProgram,
     NPhotonHamiltonianSpectroscopyProgram,
-    flatten_exp_lists,
 )
+from experiments.qsim.utils import flatten_exp_lists
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from fitting.qsim import level_statistics as level_statistics_analysis
 from fitting.qsim import matrix_pencil as matrix_pencil_analysis

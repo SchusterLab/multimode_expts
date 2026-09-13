@@ -149,3 +149,18 @@ def fit_cos2d(data, tau, phi, plot=False, **kwargs):
 
     return result
 
+
+
+def flatten_exp_lists(items, container_types=(list, tuple, set)):
+    """Yield the leaves of an arbitrarily nested list of experiments or paths.
+
+    The MBR campaigns address jobs as nested lists -- realization x occupation
+    x channel -- and every consumer that wants "all of them" flattens first.
+    Lives here rather than beside any one campaign because it knows nothing
+    about experiments: it is a nested-container walk.
+    """
+    for x in items:
+        if isinstance(x, container_types):
+            yield from flatten_exp_lists(x, container_types)
+        else:
+            yield x
