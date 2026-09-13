@@ -30,6 +30,12 @@ from experiments.qsim.kerr import *
 
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
+from experiments.qsim.floquet_phase_frame import (
+    advance_floquet_offsets,
+    advance_matrix_offsets,
+    detuning_phase_deg,
+    mod360,
+)
 from experiments.qsim.floquet_register_bank import (
     _play_preloaded_floquet_register_bank_entry,
     _prepare_preloaded_floquet_register_bank,
@@ -617,9 +623,8 @@ class DarkBaseProgram(QsimBaseProgram):
             n_last_half,
         ) = self._get_dark_swap_params()
 
-        # MHz * us = cycles, so multiply by 360 to get degrees.
         rate_MHz = ecfg.get("dark_wait_phase_rate_MHz", 0.0)
-        phase_deg = 360.0 * rate_MHz * wait_length
+        phase_deg = detuning_phase_deg(rate_MHz, wait_length)
 
         # Optional static offset for fine tuning.
         phase_deg += ecfg.get("dark_wait_phase_offset_deg", 0.0)
@@ -636,7 +641,7 @@ class DarkBaseProgram(QsimBaseProgram):
             )
         
     def _mod360(self, phase_deg):
-        return phase_deg % 360.0
+        return mod360(phase_deg)
 
     def _get_dark_swap_params(self):
         ecfg = self.cfg.expt
@@ -679,18 +684,12 @@ class DarkBaseProgram(QsimBaseProgram):
         The separate decoder_phase_matrix is directional and must never be
         used here. It is applied only to the decoder storage swaps and f0g1.
         """
-        pulsed_name = f"M1-S{pulsed_stor}"
-
-        for j_stor, stor_B in enumerate(swap_stors):
-            if stor_B == pulsed_stor:
-                continue
-
-            stor_B_name = f"M1-S{stor_B}"
-            phase_shift = self.swap_ds.get_phase_from(
-                stor_B_name, pulsed_name)
-
-            phase_offsets[j_stor] += phase_shift
-            phase_offsets[j_stor] = self._mod360(phase_offsets[j_stor])
+        advance_floquet_offsets(
+            phase_offsets=phase_offsets,
+            swap_stors=swap_stors,
+            pulsed_stor=pulsed_stor,
+            swap_ds=self.swap_ds,
+        )
 
     def _play_closed_floquet_cycle_pairs(
             self, n_cycle_pair, phase_offsets, swap_stors,
@@ -810,22 +809,20 @@ class DarkBaseProgram(QsimBaseProgram):
         if self.storage_phase_matrix is None:
             return
 
-        pulsed_index = swap_stors.index(pulsed_stor)
-        for affected_index in range(len(swap_stors)):
-            phase_offsets[affected_index] = self._mod360(
-                phase_offsets[affected_index]
-                + self.storage_phase_matrix[affected_index, pulsed_index]
-            )
+        advance_matrix_offsets(
+            offsets=phase_offsets,
+            matrix=self.storage_phase_matrix,
+            pulsed_column=swap_stors.index(pulsed_stor),
+        )
 
     def _advance_decoder_phase_offsets(
             self, decoder_phase_offsets, swap_stors, pulsed_stor):
         """Advance every decoder axis after one physical Floquet pulse."""
-        pulse_column = swap_stors.index(pulsed_stor)
-        for decoder_axis in range(len(decoder_phase_offsets)):
-            decoder_phase_offsets[decoder_axis] = self._mod360(
-                decoder_phase_offsets[decoder_axis]
-                + self.decoder_phase_matrix[decoder_axis, pulse_column]
-            )
+        advance_matrix_offsets(
+            offsets=decoder_phase_offsets,
+            matrix=self.decoder_phase_matrix,
+            pulsed_column=swap_stors.index(pulsed_stor),
+        )
 
     def _play_scramble_with_phase_offsets(
         self,
@@ -1190,7 +1187,7 @@ class DarkBaseProgram(QsimBaseProgram):
         for j_stor, detuning_MHz in enumerate(detunings):
             disorder_phase_offsets[j_stor] = self._mod360(
                 disorder_phase_offsets[j_stor]
-                + 360.0 * detuning_MHz * scramble_elapsed_us
+                + detuning_phase_deg(detuning_MHz, scramble_elapsed_us)
             )
 
         if ecfg.get("debug", False):
