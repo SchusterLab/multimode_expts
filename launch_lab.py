@@ -20,6 +20,12 @@ e.g. pixi run lab guan
 The one rule: each person connects ONLY to their own port (their ssh -L tunnel
 should forward exactly that port). Two people on one server share a workspace
 and collide -- which is the bug this setup exists to avoid.
+
+Which files you get is decided by THIS FILE's location, not by cwd: root_dir is
+pinned to the checkout launch_lab.py lives in. So `pixi run lab guan` from a
+worktree serves the worktree, and the banner says which. The port is per person,
+not per checkout -- so run one checkout's Lab at a time; a second one fails
+loudly on the taken port (port_retries=0) instead of hopping.
 """
 import subprocess
 import sys
@@ -34,6 +40,9 @@ PORTS = {
 
 # Per-user private dirs live under the slab home, one named folder each.
 SANDBOX_ROOT = Path.home() / ".jupyter" / "sandboxes"
+
+# The checkout this script belongs to (main, or a worktree beside it).
+REPO_ROOT = Path(__file__).resolve().parent
 
 
 def main():
@@ -62,12 +71,14 @@ def main():
         "--ServerApp.port_retries=0",
         f"--LabApp.workspaces_dir={workspaces_dir}",
         f"--LabApp.user_settings_dir={user_settings_dir}",
+        # Serve this checkout, whatever cwd pixi handed us.
+        f"--ServerApp.root_dir={REPO_ROOT}",
         *sys.argv[2:],  # pass through any extra flags
     ]
 
     print(
         f"[launch_lab] {name} -> http://pippin-meas:{port}/  "
-        f"(workspaces={workspaces_dir})",
+        f"root={REPO_ROOT}  (workspaces={workspaces_dir})",
         flush=True,
     )
     return subprocess.call(cmd)
