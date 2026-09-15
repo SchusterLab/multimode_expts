@@ -7,6 +7,25 @@ Surveyed 2026-09-11: local main dd9624f and guan 1325e4b. No notebooks were exec
 Q = `measurement_notebooks/jonginn/qsim_experiments.ipynb` (374 cells, 275 code cells, 10,100 code lines).
 P = `measurement_notebooks/jonginn/data_postprocess.ipynb` (306 cells, 230 code cells, 12,990 code lines).
 
+**These two are the entry points.** Recorded here 2026-09-14 because it was not
+said plainly enough before: Q and P are the notebooks the two god modules were
+accumulated from, and they are the callers that have to evolve with the
+refactored library. The one-screen map's "notebook destinations" row is about
+where code should *end up*; this is where it comes *from*. A refactor that
+migrates guan's sandbox and not these has not migrated the callers.
+
+H = `measurement_notebooks/jonginn/qsim_experiments_highkerr_untracked_refactored.ipynb`
+(372 cells, 273 code cells, 10,170 code lines, 179 stored figures). Found
+2026-09-14, not in the original survey. A near-duplicate of Q -- 223 of its 263
+non-comment code cells are byte-identical -- but with its own stored results,
+so it is a third file to keep working rather than a copy to delete.
+
+*Migrated 2026-09-14.* All three now address the four MBR stage classes;
+`analyze(stage=...)` is gone from every notebook in the repo, and
+`tests/test_no_stage_dispatch_remains.py` sweeps for it. See the worklog entry
+for that date and `tools/migrate_jonginn_notebooks.py`. Their acquisition
+provenance is unchanged, which is the constraint that shaped the migration.
+
 | Family | Q cells | P cells | Distinct work / repeated variants |
 |---|---|---|---|
 | Setup, loading, shared helpers | 1–6, 58–68 | 1–4 | P4 alone has 1,563 lines spanning loaders, fitting, Wigner, multiparity and disorder analysis. |

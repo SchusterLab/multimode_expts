@@ -1016,3 +1016,149 @@ Suite 678 passed, same one pre-existing Wigner failure. The god class name
 was also decided today: `EncodingHamiltonianSpectroscopyExperiment` stays
 where it is, because both its name and its module are recorded provenance and
 the debt is cheaper than the migration.
+
+## 2026-09-14 — the callers, and what the merge ate
+
+The 2026-09-12 notebook pass migrated the wrong sandbox. The core prompt was
+the surface map, which lists notebook *destinations* and never says which
+notebooks are the *callers*; the cell-level inventory says it plainly, and was
+not in the prompt. So guan's notebooks got migrated and jonginn's -- the ones
+the god modules were accumulated from -- did not. Both documents now say so at
+the top.
+
+### Two regressions that could not fail a test
+
+**`BatchRunner.execute` was dead.** Lifting the class out of the god module
+(1a276f5) left `numpy`, `copy.deepcopy` and `slab.AttrDict` behind. All three
+are used only inside `execute()`, so `import experiments.batch_runner` stayed
+green and the suite saw nothing -- while the first statement past the
+`job_client` check would have raised `NameError` after the queue already held
+jobs. `tests/test_batch_runner.py` drives `execute()` against a fake queue,
+because an import-only test cannot see this; removing the three imports again
+fails 12 of its 13 tests.
+
+That test needed two additions to the shared `MockStation`, both places the
+fixture had drifted from the real station rather than places the test is
+special: `experiment_name`, and `storage_man_file` (which the real station
+sets beside `ds_storage` as a pair). `ds_storage.df` is now a real DataFrame,
+since the queue path calls `to_dict(orient='records')` then `json.dumps` on
+it. Only the queue path serializes, which is why the existing runner tests
+never reached any of it.
+
+**The SFF family lost its old address.** It moved to `mbr_sff.py` and was
+never added to `_MOVED_TO`, so `floquet_dark_mode_readout.DisorderSFFExperiment`
+stopped resolving -- and that is exactly how `qsim_experiments.ipynb` cell 267
+addresses it. An omission, not the deliberate alias drop of 4440fed.
+
+### A merge, not a split, ate the Hamiltonian tomography
+
+`analyze(stage='propagator', calibration=...)` ran reconstruction *and*
+`analyze_propagator_dynamics`. On `guan` only the reconstruction existed, and
+219 lines had no definition anywhere in the tree.
+
+The first explanation was wrong and worth recording. This was not a split
+dropping a method. Jonginn added it 2026-08-28 (0e88151), by which time the
+propagator stage had already been split out here. The `jonginn` -> `guan`
+merge (6ca1a6e) resolved `floquet_dark_mode_readout.py` by taking guan's
+3,925-line refactored side over jonginn's 8,772-line side, and the addition
+went with it. **There is no commit that removes it**, and nothing in the
+file's history on this branch ever had it -- `git log -S` on the path finds
+only the commit that added it. A merge that resolves a heavily refactored file
+wholesale drops the other side's later additions with no conflict to look at.
+
+Checked the rest of the surface rather than assuming: of 114 methods across
+main's two god files, 113 have a definition somewhere in the tree today. This
+was the one. Swept the whole merge too -- `22a1e7c` vs `6ca1a6e` -- and the
+only other casualties are `tests/test_sweep_hardware.py` and 177 lines of
+`fitting/fit_display.py`, both deliberate on guan's side (`4f25675 remove
+outdated test`) and neither on any notebook path.
+
+The method is ported verbatim, pinned by a new `PORTED` list in
+`test_mbr_stage_split.py` -- it cannot be pinned against this branch's god
+class, so its pin is the merge's other parent. Two lines differ, both
+re-addressing `_calibration_data` to its new owner. It never had a test; it
+has 16 now, against a synthetic propagator built from a known Hamiltonian, so
+both estimators have a right answer. The finite-difference tolerance is
+*measured*: error over step_time^2 is the same constant to within 5% across a
+16-fold range of step, so a wrongly assembled derivative would change the
+order even though the eigenphase route stays exact either way.
+
+### The notebooks
+
+`tools/migrate_jonginn_notebooks.py`, not hand edits: 1,052 cells across three
+notebooks, repetitive edits, each one load-bearing for a measurement. Every
+edit is a rule or an exact string with the occurrence count it must match, so
+a miscount errors instead of silently doing nothing. `--check` is idempotent
+and a test asserts it has nothing left to do.
+
+A third notebook turned up that the survey missed:
+`qsim_experiments_highkerr_untracked_refactored.ipynb`, a near-duplicate of Q
+(223 of 263 code cells byte-identical) with 179 stored figures of its own. It
+gets the same plan as a dict copy with three cell numbers shifted. And
+`measurement_notebooks/guan/mbramsey.py` -- the live MBR notebook, in the
+sandbox that *was* migrated -- still had three `stage=` calls, because that
+pass repaired imports and a `stage=` argument is not an import.
+`tests/test_no_stage_dispatch_remains.py` now sweeps all 81 notebooks; it is
+what found both.
+
+Three things worth not rediscovering:
+
+**A rebound alias must never feed a provenance string.** Rebinding an alias
+from the god class to a stage class fixes its methods and its `analyze`, and
+breaks anything deriving a name from it. `D72EncSpec` looked safe -- one moved
+method -- but cell 256 builds `f"{job_id}_{D72EncSpec.__name__}.h5"` for files
+already on disk. Same trap for `ExpClass=SavedEncSpec` in `data_postprocess`
+cell 180, where `load_dark_experiments` derives its filename tag from
+`ExpClass.__name__` and says so in its own docstring. **This does not raise**:
+the loader looks for `..._MBRSpectrumExperiment.h5`, finds nothing, and
+reports missing data for jobs sitting right there. `rebound_alias_in_provenance`
+refuses the pattern now; verified by putting the bug back.
+
+**`isinstance(expt, EncSpec)` cannot follow a rebind.** In `data_postprocess`
+cell 2 that asks "is this already a loaded aggregate", and the children were
+acquired under the god class. Narrowing it to a stage subclass would make it
+return False and silently drop every job it used to accept.
+
+**The assignment and the `analyze` are often in different cells.** Three
+aggregates are analysed a cell later or reached through a campaign record, so
+no same-cell rule can pair them. The check that finds this -- receivers that
+used to name a stage and are no longer traceable to one -- is in the script,
+and is how those three were found rather than guessed.
+
+`mbramsey.py`'s spectrum call also passed seven arguments that never existed:
+`photon_number`, `detunings`, `couplings_MHz`, `floquet_cycle_us`,
+`physical_kerr_MHz`, `correction`, `mode_labels`. Checked against the
+pre-split source, not assumed -- the old dispatch took `**kwargs` and looked
+up none of the seven. Always decoration, all resolved from the saved jobs,
+now deleted.
+
+### Also added
+
+`from_batch`, the seam the stage split left out. `BatchRunner` returns an
+instance of its `ExptClass`, which must stay the acquired class for
+provenance, while aggregate analysis belongs to a stage class.
+`StageClass.from_batch(raw)` converts one to the other, carrying the job IDs
+and the station, re-reading nothing. Without it the only route was re-reading
+every job of a several-hundred-job campaign off disk to change the wrapper's
+class.
+
+### Standing
+
+813 passed, same 6 pre-existing failures: five golden tests need prod
+`configs/versions/` (set `MULTIMODE_DATA_ROOT` and they still want the
+archived Floquet swap CSVs, which do not sync off-prod), and the unrelated
+Wigner bootstrap one. Verified against a detached worktree at the session's
+starting commit: same 6 there, 673 passed.
+
+**Not done, and next.** `BatchRunner`'s roadmap is to fold into
+`CharacterizationRunner` (a `run_many()` or similar); it is fixed here, not
+redesigned. And `mbr_campaign.run_stage` passes `ExptClass=owner` -- the stage
+class -- so jobs acquired through guan's path record a different
+`experiment_class` than jonginn's, and land in differently named HDF5 files.
+That is a real inconsistency in provenance between the two acquisition paths
+and it is not resolved here; it needs a decision, not a patch.
+
+Areas 3, 4 and 5 of the surface map -- the ~19.6 kLOC of notebook-local
+campaign selection, alternative estimators and report plots in jonginn's
+notebooks -- are untouched. Those notebooks now *run*; their contents have not
+been extracted.
