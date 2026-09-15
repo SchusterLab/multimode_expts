@@ -1,10 +1,25 @@
 # Qsim refactor: the working surface map
 
-Updated 2026-09-14. **Stage 1 (library decomposition) is done. Stage 2 is
-notebook decomposition:** turn Jonginn's `qsim_experiments.ipynb` (Q) and
-`data_postprocess.ipynb` (P) into small scientific entry points. Updating their
-imports and stage-class calls did not do that. The high-Kerr sibling is outside
-this decomposition pass.
+Updated 2026-09-15. **Stage 1 (library decomposition) is done. Stage 2
+(notebook decomposition) has landed structurally.** Jonginn's
+`qsim_experiments.ipynb` (Q) and `data_postprocess.ipynb` (P) are now sixteen
+themed Jupytext entry points under
+`measurement_notebooks/202609_qsim_migration/` and
+`analysis_notebooks/202609_qsim_migration/`, with seventeen helper modules in
+`experiments/qsim/notebook_helpers/`. Q and P themselves are retired. The
+high-Kerr sibling was outside this pass and is untouched.
+
+**What "structurally" excludes:** no notebook has been run end to end and no
+job submitted. Per-theme scientific validation — numerical agreement with the
+originals, readout layout, historical loading — is the next pass, and the
+worklog lists the specific divergences it needs to settle. Three are worth
+knowing before touching this code: the notebook-local HDF5 loader that runs
+parallel to `from_h5file`, the cell-156 Floquet cycle duration that
+`floquet_timing.py` documents as ~1.2% long, and `threadpoolctl` being
+imported but absent from the environment.
+
+See `docs/archive/qsim/qsim_mbr_worklog.md`, entry 2026-09-15, for what
+collapsed into what and why.
 
 ## The whole surface
 

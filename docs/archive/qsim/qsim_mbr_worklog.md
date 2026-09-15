@@ -1246,3 +1246,158 @@ This is the shared foundation the surface map names, and it is where stage 2
 starts: one lane-layout definition, the historical provenance classes
 enumerated rather than guessed, and a loud failure instead of a reshape when
 a saved job's layout cannot be established.
+
+---
+
+## 2026-09-15 — Stage 2: the notebooks came apart
+
+`qsim_experiments.ipynb` (374 cells, 10.1k code lines) and
+`data_postprocess.ipynb` (306 cells, 13.0k) are now sixteen themed Jupytext
+notebooks under `measurement_notebooks/202609_qsim_migration/` and
+`analysis_notebooks/202609_qsim_migration/`, plus seventeen helper modules
+under `experiments/qsim/notebook_helpers/`.
+
+The surface map's cell partition turned out to be exact: Q7–374 and P5–306,
+no gaps and no overlaps, every boundary on a real heading. Nothing in it
+needed repair before starting.
+
+### The split was mostly a de-duplication
+
+Not a cleanup that removed duplication as a side effect — the duplication
+*was* the structure.
+
+| what collapsed | source cells | into |
+|---|---|---|
+| swap error-amp scans | 42, 45, 48, 51 | `scan_return_error` |
+| coarse/fine broadband frequency | 18, 21 | `fit_broadband_frequency` |
+| coarse/fine broadband gain | 19, 22 | `fit_broadband_gain` |
+| floquet error-amp loop | 81, 83, 109, 113 | `run_floquet_error_amp_sweep` |
+| phase-accumulation double loop | 89, 91, 116, 119, 121 | `run_phase_accumulation_pairs` |
+| chevron/stark hooks | 78 = 107, 88 = 115 | one copy each |
+| `floquet_cycle_list_gen` | Q151 = Q152 = Q287 = P4 | one copy |
+| calibration load | 305, 316 | `ensure_calibration` |
+| occupation-pair check | P222 = P232 | `occupation_pairs` |
+| `saved_job_range` | P213 = P218 | one copy |
+
+Each was diffed before merging, not assumed. Cells 18 and 21 differ by exactly
+one line; 19 and 22 by two. Where differences were real they became arguments:
+`span_divisor` for the fine passes, and `reset_dump_mode` as a *required*
+argument because the flat-top and Gaussian halves genuinely disagreed on it.
+
+Two cells were deleted as confirmed duplicates. **Q294/295 are byte-identical
+to Q306/307** and sat *before* cell 305, which binds the `spectroscopy_expt`
+and `cycle_branches` they read. They could only ever have worked as a stray
+re-run of the later pair.
+
+### Settings prefixes became config objects
+
+The surface map's `d72_*` example was literal. Cell 338 set **thirty**
+`d72_*` names at notebook scope and cells 340/342/344/346 read them as
+globals; cell 323 set sixteen `diag_disorder_*`; cell 206 nineteen `replot_*`;
+cell 361 thirteen `sff_*`. Those are now `D72Config`, `DiagDisorderConfig`,
+`ReplotConfig` and `SFFConfig`, carrying the source's values *and its own
+explanatory comments* on the fields.
+
+Each function unpacks its config into the local names its moved body already
+used, so none of the long bodies — 367, 308, 291 and 221 lines — needed a
+single rename.
+
+### What deliberately stayed in the notebooks
+
+Every accept cell. Every job-ID range. The `occupation_energy_shift_MHz`
+table, the branch assignments, the peak thresholds, the trace requests, the
+mock-station config versions. No helper writes to the station; they return
+candidates and print them. Deciding whether to take a fitted number after
+looking at a plot is the thing a measurement notebook is *for*.
+
+### Divergences found and left alone
+
+**`floquet_cycle_to_us` (cell 156) is wrong, on the record.**
+`experiments/floquet_timing.floquet_cycle_us` is the one definition, and its
+own docstring says that summing exact pulse durations — which is what cell 156
+does, with `ramp_sigma * 4` instead of six ramps — ran about 1.2% long on the
+August configs. QICK v1's `sync_all` advances by whole tProc cycles. Only one
+diagnostic plot's x axis depends on it here, so it is preserved with a TODO
+naming the canonical function. Fixing it during extraction would have been a
+silent physics change.
+
+**A second HDF5 loader lives in the notebook.** Cell 261 is a 248-line
+reimplementation — `SavedSpectroscopyExperiment`, `read_h5_header`, `load_h5`,
+`read_shots`, `saved_parameters`, `saved_floquet_timing`, `common_grid_jobs`,
+`make_plain` — running parallel to
+`EncodingHamiltonianSpectroscopyExperiment.from_h5file` and to
+`experiments/floquet_timing.resolve_floquet_timing`. This is the largest
+duplication the pass found. Not reconciled, per instruction.
+
+Worth establishing *why* it exists before anyone deletes either copy:
+`floquet_timing.py` exists precisely because asking a live station for
+historical timing silently substitutes today's calibration. So the notebook
+copy may be carrying a real correctness fix, or may be the thing that needed
+one. `tests/test_qsim_notebook_helpers.py` now pins down what the two
+currently agree on — every shared scalar config key, on a real saved file.
+
+**`threadpoolctl` is imported by cells 293 and 299 but is not installed and
+not declared in `pyproject.toml`.** Those cells could not have run in this
+environment as written. The name is a shim that raises with an explanation,
+rather than a silently dropped thread limit or a unilaterally added
+dependency.
+
+**Five source cells were already syntactically broken.** Three were
+unambiguous stray characters, repaired with the original text noted inline
+(Q180, Q278, and Q356 — the only one in an active theme). Two are left as
+found and marked: P165 is a half-typed `expt.data.` and nothing else, and P57
+lost the indentation of an entire function body with no recoverable stopping
+point. P57 is why one dormant file still does not parse, and why the test
+suite carries one `xfail`.
+
+**Cell 167's markdown overstates its dataset.** It says fifteen occupations;
+the file list holds ten. The analysis tolerates this — it builds the full
+fifteen-state basis for theory and compares only measured rows — but the prose
+is wrong. Recorded in `n2_spectroscopy_files.yml`.
+
+### Cooling was deleted, and what that cost
+
+Q123–149 is a structural subset of `measurement_notebooks/guan/cooling.py`:
+of its 106 code lines only 9 are absent there, and all 9 are scan knobs rather
+than logic. Deleted under the surface map's stated exception. The lost
+settings, recorded here so they do not vanish with the cells: `cooling_gain`
+2000 and 25000, `cooling_freqs = np.linspace(7050, 7150, 1001)`,
+`cooling_length = 2`, and loops over `init_stor in [0]` / `ro_stor in [3]`.
+
+### Three of my own bugs, for the next person using this tooling
+
+Worth recording because this is the kind of tooling that fails quietly.
+
+1. **A caller search that only matched `name(`.** It could not see
+   `preprocessor=error_amp_floquet_preproc`, so it reported three helpers as
+   having no caller, and the first pass deleted two of them and parked the
+   third as unplaceable. The dormant pulse-scratch section calls all three.
+   Fixed by matching bare names and closing each destination's helper set over
+   its own internal dependencies.
+2. **Helper sets not closed over dependencies.** `hdf5_path_generator` went to
+   three destinations; `job_id_generator`, which it calls, went to one.
+3. **A `keep` line range that started inside an `if` block.** It produced
+   plausible-looking text that failed only at import. The extraction tool now
+   parses before writing and refuses, printing the offending lines.
+
+An accounting check closes the loop: every source code cell's distinctive
+lines are traced into the new tree. 395 found verbatim, 21 deleted on purpose,
+11 whose bodies became a named function or moved to YAML (each named
+individually), 48 too trivial to trace, **0 unaccounted**. Ten small
+inspection cells had in fact been dropped, and were recovered this way —
+cells 176–185, 267, 328, 329 — along with four dataset choices that had been
+left as placeholders instead of the source's real values.
+
+### Verified, and not
+
+Verified: seventeen helper modules import; sixteen notebooks round-trip
+through Jupytext; basedpyright finds no undefined or possibly-unbound name in
+any active file; both HDF5 loaders read a real saved job and agree on every
+shared scalar config value; 838 pre-existing tests still pass, plus 55 new
+ones.
+
+Not verified: no notebook has been executed end to end, and no job submitted.
+Numerical agreement with the original notebooks is the later, theme-specific
+work the instructions defer. The 79 remaining undefined names are all in the
+dormant relocations — cross-notebook reads that relocation does not fix, now
+listed by name in each dormant file's header, plus the cell-57 damage.
