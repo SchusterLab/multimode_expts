@@ -17,6 +17,11 @@ the reason class names and modules in this tree count as provenance.
 ``execute`` needs a ``job_client`` and so only runs where the job server is
 reachable.
 """
+from copy import deepcopy
+
+import numpy as np
+from slab import AttrDict
+
 from experiments.characterization_runner import CharacterizationRunner
 
 

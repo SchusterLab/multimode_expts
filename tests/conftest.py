@@ -21,6 +21,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pandas as pd
+
 import pytest
 from slab import AttrDict
 
@@ -53,6 +55,9 @@ class MockStation:
 
         self._is_mock = True
         self.user = "test_user"
+        # Real MultimodeStation always has one (yymmdd_name); the queue path
+        # records it in station_config, so BatchRunner.execute needs it.
+        self.experiment_name = "260914_test"
 
         self.hardware_cfg = AttrDict({
             "device": {
@@ -75,7 +80,13 @@ class MockStation:
 
         # Dataset handles the runner threads into cfg, plus the per-run dataset
         # the sweep postprocessor test pokes at.
+        # `.df` is a real DataFrame, not a MagicMock attribute: the queue
+        # path serializes it with `to_dict(orient='records')` and then
+        # json.dumps, which a MagicMock does not survive.
         self.ds_storage = MagicMock()
+        self.ds_storage.df = pd.DataFrame({"mode": ["M1"], "freq": [5000.0]})
+        # Real MultimodeStation sets this beside ds_storage; they are a pair.
+        self.storage_man_file = "storage_man_swap_dataset.csv"
         self.ds_floquet = None
         self.ds_thisrun = MagicMock()
         self.ds_thisrun.get_freq = MagicMock(return_value=5000)
