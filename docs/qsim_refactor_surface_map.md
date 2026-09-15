@@ -1,39 +1,42 @@
-# Qsim refactor: one-screen surface map
+# Qsim refactor: the working surface map
 
-Source survey: local `main` dd9624f, compared with `guan` 1325e4b, 2026-09-11.
-Priority follows Guan's description: many-body Ramsey (MBR) active; literal dark-mode and flux-excursion projects mostly historical. Presence in a notebook does not establish current use or correctness.
+Updated 2026-09-14. **Stage 1 (library decomposition) is done. Stage 2 is
+notebook decomposition:** turn Jonginn's `qsim_experiments.ipynb` (Q) and
+`data_postprocess.ipynb` (P) into small scientific entry points. Updating their
+imports and stage-class calls did not do that. The high-Kerr sibling is outside
+this decomposition pass.
 
-**Progress, 2026-09-12.** The library side of stage 1 is done for areas 1-3 and 6: the 8,772-line god module is 443 lines, and no file under `experiments/qsim/` or `fitting/qsim/` exceeds 1.8 kLOC. The pulse layer is six modules with a per-instruction golden behind it; each MBR stage is one file holding its Program and its Experiment. What has *not* moved is the notebook side -- the cells listed below are still cells. See the 2026-09-12 worklog entry for the map of where each piece went and the open items.
+## The whole surface
 
-**Which notebooks are the callers: jonginn's.** `measurement_notebooks/jonginn/qsim_experiments.ipynb` and `data_postprocess.ipynb` are the notebooks the two god modules were accumulated from and the callers that have to evolve with the refactored library. This document did not say so, and the 2026-09-12 notebook pass migrated guan's sandbox instead; the [cell-level inventory](qsim_notebook_surface_inventory.md) had it all along. Read that file's "Notebook entry points" section before planning notebook work. All three of jonginn's MBR notebooks were migrated 2026-09-14 -- see that worklog entry.
-
-**Provenance is a hard constraint on notebook work.** The queue records `experiment_class`/`experiment_module` per job, and a saved file is `JOB-<id>_<ClassName>.h5`. So an acquisition cell keeps naming the class its data was acquired under, and anything that derives a filename from `<Class>.__name__` must too. Analysis can use a different class; `StageClass.from_batch(runner.execute(...))` is the seam. Getting this wrong does not raise -- the loader looks for a file that was never written and reports missing data for jobs sitting on disk.
-
-| Area | Scientific workflows | Refactor destination / priority |
+| Area | What belongs together | Stage-two destination |
 |---|---|---|
-| **1. Prepare and calibrate** | Readout; broadband qubit pulses; N-photon swaps; Floquet frequency, gain and Stark phase | Support active MBR; consolidate only the paths it needs. Floquet gain calibration currently lives in the flux-excursion file. **Done:** the two diagonal-phase calibrations are `floquet_phase_calibration.py`; the pulse primitives they share are `manipulate_mode_pulses.py`, `floquet_train.py`, `floquet_register_bank.py`, `floquet_phase_frame.py`. |
-| **2. Four core MBR products** | **Phase calibration · orthogonality · spectroscopy · propagator** | Finish these end to end. Diagonal/off-diagonal and photon number are variants, not new families. **Done:** each stage is one module with its Program beside its Experiment, over the shared spine `mbr_spectroscopy_program.py`; all four `analyze`/`display` signatures name their knobs. **Done 2026-09-14:** every caller in the repo addresses the four classes, `analyze(stage=...)` is gone, and the propagator's Hamiltonian tomography -- dropped by the `jonginn` merge, not by any split -- is back. |
-| **3. Spectroscopy campaigns** | Select occupations/channels → acquire disorder realizations → reconstruct spectra → compare levels / pool gap statistics / report plots | The new MBR Experiment classes own series-aware acquisition/analysis orchestration; move that implementation out of cells. Repeated datasets become inputs. |
-| **4. Analysis explorations** | Reduced-shot / randomized-occupation replay; alternative pole selection; joint shared-frequency fitting; split-shot reproducibility | Separate experimental estimators from the standard FFT/MPM route. Migrate selected useful methods, not every historical trial by default. |
-| **5. Adjacent measurement extensions** | Hamiltonian tomography (from propagators); direct disorder SFF (distinct acquisition); coherent-displacement Floquet Kerr | Explicit support decisions. Preserve their identity; do not silently make all three prerequisites for core MBR. **Done 2026-09-14:** tomography is `MBRPropagatorExperiment.analyze_propagator_dynamics`, with its first tests; the SFF family is reachable at its old address again. Neither is a core-MBR prerequisite. |
-| **6. Historical workflows** | Bright/dark basis preparation and readout, multiparity, dark T1 and disorder decay; flux-excursion Ramsey/Kerr and transition scans; Wigner; cooling/debug | Keep recoverable; migrate separately when needed. Extract shared dependencies before isolating old projects. Cooling is Guan's earlier experiment, copied into this notebook; not a new migration target. Wigner activity remains unconfirmed. **Done:** the five superseded scramble programs are `deprecated/dark_scramble_legacy.py`, reachable through the old address; the shared pulse dependencies were extracted first, as this row asks. |
+| **Prepare and calibrate** | Broadband qubit, N-photon swaps, readout, Floquet gain/frequency/phase; bare-readout checks needed by MBR | Initial h1 sections in the measurement campaigns they enable. |
+| **Four core MBR products** | Phase calibration · orthogonality · spectroscopy · propagator | A core acquisition entry point and saved-data analysis entry point; reuse the four existing Experiment owners. N and diagonal/off-diagonal returns are inputs. |
+| **Disorder campaigns** | Choose channels → preview plan → acquire → reconstruct realizations → pool/report | Separate campaign acquisition and analysis notebooks. Planning, loops and reports leave the cells. |
+| **Measurement and inference studies** | Reduced-shot / randomized-occupation replay; pole selection, shared-frequency fitting, independent-shot checks | Two analysis workspaces: shot/sampling studies and spectral validation. Preserve the methods and their evidence; library promotion can be decided later. |
+| **Adjacent extensions** | Propagator tomography; direct disorder SFF; displacement Floquet Kerr | Separate recipes as needed. Keep their distinct measurement/analysis identities. |
+| **Historical projects** | Literal dark mode, flux excursion, cooling, Wigner, debug | Move sections, outputs and their helpers into separate dormant notebooks in the working tree, outside the active path. Delete only confirmed duplicates. |
 
-**Shared foundation beneath 1–5:** pulse playback + phase/timing conventions; saved-data loading + provenance + grid validation; reusable numerical routines; normal acquire/analyze/save/display lifecycle.
+**The notebook keeps the scientific choices:** defaults, dataset selection,
+small pre/post hooks, run/load, analyze, display, and interpretation. The
+eventual library owns repeated planning, reconstruction, fitting and report
+machinery. For this pass, temporary modules beside the notebooks are enough;
+finding final homes and reconciling APIs can wait.
 
-Of these, pulse playback and the phase conventions are now separate, named modules (see area 1). Saved-data loading and provenance are still the one class left in `floquet_dark_mode_readout.py`, whose name is recorded provenance -- separating it further is a naming decision, not a move.
+**Order:** relocate dormant sections and partition the rest → hoist definitions
+and bulky data → wrap procedural blocks with explicit inputs and returns.
 
-**Notebook destinations:** {MBR, dark mode, flux excursion} × {measurement, analysis}, preferably Jupytext `.py`; analysis goes under `analysis_notebooks/`. Combine small analysis notebooks if useful. Calibration placement remains open; explicit inputs should make moving cells mechanical. Scratchpads may stay with their neighbors.
+**This pass finishes at inspectability.** Keep retained algorithms distinct
+and move their bodies with minimal edits. Breaking old entry points is allowed;
+no compatibility shims or end-to-end repair are required. Preserve relocated
+content in the working tree, including dormant code and stored outputs.
+Fix extraction syntax/import mistakes; validate scientific and
+runtime correctness afterward, one theme at a time.
 
-*Measurement side, done 2026-09-12.* `measurement_notebooks/guan/qsim_experiments.py` (2,841 lines, four projects) split into `floquet_calibration.py`, `dark_mode.py`, `flux_excursion.py` and `cooling.py`; MBR already had `mbramsey.py` (live) and `mbr_acquire.py` (worked example). Calibration got its own file rather than being folded into a project, which is one answer to the open question above. Two cells that were copy-pasted into seven notebooks became modules: the readout-calibration postprocessor (`experiments/readout_calibration.py`) and the swap-parameter reader (`qsim/utils.floquet_pulse_parameters`). All 128 in-repo imports across guan's notebooks now resolve, and a test keeps them resolving.
+[Self-contained execution instructions](qsim/stage2_notebook_map.md).
+The cell inventory and archived findings are optional evidence, not additional
+instructions or acceptance gates for this pass.
 
-*Jonginn's notebooks, done 2026-09-14.* All three (Q, P and the previously unsurveyed high-Kerr near-duplicate of Q) now address the stage classes, via `tools/migrate_jonginn_notebooks.py` -- a declared, idempotent, `--check`-able edit list rather than hand edits, because there are 1,052 cells across the three and every edit is load-bearing for a measurement. All outputs and stored figures preserved, so the Jupytext question for them stays open; `qsim_experiments.ipynb` has no stored outputs at all and would convert losslessly if that is ever wanted. Four tests keep it true, including a repo-wide sweep for the retired argument.
-
-*Analysis side, outstanding.* `analysis_notebooks/guan/MBR_analysis.py` covers MBR. Dark-mode and flux-excursion analysis still live in the shared `analysis_notebooks/qsim analysis.ipynb` (183 cells, 806 code lines, 44 stored plots) and in jonginn's `data_postprocess.ipynb`. Splitting the shared notebook means converting to Jupytext, which discards its stored figures. **Decided 2026-09-12: leave it.** Its 44 stored plots are worth more than the tidiness, so this row is a deliberate exception to the Jupytext preference above, not an unfinished task. Its imports were repaired in place.
-
-**Verification, added 2026-09-12.** A pulse move cannot be checked by "does it still acquire", because it always does. `tests/asm_golden.py` pins the compiled tProc listing and the waveform table for all 24 stage-by-config-set programs; it is what makes a pulse-layer move reviewable, and it says nothing about whether the physics it preserves is right.
-
-**Two stages, within each area:** (1) extract cohesive pieces, preserve behavior and update consumers, aiming for files below ~1 kLOC; (2) improve names, inheritance, duplication and contracts. Choose enough boundaries in stage 1 to avoid hidden globals and circular dependencies. Keep behavioral fixes distinct from moves. Attack order remains undecided.
-
-**Scale:** 680 notebook cells / 23,090 code-cell lines; 8,772-line dark-mode file + 1,503-line flux-excursion file. Rough editing surface: 30–40 kLOC, not unique functionality; do not double-count code already extracted on `guan`. Final file counts and ~200-line modules are aspirations, not commitments.
-
-[Cell-level evidence and gaps](qsim_notebook_surface_inventory.md). This is a source map, not execution coverage or a physics validation.
+This is the current direction, not a worklog. The former use of “stage 2” for
+general library API cleanup is superseded here; that cleanup follows a
+concrete workflow need rather than becoming another prerequisite project.

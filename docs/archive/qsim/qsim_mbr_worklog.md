@@ -9,9 +9,9 @@
 > Anything below that reads as a plan, an intention, or a loose end is a
 > record of what was thought at the time, **not an instruction for present or
 > future work**. Do not act on it. Current direction lives in
-> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> [`qsim_refactor_surface_map.md`](../../qsim_refactor_surface_map.md), with its
 > evidence in
-> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> [`qsim_notebook_surface_inventory.md`](../../qsim/evidence/qsim_notebook_surface_inventory.md);
 > those two supersede every other refactor doc in this repo.
 
 ## MBR refactor worklog
@@ -1162,3 +1162,87 @@ Areas 3, 4 and 5 of the surface map -- the ~19.6 kLOC of notebook-local
 campaign selection, alternative estimators and report plots in jonginn's
 notebooks -- are untouched. Those notebooks now *run*; their contents have not
 been extracted.
+
+## 2026-09-14 (later) — the provenance decision, and three read_num authorities
+
+Stage 2 starts with the loading foundation, decided with Guan. Settling the
+`run_stage` provenance question first, as asked, turned up a correctness
+problem underneath it that is worth more than the naming question.
+
+### The provenance decision
+
+`BatchRunner` records `experiment_class=self.ExptClass.__name__`
+(`batch_runner.py:82`). The worker instantiates that class to acquire, and
+builds the filename from it (`worker.py:486`, `id_generator.py:88`). So
+`ExptClass` chooses both what runs and what the file is called.
+
+What the 370 recorded jobs in `tests/data/job_provenance.json` actually say:
+
+|  n | experiment_class | program_class |
+|---|---|---|
+| 158 | EncodingHamiltonianSpectroscopyExperiment | NPhotonHamiltonianSpectroscopyProgram |
+|  70 | DarkBaseExperiment | NPhotonHamiltonianSpectroscopyProgram |
+|  70 | EncodingHamiltonianSpectroscopyExperiment | EntireFloquetCyclePhaseCalibrationProgram |
+|  70 | QsimBaseExperiment | EntireFloquetCyclePhaseCalibrationProgram |
+|   2 | RamseyExperiment | None |
+
+**The inconsistency predates the refactor.** Three `experiment_class` names
+map onto two stages, many-to-many. `program_class` is one-to-one with the
+stage. So:
+
+**Decided: `program_class` is the stage key. `experiment_class` is not, and
+the loading layer must never infer a stage from it.** Four historical names
+all have to load.
+
+**Decided: new MBR acquisitions record
+`EncodingHamiltonianSpectroscopyExperiment`.** `mbr_campaign.run_stage`
+passes `ExptClass=owner` -- a stage class -- which would add four more names
+for the same measurement. It is the plurality name already (228 of 368), it
+is what Q cells 289 and 352 bind `EncSpec` to, and the choice is provably
+nominal: none of the four stage classes defines `acquire`, `__init__`,
+`save_data` or `ProgramClass`, so all four instantiate to exactly the
+acquisition `DarkBaseExperiment` provides. Analysis still belongs to the
+stage class, reached through `from_batch`.
+
+### Two acquires, differing in eight lines
+
+`QsimBaseExperiment.acquire` (93 lines) and `DarkBaseExperiment.acquire` (88)
+are byte-identical except for the read_num block. DarkBase calls
+`readout_lane_count` and writes `self.cfg.read_num`; QsimBase inlines an older
+formula and records nothing.
+
+So the 70 `QsimBaseExperiment` phase-calibration jobs are their own provenance
+class: no saved `cfg.read_num`, and an acquisition that ignored
+`multiparity_readout`. Recomputing their lane count with today's function
+would return a number their hardware never used.
+
+### Three read_num authorities, with different flag sets
+
+This is the real finding. "How many readouts does one shot produce" has three
+implementations that do not agree:
+
+| flag | `QsimBaseExperiment.acquire` | `readout_lane_count` | `MM_base.lane_layout` |
+|---|---|---|---|
+| parity_check | +1 | +1 | **ignored** (caller adds) |
+| active_reset | + reset lanes | + reset lanes | + reset lanes |
+| multiparity_readout | **ignored** | +1 | **ignored** |
+| parity_shot | **ignored** | **ignored** | + repeat_count |
+| post_select_pre_pulse | **ignored** | **ignored** | +1 |
+| sigma_z | **ignored** | **ignored** | +1 |
+
+`acquire` passes its number to the hardware as `readouts_per_experiment`, so
+it decides the real interleave period. `lane_layout` is what analysis
+reshapes with. `readout_lane_count`'s own docstring says two agreeing copies
+is one copy plus a liability -- and there are three, which do not agree.
+
+**And the disagreement is silent.** `fit_display_classes.py:98` guards with
+`if read_num > 1 and I_data.size == expected_size_raw`. On a mismatch it falls
+to the else branch, which reshapes as `(expts, rounds, reps)` -- every lane
+treated as another rep, averaged into the parity. It warns only when
+`active_reset` is on. A job with `multiparity_readout=True` and
+`active_reset=False` takes that path with no warning and no exception.
+
+This is the shared foundation the surface map names, and it is where stage 2
+starts: one lane-layout definition, the historical provenance classes
+enumerated rather than guessed, and a loud failure instead of a reshape when
+a saved job's layout cannot be established.

@@ -10,7 +10,7 @@ unit tests: it covers every extraction at once and costs one file.
 
 It pins *current* behaviour, bugs included. That is the point of a
 characterization test, not an endorsement. Sections 2.1 to 2.5 of
-``docs/qsim_mbr_refactor.md`` describe defects this baseline currently locks in.
+``docs/archive/qsim/qsim_mbr_refactor.md`` describe defects this baseline currently locks in.
 
 Re-blessing
 -----------

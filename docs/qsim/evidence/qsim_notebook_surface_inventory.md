@@ -1,5 +1,10 @@
 # Evidence behind the Qsim surface map
 
+> **Dated source inventory, not current direction.** Surveyed September 11,
+> amended through September 14, 2026. Cell ranges remain useful; branch status,
+> proposed ordering, and statements about missing APIs may have been overtaken.
+> Use the [current stage-two map](../stage2_notebook_map.md) for the plan.
+
 Surveyed 2026-09-11: local main dd9624f and guan 1325e4b. No notebooks were executed. Cell numbers below are one-based physical cell positions, including markdown, not execution counters. Code-line counts include comments and blank lines, exclude outputs and markdown. Section headings, code-cell references, definitions and selected implementations were inspected; this is not a complete call graph.
 
 ## Notebook entry points (source notebooks, not final destinations)
@@ -70,8 +75,17 @@ Use both directions: notebook workflow → dependencies, then module symbol → 
 
 The source supports describing both as accumulated project work files. It does not establish why their author organized them that way.
 
+## Shape, as opposed to content
+
+[qsim_notebook_gap_survey.md](../../archive/qsim/qsim_notebook_gap_survey.md) measures these
+two notebooks against the target notebook shape: bucket sizes, prospective
+function signatures per cell, and the duplication between P's spectral cells
+and `fitting/qsim/matrix_pencil.py`. Read it with the family table above --
+that table says what the cells *do*, the survey says how far they are from
+being callable.
+
 ## How to use the map
 
-The [one-screen map](qsim_refactor_surface_map.md) records the thematic notebook destinations and extraction-then-improvement approach; implementation order remains open. The runner pattern survives, but substantial workflow and algorithm implementations sit around it in cells. Removing blanks and comment-only lines leaves 19,584 notebook lines; roughly 4,900 sit in top-level function/class definitions. Extraction must address that code as well as the large modules.
+The [one-screen map](../../qsim_refactor_surface_map.md) records the thematic notebook destinations and extraction-then-improvement approach; implementation order remains open. The runner pattern survives, but substantial workflow and algorithm implementations sit around it in cells. Removing blanks and comment-only lines leaves 19,584 notebook lines; roughly 4,900 sit in top-level function/class definitions. Extraction must address that code as well as the large modules.
 
 Choose one representative per core product, then cover meaningful variants: diagonal/off-diagonal; current/historical phase and timing; complete/partial grids; standard/disorder campaigns; mean arrays/raw-shot estimators. Trace shared foundations once and record subsequent differences. Treat N and dataset identity as inputs unless they expose a new contract. This is a planning inventory, not an instruction to execute all cells sequentially or to validate every historical experiment now.

@@ -1,4 +1,4 @@
-"""Job ID -> data file resolution, per section 9.1 of docs/qsim_mbr_refactor.md.
+"""Job ID -> data file resolution, per section 9.1 of docs/archive/qsim/qsim_mbr_refactor.md.
 
 Why this exists as its own module
 ---------------------------------

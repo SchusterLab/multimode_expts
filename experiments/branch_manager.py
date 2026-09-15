@@ -28,7 +28,7 @@ class BranchManager:
         i.e. each user's sandbox notebook dir (measurement_notebooks/<user>/). That
         gives every user their own log, so concurrent users never contend for one
         file. Pass an explicit shared log_path if you want cross-user visibility
-        (and accept the concurrency caveats in docs/config_branches.md).
+        (and accept the concurrency caveats in docs/reference/config_branches.md).
         """
         self.station = station
         self.log_path = Path(log_path) if log_path else Path.cwd() / "branches.jsonl"

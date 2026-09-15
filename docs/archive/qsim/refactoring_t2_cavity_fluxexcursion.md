@@ -24,9 +24,9 @@
 > Anything below that reads as a plan, an intention, or a loose end is a
 > record of what was thought at the time, **not an instruction for present or
 > future work**. Do not act on it. Current direction lives in
-> [`qsim_refactor_surface_map.md`](qsim_refactor_surface_map.md), with its
+> [`qsim_refactor_surface_map.md`](../../qsim_refactor_surface_map.md), with its
 > evidence in
-> [`qsim_notebook_surface_inventory.md`](qsim_notebook_surface_inventory.md);
+> [`qsim_notebook_surface_inventory.md`](../../qsim/evidence/qsim_notebook_surface_inventory.md);
 > those two supersede every other refactor doc in this repo.
 
 ## Refactoring t2_cavity_fluxexcursion

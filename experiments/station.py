@@ -11,7 +11,7 @@ Supports both real hardware and mock modes:
 - Real hardware: Connects to actual instruments (production on Pippin)
 - Mock mode: Real qick.QickConfig + stub MockQickSoc (no FPGA bytes go out).
   Used to validate qick programs without hardware overhead.
-  See docs/mock_mode_architecture.md for the design.
+  See docs/reference/mock_mode_architecture.md for the design.
 
 Usage:
     from experiments.station import MultimodeStation
@@ -76,7 +76,7 @@ def is_production_pc() -> bool:
 # The prod PC writes it from the live Pyro proxy; off-prod-PC clients (laptops,
 # dev machines) load it to build a fully-functional soccfg with no FPGA and no
 # proxy — accurate unit conversions and real channel shape, unlike a hand-rolled
-# stub. See docs/mock_mode_architecture.md.
+# stub. See docs/reference/mock_mode_architecture.md.
 SOCCFG_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "configs" / "soccfg_snapshot.json"
 
 
@@ -237,7 +237,7 @@ class MultimodeStation:
                 "MultimodeStation.soc was renamed to .soccfg "
                 "(it's a QickConfig, not a QickSoc — the old name was misleading). "
                 "Replace all station.soc references with station.soccfg. "
-                "See docs/mock_mode_architecture.md."
+                "See docs/reference/mock_mode_architecture.md."
             )
         raise AttributeError(
             f"{type(self).__name__!r} object has no attribute {name!r}"
@@ -456,7 +456,7 @@ class MultimodeStation:
         soccfg source: on the prod PC, fetched live from the Pyro proxy (and the
         committed snapshot refreshed); off it, loaded from the committed JSON
         snapshot — no FPGA, no proxy, accurate unit conversions and channel
-        shape. See docs/mock_mode_architecture.md.
+        shape. See docs/reference/mock_mode_architecture.md.
 
         After this, use_real_instruments() will raise — reconstruct the
         station with mock=False to switch to real mode.
