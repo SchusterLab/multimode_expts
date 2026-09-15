@@ -510,6 +510,14 @@ def main():
     failed = False
     for plan in PLANS:
         path = NOTEBOOKS / plan["notebook"]
+        if not path.exists():
+            # The stage-2 notebook split retired qsim_experiments.ipynb and
+            # data_postprocess.ipynb after distributing their cells into the
+            # themed entry points under */202609_qsim_migration/. A plan with
+            # no notebook left is done, not broken.
+            print(f"\n=== {plan['notebook']} ===")
+            print("  retired by the stage-2 split; nothing to migrate")
+            continue
         parsed_before = _parseable(_load(path))
         report, broken, notebook = migrate(plan, write=not args.check)
         parsed_after = _parseable(notebook)

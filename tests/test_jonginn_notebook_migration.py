@@ -43,11 +43,23 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS = REPO_ROOT / "measurement_notebooks" / "jonginn"
-NAMES = ["qsim_experiments.ipynb", "data_postprocess.ipynb",
-         # A near-duplicate of the first -- 223 of 263 code cells are
-         # byte-identical -- but it carries 179 stored figures of its own, so
-         # it is migrated rather than dropped.
-         "qsim_experiments_highkerr_untracked_refactored.ipynb"]
+
+# `qsim_experiments.ipynb` and `data_postprocess.ipynb` were retired by the
+# stage-2 notebook split; their successors are the themed Jupytext entry
+# points checked by SUCCESSOR_DIRS below, which get the same checks. The
+# high-Kerr sibling was explicitly outside that pass and is still an .ipynb,
+# so it keeps the JSON path: a near-duplicate of the retired first notebook
+# (223 of 263 code cells were byte-identical) that carries 179 stored figures
+# of its own.
+NAMES = ["qsim_experiments_highkerr_untracked_refactored.ipynb"]
+
+# The stage-2 successors. Jupytext `py:percent` files are valid Python, so
+# these are read as text rather than as notebook JSON.
+SUCCESSOR_DIRS = [
+    REPO_ROOT / "measurement_notebooks" / "202609_qsim_migration",
+    REPO_ROOT / "analysis_notebooks" / "202609_qsim_migration",
+    REPO_ROOT / "experiments" / "qsim" / "notebook_helpers",
+]
 
 STAGE_MODULES = {
     "MBRPhaseCorrectionExperiment": "experiments.qsim.mbr_phase_correction",
@@ -74,15 +86,86 @@ def _cells(name):
             for cell in notebook["cells"] if cell["cell_type"] == "code"]
 
 
+def _successor_sources():
+    """(label, [source chunks]) for each stage-2 successor file."""
+    out = []
+    for directory in SUCCESSOR_DIRS:
+        for path in sorted(directory.rglob("*.py")):
+            out.append((
+                str(path.relative_to(REPO_ROOT)),
+                [path.read_text(encoding="utf-8", errors="replace")],
+            ))
+    return out
+
+
+SUCCESSORS = _successor_sources()
+
+
 @pytest.fixture(scope="module", params=NAMES)
 def notebook(request):
     return request.param, _cells(request.param)
+
+
+@pytest.fixture(scope="module", params=[label for label, _ in SUCCESSORS])
+def successor(request):
+    """One stage-2 successor file, as a single source chunk."""
+    return request.param, dict(SUCCESSORS)[request.param]
 
 
 def test_the_scan_found_the_notebooks(notebook):
     """Guards against every test below passing on an empty list."""
     name, cells = notebook
     assert len(cells) > 200, f"{name}: only {len(cells)} code cells"
+
+
+# Only two of the four notebook checks carry over to the successors. The other
+# two -- the analyze/display keyword check and the acquisition-provenance
+# check -- read per-cell notebook conventions: a traceable receiver for
+# `analyze(...)`, and a literal `ExptClass=` beside an HDF5 filename. In the
+# helper modules the receiver is a function parameter and the class arrives via
+# `campaign.EncSpec`, so those checks would be asserting a shape this code
+# deliberately does not have. The mock-acquisition suite covers that ground
+# instead, by building the programs.
+
+
+def test_no_successor_still_passes_stage(successor):
+    """`EncSpec.analyze(stage=...)` raises, so a survivor is dead code."""
+    name, chunks = successor
+    offenders = [i for i, source in enumerate(chunks, 1)
+                 if STAGE_ARGUMENT.search(source)]
+    assert not offenders, f"{name}: stage= still present"
+
+
+def test_every_successor_stage_attribute_exists(successor, stage_classes):
+    """The check that catches the next move out from under the new entry points."""
+    name, chunks = successor
+    missing = []
+    for source in chunks:
+        for cls_name, cls in stage_classes.items():
+            for attr in re.findall(rf"\b{cls_name}\.(\w+)", source):
+                if not hasattr(cls, attr):
+                    missing.append(f"{cls_name}.{attr}")
+    assert not missing, f"{name}: missing {sorted(set(missing))}"
+
+
+def test_the_retired_notebooks_are_gone():
+    """The stage-2 split retired these two; nothing should resurrect them.
+
+    If one comes back, the checks above stop covering it and the split's
+    accounting no longer holds.
+    """
+    for retired in ("qsim_experiments.ipynb", "data_postprocess.ipynb"):
+        assert not (NOTEBOOKS / retired).exists(), (
+            f"{retired} is back; either re-add it to NAMES or remove it again"
+        )
+
+
+def test_the_successors_exist():
+    """Guards against SUCCESSOR_DIRS silently going empty."""
+    found = _successor_sources()
+    assert len(found) >= 30, (
+        f"expected the stage-2 tree, found {len(found)} files"
+    )
 
 
 def test_no_cell_still_passes_stage(notebook):

@@ -25,6 +25,20 @@ from slab import AttrDict
 from experiments.characterization_runner import CharacterizationRunner
 
 
+def _is_real_job_client(client):
+    """Does this client talk to the actual job server?
+
+    Imported lazily so batch_runner does not pull in job_server at import
+    time, and returns False if job_server is unavailable -- in which case
+    nothing could reach a real queue anyway.
+    """
+    try:
+        from job_server import JobClient
+    except Exception:
+        return False
+    return isinstance(client, JobClient)
+
+
 class BatchRunner(CharacterizationRunner):
     """CharacterizationRunner with bounded parallel queue submission."""
 
@@ -45,17 +59,40 @@ class BatchRunner(CharacterizationRunner):
         return obj
 
     def execute(self,
-                  configs, 
-                  batch_size=10, 
-                  postprocess=True, 
+                  configs,
+                  batch_size=10,
+                  postprocess=True,
                   priority=0,
-                  poll_interval=2., 
-                  timeout=None, 
+                  poll_interval=2.,
+                  timeout=None,
                   log=None,
-                  show=None):
+                  show=None,
+                  allow_queue_in_mock=False):
         """Submit at most batch_size jobs, then collect them in config order."""
         if self.job_client is None:
             raise ValueError("job_client is required")
+
+        # This override is queue-only: unlike CharacterizationRunner.execute,
+        # which switches to run_local() when the station is mock, there is no
+        # local batch path. So a mock session would submit real jobs to the
+        # real queue, where the worker runs whatever is checked out at
+        # C:\python\multimode_expts -- not the caller's worktree, and against
+        # real hardware unless that worker was itself started with --mock.
+        #
+        # The hazard is specifically mock station + real queue. A test driving
+        # a fake client is not at risk, so check the client's type rather than
+        # is_mock alone.
+        if (getattr(self.station, "is_mock", False)
+                and not allow_queue_in_mock
+                and _is_real_job_client(self.job_client)):
+            raise RuntimeError(
+                "BatchRunner.execute submits to the job queue and has no "
+                "local mock path, but this station has mock instruments. "
+                "The queue worker would run the main checkout against real "
+                "hardware unless it was started with --mock. Start a mock "
+                "worker and pass allow_queue_in_mock=True if that is what "
+                "you want."
+            )
         if (isinstance(batch_size, (bool, np.bool_))
                 or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
             raise ValueError("batch_size must be a positive integer")

@@ -74,6 +74,7 @@ def open_session(
     log_measurements=True,
     config_dir=CONFIG_DIR,
     verbose=True,
+    mock=False,
 ):
     """Open the database, job client and station for a measurement notebook.
 
@@ -82,6 +83,14 @@ def open_session(
     the calling notebook. It needs the keys `hardware_config`,
     `man1_storage_swap` and `floquet_storage_swap`; `multiphoton_config` is
     carried through for the record even though the station does not take it.
+
+    `mock=True` builds the station with mocked instruments, per
+    `docs/reference/mock_mode_architecture.md`: the qick program build and ASM
+    compile run for real, so parameter-validation errors still fire, but
+    nothing reaches the FPGA. The runners' `execute()` notices
+    `station.is_mock` and dispatches locally instead of through the job queue,
+    so a mock session needs no server. The job-server health check is skipped
+    for the same reason -- there may not be one running.
     """
     missing = {"hardware_config", "man1_storage_swap", "floquet_storage_swap"} - set(
         config_dict
@@ -93,18 +102,21 @@ def open_session(
     config_manager = ConfigVersionManager(config_dir)
     client = JobClient()
 
-    if verbose:
+    if verbose and not mock:
         health = client.health_check()
         print(f"Server status: {health['status']}")
         print(f"Pending jobs: {health['pending_jobs']}")
         client.print_queue()
         print(f"Welcome {user}!")
+    elif verbose:
+        print(f"Welcome {user}! (mock instruments; job queue not used)")
 
     station = MultimodeStation(
         user=user,
         experiment_name=experiment_name,
         project=project,
         log_measurements=log_measurements,
+        mock=mock,
         storage_man_file=config_dict["man1_storage_swap"],
         hardware_config=config_dict["hardware_config"],
         floquet_file=config_dict["floquet_storage_swap"],
