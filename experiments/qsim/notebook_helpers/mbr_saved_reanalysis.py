@@ -493,6 +493,68 @@ def coherent_normalized_trace_spectrum(data, scale_theory=True):
     )
 
 
+def coherent_trace_report(data_sets, SavedEncSpec=MBRSpectrumExperiment):
+    """Coherent normalized-trace FFT for every loaded data set (cell 240).
+
+    For each data set: compute the coherent trace spectrum, draw the standard
+    report figure, then relabel its aggregate axis so the title says whether
+    it is a complete-basis DOS or a projected spectrum. Raises if it cannot
+    find that axis, rather than silently mislabelling a figure.
+
+    Returns (results, figures), both keyed by data-set index.
+    """
+    coherent_trace_results = {}
+    coherent_trace_figures = {}
+
+    for coherent_data_set_index, coherent_expt in data_sets.items():
+        coherent_data = coherent_expt.data
+        coherent_result = coherent_normalized_trace_spectrum(coherent_data)
+        coherent_trace_results[coherent_data_set_index] = coherent_result
+
+        fig = SavedEncSpec.display_result(
+            coherent_data.reconstruction,
+            coherent_result.display_spectrum,
+            coherent_data.mode_labels,
+        )
+        aggregate_axes = [
+            axis
+            for axis in fig.axes
+            if axis.get_title() in {"projected spectrum", "complete-basis DOS"}
+        ]
+        if len(aggregate_axes) != 1:
+            raise RuntimeError(
+                f"data_sets[{coherent_data_set_index}]: could not identify "
+                "the aggregate-spectrum axis"
+            )
+        aggregate_axis = aggregate_axes[0]
+        trace_kind = (
+            "complete-basis trace DOS"
+            if coherent_data.spectrum.complete_basis
+            else "projected trace spectrum"
+        )
+        aggregate_axis.set_title(
+            trace_kind
+            + "\n"
+            + r"$|\mathcal{F}[\sum_n A_n(t)/A_n(0)]|$"
+        )
+        aggregate_axis.lines[0].set_label("experiment")
+        aggregate_axis.lines[1].set_label(
+            "theory (same coherent FFT, peak-scaled)"
+        )
+        aggregate_axis.legend()
+
+        coherent_trace_figures[coherent_data_set_index] = fig
+        print(
+            f"data_sets[{coherent_data_set_index}]: "
+            f"{len(coherent_data.reconstruction.occupations)} rows, "
+            f"window={coherent_result.fft_window}, n_fft={coherent_result.n_fft}, "
+            f"complete_basis={coherent_data.spectrum.complete_basis}"
+        )
+        plt.show()
+
+    return coherent_trace_results, coherent_trace_figures
+
+
 def plot_occupation_trace_panels(pp_data, occupation_to_plot,
                                  realization_idx=0):
     """Real/imaginary return, its spectrum, and the theory, side by side (cell 237).

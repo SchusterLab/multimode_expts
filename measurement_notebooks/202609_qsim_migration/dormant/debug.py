@@ -22,6 +22,13 @@
 # `LoopbackProgram`/`StoppingProgram` pair, register/frequency conversions, and an
 # unfinished sideband chevron. No active caller.
 #
+# Like its sibling, this does not stand alone: it reads
+# `sideband_stark_error_amp_runner` and `phase_expts` from what is now
+# `floquet_calibration.py`, and `dm_sideband_scramble_defaults` /
+# `sideband_scramble_preproc` from the bare-readout section. The runner in
+# particular is a live object built against a connected station, so there is no
+# import that would make these cells runnable on their own.
+#
 # Relocation only, per the stage-2 instructions. Sibling: `dark_mode.py`.
 
 # %% [markdown]

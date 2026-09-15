@@ -479,6 +479,11 @@ def compare_wigner_correction_h5_files(
 
     return {'raw': raw, 'corrected': corrected}
 
+
+# The one module-level constant from the tail of cell 4 that the
+# Wigner helpers read.
+IDENTITY_PARITY_CONFUSION = [1.0, 0.0, 0.0, 1.0]
+
 # %% [markdown]
 # # Wigner Analysis
 

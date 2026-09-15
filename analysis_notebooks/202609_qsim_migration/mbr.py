@@ -310,6 +310,89 @@ encspec_trace_time_us, encspec_trace_energy_MHz, _fig = (
     )
 )
 
+# %%
+# Shapes, for orientation (source cells 177, 178, 183).
+print(np.shape(spectroscopy_expt.data.reconstruction.A))
+print(np.shape(encspec_trace_time_us))
+spectroscopy_expt.data.spectrum.keys()
+
+# %% [markdown]
+# ### Small per-occupation inspections
+#
+# Source cells 176, 180, 181 and 185: short interactive pokes at one
+# occupation at a time. Left as plain cells rather than wrapped -- they are
+# each a handful of lines, and wrapping a one-off plot in a function makes it
+# harder to edit, not easier.
+
+# %%
+# Cell 176: how bad it looks when every occupation is summed incoherently.
+fig, ax = plt.subplots()
+
+x_data = spectroscopy_expt.data.spectrum.energy_MHz
+y_data = spectroscopy_expt.data.spectrum.measured_local[0, :].copy()
+for idx in range(len(spectroscopy_expt.data.reconstruction.occupations) - 1):
+    y_data += spectroscopy_expt.data.spectrum.measured_local[idx + 1, :]
+ax.plot(x_data, y_data, label='summed over occupations')
+ax.legend()
+
+# %%
+# Cell 180: two peak-finding methods on a single occupation. The three-panel
+# version below (cell 184) generalizes this over every occupation, but this
+# single-row comparison is where the thresholds get chosen.
+from scipy.signal import find_peaks, savgol_filter
+
+idx = spectroscopy_expt.data.reconstruction.occupations.index((2, 0, 1, 0, 0))
+state_label = spectroscopy_expt.data.reconstruction.occupations[idx]
+
+x_data = np.array(spectroscopy_expt.data.spectrum.energy_MHz)
+y_data = np.array(spectroscopy_expt.data.spectrum.measured_local[idx, :])
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+
+peaks, properties = find_peaks(y_data, height=0.04, prominence=0.006)
+
+ax1.plot(x_data, y_data, label=f"{state_label} (Original)")
+ax1.plot(x_data[peaks], y_data[peaks], "x", color='red', markersize=10, label="Detected Peaks")
+ax1.set_title("Method 1: Direct find_peaks with Thresholds")
+ax1.legend()
+
+
+y_smoothed = savgol_filter(y_data, window_length=5, polyorder=2)
+
+peaks_smooth, _ = find_peaks(y_smoothed, height=0.03, prominence=0.005)
+
+ax2.plot(x_data, y_data, alpha=0.3, label="Original Data")
+ax2.plot(x_data, y_smoothed, color='orange', label="Smoothed Signal")
+ax2.plot(x_data[peaks_smooth], y_smoothed[peaks_smooth], "x", color='red', markersize=10, label="Detected Peaks")
+ax2.set_title("Method 2: Savitzky-Golay Smoothing + find_peaks")
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
+
+# %%
+# Cell 181: exact level multiplicities against the theory curve.
+energies = np.sort(np.asarray(spectroscopy_expt.data.spectrum.energies_MHz))
+unique_energies, multiplicities = np.unique(np.round(energies, 10), return_counts=True)
+
+plt.vlines(unique_energies, 0., multiplicities, color='tab:orange')
+plt.plot(unique_energies, multiplicities, 'o', color='tab:orange')
+plt.plot(spectroscopy_expt.data.spectrum.energy_MHz,
+         spectroscopy_expt.data.spectrum.theory)
+
+# %%
+# Cell 185: one occupation's spectrum on its own.
+idx = spectroscopy_expt.data.reconstruction.occupations.index((2, 1, 0, 0, 0))
+
+fig, ax = plt.subplots()
+
+state_label = spectroscopy_expt.data.reconstruction.occupations[idx]
+x_data = spectroscopy_expt.data.spectrum.energy_MHz
+y_data = spectroscopy_expt.data.spectrum.measured_local[idx, :]
+ax.plot(x_data, y_data,
+        label = f"{state_label}")
+ax.legend()
+
 # %% [markdown]
 # ### Peak finding, three ways
 #
@@ -638,17 +721,53 @@ saved_n3_spectroscopy_job_ids = (
     + saved.saved_job_range(20260816, 1, 10)
 )
 
+# Ten theory-selected occupations x analyzer phases 0/90 per realization.
 saved_disorder_job_ids = {
-    0: saved.saved_job_range(20260816, 11, 80),
+    0: saved.saved_job_range(20260816, 13, 32),
+    1: saved.saved_job_range(20260816, 33, 52),
+    2: saved.saved_job_range(20260816, 53, 72),
+    3: saved.saved_job_range(20260817, 1, 20),
 }
 
+# Add later completed realizations here, for example:
+# saved_disorder_job_ids[4] = saved.saved_job_range(20260818, FIRST, LAST)
+
+# This reproduces the later plotted/rephased Hamiltonian. Set to None to keep
+# only the exact as-acquired frame (saved device Kerr and analyzer correction).
+saved_n3_manual_kerr_MHz = -10.5e-3
 saved_n3_cycle_branches = {
+    (2, 1, 0, 0, 0): 1,
+    (2, 0, 1, 0, 0): 1,
+    (1, 1, 0, 1, 0): 1,
+    (1, 1, 0, 0, 1): 1,
+    (1, 0, 1, 1, 0): 1,
+    (1, 0, 1, 0, 1): 1,
+}
+
+saved_fft_window = "raw"
+saved_zero_padding = 1
+
+# %%
+# Source cell 219: the four-realization dataset, loaded and analyzed on its
+# own. It uses its own two-entry branch table and a plain FFT spectrum, not
+# the manual-Kerr frame used for the N=3 set below.
+data_four_realization = MBRSpectrumExperiment.from_job_ids(
+    saved.saved_job_range(20260815, 9, 16),
+    client=saved_job_client,
+)
+
+branches = {
     (3, 0, 0, 0, 0): 1,
     (2, 0, 0, 1, 0): 1,
 }
-saved_n3_manual_kerr_MHz = -19.756e-3  # None derives it from the data instead
-saved_fft_window = "raw"
-saved_zero_padding = 1
+
+_ = data_four_realization.analyze(
+        cycle_branches=branches,
+        fft_window=saved_fft_window,
+        zero_padding=saved_zero_padding,
+        spectrum_method="fft",
+    )
+data_four_realization.display()
 
 # %%
 saved_remote = saved.load_saved_remote(
@@ -782,12 +901,7 @@ plt.show()
 # raises rather than silently producing something else.
 
 # %%
-coherent_trace_results = {}
-coherent_trace_figures = {}
-
-for coherent_data_set_index, coherent_expt in data_sets.items():
-    coherent_data = coherent_expt.data
-    coherent_result = saved.coherent_normalized_trace_spectrum(coherent_data)
-    coherent_trace_results[coherent_data_set_index] = coherent_result
-    print(coherent_data_set_index, 'done')
-plt.show()
+coherent_trace_results, coherent_trace_figures = saved.coherent_trace_report(
+    data_sets,
+    SavedEncSpec=MBRSpectrumExperiment,
+)

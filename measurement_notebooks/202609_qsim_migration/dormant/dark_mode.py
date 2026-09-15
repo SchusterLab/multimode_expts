@@ -31,7 +31,23 @@
 # definition it saw in the original notebook. Do not deduplicate these names
 # without first deciding, per section, which version that section needs.
 #
-# Its stored outputs stay in the original notebook until the collective deletion.
+# **This notebook does not stand alone.** It read these names from the live
+# kernel, having had the calibration sections run first in the same notebook;
+# relocation does not fix that, and the stage-2 instructions do not ask it to:
+#
+#   from what is now floquet_calibration.py
+#     `dm_sideband_scramble_defaults`, `sideband_scramble_preproc`,
+#     `floquet_cycle_list_gen`, `_flat_unique_expts`
+#   from what is now multiphoton_calibration.py
+#     `singleshot_defaults`, `singleshot_postproc`
+#
+# The first three are importable from
+# `experiments/qsim/notebook_helpers/floquet_bare_readout.py` and
+# `floquet_calibration.py` if this section is ever revived; the two single-shot
+# names are in `notebook_helpers/multiphoton_calibration.py`. They are
+# deliberately not imported here, so that reviving this notebook is a decision
+# someone makes rather than something that silently half-works.
+#
 # Sibling dormant notebooks: `debug.py`; on the analysis side,
 # `analysis_notebooks/202609_qsim_migration/dormant/`.
 

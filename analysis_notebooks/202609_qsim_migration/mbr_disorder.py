@@ -163,13 +163,15 @@ preview.plot_levels_per_realization(
 # Nothing below reads the job queue.
 
 # %%
-# Dataset choice: which dump to post-process, and where the files live.
-dataset_to_postproc = 0
-data_base_directory = Path(r"C:\experiments")
-manifest_directory = None
-load_shots = False
-reload_data = True
-hardware_override = None
+# 1. Choose a dataset; its explicit job lists are in the manifest below.
+dataset_to_postproc =  'Sep10 K3.6 g29.2'           # Sep05 K3.6 g30'
+data_base_directory = r'C:\experiments\260818_qsim_spectroscopy\data'
+
+load_shots = False  # FFT/MPM use means; shot checks read shots on demand.
+reload_data = False  # True rereads selected H5 arrays; no server requests.
+hardware_override = None  # Archived timing for a new dataset lacking an H5 snapshot.
+
+manifest_directory = 'postprocess_manifests'  # None disables the optional JSON report.
 
 dataset_dumps, hardware_by_job_id = h5only.build_dataset_manifest()
 print("datasets in the manifest:", sorted(dataset_dumps))
@@ -211,6 +213,17 @@ if preview_failures:
     print(f"{len(preview_failures)} previews failed:")
     for entry in preview_failures:
         print("  ", entry)
+
+# %%
+# Source cell 267: inspect one reconfigured experiment's occupation pair.
+idx2disp = 3
+occ_idx_2_disp = -1
+init_occ = reconfigured_expts[idx2disp].data.reconstruction.occupations
+fin_occ = reconfigured_expts[idx2disp].data.reconstruction.final_occupations
+
+print("initial_occupations \n" f"{init_occ} \n" "final_occupations \n" f"{fin_occ}")
+
+reconfigured_expts[idx2disp].display_occupations(occupations=init_occ[occ_idx_2_disp])
 
 # %% [markdown]
 # ## MPM settings

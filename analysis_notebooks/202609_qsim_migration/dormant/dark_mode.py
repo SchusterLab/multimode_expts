@@ -94,6 +94,15 @@ from pathlib import Path
 from collections import namedtuple, defaultdict
 
 
+def job_id_generator(job_date, job_start_num, job_finish_num, step=1):
+    starts = [job_start_num] if isinstance(job_start_num, (int, np.integer)) else list(job_start_num)
+    finishes = [job_finish_num] if isinstance(job_finish_num, (int, np.integer)) else list(job_finish_num)
+    dates = [job_date] * len(starts) if isinstance(job_date, (str, int, np.integer)) else list(job_date)
+    steps = [step] * len(starts) if isinstance(step, (int, np.integer)) else list(step)
+    if not (len(dates) == len(starts) == len(finishes) == len(steps)): raise ValueError('job range arguments must have matching lengths')
+    return [f'JOB-{date}-{job:05d}' for date, start, finish, stride in zip(dates, starts, finishes, steps) for job in range(int(start), int(finish) + 1, int(stride))]
+
+
 def hdf5_path_generator(project_name,
                         job_date,
                         job_start_num,
@@ -131,6 +140,18 @@ def path_to_experiment(hdf5_path, ExpClass):
         exp_list.append(obj)
 
     return exp_list
+
+
+def _cfg_get(cfg, path, default=None):
+    cur = cfg
+    for key in path.split("."):
+        if cur is None:
+            return default
+        if isinstance(cur, dict):
+            cur = cur.get(key, None)
+        else:
+            cur = getattr(cur, key, None)
+    return default if cur is None else cur
 
 
 def _ensure_multiparity_read_num(expt):
@@ -833,6 +854,25 @@ def state_label(state_idx):
 
 def unique_expts(nested_expts):
     return list(dict.fromkeys(expt for sub in nested_expts for expt in sub))
+
+
+# ---- module-level constants used by the helpers above ----
+IDENTITY_PARITY_CONFUSION = [1.0, 0.0, 0.0, 1.0]
+confusion_matrix_manual = np.array([
+    [0.854, 0.056, 0.042, 0.049],
+    [0.047, 0.800, 0.044, 0.110],
+    [0.072, 0.085, 0.759, 0.084],
+    [0.095, 0.104, 0.050, 0.750],
+])
+_mod_vals = np.array([0, 1, 2, 3])
+_parity_first_signs  = 1 - 2 * (_mod_vals % 2)    # [+1, -1, +1, -1]
+_parity_second_signs = 1 - 2 * (_mod_vals // 2)   # [+1, +1, -1, -1]
+DarkParams = namedtuple("DarkParams", ["swap_stors", "swap_man_dark", "dark_swap_order"])
+DARK_PARAMS = None
+
+
+# ---- one-time setup ----
+set_confusion_matrix(confusion_matrix_manual)
 
 # %% [markdown]
 # # Dark Mode Post Processing

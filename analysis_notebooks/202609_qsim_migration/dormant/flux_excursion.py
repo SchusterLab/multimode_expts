@@ -144,6 +144,15 @@ def check_program_class(obj,
     return False
 
 
+def job_id_generator(job_date, job_start_num, job_finish_num, step=1):
+    starts = [job_start_num] if isinstance(job_start_num, (int, np.integer)) else list(job_start_num)
+    finishes = [job_finish_num] if isinstance(job_finish_num, (int, np.integer)) else list(job_finish_num)
+    dates = [job_date] * len(starts) if isinstance(job_date, (str, int, np.integer)) else list(job_date)
+    steps = [step] * len(starts) if isinstance(step, (int, np.integer)) else list(step)
+    if not (len(dates) == len(starts) == len(finishes) == len(steps)): raise ValueError('job range arguments must have matching lengths')
+    return [f'JOB-{date}-{job:05d}' for date, start, finish, stride in zip(dates, starts, finishes, steps) for job in range(int(start), int(finish) + 1, int(stride))]
+
+
 def hdf5_path_generator(project_name,
                         job_date,
                         job_start_num,

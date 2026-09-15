@@ -224,6 +224,19 @@ diag_disorder_records = analyze_diag_disorder(
     diag_analysis_error="raise",
 )
 
+# %%
+# Source cells 328 and 329: look at one realization, then list every
+# realization's job IDs. Short interactive pokes, left as plain cells.
+idx_to_plot = 0
+diag_disorder_records[idx_to_plot]['expt'].display()
+diag_disorder_records[idx_to_plot]['expt'].display_occupations(occupations = [[0, 1, 0, 0, 2],
+                                                                              [1, 2, 0, 0, 0],
+                                                                              [1, 0, 1, 0, 1]])
+
+# %%
+for each in diag_disorder_records.keys():
+    print(diag_disorder_records[each]["job_ids"])
+
 # %% [markdown]
 # #### 7-1e. Plot pooled level statistics — no jobs
 

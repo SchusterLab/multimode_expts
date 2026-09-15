@@ -21,9 +21,18 @@
 # 154-166 ("Pulse Visualization Test") by the stage-2 notebook decomposition.
 # **Dormant**: scratch pulse-shape plotting with no active caller.
 #
-# Its one helper, `floquet_cycle_list_gen`, is byte-identical to the copies in
-# `qsim_experiments.ipynb` cells 151/152/287; it is copied here rather than
-# imported so this notebook does not depend on an active theme's module.
+# It carries six of cell 4's helpers, including three that a first pass at this
+# split wrongly deleted as duplicates with no caller. This section references
+# two of them by bare name -- `preprocessor=error_amp_floquet_preproc`,
+# `postprocessor=error_amp_floquet_postproc` -- which a search for call syntax
+# `name(` could not see, and `get_floquet_parameters` is an internal dependency
+# of the first. They are copied here rather than imported, so this notebook does
+# not depend on an active theme's module.
+#
+# `floquet_cycle_list_gen` is byte-identical to the copies in
+# `qsim_experiments.ipynb` cells 151/152/287. `error_amp_floquet_postproc` is
+# *not* identical to the Q copies: 11 code lines here against 19 there. This one
+# is what the section actually ran.
 #
 # Relocation only, per the stage-2 instructions. Sibling dormant notebooks:
 # `flux_excursion.py`, `wigner.py`, `dark_mode.py`.
@@ -88,6 +97,99 @@ import matplotlib.gridspec as gridspec
 import os, textwrap
 from pathlib import Path
 from collections import namedtuple, defaultdict
+
+
+def normalize(z, exp_obj):
+    Ig = exp_obj.cfg.device.readout.Ig[0]
+    Ie = exp_obj.cfg.device.readout.Ie[0]
+    return (z - Ig) / (Ie - Ig)
+
+
+def error_amp_floquet_preproc(station, default_expt_cfg, **kwargs):
+    assert 'stor_mode_no' in kwargs
+    assert 'parameter_to_test' in kwargs 
+
+    # construct the defaults
+    expt_cfg = deepcopy(default_expt_cfg)
+    if kwargs['parameter_to_test'] == 'gain':
+        expt_cfg.update(error_amp_gain_floquet_coarse_defaults)
+    elif kwargs['parameter_to_test'] == 'frequency':
+        expt_cfg.update(error_amp_freq_floquet_coarse_defaults)
+    # override with the passed kwargs
+    expt_cfg.update(kwargs)
+
+    freq, gain, length, pi_frac, ch, prepulse, postpulse = get_floquet_parameters(station, expt_cfg.man_mode_no, expt_cfg.stor_mode_no)
+    pulse_type = ['floquet', f'M{expt_cfg.man_mode_no}-{"D" if expt_cfg.stor_is_dump else "S"}{expt_cfg.stor_mode_no}', f'pi/{pi_frac}', 0]
+    # freq = 695.7
+    # gain = 10000
+    if expt_cfg.parameter_to_test == 'frequency':
+        start = freq - expt_cfg.span / 2
+        step = expt_cfg.span / (expt_cfg.expts - 1)
+    elif expt_cfg.parameter_to_test == 'gain':
+        start = int(gain - expt_cfg.span / 2)
+        step = int(expt_cfg.span / (expt_cfg.expts - 1))
+    else:
+        raise ValueError("parameter_to_test must be either 'frequency' or 'gain'.")
+    expt_cfg.start = start
+    expt_cfg.step = step
+    expt_cfg.pulse_type = pulse_type 
+    return expt_cfg
+
+
+def error_amp_floquet_postproc(station, expt):
+    expt.analyze(data=expt.data, state_fin='e')
+
+    opt_val = expt.data['fit_avgi'][2]
+    stor_name = 'M1-S' + str(expt.cfg.expt.stor_mode_no)
+    if expt.cfg.expt.parameter_to_test == 'gain':
+        station.ds_floquet.update_gain(stor_name, opt_val)
+        print(f'Updated gain for {stor_name} to {opt_val}')
+    elif expt.cfg.expt.parameter_to_test == 'frequency':
+        station.ds_floquet.update_freq(stor_name, opt_val)
+        print(f'Updated frequency for {stor_name} to {opt_val}')
+    station.snapshot_floquet_storage_swap(update_main=False)
+
+
+def get_floquet_parameters(station, man_mode_no, stor_mode_no):
+    """
+    Get pulse parameters for a given storage mode. 
+    Also returns prepulse and postpulse (single photon prep and meas for ge meas)
+
+    Args:
+        station: MultimodeStation object for managing frequency data.
+        man_mode_no: Manipulation mode number.
+        stor_mode_no: Storage mode number.
+
+    Returns:
+        A tuple containing freq, gain, ch, prepulse, and postpulse.
+    """
+    stor_name = 'M' + str(man_mode_no) + '-S' + str(stor_mode_no)
+    freq = station.ds_floquet.get_freq(stor_name)
+    gain = station.ds_floquet.get_gain(stor_name)
+    length = station.ds_floquet.get_len(stor_name)
+    pi_frac = station.ds_floquet.get_pi_frac(stor_name)
+    ch = 'low' if freq < 1000 else 'high'
+
+    mm_base_dummy = MM_dual_rail_base(station.hardware_cfg, station.soccfg)
+    prep_man_pi = mm_base_dummy.prep_man_photon(man_mode_no)
+    prepulse = mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse.tolist()
+    postpulse = mm_base_dummy.get_prepulse_creator(prep_man_pi[-1:-3:-1]).pulse.tolist() # for ge meas, only do f0g1 and ef pi
+
+    return freq, gain, length, pi_frac, ch, prepulse, postpulse
+
+
+def sideband_scramble_preproc(station, default_expt_cfg, **kwargs):
+    assert 'swept_params' in kwargs
+    assert len(kwargs['swept_params']) > 0
+
+    expt_cfg = deepcopy(default_expt_cfg)
+    expt_cfg.update(kwargs)
+    assert 'init_stor' in kwargs
+    if not expt_cfg.init_fock:
+        assert 'init_alpha' or 'init_man_fock_state' in kwargs
+        
+    # print(expt_cfg)
+    return expt_cfg
 
 
 def floquet_cycle_list_gen(start, 
