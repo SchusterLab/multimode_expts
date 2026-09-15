@@ -218,3 +218,5 @@ measurement_notebooks/jonginn/data_postprocess.ipynb.bak
 output/
 tmp/
 tests/
+server_err.txt
+server_log.txt
