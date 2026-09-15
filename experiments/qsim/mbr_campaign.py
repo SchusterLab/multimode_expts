@@ -282,8 +282,11 @@ def _calibration_batch(defaults, swap_stors, occupations, cycle_pairs=(0, 1, 2),
 def _spectrum_batch(defaults, swap_stors, occupations, cycles=(0, 4),
                     phase_by_occupation=None, sync_cycles=1, reps=1000,
                     **kwargs):
+    final_occupations = kwargs.get("final_occupations")
+    if final_occupations is None:
+        final_occupations = occupations
     phase_by_occupation = phase_by_occupation or {
-        tuple(o): 0.0 for o in occupations}
+        tuple(o): 0.0 for o in final_occupations}
     return MBRSpectrumExperiment.spectroscopy_batch(
         defaults, swap_stors, occupations, [np.asarray(cycles)],
         phase_by_occupation=phase_by_occupation,
