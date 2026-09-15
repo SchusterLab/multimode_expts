@@ -19,9 +19,12 @@ neither is covered by the ASM golden. They are kept because the calibrations
 they produce are inputs to the live MBR stages, so the way those numbers were
 measured has to stay readable.
 """
+from copy import deepcopy
+
 import numpy as np
 from slab import AttrDict
 
+from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.mbr_spectroscopy_program import (
     NPhotonHamiltonianSpectroscopyProgram,
 )

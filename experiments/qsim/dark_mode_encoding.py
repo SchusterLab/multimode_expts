@@ -38,6 +38,7 @@ Requirements on the host program: the Floquet train mixin (this module plays
 everything through ``_play_m1s_frac_train``), ``m1s_pi_fracs``, and
 ``cfg.expt`` with ``swap_stors`` and ``dark_swap_order``.
 """
+from experiments.qsim.floquet_phase_frame import detuning_phase_deg
 
 
 class DarkModeEncoding:
