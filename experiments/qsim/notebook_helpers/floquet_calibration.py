@@ -1,36 +1,38 @@
-"""Hooks and sweep loops for the Floquet pulse calibration notebook.
+"""Hooks for the Floquet pulse calibration notebook.
 
 Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 58-60 and 69-122 by the stage-2 notebook decomposition. Primary caller:
 `measurement_notebooks/202609_qsim_migration/floquet_calibration.py`.
 
 The source ran the whole calibration twice: once for the legacy flat-top pulse
-(cells 71-96) and once for the Gaussian/preloaded envelope (cells 100-122).
-That is why so much here is one function where the notebook had several cells.
-Each collapse below was checked against the source rather than assumed, and the
-differences that were real became arguments:
+(cells 71-96) and once for the Gaussian/preloaded envelope (cells 100-122), and
+it redefined the hooks identically in both halves. Only that duplication is
+collapsed here:
 
 - `error_amp_floquet_preproc` / `error_amp_floquet_postproc` -- cells 78 and
   107 defined these twice with byte-identical bodies, so there is one copy.
   Same for `sideband_stark_error_amp_preproc` / `..._postproc` (cells 88 and
   115) and for `floquet_cycle_list_gen` (cells 151, 152 and 287, plus a fourth
   copy in data_postprocess cell 4 -- all four identical).
-- `run_floquet_error_amp_sweep` is cells 81, 83, 109 and 113. Four copies of
-  one loop. What actually differed: the fine passes halve both spans
-  (`span_divisor`), and the two halves disagreed on `reset_dump_mode` and on
-  whether `relax_delay` was derived from `active_reset`.
-- `run_phase_accumulation_pairs` is cells 89, 91, 116, 119 and 121. Five
-  copies. What differed: the mode lists, the `advance_phases` grid, which
-  Floquet buffer flags were forwarded, and -- only in cell 121 -- skipping
-  pairs where both modes were already calibrated (`pre_existing_modes`).
-- `run_freq_chevron_sweep` is cells 72 and 76; cell 76 added a per-mode span
-  table, which is now the optional `freq_spans` argument.
+- The Chevron hooks stay as two pairs. `floquet_freq_chev_postproc` accepts a
+  pi/N *length* from the period fit and `floquet_gain_chev_postproc` a pi/N
+  *gain* from the contrast fit, so they are not duplicates.
 
-The defaults dicts stayed in the notebook. They are the settings a calibration
-session edits, and the two halves genuinely differ in them -- cell 107 applies
-`floquet_default_dict` to the error-amplification defaults where cell 78 set
-`floquet_waveform` alone -- so folding them together here would have merged a
-real difference.
+**The sweep loops belong in the notebook, not here.** An earlier pass pulled
+them into `run_freq_chevron_sweep`, `run_gain_chevron_sweep`,
+`run_floquet_error_amp_sweep` and `run_phase_accumulation_pairs`. Each took a
+closed list of keyword arguments and forwarded a hand-picked subset to
+`runner.execute`, so a notebook cell could no longer pass `use_queue`,
+`priority`, `go_kwargs` or any other expt_cfg override -- it got a TypeError
+instead. They also restated defaults that the defaults dicts already held.
+The loops are back inline in the notebook, where defaults -> runner -> execute
+reads end to end. Do not hoist them again: a `for` loop around
+`runner.execute(...)` is the canonical notebook cell, not duplication.
+
+The defaults dicts stay in the notebook too. They are the settings a
+calibration session edits, and the two halves genuinely differ in them -- cell
+107 applies `floquet_default_dict` to the error-amplification defaults where
+cell 78 set `floquet_waveform` alone.
 
 `error_amp_floquet_preproc` needs the two coarse-span dicts that cell 78 had
 at notebook scope. They are arguments rather than module constants, so those
@@ -308,214 +310,3 @@ def floquet_cycle_list_gen(start,
                                     stop,
                                     step))
     return _to_return
-
-
-# --------------------------------------------------------------------------
-# The sweep loops.
-# --------------------------------------------------------------------------
-
-
-def run_freq_chevron_sweep(runner, station, stor_modes, freq_spans=None,
-                           default_span=1.0, reps=100, relax_delay=200,
-                           active_reset=True, reset_dump_mode=1,
-                           always_display=False):
-    """Frequency-length Chevron for each storage mode (cells 72 and 76).
-
-    Cell 72 swept a fixed +/-1 MHz for every mode; cell 76 added a per-mode
-    table, which is `freq_spans` here -- indexed by `stor - 1`, with None
-    meaning "use `default_span`". Cell 72 always called display(); cell 76
-    only did so when the station was not logging, which is the default here.
-
-    Returns the list of experiments, in `stor_modes` order.
-    """
-    expts = [None] * len(stor_modes)
-    for i, init_stor in enumerate(stor_modes):
-        span = default_span
-        if freq_spans is not None and freq_spans[init_stor - 1] is not None:
-            span = freq_spans[init_stor - 1]
-        print(f'Running Floquet Frequency vs Length Chevron for Storage Mode {init_stor}')
-        expts[i] = runner.execute(
-            init_stor=init_stor,
-            detunes=np.linspace(-span, span, 51).tolist(),
-            reps=reps,
-            relax_delay=relax_delay,
-            active_reset=active_reset,
-            man_reset=True,
-            storage_reset=[init_stor],
-            reset_dump_mode=reset_dump_mode,
-        )
-        if always_display or not station.log_measurements:
-            expts[i].display()
-    return expts
-
-
-def run_gain_chevron_sweep(runner, station, stor_modes, detune_span=0.5,
-                           reps=50, gain_expts=21, max_gain=14000,
-                           relax_delay=200, active_reset=True,
-                           reset_dump_mode=1, debug=False):
-    """Frequency-gain Chevron for each storage mode (cell 101).
-
-    Returns the list of experiments, in `stor_modes` order.
-    """
-    expts = [None] * len(stor_modes)
-    for i, init_stor in enumerate(stor_modes):
-        print(f'Running Floquet Frequency vs Gain Chevron for Storage Mode {init_stor}')
-        expts[i] = runner.execute(
-            init_stor=init_stor,
-            detunes=np.linspace(-detune_span, detune_span, 21).tolist(),
-            reps=reps,
-            gain_expts=gain_expts,
-            max_gain=max_gain,
-            relax_delay=relax_delay,
-            active_reset=active_reset,
-            man_reset=True,
-            storage_reset=[init_stor],
-            reset_dump_mode=reset_dump_mode,
-            debug=debug,
-        )
-        if not station.log_measurements:
-            expts[i].display()
-    return expts
-
-
-def run_floquet_error_amp_sweep(runner, station, stor_modes,
-                                freq_span_list, gain_span_list,
-                                reset_dump_mode,
-                                freq_span_default=0.1, gain_span_default=0.3,
-                                span_divisor=1,
-                                do_freq_erroramp=True, do_gain_erroramp=True,
-                                active_reset=True, relax_delay=200,
-                                gain_expts=60):
-    """Error-amplify frequency and gain for each storage mode.
-
-    Cells 81, 83, 109 and 113 -- the coarse and fine passes of both the
-    flat-top and the Gaussian halves -- were four copies of this loop. The
-    fine passes halve both spans, which is `span_divisor=2`. The two halves
-    disagreed about `reset_dump_mode` (a literal 1 in the flat-top half, the
-    shared default in the Gaussian half), so it is a required argument rather
-    than something guessed here.
-
-    `freq_span_list` and `gain_span_list` are indexed by `stor - 1`, with None
-    meaning "use the corresponding default".
-
-    Returns (freq_expts, gain_expts_out), each a list in `stor_modes` order
-    with None where that scan was skipped.
-    """
-    freq_expts = [None] * len(stor_modes)
-    gain_expts_out = [None] * len(stor_modes)
-
-    for i, stor_i in enumerate(stor_modes):
-        stor_idx = stor_i - 1
-        stor_name = 'M1-S' + str(stor_i)
-
-        freq_span = (freq_span_default if freq_span_list[stor_idx] is None
-                     else freq_span_list[stor_idx])
-        gain_span = (gain_span_default if gain_span_list[stor_idx] is None
-                     else gain_span_list[stor_idx])
-
-        if do_freq_erroramp:
-            freq_expts[i] = runner.execute(
-                stor_mode_no=stor_i,
-                parameter_to_test='frequency',
-                go_kwargs=dict(analyze=False, progress=True, display=False),
-                # 0.2 is the program default, but we are already close.
-                span=freq_span / span_divisor,
-                relax_delay=relax_delay,
-                active_reset=active_reset,
-                man_reset=True,
-                storage_reset=[stor_i],
-                reset_dump_mode=reset_dump_mode,
-            )
-            if not station.log_measurements:
-                freq_expts[i].display()
-
-        if do_gain_erroramp:
-            gain_expts_out[i] = runner.execute(
-                stor_mode_no=stor_i,
-                parameter_to_test='gain',
-                go_kwargs=dict(analyze=False, progress=True, display=False),
-                # 0.7 is the program default.
-                span=int(station.ds_floquet.get_gain(stor_name)
-                         * gain_span / span_divisor),
-                expts=gain_expts,
-                relax_delay=relax_delay,
-                active_reset=active_reset,
-                man_reset=True,
-                storage_reset=[stor_i],
-                reset_dump_mode=reset_dump_mode,
-            )
-            if not station.log_measurements:
-                gain_expts_out[i].display()
-
-    return freq_expts, gain_expts_out
-
-
-def run_phase_accumulation_pairs(runner, stor_modes_to, stor_modes_from,
-                                 advance_phases, reset_dump_mode,
-                                 floquet_settings,
-                                 phase_expts=None,
-                                 reps=100, relax_delay=100, active_reset=True,
-                                 pre_existing_modes=None,
-                                 forward_pi_half_buffer=True,
-                                 forward_sync_cycles=True):
-    """Measure the Stark-shift phase each mode accumulates from another.
-
-    Cells 89, 91, 116, 119 and 121 were five copies of this double loop. What
-    genuinely differed between them and is therefore an argument here: the two
-    mode lists, the `advance_phases` grid, `reset_dump_mode`, which Floquet
-    buffer flags were forwarded to the runner, and -- only in cell 121 --
-    skipping pairs where both modes were already calibrated.
-
-    `floquet_settings` is the notebook's `floquet_default_dict`. Only cells 116
-    onward forwarded `include_10cycles_buffer_in_pi_half` and
-    `scramble_sync_cycles`; cells 89 and 91 did not, so those two are behind
-    flags rather than always sent.
-
-    `pre_existing_modes` reproduces cell 121: a pair is skipped when both of
-    its modes are in that list, so only the newly added modes are measured.
-
-    `phase_expts` is the 7x7 result grid; a fresh one is made if not given.
-    Returns it, indexed [stor_A - 1][stor_B - 1].
-    """
-    if phase_expts is None:
-        phase_expts = [[None for _ in range(7)] for _ in range(7)]
-    pre_existing = set(pre_existing_modes or ())
-
-    for init_storA in stor_modes_to:
-        for init_storB in stor_modes_from:
-            if init_storA == init_storB:
-                continue
-            if init_storA in pre_existing and init_storB in pre_existing:
-                continue
-
-            print("Starting experiment for storage modes:", init_storA,
-                  "from", init_storB)
-
-            extra = {}
-            if forward_pi_half_buffer:
-                extra['include_10cycles_buffer_in_pi_half'] = floquet_settings[
-                    "include_10cycles_buffer_in_pi_half"
-                ]
-            if forward_sync_cycles:
-                extra['scramble_sync_cycles'] = floquet_settings[
-                    "scramble_sync_cycles"
-                ]
-
-            qbe = runner.execute(
-                stor_A=init_storA,
-                stor_B=init_storB,
-                relax_delay=relax_delay,
-                active_reset=active_reset,
-                man_reset=True,
-                storage_reset=[init_storA, init_storB],
-                reset_dump_mode=reset_dump_mode,
-                reps=reps,
-                include_10cycles_buffer=floquet_settings[
-                    "include_10cycles_buffer"
-                ],
-                advance_phases=advance_phases,
-                **extra,
-            )
-            phase_expts[init_storA - 1][init_storB - 1] = qbe
-
-    return phase_expts

@@ -41,6 +41,24 @@ notebook produced and which now lives in
 here. Passing None falls back the way the source did: to the signed Kerr saved
 with the phase-calibration jobs.
 
+## Submission stays in the notebook
+
+An earlier pass wrapped the three submission cells whole, as
+`submit_pairwise`, `submit_diag_disorder` and `submit_d72`. Each one built the
+`BatchRunner` *and* called `runner.execute` behind a closed keyword list, so
+the notebook could not reach `batch_size`, `log` or any other per-run
+argument, and the runner it was submitting through was invisible. Worse, each
+opened by unpacking its whole config object into local names, most of which it
+never used.
+
+What is here now is the build halves -- `build_pairwise_batch`,
+`build_diag_realization_batch` -- which return `(batch, runner, ...)` and
+submit nothing, plus `check_d72_visibility`, the guard cell 344 ran before
+submitting. The `execute` calls and the two per-realization acquisition loops
+are inline in the notebook. This is the contract
+`mbr_campaign.build_spectroscopy_batch` already had; do not hoist submission
+again.
+
 Temporary home, per the stage-2 instructions. The three campaigns are kept as
 three code paths rather than unified -- they select channels and match theory
 differently, and deciding which approach wins is not this pass's job.
@@ -338,71 +356,45 @@ def build_pairwise_plan(campaign, station, N=3, strength_kHz=50.0, seed=20260815
     }
 
 
-def submit_pairwise(campaign, station, client, plan):
-    """Submit the pairwise disorder batch (cell 320)."""
-    disorder_calibration = plan["disorder_calibration"]
-    disorder_cycle_chunks = plan["disorder_cycle_chunks"]
-    disorder_detunings_MHz = plan["disorder_detunings_MHz"]
-    disorder_pairs = plan["disorder_pairs"]
-    disorder_reps = plan["disorder_reps"]
-    disorder_batch_size = plan["disorder_batch_size"]
-    disorder_theory = plan["disorder_theory"]
+def build_pairwise_batch(campaign, station, client, plan):
+    """Phase-correct the pairwise plan and build its batch and runner.
 
-    EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
-    encspec_modes = campaign.modes
-    encspec_mode_labels = campaign.mode_labels
-    encspec_sync_cycles = campaign.sync_cycles
-    encspec_defaults = campaign.defaults
-    encspec_calibrations = campaign.calibrations
-    encspec_calibration_files = campaign.calibration_files
-    encspec_calibration_job_ids = campaign.calibration_job_ids
+    Cell 320's build half. Submits nothing: the notebook calls
+    `runner.execute`, so job submission stays a visible, separate step -- the
+    same contract as `mbr_campaign.build_spectroscopy_batch`.
+
+    Returns (batch, runner, cycle_branches).
+    """
+    disorder_pairs = plan["disorder_pairs"]
 
     disorder_decoders = [list(decoder) for decoder, encoder in disorder_pairs]
     disorder_encoders = [list(encoder) for decoder, encoder in disorder_pairs]
-    disorder_cycle_branches = {
-        tuple(decoder): 0 for decoder in disorder_decoders
-    }
-    disorder_correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
-        disorder_calibration,
-        cycle_branches=disorder_cycle_branches,
+    cycle_branches = {tuple(decoder): 0 for decoder in disorder_decoders}
+    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
+        plan["disorder_calibration"],
+        cycle_branches=cycle_branches,
     )
-    disorder_batch = MBRSpectrumExperiment.spectroscopy_batch(
-        encspec_defaults,
-        encspec_modes,
+    batch = MBRSpectrumExperiment.spectroscopy_batch(
+        campaign.defaults,
+        campaign.modes,
         disorder_encoders,
-        disorder_cycle_chunks,
-        disorder_correction.phase_by_occupation,
-        detunings=disorder_detunings_MHz,
-        sync_cycles=encspec_sync_cycles,
-        reps=disorder_reps,
+        plan["disorder_cycle_chunks"],
+        correction.phase_by_occupation,
+        detunings=plan["disorder_detunings_MHz"],
+        sync_cycles=campaign.sync_cycles,
+        reps=plan["disorder_reps"],
         final_occupations=disorder_decoders,
     )
-    print(f"{len(disorder_batch.configs)} jobs")
-    disorder_runner = BatchRunner(
+    print(f"{len(batch.configs)} jobs")
+    runner = campaign.BatchRunner(
         station=station,
-        ExptClass=EncSpec,
-        ExptProgram=disorder_batch.program,
-        default_expt_cfg=disorder_batch.default_expt_cfg,
+        ExptClass=campaign.EncSpec,
+        ExptProgram=batch.program,
+        default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
         show=False,
     )
-
-    disorder_expt = MBRSpectrumExperiment.from_batch(disorder_runner.execute(
-        disorder_batch.configs,
-        batch_size=disorder_batch_size,
-        log=True,
-        show=False,
-    ))
-    disorder_expt.analyze(
-        cycle_branches=disorder_cycle_branches,
-        spectrum_method="mpm",
-        mpm_requested_max_modes=len(disorder_theory.energies_MHz),
-        mpm_match_decay=False,
-    )
-    disorder_expt.display(spectrum_method="fft")
-    disorder_expt.display(spectrum_method="mpm")
-    plt.show()
+    return batch, runner, cycle_branches
 
 
 # --------------------------------------------------------------------------
@@ -739,112 +731,55 @@ def build_diag_disorder_plans(campaign, station, config=None,
     }
 
 
-def submit_diag_disorder(campaign, station, client, plan, config=None):
-    """Submit the diagonal-disorder batches (cell 327)."""
-    config = config or DiagDisorderConfig()
-    # Cell knobs, from the config object.
-    diag_disorder_N = config.N
-    diag_disorder_realization_count = config.realization_count
-    diag_disorder_strength_kHz = config.strength_kHz
-    diag_disorder_master_seed = config.master_seed
-    diag_disorder_selected_states = config.selected_states
-    diag_disorder_max_cycle = config.max_cycle
-    diag_disorder_min_time_points = config.min_time_points
-    diag_disorder_nyquist_margin = config.nyquist_margin
-    diag_disorder_reps = config.reps
-    diag_disorder_batch_size = config.batch_size
-    diag_disorder_edge_fraction = config.edge_fraction
-    diag_disorder_gap_ratio_bins = config.gap_ratio_bins
-    diag_disorder_match_tolerance_bins = config.match_tolerance_bins
-    diag_disorder_require_complete_match = config.require_complete_match
-    diag_disorder_self_kerr_kHz = config.self_kerr_kHz
-    diag_disorder_branch_overrides = config.branch_overrides
-    diag_disorder_correction = plan["diag_disorder_correction"]
-    diag_disorder_cycle_chunks = plan["diag_disorder_cycle_chunks"]
-    diag_disorder_plans = plan["diag_disorder_plans"]
-    diag_disorder_records = plan["diag_disorder_records"]
+def build_diag_realization_batch(campaign, station, client, plan, config,
+                                 realization_plan):
+    """Build one diagonal-disorder realization's batch and runner.
 
-    EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
-    encspec_modes = campaign.modes
-    encspec_mode_labels = campaign.mode_labels
-    encspec_sync_cycles = campaign.sync_cycles
-    encspec_defaults = campaign.defaults
-    encspec_calibrations = campaign.calibrations
-    encspec_calibration_files = campaign.calibration_files
-    encspec_calibration_job_ids = campaign.calibration_job_ids
+    Cell 327's build half, for a single realization. Submits nothing: the
+    notebook loops over `plan["diag_disorder_plans"]` and calls
+    `runner.execute` itself, so the acquisition loop and its batch size stay
+    visible.
 
-    # Acquire every realization first. Each aggregate contains only one disorder H.
-    for plan in diag_disorder_plans:
-        diag_realization = plan["realization"]
-        if diag_realization in diag_disorder_records:
-            print(f"skip r={diag_realization}: already completed in this kernel")
-            continue
-
-        diag_defaults = deepcopy(encspec_defaults)
-        diag_defaults.update(dict(
-            diagonal_disorder_realization=diag_realization,
-            diagonal_disorder_seed=plan["seed"],
-            diagonal_disorder_strength_kHz=diag_disorder_strength_kHz,
-            diagonal_disorder_direction=plan["direction"].tolist(),
-            diagonal_disorder_target_onsite_MHz=(
-                plan["target_onsite_MHz"].tolist()
-            ),
-            diagonal_disorder_selected_occupations=plan["occupations"],
-            diagonal_disorder_self_kerr_kHz=diag_disorder_self_kerr_kHz,
-        ))
-        diag_branches = {
-            tuple(occupation): int(
-                diag_disorder_branch_overrides.get(tuple(occupation), 0)
-            )
-            for occupation in plan["occupations"]
-        }
-        diag_batch = MBRSpectrumExperiment.spectroscopy_batch(
-            diag_defaults,
-            encspec_modes,
-            plan["occupations"],
-            diag_disorder_cycle_chunks,
-            diag_disorder_correction.phase_by_occupation,
-            detunings=plan["pulse_detunings_MHz"].tolist(),
-            sync_cycles=encspec_sync_cycles,
-            reps=diag_disorder_reps,
-            final_occupations=plan["occupations"],
+    Returns (batch, runner, cycle_branches).
+    """
+    diag_defaults = deepcopy(campaign.defaults)
+    diag_defaults.update(dict(
+        diagonal_disorder_realization=realization_plan["realization"],
+        diagonal_disorder_seed=realization_plan["seed"],
+        diagonal_disorder_strength_kHz=config.strength_kHz,
+        diagonal_disorder_direction=realization_plan["direction"].tolist(),
+        diagonal_disorder_target_onsite_MHz=(
+            realization_plan["target_onsite_MHz"].tolist()
+        ),
+        diagonal_disorder_selected_occupations=realization_plan["occupations"],
+        diagonal_disorder_self_kerr_kHz=config.self_kerr_kHz,
+    ))
+    cycle_branches = {
+        tuple(occupation): int(
+            config.branch_overrides.get(tuple(occupation), 0)
         )
-        diag_runner = BatchRunner(
-            station=station,
-            ExptClass=EncSpec,
-            ExptProgram=diag_batch.program,
-            default_expt_cfg=diag_batch.default_expt_cfg,
-            job_client=client,
-            show=False,
-        )
-        try:
-            diag_expt = MBRSpectrumExperiment.from_batch(diag_runner.execute(
-                diag_batch.configs,
-                batch_size=diag_disorder_batch_size,
-                log=True,
-                show=False,
-            ))
-        except BaseException:
-            print(
-                f"r={diag_realization} submitted before interruption:",
-                list(map(str, getattr(diag_runner, "last_job_ids", []))),
-            )
-            raise
-
-        diag_disorder_records[diag_realization] = dict(
-            plan=plan,
-            expt=diag_expt,
-            job_ids=list(map(str, diag_expt.batch_job_ids)),
-            cycle_branches=diag_branches,
-            data=None,
-        )
-        print(
-            f"finished acquisition r={diag_realization}:",
-            diag_disorder_records[diag_realization]["job_ids"],
-        )
-
-    return diag_disorder_records
+        for occupation in realization_plan["occupations"]
+    }
+    batch = MBRSpectrumExperiment.spectroscopy_batch(
+        diag_defaults,
+        campaign.modes,
+        realization_plan["occupations"],
+        plan["diag_disorder_cycle_chunks"],
+        plan["diag_disorder_correction"].phase_by_occupation,
+        detunings=realization_plan["pulse_detunings_MHz"].tolist(),
+        sync_cycles=campaign.sync_cycles,
+        reps=config.reps,
+        final_occupations=realization_plan["occupations"],
+    )
+    runner = campaign.BatchRunner(
+        station=station,
+        ExptClass=campaign.EncSpec,
+        ExptProgram=batch.program,
+        default_expt_cfg=batch.default_expt_cfg,
+        job_client=client,
+        show=False,
+    )
+    return batch, runner, cycle_branches
 
 
 def analyze_diag_disorder(plan, config=None, diag_analysis_error="raise"):
@@ -2194,107 +2129,25 @@ def preview_d72_jobs(campaign, station, plan, config=None):
     return d72_records
 
 
-def submit_d72(campaign, station, client, plan, d72_records, config=None):
-    """Submit the constrained disorder batches (cell 344)."""
-    config = config or D72Config()
-    # Cell knobs, from the config object.
-    d72_N = config.N
-    d72_realization_count = config.realization_count
-    d72_disorder_strength_kHz = config.disorder_strength_kHz
-    d72_master_seed = config.master_seed
-    d72_max_occupation = config.max_occupation
-    d72_forbidden_states = config.forbidden_states
-    d72_channel_count = config.channel_count
-    d72_required_support = config.required_support
-    d72_allow_diagonal = config.allow_diagonal
-    d72_allow_offdiagonal = config.allow_offdiagonal
-    d72_min_acceptable_visibility = config.min_acceptable_visibility
-    d72_max_time_us = config.max_time_us
-    d72_min_time_points = config.min_time_points
-    d72_nyquist_margin = config.nyquist_margin
-    d72_step_autocalculate = config.step_autocalculate
-    d72_cycle_step = config.cycle_step
-    d72_cycle_chunk_points = config.cycle_chunk_points
-    d72_reps = config.reps
-    d72_batch_size = config.batch_size
-    d72_self_kerr_kHz = config.self_kerr_kHz
-    d72_branch_overrides = config.branch_overrides
-    d72_calibration_job_ids = config.calibration_job_ids
-    d72_theory_plot_realizations = config.theory_plot_realizations
-    d72_match_tolerance_bins = config.match_tolerance_bins
-    d72_mpm_minimum_consecutive_ranks = config.mpm_minimum_consecutive_ranks
-    d72_mpm_minimum_supporting_rows = config.mpm_minimum_supporting_rows
-    d72_mpm_merge_frequency_tolerance = config.mpm_merge_frequency_tolerance
-    d72_mpm_calibration_sigma_multiplier = config.mpm_calibration_sigma_multiplier
-    d72_mpm_frequency_tolerance_floor_kHz = config.mpm_frequency_tolerance_floor_kHz
-    d72_mpm_dedup_frequency_tolerance_kHz = config.mpm_dedup_frequency_tolerance_kHz
-    # Derived in the source, not a knob.
-    d72_mpm_rank_sweep_extra = config.mpm_rank_sweep_extra
-    D72EncSpec = campaign.EncSpec
-    D72BatchRunner = campaign.BatchRunner
-    d72_plans = plan["d72_plans"]
+def check_d72_visibility(plan, min_acceptable_visibility=None):
+    """Block 7-2 submission when a realization's theory coverage is too weak.
 
-    d72_low_visibility = [
-        (
-            plan.realization,
-            plan.selection.visibility_floor,
-        )
-        for plan in d72_plans
-        if not plan.visibility_ok
+    Cell 344's guard. The submission loop it guarded is in the notebook, so
+    this is a check the notebook calls before entering that loop. Raises
+    RuntimeError naming the offending realizations; returns None otherwise.
+    """
+    low_visibility = [
+        (realization_plan.realization,
+         realization_plan.selection.visibility_floor)
+        for realization_plan in plan["d72_plans"]
+        if not realization_plan.visibility_ok
     ]
-    if d72_low_visibility:
+    if low_visibility:
         raise RuntimeError(
             "7-2 submission blocked by weak theory coverage: "
-            f"{d72_low_visibility}; adjust the state constraints, "
+            f"{low_visibility}; adjust the state constraints, "
             "channel count, or d72_min_acceptable_visibility"
         )
-
-    for plan in d72_plans:
-        if plan.realization in d72_records:
-            print(
-                f"skip r={plan.realization}: already completed "
-                "in this 7-2 campaign"
-            )
-            continue
-
-        d72_runner = D72BatchRunner(
-            station=station,
-            ExptClass=D72EncSpec,
-            ExptProgram=plan.batch.program,
-            default_expt_cfg=plan.batch.default_expt_cfg,
-            job_client=client,
-            show=False,
-        )
-        try:
-            d72_expt = MBRSpectrumExperiment.from_batch(d72_runner.execute(
-                plan.batch.configs,
-                batch_size=d72_batch_size,
-                log=True,
-                show=False,
-            ))
-        except BaseException:
-            print(
-                f"r={plan.realization} submitted before interruption:",
-                list(map(
-                    str,
-                    getattr(d72_runner, "last_job_ids", []),
-                )),
-            )
-            raise
-
-        d72_records[plan.realization] = AttrDict(dict(
-            plan=plan,
-            expt=d72_expt,
-            job_ids=list(map(str, d72_expt.batch_job_ids)),
-            cycle_branches=plan.cycle_branches,
-            data=None,
-        ))
-        print(
-            f"finished 7-2 acquisition r={plan.realization}:",
-            d72_records[plan.realization].job_ids,
-        )
-
-    return d72_records
 
 
 def analyze_d72(plan, d72_records, config=None, d72_analysis_error="raise"):

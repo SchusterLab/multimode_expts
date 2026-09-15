@@ -75,12 +75,12 @@ from experiments.qsim.notebook_helpers.multiphoton_calibration import (
     build_swap_pulse_sequences,
     even_gain_grid,
     fit_broadband_frequency,
+    broadband_gain_grid,
     fit_broadband_gain,
     plot_broadband_rabi_transfer,
     plot_broadband_validation,
     plot_iq_endpoints,
-    run_broadband_rabi_scan,
-    scan_return_error,
+    score_return_error,
     singleshot_postproc,
 )
 
@@ -207,12 +207,41 @@ broadband_amprabi_runner = CharacterizationRunner(
 
 # %%
 # Execute amplitude Rabi from |g,n> and |e,n> (two jobs per photon number).
-broadband_rabi_from_g, broadband_rabi_from_e = run_broadband_rabi_scan(
-    runner=broadband_amprabi_runner,
-    photon_numbers=photon_numbers,
-    broadband_sigma=broadband_sigma,
-    broadband_frequency=broadband_frequency,
-)
+# These are pure-state preparations, so conditional shelving is not needed.
+broadband_rabi_from_g = [None] * len(photon_numbers)
+broadband_rabi_from_e = [None] * len(photon_numbers)
+
+for photon_number in photon_numbers:
+    prep_gN = []
+    for n in range(photon_number):
+        prep_gN += [
+            ['multiphoton', f'g{n}-e{n}', 'pi', 0.0],
+            ['multiphoton', f'e{n}-f{n}', 'pi', 0.0],
+            ['multiphoton', f'f{n}-g{n + 1}', 'pi', 0.0],
+        ]
+    prep_eN = prep_gN + [[
+        'multiphoton', f'g{photon_number}-e{photon_number}', 'pi', 0.0
+    ]]
+
+    print(f'Running broadband Rabi from |g,{photon_number}>')
+    broadband_rabi_from_g[photon_number] = broadband_amprabi_runner.execute(
+        sigma_test=broadband_sigma,
+        user_defined_freq=[True, broadband_frequency],
+        pre_sweep_pulse=prep_gN,
+        show=False,
+        log=True,
+    )
+    broadband_rabi_from_g[photon_number].display()
+
+    print(f'Running broadband Rabi from |e,{photon_number}>')
+    broadband_rabi_from_e[photon_number] = broadband_amprabi_runner.execute(
+        sigma_test=broadband_sigma,
+        user_defined_freq=[True, broadband_frequency],
+        pre_sweep_pulse=prep_eN,
+        show=False,
+        log=True,
+    )
+    broadband_rabi_from_e[photon_number].display()
 
 # %%
 # Put every photon number on its own g/e readout axis.
@@ -280,23 +309,58 @@ broadband_error_amp_runner = CharacterizationRunner(
 # differing only in scan width, so both pairs now call one function each.
 
 # %%
-bb_freq_error_amp, best_frequency, best_frequency_err = fit_broadband_frequency(
-    runner=broadband_error_amp_runner,
-    center=float(bb.frequency[0]),
-    band=5.0,
+bb_freq_center = float(bb.frequency[0])
+bb_freq_band = 5.0
+bb_freq_points = 51
+
+bb_freq_error_amp = broadband_error_amp_runner.execute(
+    parameter_to_test='frequency',
+    start=bb_freq_center - bb_freq_band,
+    step=2 * bb_freq_band / (bb_freq_points - 1),
+    expts=bb_freq_points,
+    reps=50,
+    n_pulses=10,
+    pulse_type=['qubit', 'ge_broadband', 'pi', 0],
+    postprocess=False,
+    show=False,
+    log=True,
+)
+best_frequency, best_frequency_err = fit_broadband_frequency(
+    bb_freq_error_amp, center=bb_freq_center
 )
 # Accept the coarse frequency fit.
 bb.frequency[0] = best_frequency
 
 # %%
-bb_gain_error_amp, best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
-    runner=broadband_error_amp_runner,
-    current_gain=int(round(float(bb.gain[0]))),
-    gain_half_band=3000,
+bb_gain_center = int(round(float(bb.gain[0])))
+bb_gain_start, bb_gain_stop, bb_gain_step = broadband_gain_grid(
+    current_gain=bb_gain_center,
+    half_band=3000,
     gain_limit=broadband_gain_limit,
-    # Source cell 19 passed log=False here, deferring the log until after the
-    # refit; cell 22 logged immediately.
+    points=26,
+)
+print(f'broadband gain scan: {bb_gain_start} ... {bb_gain_stop} '
+      f'(step {bb_gain_step}, limit {broadband_gain_limit})')
+
+bb_gain_error_amp = broadband_error_amp_runner.execute(
+    parameter_to_test='gain',
+    start=bb_gain_start,
+    step=bb_gain_step,
+    expts=26,
+    reps=50,
+    n_pulses=10,
+    pulse_type=['qubit', 'ge_broadband', 'pi', 0],
+    postprocess=False,
+    show=False,
+    # Source cell 19 passed log=False here, deferring the log until
+    # after the refit; cell 22 logged immediately.
     log=False,
+)
+best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
+    bb_gain_error_amp,
+    current_gain=bb_gain_center,
+    gain_start=bb_gain_start,
+    gain_stop=bb_gain_stop,
 )
 # Accept the coarse gain fit.
 bb.gain[0] = best_gain
@@ -305,21 +369,56 @@ bb.gain[0] = best_gain
 # ### Fine
 
 # %%
-bb_freq_error_amp, best_frequency, best_frequency_err = fit_broadband_frequency(
-    runner=broadband_error_amp_runner,
-    center=float(bb.frequency[0]),
-    band=1.0,
+bb_freq_center = float(bb.frequency[0])
+bb_freq_band = 1.0
+bb_freq_points = 51
+
+bb_freq_error_amp = broadband_error_amp_runner.execute(
+    parameter_to_test='frequency',
+    start=bb_freq_center - bb_freq_band,
+    step=2 * bb_freq_band / (bb_freq_points - 1),
+    expts=bb_freq_points,
+    reps=50,
+    n_pulses=10,
+    pulse_type=['qubit', 'ge_broadband', 'pi', 0],
+    postprocess=False,
+    show=False,
+    log=True,
+)
+best_frequency, best_frequency_err = fit_broadband_frequency(
+    bb_freq_error_amp, center=bb_freq_center
 )
 # Accept the fine frequency fit.
 bb.frequency[0] = best_frequency
 
 # %%
-bb_gain_error_amp, best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
-    runner=broadband_error_amp_runner,
-    current_gain=int(round(float(bb.gain[0]))),
-    gain_half_band=1500,
+bb_gain_center = int(round(float(bb.gain[0])))
+bb_gain_start, bb_gain_stop, bb_gain_step = broadband_gain_grid(
+    current_gain=bb_gain_center,
+    half_band=1500,
     gain_limit=broadband_gain_limit,
+    points=26,
+)
+print(f'broadband gain scan: {bb_gain_start} ... {bb_gain_stop} '
+      f'(step {bb_gain_step}, limit {broadband_gain_limit})')
+
+bb_gain_error_amp = broadband_error_amp_runner.execute(
+    parameter_to_test='gain',
+    start=bb_gain_start,
+    step=bb_gain_step,
+    expts=26,
+    reps=50,
+    n_pulses=10,
+    pulse_type=['qubit', 'ge_broadband', 'pi', 0],
+    postprocess=False,
+    show=False,
     log=True,
+)
+best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
+    bb_gain_error_amp,
+    current_gain=bb_gain_center,
+    gain_start=bb_gain_start,
+    gain_stop=bb_gain_stop,
 )
 # Accept the fine gain fit.
 bb.gain[0] = best_gain
@@ -569,8 +668,8 @@ print('accepted Chevron values for', multiphoton_swap_pulse_name)
 # Every depth uses an even number of physical swaps. The depth-zero row is an in-situ preparation/readout reference. The plotted score is the mean IQ distance from that row, and measurement cells only print a candidate.
 #
 # All four scans below -- coarse/fine frequency and coarse/fine gain, source
-# cells 42, 45, 48 and 51 -- were the same body with different settings, and
-# now call `scan_return_error`.
+# cells 42, 45, 48 and 51 -- are the same `runner.execute` with different
+# settings, and share the scoring in `score_return_error`.
 
 # %%
 storage_wait_cycles = int(station.soccfg.us2cycles(multiphoton_swap_storage_wait_us))
@@ -618,19 +717,23 @@ coarse_frequency_center_MHz = float(
 coarse_frequency_half_span_MHz = 0.10
 coarse_frequency_points = 31
 
-(
-    multiphoton_swap_coarse_frequency,
-    _x,
-    _return_error,
-    coarse_frequency_candidate_MHz,
-) = scan_return_error(
-    runner=multiphoton_swap_error_amp_runner,
+multiphoton_swap_coarse_frequency = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
     start=coarse_frequency_center_MHz - coarse_frequency_half_span_MHz,
     step=2 * coarse_frequency_half_span_MHz / (coarse_frequency_points - 1),
     expts=coarse_frequency_points,
+    n_start=0,
+    n_step=1,
     n_pulses=6,
     reps=75,
+    postprocess=False,
+    show=False,
+    log=True,
+)
+multiphoton_swap_coarse_frequency.display(fit=False)
+
+_x, _return_error, coarse_frequency_candidate_MHz = score_return_error(
+    multiphoton_swap_coarse_frequency,
     xlabel='frequency (MHz)',
     title='coarse frequency',
 )
@@ -663,19 +766,23 @@ coarse_gain_start, coarse_gain_stop, coarse_gain_step, coarse_gain_points = (
 print('coarse gain sweep:', coarse_gain_start, '...', coarse_gain_stop,
       'step', coarse_gain_step)
 
-(
-    multiphoton_swap_coarse_gain,
-    _x,
-    _return_error,
-    coarse_gain_candidate,
-) = scan_return_error(
-    runner=multiphoton_swap_error_amp_runner,
+multiphoton_swap_coarse_gain = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='gain',
     start=coarse_gain_start,
     step=coarse_gain_step,
     expts=coarse_gain_points,
+    n_start=0,
+    n_step=1,
     n_pulses=6,
     reps=75,
+    postprocess=False,
+    show=False,
+    log=True,
+)
+multiphoton_swap_coarse_gain.display(fit=False)
+
+_x, _return_error, coarse_gain_candidate = score_return_error(
+    multiphoton_swap_coarse_gain,
     xlabel='gain',
     title='coarse gain',
     as_int=True,
@@ -701,19 +808,23 @@ fine_gain_start, fine_gain_stop, fine_gain_step, fine_gain_points = even_gain_gr
 print('fine gain sweep:', fine_gain_start, '...', fine_gain_stop,
       'step', fine_gain_step)
 
-(
-    multiphoton_swap_fine_gain,
-    _x,
-    _return_error,
-    fine_gain_candidate,
-) = scan_return_error(
-    runner=multiphoton_swap_error_amp_runner,
+multiphoton_swap_fine_gain = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='gain',
     start=fine_gain_start,
     step=fine_gain_step,
     expts=fine_gain_points,
+    n_start=0,
+    n_step=1,
     n_pulses=10,
     reps=100,
+    postprocess=False,
+    show=False,
+    log=True,
+)
+multiphoton_swap_fine_gain.display(fit=False)
+
+_x, _return_error, fine_gain_candidate = score_return_error(
+    multiphoton_swap_fine_gain,
     xlabel='gain',
     title='fine gain',
     as_int=True,
@@ -735,19 +846,23 @@ fine_frequency_center_MHz = float(
 fine_frequency_half_span_MHz = 0.02
 fine_frequency_points = 31
 
-(
-    multiphoton_swap_fine_frequency,
-    _x,
-    _return_error,
-    fine_frequency_candidate_MHz,
-) = scan_return_error(
-    runner=multiphoton_swap_error_amp_runner,
+multiphoton_swap_fine_frequency = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
     start=fine_frequency_center_MHz - fine_frequency_half_span_MHz,
     step=2 * fine_frequency_half_span_MHz / (fine_frequency_points - 1),
     expts=fine_frequency_points,
+    n_start=0,
+    n_step=1,
     n_pulses=10,
     reps=100,
+    postprocess=False,
+    show=False,
+    log=True,
+)
+multiphoton_swap_fine_frequency.display(fit=False)
+
+_x, _return_error, fine_frequency_candidate_MHz = score_return_error(
+    multiphoton_swap_fine_frequency,
     xlabel='frequency (MHz)',
     title='fine frequency',
 )

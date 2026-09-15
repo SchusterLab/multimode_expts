@@ -145,7 +145,11 @@ def test_single_shot_histogram_builds(mock_session, defaults):
 
 
 def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
-    """floquet_calibration.py's run_floquet_error_amp_sweep."""
+    """floquet_calibration.py's error-amplification cells.
+
+    The loop is inline here because it is inline in the notebook: the cell
+    body is what this test has to keep working.
+    """
     from functools import partial
 
     import experiments as meas
@@ -153,7 +157,6 @@ def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
     from experiments.qsim.notebook_helpers.floquet_calibration import (
         error_amp_floquet_postproc,
         error_amp_floquet_preproc,
-        run_floquet_error_amp_sweep,
     )
 
     active_reset_defaults, floquet_defaults, _ = defaults
@@ -182,23 +185,61 @@ def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
         job_client=client,
         show=False,
     )
-    freq_expts, gain_expts = run_floquet_error_amp_sweep(
-        runner=runner, station=station, stor_modes=[1],
-        freq_span_list=[0.1] * 7, gain_span_list=[None] * 7,
-        reset_dump_mode=active_reset_defaults["reset_dump_mode"],
-        span_divisor=1, do_freq_erroramp=True, do_gain_erroramp=True,
-        active_reset=True, relax_delay=200, gain_expts=5,
-    )
+    stor_modes_to_run = [1]
+    freq_span_list = [0.1] * 7
+    gain_span_list = [None] * 7
+    freq_span_default = 0.1
+    gain_span_default = 0.3
+    span_divisor = 1
+
+    freq_expts = [None] * len(stor_modes_to_run)
+    gain_expts = [None] * len(stor_modes_to_run)
+    for i, stor_i in enumerate(stor_modes_to_run):
+        stor_name = f"M1-S{stor_i}"
+        freq_span = freq_span_list[stor_i - 1]
+        if freq_span is None:
+            freq_span = freq_span_default
+        gain_span = gain_span_list[stor_i - 1]
+        if gain_span is None:
+            gain_span = gain_span_default
+
+        freq_expts[i] = runner.execute(
+            stor_mode_no=stor_i,
+            parameter_to_test="frequency",
+            go_kwargs=dict(analyze=False, progress=False, display=False),
+            span=freq_span / span_divisor,
+            relax_delay=200,
+            active_reset=True,
+            man_reset=True,
+            storage_reset=[stor_i],
+            reset_dump_mode=active_reset_defaults["reset_dump_mode"],
+        )
+        gain_expts[i] = runner.execute(
+            stor_mode_no=stor_i,
+            parameter_to_test="gain",
+            go_kwargs=dict(analyze=False, progress=False, display=False),
+            span=int(station.ds_floquet.get_gain(stor_name)
+                     * gain_span / span_divisor),
+            expts=5,
+            relax_delay=200,
+            active_reset=True,
+            man_reset=True,
+            storage_reset=[stor_i],
+            reset_dump_mode=active_reset_defaults["reset_dump_mode"],
+        )
+
     assert freq_expts[0] is not None
     assert gain_expts[0] is not None
 
 
 def test_bare_scramble_sweep_builds(mock_session, defaults):
-    """floquet_calibration.py's bare dark-mode readout check."""
+    """floquet_calibration.py's bare dark-mode readout check.
+
+    Inline, like the notebook cell it stands in for.
+    """
     import experiments as meas
     from experiments import CharacterizationRunner
     from experiments.qsim.notebook_helpers.floquet_bare_readout import (
-        run_bare_scramble_sweep,
         sideband_scramble_preproc,
     )
     from experiments.qsim.notebook_helpers.floquet_calibration import (
@@ -226,14 +267,48 @@ def test_bare_scramble_sweep_builds(mock_session, defaults):
         job_client=client,
         show=False,
     )
-    expts = run_bare_scramble_sweep(
-        runner=runner, station=station,
-        floquet_settings=floquet_defaults,
-        active_reset_settings=active_reset_defaults,
-        swap_stors=[1, 2, 3, 4], meas_stors=[0, 1],
-        floquet_cycles_list=floquet_cycle_list_gen(0, 4, 4, 2),
-        dark_swaps=[4, 5], reps=20, active_reset=True, progress=False,
-    )
+    swap_stors = [1, 2, 3, 4]
+    meas_stors = [0, 1]
+    dark_swaps = [4, 5]
+    floquet_cycles_list = floquet_cycle_list_gen(0, 4, 4, 2)
+    detunings = [0] * len(swap_stors)
+    reset_stors = meas_stors[1:]
+
+    expts = []
+    for meas_stor in meas_stors:
+        sub_expts = []
+        for floquet_cycles in floquet_cycles_list:
+            sub_expts.append(runner.execute(
+                reps=20,
+                init_fock=True,
+                init_stor=0,
+                ro_stor=meas_stor,
+                relax_delay=200,
+                active_reset=True,
+                pre_relax_delay=100,
+                man_reset=True,
+                storage_reset=reset_stors,
+                reset_dump_mode=active_reset_defaults["reset_dump_mode"],
+                dump_reset_iter_num=active_reset_defaults["dump_reset_iter_num"],
+                swap_stors=swap_stors,
+                update_phases=True,
+                detunings=detunings,
+                floquet_cycles=floquet_cycles,
+                swept_params=["floquet_cycle"],
+                custom_prepulse=False,
+                custom_postpulse=False,
+                debug=False,
+                swap_man_dark=False,
+                dark_swap_order=dark_swaps,
+                second_rel_phase=180,
+                map_to_qubit_ge=True,
+                prepulse=True,
+                postpulse=True,
+                palindrome_scramble=floquet_defaults["palindrome_scramble"],
+                scramble_sync_cycles=floquet_defaults["scramble_sync_cycles"],
+            ))
+        expts.append(sub_expts)
+
     assert expts and expts[0]
 
 

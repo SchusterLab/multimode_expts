@@ -19,6 +19,15 @@ uses the cross product of those replicas.
 This theme reads the campaign base built by `mbr_campaign.build_campaign`
 rather than depending on the acquisition notebook having run.
 
+**The two job submissions are not here.** An earlier pass wrapped cells 363
+and 365 whole, as `measure_visibility` and `run_ensemble`, which hid both the
+`BatchRunner` construction and a closed keyword list in front of
+`runner.execute` -- the notebook could no longer reach `batch_size`, `log`, or
+anything else per run. Both cells now build their runner and call `execute`
+inline, as `mbr_campaign.build_spectroscopy_batch` already expects of its
+caller. What stayed here is `plot_sff_visibility`, the reporting tail of cell
+363. Do not hoist the submissions again.
+
 Temporary home, per the stage-2 instructions.
 """
 
@@ -295,34 +304,18 @@ def build_sff_plan(campaign, station, client, config=None):
     }
 
 
-def measure_visibility(campaign, station, client, sff):
-    """Measure the depth-zero encoder/decoder visibility (cell 363).
+def plot_sff_visibility(sff_visibility_batch, sff):
+    """Plot the depth-zero encoder/decoder visibility (cell 363 tail).
 
-    Submits one job. Run this before the full ensemble: it plots all 35
-    encoder/decoder returns, and the ensemble analysis divides by it.
+    The one job it reports on is `runner.execute(sff["plan"].configs[:1], ...)`
+    in the notebook. Run it before the full ensemble: the ensemble analysis
+    divides by this visibility.
 
     Returns the visibility experiment.
     """
-    BatchRunner = campaign.BatchRunner
-    SFFExperiment = sff["SFFExperiment"]
-    sff_plan = sff["plan"]
     sff_dimension = sff["dimension"]
     sff_occupations = sff["occupations"]
 
-    sff_visibility_runner = BatchRunner(
-        station=station,
-        ExptClass=SFFExperiment,
-        ExptProgram=sff_plan.program,
-        default_expt_cfg=sff_plan.default_expt_cfg,
-        job_client=client,
-        show=False,
-    )
-    sff_visibility_batch = sff_visibility_runner.execute(
-        sff_plan.configs[:1],
-        batch_size=1,
-        log=True,
-        show=False,
-    )
     sff_visibility_expt = sff_visibility_batch.batch_expts[0]
     sff_visibility = (
         np.asarray(sff_visibility_expt.data.visibility_real, dtype=float)
@@ -352,50 +345,6 @@ def measure_visibility(campaign, station, client, sff):
         )
 
     return sff_visibility_expt
-
-
-def run_ensemble(campaign, station, client, sff):
-    """Submit the positive-depth disorder jobs (cell 365).
-
-    Only the positive-depth jobs; `sff_plan.configs[0]` is the visibility
-    configuration, already measured above. The source wrapped this in a bare
-    `except BaseException` so an interrupted submission still leaves the
-    partial batch reachable, which is preserved.
-
-    Returns the disorder batch.
-    """
-    BatchRunner = campaign.BatchRunner
-    SFFExperiment = sff["SFFExperiment"]
-    sff_plan = sff["plan"]
-    sff_batch_size = sff["batch_size"]
-
-    sff_disorder_runner = BatchRunner(
-        station=station,
-        ExptClass=SFFExperiment,
-        ExptProgram=sff_plan.program,
-        default_expt_cfg=sff_plan.default_expt_cfg,
-        job_client=client,
-        show=False,
-    )
-    try:
-        sff_disorder_batch = sff_disorder_runner.execute(
-            sff_plan.configs[1:],
-            batch_size=sff_batch_size,
-            log=True,
-            show=False,
-        )
-    except BaseException:
-        print(
-            "jobs submitted before the stop/failure:",
-            sff_disorder_runner.last_job_ids,
-        )
-        raise
-
-    print("completed disorder jobs:", len(sff_disorder_batch.batch_job_ids))
-    print("first job:", sff_disorder_batch.batch_job_ids[0])
-    print("last job:", sff_disorder_batch.batch_job_ids[-1])
-
-    return sff_disorder_batch
 
 
 def analyze_and_plot_sff(sff, sff_disorder_batch, sff_visibility_expt):

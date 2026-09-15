@@ -4,25 +4,29 @@ Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 7-57 and 61-68 by the stage-2 notebook decomposition. Primary caller:
 `measurement_notebooks/202609_qsim_migration/multiphoton_calibration.py`.
 
-Two kinds of thing live here. The preprocessor/postprocessor hooks
-(`broadband_amprabi_preproc`, `singleshot_postproc`) were already top-level
-`def`s in the notebook and moved unchanged. The rest are the long procedural
-cells, each wrapped into one function so the notebook reads as a sequence of
-named steps.
+What lives here: the preprocessor/postprocessor hooks
+(`broadband_amprabi_preproc`, `singleshot_postproc`), which were already
+top-level `def`s in the notebook, plus the fitting, scoring and plotting that
+each procedural cell ended with.
 
-Several of those wrappings collapse cells that were copy-paste duplicates
-differing only in a scan width, which the stage-2 instructions allow because
-the duplication is confirmed rather than assumed:
+**What does not live here: the `runner.execute` calls.** An earlier pass
+wrapped whole cells -- scan *and* fit together -- into `run_broadband_rabi_scan`,
+`fit_broadband_frequency`, `fit_broadband_gain` and `scan_return_error`. Each
+took a closed keyword list and forwarded a hand-picked subset to
+`runner.execute`, so a cell could no longer pass `use_queue`, `priority` or
+any other expt_cfg override, and the defaults -> runner -> execute flow was
+invisible from the notebook. The scans are back inline in the notebook; the
+analysis stayed here, taking the finished experiment as its first argument:
 
-- `fit_broadband_frequency` is cells 18 and 21. Their only difference is
-  `band` (5.0 coarse, 1.0 fine).
-- `fit_broadband_gain` is cells 19 and 22, differing only in
-  `gain_half_band` (3000 coarse, 1500 fine) and whether the job was logged.
-- `scan_return_error` is cells 42, 45, 48 and 51 -- coarse/fine frequency and
-  coarse/fine gain of the swap error amplification. Same body throughout:
-  sweep, score each point by its mean IQ distance from the depth-zero row,
-  take the argmin, plot.
+- `fit_broadband_frequency(expt, center)` -- the fit from cells 18 and 21,
+  which differed only in scan band.
+- `broadband_gain_grid(...)` then `fit_broadband_gain(expt, ...)` -- cells 19
+  and 22, which differed in half band and in whether the job was logged.
+- `score_return_error(expt, ...)` -- the scoring from cells 42, 45, 48 and 51.
 - `even_gain_grid` is the gain-range arithmetic shared by cells 45 and 48.
+
+Do not hoist the scans again: a `for` loop or a plain call around
+`runner.execute(...)` is the canonical notebook cell, not duplication.
 
 None of these functions writes to the station. Accepting a fit into
 `ds_storage` or into the `pi_ge_broadband` config stayed in the notebook,
@@ -92,55 +96,6 @@ def ge_population_transfer(z, z_g, z_e):
     return np.real((z - z_g) * np.conj(readout_axis)) / abs(readout_axis) ** 2
 
 
-def run_broadband_rabi_scan(runner, photon_numbers, broadband_sigma,
-                            broadband_frequency, show_each=True):
-    """Amplitude Rabi from |g,n> and |e,n> at each photon number (cell 12).
-
-    Two jobs per photon number. These are pure-state preparations, so
-    conditional shelving is not needed.
-
-    Returns (rabi_from_g, rabi_from_e), each a list indexed by photon number.
-    """
-    rabi_from_g = [None] * len(photon_numbers)
-    rabi_from_e = [None] * len(photon_numbers)
-
-    for photon_number in photon_numbers:
-        prep_gN = []
-        for n in range(photon_number):
-            prep_gN += [
-                ['multiphoton', f'g{n}-e{n}', 'pi', 0.0],
-                ['multiphoton', f'e{n}-f{n}', 'pi', 0.0],
-                ['multiphoton', f'f{n}-g{n + 1}', 'pi', 0.0],
-            ]
-        prep_eN = prep_gN + [[
-            'multiphoton', f'g{photon_number}-e{photon_number}', 'pi', 0.0
-        ]]
-
-        print(f'Running broadband Rabi from |g,{photon_number}>')
-        rabi_from_g[photon_number] = runner.execute(
-            sigma_test=broadband_sigma,
-            user_defined_freq=[True, broadband_frequency],
-            pre_sweep_pulse=prep_gN,
-            show=False,
-            log=True,
-        )
-        if show_each:
-            rabi_from_g[photon_number].display()
-
-        print(f'Running broadband Rabi from |e,{photon_number}>')
-        rabi_from_e[photon_number] = runner.execute(
-            sigma_test=broadband_sigma,
-            user_defined_freq=[True, broadband_frequency],
-            pre_sweep_pulse=prep_eN,
-            show=False,
-            log=True,
-        )
-        if show_each:
-            rabi_from_e[photon_number].display()
-
-    return rabi_from_g, rabi_from_e
-
-
 def plot_broadband_rabi_transfer(rabi_from_g, rabi_from_e, photon_numbers):
     """Put every photon number on its own g/e readout axis and plot (cell 13).
 
@@ -180,29 +135,17 @@ def plot_broadband_rabi_transfer(rabi_from_g, rabi_from_e, photon_numbers):
     return gain, g_to_e, e_to_g
 
 
-def fit_broadband_frequency(runner, center, band, expts=51, reps=50,
-                            n_pulses=10, log=True):
-    """Error-amplified broadband frequency scan and Gaussian fit.
+def fit_broadband_frequency(expt, center):
+    """Gaussian fit of an error-amplified broadband frequency scan.
 
-    Cells 18 (band=5.0, coarse) and 21 (band=1.0, fine), which were otherwise
-    identical. Does not write the result into the config -- accepting the fit
-    is left to the notebook.
+    The scan itself is `runner.execute(parameter_to_test='frequency', ...)` in
+    the notebook -- cells 18 (band=5.0, coarse) and 21 (band=1.0, fine), whose
+    only difference is that band. This is the analysis half: fit, annotate the
+    experiment, display, print. Does not write the result into the config;
+    accepting the fit is the notebook's call.
 
-    Returns (expt, best_frequency, best_frequency_err) in MHz.
+    Returns (best_frequency, best_frequency_err) in MHz.
     """
-    expt = runner.execute(
-        parameter_to_test='frequency',
-        start=center - band,
-        step=2 * band / (expts - 1),
-        expts=expts,
-        reps=reps,
-        n_pulses=n_pulses,
-        pulse_type=['qubit', 'ge_broadband', 'pi', 0],
-        postprocess=False,
-        show=False,
-        log=log,
-    )
-
     x = np.asarray(expt.data['x_pts'], dtype=float)
     y = np.asarray(expt.data['prod_avgi'], dtype=float)
 
@@ -220,43 +163,36 @@ def fit_broadband_frequency(runner, center, band, expts=51, reps=50,
         f'N=0 fitted frequency: {best_frequency:.6f} '
         f'+/- {best_frequency_err:.6f} MHz'
     )
-    return expt, best_frequency, best_frequency_err
+    return best_frequency, best_frequency_err
 
 
-def fit_broadband_gain(runner, current_gain, gain_half_band, gain_limit,
-                       gain_expts=26, reps=50, n_pulses=10, log=True):
-    """Error-amplified broadband gain scan and Gaussian fit.
+def broadband_gain_grid(current_gain, half_band, gain_limit, points):
+    """Gain sweep grid for the broadband error amplification (cells 19, 22).
 
-    Cells 19 (gain_half_band=3000, coarse) and 22 (1500, fine). Their only
-    other difference was that cell 19 passed log=False, deferring the log
-    until after the refit; that is now the `log` argument.
+    Pure arithmetic, like `even_gain_grid` below: the window is centred on
+    `current_gain`, slid left if it would run past `gain_limit`, and the step
+    is integer so every point is a whole gain.
 
-    Returns (expt, best_gain, best_gain_err, fitted_gain). `best_gain` is the
-    integer candidate, clipped to the scanned range.
+    Returns (start, stop, step).
     """
-    gain_width = 2 * gain_half_band
-    gain_start = max(0, min(current_gain - gain_half_band, gain_limit - gain_width))
-    gain_step = gain_width // (gain_expts - 1)
-    gain_stop = gain_start + gain_step * (gain_expts - 1)
+    width = 2 * half_band
+    start = max(0, min(current_gain - half_band, gain_limit - width))
+    step = width // (points - 1)
+    stop = start + step * (points - 1)
+    return start, stop, step
 
-    print(
-        f'broadband gain scan: {gain_start} ... {gain_stop} '
-        f'(step {gain_step}, limit {gain_limit})'
-    )
 
-    expt = runner.execute(
-        parameter_to_test='gain',
-        start=gain_start,
-        step=gain_step,
-        expts=gain_expts,
-        reps=reps,
-        n_pulses=n_pulses,
-        pulse_type=['qubit', 'ge_broadband', 'pi', 0],
-        postprocess=False,
-        show=False,
-        log=log,
-    )
+def fit_broadband_gain(expt, current_gain, gain_start, gain_stop):
+    """Gaussian fit of an error-amplified broadband gain scan.
 
+    The scan itself is `runner.execute(parameter_to_test='gain', ...)` in the
+    notebook -- cells 19 (half band 3000, coarse) and 22 (1500, fine), which
+    also differed in whether the job was logged. `gain_start` and `gain_stop`
+    come from `broadband_gain_grid`; the fitted centre is clipped to them.
+
+    Returns (best_gain, best_gain_err, fitted_gain). `best_gain` is the
+    integer candidate.
+    """
     x_gain = np.asarray(expt.data['x_pts'], dtype=float)
     y_gain = np.asarray(expt.data['prod_avgi'], dtype=float)
 
@@ -273,7 +209,7 @@ def fit_broadband_gain(runner, current_gain, gain_half_band, gain_limit,
     print(f'current broadband gain: {current_gain}')
     print(f'N=0 fitted gain: {fitted_gain:.1f} +/- {best_gain_err:.1f}')
     print(f'capped integer gain candidate: {best_gain}')
-    return expt, best_gain, best_gain_err, fitted_gain
+    return best_gain, best_gain_err, fitted_gain
 
 
 def plot_broadband_validation(expt, photon_numbers, validation_cases):
@@ -433,35 +369,20 @@ def even_gain_grid(center, half_span, step, gain_limit):
     return start, stop, step, points
 
 
-def scan_return_error(runner, parameter_to_test, start, step, expts,
-                      n_pulses, reps, xlabel, title, as_int=False):
-    """Sweep one swap parameter and score it by return IQ error.
+def score_return_error(expt, xlabel, title, as_int=False):
+    """Score a swap parameter sweep by its return IQ error.
 
-    Cells 42, 45, 48 and 51 -- coarse frequency, coarse gain, fine gain, fine
-    frequency -- were the same body with different scan settings. Every depth
-    uses an even number of physical swaps, and row 0 is the in-situ
-    preparation/readout reference, so the score is the mean IQ distance of the
-    deeper rows from that reference. Lower is better.
+    The sweep is `runner.execute(parameter_to_test=..., ...)` in the notebook
+    -- cells 42, 45, 48 and 51, coarse/fine frequency and coarse/fine gain,
+    the same scoring with different scan settings. Every depth uses an even
+    number of physical swaps and row 0 is the in-situ preparation/readout
+    reference, so the score is the mean IQ distance of the deeper rows from
+    that reference. Lower is better.
 
     Prints a candidate only; the notebook's accept cell writes it.
 
-    Returns (expt, x, return_error, candidate).
+    Returns (x, return_error, candidate).
     """
-    expt = runner.execute(
-        parameter_to_test=parameter_to_test,
-        start=start,
-        step=step,
-        expts=expts,
-        n_start=0,
-        n_step=1,
-        n_pulses=n_pulses,
-        reps=reps,
-        postprocess=False,
-        show=False,
-        log=True,
-    )
-    expt.display(fit=False)
-
     x = np.asarray(expt.data['x_pts'], dtype=float)
     z = (
         np.asarray(expt.data['avgi'], dtype=float)
@@ -480,7 +401,7 @@ def scan_return_error(runner, parameter_to_test, start, step, expts,
     plt.grid()
     plt.show()
     print(f'{title} candidate:', candidate)
-    return expt, x, return_error, candidate
+    return x, return_error, candidate
 
 
 def plot_iq_endpoints(expt, labels, title):

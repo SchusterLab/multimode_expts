@@ -76,8 +76,7 @@ from experiments.qsim.notebook_helpers.mbr_sff_campaign import (
     analyze_and_plot_sff,
     build_sff_plan,
     compare_effective_hamiltonian_ensemble,
-    measure_visibility,
-    run_ensemble,
+    plot_sff_visibility,
 )
 
 # %%
@@ -155,12 +154,25 @@ sff = build_sff_plan(
 # and the ensemble analysis divides by it.
 
 # %%
-sff_visibility_expt = measure_visibility(
-    campaign=campaign,
+sff_visibility_runner = campaign.BatchRunner(
     station=station,
-    client=client,
-    sff=sff,
+    ExptClass=sff["SFFExperiment"],
+    ExptProgram=sff["plan"].program,
+    default_expt_cfg=sff["plan"].default_expt_cfg,
+    job_client=client,
+    show=False,
 )
+
+# configs[:1] is the depth-zero visibility configuration.
+sff_visibility_batch = sff_visibility_runner.execute(
+    sff["plan"].configs[:1],
+    batch_size=1,
+    log=True,
+    show=False,
+)
+print("visibility job:", sff_visibility_batch.batch_job_ids)
+
+sff_visibility_expt = plot_sff_visibility(sff_visibility_batch, sff)
 
 # %% [markdown]
 # ### 9-3. Run the 2000-realization ensemble — submits jobs
@@ -169,12 +181,33 @@ sff_visibility_expt = measure_visibility(
 # configuration was already measured above.
 
 # %%
-sff_disorder_batch = run_ensemble(
-    campaign=campaign,
+sff_disorder_runner = campaign.BatchRunner(
     station=station,
-    client=client,
-    sff=sff,
+    ExptClass=sff["SFFExperiment"],
+    ExptProgram=sff["plan"].program,
+    default_expt_cfg=sff["plan"].default_expt_cfg,
+    job_client=client,
+    show=False,
 )
+
+# configs[1:] skips the visibility configuration measured in 9-2. The bare
+# except is the source's: an interrupted submission still has to name the jobs
+# it already sent.
+try:
+    sff_disorder_batch = sff_disorder_runner.execute(
+        sff["plan"].configs[1:],
+        batch_size=sff["batch_size"],
+        log=True,
+        show=False,
+    )
+except BaseException:
+    print("jobs submitted before the stop/failure:",
+          sff_disorder_runner.last_job_ids)
+    raise
+
+print("completed disorder jobs:", len(sff_disorder_batch.batch_job_ids))
+print("first job:", sff_disorder_batch.batch_job_ids[0])
+print("last job:", sff_disorder_batch.batch_job_ids[-1])
 
 # %% [markdown]
 # ### 9-4. Analyze and plot the measured SFF — no jobs

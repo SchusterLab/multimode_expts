@@ -79,6 +79,7 @@ from experiments.qsim.notebook_helpers.mbr_campaign import (
     build_campaign,
     ensure_calibration,
 )
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
     D72Config,
     DiagDisorderConfig,
@@ -86,12 +87,12 @@ from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
     analyze_diag_disorder,
     build_d72_plans,
     build_diag_disorder_plans,
+    build_diag_realization_batch,
+    build_pairwise_batch,
     build_pairwise_plan,
+    check_d72_visibility,
     plot_diag_level_statistics,
     preview_d72_jobs,
-    submit_d72,
-    submit_diag_disorder,
-    submit_pairwise,
 )
 
 # %%
@@ -147,12 +148,28 @@ pairwise_plan = build_pairwise_plan(
 )
 
 # %%
-submit_pairwise(
+disorder_batch, disorder_runner, disorder_cycle_branches = build_pairwise_batch(
     campaign=campaign,
     station=station,
     client=client,
     plan=pairwise_plan,
 )
+
+disorder_expt = MBRSpectrumExperiment.from_batch(disorder_runner.execute(
+    disorder_batch.configs,
+    batch_size=pairwise_plan["disorder_batch_size"],
+    log=True,
+    show=False,
+))
+disorder_expt.analyze(
+    cycle_branches=disorder_cycle_branches,
+    spectrum_method="mpm",
+    mpm_requested_max_modes=len(pairwise_plan["disorder_theory"].energies_MHz),
+    mpm_match_decay=False,
+)
+disorder_expt.display(spectrum_method="fft")
+disorder_expt.display(spectrum_method="mpm")
+plt.show()
 
 # %% [markdown]
 # ### 7-1. Diagonal disorder spectroscopy
@@ -202,13 +219,46 @@ diag_plan = build_diag_disorder_plans(
 # #### 7-1c. Run the batch — submits jobs
 
 # %%
-diag_disorder_records = submit_diag_disorder(
-    campaign=campaign,
-    station=station,
-    client=client,
-    plan=diag_plan,
-    config=diag_config,
-)
+# Acquire every realization first. Each aggregate contains only one
+# disorder H, so this is one batch per realization.
+diag_disorder_records = diag_plan["diag_disorder_records"]
+
+for realization_plan in diag_plan["diag_disorder_plans"]:
+    diag_realization = realization_plan["realization"]
+    if diag_realization in diag_disorder_records:
+        print(f"skip r={diag_realization}: already completed in this kernel")
+        continue
+
+    diag_batch, diag_runner, diag_branches = build_diag_realization_batch(
+        campaign=campaign,
+        station=station,
+        client=client,
+        plan=diag_plan,
+        config=diag_config,
+        realization_plan=realization_plan,
+    )
+    try:
+        diag_expt = MBRSpectrumExperiment.from_batch(diag_runner.execute(
+            diag_batch.configs,
+            batch_size=diag_config.batch_size,
+            log=True,
+            show=False,
+        ))
+    except BaseException:
+        # An interrupted submission still has to name the jobs it sent.
+        print(f"r={diag_realization} submitted before interruption:",
+              list(map(str, getattr(diag_runner, "last_job_ids", []))))
+        raise
+
+    diag_disorder_records[diag_realization] = dict(
+        plan=realization_plan,
+        expt=diag_expt,
+        job_ids=list(map(str, diag_expt.batch_job_ids)),
+        cycle_branches=diag_branches,
+        data=None,
+    )
+    print(f"finished acquisition r={diag_realization}:",
+          diag_disorder_records[diag_realization]["job_ids"])
 
 # %% [markdown]
 # #### 7-1d. Matrix-Pencil analysis and theory matching — no jobs
@@ -323,14 +373,45 @@ d72_records = preview_d72_jobs(
 # #### 7-2d. Run the constrained disorder batches — submits jobs
 
 # %%
-d72_records = submit_d72(
-    campaign=campaign,
-    station=station,
-    client=client,
-    plan=d72_plan,
-    d72_records=d72_records,
-    config=d72_config,
-)
+check_d72_visibility(d72_plan)
+
+for realization_plan in d72_plan["d72_plans"]:
+    if realization_plan.realization in d72_records:
+        print(f"skip r={realization_plan.realization}: already completed "
+              "in this 7-2 campaign")
+        continue
+
+    # build_d72_plans already built the batch for each realization.
+    d72_runner = campaign.BatchRunner(
+        station=station,
+        ExptClass=campaign.EncSpec,
+        ExptProgram=realization_plan.batch.program,
+        default_expt_cfg=realization_plan.batch.default_expt_cfg,
+        job_client=client,
+        show=False,
+    )
+    try:
+        d72_expt = MBRSpectrumExperiment.from_batch(d72_runner.execute(
+            realization_plan.batch.configs,
+            batch_size=d72_config.batch_size,
+            log=True,
+            show=False,
+        ))
+    except BaseException:
+        print(f"r={realization_plan.realization} submitted before "
+              "interruption:",
+              list(map(str, getattr(d72_runner, "last_job_ids", []))))
+        raise
+
+    d72_records[realization_plan.realization] = AttrDict(dict(
+        plan=realization_plan,
+        expt=d72_expt,
+        job_ids=list(map(str, d72_expt.batch_job_ids)),
+        cycle_branches=realization_plan.cycle_branches,
+        data=None,
+    ))
+    print(f"finished 7-2 acquisition r={realization_plan.realization}:",
+          d72_records[realization_plan.realization].job_ids)
 
 # %% [markdown]
 # #### 7-2e. Matrix-Pencil rank stability, calibration merge, and theory matching — no jobs

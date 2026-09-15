@@ -20,6 +20,13 @@ Two things that were notebook globals and are now arguments, because the move
 is what broke them: `floquet_cycle_to_us` read `station` directly, and the
 plotting cell reached for `fname_list` through `globals()`, which the stage-2
 instructions rule out.
+
+The sweep loop itself is **not** here. An earlier pass wrapped cell 154 in
+`run_bare_scramble_sweep`, whose closed keyword list cut the notebook off from
+`runner.execute` -- no `use_queue`, no `priority`, no expt_cfg override. It is
+back inline in the notebook, next to the defaults dict and the runner it uses.
+What remains here is preprocessing, pooling and plotting: code with real logic
+in it that the notebook should not carry.
 """
 
 import textwrap
@@ -149,76 +156,6 @@ def floquet_cycle_to_us(expt, station):
         total += station.soccfg.cycles2us(sync_cycles)
 
     return total
-
-
-def run_bare_scramble_sweep(runner, station, floquet_settings,
-                            active_reset_settings,
-                            swap_stors, meas_stors, floquet_cycles_list,
-                            detunings=None, dark_swaps=(4, 5),
-                            reps=300, relax_delay=None, active_reset=True,
-                            progress=True):
-    """Run the bare sideband-scramble sweep (cell 154).
-
-    One job per (measured storage mode, Floquet-cycle chunk). `meas_stors` is
-    conventionally `[0] + swap_stors`, where 0 reads out the manipulate mode;
-    the storages that get reset are `meas_stors` without that leading 0,
-    which is what the source did by popping index 0.
-
-    `detunings` defaults to all zeros, one per swap storage, matching the
-    source.
-
-    Returns the nested list of experiments, outer index over `meas_stors`.
-    """
-    if relax_delay is None:
-        relax_delay = 200 if active_reset else 8000
-    if detunings is None:
-        # None/False/unspecified all default to all zeros
-        detunings = [0] * len(swap_stors)
-
-    reset_stors = list(meas_stors)
-    reset_stors.pop(0)
-
-    iterator = meas_stors
-    if progress:
-        from tqdm.notebook import tqdm
-        iterator = tqdm(meas_stors)
-
-    scramble_expts = []
-    for meas_stor in iterator:
-        scramble_sub_expts = []
-        for floquet_cycles in floquet_cycles_list:
-            scramble = runner.execute(
-                reps=reps,
-                init_fock=True,
-                init_stor=0,
-                ro_stor=meas_stor,
-                relax_delay=relax_delay,
-                active_reset=active_reset,
-                pre_relax_delay=100,
-                man_reset=True,
-                storage_reset=reset_stors,
-                reset_dump_mode=active_reset_settings["reset_dump_mode"],
-                dump_reset_iter_num=active_reset_settings["dump_reset_iter_num"],
-                swap_stors=swap_stors,
-                update_phases=True,
-                detunings=detunings,
-                floquet_cycles=floquet_cycles,
-                swept_params=['floquet_cycle'],
-                custom_prepulse=False,
-                custom_postpulse=False,
-                debug=False,
-                swap_man_dark=False,
-                dark_swap_order=list(dark_swaps),
-                second_rel_phase=180,
-                map_to_qubit_ge=True,
-                prepulse=True,   # for debugging. Should always be true
-                postpulse=True,  # for debugging. Should always be true
-                palindrome_scramble=floquet_settings["palindrome_scramble"],
-                scramble_sync_cycles=floquet_settings["scramble_sync_cycles"],
-            )
-            scramble_sub_expts.append(scramble)
-        scramble_expts.append(scramble_sub_expts)
-    return scramble_expts
 
 
 def plot_bare_scramble(scramble_expts, station, fname_list=None,
