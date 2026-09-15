@@ -1,0 +1,52 @@
+description: 'HDF5 job files for the N=2 Hamiltonian spectroscopy reprocessing, moved out of data_postprocess.ipynb
+  cell 168 by the stage-2 notebook split. Nesting is [occupation][analyzer phase][file]; the reconstruction
+  places files by the analyzer phase saved inside them, not by position here. Ten occupation groups, two
+  analyzer phases each, two files per phase = 40 files. Note that cell 167''s markdown says fifteen occupations,
+  which this list is not: N=2 over five modes has fifteen occupations, and only ten of them are here.
+  That is consistent with the analysis, which builds the full fifteen-state fixed-N basis for theory and
+  compares only the measured rows against it -- but the prose overstates what was acquired. Preserved
+  as found; confirming which five are absent is a later, theme-specific task.'
+project: 260526_qsim_darkmode
+experiment_class: DarkBaseExperiment
+job_date: 20260721
+occupation_groups:
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00267_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00271_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00269_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00273_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00275_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00279_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00277_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00281_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00283_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00287_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00285_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00289_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00291_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00295_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00293_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00297_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00299_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00303_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00301_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00305_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00307_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00311_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00309_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00313_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00315_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00319_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00317_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00321_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00323_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00327_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00325_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00329_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00331_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00335_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00333_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00337_DarkBaseExperiment.h5
+- - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00339_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00343_DarkBaseExperiment.h5
+  - - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00341_DarkBaseExperiment.h5
+    - C:\experiments\260526_qsim_darkmode\data\JOB-20260721-00345_DarkBaseExperiment.h5
