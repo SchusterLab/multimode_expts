@@ -478,8 +478,12 @@ EXPLICIT = [
      "orthogonality_batch",
      ["default_expt_cfg", "swap_stors", "occupations", "sync_cycles", "reps",
       "correction_mode"]),
+    # The last four came back with the tomography branch. They were read out
+    # of `**kwargs` by the old string dispatch; naming them is the same
+    # treatment the other three stages got.
     ("mbr_propagator", "MBRPropagatorExperiment", "analyze",
-     ["data", "occupations"]),
+     ["data", "occupations", "calibration", "floquet_cycle_us",
+      "finite_difference_cycles", "eigenphase_cycle"]),
 ]
 
 
@@ -518,3 +522,77 @@ def test_an_unknown_stage_argument_raises(module, cls, method):
     # what must fail is the unknown name, not the missing one.
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         inspect.signature(bound).bind_partial(definitely_not_a_knob=1)
+
+
+# --------------------------------------------------------------------------
+# Ported, not split
+# --------------------------------------------------------------------------
+# A method that was never on *this* branch's god class, so `STAGES` above
+# cannot pin it: its pin is a commit from the other side of a merge.
+#
+# The case that needed this: jonginn added `analyze_propagator_dynamics` on
+# 2026-08-28, after the propagator stage had already been split out here. The
+# `jonginn` -> `guan` merge (6ca1a6e) resolved `floquet_dark_mode_readout.py`
+# by taking guan's 3,925-line refactored side over jonginn's 8,772-line side,
+# and the addition went out with it -- no conflict, no commit that removes it,
+# nothing in the file's simplified history that ever had it. `git log -S` on
+# the path finds only the commit that *added* it.
+#
+# 22a1e7c is that merge's other parent: the last commit reachable from `guan`
+# where the method still existed, and its copy of the file is byte-identical
+# to main's.
+
+PORTED = [
+    dict(method="analyze_propagator_dynamics",
+         pin="22a1e7c",
+         module="mbr_propagator",
+         cls="MBRPropagatorExperiment",
+         edits=[
+             # `_calibration_data` moved to the calibration stage, and
+             # resolving a calibration given as paths needs a station, so the
+             # method takes one. Same re-addressing `mbr_spectrum.py` does.
+             ("cls._calibration_data(calibration)",
+              "MBRPhaseCorrectionExperiment._calibration_data(calibration, station)"),
+             ("eigenphase_cycle=None):", "eigenphase_cycle=None, station=None):"),
+         ]),
+]
+
+
+@pytest.mark.parametrize("spec", PORTED, ids=[s["method"] for s in PORTED])
+def test_ported_method_is_unchanged(spec):
+    """A port is a move too, so it gets the same verbatim check.
+
+    Without this the 219 lines could have been paraphrased on the way in and
+    nothing would have noticed.
+    """
+    root = Path(_repo_root())
+    shown = subprocess.run(
+        ["git", "-C", str(root), "show", f"{spec['pin']}:{GOD}"],
+        capture_output=True, text=True, encoding="utf-8")
+    assert shown.returncode == 0, (
+        f"cannot read {GOD} at {spec['pin']}: {shown.stderr}")
+
+    old = _methods(shown.stdout, GODCLASS)
+    assert spec["method"] in old, (
+        f"{spec['method']} was not on {GODCLASS} at {spec['pin']}")
+    new = _methods(
+        (root / "experiments" / "qsim" / f"{spec['module']}.py").read_text(
+            encoding="utf-8"),
+        spec["cls"])
+    assert spec["method"] in new, f"{spec['method']} is missing from {spec['cls']}"
+
+    was = ast.unparse(old[spec["method"]])
+    for target, replacement in spec["edits"]:
+        assert target in was, (
+            f"declared edit {target!r} matches nothing at {spec['pin']}; "
+            f"delete the row instead of leaving it")
+        was = was.replace(target, replacement)
+    assert ast.unparse(new[spec["method"]]) == was
+
+
+@pytest.mark.parametrize("spec", PORTED, ids=[s["method"] for s in PORTED])
+def test_ported_method_is_not_also_on_the_god_class(spec):
+    """Defined in two places, the subclass silently shadows -- and drifts."""
+    root = Path(_repo_root())
+    god = _methods((root / GOD).read_text(encoding="utf-8"), GODCLASS)
+    assert spec["method"] not in god
