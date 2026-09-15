@@ -266,7 +266,26 @@ EXPERIMENTS = dict(
     expect={},
 )
 
-PLANS = [POSTPROCESS, EXPERIMENTS]
+# `qsim_experiments_highkerr_untracked_refactored.ipynb` is a near-duplicate of
+# `qsim_experiments.ipynb` -- 223 of its 263 non-comment code cells are
+# byte-identical -- so it needs the same plan with the cell numbers shifted.
+# Unlike its twin it carries 179 stored figures, which is why it is migrated
+# rather than left behind or converted.
+HIGHKERR = dict(
+    EXPERIMENTS,
+    notebook="qsim_experiments_highkerr_untracked_refactored.ipynb",
+    extra_stages={
+        231: {"orthogonality_expt": "orthogonality"},   # analysed in cell 232
+        247: {"diag_expt": "spectrum"},                 # via a dict record
+        257: {"d72_expt": "spectrum"},                  # via an AttrDict record
+    },
+    # Its `D72EncSpec.__name__` filename is in cell 255, not 256, but no edit
+    # is needed: neither alias is rebound here either, so `__name__` is left
+    # alone by construction.
+    edits=[],
+)
+
+PLANS = [POSTPROCESS, EXPERIMENTS, HIGHKERR]
 
 
 # Classes the notebook defines on top of the god class. Their constructions

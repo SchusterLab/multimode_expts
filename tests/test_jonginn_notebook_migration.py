@@ -43,7 +43,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS = REPO_ROOT / "measurement_notebooks" / "jonginn"
-NAMES = ["qsim_experiments.ipynb", "data_postprocess.ipynb"]
+NAMES = ["qsim_experiments.ipynb", "data_postprocess.ipynb",
+         # A near-duplicate of the first -- 223 of 263 code cells are
+         # byte-identical -- but it carries 179 stored figures of its own, so
+         # it is migrated rather than dropped.
+         "qsim_experiments_highkerr_untracked_refactored.ipynb"]
 
 STAGE_MODULES = {
     "MBRPhaseCorrectionExperiment": "experiments.qsim.mbr_phase_correction",

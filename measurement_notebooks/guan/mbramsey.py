@@ -279,14 +279,16 @@ calibration_runner = meas.BatchRunner(
     job_client=client, 
     show=False,
 )
-calibration_expt = calibration_runner.execute(
-    calibration_batch.configs, 
-    batch_size=10, 
-    log=True, 
-    show=False,
+calibration_expt = meas.MBRPhaseCorrectionExperiment.from_batch(
+    calibration_runner.execute(
+        calibration_batch.configs, 
+        batch_size=10, 
+        log=True, 
+        show=False,
+    )
 )
 calibration_expt.analyze(
-    stage='calibration', occupations=encspec_occupations,
+    occupations=encspec_occupations,
     cycle_pairs=encspec_cycle_pairs, repeats=calibration_batch.repeats,
 )
 
@@ -316,11 +318,13 @@ for correction_sign in [1., -1.]:
     for config in sign_batch.configs:
         config['final_analyzer_phase_per_cycle_deg'] = correction_per_cycle
 
-    sign_expt = calibration_runner.execute(
-        sign_batch.configs, batch_size=2, log=True, show=False,
+    sign_expt = meas.MBRPhaseCorrectionExperiment.from_batch(
+        calibration_runner.execute(
+            sign_batch.configs, batch_size=2, log=True, show=False,
+        )
     )
     sign_expt.analyze(
-        stage='calibration', occupations=[encspec_sign_occupation],
+        occupations=[encspec_sign_occupation],
         cycle_pairs=encspec_cycle_pairs, repeats=sign_batch.repeats,
     )
     residual_phase = sign_expt.data.phase_mod180[0]
@@ -380,18 +384,21 @@ spectroscopy_runner = floquet_dark_mode_readout.BatchRunner(
     default_expt_cfg=spectroscopy_batch.default_expt_cfg,
     job_client=client, show=False,
 )
-spectroscopy_expt = spectroscopy_runner.execute(
-    spectroscopy_batch.configs, batch_size=8, log=True, show=False,
+spectroscopy_expt = meas.MBRSpectrumExperiment.from_batch(
+    spectroscopy_runner.execute(
+        spectroscopy_batch.configs, batch_size=8, log=True, show=False,
+    )
 )
+# Six arguments came out of this call: photon_number, detunings,
+# couplings_MHz, floquet_cycle_us, physical_kerr_MHz, correction and
+# mode_labels. None of them was ever read -- the old dispatch took `**kwargs`
+# and never looked any of them up, checked against the pre-split source -- so
+# they have always been decoration. They are all resolved from the saved jobs.
+# `analyze` names its parameters now, so leaving them in raises.
 spectroscopy_expt.analyze(
-    stage='spectrum', occupations=encspec_occupations,
-    photon_number=encspec_N,
-    detunings=encspec_detunings, couplings_MHz=encspec_hardware.couplings_MHz,
-    floquet_cycle_us=encspec_hardware.floquet_cycle_us,
-    physical_kerr_MHz=encspec_hardware.physical_kerr_MHz,
+    occupations=encspec_occupations,
     fft_window='raw', zero_padding=1,
-    calibration=calibration_expt.data, correction=encspec_correction,
-    mode_labels=['M1'] + [f'S{stor}' for stor in encspec_modes],
+    calibration=calibration_expt.data,
 )
 spectroscopy_expt.calibration_job_ids = calibration_expt.batch_job_ids
 
