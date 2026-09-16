@@ -206,6 +206,8 @@ def fit_shared_step(matrices, cycles, step, depth, cycle_us):
             "semigroup_residual": float(semigroup_residual),
         }
 
+    return hamtom_fit_shared_step(matrices)
+
 
 def analyze_tomography(hamtom_expt, plan):
     """Analyze the three depths and fit both raw and corrected (cell 356).
@@ -218,6 +220,11 @@ def analyze_tomography(hamtom_expt, plan):
     hamtom_step = plan["step"]
     hamtom_depth = plan["depth"]
     hamtom_cycle_us = plan["cycle_us"]
+
+    # BatchRunner returns the acquisition class; tomography needs the
+    # aggregate propagator analyzer, reusing the already acquired children.
+    if not isinstance(hamtom_expt, MBRPropagatorExperiment):
+        hamtom_expt = MBRPropagatorExperiment.from_batch(hamtom_expt)
 
     hamtom_data = hamtom_expt.analyze(
         occupations=hamtom_occupations,
