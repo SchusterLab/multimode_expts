@@ -341,13 +341,17 @@ def build_stage(stage, defaults, swap_stors, occupations, **kwargs):
 
 
 def run_stage(station, stage, defaults, swap_stors, occupations,
-              job_client=None, batch_size=1, show=False, **kwargs):
+              job_client=None, batch_size=1, show=False, log=None, **kwargs):
     """Acquire one stage, through the queue if a client is given.
 
     With a ``job_client`` this is the production path and goes through
     ``BatchRunner``, so provenance and HDF5 output happen as usual. Without
     one it acquires in-process, which is the only option off-prod; the return
     value is then a list of acquired Experiments rather than an aggregate.
+    Queued jobs analyze their own quadratures before saving. ``show`` and
+    ``log`` control per-job plots and lab-notebook entries;
+    ``log=None`` follows ``station.log_measurements``.
+    Analyze the returned aggregate separately.
     """
     owner, program, batch = build_stage(
         stage, defaults, swap_stors, occupations, **kwargs)
@@ -357,7 +361,8 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
             station=station, ExptClass=owner, ExptProgram=program,
             default_expt_cfg=batch.default_expt_cfg,
             job_client=job_client, show=show)
-        return runner.execute(batch.configs, batch_size=batch_size, show=show)
+        return runner.execute(batch.configs, batch_size=batch_size,show=show,
+                              log=log)
 
     acquired = []
     for override in batch.configs:
