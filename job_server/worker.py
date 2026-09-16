@@ -482,10 +482,6 @@ class JobWorker:
         Returns:
             Tuple of (data_file_path, expt_pickle_path)
         """
-        analyze = expt_config.get("analyze_on_acquire", True)
-        if not isinstance(analyze, bool):
-            raise ValueError("analyze_on_acquire must be a boolean")
-
         # Generate data filename using job ID
         data_filename = IDGenerator.generate_data_filename(job.job_id, job.experiment_class)
         data_file_path = self.station.data_path / data_filename
@@ -563,7 +559,7 @@ class JobWorker:
         # Run experiment
         # In mock mode, this will generate simulated data
         expt.go(
-            analyze=analyze,
+            analyze=True,
             display=False,  # Don't display in worker
             progress=True,
             save=True,

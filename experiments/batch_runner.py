@@ -67,14 +67,8 @@ class BatchRunner(CharacterizationRunner):
                   timeout=None,
                   log=None,
                   show=None,
-                  allow_queue_in_mock=False,
-                  analyze=True):
-        """Submit at most batch_size jobs, then collect them in config order.
-
-        ``analyze`` controls each job's worker-side analysis, not the aggregate.
-        It travels in ``expt_config.analyze_on_acquire`` and is saved with the
-        raw data. The caller analyzes the returned aggregate separately.
-        """
+                  allow_queue_in_mock=False):
+        """Submit at most batch_size jobs, then collect them in config order."""
         if self.job_client is None:
             raise ValueError("job_client is required")
 
@@ -103,9 +97,6 @@ class BatchRunner(CharacterizationRunner):
                 or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
             raise ValueError("batch_size must be a positive integer")
 
-        if not isinstance(analyze, (bool, np.bool_)):
-            raise ValueError("analyze must be a boolean")
-
         configs = list(configs) #list of config dictionary that is overrided in the submitted job
         if not configs:
             raise ValueError("configs cannot be empty")
@@ -124,12 +115,10 @@ class BatchRunner(CharacterizationRunner):
             print(f"batch {start // batch_size + 1}: {len(batch_configs)} jobs")
             try:
                 for cfg in batch_configs:
-                    expt_config = self._plain(dict(cfg))
-                    expt_config["analyze_on_acquire"] = bool(analyze)
                     job_id = self.job_client.submit_job(
                         experiment_class=self.ExptClass.__name__,
                         experiment_module=self.ExptClass.__module__,
-                        expt_config=expt_config,
+                        expt_config=self._plain(dict(cfg)), 
                         station_config=station_config,
                         user=self.station.user, 
                         priority=priority,
