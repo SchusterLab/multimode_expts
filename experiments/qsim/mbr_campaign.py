@@ -368,6 +368,8 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
         expt.cfg = AttrDict(deepcopy(station.hardware_cfg))
         expt.cfg.expt = AttrDict(deepcopy(batch.default_expt_cfg))
         expt.cfg.expt.update(override)
+        if "relax_delay" in expt.cfg.expt:
+            expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
         expt.im = station.im
         expt.acquire(progress=False)
         acquired.append(expt)
