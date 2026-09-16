@@ -238,6 +238,8 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
 
     def display(self, data=None, figsize=None):
         """Raw, raw off-diagonal, and normalized leakage panels."""
+        if not hasattr(self, "batch_expts"):
+            return super().display(data=data)
         if data is not None:
             self.data = data
         return self.display_orthogonality(self.data, figsize=figsize)

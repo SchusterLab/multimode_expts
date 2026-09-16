@@ -284,6 +284,8 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
 
         Body is the former ``display`` spectrum branch, unchanged.
         """
+        if not hasattr(self, "batch_expts"):
+            return super().display(data=data, **kwargs)
         if data is not None:
             self.data = data
         spectrum_method = str(kwargs.get("spectrum_method", self.data.get("spectrum_method", "fft"))).lower()

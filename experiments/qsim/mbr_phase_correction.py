@@ -440,6 +440,8 @@ class MBRPhaseCorrectionExperiment(EncodingHamiltonianSpectroscopyExperiment):
 
     def display(self, data=None, ncols=None):
         """Per-occupation IQ/phase fits, then the phase-per-cycle summary."""
+        if not hasattr(self, "batch_expts"):
+            return super().display(data=data)
         if data is not None:
             self.data = data
         if "results" not in self.data:
