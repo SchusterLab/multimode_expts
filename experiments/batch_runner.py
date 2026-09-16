@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Queue submission for a whole batch of jobs, a bounded number at a time.
+"""Run a batch locally or submit it to the queue a bounded number at a time.
 
 ``CharacterizationRunner`` submits one job and waits. A campaign submits
 hundreds -- one per disorder realization per occupation -- and waiting for
@@ -14,8 +14,9 @@ knows what is being measured. It does record what was measured --
 ``program_module`` go into the job with the config -- and that recording is
 the reason class names and modules in this tree count as provenance.
 
-``execute`` needs a ``job_client`` and so only runs where the job server is
-reachable.
+``execute(use_queue=False)`` runs each config through ``run_local``, including
+its usual analysis, saving, postprocessing and logging. Both execution modes
+return the same aggregate; local runs have no queue job IDs.
 """
 from copy import deepcopy
 
@@ -40,7 +41,7 @@ def _is_real_job_client(client):
 
 
 class BatchRunner(CharacterizationRunner):
-    """CharacterizationRunner with bounded parallel queue submission."""
+    """CharacterizationRunner with local batches and bounded queue submission."""
 
     @staticmethod
     def _plain(obj):
@@ -67,31 +68,32 @@ class BatchRunner(CharacterizationRunner):
                   timeout=None,
                   log=None,
                   show=None,
-                  allow_queue_in_mock=False):
-        """Submit at most batch_size jobs, then collect them in config order."""
-        if self.job_client is None:
+                  allow_queue_in_mock=False,
+                  use_queue=None):
+        """Run configs in order and return an aggregate of their Experiments.
+
+        ``use_queue=None`` follows the runner's setting (default: True).
+        Queued execution submits at most ``batch_size`` jobs before collecting
+        that group. Local execution runs one config at a time, without grouping,
+        and needs no job client. The usual ``run_local`` defaults analyze and
+        save each acquired experiment.
+        """
+        mode = self.use_queue if use_queue is None else use_queue
+        if mode and self.job_client is None:
             raise ValueError("job_client is required")
 
-        # This override is queue-only: unlike CharacterizationRunner.execute,
-        # which switches to run_local() when the station is mock, there is no
-        # local batch path. So a mock session would submit real jobs to the
-        # real queue, where the worker runs whatever is checked out at
-        # C:\python\multimode_expts -- not the caller's worktree, and against
-        # real hardware unless that worker was itself started with --mock.
-        #
-        # The hazard is specifically mock station + real queue. A test driving
-        # a fake client is not at risk, so check the client's type rather than
-        # is_mock alone.
-        if (getattr(self.station, "is_mock", False)
+        # Preserve the queue's explicit mock opt-in: a real queue may have a
+        # worker using live hardware even when this notebook's station is mock.
+        if (mode and getattr(self.station, "is_mock", False)
                 and not allow_queue_in_mock
                 and _is_real_job_client(self.job_client)):
             raise RuntimeError(
-                "BatchRunner.execute submits to the job queue and has no "
-                "local mock path, but this station has mock instruments. "
+                "BatchRunner.execute would submit to the job queue, "
+                "but this station has mock instruments. "
                 "The queue worker would run the main checkout against real "
-                "hardware unless it was started with --mock. Start a mock "
-                "worker and pass allow_queue_in_mock=True if that is what "
-                "you want."
+                "hardware unless it was started with --mock. Pass "
+                "use_queue=False for local execution, or start a mock worker "
+                "and pass allow_queue_in_mock=True."
             )
         if (isinstance(batch_size, (bool, np.bool_))
                 or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
@@ -102,6 +104,14 @@ class BatchRunner(CharacterizationRunner):
             raise ValueError("configs cannot be empty")
         expts = []
         self.last_job_ids = []
+        self.last_job_result = None
+        if not mode:
+            for overrides in configs:
+                expts.append(self.run_local(
+                    postprocess=postprocess, log=log, show=show, **overrides,
+                ))
+            return self._aggregate(expts)
+
         program_module = None
         program_class = None
         if self.program is not None:
@@ -149,6 +159,10 @@ class BatchRunner(CharacterizationRunner):
                     except Exception:
                         pass
                 raise
+        return self._aggregate(expts)
+
+    def _aggregate(self, expts):
+        """Keep the result shape identical for local and queued acquisition."""
         if self.program is not None:
             batch_expt = self.ExptClass(
                 soccfg=self.station.soccfg,
