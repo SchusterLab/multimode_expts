@@ -148,12 +148,14 @@ def next_file_index(datapath,prefix=''):
         in the series"""
 
     dirlist=glob.glob(os.path.join(datapath,'*_'+prefix+'*'))
-    dirlist.sort()
-    try:
-        ii=int(os.path.split(dirlist[-1])[-1].split('_')[0])+1
-    except:
-        ii=0
-    return ii
+    indices = []
+    for filename in dirlist:
+        try:
+            indices.append(int(os.path.basename(filename).split('_')[0]))
+        except ValueError:
+            # Queued measurements use JOB-... names rather than numeric indices.
+            continue
+    return max(indices, default=-1) + 1
 
 def current_file_index(datapath,prefix=''):
     """Searches directories for files of the form *_prefix* and returns current number
