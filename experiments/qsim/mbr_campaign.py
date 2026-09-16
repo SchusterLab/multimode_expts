@@ -337,7 +337,7 @@ def build_stage(stage, defaults, swap_stors, occupations, **kwargs):
         raise KeyError(f"unknown stage {stage!r}; expected {sorted(STAGES)}")
     owner, program, builder = STAGES[stage]
     batch = builder(defaults, swap_stors, occupations, **kwargs)
-    return owner, program, batch
+    return owner, batch.get("program", program), batch
 
 
 def run_stage(station, stage, defaults, swap_stors, occupations,
