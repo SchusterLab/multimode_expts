@@ -7,9 +7,8 @@ are verbatim slices; only :meth:`MBRPropagatorExperiment.analyze` is new, and it
 replaces the string dispatch with a plain call.
 
 Rows are decoder occupations, columns are encoder occupations. ``raw_matrices``
-is what the quadratures give directly; ``matrices`` additionally undoes the
-per-decoder phase correction that was applied at pulse time, so it is the
-Kerr-preserving form.
+is what the quadratures give directly. ``matrices`` applies the per-decoder
+correction in analysis only when it was not already applied to the pulse.
 
 The base class is still the god Experiment, which is where the loading layer
 (``from_job_files``, ``_saved_parameters``, ``_quadrature``) lives until it is
@@ -49,7 +48,11 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
     def reconstruct_propagator(cls,
                                propagator_expts,
                                occupations=None):
-        """Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices."""
+        """Reconstruct raw and Kerr-preserving ``M_q[j, i]`` matrices.
+
+        Jobs share the cycle and decoder order. Returned correction angles
+        have shape (decoder, encoder); correction locations follow encoder order.
+        """
         first_cfg = propagator_expts[0].cfg.expt
         swap_stors = [int(stor) for stor in first_cfg.swap_stors]
         cycles = [int(cycle) for cycle in first_cfg.propagator_cycles]
@@ -58,15 +61,33 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
             for occupation in first_cfg.propagator_occupations
         ]
 
+        raw_columns = {}
         columns = {}
+        phase_corrections = {}
+        correction_locations = {}
         for expt in propagator_expts:
+            correction_location = expt.cfg.expt.get("phase_correction_location", "analysis")
+            if correction_location not in ("pulse", "analysis"):
+                raise ValueError("phase_correction_location must be 'pulse' or 'analysis'")
             encoder = tuple(expt.cfg.expt.spectroscopy_occupations)
             quadrature = np.asarray(
                 cls._quadrature(expt), dtype=float
             ).reshape(len(cycles), len(decoder_order), 2)
-            columns[encoder] = (
+            raw_columns[encoder] = (
                 quadrature[:, :, 0] - 1j * quadrature[:, :, 1]
             )
+            phase_correction = np.asarray(
+                expt.cfg.expt.propagator_decoder_phase_correction_deg, dtype=float
+            )
+            columns[encoder] = raw_columns[encoder]
+            if correction_location == "analysis":
+                columns[encoder] = raw_columns[encoder] * np.exp(
+                    -1j * np.deg2rad(
+                        np.asarray(cycles)[:, None] * phase_correction[None, :]
+                    )
+                )
+            phase_corrections[encoder] = phase_correction
+            correction_locations[encoder] = correction_location
 
         occupation_order = decoder_order if occupations is None else [
             tuple(occupation) for occupation in occupations
@@ -76,19 +97,17 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
             for occupation in occupation_order
         ]
         raw_matrices = np.stack([
+            raw_columns[occupation][:, decoder_indices]
+            for occupation in occupation_order
+        ], axis=2).astype(complex, copy=False)
+        matrices = np.stack([
             columns[occupation][:, decoder_indices]
             for occupation in occupation_order
         ], axis=2).astype(complex, copy=False)
-        phase_correction = np.asarray(
-            first_cfg.propagator_decoder_phase_correction_deg,
-            dtype=float,
-        )[decoder_indices]
-        matrices = raw_matrices * np.exp(
-            -1j * np.deg2rad(
-                np.asarray(cycles)[:, None, None]
-                * phase_correction[None, :, None]
-            )
-        )
+        phase_correction = np.stack([
+            phase_corrections[occupation][decoder_indices]
+            for occupation in occupation_order
+        ], axis=1)
 
         return AttrDict(dict(
             cycles=np.asarray(cycles, dtype=int),
@@ -97,6 +116,10 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
             raw_matrices=raw_matrices,
             matrices=matrices,
             decoder_phase_correction_deg=phase_correction,
+            phase_correction_location=np.asarray([
+                correction_locations[occupation]
+                for occupation in occupation_order
+            ], dtype="S"),
             matrix_orientation="rows=decoder, columns=encoder",
         ))
 
@@ -107,8 +130,11 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
                          cycles,
                          phase_by_occupation,
                          sync_cycles=10,
-                         reps=300):
-        """Build one raw short-time propagator job per encoded occupation."""
+                         reps=300,
+                         phase_correction_location="pulse"):
+        """Build one propagator job per encoder, with pulse or analysis correction."""
+        if phase_correction_location not in ("pulse", "analysis"):
+            raise ValueError("phase_correction_location must be 'pulse' or 'analysis'")
         swap_stors = [int(stor) for stor in swap_stors]
         occupations = [list(occupation) for occupation in occupations]
         cycles = [int(cycle) for cycle in cycles]
@@ -139,6 +165,7 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
             palindrome_scramble=False,
             spectroscopy_phase_correction_mode="final_analyzer",
             final_analyzer_phase_per_cycle_deg=0.,
+            phase_correction_location=phase_correction_location,
             propagator_cycles=cycles,
             propagator_occupations=deepcopy(occupations),
             propagator_decoder_phase_correction_deg=(
@@ -442,6 +469,12 @@ class EncodingPropagatorProgram(
             cycle_decoder_analyzer[-1])
         ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
         ecfg.final_analyzer_phase_per_cycle_deg = 0.
+        if ("propagator_occupations" in ecfg
+                and ecfg.get("phase_correction_location", "analysis") == "pulse"):
+            decoder = ecfg.propagator_occupations.index(decoder_occupation)
+            ecfg.final_analyzer_phase_per_cycle_deg = (
+                ecfg.propagator_decoder_phase_correction_deg[decoder]
+            )
         ecfg.spectroscopy_final_occupations = decoder_occupation
 
         super().initialize()
