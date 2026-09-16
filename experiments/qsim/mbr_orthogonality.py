@@ -231,6 +231,8 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
         ``occupations`` optionally fixes the row/column order; it defaults to
         the order recorded in the jobs.
         """
+        if not hasattr(self, "batch_expts"):
+            return super().analyze(data=data)
         if data is not None:
             self.data = data
         self.data = self.reconstruct_orthogonality(self.batch_expts, occupations)

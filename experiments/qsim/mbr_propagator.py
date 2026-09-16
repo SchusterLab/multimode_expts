@@ -181,6 +181,8 @@ class MBRPropagatorExperiment(EncodingHamiltonianSpectroscopyExperiment):
         ``floquet_cycle_us`` defaults to the value resolved from the saved
         jobs; the other two knobs are passed straight through.
         """
+        if not hasattr(self, "batch_expts"):
+            return super().analyze(data=data)
         if data is not None:
             self.data = data
         self.data = self.reconstruct_propagator(self.batch_expts, occupations)

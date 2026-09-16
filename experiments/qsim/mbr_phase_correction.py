@@ -428,6 +428,8 @@ class MBRPhaseCorrectionExperiment(EncodingHamiltonianSpectroscopyExperiment):
         :meth:`phase_correction_from_calibration` needs the Kerr rate and the
         Floquet cycle length that go with this data.
         """
+        if not hasattr(self, "batch_expts"):
+            return super().analyze(data=data)
         if data is not None:
             self.data = data
         self.data = self.analyze_calibration(
