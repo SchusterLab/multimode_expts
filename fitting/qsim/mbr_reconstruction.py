@@ -189,8 +189,11 @@ def subsample_spectroscopy_shots(spectroscopy_expts,
         sampled_data["avgq"] = sampled_avgq
         sampled_data["amps"] = np.abs(sampled_avgi + 1j * sampled_avgq)
         sampled_data["phases"] = np.angle(sampled_avgi + 1j * sampled_avgq)
+        # Discard results derived from the original average so reanalysis uses
+        # the sampled IQ. The sweep coordinates are unchanged and can stay.
         sampled_data.pop("Pe", None)
         sampled_data.pop("return_quadrature", None)
+        sampled_data.pop("A", None)
 
         sampled_expt = copy(expt)
         sampled_expt.data = sampled_data
