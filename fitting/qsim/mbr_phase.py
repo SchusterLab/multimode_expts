@@ -154,6 +154,7 @@ def saved_correction(expts):
             "offdiag_decoder_phase_correction_deg",
             ecfg.get("final_analyzer_phase_per_cycle_deg", 0.),
         ))
+        phase += float(ecfg.get("spectroscopy_analysis_phase_per_cycle_deg", 0.))
         if occupation in phase_by_occupation and not np.isclose(phase, phase_by_occupation[occupation]):
             raise ValueError(f"{occupation} spectroscopy chunks used different analyzer corrections")
         phase_by_occupation[occupation] = phase
