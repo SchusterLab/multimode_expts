@@ -16,8 +16,7 @@ The chain, in the order ``analyze`` runs it:
 
 1. optional shot subsampling (``subsample_spectroscopy_shots``);
 2. quadratures to a complex return ``A = Q_0 - i Q_90``
-   (``reconstruct_spectroscopy``, or ``reconstruct_pair_spectroscopy`` when the
-   jobs carry ``offdiag_cycles``);
+   (``reconstruct_spectroscopy`` handles both current and legacy job layouts);
 3. phase-frame transformation against the calibration
    (``_postprocess_reconstruction``, which needs
    ``MBRPhaseCorrectionExperiment``);
@@ -57,7 +56,6 @@ import numpy as np
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
-    EncodingPropagatorProgram,
     NPhotonHamiltonianSpectroscopyProgram,
 )
 from experiments.qsim.dark_base import readout_lane_count
@@ -175,12 +173,8 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             raise ValueError("shot_seed requires shots_per_point")
         saved = self._saved_parameters(analysis_expts,
                                        getattr(self, "_analysis_station", None))
-        if "offdiag_cycles" in analysis_expts[0].cfg.expt:
-            acquired_reconstruction = self.reconstruct_pair_spectroscopy(
-                analysis_expts, occupations)
-        else:
-            acquired_reconstruction = self.reconstruct_spectroscopy(
-                analysis_expts, occupations)
+        acquired_reconstruction = self.reconstruct_spectroscopy(
+            analysis_expts, occupations)
         photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
         if len(photon_numbers) != 1:
             raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
@@ -436,91 +430,24 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
     @classmethod
     def reconstruct_pair_spectroscopy(cls, spectroscopy_expts,
                                       occupations=None):
-        """Reconstruct the interleaved off-diagonal acquisition path."""
-        grouped = {}
-        for expt in spectroscopy_expts:
-            cfg = expt.cfg.expt
-            initial = tuple(cfg.spectroscopy_occupations)
-            final = tuple(cfg.offdiag_decoder_occupation)
-            cycles = np.asarray(cfg.offdiag_cycles, dtype=int)
-            quadratures = np.asarray(
-                cls._quadrature(expt), dtype=float
-            ).reshape(-1, 2)
-            A = quadratures[:, 0] - 1j * quadratures[:, 1]
-            phase = float(cfg.offdiag_decoder_phase_correction_deg)
-            A *= np.exp(-1j * np.deg2rad(phase * cycles))
-            grouped.setdefault((final, initial), []).append((cycles, A))
-
-        if occupations is None:
-            state_order = list(grouped)
-        else:
-            initial_order = [tuple(occupation) for occupation in occupations]
-            state_order = [
-                state for initial in initial_order
-                for state in grouped if state[1] == initial
-            ]
-
-        rows = []
-        expected_cycles = None
-        for state in state_order:
-            cycles = np.concatenate([chunk[0] for chunk in grouped[state]])
-            A = np.concatenate([chunk[1] for chunk in grouped[state]])
-            order = np.argsort(cycles)
-            cycles, A = cycles[order], A[order]
-            if expected_cycles is None:
-                expected_cycles = cycles
-            rows.append(A)
-
-        initial_occupations = [state[1] for state in state_order]
-        final_occupations = [state[0] for state in state_order]
-        A = np.asarray(rows, dtype=complex)
-        A_norm = np.asarray([
-            row / row[0] if initial == final else row
-            for row, initial, final in zip(
-                A, initial_occupations, final_occupations
-            )
-        ])
-        return AttrDict(dict(
-            occupations=initial_occupations,
-            final_occupations=final_occupations,
-            cycles=expected_cycles,
-            A=A,
-            A_norm=A_norm,
-        ))
+        """Compatibility entry point for saved off-diagonal spectroscopy jobs."""
+        return cls.reconstruct_spectroscopy(spectroscopy_expts, occupations)
 
     @classmethod
     def reconstruct_spectroscopy(cls, 
                                  spectroscopy_expts, 
                                  occupations=None):
         """
-        Combine chunked spectroscopy jobs into the complex return amplitudes in
-        the phase frame used during acquisition.
+        Combine cycle chunks into ``A = Q_0 - i Q_90`` for each initial/final pair.
 
-        For each initial occupation ``alpha``, the saved jobs must contain the
-        analyzer settings ``phi=0`` and ``phi=90``. ``_quadrature`` first forms
-        ``Q_phi=Pe(theta=0)-Pe(theta=180)`` from the two preparation phases.
-        With the QICK convention ``Q_phi=Re[A_alpha exp(+i phi)]``, the two
-        analyzer quadratures give
+        Accepts four-phase jobs, legacy interleaved off-diagonal jobs, and legacy
+        jobs split between analyzer phases 0/90. Saved analysis corrections are
+        applied once; pulse corrections are already present in the measured
+        signal. Further phase-frame transformations belong to ``analyze``.
 
-            ``A_alpha=Q_0-i Q_90=<alpha|U|alpha>``.
-
-        The analyzer phase already contains any correction played by the pulse
-        program. This method only reconstructs what was acquired: it does not
-        undo or replace that correction, select a 180-degree phase branch,
-        change the self-Kerr frame, or perform an FFT. Those operations belong
-        to ``analyze(stage='spectrum')`` after this reconstruction.
-
-        Jobs are grouped using the saved ``spectroscopy_occupations`` and
-        ``spectroscopy_analyzer_phase``. Cycle chunks are concatenated and
-        sorted, and every occupation and analyzer quadrature must cover the same
-        non-overlapping cycle points. If ``occupations`` is supplied, it sets
-        the returned row order and must contain exactly the occupations present
-        in the saved jobs.
-
-        Returns an AttrDict with ``occupations``, the common sorted ``cycles``,
-        and a complex array ``A`` of shape ``(n_occupations, n_cycles)``. This
-        result is called ``acquired_reconstruction`` by ``analyze`` to distinguish
-        it from the reconstruction after an optional phase-frame transformation.
+        All pairs must cover the same non-overlapping cycles. ``occupations``
+        optionally orders the initial states, keeping each one's final states
+        in their saved order. Only diagonal returns are normalized by A(0).
         """
         if not spectroscopy_expts:
             raise ValueError("spectroscopy_expts cannot be empty")
@@ -528,8 +455,35 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         for expt in spectroscopy_expts:
             cfg = expt.cfg.expt
             occupation = tuple(cfg.spectroscopy_occupations)
-            final_occupation = tuple(cfg.get("spectroscopy_final_occupations", occupation))
+            final_occupation = tuple(cfg.get(
+                "offdiag_decoder_occupation",
+                cfg.get("spectroscopy_final_occupations", occupation)))
             state = (final_occupation, occupation)
+            # Group jobs by (final_occupation, initial_occupation):
+            # grouped = {
+            #     (final, initial): {
+            #         "complex": [(cycles, A), ...],  # New four-phase / legacy off-diagonal jobs
+            #         0.: [expt, ...],               # Legacy analyzer-0-only jobs
+            #         90.: [expt, ...],              # Legacy analyzer-90-only jobs
+            #     },
+            #     ...
+            # }
+            # Each list entry represents one job; cycle chunks are combined later.
+            # setdefault initializes this state pair's group if it is missing.
+            # chunks references grouped[state], so appending here updates that same group.
+            chunks = grouped.setdefault(state, {"complex": [], 
+                                                0.: [], 
+                                                90.: []})
+            if "spectroscopy_phase_id" in cfg.get("swept_params", []):
+                cycles = np.asarray(expt.data["ypts"])
+                if not np.array_equal(cycles, cfg.floquet_cycles):
+                    raise ValueError(f"{state}: saved cycles do not match its config")
+                chunks["complex"].append((cycles, cls._complex_return(expt)))
+                continue
+            if "offdiag_cycles" in cfg:
+                cycles = np.asarray(cfg.offdiag_cycles, dtype=int)
+                chunks["complex"].append((cycles, cls._complex_return(expt)))
+                continue
             phi = cfg.spectroscopy_analyzer_phase
             if phi not in (0., 90.):
                 raise ValueError(f"{occupation} has analyzer phase {phi}; expected 0 or 90")
@@ -539,38 +493,61 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 raise ValueError(f"{occupation}, phi={phi}: saved preparation phases changed")
             if not np.array_equal(expt.data["ypts"], cfg.floquet_cycles):
                 raise ValueError(f"{occupation}, phi={phi}: saved cycles do not match its config")
-            if state not in grouped:
-                grouped[state] = {0.: [], 90.: []}
-            grouped[state][phi].append(expt)
+            chunks[phi].append(expt)
 
         if occupations is None:
             state_order = list(grouped)
         else:
-            occupation_order = [tuple(occupation) for occupation in occupations]
-            state_order = [next(state for state in grouped if state[1] == occupation) for occupation in occupation_order]
+            occupation_order = list(dict.fromkeys(tuple(occupation) for occupation in occupations))
+            if set(occupation_order) != {state[1] for state in grouped}:
+                raise ValueError("spectroscopy occupations do not match the saved configs")
+            state_order = [state for occupation in occupation_order
+                           for state in grouped if state[1] == occupation]
         if len(state_order) != len(grouped) or set(state_order) != set(grouped):
             raise ValueError("spectroscopy occupations do not match the saved configs")
         expected_cycles = None
         rows = []
 
         for state in state_order:
-            quadratures = []
-            for phi in [0., 90.]:
-                expts = grouped[state][phi]
-                if not expts:
-                    raise ValueError(f"{occupation} is missing phi={phi} data")
-                cycles = np.concatenate([np.asarray(expt.data["ypts"]) for expt in expts])
-                quadrature = np.concatenate([cls._quadrature(expt) for expt in expts])
-                order = np.argsort(cycles)
-                cycles = cycles[order]
-                if len(np.unique(cycles)) != len(cycles):
-                    raise ValueError(f"{occupation}, phi={phi}: spectroscopy cycles overlap")
-                if expected_cycles is None:
-                    expected_cycles = cycles
-                elif not np.array_equal(cycles, expected_cycles):
-                    raise ValueError(f"{occupation}, phi={phi}: spectroscopy cycles are incomplete")
-                quadratures.append(quadrature[order])
-            rows.append(quadratures[0] - 1j * quadratures[1])
+            chunks = grouped[state]
+            # New four-phase and legacy off-diagonal jobs already have complex A.
+            complete = list(chunks["complex"])
+            # Only legacy analyzer-only jobs went into chunks[0.] and chunks[90.].
+            # Jobs already reconstructed in chunks["complex"] are not processed here.
+            # Join each analyzer's cycle chunks, verify matching cycle arrays,
+            # then combine Q0 and Q90 into A. With only complete jobs, both lists
+            # are empty and this block is skipped.
+            if chunks[0.] or chunks[90.]:
+                quadratures = []
+                legacy_cycles = None
+                for phi in [0., 90.]:
+                    expts = chunks[phi]
+                    if not expts:
+                        raise ValueError(f"{state} is missing phi={phi} data")
+                    cycles = np.concatenate([np.asarray(expt.data["ypts"]) for expt in expts])
+                    quadrature = np.concatenate([cls._quadrature(expt) for expt in expts])
+                    order = np.argsort(cycles)
+                    cycles = cycles[order]
+                    if len(np.unique(cycles)) != len(cycles):
+                        raise ValueError(f"{state}, phi={phi}: spectroscopy cycles overlap")
+                    if legacy_cycles is None:
+                        legacy_cycles = cycles
+                    elif not np.array_equal(cycles, legacy_cycles):
+                        raise ValueError(f"{state}, phi={phi}: spectroscopy cycles are incomplete")
+                    quadratures.append(quadrature[order])
+                complete.append((legacy_cycles, quadratures[0] - 1j * quadratures[1]))
+
+            cycles = np.concatenate([chunk[0] for chunk in complete])
+            A = np.concatenate([chunk[1] for chunk in complete])
+            order = np.argsort(cycles)
+            cycles, A = cycles[order], A[order]
+            if len(np.unique(cycles)) != len(cycles):
+                raise ValueError(f"{state}: spectroscopy cycles overlap")
+            if expected_cycles is None:
+                expected_cycles = cycles
+            elif not np.array_equal(cycles, expected_cycles):
+                raise ValueError(f"{state}: spectroscopy cycles are incomplete")
+            rows.append(A)
         A = np.asarray(rows, dtype = complex)
         occupation_order = [state[1] for state in state_order]
         final_occupations = [state[0] for state in state_order]
