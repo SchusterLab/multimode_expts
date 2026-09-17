@@ -307,7 +307,7 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
             cycles = np.asarray(expt.data["ypts"])
             phase = float(ecfg.get("spectroscopy_analysis_phase_per_cycle_deg", 0.))
         else:
-            quadratures.reshape(-1, 2)
+            quadratures = quadratures.reshape(-1, 2)
             cycles = np.asarray(ecfg.offdiag_cycles)
             phase = float(ecfg.offdiag_decoder_phase_correction_deg)
         A = quadratures[:, 0] - 1j * quadratures[:, 1]
