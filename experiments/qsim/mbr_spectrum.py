@@ -1086,30 +1086,36 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         else:
             detunings = list(detunings)
         defaults = deepcopy(default_expt_cfg)
-        defaults.update(dict(
+        batch_overrides = dict(
             reps=reps, 
             storage_reset=swap_stors, 
             swap_stors=swap_stors,
             detunings=detunings, 
             scramble_sync_cycles=sync_cycles,
-            
-            floquet_hardware_loop=False,
             update_phases=True, 
             palindrome_scramble=False, 
             spectroscopy_phase_correction_mode="final_analyzer",
             spectroscopy_prep_phases=[0., 180.],
             swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
-        ))
+        )
+        for key, value in batch_overrides.items():
+            if key in defaults and not np.array_equal(defaults[key], value):
+                print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
+        defaults.update(batch_overrides)
         final_occupations = occupations if final_occupations is None else final_occupations
         pairs = list(zip(occupations, final_occupations))
         if any(tuple(initial) != tuple(final) for initial, final in pairs):
-            defaults.update(dict(
+            offdiag_overrides = dict(
                 final_analyzer_phase_per_cycle_deg=0.,
                 swept_params=[
                     "cycle_decoder_analyzer",
                     "spectroscopy_prep_phase",
                 ],
-            ))
+            )
+            for key, value in offdiag_overrides.items():
+                if key in defaults and not np.array_equal(defaults[key], value):
+                    print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
+            defaults.update(offdiag_overrides)
             configs = [
                 dict(
                     spectroscopy_occupations=list(initial),
