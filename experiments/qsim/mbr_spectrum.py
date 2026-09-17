@@ -152,6 +152,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
           the historical ``mpm_`` prefix (``mpm_pencil_length=...``). Unknown
           names raise, which the old ``kwargs.get`` chain could not do.
         """
+        matrix_pencil_options = _matrix_pencil_options(matrix_pencil_options)
         if not hasattr(self, "batch_expts"):
             return super().analyze(data=data)
         if data is not None:
