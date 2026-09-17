@@ -303,6 +303,11 @@ class NPhotonHamiltonianSpectroscopyProgram(
         """
         
         ecfg = self.cfg.expt
+        if "spectroscopy_phase_id" in ecfg.get("swept_params", []):
+            prep_phase, analyzer_phase = ecfg.spectroscopy_phase_combinations[
+                ecfg.spectroscopy_phase_id]
+            ecfg.spectroscopy_prep_phase = float(prep_phase)
+            ecfg.spectroscopy_analyzer_phase = float(analyzer_phase)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         if len(set(swap_stors)) != len(swap_stors):
             raise ValueError(f"swap_stors must be distinct; got {swap_stors}")

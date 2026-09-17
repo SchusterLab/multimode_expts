@@ -1067,13 +1067,27 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                            detunings=None, 
                            sync_cycles=10, 
                            reps=300,
-                           final_occupations=None):
+                           final_occupations=None,
+                           phase_correction_location=None):
         """
         Returns dictionary of 
             - default_expt_cfg
             - list of config to be overrided in each job
         The list of config is then used to make and batch jobs in a chunk.
         The actual batch is done by plugging the output to the BatchRunner.
+
+        Each initial/final pair and cycle chunk is one job, with a 2D sweep
+        of Floquet cycle and four (preparation, analyzer) phase combinations.
+        
+        ``phase_correction_location`` selects "pulse" or "analysis" for every
+        pair. 
+            - If "pulse", it adds the phase correction to the final pi/2 pulse.
+            - If "analysis", it post-processes in the `analyze()` method
+            - If omitted, use the value in ``default_expt_cfg``, falling back to "pulse".
+        An explicit argument overrides that default. 
+        
+        The resolved location is saved in each job's
+        config along with its pulse and analysis correction amounts.
         
         Example:
             spectroscopy_batch = EncSpec.spectroscopy_batch()
@@ -1085,6 +1099,14 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             detunings = [0.] * len(swap_stors)
         else:
             detunings = list(detunings)
+            
+        if phase_correction_location is None:
+            phase_correction_location = default_expt_cfg.get("phase_correction_location", "pulse")
+        if phase_correction_location not in ("pulse", "analysis"):
+            raise ValueError("phase_correction_location must be 'pulse' or 'analysis'")
+        
+        final_occupations = occupations if final_occupations is None else final_occupations
+        pairs = list(zip(occupations, final_occupations))
         defaults = deepcopy(default_expt_cfg)
         batch_overrides = dict(
             reps=reps, 
@@ -1095,58 +1117,33 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             update_phases=True, 
             palindrome_scramble=False, 
             spectroscopy_phase_correction_mode="final_analyzer",
-            spectroscopy_prep_phases=[0., 180.],
-            swept_params=["floquet_cycle", "spectroscopy_prep_phase"],
+            phase_correction_location=phase_correction_location,
+            spectroscopy_phase_combinations=[
+                [0., 0.], [180., 0.], [0., 90.], [180., 90.],
+            ], #Note: The order is [prep_phase, analhzer_phase]
+            spectroscopy_phase_ids=[0, 1, 2, 3],
+            swept_params=["floquet_cycle", "spectroscopy_phase_id"],
         )
+        
+        if phase_correction_location == "analysis":
+            batch_overrides["final_analyzer_phase_per_cycle_deg"] = 0.
+        else:
+            batch_overrides["spectroscopy_analysis_phase_per_cycle_deg"] = 0.
+            
+            
         for key, value in batch_overrides.items():
             if key in defaults and not np.array_equal(defaults[key], value):
                 print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
         defaults.update(batch_overrides)
-        final_occupations = occupations if final_occupations is None else final_occupations
-        pairs = list(zip(occupations, final_occupations))
-        if any(tuple(initial) != tuple(final) for initial, final in pairs):
-            offdiag_overrides = dict(
-                final_analyzer_phase_per_cycle_deg=0.,
-                swept_params=[
-                    "cycle_decoder_analyzer",
-                    "spectroscopy_prep_phase",
-                ],
-            )
-            for key, value in offdiag_overrides.items():
-                if key in defaults and not np.array_equal(defaults[key], value):
-                    print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
-            defaults.update(offdiag_overrides)
-            configs = [
-                dict(
-                    spectroscopy_occupations=list(initial),
-                    offdiag_decoder_occupation=list(final),
-                    offdiag_pair_index=pair_index,
-                    offdiag_chunk_index=chunk_index,
-                    offdiag_cycles=cycles.tolist(),
-                    offdiag_decoder_phase_correction_deg=(
-                        phase_by_occupation[tuple(final)]
-                    ),
-                    cycle_decoder_analyzers=[
-                        [int(cycle), *final, phi]
-                        for cycle in cycles for phi in [0., 90.]
-                    ],
-                )
-                for pair_index, (initial, final) in enumerate(pairs)
-                for chunk_index, cycles in enumerate(cycle_chunks)
-            ]
-            return AttrDict(dict(
-                default_expt_cfg=defaults,
-                configs=configs,
-                program=EncodingPropagatorProgram,
-            ))
-
         configs = [
             dict(spectroscopy_occupations=occupation,
                  spectroscopy_final_occupations=final_occupation,
-                 spectroscopy_analyzer_phase=phi,
-                 final_analyzer_phase_per_cycle_deg=phase_by_occupation[tuple(final_occupation)],
+                 final_analyzer_phase_per_cycle_deg=(
+                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "pulse" else 0.),
+                 spectroscopy_analysis_phase_per_cycle_deg=(
+                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "analysis" else 0.),
                  floquet_cycles=cycles.tolist())
-            for occupation, final_occupation in pairs for cycles in cycle_chunks for phi in [0., 90.]
+            for occupation, final_occupation in pairs for cycles in cycle_chunks
         ]
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs,
