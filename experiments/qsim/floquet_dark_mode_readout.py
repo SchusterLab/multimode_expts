@@ -237,12 +237,11 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                              hardware=hardware))
 
     def analyze(self, data=None, **kwargs):
-        """Convert one saved job's two preparation phases to a real quadrature.
+        """Analyze one job's preparation-phase differences.
 
-        This is the per-job analysis the worker runs after ``acquire``. It
-        produces ``Q_phi`` at that job's analyzer phase and does *not* combine
-        the ``phi=0`` and ``phi=90`` jobs into a complex return -- that is an
-        aggregate step and belongs to a stage Experiment.
+        Four-phase spectroscopy jobs also produce ``cycles`` and the complex
+        return ``A = Q_0 - i Q_90``, including the saved analysis correction.
+        Legacy jobs with one analyzer phase still produce only ``Q_phi``.
 
         The four aggregate stages that used to hide behind ``stage=`` are now
         separate classes; see :data:`STAGE_CLASSES` and the migration table in
@@ -253,6 +252,9 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if data is not None:
             self.data = data
         self._quadrature(self)
+        if "spectroscopy_phase_id" in self.cfg.expt.get("swept_params", []):
+            self.data["cycles"] = np.asarray(self.data["ypts"])
+            self.data["A"] = self._complex_return(self)
         return self.data
 
     @staticmethod
@@ -268,8 +270,48 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         if np.isclose(Ig, Ie):
             raise ValueError("Ig and Ie are identical; recalibrate readout")
         expt.data["Pe"] = (signal - Ig) / (Ie - Ig)
-        expt.data["return_quadrature"] = expt.data["Pe"][:, 0] - expt.data["Pe"][:, 1]
+        if "spectroscopy_phase_id" in expt.cfg.expt.get("swept_params", []):
+            phase_pairs = np.asarray(
+                expt.cfg.expt.spectroscopy_phase_combinations, dtype=float
+            )[np.asarray(theta, dtype=int)] 
+            # the above is actually identical to spectroscopy_phase_combinations
+            # but coded just in case phase_id order gets changed in future.
+            quadratures = []
+            for analyzer in (0., 90.):
+                #logic
+                # 1. np.isclose returns [[True, False], ...]
+                # 2. np.all wrt axis =1 gives [True, False, ...]
+                # 3. np.flatnonzero gives the index of Ture. 
+                # so prep0[0] and prep180[0] is integer index
+                prep0 = np.flatnonzero(np.all(
+                    np.isclose(phase_pairs, [0., analyzer]), axis=1))
+                prep180 = np.flatnonzero(np.all(
+                    np.isclose(phase_pairs, [180., analyzer]), axis=1))
+                if len(prep0) != 1 or len(prep180) != 1:
+                    raise ValueError("spectroscopy needs each of the four phase combinations once")
+                quadratures.append(
+                    expt.data["Pe"][:, prep0[0]] - expt.data["Pe"][:, prep180[0]])
+            expt.data["return_quadrature"] = np.column_stack(quadratures) #dim: [cycles, analyzer_phase]
+        else:
+            expt.data["return_quadrature"] = expt.data["Pe"][:, 0] - expt.data["Pe"][:, 1]
         return expt.data["return_quadrature"]
+
+    @staticmethod
+    def _complex_return(expt):
+        """Reconstruct a complete four-phase job, including legacy off-diagonal jobs."""
+        ecfg = expt.cfg.expt
+        quadratures = np.asarray(
+            EncodingHamiltonianSpectroscopyExperiment._quadrature(expt)
+        ) 
+        if "spectroscopy_phase_id" in ecfg.get("swept_params", []):
+            cycles = np.asarray(expt.data["ypts"])
+            phase = float(ecfg.get("spectroscopy_analysis_phase_per_cycle_deg", 0.))
+        else:
+            quadratures.reshape(-1, 2)
+            cycles = np.asarray(ecfg.offdiag_cycles)
+            phase = float(ecfg.offdiag_decoder_phase_correction_deg)
+        A = quadratures[:, 0] - 1j * quadratures[:, 1]
+        return A * np.exp(-1j * np.deg2rad(phase * cycles)) #postprocessing if phase is nonzero
 
     # Analyzer-phase numerics live in fitting/qsim/mbr_phase.py (spec 7.5).
     # Wrappers keep the historical call sites and notebook usage working.
