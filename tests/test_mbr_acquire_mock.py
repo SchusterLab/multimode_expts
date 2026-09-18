@@ -34,9 +34,16 @@ Everything needed is committed: the config sets live in
 ``configs/soccfg_snapshot.json``. Unlike the golden-baseline tests, this one
 needs no measurement data, so it runs anywhere.
 """
+import json
+import shutil
+from pathlib import Path
+
+import h5py
 import numpy as np
 import pytest
 
+from experiments.floquet_timing import resolve_floquet_timing
+from experiments.saved_jobs import load_job
 from experiments.qsim.mbr_campaign import (
     STAGES,
     mbr_defaults,
@@ -243,3 +250,93 @@ def test_sff_rejects_negative_detunings():
 
     with pytest.raises(RuntimeError, match="does not fit mathi"):
         _acquire_sff(st, plan)
+
+
+# --------------------------------------------------------------------------
+# The derived-parameter provenance attribute
+# --------------------------------------------------------------------------
+#
+# The Floquet cycle time and couplings are the one thing saved data cannot
+# otherwise carry: they existed only on the compiled program, which lives in
+# the job pickle, and pickles are ephemeral. Acquisition now records them in
+# the HDF5 `derived_params` attribute -- beside `config`, not inside it,
+# because `cfg.expt` is the input a notebook overrides by hand and this is
+# generated output.
+#
+# These two tests are the pair that matters: the value is written where the
+# reader looks, and it agrees with the independent way of recovering it.
+
+
+def _acquire_one(station, tmp_path):
+    """-> one acquired spectrum job, saved under `tmp_path`.
+
+    `run_stage` acquires in process without saving, and the mock station's own
+    output root is a prod path (`C:/experiments/mock_data`), so point the file
+    somewhere the test can read before saving.
+    """
+    acquired = run_stage(station, "spectrum", mbr_defaults(SWAP_STORS, reps=10),
+                         SWAP_STORS, OCCUPATIONS, reps=10)
+    expt = acquired[0]
+    expt.fname = str(tmp_path / "JOB-19990101-00001_MBRSpectrumExperiment.h5")
+    expt.save_data(expt.data)
+    return expt
+
+
+def test_saved_h5_carries_the_derived_timing(station, tmp_path):
+    """Acquisition writes the timing, and analysis reads it back with no sidecar.
+
+    The round trip is the point. `provenance={}` below means the loader has no
+    sidecar entry to fall back on, so the only way it can answer is the
+    attribute the save path just wrote.
+    """
+    _, st = station
+    assert st.is_mock, "refusing to acquire against real instruments"
+
+    expt = _acquire_one(st, tmp_path)
+    expected = expt.derived_params()
+    assert expected["floquet_cycle_us"] > 0.
+    assert len(expected["m1s_pi_fracs"]) == 7
+    assert len(expected["couplings_MHz"]) == 7
+
+    with h5py.File(expt.fname, "r") as handle:
+        assert "derived_params" in handle.attrs, sorted(handle.attrs)
+        # Still beside `config`, never inside it: a derived value in cfg.expt
+        # would be indistinguishable from a hand-set input.
+        assert "config" in handle.attrs
+        recorded = json.loads(handle.attrs["derived_params"])
+        cfg = json.loads(handle.attrs["config"])
+    assert recorded == expected
+    assert "floquet_cycle_us" not in cfg["expt"]
+
+    job = load_job("JOB-19990101-00001", path=expt.fname, provenance={})
+    assert job.prog.calculate_floquet_cycle_us() == expected["floquet_cycle_us"]
+    assert job.prog.m1s_pi_fracs == expected["m1s_pi_fracs"]
+    assert "derived_params" in job.prog.source
+
+
+def test_recorded_timing_agrees_with_the_archive_resolver(station, tmp_path):
+    """The two ways of recovering the timing give the same number.
+
+    One reads what acquisition recorded; the other recomputes it from the
+    versioned swap CSV (`resolve_floquet_timing`, the path used for files
+    written before the attribute existed). If these ever disagree, then files
+    with and without the attribute would analyze differently, and the
+    attribute would have made old and new data incomparable.
+    """
+    set_name, st = station
+    expt = _acquire_one(st, tmp_path)
+    recorded = expt.derived_params()
+
+    # The resolver wants an archive laid out as {root}/floquet_storage_swap/,
+    # while the pinned sets are a flat directory. Build the shape it expects,
+    # still entirely from committed files -- no mount, per this module's note.
+    csv = Path(pinned_config_set(set_name)["floquet_file"])
+    archive = tmp_path / "archive"
+    (archive / "floquet_storage_swap").mkdir(parents=True)
+    shutil.copy2(csv, archive / "floquet_storage_swap" / csv.name)
+
+    resolved = resolve_floquet_timing(expt.cfg, csv.stem, archive=archive)
+
+    assert resolved["floquet_cycle_us"] == pytest.approx(
+        recorded["floquet_cycle_us"], rel=1e-12), set_name
+    assert list(resolved["m1s_pi_fracs"]) == list(recorded["m1s_pi_fracs"])

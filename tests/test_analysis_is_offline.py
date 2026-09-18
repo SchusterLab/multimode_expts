@@ -262,3 +262,84 @@ def test_from_job_files_rejects_a_pickle(tmp_path):
 
     with pytest.raises(ValueError, match="HDF5"):
         MBRSpectrumExperiment.from_job_files(pickle_path)
+
+
+# --------------------------------------------------------------------------
+# config_versions: written by the worker, read by the resolver
+# --------------------------------------------------------------------------
+
+
+def test_worker_records_config_versions_in_the_data_file(tmp_path):
+    """The worker writes the config version IDs into the file it just saved.
+
+    `_write_config_versions` needs nothing from worker state, so it is called
+    on a bare instance rather than standing up a database and a station.
+    """
+    from job_server.worker import JobWorker
+
+    path = tmp_path / "JOB-19990101-00010_MBRSpectrumExperiment.h5"
+    _write_h5(path, MINIMAL_CFG, [[0.1, 0.2]])
+
+    JobWorker._write_config_versions(
+        JobWorker.__new__(JobWorker), path,
+        {"hardware_config": "CFG-HW-20260814-00074",
+         "floquet_storage_swap": "CFG-FL-20260814-00076",
+         "man1_storage_swap": None})
+
+    with h5py.File(path, "r") as handle:
+        recorded = json.loads(handle.attrs["config_versions"])
+    # None-valued entries are dropped rather than recorded as null: an absent
+    # key means "not versioned", which is not the same as a null version.
+    assert recorded == {"hardware_config": "CFG-HW-20260814-00074",
+                        "floquet_storage_swap": "CFG-FL-20260814-00076"}
+
+
+def test_a_failed_attribute_write_does_not_lose_the_job(tmp_path):
+    """Provenance is best-effort: a job whose data is on disk stays completed.
+
+    Failing the job because an attribute could not be added would discard a
+    real measurement, and the exported sidecar still covers this case.
+    """
+    from job_server.worker import JobWorker
+
+    missing = tmp_path / "does-not-exist.h5"
+    JobWorker._write_config_versions(
+        JobWorker.__new__(JobWorker), missing, {"hardware_config": "CFG-HW-1"})
+    assert not missing.exists()
+
+
+def test_config_versions_attribute_resolves_timing_without_the_sidecar(tmp_path):
+    """A file recording its config versions needs no provenance sidecar.
+
+    This is what the worker-side write buys: `provenance={}` here, so the only
+    way the loader can find the Floquet version is the file's own attribute,
+    and the timing then comes from the versioned archive.
+    """
+    from experiments.saved_jobs import load_job
+
+    path = tmp_path / "JOB-20260815-00009_EncodingHamiltonianSpectroscopyExperiment.h5"
+    # The real August config, so the resolver has a version it can actually
+    # read and a value already pinned elsewhere in the suite.
+    cfg, _ = load_h5_for_fixture()
+    _write_h5(path, cfg, [[0.1, 0.2]])
+    with h5py.File(path, "a") as handle:
+        handle.attrs["config_versions"] = json.dumps(
+            {"floquet_storage_swap": "CFG-FL-20260814-00076"})
+
+    job = load_job("JOB-20260815-00009", path=path, provenance={})
+
+    assert job.prog.calculate_floquet_cycle_us() == 0.7254464285714286
+    assert job.prog.source.startswith("versioned config CFG-FL-")
+
+
+def load_h5_for_fixture():
+    """-> the real cfg of JOB-20260815-00009, for the resolver to read.
+
+    The resolver needs genuine `expt`/`hw`/`device` sections -- swap_stors,
+    the flux DAC channels, the manipulate ramp sigma -- so a hand-written
+    minimal config will not do.
+    """
+    from experiments.job_paths import resolve_job_path
+    from experiments.saved_jobs import load_h5
+
+    return load_h5(resolve_job_path("JOB-20260815-00009"))

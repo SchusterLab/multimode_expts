@@ -368,6 +368,9 @@ class JobWorker:
             # Snapshot configs AFTER experiment runs, using the actual config that was used
             config_versions = self._snapshot_configs(job.job_id)
 
+            # Record them in the data file too, not only in the database.
+            self._write_config_versions(data_file_path, config_versions)
+
             # Update job as completed
             self._update_job_completed(
                 job.job_id, str(data_file_path), str(expt_pickle_path), config_versions
@@ -598,6 +601,45 @@ class JobWorker:
                 job.multiphoton_config_version_id = config_versions.get("multiphoton_config")
                 job.floquet_storage_version_id = config_versions.get("floquet_storage_swap")
                 job.man1_storage_version_id = config_versions.get("man1_storage_swap")
+
+    def _write_config_versions(self, data_file_path, config_versions: dict):
+        """Record the config version IDs in the data file's own attributes.
+
+        The database already links them to the job, but the database does not
+        leave this machine: it cannot ship with a paper, and a collaborator
+        analyzing the HDF5 has no way to ask it which configs a run used. The
+        IDs are what make the Floquet timing recoverable offline (see
+        ``experiments/floquet_timing.resolve_floquet_timing``), so they belong
+        with the data.
+
+        Written here rather than during ``acquire`` because the IDs do not
+        exist yet at that point -- ``_snapshot_configs`` deliberately runs
+        after the experiment so that postprocessor edits to the station config
+        are captured. By now the file is written and closed, so this reopens
+        it to add one attribute.
+
+        Never fatal. A job whose data is on disk is a completed job; failing
+        it because a provenance attribute could not be added would throw away
+        a real measurement, and the sidecar exported from the database remains
+        the fallback for exactly this case.
+        """
+        if not data_file_path or not config_versions:
+            return
+        try:
+            import h5py
+
+            # "r+", not "a": the data file must already exist. "a" would
+            # create one, so a wrong or missing path would leave a stray HDF5
+            # holding nothing but provenance.
+            with h5py.File(str(data_file_path), "r+") as handle:
+                handle.attrs["config_versions"] = json.dumps(
+                    {name: version for name, version in config_versions.items()
+                     if version is not None},
+                    sort_keys=True,
+                )
+        except Exception as error:
+            print(f"[WORKER] WARNING: could not record config_versions in "
+                  f"{data_file_path}: {error!r}")
 
     def _update_job_failed(self, job_id: str, error_message: str):
         """

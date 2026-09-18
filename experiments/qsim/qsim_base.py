@@ -1,3 +1,4 @@
+import json
 import os
 from copy import deepcopy
 
@@ -7,6 +8,7 @@ from qick import QickConfig
 from qick.helpers import gauss
 from fitting.fit_display_classes import GeneralFitting
 from slab import AttrDict, Experiment, dsfit
+from slab.experiment import NpEncoder
 from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
@@ -535,6 +537,63 @@ class QsimBaseExperiment(Experiment):
         return fig, axs
 
 
+    # Provenance recorded beside `config`, deliberately not inside it.
+    #
+    # `cfg.expt` is the *input* to a run: the values a notebook sets by hand,
+    # and copies into the next submission to build on. The Floquet cycle time
+    # is generated, never consumed. Parking it in `cfg.expt` would make a
+    # derived value indistinguishable from a chosen one, and it would ride
+    # along into the next job's config looking like a manual override.
+    #
+    # It is worth saving at all because it is the one fact offline analysis
+    # cannot otherwise recover from the file: it existed only on the compiled
+    # program, which lives in the job pickle, and pickles are ephemeral.
+    # `experiments/saved_jobs.py` reads this attribute and prefers it over
+    # recomputing the timing from the versioned config archive.
+    DERIVED_PARAMS_ATTR = "derived_params"
+
+    def derived_params(self):
+        """-> what this run computed that its config does not already say.
+
+        None when the compiled program has no Floquet timing to report: not
+        every Qsim program plays a Floquet train, and an absent attribute is
+        exactly what the reader expects in that case.
+
+        One job records one cycle time, which is the assumption the aggregate
+        analysis has always made (`_saved_parameters` reads the timing off a
+        single child's program). A sweep over something that changes the cycle
+        time -- `floquet_gauss_sigma`, say -- would record only its last
+        value; no such sweep exists today.
+        """
+        prog = getattr(self, "prog", None)
+        if prog is None or not all(hasattr(prog, name) for name in
+                                   ("calculate_floquet_cycle_us", "m1s_pi_fracs")):
+            return None
+
+        cycle_us = float(prog.calculate_floquet_cycle_us())
+        pi_fracs = [int(frac) for frac in prog.m1s_pi_fracs]
+        params = dict(floquet_cycle_us=cycle_us,
+                      m1s_pi_fracs=pi_fracs,
+                      source=f"compiled {type(prog).__name__}")
+
+        # Redundant with the two above -- 1/(4 * pi_frac * T) -- and recorded
+        # anyway so the reader can check the file against itself. Omitted
+        # rather than guessed if any entry would not be finite, since a
+        # placeholder here is worse than an absent key.
+        if cycle_us > 0. and all(frac > 0 for frac in pi_fracs):
+            params["couplings_MHz"] = [1. / (4. * frac * cycle_us)
+                                       for frac in pi_fracs]
+        return params
+
+    def save_derived_params(self):
+        """Write :meth:`derived_params` into the data file as an attribute."""
+        params = self.derived_params()
+        if not params:
+            return None
+        with self.datafile() as f:
+            f.attrs[self.DERIVED_PARAMS_ATTR] = json.dumps(params, cls=NpEncoder)
+        return params
+
     def save_data(self, data=None):
         # do we really need to ovrride this?
         # TODO: at least make this save line-by-line
@@ -545,5 +604,6 @@ class QsimBaseExperiment(Experiment):
             self.cfg.expt.pop('ds_floquet')  # remove the dataset object from cfg before saving otherwise json gets mad
         print(f'Saving {self.fname}')
         super().save_data(data=data)
+        self.save_derived_params()
         self.cfg = temp_cfg
         return self.fname

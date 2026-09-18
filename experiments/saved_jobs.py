@@ -26,10 +26,11 @@ can supply them, tried in this order:
    and the only option for a file whose configs were never versioned.
 2. the file's own ``derived_params`` attribute, written at acquisition. Present
    only on files written after that landed; see the module note below.
-3. recomputation from the versioned config named in the provenance sidecar,
-   via :func:`experiments.floquet_timing.resolve_floquet_timing`. This is
-   exact, not approximate -- the configs are immutable and the arithmetic is
-   the program's own.
+3. recomputation from the versioned config, via
+   :func:`experiments.floquet_timing.resolve_floquet_timing`. Exact, not
+   approximate: the configs are immutable and the arithmetic is the program's
+   own. Which version to read comes from the file's ``config_versions``
+   attribute if it has one, and otherwise from the provenance sidecar.
 
 If none of the three can supply it, loading **raises** and the message says
 what to pass. It does not fall back to a placeholder: the cycle time divides
@@ -40,10 +41,11 @@ not this.
 On ``derived_params``
 ---------------------
 The acquisition side writes two provenance attributes beside ``config``:
-``derived_params`` (this timing) and ``config_versions`` (the config version
-IDs). They are attributes rather than entries in ``cfg.expt`` because
-``cfg.expt`` is the *input* to a run -- the thing a notebook overrides by
-hand. Timing is generated, never consumed, and a generated value parked among
+``derived_params`` (this timing, written by the experiment's own save path)
+and ``config_versions`` (the config version IDs, written by the worker once
+the post-run snapshot exists). They are attributes rather than entries in
+``cfg.expt`` because ``cfg.expt`` is the *input* to a run -- the thing a
+notebook overrides by hand. Timing is generated, never consumed, and a generated value parked among
 the inputs eventually gets replayed into a later job as if it had been chosen.
 This module already reads the attribute, so files that carry it need no
 provenance sidecar; files that do not fall through to the sidecar as before.
@@ -158,6 +160,18 @@ def _derived_params(data):
     return params
 
 
+def _saved_config_versions(data):
+    """-> the file's ``config_versions`` attribute, or {} if it has none.
+
+    Keyed as the worker's snapshot dict is -- ``floquet_storage_swap``,
+    ``hardware_config`` and so on -- not as the job database's columns.
+    """
+    raw = data.get("attrs", {}).get("config_versions")
+    if raw is None:
+        return {}
+    return json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
+
+
 def _check_couplings(params, prog, job_id):
     """Cross-check a recorded coupling against the one implied by the timing.
 
@@ -193,12 +207,22 @@ def resolve_timing(job_id, cfg, data, timing=None, record=None):
 
     params = _derived_params(data)
     if params is not None:
+        # Carry the recorded source through: it names the program that
+        # computed the timing, which is finer provenance than the attribute
+        # it arrived in.
+        recorded = params.get("source") or "unattributed"
         prog = SavedProgram(params["floquet_cycle_us"], params["m1s_pi_fracs"],
-                            source=f"H5 derived_params: {job_id}")
+                            source=f"H5 derived_params ({recorded}): {job_id}")
         _check_couplings(params, prog, job_id)
         return prog
 
-    version_id = (record or {}).get("floquet_storage_version_id")
+    # The file's own record of which configs it ran under, written by the
+    # worker. Preferred over the sidecar for the same reason `derived_params`
+    # is: it travels with the data, whereas the sidecar is an export of a
+    # database that stays on one machine.
+    version_id = _saved_config_versions(data).get("floquet_storage_swap")
+    if not version_id:
+        version_id = (record or {}).get("floquet_storage_version_id")
     if version_id:
         try:
             resolved = resolve_floquet_timing(cfg, version_id)
@@ -212,10 +236,10 @@ def resolve_timing(job_id, cfg, data, timing=None, record=None):
                             source=resolved["source"])
 
     raise SavedJobError(
-        f"{job_id}: no Floquet timing available. The file carries no "
-        f"'derived_params' attribute and the provenance sidecar records no "
-        f"floquet_storage_version_id for it, so the cycle time cannot be "
-        f"recovered from what was saved.\n"
+        f"{job_id}: no Floquet timing available. The file carries neither a "
+        f"'derived_params' nor a 'config_versions' attribute, and the "
+        f"provenance sidecar records no floquet_storage_version_id for it, so "
+        f"the cycle time cannot be recovered from what was saved.\n"
         f"Supply the historical values explicitly:\n"
         f"  timing=dict(floquet_cycle_us=..., m1s_pi_fracs=[...])\n"
         f"or re-export the sidecar on the acquisition workstation:\n"
