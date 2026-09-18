@@ -1045,8 +1045,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                            sync_cycles=10, 
                            reps=300,
                            final_occupations=None,
-                           phase_correction_location=None,
-                           sweep_occupations="no"):
+                           phase_correction_location=None):
         """
         Returns dictionary of 
             - default_expt_cfg
@@ -1054,16 +1053,8 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         The list of config is then used to make and batch jobs in a chunk.
         The actual batch is done by plugging the output to the BatchRunner.
 
-        By default, each initial/final pair and cycle chunk is one job, with a 2D sweep
+        Each initial/final pair and cycle chunk is one job, with a 2D sweep
         of Floquet cycle and four (preparation, analyzer) phase combinations.
-
-        ``sweep_occupations`` groups the explicitly requested initial/final
-        pairs within each cycle chunk; it never creates a Cartesian product:
-            - "no" keeps one pair per job, 
-            - "initial" sweeps initial states sharing a final state, 
-            - "final" sweeps final states sharing an initial state,
-            - "both" puts all requested pairs in one job. Grouped jobs sweep
-        cycle x setting ID, where each setting identifies a pair and phase.
         
         ``phase_correction_location`` selects "pulse" or "analysis" for every
         pair. 
@@ -1090,14 +1081,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             phase_correction_location = default_expt_cfg.get("phase_correction_location", "pulse")
         if phase_correction_location not in ("pulse", "analysis"):
             raise ValueError("phase_correction_location must be 'pulse' or 'analysis'")
-        if sweep_occupations not in ("no", "initial", "final", "both"):
-            raise ValueError("sweep_occupations must be 'no', 'initial', 'final' or 'both'")
         
-        occupations = list(occupations)
-        if final_occupations is not None:
-            final_occupations = list(final_occupations)
-            if len(occupations) != len(final_occupations):
-                raise ValueError("initial and final occupations must have equal lengths")
         final_occupations = occupations if final_occupations is None else final_occupations
         pairs = list(zip(occupations, final_occupations))
         defaults = deepcopy(default_expt_cfg)
@@ -1111,7 +1095,6 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             palindrome_scramble=False, 
             spectroscopy_phase_correction_mode="final_analyzer",
             phase_correction_location=phase_correction_location,
-            sweep_occupations=sweep_occupations,
             spectroscopy_phase_combinations=[
                 [0., 0.], [180., 0.], [0., 90.], [180., 90.],
             ], #Note: The order is [prep_phase, analhzer_phase]
@@ -1119,8 +1102,6 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             swept_params=["floquet_cycle", "spectroscopy_phase_id"],
         )
         
-        if sweep_occupations != "no":
-            batch_overrides["swept_params"] = ["floquet_cycle", "spectroscopy_setting_id"]
         if phase_correction_location == "analysis":
             batch_overrides["final_analyzer_phase_per_cycle_deg"] = 0.
         else:
@@ -1131,42 +1112,16 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             if key in defaults and not np.array_equal(defaults[key], value):
                 print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
         defaults.update(batch_overrides)
-        if sweep_occupations == "no":
-            configs = [
-                dict(spectroscopy_occupations=occupation,
-                     spectroscopy_final_occupations=final_occupation,
-                     final_analyzer_phase_per_cycle_deg=(
-                         phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "pulse" else 0.),
-                     spectroscopy_analysis_phase_per_cycle_deg=(
-                         phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "analysis" else 0.),
-                     floquet_cycles=cycles.tolist())
-                for occupation, final_occupation in pairs for cycles in cycle_chunks
-            ]
-        else:
-            # Group only the requested pairs; each group becomes one job per cycle chunk.
-            pair_groups = {}
-            for initial, final in pairs:
-                # for initial sweep, final is fixed thus a key and vice versa.
-                key = (tuple(final) if sweep_occupations == "initial" else
-                       tuple(initial) if sweep_occupations == "final" else None)
-                pair_groups.setdefault(key, []).append((list(initial), list(final)))
-            configs = []
-            cycle_chunks = [list(cycles) for cycles in cycle_chunks]
-            for group in pair_groups.values():
-                corrections = [float(phase_by_occupation[tuple(final)]) for _, final in group]
-                settings = [[pair, phase] for pair in range(len(group)) for phase in range(4)] #phase is phase mod index.
-                for cycles in cycle_chunks:
-                    configs.append(dict(
-                        spectroscopy_occupations=group[0][0],
-                        spectroscopy_final_occupations=group[0][1],
-                        final_analyzer_phase_per_cycle_deg=corrections[0] if phase_correction_location == "pulse" else 0.,
-                        spectroscopy_analysis_phase_per_cycle_deg=corrections[0] if phase_correction_location == "analysis" else 0.,
-                        floquet_cycles=cycles,
-                        spectroscopy_occupation_pairs=group,
-                        spectroscopy_pair_phase_per_cycle_deg=corrections,
-                        spectroscopy_settings=settings,
-                        spectroscopy_setting_ids=list(range(len(settings))),
-                    ))
+        configs = [
+            dict(spectroscopy_occupations=occupation,
+                 spectroscopy_final_occupations=final_occupation,
+                 final_analyzer_phase_per_cycle_deg=(
+                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "pulse" else 0.),
+                 spectroscopy_analysis_phase_per_cycle_deg=(
+                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "analysis" else 0.),
+                 floquet_cycles=cycles.tolist())
+            for occupation, final_occupation in pairs for cycles in cycle_chunks
+        ]
         return AttrDict(dict(default_expt_cfg=defaults, 
                              configs=configs,
                              program=NPhotonHamiltonianSpectroscopyProgram))

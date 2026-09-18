@@ -1104,9 +1104,6 @@ class DisorderSFFExperiment(QsimBaseExperiment):
 
         defaults = deepcopy(default_expt_cfg)
         defaults.update(dict(
-            # SFF selects occupations/phases itself, including visibility jobs
-            # that invoke the fixed-depth spectroscopy program directly.
-            swept_params=[],
             reps=2 * shots_per_replica,
             rounds=1,
             expts=len(positive_cycles),
