@@ -448,28 +448,12 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         All pairs must cover the same non-overlapping cycles. ``occupations``
         optionally orders the initial states, keeping each one's final states
         in their saved order. Only diagonal returns are normalized by A(0).
-        For grouped jobs, it can also select initial states from the pair table.
         """
         if not spectroscopy_expts:
             raise ValueError("spectroscopy_expts cannot be empty")
         grouped = {}
         for expt in spectroscopy_expts:
             cfg = expt.cfg.expt
-            if "spectroscopy_setting_id" in cfg.get("swept_params", []):
-                data = EncodingHamiltonianSpectroscopyExperiment.analyze(expt)
-                if occupations is not None:
-                    occupations = [tuple(occupation) for occupation in occupations]
-                    if not occupations:
-                        raise ValueError("spectroscopy occupations do not match the saved configs")
-                for initial, final, A in zip(data["occupations"], data["final_occupations"], data["A"]):
-                    initial, final = tuple(initial), tuple(final)
-                    # A grouped HDF5 may also contain states excluded from this preview.
-                    if occupations is not None and initial not in occupations:
-                        continue
-                    state = (final, initial)
-                    chunks = grouped.setdefault(state, {"complex": [], 0.: [], 90.: []})
-                    chunks["complex"].append((data["cycles"], A))
-                continue
             occupation = tuple(cfg.spectroscopy_occupations)
             final_occupation = tuple(cfg.get(
                 "offdiag_decoder_occupation",
