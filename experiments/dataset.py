@@ -758,7 +758,7 @@ class StorageManSwapDataset(MMDataset):
 class FloquetStorageSwapDataset(MMDataset):
     def __init__(self, filename='floquet_storage_swap_dataset.csv', parent_path='configs'):
         super().__init__(filename=filename, parent_path=parent_path)
-        self.config_type = ConfigType.MAN1_STORAGE_SWAP
+        self.config_type = ConfigType.FLOQUET_STORAGE_SWAP
 
         # Backfill gaussian-waveform columns for CSVs written before gauss support.
         # The defaults reproduce the legacy flat_top behaviour exactly, so older
