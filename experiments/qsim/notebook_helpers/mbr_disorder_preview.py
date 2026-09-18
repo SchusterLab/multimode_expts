@@ -33,6 +33,7 @@ from slab import AttrDict
 
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.saved_jobs import load_aggregate
 
 
 def diag_preview_job_range(date, first, last):
@@ -97,9 +98,12 @@ def diag_preview_job_ids(branch_overrides=None):
 def load_preview_realization(diag_preview_calibration_job_ids,
                              diag_preview_job_ids_by_realization,
                              diag_preview_branch_overrides,
-                             client,
-                             realization=0):
+                             realization=0,
+                             timing=None):
     """Load and analyze one realization (cell 243).
+
+    Reads HDF5 only; `timing` is the escape hatch for files with no
+    provenance, as everywhere else.
 
     Returns a dict of the `diag_preview_*` names the report step needs.
     """
@@ -110,18 +114,17 @@ def load_preview_realization(diag_preview_calibration_job_ids,
 
     import matplotlib.pyplot as plt
     import numpy as np
-    from job_server import JobClient
     from experiments.qsim import floquet_dark_mode_readout
 
     importlib.reload(floquet_dark_mode_readout)
     DiagPreviewEncSpec = MBRSpectrumExperiment
-    diag_preview_client = JobClient()
 
-    diag_preview_calibration = MBRPhaseCorrectionExperiment.from_job_ids(
+    diag_preview_calibration = load_aggregate(
         diag_preview_calibration_job_ids,
-        client=diag_preview_client,
+        owner=MBRPhaseCorrectionExperiment,
+        timing=timing,
+        analyze=True,
     )
-    diag_preview_calibration.analyze()
 
     diag_preview_realization = 12
 
@@ -129,9 +132,8 @@ def load_preview_realization(diag_preview_calibration_job_ids,
     diag_preview_job_ids = diag_preview_job_ids_by_realization[
         diag_preview_realization
     ]
-    diag_preview_expt = DiagPreviewEncSpec.from_job_ids(
-        diag_preview_job_ids,
-        client=diag_preview_client,
+    diag_preview_expt = load_aggregate(
+        diag_preview_job_ids, owner=DiagPreviewEncSpec, timing=timing,
     )
     diag_preview_cfg = diag_preview_expt.batch_expts[0].cfg.expt
     diag_preview_saved_realizations = sorted({
@@ -239,9 +241,9 @@ def report_preview_realization(preview):
     plt.show()
 
 
-def analyze_every_realization(diag_preview_job_ids_by_realization, client,
+def analyze_every_realization(diag_preview_job_ids_by_realization,
                               edge_fraction=0.10, gap_ratio_bins=15,
-                              excluded_occupations=None):
+                              excluded_occupations=None, timing=None):
     """Analyze every completed disorder realization (cell 246).
 
     Returns (records, failures). `failures` replaces the source's habit of
@@ -260,13 +262,11 @@ def analyze_every_realization(diag_preview_job_ids_by_realization, client,
 
     import matplotlib.pyplot as plt
     import numpy as np
-    from job_server import JobClient
     from slab import AttrDict
     from experiments.qsim import floquet_dark_mode_readout
 
     importlib.reload(floquet_dark_mode_readout)
     DiagStatsEncSpec = MBRSpectrumExperiment
-    diag_stats_client = JobClient()
 
     diag_stats_records = {}
     diag_stats_edge_fraction = 0.10
@@ -277,9 +277,8 @@ def analyze_every_realization(diag_preview_job_ids_by_realization, client,
         diag_preview_job_ids_by_realization.items()
     ):
         try:
-            loaded_expt = DiagStatsEncSpec.from_job_ids(
-                job_ids,
-                client=diag_stats_client,
+            loaded_expt = load_aggregate(
+                job_ids, owner=DiagStatsEncSpec, timing=timing,
             )
             phases_by_occupation = {}
             for child in loaded_expt.batch_expts:

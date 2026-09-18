@@ -80,7 +80,6 @@ import matplotlib.pyplot as plt
 
 import experiments as meas
 from slab import AttrDict
-from job_server import JobClient
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
@@ -93,8 +92,6 @@ from experiments.qsim.notebook_helpers import mbr_disorder_h5 as h5only
 from experiments.qsim.notebook_helpers import mbr_disorder_preview as dpreview
 from experiments.qsim.notebook_helpers import mbr_spectral_validation as sv
 
-client = JobClient()
-
 # %% [markdown]
 # # Global-only Matrix Pencil (source cell 188)
 #
@@ -106,7 +103,6 @@ calibration_expt, spectroscopy_expt = load_encoding_spectroscopy(
     MBRSpectrumExperiment,
     job_id_generator([20260722, 20260723], [683, 1], [712, 40]),
     job_id_generator(20260723, [48, 87], [85, 149], step=[1, 2]),
-    client=client,
 )
 encspec_reprocessed = n3.reprocess_n3_spectroscopy(
     calibration_expt=calibration_expt,
@@ -177,7 +173,6 @@ spectroscopy_records = h5only.run_mpm(
 # %%
 diag_stats_records, diag_stats_failures = dpreview.analyze_every_realization(
     diag_preview_job_ids_by_realization=job_ids_by_realization,
-    client=client,
 )
 
 # %%

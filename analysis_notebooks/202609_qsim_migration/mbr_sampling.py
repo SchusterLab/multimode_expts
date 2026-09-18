@@ -62,7 +62,6 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from job_server import JobClient
 
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_loading import (
@@ -71,8 +70,6 @@ from experiments.qsim.notebook_helpers.mbr_loading import (
 )
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
 from experiments.qsim.notebook_helpers import mbr_sampling as sampling
-
-client = JobClient()
 
 # %% [markdown]
 # ## Load the N=3 dataset these studies replay
@@ -92,7 +89,6 @@ calibration_expt, spectroscopy_expt = load_encoding_spectroscopy(
     MBRSpectrumExperiment,
     calibration_job_ids,
     spectroscopy_job_ids,
-    client=client,
 )
 
 # %%

@@ -42,6 +42,7 @@ from slab import AttrDict
 
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.saved_jobs import load_aggregate
 
 
 @dataclass
@@ -78,65 +79,34 @@ def expand_job_ranges(ranges):
     ]
 
 
-def load_program_jobs(job_ids, program_name, client):
-    loaded_expts = []
-    loaded_ids = []
-    skipped = []
+def load_sector(job_ranges, config, timing=None):
+    """-> (calibration_expt, spectroscopy_expt, load_info) for one sector.
 
-    for job_id in job_ids:
-        try:
-            result = client.get_status(job_id)
-            if not result.is_successful():
-                skipped.append((job_id, str(getattr(result, 'status', 'not successful'))))
-                continue
-            expt = result.load_expt()
-            saved_program_name = type(getattr(expt, 'prog', None)).__name__
-            if saved_program_name != program_name:
-                skipped.append((job_id, saved_program_name))
-                continue
-            loaded_expts.append(expt)
-            loaded_ids.append(job_id)
-        except Exception as exc:
-            skipped.append((job_id, f'{type(exc).__name__}: {exc}'))
-
-    if not loaded_expts:
-        raise RuntimeError(f'no {program_name} jobs were loaded; first skips: {skipped[:5]}')
-    return loaded_expts, loaded_ids, skipped
-
-
-def load_sector(job_ranges, client, config):
-    ReplotEncSpec = config.EncSpec
-    calibration_ids = expand_job_ranges(job_ranges['calibration'])
-    spectroscopy_ids = expand_job_ranges(job_ranges['spectroscopy'])
-
-    calibration_expts, calibration_loaded_ids, calibration_skipped = (
-        load_program_jobs(
-            calibration_ids,
-            'EntireFloquetCyclePhaseCalibrationProgram',
-            client,
-        )
+    Both aggregates come from HDF5 via :mod:`experiments.saved_jobs`. The job
+    ranges for these sectors were submitted interleaved with other programs,
+    so each is filtered by the program class recorded in the provenance
+    sidecar -- which is checked before a file is opened, rather than by
+    unpickling each job and inspecting its `prog`.
+    """
+    calibration_expt = load_aggregate(
+        expand_job_ranges(job_ranges['calibration']),
+        owner=MBRPhaseCorrectionExperiment,
+        program_class='EntireFloquetCyclePhaseCalibrationProgram',
+        timing=timing,
+        analyze=True,
     )
-    spectroscopy_expts, spectroscopy_loaded_ids, spectroscopy_skipped = (
-        load_program_jobs(
-            spectroscopy_ids,
-            'NPhotonHamiltonianSpectroscopyProgram',
-            client,
-        )
+    spectroscopy_expt = load_aggregate(
+        expand_job_ranges(job_ranges['spectroscopy']),
+        owner=config.EncSpec,
+        program_class='NPhotonHamiltonianSpectroscopyProgram',
+        timing=timing,
     )
-
-    calibration_expt = MBRPhaseCorrectionExperiment._from_expts(
-        calibration_expts, job_ids=calibration_loaded_ids
-    )
-    spectroscopy_expt = ReplotEncSpec._from_expts(
-        spectroscopy_expts, job_ids=spectroscopy_loaded_ids
-    )
-    calibration_expt.analyze()
 
     load_info = AttrDict(dict(
-        calibration_loaded_ids=calibration_loaded_ids,
-        spectroscopy_loaded_ids=spectroscopy_loaded_ids,
-        calibration_skipped=calibration_skipped,
-        spectroscopy_skipped=spectroscopy_skipped,
+        calibration_loaded_ids=calibration_expt.batch_job_ids,
+        spectroscopy_loaded_ids=spectroscopy_expt.batch_job_ids,
+        calibration_skipped=calibration_expt.skipped_jobs,
+        spectroscopy_skipped=spectroscopy_expt.skipped_jobs,
     ))
     return calibration_expt, spectroscopy_expt, load_info
 
@@ -675,10 +645,11 @@ def plot_time_traces(
     return fig
 
 
-def load_and_analyze_sectors(config, job_ranges, client,
+def load_and_analyze_sectors(config, job_ranges,
                              sectors=(1, 2, 3, 4),
                              n2_supplement_ranges=None,
-                             n2_supplement_occupation=None):
+                             n2_supplement_occupation=None,
+                             timing=None):
     """Load every photon-number sector, then merge the N=2 supplement (cell 208).
 
     Returns `runs`, keyed by photon number. Each entry holds the calibration
@@ -689,7 +660,7 @@ def load_and_analyze_sectors(config, job_ranges, client,
 
     for N in sectors:
         calibration_expt, spectroscopy_expt, load_info = load_sector(
-            job_ranges[N], client, config
+            job_ranges[N], config, timing=timing
         )
         sector_data = analyze_sector(
             N, calibration_expt, spectroscopy_expt, config
@@ -715,7 +686,7 @@ def load_and_analyze_sectors(config, job_ranges, client,
     # N=2 has one occupation on a different time grid. Analyze it separately,
     # then merge only the FFT rows for the complete report spectrum.
     supp_calibration_expt, supp_expt, supp_load_info = load_sector(
-        n2_supplement_ranges, client, config
+        n2_supplement_ranges, config, timing=timing
     )
     supp_data = supp_expt.analyze(
         calibration=supp_calibration_expt,

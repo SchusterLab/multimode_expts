@@ -6,10 +6,18 @@ Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 
 The source had this work twice over, as two "Reproduce the Aug-15--17"
 sections: one reading from the job server (cells 217-229) and one reading
-local HDF5 files with a mock station (cells 230-240). That distinction is
-real -- the two get their children from genuinely different places -- so both
-survive here as `load_saved_remote` and `load_saved_local`. What was *not*
-real:
+local HDF5 files with a mock station (cells 230-240). Both now read HDF5
+through :mod:`experiments.saved_jobs`, so where the data comes from is no
+longer what separates them. What actually separates them is the analysis:
+
+* `load_saved_calibrated` (was `load_saved_remote`) applies the N=3 phase
+  calibration and reports the manual-Kerr frame;
+* `load_saved_as_acquired` (was `load_saved_local`) applies no calibration at
+  all and stays in the as-acquired frame.
+
+They are named for that difference now, because naming them for their source
+would be wrong -- and because a reader comparing their numbers needs to know
+the frames differ. What was *not* real:
 
 - cells 213 and 218 defined `saved_job_range` byte-identically. One copy.
 - cells 222 and 232 defined the same occupation-pairing check twice, with
@@ -21,10 +29,12 @@ real:
   They became `plot_occupation_trace_panels` plus, in the notebook, one
   `data_sets` dict.
 
-The local loader took `saved_station` -- a mock station built at cell 231 --
-from notebook scope. It is a `station` argument now, and building that mock
-station stayed in the notebook, since which config versions to reconstruct
-against is a scientific choice.
+The local loader used to take `saved_station` -- a mock station built at cell
+231 -- so that `_saved_parameters` could ask it for Floquet timing. That is
+gone: a station answers with *today's* calibration, and the timing is now
+recovered from the file's own provenance instead. Nothing here builds a
+station, and `make_local_loader` is deleted along with the hard-coded
+`C:\experiments` glob it wrapped.
 
 Temporary home, per the stage-2 instructions.
 """
@@ -36,15 +46,9 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-)
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers.mbr_loading import (
-    job_id_generator,
-    load_dark_experiments,
-)
+from experiments.saved_jobs import load_aggregate
 
 
 def saved_job_range(date, first, last):
@@ -73,21 +77,25 @@ def occupation_pairs(expt, label):
     return list(grouped)
 
 
-def load_saved_remote(saved_n3_calibration_job_ids,
-                      saved_n3_spectroscopy_job_ids,
-                      saved_disorder_job_ids,
-                      saved_n3_cycle_branches,
-                      saved_n3_manual_kerr_MHz,
-                      saved_job_client,
-                      saved_fft_window="raw",
-                      saved_zero_padding=1):
-    """Load and reanalyze the completed jobs from the job server (cell 222).
+def load_saved_calibrated(saved_n3_calibration_job_ids,
+                          saved_n3_spectroscopy_job_ids,
+                          saved_disorder_job_ids,
+                          saved_n3_cycle_branches,
+                          saved_n3_manual_kerr_MHz,
+                          saved_fft_window="raw",
+                          saved_zero_padding=1,
+                          timing=None):
+    """Reanalyze the saved jobs *with* the N=3 phase calibration (cell 222).
 
     No `runner.execute()` appears here or anywhere below -- this path only
-    reads jobs that already ran.
+    reads jobs that already ran, and reads them from HDF5 alone.
 
     `saved_n3_manual_kerr_MHz=None` selects the source's alternative branch,
     which derives the Kerr phase frame from the data instead of imposing one.
+
+    `timing` is the manual escape hatch for files carrying no provenance; see
+    :mod:`experiments.saved_jobs`. Leave it None whenever the provenance
+    sidecar covers the job range, which for these datasets it does.
 
     The parameters keep the `saved_*` names the moved body already uses --
     they were cell 221's notebook globals -- so no line of the body needed
@@ -96,11 +104,12 @@ def load_saved_remote(saved_n3_calibration_job_ids,
     Returns a dict of the `saved_*` names the following cells read, including
     `saved_disorder_records`.
     """
-    saved_n3_calibration_expt = MBRPhaseCorrectionExperiment.from_job_ids(
+    saved_n3_calibration_expt = load_aggregate(
         saved_n3_calibration_job_ids,
-        client=saved_job_client,
+        owner=MBRPhaseCorrectionExperiment,
+        timing=timing,
+        analyze=True,
     )
-    saved_n3_calibration_expt.analyze()
     saved_n3_calibration_occupations = [
         tuple(map(int, occupation))
         for occupation in saved_n3_calibration_expt.data.occupations
@@ -110,12 +119,20 @@ def load_saved_remote(saved_n3_calibration_job_ids,
         or any(sum(occupation) != 3 for occupation in saved_n3_calibration_occupations)
     ):
         raise RuntimeError("calibration is not the complete 35-state N=3 sector")
-    if saved_n3_calibration_expt.data.hardware.source != "saved program":
-        raise RuntimeError("calibration did not recover timing from the saved program")
+    # Was: assert the timing came from the pickle's compiled program. There is
+    # no pickle now, so assert instead that it was *recovered* rather than
+    # guessed, and say which of the recovered sources answered.
+    hardware_source = saved_n3_calibration_expt.data.hardware.source
+    if not hardware_source or "station" in hardware_source:
+        raise RuntimeError(
+            f"calibration timing came from {hardware_source!r}, which is not a "
+            f"recovered historical value")
+    print(f"Floquet timing recovered from: {hardware_source}")
 
-    saved_n3_spectroscopy_expt = MBRSpectrumExperiment.from_job_ids(
+    saved_n3_spectroscopy_expt = load_aggregate(
         saved_n3_spectroscopy_job_ids,
-        client=saved_job_client,
+        owner=MBRSpectrumExperiment,
+        timing=timing,
     )
     saved_n3_spectroscopy_occupations = occupation_pairs(
         saved_n3_spectroscopy_expt,
@@ -151,7 +168,7 @@ def load_saved_remote(saved_n3_calibration_job_ids,
 
     saved_disorder_records = {}
     for realization, job_ids in sorted(saved_disorder_job_ids.items()):
-        expt = MBRSpectrumExperiment.from_job_ids(job_ids, client=saved_job_client)
+        expt = load_aggregate(job_ids, owner=MBRSpectrumExperiment, timing=timing)
         cfg0 = expt.batch_expts[0].cfg.expt
         saved_realizations = {
             int(child.cfg.expt.disorder_realization)
@@ -241,68 +258,35 @@ def load_saved_remote(saved_n3_calibration_job_ids,
     }
 
 
-def make_local_loader(station, project_name,
-                      EncSpec=MBRSpectrumExperiment):
-    """Build a loader for local HDF5 children (cell 231).
+def load_saved_as_acquired(saved_four_realization_job_ids,
+                           offline_four_realization_branches,
+                           saved_n3_job_ids,
+                           saved_disorder_job_ids,
+                           EncSpec=MBRSpectrumExperiment,
+                           offline_fft_window="raw",
+                           offline_zero_padding=1,
+                           timing=None):
+    """The same datasets with *no* calibration applied, in the as-acquired
+    frame (cell 232).
 
-    Returns a callable `(job_dates, job_starts, job_finishes, project_name=None)`.
-    `station` was the mock `saved_station` that cell 231 built at notebook
-    scope; it is explicit now because the move is what broke that.
+    This is the honest name for what used to be `load_saved_local`. Its
+    children come from the same HDF5 files as
+    :func:`load_saved_calibrated`, so comparing the two compares phase frames
+    and nothing else -- previously it also compared two loading paths, which
+    made a disagreement ambiguous.
 
-    Note which class names the files versus which analyzes them: the saved
-    HDF5 files are named for `EncodingHamiltonianSpectroscopyExperiment`, and
-    `EncSpec` is what reassembles them.
-    """
-    SavedEncSpec = EncSpec
-
-    def saved_local_experiment(job_dates, job_starts, job_finishes,
-                               project_name=project_name):
-        """Load local H5 children with the wrappers defined near the top."""
-        job_ids = job_id_generator(job_dates, job_starts, job_finishes)
-        child_expts = load_dark_experiments(
-            project_name,
-            job_dates,
-            job_starts,
-            job_finishes,
-            ExpClass=EncodingHamiltonianSpectroscopyExperiment,  # names the saved files, not the analysis
-        )
-        if len(child_expts) != len(job_ids):
-            raise FileNotFoundError(
-                f"Expected {len(job_ids)} local H5 jobs but loaded "
-                f"{len(child_expts)} from {project_name!r}."
-            )
-        return SavedEncSpec._from_expts(
-            child_expts,
-            job_ids=job_ids,
-            station=station,
-        )
-
-    return saved_local_experiment
-
-
-def load_saved_local(saved_local_experiment,
-                     saved_four_realization_range,
-                     offline_four_realization_branches,
-                     saved_n3_range,
-                     saved_disorder_ranges,
-                     saved_four_project_name,
-                     offline_fft_window="raw",
-                     offline_zero_padding=1):
-    """Same reanalysis as `load_saved_remote`, from local files (cell 232).
-
-    Everything comes from HDF5 on disk; nothing touches the job queue.
-
-    `saved_four_project_name` is separate from the loader's own default
-    project because the four-realization data set lives in a different
-    experiment directory than the N=3 and disorder data -- cell 231 kept both
-    names for exactly that reason.
+    Job IDs replace the old `(dates, starts, finishes)` triples and the
+    per-dataset `project_name`: :func:`experiments.job_paths.resolve_job_paths`
+    finds each file from the job ID, so the caller no longer has to know which
+    experiment directory a dataset landed in. The four-realization set lives in
+    a different project than the N=3 and disorder sets, which is exactly the
+    bookkeeping that used to need two project names.
 
     Returns a dict of the `saved_*` and `data_*` names the following cells
     read.
     """
-    data_four_realization = saved_local_experiment(
-        *saved_four_realization_range,
-        project_name=saved_four_project_name,
+    data_four_realization = load_aggregate(
+        saved_four_realization_job_ids, owner=EncSpec, timing=timing,
     )
     data_four_realization.analyze(
         phase_frame="as_acquired",
@@ -314,7 +298,9 @@ def load_saved_local(saved_local_experiment,
 
 
     # Full N=3 spectroscopy: 35 occupations x analyzer phases 0/90.
-    saved_n3_spectroscopy_expt = saved_local_experiment(*saved_n3_range)
+    saved_n3_spectroscopy_expt = load_aggregate(
+        saved_n3_job_ids, owner=EncSpec, timing=timing,
+    )
     saved_n3_occupations = occupation_pairs(
         saved_n3_spectroscopy_expt, "N=3 spectroscopy"
     )
@@ -331,8 +317,8 @@ def load_saved_local(saved_local_experiment,
     )
     # Disorder spectroscopy: ten selected occupations x analyzer phases 0/90.
     saved_disorder_records = {}
-    for realization, job_range in sorted(saved_disorder_ranges.items()):
-        expt = saved_local_experiment(*job_range)
+    for realization, job_ids in sorted(saved_disorder_job_ids.items()):
+        expt = load_aggregate(job_ids, owner=EncSpec, timing=timing)
         cfg0 = expt.batch_expts[0].cfg.expt
         saved_realizations = {
             int(child.cfg.expt.disorder_realization) for child in expt.batch_expts
@@ -360,15 +346,15 @@ def load_saved_local(saved_local_experiment,
         )
 
     print(
-        f"Loaded four-realization data locally: "
+        f"Four-realization data, as acquired: "
         f"{len(data_four_realization.batch_job_ids)} H5 jobs"
     )
     print(
-        f"Loaded N=3 locally: {len(saved_n3_spectroscopy_expt.batch_job_ids)} H5 jobs, "
+        f"N=3, as acquired: {len(saved_n3_spectroscopy_expt.batch_job_ids)} H5 jobs, "
         f"{len(saved_n3_occupations)} occupations"
     )
     print(
-        "Loaded disorder locally: "
+        "Disorder, as acquired: "
         + ", ".join(
             f"r={realization} ({len(record.expt.batch_job_ids)} H5 jobs)"
             for realization, record in saved_disorder_records.items()

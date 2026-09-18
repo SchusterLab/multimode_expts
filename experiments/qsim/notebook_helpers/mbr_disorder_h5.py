@@ -12,12 +12,14 @@ and `make_plain`. That is a parallel loader to the library's own
 `EncodingHamiltonianSpectroscopyExperiment.from_h5file`, and to
 `experiments/floquet_timing.resolve_floquet_timing`.
 
-TODO(stage2): those two loading paths are not reconciled here, per the
-instruction not to decide that yet. It is the most substantial such
-duplication this pass found, and the reason the notebook-local copy exists at
-all is worth establishing before either is deleted --
-`experiments/floquet_timing.py` exists precisely because asking a live station
-for historical timing silently substituted today's calibration.
+TODO: those loading paths are still not reconciled here, but the decision has
+been made and half-executed elsewhere. `experiments/saved_jobs.py` is now the
+library's HDF5 loader, and it does what this module's copy does -- reads the
+file, resolves the Floquet timing from provenance, never touches a station --
+for every MBR stage. What remains here that `saved_jobs` does not do is the
+part that motivated the copy: reading headers without loading shot arrays, and
+selecting a rectangular common grid across jobs. Folding those two into
+`saved_jobs` and deleting the rest is the remaining step.
 
 The settings prefixes (`diag_*`, `mpm_*`, `spectroscopy_*`) are arguments
 rather than notebook globals. The dataset manifest in cell 258 stayed in the

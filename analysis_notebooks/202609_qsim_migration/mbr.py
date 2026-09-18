@@ -30,8 +30,9 @@
 #    data set, then a series of independent FFT and Matrix-Pencil diagnostics.
 # 3. **Report replots** (P205-211). The figure machinery for the four
 #    photon-number sectors.
-# 4. **Reproducing the Aug-15--17 datasets** (P212-240), twice over: once from
-#    the job server and once from local HDF5 with a mock station.
+# 4. **Reproducing the Aug-15--17 datasets** (P212-240), twice over: once
+#    with the phase calibration applied and once in the as-acquired frame.
+#    Both read the same HDF5 files.
 #
 # ## What moved, and what deliberately did not
 #
@@ -67,7 +68,6 @@
 
 import os
 import sys
-import pickle
 import glob
 import textwrap
 from copy import deepcopy
@@ -82,11 +82,9 @@ from tqdm.notebook import tqdm
 
 import experiments as meas
 from slab import AttrDict
-from experiments import MultimodeStation
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 from fitting.fit_display_classes import GeneralFitting
 from fitting.wigner import WignerAnalysis
-from job_server import JobClient
 
 # The four aggregate MBR stages. `EncodingHamiltonianSpectroscopyExperiment`
 # is still the loading layer and the shared numerics, and is still the class
@@ -110,7 +108,6 @@ from experiments.qsim.notebook_helpers import mbr_replot as replot
 from experiments.qsim.notebook_helpers import mbr_saved_reanalysis as saved
 
 NOTEBOOK_DIR = Path.cwd()
-client = JobClient()
 
 # %% [markdown]
 # # 1. N=2 Hamiltonian spectroscopy from saved jobs
@@ -255,8 +252,8 @@ n2.plot_shifted_spectra(
 # %% [markdown]
 # # 2. N=3 encoding-Hamiltonian spectroscopy reprocessing
 #
-# Loads the full N=3 calibration and spectroscopy jobs once from the job
-# queue, then runs a series of independent diagnostics on the result.
+# Loads the full N=3 calibration and spectroscopy jobs once from their HDF5
+# files, then runs a series of independent diagnostics on the result.
 
 # %%
 # Dataset choice: the complete N=3 calibration and spectroscopy job ranges.
@@ -269,7 +266,6 @@ calibration_expt, spectroscopy_expt = load_encoding_spectroscopy(
     MBRSpectrumExperiment,
     calibration_job_ids,
     spectroscopy_job_ids,
-    client=client,
 )
 
 # %% [markdown]
@@ -436,7 +432,6 @@ n3_result = n3.load_and_analyze_n3(
     spectroscopy_job_ids=job_id_generator(
         20260723, [48, 87], [85, 149], step=[1, 2]
     ),
-    client=client,
     cycle_branches={},
     manual_kerr_MHz=-19.756e-3,
     spectrum_method='matrix_pencil',
@@ -538,9 +533,8 @@ plt.show()
 # Source cell 314. Loads four known-good interleaved off-diagonal jobs without
 # acquiring new data. Replace the job list to analyze another saved batch.
 #
-# This needs a `station` only for its data path. Build a mock one, as the
-# offline reproduce section further down does, rather than connecting to
-# hardware from an analysis notebook.
+# Loads from HDF5: no station, and so no risk of picking up today's
+# calibration in place of the one these jobs ran under.
 
 # %%
 saved_spectroscopy_job_ids = [
@@ -548,7 +542,6 @@ saved_spectroscopy_job_ids = [
 ]
 saved_spectroscopy_expt = MBRSpectrumExperiment.from_job_ids(
     saved_spectroscopy_job_ids,
-    client=client,
 )
 saved_spectroscopy_expt.analyze(
     cycle_branches={(0, 0, 2, 0, 0): 0},
@@ -617,7 +610,6 @@ replot_N2_supplement_occupation = (0, 0, 0, 0, 2)
 replot_runs = replot.load_and_analyze_sectors(
     config=replot_config,
     job_ranges=replot_job_ranges,
-    client=client,
     sectors=(1, 2, 3, 4),
     n2_supplement_ranges=replot_N2_supplement_ranges,
     n2_supplement_occupation=replot_N2_supplement_occupation,
@@ -699,19 +691,24 @@ plt.show()
 #
 # Load only -- no `runner.execute()` appears anywhere below. The source did
 # this twice, once from the job server and once from local HDF5 files with a
-# mock station, and both paths survive because they genuinely read from
-# different places.
+# mock station. Both now read the same HDF5 files, so the loading difference
+# is gone; what remains is a real difference in the *analysis*, and the two
+# sections are named for it:
+#
+# - 5a applies the N=3 phase calibration and reports the manual-Kerr frame;
+# - 5b applies no calibration and stays in the as-acquired frame.
+#
+# Because both read the same files, a disagreement between them is now a
+# statement about phase frames and nothing else.
 #
 # What was *not* a real difference: cells 213/218 defined `saved_job_range`
 # byte-identically, and cells 222/232 defined the same occupation-pairing
 # check under two names with identical bodies. Both are single functions now.
 
 # %% [markdown]
-# ## 5a. From the job server
+# ## 5a. With the phase calibration applied
 
 # %%
-saved_job_client = JobClient()
-
 # Complete N=3 phase calibration: 35 occupations x analyzer phases 0/90.
 saved_n3_calibration_job_ids = saved.saved_job_range(20260815, 113, 182)
 
@@ -753,7 +750,6 @@ saved_zero_padding = 1
 # the manual-Kerr frame used for the N=3 set below.
 data_four_realization = MBRSpectrumExperiment.from_job_ids(
     saved.saved_job_range(20260815, 9, 16),
-    client=saved_job_client,
 )
 
 branches = {
@@ -770,20 +766,19 @@ _ = data_four_realization.analyze(
 data_four_realization.display()
 
 # %%
-saved_remote = saved.load_saved_remote(
+saved_calibrated = saved.load_saved_calibrated(
     saved_n3_calibration_job_ids=saved_n3_calibration_job_ids,
     saved_n3_spectroscopy_job_ids=saved_n3_spectroscopy_job_ids,
     saved_disorder_job_ids=saved_disorder_job_ids,
     saved_n3_cycle_branches=saved_n3_cycle_branches,
     saved_n3_manual_kerr_MHz=saved_n3_manual_kerr_MHz,
-    saved_job_client=saved_job_client,
     saved_fft_window=saved_fft_window,
     saved_zero_padding=saved_zero_padding,
 )
-saved_n3_calibration_expt = saved_remote["saved_n3_calibration_expt"]
-saved_n3_spectroscopy_expt = saved_remote["saved_n3_spectroscopy_expt"]
-saved_n3_data = saved_remote.get("saved_n3_data")
-saved_disorder_records = saved_remote["saved_disorder_records"]
+saved_n3_calibration_expt = saved_calibrated["saved_n3_calibration_expt"]
+saved_n3_spectroscopy_expt = saved_calibrated["saved_n3_spectroscopy_expt"]
+saved_n3_data = saved_calibrated.get("saved_n3_data")
+saved_disorder_records = saved_calibrated["saved_disorder_records"]
 
 # %%
 # Optional report figures from the reconstructed data.
@@ -801,60 +796,58 @@ if saved_show_n3:
     plt.show()
 
 # %% [markdown]
-# ## 5b. From local HDF5 files only
+# ## 5b. With no calibration applied, in the as-acquired frame
 #
-# Same reanalysis with nothing read from the job queue. The mock station
-# exists only so the loaders have config versions and a data path; which
-# versions to reconstruct against is a scientific choice, so it stays here.
+# The same files as 5a, reanalyzed without the phase calibration. The mock
+# station this section used to build is gone: it existed only so the loader
+# could ask *something* for the Floquet cycle time, and asking a station
+# returns today's calibration rather than the one these jobs ran under. The
+# timing now comes from each job's own provenance.
+#
+# The job ranges no longer carry a project name either -- `resolve_job_paths`
+# finds each file from its job ID, so which experiment directory a dataset
+# landed in is no longer something this notebook has to know. That mattered
+# here, because the four-realization set sits in a different project than the
+# N=3 and disorder sets.
 
 # %%
-saved_project_name = "260526_qsim_darkmode"
-saved_four_project_name = "260814_qsim_encspec"
-saved_station_config = {
-    "hardware_config": "CFG-HW-20260815-00002",
-}
-
-saved_station = MultimodeStation(
-    user="jonginn",
-    mock=True,
-    experiment_name=saved_project_name,
-    hardware_config=saved_station_config["hardware_config"],
-    log_measurements=False,
-)
-
-saved_local_experiment = saved.make_local_loader(
-    station=saved_station,
-    project_name=saved_project_name,
-    EncSpec=MBRSpectrumExperiment,
-)
-
-saved_four_realization_range = ([20260815], [9], [16])
+saved_four_realization_job_ids = saved.saved_job_range(20260815, 9, 16)
 offline_four_realization_branches = {
     (3, 0, 0, 0, 0): 1,
     (2, 0, 0, 1, 0): 1,
 }
-saved_n3_range = ([20260815, 20260816], [183, 1], [242, 10])
-saved_disorder_ranges = {
-    0: ([20260816], [11], [80]),
+saved_n3_job_ids = (
+    saved.saved_job_range(20260815, 183, 242)
+    + saved.saved_job_range(20260816, 1, 10)
+)
+# NOTE: this range is not the same partition 5a uses. 5a splits 20260816
+# 13-72 plus 20260817 1-20 into four realizations; this asks for 11-80 as a
+# single realization 0, and `load_saved_as_acquired` checks that every child
+# agrees with its manifest label, so it will raise if these files in fact
+# span several realizations. Kept as the source had it -- deciding which
+# partition is right is a dataset question, not a loading one.
+# `offline_` prefix, not `saved_`: 5a's own `saved_disorder_job_ids` is still
+# live in the kernel at this point and must not be clobbered.
+offline_disorder_job_ids = {
+    0: saved.saved_job_range(20260816, 11, 80),
 }
 offline_fft_window = "raw"
 offline_zero_padding = 1
 
 # %%
-saved_local = saved.load_saved_local(
-    saved_local_experiment=saved_local_experiment,
-    saved_four_realization_range=saved_four_realization_range,
+saved_as_acquired = saved.load_saved_as_acquired(
+    saved_four_realization_job_ids=saved_four_realization_job_ids,
     offline_four_realization_branches=offline_four_realization_branches,
-    saved_n3_range=saved_n3_range,
-    saved_disorder_ranges=saved_disorder_ranges,
-    saved_four_project_name=saved_four_project_name,
+    saved_n3_job_ids=saved_n3_job_ids,
+    saved_disorder_job_ids=offline_disorder_job_ids,
+    EncSpec=MBRSpectrumExperiment,
     offline_fft_window=offline_fft_window,
     offline_zero_padding=offline_zero_padding,
 )
-data_four_realization = saved_local["data_four_realization"]
-saved_n3_spectroscopy_expt = saved_local["saved_n3_spectroscopy_expt"]
-saved_n3_data = saved_local["saved_n3_data"]
-saved_disorder_records = saved_local["saved_disorder_records"]
+data_four_realization = saved_as_acquired["data_four_realization"]
+saved_n3_spectroscopy_expt = saved_as_acquired["saved_n3_spectroscopy_expt"]
+saved_n3_data = saved_as_acquired["saved_n3_data"]
+saved_disorder_records = saved_as_acquired["saved_disorder_records"]
 
 # %%
 # Optional figures; all data above came from local H5 files.

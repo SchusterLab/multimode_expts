@@ -159,6 +159,36 @@ def provenance_path() -> Path:
     return path
 
 
+@lru_cache(maxsize=4)
+def _records(sidecar: Path) -> dict:
+    """job_id -> the full recorded provenance, from the exported sidecar."""
+    with sidecar.open() as handle:
+        return json.load(handle)
+
+
+def job_records(required: bool = True) -> dict:
+    """-> {job_id: record} from the provenance sidecar.
+
+    The records carry what the HDF5 file does not: the config version IDs each
+    job ran against, the program class it was recorded under, and its final
+    status. :mod:`experiments.saved_jobs` reads them to resolve Floquet timing
+    and to filter a mixed job range without opening a single file.
+
+    Args:
+        required: raise when the sidecar is absent. Pass False to get an empty
+            dict instead, for callers that can still proceed without it --
+            a file carrying its own ``derived_params`` needs no sidecar.
+    """
+    if not required:
+        try:
+            path = provenance_path()
+        except JobPathError:
+            return {}
+    else:
+        path = provenance_path()
+    return _records(path)
+
+
 def _reroot(recorded: str, root: Path):
     """Re-root an acquisition-machine absolute path onto the local data root.
 

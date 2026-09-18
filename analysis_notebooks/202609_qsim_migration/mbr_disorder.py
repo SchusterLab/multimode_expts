@@ -81,15 +81,12 @@ from tqdm.notebook import tqdm
 
 import experiments as meas
 from slab import AttrDict
-from job_server import JobClient
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers import mbr_disorder_preview as preview
 from experiments.qsim.notebook_helpers import mbr_disorder_h5 as h5only
-
-client = JobClient()
 
 # %% [markdown]
 # # 1. Preview the current diagonal-disorder campaign from job IDs
@@ -109,7 +106,6 @@ diag_preview = preview.load_preview_realization(
     diag_preview_calibration_job_ids=diag_preview_calibration_job_ids,
     diag_preview_job_ids_by_realization=diag_preview_job_ids_by_realization,
     diag_preview_branch_overrides=diag_preview_branch_overrides,
-    client=client,
     realization=0,
 )
 
@@ -122,7 +118,6 @@ preview.report_preview_realization(diag_preview)
 # %%
 diag_stats_records, diag_stats_failures = preview.analyze_every_realization(
     diag_preview_job_ids_by_realization=diag_preview_job_ids_by_realization,
-    client=client,
     edge_fraction=0.10,
     gap_ratio_bins=15,
     excluded_occupations=[],

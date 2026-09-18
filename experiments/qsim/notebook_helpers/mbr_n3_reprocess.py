@@ -424,11 +424,12 @@ def find_ridge_peaks(encspec_reprocessed, max_candidates=35,
 
 
 def load_and_analyze_n3(calibration_job_ids, spectroscopy_job_ids,
-                        client=None, cycle_branches=None,
+                        cycle_branches=None,
                         manual_kerr_MHz=-19.756e-3,
                         spectrum_method='matrix_pencil',
-                        EncSpec=MBRSpectrumExperiment):
-    """Load N=3 jobs from the queue and analyze them (cell 189).
+                        EncSpec=MBRSpectrumExperiment,
+                        timing=None):
+    """Load the N=3 jobs from HDF5 and analyze them (cell 189).
 
     Cell 189 called itself a tutorial: it is the worked path from job ranges
     to a choice of raw FFT or rowwise Matrix Pencil. Kept because it is the
@@ -448,7 +449,7 @@ def load_and_analyze_n3(calibration_job_ids, spectroscopy_job_ids,
         EncSpec,
         mpm_calibration_job_ids,
         mpm_spectroscopy_job_ids,
-        client=client,
+        timing=timing,
         calibration_program_name='EntireFloquetCyclePhaseCalibrationProgram',
         spectroscopy_program_name='NPhotonHamiltonianSpectroscopyProgram',
     )

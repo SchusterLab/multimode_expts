@@ -1,139 +1,101 @@
-"""Job-number-to-file loading for the MBR analysis notebooks.
+"""Job-number-to-experiment loading for the MBR analysis notebooks.
 
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cell 4 by
-the stage-2 notebook split. That cell defined all 71 of the notebook's helpers
-at once; these six are the only ones the active MBR analysis themes call, and
-all six do the same job: turn a job date and number into a path, then into a
-loaded experiment.
+the stage-2 notebook split, then reduced to two functions when the loading
+path was purged of the job server.
 
 Callers: `analysis_notebooks/202609_qsim_migration/mbr.py`,
-`mbr_disorder.py`, `mbr_sampling.py`, `mbr_spectral_validation.py`.
+`mbr_sampling.py`, `mbr_spectral_validation.py`, and
+`notebook_helpers/mbr_n3_reprocess.py`.
 
-This is a temporary home. The stage-2 instructions are explicit that these are
-not to be reconciled with the existing library loaders yet -- notably
-`EncodingHamiltonianSpectroscopyExperiment.from_h5file`, which is the canonical
-path and which `load_encoding_spectroscopy` here wraps. Deciding which one
-survives is a later, theme-specific task.
+What changed and why
+--------------------
+`load_encoding_spectroscopy` used to ask a `JobClient` for each job's status
+and then unpickle a whole Experiment. It now goes through
+:mod:`experiments.saved_jobs`, which reads HDF5 only. Two consequences worth
+knowing at the call site:
 
-`tqdm`, `EncodingHamiltonianSpectroscopyExperiment` and
-`MBRPhaseCorrectionExperiment` were notebook globals that these bodies relied
-on; they are imported properly here, since the move is what broke them.
+* Filtering is by the program class **recorded in the provenance sidecar**,
+  not by the class of an unpickled `expt.prog`. A mixed job range is therefore
+  filtered before any file is opened, and the answer no longer depends on the
+  acquisition revision still being importable.
+* There is no `client` argument. Nothing here talks to the job server, the job
+  database, or a station.
+
+The `hdf5_path_generator`/`path_to_experiment`/`load_dark_experiments` trio
+that used to live here is gone: it globbed a hard-coded `C:\\experiments` and
+loaded children without their Floquet timing.
+:func:`experiments.job_paths.resolve_job_paths` does the path resolution
+properly, and works off the acquisition workstation. The dormant notebooks
+under `analysis_notebooks/202609_qsim_migration/dormant/` keep their own inline
+copies, so they are unaffected.
 """
 
-import os
-
 import numpy as np
-from tqdm.notebook import tqdm
 
-import experiments as meas
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-)
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+from experiments.saved_jobs import load_aggregate
 
-# Notebook globals in cell 2 of data_postprocess.ipynb. Kept as defaults so
-# these functions stay callable, but every function still takes `basedir`
-# explicitly so a notebook can point elsewhere without editing this file.
-REPO_ROOT = os.path.join("C:", os.sep, "python", "multimode_expts")
-BASE_DIR = os.path.join("C:", os.sep, "experiments")
-
-
-def check_program_class(obj,
-                        class_name):
-    if obj.prog.__class__.__name__ == class_name:
-        return True
-    return False
+CALIBRATION_PROGRAM = "EntireFloquetCyclePhaseCalibrationProgram"
+SPECTROSCOPY_PROGRAM = "NPhotonHamiltonianSpectroscopyProgram"
 
 
 def job_id_generator(job_date, job_start_num, job_finish_num, step=1):
+    """-> the `JOB-<date>-<number>` IDs for one or more inclusive ranges.
+
+    Every argument broadcasts: pass scalars for a single range, or matching
+    lists to union several. Unchanged from cell 4.
+    """
     starts = [job_start_num] if isinstance(job_start_num, (int, np.integer)) else list(job_start_num)
     finishes = [job_finish_num] if isinstance(job_finish_num, (int, np.integer)) else list(job_finish_num)
     dates = [job_date] * len(starts) if isinstance(job_date, (str, int, np.integer)) else list(job_date)
     steps = [step] * len(starts) if isinstance(step, (int, np.integer)) else list(step)
-    if not (len(dates) == len(starts) == len(finishes) == len(steps)): raise ValueError('job range arguments must have matching lengths')
-    return [f'JOB-{date}-{job:05d}' for date, start, finish, stride in zip(dates, starts, finishes, steps) for job in range(int(start), int(finish) + 1, int(stride))]
+    if not (len(dates) == len(starts) == len(finishes) == len(steps)):
+        raise ValueError('job range arguments must have matching lengths')
+    return [f'JOB-{date}-{job:05d}'
+            for date, start, finish, stride in zip(dates, starts, finishes, steps)
+            for job in range(int(start), int(finish) + 1, int(stride))]
 
 
-def hdf5_path_generator(project_name,
-                        job_date,
-                        job_start_num,
-                        job_finish_num, 
-                        experiement_name,
-                        basedir = BASE_DIR,
-                        verbose = False):
-    object_directory = os.path.join(basedir, project_name, "data")
-    path = {}
-    hdf5_path_to_return = []
-    for job_id in job_id_generator(job_date, job_start_num, job_finish_num):
-        filepath = os.path.join(object_directory, f"{job_id}_{experiement_name}.h5")
-        if os.path.exists(filepath):
-            hdf5_path_to_return.append(filepath)
-            if verbose: print(f"[O] Found: {filepath}")
-        elif verbose: print(f"[X] Missing: {filepath}")
-    path[experiement_name] = hdf5_path_to_return
-    return path
+def load_encoding_spectroscopy(EncSpec,
+                               calibration_job_ids,
+                               spectroscopy_job_ids,
+                               timing=None,
+                               calibration_program_name=CALIBRATION_PROGRAM,
+                               spectroscopy_program_name=SPECTROSCOPY_PROGRAM):
+    """-> (calibration_expt, spectroscopy_expt) for one encoding-spectroscopy set.
 
+    Both aggregates come from HDF5 alone. The calibration is analyzed before
+    it is returned, since the spectroscopy analysis takes it as an input; the
+    spectroscopy aggregate is not, because its analysis takes parameters that
+    are a per-notebook choice.
 
-def path_to_experiment(hdf5_path, ExpClass):
-    
-    exp_name = list(hdf5_path.keys())[0]
-    path_list = hdf5_path[exp_name]
+    Args:
+        EncSpec: the stage class that reassembles the spectroscopy jobs,
+            e.g. `MBRSpectrumExperiment`.
+        calibration_job_ids, spectroscopy_job_ids: job IDs, nested lists fine.
+        timing: historical `dict(floquet_cycle_us=..., m1s_pi_fracs=[...])`,
+            for files that carry neither a `derived_params` attribute nor a
+            sidecar entry. Omit it whenever provenance is available.
+        calibration_program_name, spectroscopy_program_name: the recorded
+            program classes to keep. The spectroscopy range for these datasets
+            was submitted interleaved with other programs, which is why
+            filtering exists at all.
 
-    exp_list = []
-
-    for fname in tqdm(path_list):
-        obj = ExpClass.from_h5file(fname)
-
-        obj.path = os.path.dirname(fname)
-        obj.config_file = fname
-        obj.prefix = os.path.splitext(os.path.basename(fname))[0]
-
-        exp_list.append(obj)
-
-    return exp_list
-
-
-def load_encoding_spectroscopy(EncSpec, calibration_job_ids, spectroscopy_job_ids, client=None, calibration_program_name='EntireFloquetCyclePhaseCalibrationProgram', spectroscopy_program_name='NPhotonHamiltonianSpectroscopyProgram'):
-    if client is None:
-        from job_server import JobClient
-        client = JobClient()
-    def load_selected(job_ids, selector):
-        expts, loaded_job_ids, skipped_job_ids = [], [], []
-        for job_id in job_ids:
-            try:
-                result = client.get_status(job_id)
-                if not result.is_successful():
-                    skipped_job_ids.append(job_id)
-                    continue
-                expt = result.load_expt()
-                keep = selector(expt)
-            except Exception:
-                skipped_job_ids.append(job_id)
-                continue
-            if keep:
-                expts.append(expt)
-                loaded_job_ids.append(job_id)
-            else:
-                skipped_job_ids.append(job_id)
-        return expts, loaded_job_ids, skipped_job_ids
-    calibration_expts, calibration_loaded_job_ids, calibration_skipped_job_ids = load_selected(calibration_job_ids, lambda expt: check_program_class(expt, calibration_program_name))
-    spectroscopy_expts, spectroscopy_loaded_job_ids, spectroscopy_skipped_job_ids = load_selected(spectroscopy_job_ids, lambda expt: isinstance(expt, EncodingHamiltonianSpectroscopyExperiment) or check_program_class(expt, spectroscopy_program_name))
-    calibration_expt = MBRPhaseCorrectionExperiment._from_expts(calibration_expts, job_ids=calibration_loaded_job_ids)
-    spectroscopy_expt = EncSpec._from_expts(spectroscopy_expts, job_ids=spectroscopy_loaded_job_ids)
-    calibration_expt.skipped_job_ids = calibration_skipped_job_ids
-    spectroscopy_expt.skipped_job_ids = spectroscopy_skipped_job_ids
-    calibration_expt.analyze()
+    Both returned aggregates carry `skipped_job_ids` (and `skipped_jobs`, with
+    the reason per job) so a notebook can see what was dropped.
+    """
+    calibration_expt = load_aggregate(
+        calibration_job_ids,
+        owner=MBRPhaseCorrectionExperiment,
+        program_class=calibration_program_name,
+        timing=timing,
+        analyze=True,
+    )
+    spectroscopy_expt = load_aggregate(
+        spectroscopy_job_ids,
+        owner=EncSpec,
+        program_class=spectroscopy_program_name,
+        timing=timing,
+    )
     return calibration_expt, spectroscopy_expt
-
-
-def load_dark_experiments(project, job_date_list, start_num_list, finish_num_list,
-                          ExpClass=meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment):
-    """Reconstruct (and dedup) an experiment dataset from *.h5 files.
-
-    Defaults to DarkBaseExperiment; pass e.g. meas.qsim.qsim_base.QsimBaseExperiment
-    to load Qsim runs instead. The .h5 filename tag is taken from ExpClass.__name__,
-    so it must match how the files were saved: JOB-<date>-<num>_<ExpClass>.h5."""
-    path = hdf5_path_generator(project, job_date_list, start_num_list,
-                               finish_num_list, ExpClass.__name__)
-    expts = path_to_experiment(path, ExpClass)
-    return list(dict.fromkeys(expts))

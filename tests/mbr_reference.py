@@ -8,33 +8,29 @@ run ``MBRSpectrumExperiment.analyze()``.
 Not a test module (no ``test_`` prefix, so pytest does not collect it). It is
 imported by ``test_mbr_analysis_golden.py`` and by the baseline generator.
 
-Scaffolding, and known to be scaffolding
+The HDF5 loader now lives in the library
 ----------------------------------------
-``_SavedJob`` and ``_SavedProgram`` duck-type the pickled experiment object
-that the aggregate path expects to find. They exist only because raw HDF5 does
-not yet carry its own provenance (section 3.1 of the refactor spec): the
-analysis wants a compiled Program to ask for Floquet timing, and a file saved
-today cannot supply one.
+This module used to carry its own ``_SavedJob``/``_SavedProgram`` pair and its
+own HDF5 reader, marked as scaffolding to be deleted once a real loader
+landed. It has: :mod:`experiments.saved_jobs`. The functions below are thin
+wrappers over it, kept because the fixtures and the golden test call them by
+these names.
 
-Both classes die when ``MBRSpectrumExperiment`` and its HDF5 loader land
-(spec phase 2). Do not build on them.
-
-TODO(spec 3.1): drop ``_SavedProgram`` once the timing resolver reads the
-versioned configs directly, and ``_SavedJob`` once aggregates load HDF5
-themselves.
+That the wrappers are thin is the point. These tests pin the analysis numbers
+against a stored baseline, so running them through the same loader the
+notebooks use is what makes the baseline evidence that the loader is right.
 """
 
 import json
 from pathlib import Path
 
-import h5py
 import numpy as np
-from slab import AttrDict
 
-from experiments.floquet_timing import resolve_floquet_timing
-from experiments.job_paths import resolve_job_paths
+from experiments.job_paths import job_records, resolve_job_paths
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.saved_jobs import load_aggregate as _load_aggregate
+from experiments.saved_jobs import load_h5
 
 DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
 
@@ -134,47 +130,20 @@ COMPLETE_BASIS_ANALYSIS = dict(fft_window="raw", zero_padding=1)
 PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
 
 
-def load_h5(path, load_shots=False):
-    """-> (cfg, data). Skips idata/qdata unless asked; they are ~99% of the file."""
-    with h5py.File(path, "r") as handle:
-        cfg = AttrDict(json.loads(handle.attrs["config"]))
-        skip = () if load_shots else ("idata", "qdata")
-        data = AttrDict({k: handle[k][()] for k in handle if k not in skip})
-    return cfg, data
-
-
-class _SavedProgram:
-    """Supplies Floquet timing where the analysis looks for a compiled program."""
-
-    def __init__(self, floquet_cycle_us, m1s_pi_fracs):
-        self._cycle_us = float(floquet_cycle_us)
-        self.m1s_pi_fracs = list(m1s_pi_fracs)
-
-    def calculate_floquet_cycle_us(self):
-        return self._cycle_us
-
-
-class _SavedJob:
-    """Duck-types the pickled experiment for what the analysis path reads."""
-
-    def __init__(self, job_id, cfg, data, path, prog):
-        self.job_id, self.cfg, self.data = job_id, cfg, data
-        self.fname = str(path)
-        self.prog = prog
-
-
-def load_aggregate(job_ids=None, timing=None,
-                   owner=MBRSpectrumExperiment):
+def load_aggregate(job_ids=None, timing=None, owner=MBRSpectrumExperiment):
     """Build the aggregate Experiment for ``job_ids`` from HDF5 alone.
 
     Touches no station, no database, no vault note and no pickle, per the
     isolation rule in spec section 13.3.
+
+    ``timing`` is pinned to :data:`CHARACTERIZATION_TIMING` by default rather
+    than resolved from provenance, so this fixture keeps testing the analysis
+    against a fixed cycle time even if the resolver changes.
+    :func:`load_aggregate_resolved` is the one that exercises the resolver.
     """
     ids = list(CHARACTERIZATION_JOB_IDS if job_ids is None else job_ids)
-    paths = resolve_job_paths(ids)
-    prog = _SavedProgram(**(timing or CHARACTERIZATION_TIMING))
-    jobs = [_SavedJob(j, *load_h5(paths[j]), paths[j], prog) for j in ids]
-    return owner._from_expts(jobs, job_ids=ids)
+    return _load_aggregate(ids, owner=owner,
+                           timing=timing or CHARACTERIZATION_TIMING)
 
 
 def run_reference_analysis(job_ids=None, timing=None, **overrides):
@@ -193,44 +162,22 @@ def run_reference_analysis(job_ids=None, timing=None, **overrides):
 def job_provenance():
     """-> {job_id: record} from the exported sidecar (spec section 3.2).
 
-    Written once by ``tools/export_job_provenance.py``. Reading it here keeps
-    the analysis path free of any database access.
+    Delegates to :func:`experiments.job_paths.job_records`; kept as a name
+    because the golden test reads the version IDs out of it directly.
     """
-    if not PROVENANCE.is_file():
-        raise FileNotFoundError(
-            f"No provenance sidecar at {PROVENANCE}. Regenerate it with\n"
-            f"  pixi run python tools/export_job_provenance.py --range ... -o {PROVENANCE}"
-        )
-    return json.loads(PROVENANCE.read_text())
+    return job_records()
 
 
 def load_aggregate_resolved(job_ids, owner=MBRSpectrumExperiment):
     """Build an aggregate whose Floquet timing comes from the versioned configs.
 
-    Unlike :func:`load_aggregate` this needs no hard-coded timing: each job's
-    Floquet config version comes from the provenance sidecar and the timing is
-    recomputed from the archive (spec section 2.2). That is what makes datasets
-    other than the August characterization set loadable at all -- the July
-    sectors were taken under a different configuration.
+    Unlike :func:`load_aggregate` this passes no ``timing``, so the loader
+    resolves each job's Floquet config from the provenance sidecar and
+    recomputes the timing from the archive (spec section 2.2). That is what
+    makes datasets other than the August characterization set loadable at
+    all -- the July sectors were taken under a different configuration.
     """
-    ids = list(job_ids)
-    paths = resolve_job_paths(ids)
-    provenance = job_provenance()
-
-    missing = [j for j in ids if j not in provenance]
-    if missing:
-        raise KeyError(f"{len(missing)} jobs absent from the provenance sidecar: {missing[:5]}")
-
-    jobs = []
-    for job_id in ids:
-        cfg, data = load_h5(paths[job_id])
-        timing = resolve_floquet_timing(
-            cfg, provenance[job_id]["floquet_storage_version_id"])
-        jobs.append(_SavedJob(
-            job_id, cfg, data, paths[job_id],
-            _SavedProgram(timing["floquet_cycle_us"], timing["m1s_pi_fracs"]),
-        ))
-    return owner._from_expts(jobs, job_ids=ids)
+    return _load_aggregate(list(job_ids), owner=owner)
 
 
 def load_complete_basis():

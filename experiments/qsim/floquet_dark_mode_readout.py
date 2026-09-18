@@ -58,7 +58,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 
     @classmethod
     def _from_expts(cls, expts, job_ids=None, station=None):
-        """Collect saved jobs for analysis; station supplies missing hardware data."""
+        """Collect child experiments into one aggregate for analysis.
+
+        ``station`` is passed on to the stages that still take one for theory
+        comparison. It is no longer a source of Floquet timing -- see
+        ``_saved_parameters``.
+        """
         
         expts = list(flatten_exp_lists(expts))
         if not expts:
@@ -101,12 +106,22 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                                station=station)
 
     @classmethod
-    def from_job_files(cls, job_files, station=None):
+    def from_job_files(cls, job_files, timing=None):
         """
-        Load child experiment pickle/H5 files into one analysis object.
+        Load child HDF5 files into one analysis object.
+
+        Takes paths, or already-loaded child experiments. ``timing`` supplies
+        the Floquet cycle time for files that carry neither a
+        ``derived_params`` attribute nor a provenance entry; see
+        :mod:`experiments.saved_jobs`.
+
+        Pickles are no longer accepted. They are ephemeral debugging output,
+        not data: unpickling needs the acquisition revision still importable,
+        and the canonical record is the HDF5 file.
         """
-        import pickle
         from pathlib import Path
+
+        from experiments.saved_jobs import job_id_from_path, load_job
 
         if isinstance(job_files, (str, Path)):
             job_files = [job_files]
@@ -116,39 +131,34 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 expts.append(job_file)
                 continue
             path = Path(job_file)
-            if path.suffix.lower() in (".h5", ".hdf5"):
-                expts.append(cls.from_h5file(str(path)))
-            else:
-                with path.open("rb") as handle:
-                    expts.append(pickle.load(handle))
-        return cls._from_expts(expts, station=station)
+            if path.suffix.lower() not in (".h5", ".hdf5"):
+                raise ValueError(
+                    f"{path.name} is not an HDF5 file. Analysis loads HDF5 only; "
+                    f"if this is a job pickle, load the job's .h5 instead "
+                    f"(from_job_ids resolves it by job ID).")
+            expts.append(load_job(job_id_from_path(path), path=path, timing=timing))
+        return cls._from_expts(expts)
 
     @classmethod
-    def from_job_ids(cls, job_ids, client=None, station=None):
+    def from_job_ids(cls, job_ids, timing=None, program_class=None):
         """
-        Load completed queue jobs without rebuilding a BatchRunner.
-        If station is properly specified (along with project name and directory (which is hardcoded)),
-        a list of job_ids is okay. Otherwise, a complete directory is necessary.
+        Load saved jobs by ID, from HDF5 alone.
+
+        Resolves each ID to its file via
+        :func:`experiments.job_paths.resolve_job_paths` and reads it with
+        :mod:`experiments.saved_jobs`. No job server, no job database, no
+        pickle and no station: the timing that only the compiled program used
+        to carry is recovered from the file's own ``derived_params`` attribute
+        or recomputed from the versioned config, and ``timing`` is the manual
+        escape hatch when neither exists.
+
+        ``program_class`` filters a mixed job range by the program class
+        recorded in the provenance sidecar.
         """
-        if isinstance(job_ids, (str, int, np.integer)):
-            job_ids = [job_ids]
-        job_ids = [str(job_id) for job_id in flatten_exp_lists(job_ids)]
-        if not job_ids:
-            raise ValueError("job_ids cannot be empty")
-        if client is None:
-            if station is None:
-                raise ValueError("client or station is required to resolve job IDs")
-            job_files = [station.expt_objs_path / f"{job_id}_expt.pkl" for job_id in job_ids]
-            aggregate = cls.from_job_files(job_files, station=station)
-            aggregate.batch_job_ids = job_ids
-            return aggregate
-        expts = []
-        for job_id in job_ids:
-            result = client.get_status(job_id)
-            if not result.is_successful():
-                raise RuntimeError(f"Job {job_id} {result.status}: {result.error_message or 'No details'}")
-            expts.append(result.load_expt())
-        return cls._from_expts(expts, job_ids=job_ids, station=station)
+        from experiments.saved_jobs import load_aggregate
+
+        return load_aggregate(job_ids, owner=cls, timing=timing,
+                              program_class=program_class)
 
     @staticmethod
     def _first_scalar(value):
@@ -179,8 +189,12 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         """
         Check whether all the sister expts have the same params,
         and return the params as an AttrDict.
-        If the class is called for post processing using hdf5 files,
-        one should specify station with proper config as well.
+
+        The Floquet timing comes from each child's ``prog``. During acquisition
+        that is the live compiled program; for saved data it is the stand-in
+        that :mod:`experiments.saved_jobs` attaches, carrying timing recovered
+        from the file's ``derived_params`` attribute or from the versioned
+        config. There is no station fallback, deliberately -- see below.
         
         Returning params are:
             - `swap_stors`
@@ -212,22 +226,29 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
                 floquet_cycle_us = float(prog.calculate_floquet_cycle_us())
                 pi_fracs = np.asarray([prog.m1s_pi_fracs[stor - 1] for stor in swap_stors], dtype=float)
                 couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
-                program_hardware.append((floquet_cycle_us, couplings_MHz))
+                # `source` says where the timing came from: a live compiled
+                # program during acquisition, or one of the recovered sources
+                # that experiments.saved_jobs resolves offline.
+                program_hardware.append((floquet_cycle_us, couplings_MHz,
+                                         getattr(prog, "source", "saved program")))
                 break
 
         if program_hardware:
-            floquet_cycle_us, couplings_MHz = program_hardware[0]
-            hardware_source = "saved program"
-        elif station is not None:
-            hardware = cls.hardware_parameters(station, 
-                                               swap_stors, 
-                                               sync_cycles, 
-                                               floquet_gauss_sigma, 
-                                               floquet_waveform)
-            floquet_cycle_us, couplings_MHz = hardware.floquet_cycle_us, hardware.couplings_MHz
-            hardware_source = "current station (H5 fallback)"
+            floquet_cycle_us, couplings_MHz, hardware_source = program_hardware[0]
         else:
-            raise RuntimeError("Floquet cycle time and couplings need the job pickle or station when loading H5 files")
+            # Deliberately no station fallback. Asking the *current* station
+            # substitutes today's calibration for the historical one, and does
+            # it silently: when the swap dataset moved gauss_sigma 0.04 -> 0.02
+            # us between 2026-08-14 and 08-25, that fallback returned roughly
+            # half the correct cycle time and every energy with it. The cycle
+            # time is not a measurement -- it is computed from immutable
+            # versioned config, so it is recovered exactly or not at all.
+            raise RuntimeError(
+                "no Floquet timing on these children. Load them through "
+                "experiments.saved_jobs (from_job_ids / from_job_files), which "
+                "reads the file's own 'derived_params' attribute or recomputes "
+                "the timing from the versioned config, and takes timing= for "
+                "files that have neither.")
         if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0. or not np.all(np.isfinite(couplings_MHz)) or np.min(couplings_MHz) <= 0.:
             raise ValueError("saved Floquet hardware parameters must be finite and positive")
         hardware = AttrDict(dict(floquet_cycle_us=float(floquet_cycle_us), couplings_MHz=np.asarray(couplings_MHz), physical_kerr_MHz=physical_kerr_MHz, source=hardware_source))
