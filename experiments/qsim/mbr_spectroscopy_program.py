@@ -303,7 +303,18 @@ class NPhotonHamiltonianSpectroscopyProgram(
         """
         
         ecfg = self.cfg.expt
-        if "spectroscopy_phase_id" in ecfg.get("swept_params", []):
+        if "spectroscopy_setting_id" in ecfg.get("swept_params", []):
+            pair_index, phase_id = ecfg.spectroscopy_settings[ecfg.spectroscopy_setting_id]
+            initial, final = ecfg.spectroscopy_occupation_pairs[pair_index]
+            ecfg.spectroscopy_occupations = list(initial)
+            ecfg.spectroscopy_final_occupations = list(final)
+            ecfg.spectroscopy_phase_id = phase_id
+            phase = float(ecfg.spectroscopy_pair_phase_per_cycle_deg[pair_index])
+            location = ecfg.phase_correction_location
+            ecfg.final_analyzer_phase_per_cycle_deg = phase if location == "pulse" else 0.
+            ecfg.spectroscopy_analysis_phase_per_cycle_deg = phase if location == "analysis" else 0.
+        if any(param in ecfg.get("swept_params", []) for param in
+               ("spectroscopy_phase_id", "spectroscopy_setting_id")):
             prep_phase, analyzer_phase = ecfg.spectroscopy_phase_combinations[
                 ecfg.spectroscopy_phase_id]
             ecfg.spectroscopy_prep_phase = float(prep_phase)
