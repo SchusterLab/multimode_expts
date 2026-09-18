@@ -44,6 +44,11 @@ import numpy as np
 from qick import QickConfig
 
 from experiments.dataset import FloquetStorageSwapDataset
+from experiments.local_env import load_env
+
+# The archive location is per-machine; read it from the repo-root .env when the
+# environment does not already say. See experiments/local_env.py.
+load_env()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOCCFG_SNAPSHOT = REPO_ROOT / "configs" / "soccfg_snapshot.json"

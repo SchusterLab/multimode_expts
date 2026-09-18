@@ -58,6 +58,14 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from experiments.local_env import load_env
+
+# Per-machine roots normally come from the repo-root .env rather than from an
+# export the current kernel happened to inherit; see experiments/local_env.py.
+# Anything already in the environment wins, so tests and one-off overrides are
+# unaffected.
+load_env()
+
 # Where the acquisition workstation keeps its data. Used as the default so the
 # common case needs no environment at all.
 PRODUCTION_DATA_ROOT = Path("C:/experiments")

@@ -14,13 +14,14 @@
 
 # %%
 import json
-import os
 import re
 from pathlib import Path
 
 import h5py
 import matplotlib.pyplot as plt
 
+from experiments.job_paths import data_root, vault_root
+from experiments.local_env import load_env
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from slab import AttrDict
@@ -94,11 +95,16 @@ from slab import AttrDict
 
 # Where this machine sees the two shared trees. Configs record Windows paths
 # (output_root C:, vault_root G:), so off-prod every reader needs a mapping.
-DATA_ROOT = Path(os.environ.get("MULTIMODE_DATA_ROOT", "/Volumes/pippin/experiments"))
-VAULT_ROOT = Path(os.environ.get(
-    "MULTIMODE_VAULT_ROOT",
-    Path.home() / "Google Drive/Shared drives/SLab/Multimode",
-))
+# Both come from the repo-root .env (see experiments/local_env.py) so that this
+# notebook holds no machine-specific path: MULTIMODE_DATA_ROOT and
+# MULTIMODE_VAULT_ROOT. Both go through job_paths, which is the one definition
+# and raises naming the variable to set. The vault is resolved inside
+# `vault_paths` rather than here, so the rest of the notebook runs on a machine
+# that has the data share but no synced vault.
+load_env()
+DATA_ROOT = data_root()
+# Whose lab notebook logged these runs -- a fact about the dataset, not about
+# this machine, so it stays here rather than in .env.
 VAULT_USER = "Jonginn"
 
 # Floquet timing as compiled at acquisition. Not in the H5 (JSON serialization
@@ -126,7 +132,7 @@ def vault_paths(ids):
     found = {}
     for date in sorted(dates):
         year, month, _ = date.split("-")
-        for md in VAULT_ROOT.glob(
+        for md in vault_root().glob(
             f"Lab/{VAULT_USER}/*/{year}/{month}/{date}.md"
         ):
             for match in re.finditer(r"data_path:\s*(.+\.h5)", md.read_text(errors="replace")):

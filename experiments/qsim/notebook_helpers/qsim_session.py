@@ -18,17 +18,23 @@ This is a temporary home, per the stage-2 instructions -- reconciling it with
 `MultimodeStation` and the runners is a later task.
 """
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
 from experiments import MultimodeStation
+from experiments.local_env import load_env
 from job_server import JobClient
 from job_server.config_versioning import ConfigVersionManager
 from job_server.database import get_database
 
 # Cell 2 hard-coded the main checkout. Worktrees share the same config store,
-# so this stays pointed at the main path rather than the importing tree.
-CONFIG_DIR = "C:/python/multimode_expts/configs"
+# so this stays pointed at the main path rather than the importing tree -- but
+# where that checkout lives is per-machine, so it comes from
+# MULTIMODE_CONFIG_DIR in the repo-root .env (see experiments/local_env.py),
+# defaulting to the acquisition workstation's path.
+load_env()
+CONFIG_DIR = os.environ.get("MULTIMODE_CONFIG_DIR", "C:/python/multimode_expts/configs")
 
 # Cell 6, verbatim. Shared by every theme, so a change here is meant to reach
 # all of them, exactly as editing cell 6 used to.

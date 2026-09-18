@@ -83,6 +83,7 @@ import experiments as meas
 from slab import AttrDict
 from job_server import JobClient
 
+from experiments.job_paths import data_root
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers import mbr_disorder_preview as preview
@@ -165,7 +166,9 @@ preview.plot_levels_per_realization(
 # %%
 # 1. Choose a dataset; its explicit job lists are in the manifest below.
 dataset_to_postproc =  'Sep10 K3.6 g29.2'           # Sep05 K3.6 g30'
-data_base_directory = r'C:\experiments\260818_qsim_spectroscopy\data'
+# The project subdirectory is part of the dataset; the root it sits under is
+# per-machine, so it comes from $MULTIMODE_DATA_ROOT or the repo-root .env.
+data_base_directory = data_root() / '260818_qsim_spectroscopy' / 'data'
 
 load_shots = False  # FFT/MPM use means; shot checks read shots on demand.
 reload_data = False  # True rereads selected H5 arrays; no server requests.

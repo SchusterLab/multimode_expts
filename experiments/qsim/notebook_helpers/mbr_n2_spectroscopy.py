@@ -10,7 +10,12 @@ the rigid shifts -- the one genuinely hand-entered input -- stay visible in the
 notebook rather than being buried in a function.
 
 The 40 HDF5 paths that cell 168 held inline are now
-`analysis_notebooks/202609_qsim_migration/n2_spectroscopy_files.yml`. Read that
+`analysis_notebooks/202609_qsim_migration/n2_spectroscopy_files.yml`, and they
+are stored relative to the experiment data root rather than as the
+``C:/experiments/...`` absolutes the cell held, so the catalog reads the same on
+the workstation and on a laptop with the share mounted. `load_file_catalog`
+joins them onto `job_paths.data_root()`, which is `$MULTIMODE_DATA_ROOT` or the
+repo-root `.env`. Read that
 file's own note: cell 167's markdown claims fifteen occupations but the list
 holds ten, which the analysis tolerates because it builds the full fifteen-state
 basis for theory and compares only measured rows against it.
@@ -37,18 +42,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
+from experiments.job_paths import data_root
 from experiments.qsim.floquet_dark_mode_readout import DarkBaseExperiment
 
 
-def load_file_catalog(path):
+def load_file_catalog(path, root=None):
     """Read the occupation-grouped HDF5 paths and check they all exist.
 
     Replaces the inline list and the existence check of cell 168. Raises
     rather than silently analyzing a partial set.
+
+    Catalog entries are relative to the experiment data root, so `root`
+    defaults to `job_paths.data_root()` -- the one place the per-machine data
+    location is configured. Pass `root` to read a copy of the tree somewhere
+    else. An absolute entry is used as given, which is what makes a catalog
+    that names a path outside the data tree still loadable.
     """
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    base = Path(root) if root is not None else data_root()
     groups = [
-        [[str(fname) for fname in phi_files] for phi_files in occupation_files]
+        [[str(base / fname) for fname in phi_files] for phi_files in occupation_files]
         for occupation_files in doc["occupation_groups"]
     ]
     missing_files = [
