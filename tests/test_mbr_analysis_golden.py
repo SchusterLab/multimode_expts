@@ -322,7 +322,15 @@ def test_complete_basis_baseline_matches(branch):
 
     expected = _load_baseline(baseline)
 
-    assert not set(expected) - set(flat), "fields disappeared from the analysis result"
+    gone = set(expected) - set(flat)
+    new = set(flat) - set(expected)
+    assert not gone, f"fields disappeared from the analysis result: {sorted(gone)[:10]}"
+    # The sibling test above has always had this check; this one did not, so
+    # the baseline silently stopped covering 6722 matrix-pencil candidate
+    # fields that the result grew. A stale baseline that only compares the
+    # subset it already holds is not a regression test.
+    assert not new, (f"{len(new)} fields appeared without re-blessing: "
+                     f"{sorted(new)[:10]}")
     mismatched = []
     for path, want in sorted(expected.items()):
         want_arr, got_arr = np.asarray(want), np.asarray(flat[path])
