@@ -224,36 +224,40 @@ def analyze_spectrum(reconstruction,
     energy_MHz = np.fft.fftshift(np.fft.fftfreq(n_fft, d=sample_time_us))
 
     fft_scale = n_fft / np.sum(window)
-    measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
+    _do_fft = lambda f, n, axis: np.abs(np.fft.fftshift(np.fft.ifft(f, n = n, axis = axis), axes = axis))
+    measured_fft_ldos = fft_scale * _do_fft(A * window, n_fft, 1)
+    normalized_fft_ldos = np.zeros(np.shape(measured_fft_ldos))
+    
     diagonal = np.asarray([tuple(initial) == tuple(final) for initial, final in zip(reconstruction.occupations, final_occupations)])
-    fft_normalization = np.where(diagonal, 
-                                 np.maximum(np.abs(A[:, 0]), 1e-12), 
-                                 1.)
-    measured_local /= fft_normalization[:, None]
-    measured = np.sum(measured_local, axis=0)
-
-    theory_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(theory_A * window, n=n_fft, axis=1), axes=1))
-    theory = np.sum(theory_local, axis=0)
-    if np.max(theory) > 0.:
-        theory_local *= np.max(measured) / np.max(theory)
-        theory = np.sum(theory_local, axis=0)
+    for index, trace in enumerate(reversed(measured_fft_ldos)):
+        if tuple(reconstruction.occupation[index]) == final_occupations[index] and (A[index, 0] > 0):
+            normalized_fft_ldos[index, :] = measured_fft_ldos[index, :]/A[index, 0] 
+    
+    measured_fft_DOS = np.sum(normalized_fft_ldos, axis=0)
+        
+    theory_fft_ldos = fft_scale *_do_fft(theory_A * window, n=n_fft, axis=1)
+    theory_fft_DOS = np.sum(theory_fft_ldos, axis=0)
+    
+    if np.max(theory_fft_DOS) > 0.:
+        theory_fft_ldos *= np.max(measured_fft_DOS) / np.max(theory_fft_DOS)
+        theory_fft_DOS = np.sum(theory_fft_ldos, axis=0)
+    
     complete_basis = np.all(diagonal) and set(map(tuple, reconstruction.occupations)) == set(map(tuple, fock_basis))
     energy_limit_MHz = min(np.max(np.abs(energy_MHz)), max(0.6, 1.2 * np.max(np.abs(energies_MHz))))
 
     return AttrDict(dict(
         time_us=time_us, 
         energy_MHz=energy_MHz, 
-        measured_local=measured_local, 
-        theory_local=theory_local,
-        measured=measured, 
-        theory=theory, 
+        measured_local=measured_fft_ldos, 
+        theory_local=theory_fft_ldos,
+        measured=measured_fft_DOS, 
+        theory=theory_fft_DOS, 
         theory_A=theory_A,
         energies_MHz=energies_MHz,
         fock_basis=fock_basis,
         basis_eigenstate_weights=np.abs(states) ** 2,
         eigenstate_weights=eigenstate_weights, 
         spectral_weights=spectral_weights,
-        fft_normalization=fft_normalization,
         physical_kerr_MHz=physical_kerr_MHz,
         complete_basis=complete_basis, 
         energy_limit_MHz=energy_limit_MHz,
