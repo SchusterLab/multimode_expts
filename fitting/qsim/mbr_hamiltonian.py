@@ -28,7 +28,7 @@ def construct_hamiltonian(photon_number,
 
     Returns:
         - H_MHz: Hamiltonian matrix
-        - couplings_MHz: Fock states and their index upon which H_MHz is defined
+        - fock_index: Fock states and their index upon which H_MHz is defined
     """
     fock_basis = [
         list(occupation) for occupation in product(range(photon_number + 1), repeat=mode_count)

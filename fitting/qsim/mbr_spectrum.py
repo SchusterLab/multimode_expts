@@ -27,24 +27,24 @@ from mbr_hamiltonian import construct_hamiltonian
 from mbr_fft import calculate_ldos_from_propagator
 class SpectrumDataSet(BaseModel):
     
-    time_us: Any
-    energy_MHz: Any
-    measured_local: Any
-    theory_local: Any
-    measured: np.ndarray | list
-    theory: Any
-    theory_A: Any
-    energies_MHz: Any
-    fock_basis: Any
-    basis_eigenstate_weights: Any
-    eigenstate_weights: Any
-    spectral_weights: Any
-    physical_kerr_MHz: Any
-    complete_basis: Any
-    energy_limit_MHz: Any
-    fft_window: Any
-    zero_padding: Any
-    fft_resolution_MHz: Any
+    time_us: Any | None = None
+    energy_MHz: Any | None = None
+    measured_local: Any | None = None
+    theory_local: Any | None = None
+    measured: np.ndarray | list | None = None
+    theory: Any | None = None
+    theory_A: Any | None = None
+    energies_MHz: Any | None = None
+    fock_basis: Any | None = None
+    basis_eigenstate_weights: Any | None = None
+    eigenstate_weights: Any | None = None
+    spectral_weights: Any | None = None
+    physical_kerr_MHz: Any | None = None
+    complete_basis: Any | None = None
+    energy_limit_MHz: Any | None = None
+    fft_window: Any | None = None
+    zero_padding: Any | None = None
+    fft_resolution_MHz: Any | None = None
     
     
 
