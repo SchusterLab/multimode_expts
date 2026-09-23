@@ -161,7 +161,9 @@ def test_bootstrap_freezes_theta_across_draws():
     # the ~0.7 gauge (not a degenerate no-op).
     point_theta = _wa(a).wigner_analysis_results(
         parity, initial_state=psi, rotate='optimal')['theta_max']
-    assert tf == pytest.approx(point_theta)
+    # |0>+|2> is invariant under exp(-i pi N), so theta and theta+pi tie on
+    # fidelity; the rounded counts and the exact parity can break the tie apart.
+    assert np.angle(np.exp(2j * (tf - point_theta))) == pytest.approx(0, abs=1e-6)
     assert abs(tf) > 0.1
     # Same frozen angle + same seed => same per-draw reconstruction, up to BLAS
     # last-bit noise (~1e-8). A per-draw re-maximization would instead shift theta
