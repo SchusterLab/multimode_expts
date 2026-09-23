@@ -192,7 +192,7 @@ def analyze_spectrum(reconstruction,
                                               detunings,
                                               physical_kerr_MHz,
                                               couplings_MHz)
-    fock_basis = [state for _,state in fock_index_map]
+    fock_basis = [state for _,state in enumerate(fock_index_map)]
 
     
     energies_MHz, states = np.linalg.eigh(H_MHz) #(f: fock idx, k: eig idx )
