@@ -101,7 +101,8 @@ floquet_kerr_defaults = AttrDict(dict(
     qubits=[0],
     active_reset=True,
     man_reset=True,
-    storage_reset=floquet_kerr_modes,
+    # Not mode 6: its M1-S6 row in CFG-M1-20260904-00014 has no pi time.
+    storage_reset=[4, 5, 7],
     pre_relax_delay=100,
     relax_delay=200,
     reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
@@ -140,7 +141,7 @@ floquet_kerr_expt = floquet_kerr_runner.execute(
     show=False,
 )
 
-# %%
+# %% tags=["mock-skip"]
 
 floquet_kerr_expt.analyze(debug=False)
 floquet_kerr_expt.display(save_fig=False)
@@ -149,5 +150,5 @@ plt.show()
 print('Floquet Kerr:', floquet_kerr_expt.data.Kerr * 1e3, '+/-', floquet_kerr_expt.data.Kerr_err * 1e3, 'kHz')
 print('linear detuning:', floquet_kerr_expt.data.detuning_g * 1e3, '+/-', floquet_kerr_expt.data.detuning_g_err * 1e3, 'kHz')
 
-# %%
+# %% tags=["mock-skip"]
 plt.plot(floquet_kerr_expt.data['avgi'][1])

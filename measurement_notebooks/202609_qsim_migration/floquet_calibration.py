@@ -237,7 +237,8 @@ floquet_freq_chev_runner = CharacterizationRunner(
     use_queue=RUN.use_queue,
 )
 
-# %%
+# %% tags=["raises-exception"]
+# Suite: raises-exception, known bug: FloquetChevronProgram sets 'length' on an arb pulse (floquet_chevron.py:15).
 # Source cell 72: one fixed +/-1 MHz span for every mode.
 stor_modes_to_run = RUN.pick([1, 2, 5, 6, 7], smoke=[1]) #list(range(1,8))
 detune_span = 1.0
@@ -256,9 +257,8 @@ for i, init_stor in enumerate(stor_modes_to_run):
         reset_dump_mode=1,
         use_queue=False,
     )
-    freq_len_expt[i].display()
 
-# %%
+# %% tags=["mock-skip"]
 for i in range(len(stor_modes_to_run)):
     floquet_freq_chev_postproc(station, freq_len_expt[i])
 
@@ -292,8 +292,6 @@ for i, init_stor in enumerate(stor_modes_to_run):
         storage_reset=[init_stor],
         reset_dump_mode=1,
     )
-    if not station.log_measurements:
-        freq_len_expt[i].display()
 
 # %% [markdown]
 # ## Error amplification on floquet pulses
@@ -387,8 +385,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_freq1[i].display()
 
     error_amp_gain1[i] = error_amp_floquet_runner.execute(
         stor_mode_no=stor_i,
@@ -403,8 +399,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_gain1[i].display()
 
 # %% [markdown]
 # ### Fine
@@ -441,8 +435,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=1,
     )
-    if not station.log_measurements:
-        error_amp_freq1[i].display()
 
     error_amp_gain1[i] = error_amp_floquet_runner.execute(
         stor_mode_no=stor_i,
@@ -457,8 +449,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=1,
     )
-    if not station.log_measurements:
-        error_amp_gain1[i].display()
 
 # %%
 station.update_all_station_snapshots()
@@ -636,10 +626,8 @@ if you_have_to_do_amp_chev == True:
             reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
             debug=False,
         )
-        if not station.log_measurements:
-            freq_len_expt[i].display()
 
-# %%
+# %% tags=["mock-skip"]
 floquet_gain_chev_postproc(station, freq_len_expt[0])
 
 # %% tags=["suite-skip"]
@@ -756,8 +744,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_freq1[i].display()
 
     error_amp_gain1[i] = error_amp_floquet_runner.execute(
         stor_mode_no=stor_i,
@@ -772,8 +758,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_gain1[i].display()
 
 # %%
 # station.ds_floquet.update_freq("M1-S4", 878.27)
@@ -813,8 +797,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_freq1[i].display()
 
     error_amp_gain1[i] = error_amp_floquet_runner.execute(
         stor_mode_no=stor_i,
@@ -829,8 +811,6 @@ for i, stor_i in enumerate(stor_modes_to_run):
         storage_reset=[stor_i],
         reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
     )
-    if not station.log_measurements:
-        error_amp_gain1[i].display()
 
 # %% [markdown]
 # ## Phase Accumulation

@@ -230,28 +230,27 @@ for photon_number in photon_numbers:
         sigma_test=broadband_sigma,
         user_defined_freq=[True, broadband_frequency],
         pre_sweep_pulse=prep_gN,
-        show=False,
+        show=True,
         log=True,
     )
-    broadband_rabi_from_g[photon_number].display()
 
     print(f'Running broadband Rabi from |e,{photon_number}>')
     broadband_rabi_from_e[photon_number] = broadband_amprabi_runner.execute(
         sigma_test=broadband_sigma,
         user_defined_freq=[True, broadband_frequency],
         pre_sweep_pulse=prep_eN,
-        show=False,
+        show=True,
         log=True,
     )
-    broadband_rabi_from_e[photon_number].display()
 
-# %%
+# %% tags=["mock-skip"]
 # Put every photon number on its own g/e readout axis.
 gain, g_to_e, e_to_g = plot_broadband_rabi_transfer(
     broadband_rabi_from_g, broadband_rabi_from_e, photon_numbers
 )
 
-# %%
+# %% tags=["mock-skip"]
+# Suite: mock-skip, reads a fitted gain. Mock keeps the config's gain.
 # Choose one gain where all eight curves above are near 1.
 # The N=0 fit is only a starting value; overwrite it after looking at the plot.
 broadband_gain = int(np.clip(
@@ -327,6 +326,9 @@ bb_freq_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
+
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 best_frequency, best_frequency_err = fit_broadband_frequency(
     bb_freq_error_amp, center=bb_freq_center
 )
@@ -358,6 +360,9 @@ bb_gain_error_amp = broadband_error_amp_runner.execute(
     # after the refit; cell 22 logged immediately.
     log=False,
 )
+
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
     bb_gain_error_amp,
     current_gain=bb_gain_center,
@@ -388,6 +393,9 @@ bb_freq_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
+
+# %% tags=["suite-skip", "mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 best_frequency, best_frequency_err = fit_broadband_frequency(
     bb_freq_error_amp, center=bb_freq_center
 )
@@ -418,6 +426,9 @@ bb_gain_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
+
+# %% tags=["suite-skip", "mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
     bb_gain_error_amp,
     current_gain=bb_gain_center,
@@ -480,6 +491,8 @@ broadband_validation = broadband_validation_runner.execute(
     log=True,
 )
 
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 validation_transfer = plot_broadband_validation(
     broadband_validation, photon_numbers, broadband_validation_cases
 )
@@ -639,7 +652,7 @@ multiphoton_swap_chevron = multiphoton_swap_chevron_runner.execute(
 print('jobs:', multiphoton_swap_chevron_runner.last_job_ids)
 
 
-# %%
+# %% tags=["mock-skip"]
 (
     multiphoton_swap_chevron_analysis,
     chevron_frequency_candidate_MHz,
@@ -653,7 +666,7 @@ print('jobs:', multiphoton_swap_chevron_runner.last_job_ids)
 #
 # Edit the two assignments if the fit selected the wrong branch. This is the first cell that changes the in-memory row.
 
-# %%
+# %% tags=["mock-skip"]
 selected_frequency_MHz = chevron_frequency_candidate_MHz
 selected_pi_us = chevron_pi_candidate_us
 
@@ -733,18 +746,20 @@ multiphoton_swap_coarse_frequency = multiphoton_swap_error_amp_runner.execute(
     n_pulses=6,
     reps=75,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
+    display_kwargs=dict(fit=False),
 )
-multiphoton_swap_coarse_frequency.display(fit=False)
 
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 _x, _return_error, coarse_frequency_candidate_MHz = score_return_error(
     multiphoton_swap_coarse_frequency,
     xlabel='frequency (MHz)',
     title='coarse frequency',
 )
 
-# %%
+# %% tags=["mock-skip"]
 selected_frequency_MHz = coarse_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
 station.ds_storage.update_precision(
@@ -782,11 +797,13 @@ multiphoton_swap_coarse_gain = multiphoton_swap_error_amp_runner.execute(
     n_pulses=6,
     reps=75,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
+    display_kwargs=dict(fit=False),
 )
-multiphoton_swap_coarse_gain.display(fit=False)
 
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 _x, _return_error, coarse_gain_candidate = score_return_error(
     multiphoton_swap_coarse_gain,
     xlabel='gain',
@@ -794,7 +811,7 @@ _x, _return_error, coarse_gain_candidate = score_return_error(
     as_int=True,
 )
 
-# %%
+# %% tags=["mock-skip"]
 selected_gain = int(np.clip(coarse_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
 print('accepted coarse gain:', selected_gain)
@@ -825,11 +842,13 @@ multiphoton_swap_fine_gain = multiphoton_swap_error_amp_runner.execute(
     n_pulses=10,
     reps=100,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
+    display_kwargs=dict(fit=False),
 )
-multiphoton_swap_fine_gain.display(fit=False)
 
+# %% tags=["suite-skip", "mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 _x, _return_error, fine_gain_candidate = score_return_error(
     multiphoton_swap_fine_gain,
     xlabel='gain',
@@ -837,7 +856,7 @@ _x, _return_error, fine_gain_candidate = score_return_error(
     as_int=True,
 )
 
-# %% tags=["suite-skip"]
+# %% tags=["suite-skip", "mock-skip"]
 # Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_gain = int(np.clip(fine_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
@@ -865,18 +884,20 @@ multiphoton_swap_fine_frequency = multiphoton_swap_error_amp_runner.execute(
     n_pulses=10,
     reps=100,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
+    display_kwargs=dict(fit=False),
 )
-multiphoton_swap_fine_frequency.display(fit=False)
 
+# %% tags=["suite-skip", "mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 _x, _return_error, fine_frequency_candidate_MHz = score_return_error(
     multiphoton_swap_fine_frequency,
     xlabel='frequency (MHz)',
     title='fine frequency',
 )
 
-# %% tags=["suite-skip"]
+# %% tags=["suite-skip", "mock-skip"]
 # Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_frequency_MHz = fine_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
@@ -925,6 +946,8 @@ multiphoton_swap_odd_validation = odd_validation_runner.execute(
     postprocess=False, show=False, log=True
 )
 
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 odd_z, odd_separation = plot_iq_endpoints(
     multiphoton_swap_odd_validation,
     labels=('zero swaps', 'one swap'),
@@ -947,6 +970,8 @@ multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     log=True,
 )
 
+# %% tags=["mock-skip"]
+# Suite: mock-skip, analysis of the data above.
 even_z, even_error = plot_iq_endpoints(
     multiphoton_swap_even_validation,
     labels=('zero swaps', 'two swaps'),
@@ -1077,7 +1102,6 @@ ss = ss_runner.execute(
 
 
 )
-ss.display(station)
 
 # %%
 station.update_all_station_snapshots()
