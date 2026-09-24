@@ -69,6 +69,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 
+from experiments.characterization_runner import mock_run_defaults
+
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
     from job_server.client import JobClient, JobResult
@@ -598,6 +600,7 @@ class SweepRunner:
         sweep_npts: int,
         postprocess: bool = True,
         go_kwargs: Optional[dict] = None,
+        analyze: bool = True,
         incremental_save: bool = True,
         log: Optional[bool] = None,
         sweep_vals: Optional[Any] = None,
@@ -616,6 +619,9 @@ class SweepRunner:
             sweep_npts: Number of swept points for sweep parameter
             postprocess: Whether to run postprocessor after sweep
             go_kwargs: Dict passed to expt.go() (analyze, display, progress, save)
+                for each sweep point.
+            analyze: Run mother_expt.analyze() and display() at the end, and
+                in the live plot. False gives acquire and save only.
             incremental_save: If True, save after each point (safer but slower)
             sweep_vals: Optional explicit array-like of sweep points; overrides
                        np.linspace(sweep_start, sweep_stop, sweep_npts). Useful
@@ -737,7 +743,7 @@ class SweepRunner:
                 print()
 
             # Live plot
-            if self.live_plot:
+            if self.live_plot and analyze:
                 self._do_live_plot(mother_expt, idx + 1)
 
         # Final save
@@ -751,8 +757,9 @@ class SweepRunner:
 
         # Run final analysis and display via Experiment methods
         try:
-            mother_expt.analyze(station=self.station)
-            mother_expt.display()
+            if analyze:
+                mother_expt.analyze(station=self.station)
+                mother_expt.display()
 
             if postprocess and self.postprocessor is not None:
                 self.postprocessor(self.station, mother_expt)
@@ -808,6 +815,10 @@ class SweepRunner:
                 )
             else:
                 mode = False
+        if getattr(self.station, "is_mock", False):
+            kwargs = mock_run_defaults(kwargs, local=False)
+            if not mode:
+                kwargs.setdefault("analyze", False)
 
         if mode:
             return self.run(sweep_start, sweep_stop, sweep_npts, **kwargs)

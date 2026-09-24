@@ -23,7 +23,7 @@ from copy import deepcopy
 import numpy as np
 from slab import AttrDict
 
-from experiments.characterization_runner import CharacterizationRunner
+from experiments.characterization_runner import CharacterizationRunner, mock_run_defaults
 
 
 def _is_real_job_client(client):
@@ -62,7 +62,7 @@ class BatchRunner(CharacterizationRunner):
     def execute(self,
                   configs,
                   batch_size=10,
-                  postprocess=True,
+                  postprocess=None,
                   priority=0,
                   poll_interval=2.,
                   timeout=None,
@@ -77,6 +77,10 @@ class BatchRunner(CharacterizationRunner):
         that group. Local execution runs one config at a time, without grouping,
         and needs no job client. The usual ``run_local`` defaults analyze and
         save each acquired experiment.
+
+        ``postprocess=None`` means True, except on a mock station: there each
+        experiment is only acquired and saved (no postprocess, no analyze).
+        An explicit ``postprocess`` or a ``go_kwargs`` entry in a config wins.
         """
         mode = self.use_queue if use_queue is None else use_queue
         if mode and self.job_client is None:
@@ -105,11 +109,15 @@ class BatchRunner(CharacterizationRunner):
         expts = []
         self.last_job_ids = []
         self.last_job_result = None
+        is_mock = getattr(self.station, "is_mock", False)
+        if postprocess is None:
+            postprocess = not is_mock
         if not mode:
             for overrides in configs:
-                expts.append(self.run_local(
-                    postprocess=postprocess, log=log, show=show, **overrides,
-                ))
+                run_kwargs = dict(postprocess=postprocess, log=log, show=show, **overrides)
+                if is_mock:
+                    run_kwargs = mock_run_defaults(run_kwargs, local=True)
+                expts.append(self.run_local(**run_kwargs))
             return self._aggregate(expts)
 
         program_module = None

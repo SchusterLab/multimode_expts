@@ -125,6 +125,24 @@ def default_postprocessor(station, expt):
     return None
 
 
+def mock_run_defaults(kwargs: dict, local: bool) -> dict:
+    """Defaults for a run on a mock station: acquire and save only.
+
+    Mock data is all zeros, so a fit on it gives nothing useful, and a
+    postprocessor would write that nothing into the station config. The
+    caller's explicit arguments still win. Display is already skipped for
+    mock stations in the render/log step.
+
+    Args:
+        kwargs: The keyword arguments for run() / run_local().
+        local: True for run_local(), which also takes go_kwargs.
+    """
+    kwargs = dict(kwargs)
+    kwargs.setdefault("postprocess", False)
+    if local:
+        kwargs["go_kwargs"] = {"analyze": False, **(kwargs.get("go_kwargs") or {})}
+    return kwargs
+
 
 class CharacterizationRunner:
     """
@@ -543,7 +561,9 @@ class CharacterizationRunner:
         Args:
             use_queue: Override instance setting. If None, uses self.use_queue.
                        True = run() via job queue, False = run_local()
-            **kwargs: Passed to run() or run_local()
+            **kwargs: Passed to run() or run_local(). On a mock station,
+                postprocess and go_kwargs['analyze'] default to False
+                (see mock_run_defaults).
 
         Returns:
             Completed Experiment object
@@ -563,6 +583,8 @@ class CharacterizationRunner:
                 )
             else:
                 mode = False
+        if getattr(self.station, "is_mock", False):
+            kwargs = mock_run_defaults(kwargs, local=not mode)
 
         if mode:
             return self.run(**kwargs)
