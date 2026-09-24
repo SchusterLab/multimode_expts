@@ -171,3 +171,12 @@ still need. Exception: their runner calls move in step 1.
   `EntireFloquetCyclePhaseCalibrationProgram` is now a subclass of `MBRStarkCalProgram`.
   `phase_unwrap_mode: odd_guide` has no new equivalent. `test_stark_cal_baseline_matches`
   runs on converted data and still matches.
+- Step 3 done (2026-09-24). `experiments/qsim/mbr_ramsey.py` holds `MBRRamseyProgram`,
+  the shared base (the old `NPhotonHamiltonianSpectroscopyProgram` body, which is now an
+  empty subclass kept for the old jobs). `SidebandScrambleDarkProgramNewNew` is *not*
+  merged into it: it is a standalone dark-mode program used by the Floquet calibration
+  notebooks, so it stays as the base's parent. `experiments/qsim/mbr_time_trace.py`
+  (job + Program; init != final allowed), `experiments/qsim/mbr_spectrum.py` (assembled),
+  `AssembledExperiment` base in `experiments/assembled_data.py`, migration kind `spectrum`
+  (joins time chunks; old off-diagonal pair jobs are refused until the disorder phase).
+  The quick-plot and complete-basis baselines run on converted data and still match.

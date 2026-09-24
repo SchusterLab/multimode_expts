@@ -45,7 +45,7 @@
 # | stage           | owner class                    | program                                     | both now live in            |
 # |-----------------|--------------------------------|---------------------------------------------|-----------------------------|
 # | `calibration`   | `MBRPhaseCorrectionExperiment` | `EntireFloquetCyclePhaseCalibrationProgram` | `mbr_phase_correction.py`   |
-# | `spectrum`      | `MBRSpectrumExperiment`        | `NPhotonHamiltonianSpectroscopyProgram`     | program in `mbr_spectroscopy_program.py` |
+# | `spectrum`      | `MBRSpectrumExperiment`        | `NPhotonHamiltonianSpectroscopyProgram`     | program in `mbr_ramsey.py` |
 # | `propagator`    | `MBRPropagatorExperiment`      | `EncodingPropagatorProgram`                 | `mbr_propagator.py`         |
 # | `orthogonality` | `MBROrthogonalityExperiment`   | `EncodingOrthogonalityProgram`              | `mbr_orthogonality.py`      |
 #

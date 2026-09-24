@@ -14,6 +14,7 @@ YAML (or JSON) file::
     kind: stark_cal                # which conversion
     notes: N=3 sector, preload_flattop swaps, 65 cycle pairs
     job_ids: [JOB-20260905-00075, JOB-20260905-00076, ...]
+    calibration_job_ids: [...]     # kind spectrum only, optional
 
 Do not guess the grouping of jobs into datasets. If no list exists for a
 dataset, build it from the lab's OneNote logs.
@@ -25,6 +26,13 @@ Kinds
     occupation (analyzer phase 0 and 90) -> one ``MBRStarkCalExperiment``
     file per occupation, then one ``MBRCalibrationSetExperiment`` manifest and
     assembled HDF5. Example: 70 files (35 occupations x 2) -> 35 + 1 + 1.
+``spectrum``
+    Old diagonal ``NPhotonHamiltonianSpectroscopyProgram`` jobs: per
+    occupation, analyzer phase 0 and 90, each possibly in time chunks -> one
+    ``MBRTimeTraceExperiment`` file per occupation, then one
+    ``MBRSpectrumExperiment`` manifest and assembled HDF5. The optional
+    ``calibration_job_ids`` are converted first, as ``stark_cal``, and become
+    the spectrum's calibration set.
 
 Each converted file records the old job IDs and file paths it came from
 (``converted_from``) and its new job class (``job_class``), and carries the
@@ -55,19 +63,21 @@ from slab.experiment import NpEncoder  # noqa: E402
 from experiments import assembled_data  # noqa: E402
 from experiments.job_paths import job_records, resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment  # noqa: E402
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment  # noqa: E402
 from experiments.qsim.mbr_stark_cal import (  # noqa: E402
     RAMSEY_PHASES,
     MBRStarkCalExperiment,
 )
+from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment  # noqa: E402
 from experiments.saved_jobs import load_experiment, load_job  # noqa: E402
 
 TOOL = "tools/migrate_mbr_jobs.py"
 
-# Point-by-point arrays of the old 2D sweep, shape (n_cycle_pairs, 2 prep phases).
+# Point-by-point arrays of the old 2D sweep, shape (n_cycles, 2 prep phases).
 POINT_KEYS = ("avgi", "avgq", "amps", "phases")
 # Per-shot arrays, one row per point in sweep order (cycle-major, prep inner).
 SHOT_KEYS = ("idata", "qdata")
-# Config keys that differ between the two old jobs of one occupation.
+# The config key that differs between the two analyzer-phase jobs of a trace.
 ANALYZER_KEY = "spectroscopy_analyzer_phase"
 
 
@@ -118,87 +128,135 @@ def _derived_params(job, converted_job_class):
 
 
 # --------------------------------------------------------------------------
-# stark_cal
+# Shared: merge the analyzer-phase jobs (and time chunks) of one trace
 # --------------------------------------------------------------------------
 
 
-def convert_stark_cal_pair(phi0, phi90):
-    """-> (cfg, data, attrs) of one MBRStarkCalExperiment file.
+def _strip(cfg, keys):
+    """-> a copy of ``cfg`` without ``keys`` in cfg.expt or at the top level.
 
-    ``phi0`` and ``phi90`` are the two old jobs of one occupation (loaded
-    with :func:`experiments.saved_jobs.load_job`). The new inner sweep is
-    :data:`RAMSEY_PHASES`: [prep, analyzer] = [0,0], [180,0], [0,90], [180,90],
-    i.e. phi0's two columns, then phi90's.
+    Old configs also carry a stray top-level copy of the swept keys.
     """
-    for job, phi in ((phi0, 0.), (phi90, 90.)):
+    cfg = deepcopy(cfg)
+    for key in keys:
+        cfg.expt.pop(key, None)
+        cfg.pop(key, None)
+    return cfg
+
+
+def group_phase_jobs(jobs, state_of):
+    """-> {state: {0.: [jobs], 90.: [jobs]}}, states in first-seen order."""
+    grouped = {}
+    for job in jobs:
+        phi = float(job.cfg.expt[ANALYZER_KEY])
+        if phi not in (0., 90.):
+            raise ValueError(f"{job.job_id}: analyzer phase {phi}; expected 0 or 90")
+        grouped.setdefault(state_of(job), {0.: [], 90.: []})[phi].append(job)
+    return grouped
+
+
+def _joined(phase_jobs, key, shots):
+    """-> (sorted cycles, rows of ``key``) from the time chunks of one phase."""
+    cycles = np.concatenate([np.asarray(job.data["ypts"]) for job in phase_jobs])
+    order = np.argsort(cycles, kind="stable")
+    shape = (2, -1) if shots else (2,)
+    rows = np.concatenate([np.asarray(job.data[key]).reshape(len(job.data["ypts"]), *shape)
+                           for job in phase_jobs])
+    return cycles[order], rows[order]
+
+
+def merge_phase_jobs(phi0_jobs, phi90_jobs, cycle_key, swept_cycle):
+    """-> (cfg, data) of one new-layout trace from its old jobs.
+
+    ``phi0_jobs``/``phi90_jobs`` are the old jobs at analyzer phase 0 and 90;
+    several per phase are time chunks of one trace. Each job's ``ypts`` are
+    its cycles and ``cfg.expt[cycle_key]`` their config list. The chunks are
+    joined and sorted by cycle; both phases must cover the same cycles. The
+    new inner sweep is :data:`RAMSEY_PHASES`: [prep, analyzer] = [0,0],
+    [180,0], [0,90], [180,90], i.e. the phi=0 columns, then phi=90's.
+    """
+    jobs = list(phi0_jobs) + list(phi90_jobs)
+    if not phi0_jobs or not phi90_jobs:
+        raise ValueError(f"{[job.job_id for job in jobs]}: need both analyzer phases")
+    for job in jobs:
         ecfg = job.cfg.expt
-        if float(ecfg[ANALYZER_KEY]) != phi:
-            raise ValueError(f"{job.job_id}: analyzer phase {ecfg[ANALYZER_KEY]}, expected {phi}")
         if ecfg.get("phase_unwrap_mode", "pair") != "pair":
             raise ValueError(f"{job.job_id}: phase_unwrap_mode "
                              f"{ecfg.phase_unwrap_mode!r} has no new-layout equivalent")
         if not np.allclose(job.data["xpts"], [0., 180.]):
             raise ValueError(f"{job.job_id}: preparation phases {job.data['xpts']}")
-    cfg0, cfg90 = deepcopy(phi0.cfg), deepcopy(phi90.cfg)
-    # Old configs also carry a stray top-level copy of the swept keys.
-    for cfg in (cfg0, cfg90):
-        cfg.expt.pop(ANALYZER_KEY)
-        cfg.pop(ANALYZER_KEY, None)
-    if json.dumps(cfg0, cls=NpEncoder, sort_keys=True) != json.dumps(cfg90, cls=NpEncoder, sort_keys=True):
-        raise ValueError(f"{phi0.job_id} and {phi90.job_id} differ in more than the analyzer phase")
-    if not np.array_equal(phi0.data["ypts"], phi90.data["ypts"]):
-        raise ValueError(f"{phi0.job_id} and {phi90.job_id} sweep different cycle pairs")
+        if not np.array_equal(job.data["ypts"], ecfg[cycle_key]):
+            raise ValueError(f"{job.job_id}: saved cycles do not match its config")
+    reference = json.dumps(_strip(jobs[0].cfg, (ANALYZER_KEY, cycle_key)),
+                           cls=NpEncoder, sort_keys=True)
+    for job in jobs[1:]:
+        if json.dumps(_strip(job.cfg, (ANALYZER_KEY, cycle_key)),
+                      cls=NpEncoder, sort_keys=True) != reference:
+            raise ValueError(f"{jobs[0].job_id} and {job.job_id} differ in more than "
+                             f"the analyzer phase and the cycles")
 
-    cfg = AttrDict(cfg0)
+    cycles, _ = _joined(phi0_jobs, "avgi", False)
+    if len(np.unique(cycles)) != len(cycles):
+        raise ValueError(f"{[job.job_id for job in phi0_jobs]}: cycles overlap")
+    if not np.array_equal(cycles, _joined(phi90_jobs, "avgi", False)[0]):
+        raise ValueError(f"{[job.job_id for job in jobs]}: the two analyzer phases "
+                         f"cover different cycles")
+
+    data = dict(xpts=np.asarray(RAMSEY_PHASES), ypts=cycles)
+    for key in POINT_KEYS:
+        data[key] = np.concatenate([_joined(phi0_jobs, key, False)[1],
+                                    _joined(phi90_jobs, key, False)[1]], axis=1)
+    if all(key in job.data for job in jobs for key in SHOT_KEYS):
+        for key in SHOT_KEYS:
+            both = np.concatenate([_joined(phi0_jobs, key, True)[1],
+                                   _joined(phi90_jobs, key, True)[1]], axis=1)
+            data[key] = both.reshape(4 * len(cycles), -1)
+
+    cfg = AttrDict(_strip(phi0_jobs[0].cfg, (ANALYZER_KEY,)))
     ecfg = cfg.expt
     for key in ("spectroscopy_prep_phases", "spectroscopy_prep_phase", "phase_unwrap_mode"):
         ecfg.pop(key, None)
+    ecfg[cycle_key] = [int(n) for n in cycles]
     ecfg.ramsey_phases = deepcopy(RAMSEY_PHASES)
-    ecfg.swept_params = ["n_cycle_pair", "ramsey_phase"]
-    ecfg.QickProgramName = "MBRStarkCalProgram"
+    ecfg.swept_params = [swept_cycle, "ramsey_phase"]
+    return cfg, data
 
-    n_pairs = len(phi0.data["ypts"])
-    data = dict(xpts=np.asarray(RAMSEY_PHASES), ypts=np.asarray(phi0.data["ypts"]))
-    for key in POINT_KEYS:
-        data[key] = np.concatenate([np.asarray(phi0.data[key]).reshape(n_pairs, 2),
-                                    np.asarray(phi90.data[key]).reshape(n_pairs, 2)], axis=1)
-    if all(key in phi0.data and key in phi90.data for key in SHOT_KEYS):
-        for key in SHOT_KEYS:
-            old0 = np.asarray(phi0.data[key]).reshape(n_pairs, 2, -1)
-            old90 = np.asarray(phi90.data[key]).reshape(n_pairs, 2, -1)
-            data[key] = np.concatenate([old0, old90], axis=1).reshape(4 * n_pairs, -1)
 
+def write_converted(job_class, program_name, jobs, cfg, data, path):
+    """Analyze, write and reload one converted job file. -> the loaded job.
+
+    The job's own ``analyze`` runs once, so the file holds what a new job
+    would: the raw sweep plus ``complex_return``.
+    """
+    cfg.expt.QickProgramName = program_name
     attrs = dict(
-        job_class=MBRStarkCalExperiment.__name__,
-        converted_from=dict(job_ids=[phi0.job_id, phi90.job_id],
-                            files=[str(phi0.fname), str(phi90.fname)],
+        job_class=job_class.__name__,
+        converted_from=dict(job_ids=[job.job_id for job in jobs],
+                            files=[str(job.fname) for job in jobs],
                             tool=TOOL, code_version=assembled_data.code_version()),
-        derived_params=_derived_params(phi0, MBRStarkCalExperiment.__name__),
+        derived_params=_derived_params(jobs[0], job_class.__name__),
     )
-    versions = _config_versions(phi0)
+    versions = _config_versions(jobs[0])
     if versions:
         attrs["config_versions"] = versions
-    return cfg, data, attrs
+    child = job_class.__new__(job_class)
+    child.cfg, child.data, child.fname = cfg, AttrDict(data), str(path)
+    child.analyze()
+    write_job_file(path, cfg, dict(child.data), attrs)
+    return load_experiment(job_class, path)
 
 
-def pair_stark_cal_jobs(jobs):
-    """-> [(phi0, phi90)] in the order occupations first appear in ``jobs``."""
-    grouped = {}
-    for job in jobs:
-        occupation = tuple(int(n) for n in job.cfg.expt.spectroscopy_occupations)
-        phi = float(job.cfg.expt[ANALYZER_KEY])
-        if phi not in (0., 90.):
-            raise ValueError(f"{job.job_id}: analyzer phase {phi}; expected 0 or 90")
-        slot = grouped.setdefault(occupation, {0.: [], 90.: []})
-        slot[phi].append(job)
-    pairs = []
-    for occupation, slot in grouped.items():
-        if len(slot[0.]) != 1 or len(slot[90.]) != 1:
-            raise ValueError(
-                f"{occupation}: {len(slot[0.])} phi=0 and {len(slot[90.])} phi=90 jobs; "
-                f"expected one of each (repeated jobs are not converted)")
-        pairs.append((slot[0.][0], slot[90.][0]))
-    return pairs
+def _load_old_jobs(job_ids, timing, load_shots):
+    paths = resolve_job_paths(list(job_ids))
+    records = job_records(required=False)
+    return paths, [load_job(job_id, path=paths[job_id], timing=timing,
+                            load_shots=load_shots, provenance=records)
+                   for job_id in job_ids]
+
+
+# --------------------------------------------------------------------------
+# stark_cal
+# --------------------------------------------------------------------------
 
 
 def migrate_stark_cal(job_ids, out_root=None, load_shots=True, notes="", timing=None):
@@ -206,36 +264,87 @@ def migrate_stark_cal(job_ids, out_root=None, load_shots=True, notes="", timing=
 
     ``out_root`` defaults to the experiment root of the first old job file.
     """
-    paths = resolve_job_paths(list(job_ids))
-    jobs = [load_job(job_id, path=paths[job_id], timing=timing, load_shots=load_shots,
-                     provenance=job_records(required=False))
-            for job_id in job_ids]
+    paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
     out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
     converted_dir = out_root / assembled_data.CONVERTED_DIR
 
-    children, pair_ids = [], []
-    for phi0, phi90 in pair_stark_cal_jobs(jobs):
-        cfg, data, attrs = convert_stark_cal_pair(phi0, phi90)
+    children, sources = [], []
+    grouped = group_phase_jobs(
+        jobs, lambda job: tuple(int(n) for n in job.cfg.expt.spectroscopy_occupations))
+    for occupation, slot in grouped.items():
+        if len(slot[0.]) != 1 or len(slot[90.]) != 1:
+            raise ValueError(
+                f"{occupation}: {len(slot[0.])} phi=0 and {len(slot[90.])} phi=90 jobs; "
+                f"expected one of each (repeated jobs are not converted)")
+        phi0, phi90 = slot[0.][0], slot[90.][0]
+        cfg, data = merge_phase_jobs([phi0], [phi90], "n_cycle_pairs", "n_cycle_pair")
         path = converted_dir / (f"converted_{phi0.job_id}_{phi90.job_id}_"
                                 f"{MBRStarkCalExperiment.__name__}.h5")
-        # Run the job's own analysis once, so the file holds what a new job
-        # would: the raw sweep plus complex_return and its fit.
-        child = MBRStarkCalExperiment.__new__(MBRStarkCalExperiment)
-        child.cfg, child.data, child.fname = cfg, AttrDict(data), str(path)
-        child.analyze()
-        write_job_file(path, cfg, dict(child.data), attrs)
-        children.append(load_experiment(MBRStarkCalExperiment, path))
-        pair_ids.append(f"{phi0.job_id}+{phi90.job_id}")
+        children.append(write_converted(MBRStarkCalExperiment, "MBRStarkCalProgram",
+                                        [phi0, phi90], cfg, data, path))
+        sources.append(f"{phi0.job_id}+{phi90.job_id}")
 
-    # A converted job has no queue ID of its own; name the old pair it came from.
+    # A converted job has no queue ID of its own; name the old jobs it came from.
     calibration = MBRCalibrationSetExperiment.from_children(
-        children, job_ids=pair_ids, notes=notes)
+        children, job_ids=sources, notes=notes)
     calibration.analyze()
     calibration.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
     return calibration
 
 
-MIGRATIONS = {"stark_cal": migrate_stark_cal}
+# --------------------------------------------------------------------------
+# spectrum
+# --------------------------------------------------------------------------
+
+
+def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=None,
+                     calibration_job_ids=None):
+    """Convert one diagonal spectroscopy dataset. -> the saved MBRSpectrumExperiment.
+
+    Old off-diagonal pair jobs (``offdiag_cycles``) are not converted yet;
+    they belong to the disorder datasets (later phase).
+    """
+    paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
+    out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
+    converted_dir = out_root / assembled_data.CONVERTED_DIR
+    for job in jobs:
+        if "offdiag_cycles" in job.cfg.expt:
+            raise NotImplementedError(
+                f"{job.job_id} is an old off-diagonal pair job; their conversion "
+                f"comes with the disorder datasets (later phase)")
+        if "floquet_cycles" not in job.cfg.expt:
+            raise ValueError(f"{job.job_id} is not a spectroscopy job")
+    calibration = None
+    if calibration_job_ids:
+        calibration = migrate_stark_cal(calibration_job_ids, out_root=out_root,
+                                        load_shots=load_shots, notes=notes, timing=timing)
+
+    def state_of(job):
+        ecfg = job.cfg.expt
+        initial = tuple(int(n) for n in ecfg.spectroscopy_occupations)
+        final = tuple(int(n) for n in ecfg.get("spectroscopy_final_occupations", initial))
+        return initial, final
+
+    children, sources = [], []
+    for (initial, final), slot in group_phase_jobs(jobs, state_of).items():
+        if initial != final:
+            raise ValueError(f"{initial} -> {final}: a spectrum takes diagonal traces")
+        cfg, data = merge_phase_jobs(slot[0.], slot[90.], "floquet_cycles", "floquet_cycle")
+        trace_jobs = slot[0.] + slot[90.]
+        path = converted_dir / (f"converted_{trace_jobs[0].job_id}_x{len(trace_jobs)}_"
+                                f"{MBRTimeTraceExperiment.__name__}.h5")
+        children.append(write_converted(MBRTimeTraceExperiment, "MBRTimeTraceProgram",
+                                        trace_jobs, cfg, data, path))
+        sources.append("+".join(job.job_id for job in trace_jobs))
+
+    spectrum = MBRSpectrumExperiment.from_children(
+        children, job_ids=sources, notes=notes, calibration=calibration)
+    spectrum.analyze()
+    spectrum.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
+    return spectrum
+
+
+MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum}
 
 
 def main(argv=None):
@@ -252,8 +361,11 @@ def main(argv=None):
     if kind not in MIGRATIONS:
         parser.error(f"kind must be one of {sorted(MIGRATIONS)}, got {kind!r}")
     notes = " ".join(str(part) for part in (job_list.get("dataset"), job_list.get("notes")) if part)
+    extra = {}
+    if kind == "spectrum" and job_list.get("calibration_job_ids"):
+        extra["calibration_job_ids"] = job_list["calibration_job_ids"]
     result = MIGRATIONS[kind](job_list["job_ids"], out_root=args.out_root,
-                              load_shots=not args.no_shots, notes=notes)
+                              load_shots=not args.no_shots, notes=notes, **extra)
     print(f"{len(result.children)} converted job files; manifest {result.manifest_path}")
 
 

@@ -90,6 +90,9 @@ def read_manifest(path):
         f if Path(f).is_absolute() else (path.parent / f).resolve()
         for f in manifest.get("raw_files", [])
     ]
+    calibration = manifest.get("calibration_manifest")
+    if calibration and not Path(calibration).is_absolute():
+        manifest["calibration_manifest"] = (path.parent / calibration).resolve()
     return manifest
 
 
@@ -116,3 +119,147 @@ def read_assembled_h5(path):
         arrays = {key: handle[key][()] for key in handle}
         attrs = dict(handle.attrs)
     return arrays, attrs
+
+
+class AssembledExperiment:
+    """Base of the assembled Experiments: holds job Experiments of one class.
+
+    Not a slab ``Experiment``: it never goes to the worker and needs no
+    soccfg, config file or instruments. Same method names as one, though:
+    ``acquire``, ``analyze``, ``display``, ``save``, ``from_manifest``
+    (docs/qsim/mbr_redesign.md, section 5).
+
+    A subclass sets ``child_class`` and implements
+
+    - ``job_overrides()``: one runner override dict per job;
+    - ``from_children(children, job_ids, notes, **kwargs)``: assemble jobs;
+    - ``analyze(...)`` and ``display(...)``;
+    - ``manifest_parameters()``, ``assembled_arrays()``, ``assembled_attrs()``:
+      what ``save()`` writes.
+    """
+
+    child_class = None
+
+    def __init__(self, notes=""):
+        self.notes = notes
+        self.children = []
+        self.job_ids = []
+        self.data = {}
+        self.manifest_path = None
+
+    def job_overrides(self):
+        raise NotImplementedError
+
+    def acquire(self, runner, batch_size=10, **execute_kwargs):
+        """Run one job per ``job_overrides()`` entry through ``runner``.
+
+        ``execute_kwargs`` go to ``runner.execute`` (``use_queue``, ``log``,
+        ``show``, ...). Returns the job Experiments.
+        """
+        if runner.ExptClass is not self.child_class:
+            raise TypeError(
+                f"runner.ExptClass is {runner.ExptClass.__name__}; "
+                f"{type(self).__name__} needs {self.child_class.__name__}")
+        children = runner.execute(overrides=self.job_overrides(),
+                                  batch_size=batch_size, **execute_kwargs)
+        self.children = list(children)
+        self.job_ids = list(runner.last_job_ids)
+        self.data = {}
+        return self.children
+
+    @classmethod
+    def from_children(cls, children, job_ids=(), notes="", **kwargs):
+        raise NotImplementedError
+
+    def _check_children(self):
+        if not self.children:
+            raise ValueError(f"{type(self).__name__} has no jobs; acquire or load them first")
+        for child in self.children:
+            if not isinstance(child, self.child_class):
+                raise TypeError(f"{child!r} is not a {self.child_class.__name__}")
+
+    # -- persistence ------------------------------------------------------
+
+    def calibration_manifest(self):
+        """-> the path of the calibration manifest this set used, or None."""
+        return None
+
+    def manifest_parameters(self):
+        return {}
+
+    def assembled_arrays(self):
+        raise NotImplementedError
+
+    def assembled_attrs(self):
+        return {}
+
+    @classmethod
+    def _load_children(cls, manifest, timing=None):
+        from experiments.saved_jobs import load_experiment
+
+        return [load_experiment(cls.child_class, raw, timing=timing)
+                for raw in manifest["raw_files"]]
+
+    @classmethod
+    def from_manifest(cls, path, timing=None):
+        """Re-assemble from the raw job files a saved manifest lists.
+
+        ``timing`` goes to :func:`experiments.saved_jobs.load_experiment` for
+        job files that carry no Floquet timing of their own.
+        """
+        manifest = read_manifest(path)
+        if manifest["class"] != cls.__name__:
+            raise ValueError(f"{path} is a {manifest['class']} manifest")
+        assembled = cls.from_children(
+            cls._load_children(manifest, timing=timing),
+            job_ids=manifest["job_ids"], notes=manifest.get("notes", ""),
+            **cls._from_manifest_kwargs(manifest, Path(path)))
+        assembled.manifest_path = Path(path)
+        return assembled
+
+    @classmethod
+    def _from_manifest_kwargs(cls, manifest, path):
+        """-> extra ``from_children`` keyword arguments read from a manifest."""
+        return {}
+
+    def save(self, directory=None, notes=None):
+        """Write the manifest YAML and the assembled HDF5. -> the manifest path.
+
+        ``directory`` defaults to ``assembled_data/`` beside the first job's
+        data directory. Needs ``analyze()`` to have run.
+        """
+        if not self.data:
+            raise ValueError("run analyze() before save()")
+        if notes is not None:
+            self.notes = notes
+        raw_files = [Path(child.fname) for child in self.children]
+        if directory is None:
+            directory = experiment_root(raw_files[0]) / ASSEMBLED_DIR
+        stem = new_stem(type(self).__name__)
+        manifest_path = Path(directory) / f"{stem}.yaml"
+        h5_path = Path(directory) / f"{stem}.h5"
+        version = code_version()
+        calibration = self.calibration_manifest()
+        if calibration is not None:
+            calibration = _relative(calibration, manifest_path.parent)
+
+        write_manifest(manifest_path, {
+            "class": type(self).__name__,
+            "module": type(self).__module__,
+            "child_class": self.child_class.__name__,
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "code_version": version,
+            "job_ids": list(self.job_ids),
+            "calibration_manifest": calibration,
+            "assembled_h5": h5_path.name,
+            "parameters": self.manifest_parameters(),
+            "notes": self.notes,
+        }, raw_files)
+        write_assembled_h5(h5_path, self.assembled_arrays(), {
+            "class": type(self).__name__,
+            "manifest": manifest_path.name,
+            "code_version": version,
+            **self.assembled_attrs(),
+        })
+        self.manifest_path = manifest_path
+        return manifest_path

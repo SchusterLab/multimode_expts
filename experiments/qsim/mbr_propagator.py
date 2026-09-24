@@ -5,9 +5,7 @@ The aggregate class ``MBRPropagatorExperiment`` that used to live here moved wit
 changes to ``experiments/qsim/deprecated/legacy_mbr.py`` (``docs/qsim/mbr_redesign.md``,
 section 2).
 """
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 
 
 class EncodingPropagatorProgram(

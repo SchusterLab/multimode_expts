@@ -12,6 +12,8 @@ unchanged -- ``tests/test_mbr_analysis_golden.py`` pins it.
   candidate poles, before the cross-row merge.
 """
 
+import inspect
+
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -1083,3 +1085,30 @@ def refit_occupation(occupation,
                          measured_spectrum=np.asarray(data.spectrum.measured_local[row]),
                          reconstructed_spectrum=reconstructed_spectrum))
 
+
+# ``analyze(mpm_...=...)`` options of the spectrum class, checked by name.
+OPTION_PREFIX = "mpm_"
+
+
+OPTION_NAMES = frozenset(
+    inspect.signature(analyze_matrix_pencil)
+    .parameters) - {"reconstruction", "spectrum"}
+
+
+def strip_option_prefix(options):
+    """Strip the ``mpm_`` prefix; reject anything not a real option.
+
+    The old ``kwargs.get("mpm_...")`` chain silently ignored a typo, so a
+    mis-spelled tolerance looked like it worked and quietly did nothing.
+    """
+    stripped = {}
+    for name, value in options.items():
+        bare = name.removeprefix(OPTION_PREFIX)
+        if bare not in OPTION_NAMES:
+            raise TypeError(
+                f"analyze() got an unexpected keyword argument {name!r}. "
+                "Matrix-Pencil options are "
+                + ", ".join(sorted(OPTION_PREFIX + n
+                                   for n in OPTION_NAMES)))
+        stripped[bare] = value
+    return stripped

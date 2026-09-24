@@ -41,6 +41,8 @@ from copy import copy
 import numpy as np
 from slab import AttrDict
 
+from fitting.qsim import mbr_phase
+
 
 def subsample_spectroscopy_shots(spectroscopy_expts,
                                  shots_per_point,
@@ -230,3 +232,96 @@ def subsample_spectroscopy_shots(spectroscopy_expts,
         job_summaries=job_summaries,
     ))
     return subsampled_expts, metadata
+
+
+def postprocess_reconstruction(reconstruction,
+                               saved_correction,
+                               calibration,
+                               hardware,
+                               phase_frame,
+                               manual_kerr_MHz,
+                               cycle_branches,
+                               legacy):
+    """Transform an acquired reconstruction into the requested phase frame.
+
+    Moved from the old ``MBRSpectrumExperiment._postprocess_reconstruction``
+    (docs/qsim/mbr_redesign.md, section 2) so the new spectrum class can use
+    it; the arithmetic is unchanged.
+
+    ``phase_frame`` is ``'as_acquired'`` (only the 180 deg/cycle branch is
+    applied), ``'uncorrected'`` (the saved pulse correction is undone),
+    ``'zero_kerr'`` or ``'manual_kerr'`` (rebuilt from ``calibration`` with
+    that Kerr rate). Jobs saved before ``final_analyzer_phase_application_sign``
+    existed need ``legacy``: True for the old +correction convention, False
+    for -correction.
+    """
+
+    if manual_kerr_MHz is not None and phase_frame == "as_acquired":
+        phase_frame = "manual_kerr"
+    if phase_frame == "zero_kerr":
+        if manual_kerr_MHz is not None:
+            raise ValueError("zero_kerr does not take manual_kerr_MHz")
+        manual_kerr_MHz = 0.
+    if phase_frame not in ("as_acquired", "uncorrected", "zero_kerr", "manual_kerr"):
+        raise ValueError("phase_frame must be 'as_acquired', 'uncorrected', 'zero_kerr', or 'manual_kerr'")
+    occupations = reconstruction.occupations
+    final_occupations = reconstruction.get("final_occupations", occupations)
+    branches = mbr_phase.cycle_branches(final_occupations, cycle_branches)
+    A = reconstruction.A.copy()
+    target_correction = None
+    application_sign = saved_correction.application_sign
+    legacy_migration = False
+
+    if phase_frame == "as_acquired":
+        if legacy is not None:
+            raise ValueError("legacy is only used with uncorrected/zero_kerr/manual_kerr rephasing")
+        for row, branch in enumerate(branches):
+            A[row] *= np.exp(-1j * np.deg2rad(180. * branch) * reconstruction.cycles)
+        physical_kerr_MHz = hardware.physical_kerr_MHz
+    else:
+        if saved_correction.modes != {"final_analyzer"}:
+            raise ValueError("uncorrected/zero_kerr/manual_kerr rephasing requires spectroscopy_phase_correction_mode='final_analyzer'")
+        if application_sign is None:
+            nonzero_correction = any(not np.isclose(phase, 0.) for phase in saved_correction.phase_by_occupation.values())
+            if nonzero_correction and legacy is None:
+                raise ValueError("saved jobs do not record the analyzer sign; use legacy=True for old +correction jobs or legacy=False for -correction jobs")
+            application_sign = 1. if legacy else -1.
+            legacy_migration = bool(legacy)
+        elif legacy is not None and application_sign != (1. if legacy else -1.):
+            raise ValueError("legacy disagrees with the saved analyzer phase application sign")
+        legacy_migration = application_sign == 1.
+
+        if phase_frame == "uncorrected":
+            if manual_kerr_MHz is not None:
+                raise ValueError("uncorrected does not take manual_kerr_MHz")
+            for row, occupation in enumerate(final_occupations):
+                saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
+                A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + 180. * branches[row]) * reconstruction.cycles)
+            physical_kerr_MHz = hardware.physical_kerr_MHz
+        else:
+            if manual_kerr_MHz is None or not np.isfinite(manual_kerr_MHz):
+                raise ValueError("phase_frame='manual_kerr' requires a finite signed manual_kerr_MHz")
+            if calibration is None:
+                raise ValueError("zero_kerr/manual_kerr rephasing requires calibration")
+            calibration_phase = {tuple(occupation): phase for occupation, phase in zip(calibration.occupations, calibration.phase_mod180)}
+            missing = [occupation for occupation in final_occupations if tuple(occupation) not in calibration_phase]
+            if missing:
+                raise ValueError(f"calibration is missing occupations {missing}")
+            target_correction = mbr_phase.build_phase_correction(final_occupations, [calibration_phase[tuple(occupation)] for occupation in final_occupations], branches, float(manual_kerr_MHz), hardware.floquet_cycle_us)
+            for row, occupation in enumerate(final_occupations):
+                saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
+                target_phase = target_correction.phase_by_occupation[tuple(occupation)]
+                A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
+            physical_kerr_MHz = float(manual_kerr_MHz)
+    normalized_A = np.asarray([row / row[0] if tuple(initial) == tuple(final) else row for row, initial, final in zip(A, occupations, final_occupations)])
+    return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, 
+                                                      final_occupations=final_occupations,
+                                                      cycles=reconstruction.cycles,
+                                                      A=A,
+                                                      A_norm=normalized_A)), 
+                         target_correction=target_correction, 
+                         physical_kerr_MHz=physical_kerr_MHz, 
+                         phase_frame=phase_frame, 
+                         cycle_branches=branches, 
+                         analyzer_phase_application_sign=application_sign, 
+                         legacy_analyzer_migration=legacy_migration))

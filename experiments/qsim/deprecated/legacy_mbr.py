@@ -24,9 +24,7 @@ from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
 from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 from experiments.qsim.utils import flatten_exp_lists
 from fitting.qsim import level_statistics as level_statistics_analysis
 from fitting.qsim import matrix_pencil as matrix_pencil_analysis

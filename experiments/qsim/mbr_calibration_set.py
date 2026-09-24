@@ -19,37 +19,29 @@ trace programs subtract.
 The runner carries the settings every MBR job shares (reset, readout, reps
 defaults); this class adds what to sweep.
 """
-from datetime import datetime
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 
-from experiments import assembled_data
+from experiments.assembled_data import AssembledExperiment
 from experiments.qsim.mbr_saved import saved_parameters
 from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
-from experiments.saved_jobs import load_experiment
 from fitting.qsim import mbr_phase
 
 
-class MBRCalibrationSetExperiment:
+class MBRCalibrationSetExperiment(AssembledExperiment):
     """StarkCal jobs over occupations; gives ``phase_for(occupation)``."""
 
     child_class = MBRStarkCalExperiment
 
     def __init__(self, occupations, cycle_pairs, swap_stors, sync_cycles=10,
                  reps=1500, notes=""):
+        super().__init__(notes=notes)
         self.occupations = [tuple(int(n) for n in o) for o in occupations]
         self.cycle_pairs = [int(n) for n in cycle_pairs]
         self.swap_stors = [int(stor) for stor in swap_stors]
         self.sync_cycles = int(sync_cycles)
         self.reps = int(reps)
-        self.notes = notes
-        self.children = []
-        self.job_ids = []
-        self.data = AttrDict()
-        self.manifest_path = None
 
     # -- acquisition ------------------------------------------------------
 
@@ -59,23 +51,6 @@ class MBRCalibrationSetExperiment:
                                             self.swap_stors, self.sync_cycles,
                                             self.reps)
                 for occupation in self.occupations]
-
-    def acquire(self, runner, batch_size=10, **execute_kwargs):
-        """Run one StarkCal job per occupation through ``runner``.
-
-        ``execute_kwargs`` go to ``runner.execute`` (``use_queue``, ``log``,
-        ``show``, ...). Returns the job Experiments.
-        """
-        if runner.ExptClass is not self.child_class:
-            raise TypeError(
-                f"runner.ExptClass is {runner.ExptClass.__name__}; "
-                f"{type(self).__name__} needs {self.child_class.__name__}")
-        children = runner.execute(overrides=self.job_overrides(),
-                                  batch_size=batch_size, **execute_kwargs)
-        self.children = list(children)
-        self.job_ids = list(runner.last_job_ids)
-        self.data = AttrDict()
-        return self.children
 
     @classmethod
     def from_children(cls, children, job_ids=(), notes=""):
@@ -87,9 +62,6 @@ class MBRCalibrationSetExperiment:
         children = list(children)
         if not children:
             raise ValueError("a calibration set needs at least one StarkCal job")
-        for child in children:
-            if not isinstance(child, cls.child_class):
-                raise TypeError(f"{child!r} is not a {cls.child_class.__name__}")
         first = children[0].cfg.expt
         cycle_pairs = [int(n) for n in first.n_cycle_pairs]
         swap_stors = [int(stor) for stor in first.swap_stors]
@@ -108,23 +80,7 @@ class MBRCalibrationSetExperiment:
                           reps=int(first.reps), notes=notes)
         calibration.children = children
         calibration.job_ids = list(job_ids)
-        return calibration
-
-    @classmethod
-    def from_manifest(cls, path, timing=None):
-        """Re-assemble from the raw job files a saved manifest lists.
-
-        ``timing`` is passed to :func:`experiments.saved_jobs.load_experiment`
-        for job files that carry no Floquet timing of their own.
-        """
-        manifest = assembled_data.read_manifest(path)
-        if manifest["class"] != cls.__name__:
-            raise ValueError(f"{path} is a {manifest['class']} manifest")
-        children = [load_experiment(cls.child_class, raw, timing=timing)
-                    for raw in manifest["raw_files"]]
-        calibration = cls.from_children(children, job_ids=manifest["job_ids"],
-                                        notes=manifest.get("notes", ""))
-        calibration.manifest_path = Path(path)
+        calibration._check_children()
         return calibration
 
     # -- analysis ---------------------------------------------------------
@@ -136,8 +92,7 @@ class MBRCalibrationSetExperiment:
         the jobs' hardware parameters (Floquet cycle time, couplings, Kerr),
         which the phase correction needs.
         """
-        if not self.children:
-            raise ValueError("no StarkCal jobs; acquire or load them first")
+        self._check_children()
         for child in self.children:
             if "complex_return" not in child.data:
                 child.analyze()
@@ -218,55 +173,26 @@ class MBRCalibrationSetExperiment:
 
     # -- persistence ------------------------------------------------------
 
-    def save(self, directory=None, notes=None):
-        """Write the manifest YAML and the assembled HDF5. -> the manifest path.
+    def manifest_parameters(self):
+        return dict(occupations=[list(o) for o in self.occupations],
+                    cycle_pairs=self.cycle_pairs,
+                    swap_stors=self.swap_stors)
 
-        ``directory`` defaults to ``assembled_data/`` beside the first job's
-        data directory.
-        """
-        if "phase_mod180" not in self.data:
-            self.analyze()
-        if notes is not None:
-            self.notes = notes
-        raw_files = [Path(child.fname) for child in self.children]
-        if directory is None:
-            directory = (assembled_data.experiment_root(raw_files[0])
-                         / assembled_data.ASSEMBLED_DIR)
-        stem = assembled_data.new_stem(type(self).__name__)
-        manifest_path = Path(directory) / f"{stem}.yaml"
-        h5_path = Path(directory) / f"{stem}.h5"
-        version = assembled_data.code_version()
-
-        assembled_data.write_manifest(manifest_path, dict(
-            **{"class": type(self).__name__},
-            module=type(self).__module__,
-            child_class=self.child_class.__name__,
-            created=datetime.now().isoformat(timespec="seconds"),
-            code_version=version,
-            job_ids=list(self.job_ids),
-            calibration_manifest=None,
-            assembled_h5=h5_path.name,
-            parameters=dict(occupations=[list(o) for o in self.occupations],
-                            cycle_pairs=self.cycle_pairs,
-                            swap_stors=self.swap_stors),
-            notes=self.notes,
-        ), raw_files)
-        hardware = self.data.hardware
-        assembled_data.write_assembled_h5(h5_path, dict(
+    def assembled_arrays(self):
+        return dict(
             occupations=np.asarray(self.occupations, dtype=int),
             physical_cycles=self.data.physical_cycles,
             complex_returns=self.data.complex_returns,
             phase_mod180=self.data.phase_mod180,
             phase_error=self.data.phase_error,
-            couplings_MHz=hardware.couplings_MHz,
-        ), dict(
-            **{"class": type(self).__name__},
-            manifest=manifest_path.name,
-            code_version=version,
+            couplings_MHz=self.data.hardware.couplings_MHz,
+        )
+
+    def assembled_attrs(self):
+        hardware = self.data.hardware
+        return dict(
             floquet_cycle_us=float(hardware.floquet_cycle_us),
             physical_kerr_MHz=float(hardware.physical_kerr_MHz),
             hardware_source=str(hardware.source),
             mode_labels=list(self.data.mode_labels),
-        ))
-        self.manifest_path = manifest_path
-        return manifest_path
+        )

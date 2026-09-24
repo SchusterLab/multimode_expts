@@ -11,9 +11,7 @@ jobs recorded under this class name should still resolve when re-analysed.
 """
 import numpy as np
 
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 
 
 class SinglePhotonFloquetSpectroscopyProgram(

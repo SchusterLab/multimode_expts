@@ -25,9 +25,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 
 
 class EncodingStarkShiftCalibrationProgram(

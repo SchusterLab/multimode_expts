@@ -61,9 +61,7 @@ from experiments.qsim.mbr_phase_correction import (
     EntireFloquetCyclePhaseCalibrationProgram,
 )
 from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVENANCE = REPO_ROOT / "tests" / "data" / "job_provenance.json"

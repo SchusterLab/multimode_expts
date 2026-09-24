@@ -345,7 +345,7 @@ _MOVED_TO = {
     "EncodingStarkShiftCalibrationProgram": "experiments.qsim.floquet_phase_calibration",
     "EntireFloquetCyclePhaseCalibrationProgram": "experiments.qsim.mbr_phase_correction",
     "FloquetPhaseAccumulationProgram": "experiments.qsim.floquet_phase_calibration",
-    "NPhotonHamiltonianSpectroscopyProgram": "experiments.qsim.mbr_spectroscopy_program",
+    "NPhotonHamiltonianSpectroscopyProgram": "experiments.qsim.mbr_ramsey",
     "SidebandScrambleDarkProgramNewNew": "experiments.qsim.mbr_spectroscopy_program",
     "SinglePhotonFloquetSpectroscopyProgram":
         "experiments.qsim.deprecated.single_photon_spectroscopy",

@@ -27,7 +27,6 @@ from pathlib import Path
 import numpy as np
 
 from experiments.job_paths import job_records, resolve_job_paths
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate as _load_aggregate
 from experiments.saved_jobs import load_h5
@@ -64,7 +63,6 @@ CHARACTERIZATION_JOB_IDS = dataset("august_quickplot", "spectroscopy")
 # Analysis parameters the reference notebook uses. Kept here rather than in the
 # test so the baseline generator and the test cannot disagree about them.
 CHARACTERIZATION_ANALYSIS = dict(
-    calibration=None,
     cycle_branches={(3, 0, 0, 0, 0): 1, (2, 0, 0, 1, 0): 1},
     fft_window="raw",
     zero_padding=1,
@@ -146,12 +144,27 @@ def load_aggregate(job_ids=None, timing=None, owner=MBRSpectrumExperiment):
                            timing=timing or CHARACTERIZATION_TIMING)
 
 
-def run_reference_analysis(job_ids=None, timing=None, **overrides):
-    """-> (expt, analysis_result) for the characterization workflow."""
-    expt = load_aggregate(job_ids=job_ids, timing=timing)
+def converted_quickplot(out_root):
+    """-> MBRSpectrumExperiment for the quick-plot set, through the migration script.
+
+    The eight old jobs go to four ``MBRTimeTraceExperiment`` files in
+    ``out_root``; the spectrum is re-assembled from the manifest the script
+    writes. Timing is pinned to :data:`CHARACTERIZATION_TIMING`, as for the
+    old aggregate.
+    """
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        CHARACTERIZATION_JOB_IDS, out_root=out_root, load_shots=False,
+        timing=CHARACTERIZATION_TIMING)
+    return Spectrum.from_manifest(converted.manifest_path)
+
+
+def run_reference_analysis(spectrum, **overrides):
+    """-> (spectrum, analysis_result) for the characterization workflow."""
     params = dict(CHARACTERIZATION_ANALYSIS)
     params.update(overrides)
-    return expt, expt.analyze(**params)
+    return spectrum, spectrum.analyze(**params)
 
 
 # --------------------------------------------------------------------------
@@ -180,36 +193,33 @@ def load_aggregate_resolved(job_ids, owner=MBRSpectrumExperiment):
     return _load_aggregate(list(job_ids), owner=owner)
 
 
-def load_complete_basis():
-    """-> (calibration_expt, spectroscopy_expt, occupations) for August N=3.
+def converted_complete_basis(out_root):
+    """-> MBRSpectrumExperiment for August N=3, through the migration script.
 
-    Loads from HDF5 plus the provenance sidecar; no job server, no pickles.
-    Cached per process because the two aggregates cover 140 files and every
-    branch reuses them.
+    The 70 calibration jobs become an ``MBRCalibrationSetExperiment`` and the
+    70 spectroscopy jobs 35 ``MBRTimeTraceExperiment`` files, all in
+    ``out_root``; the spectrum is re-assembled from its manifest, which also
+    loads the calibration set.
     """
-    if not hasattr(load_complete_basis, "_cache"):
-        calibration = load_aggregate_resolved(
-            COMPLETE_BASIS_CALIBRATION_IDS, owner=MBRPhaseCorrectionExperiment)
-        calibration.analyze()
-        occupations = [tuple(map(int, o)) for o in calibration.data.occupations]
-        if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
-            raise RuntimeError(
-                f"calibration is not the complete 35-state N=3 sector: "
-                f"{len(occupations)} occupations")
-        spectroscopy = load_aggregate_resolved(COMPLETE_BASIS_SPECTROSCOPY_IDS)
-        load_complete_basis._cache = (calibration, spectroscopy, occupations)
-    return load_complete_basis._cache
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        COMPLETE_BASIS_SPECTROSCOPY_IDS, out_root=out_root, load_shots=False,
+        calibration_job_ids=COMPLETE_BASIS_CALIBRATION_IDS)
+    spectrum = Spectrum.from_manifest(converted.manifest_path)
+    occupations = spectrum.occupations
+    if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
+        raise RuntimeError(
+            f"spectrum is not the complete 35-state N=3 sector: "
+            f"{len(occupations)} occupations")
+    return spectrum
 
 
-def run_complete_basis_analysis(branch="as_acquired_fft", **overrides):
-    """-> (expt, analysis_result) for one branch of the August N=3 sector."""
-    calibration, spectroscopy, occupations = load_complete_basis()
-    params = dict(COMPLETE_BASIS_ANALYSIS,
-                  calibration=calibration,
-                  occupations=occupations,
-                  **COMPLETE_BASIS_BRANCHES[branch])
+def run_complete_basis_analysis(spectrum, branch="as_acquired_fft", **overrides):
+    """-> (spectrum, analysis_result) for one branch of the August N=3 sector."""
+    params = dict(COMPLETE_BASIS_ANALYSIS, **COMPLETE_BASIS_BRANCHES[branch])
     params.update(overrides)
-    return spectroscopy, spectroscopy.analyze(**params)
+    return spectrum, spectrum.analyze(**params)
 
 
 # --------------------------------------------------------------------------

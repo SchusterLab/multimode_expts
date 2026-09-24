@@ -25,16 +25,14 @@ from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.dark_base import DarkBaseExperiment
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
+from experiments.qsim.mbr_ramsey import MBRRamseyProgram
 from fitting.qsim import mbr_phase
 
 # [preparation, analyzer] half-pi phases in degrees, the inner sweep of a job.
 RAMSEY_PHASES = [[0., 0.], [180., 0.], [0., 90.], [180., 90.]]
 
 
-class MBRStarkCalProgram(NPhotonHamiltonianSpectroscopyProgram):
+class MBRStarkCalProgram(MBRRamseyProgram):
     """Prepare one occupation, play closed cycle pairs, analyze.
 
     One closed pair is
