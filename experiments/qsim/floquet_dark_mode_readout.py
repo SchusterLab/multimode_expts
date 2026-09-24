@@ -410,12 +410,10 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
 # consumers can resolve a stage programmatically. It is not a forwarding shim:
 # nothing here re-exports a method under its old address.
 STAGE_CLASSES = {
-    "calibration": "experiments.qsim.mbr_phase_correction"
-                   ".MBRPhaseCorrectionExperiment",
-    "orthogonality": "experiments.qsim.mbr_orthogonality"
-                     ".MBROrthogonalityExperiment",
-    "propagator": "experiments.qsim.mbr_propagator.MBRPropagatorExperiment",
-    "spectrum": "experiments.qsim.mbr_spectrum.MBRSpectrumExperiment",
+    "calibration": "experiments.qsim.legacy_mbr.MBRPhaseCorrectionExperiment",
+    "orthogonality": "experiments.qsim.legacy_mbr.MBROrthogonalityExperiment",
+    "propagator": "experiments.qsim.legacy_mbr.MBRPropagatorExperiment",
+    "spectrum": "experiments.qsim.legacy_mbr.MBRSpectrumExperiment",
 }
 
 

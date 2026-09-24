@@ -463,7 +463,7 @@ def test_stark_cal_golden_detects_a_data_change():
     """
     if _blessing():
         pytest.skip("would bless the perturbed result")
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
     from tests.mbr_reference import STARK_CAL_IDS, load_aggregate_resolved
 
     calibration = load_aggregate_resolved(

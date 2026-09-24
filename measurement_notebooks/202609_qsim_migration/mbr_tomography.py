@@ -72,8 +72,8 @@ from experiments.qsim.notebook_helpers.run_mode import run_settings
 # Set by tools/run_qsim_suite.py. Unset: through the queue in the main
 # checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 from experiments.qsim.notebook_helpers.mbr_campaign import (
     acquire_calibration,
     build_campaign,

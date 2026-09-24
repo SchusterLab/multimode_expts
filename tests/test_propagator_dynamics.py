@@ -32,7 +32,7 @@ import numpy as np
 import pytest
 from slab import AttrDict
 
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 
 FLOQUET_CYCLE_US = 0.5
 STEP = 2                        # even, so [0, 2, 4] is a valid FD triple

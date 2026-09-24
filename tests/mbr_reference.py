@@ -27,8 +27,8 @@ from pathlib import Path
 import numpy as np
 
 from experiments.job_paths import job_records, resolve_job_paths
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate as _load_aggregate
 from experiments.saved_jobs import load_h5
 

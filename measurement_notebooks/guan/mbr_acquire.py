@@ -154,7 +154,7 @@ if client is None:
     phase_by_occupation = {tuple(o): 0.0 for o in OCCUPATIONS}
     print(f"{len(calibration_expts)} calibration jobs acquired (mock)")
 else:
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 
     calibration_expts.analyze()
     calibration_expts.display()

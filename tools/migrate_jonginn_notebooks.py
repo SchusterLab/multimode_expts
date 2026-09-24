@@ -58,10 +58,10 @@ STAGE_IMPORTS = """# The four aggregate MBR stages. `EncodingHamiltonianSpectros
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment"""
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
+from experiments.qsim.legacy_mbr import MBRPropagatorExperiment"""
 
 
 def _load(path):
@@ -434,7 +434,7 @@ def migrate(plan, write):
     # Everything the notebook now names has to be importable in it.
     target = cells[plan["import_into"] - 1]
     text = _source(target)
-    if "from experiments.qsim.mbr_spectrum import" not in text:
+    if "from experiments.qsim.legacy_mbr import" not in text:
         assert re.search(r"^\s*(import|from)\s", text, re.M), (
             f"cell {plan['import_into']} has no imports; the stage imports "
             f"belong in an import cell, and it must run before the first "

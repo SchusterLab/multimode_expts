@@ -40,7 +40,7 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 
 
 @dataclass

@@ -63,7 +63,7 @@ from copy import deepcopy
 import experiments as meas
 from slab import AttrDict
 
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_loading import (
     job_id_generator,
     load_encoding_spectroscopy,

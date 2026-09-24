@@ -171,7 +171,7 @@ def ensure_calibration(campaign, N, station):
     calibration is a missing scientific input, which the stage-2 instructions
     say must fail visibly.
     """
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 
     if N in campaign.calibrations:
         return campaign.calibrations[N]
@@ -202,7 +202,7 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
     instead -- which the test suite needs, because it has no job IDs.
     `occupations` defaults to the whole fixed-N basis.
     """
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 
     if occupations is None:
         occupations = fixed_n_occupations(N, len(campaign.mode_labels))
@@ -294,8 +294,8 @@ def build_spectroscopy_batch(campaign, station, client, plan,
     nothing; the notebook calls `runner.execute` so that job submission stays
     a visible, separate step.
     """
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
     calibration_expt = ensure_calibration(campaign, plan.N, station)
 
@@ -394,7 +394,7 @@ def merge_replacement_calibration(campaign, station, N,
     (updated_calibration_expt, old_phase_by_occupation,
     new_phase_by_occupation).
     """
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 
     old_calibration_expt = campaign.calibrations[N]
     old_occupation_order = [
@@ -513,8 +513,8 @@ def build_propagator_batch(campaign, station, client, propagator_occupations,
 
     Submits nothing. Returns (batch, runner, calibration_expt).
     """
-    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-    from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 
     N = sum(propagator_occupations[0])
     calibration_expt = ensure_calibration(campaign, N, station)

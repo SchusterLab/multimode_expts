@@ -37,7 +37,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # One real load through the notebook helper, on the smallest pinned dataset.
 # Eight files, so it costs a couple of seconds even over SMB.
 A_REAL_LOAD = """
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate
 
 JOBS = [f"JOB-20260815-{n:05d}" for n in range(9, 17)]
@@ -247,7 +247,7 @@ def test_loaders_take_no_client(loader):
     """The `client=` argument is gone, not merely unused."""
     import inspect
 
-    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
     parameters = inspect.signature(getattr(MBRSpectrumExperiment, loader)).parameters
     assert "client" not in parameters, sorted(parameters)
@@ -255,7 +255,7 @@ def test_loaders_take_no_client(loader):
 
 def test_from_job_files_rejects_a_pickle(tmp_path):
     """Pointing the loader at a job pickle raises and says to use the .h5."""
-    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
     pickle_path = tmp_path / "JOB-19990101-00005_expt.pkl"
     pickle_path.write_bytes(b"not really a pickle")

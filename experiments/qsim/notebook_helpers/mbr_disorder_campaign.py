@@ -82,8 +82,8 @@ from scipy.optimize import (
 from slab import AttrDict
 
 from experiments.qsim import floquet_dark_mode_readout as d72_module
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
 
 @dataclass

@@ -45,7 +45,7 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
 
 # --------------------------------------------------------------------------

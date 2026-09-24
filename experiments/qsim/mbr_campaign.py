@@ -53,22 +53,20 @@ from slab import AttrDict
 from experiments.batch_runner import BatchRunner
 from experiments.floquet_timing import config_archive
 from experiments.qsim import floquet_dark_mode_readout as fdmr
-from experiments.qsim.mbr_orthogonality import (
-    EncodingOrthogonalityProgram,
+from experiments.qsim.legacy_mbr import (
     MBROrthogonalityExperiment,
+    MBRPhaseCorrectionExperiment,
+    MBRPropagatorExperiment,
+    MBRSpectrumExperiment,
 )
+from experiments.qsim.mbr_orthogonality import EncodingOrthogonalityProgram
 from experiments.qsim.mbr_phase_correction import (
     EntireFloquetCyclePhaseCalibrationProgram,
-    MBRPhaseCorrectionExperiment,
 )
-from experiments.qsim.mbr_propagator import (
-    EncodingPropagatorProgram,
-    MBRPropagatorExperiment,
-)
+from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
 from experiments.qsim.mbr_spectroscopy_program import (
     NPhotonHamiltonianSpectroscopyProgram,
 )
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVENANCE = REPO_ROOT / "tests" / "data" / "job_provenance.json"

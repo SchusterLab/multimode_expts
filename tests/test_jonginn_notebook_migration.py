@@ -62,10 +62,10 @@ SUCCESSOR_DIRS = [
 ]
 
 STAGE_MODULES = {
-    "MBRPhaseCorrectionExperiment": "experiments.qsim.mbr_phase_correction",
-    "MBRSpectrumExperiment": "experiments.qsim.mbr_spectrum",
-    "MBROrthogonalityExperiment": "experiments.qsim.mbr_orthogonality",
-    "MBRPropagatorExperiment": "experiments.qsim.mbr_propagator",
+    "MBRPhaseCorrectionExperiment": "experiments.qsim.legacy_mbr",
+    "MBRSpectrumExperiment": "experiments.qsim.legacy_mbr",
+    "MBROrthogonalityExperiment": "experiments.qsim.legacy_mbr",
+    "MBRPropagatorExperiment": "experiments.qsim.legacy_mbr",
     "EncodingHamiltonianSpectroscopyExperiment":
         "experiments.qsim.floquet_dark_mode_readout",
 }

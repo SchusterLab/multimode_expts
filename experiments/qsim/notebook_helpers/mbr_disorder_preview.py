@@ -31,8 +31,8 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate
 
 

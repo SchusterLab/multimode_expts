@@ -32,8 +32,8 @@ from itertools import product
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 
 
 def build_tomography_plan(campaign, station, client, N=1, step=10,

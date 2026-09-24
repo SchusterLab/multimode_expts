@@ -94,7 +94,7 @@ from slab import AttrDict
 from IPython.display import display
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
 
 # Both of these were notebook globals here, defined by the *disorder* HDF5
 # section: SavedSpectroscopyExperiment is cell 261's notebook-local loader and

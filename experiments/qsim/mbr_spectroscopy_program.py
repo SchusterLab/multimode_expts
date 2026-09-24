@@ -25,9 +25,9 @@ worth reading before changing anything here: which axis each row of
 ``decoder_phase_matrix`` is, and why the storage rows enter the inverse
 M1-storage pulses with the opposite sign.
 
-The stage variants sit with their own Experiments -- calibration in
+The stage program variants are in their own modules -- calibration in
 ``mbr_phase_correction``, propagator in ``mbr_propagator``, orthogonality in
-``mbr_orthogonality`` -- so each measurement is one file.
+``mbr_orthogonality``. Their old aggregate Experiments are in ``legacy_mbr``.
 """
 from copy import deepcopy
 

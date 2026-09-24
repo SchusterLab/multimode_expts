@@ -64,10 +64,10 @@ RUN_PREFIX = "JOB-20260414"
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
+from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 
 # %% [markdown]
 # Helpers this notebook uses, sliced out of the original
