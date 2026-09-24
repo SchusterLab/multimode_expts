@@ -303,3 +303,23 @@ def test_runner_helpers_short_circuit_log_in_mock():
         src = inspect.getsource(getattr(cls, meth))
         assert "is_mock" in src
         assert "mock mode active" in src
+
+
+@pytest.mark.parametrize("method, version_id", [
+    ("snapshot_hardware_config", "CFG-HW-MOCK"),
+    ("snapshot_multiphoton_config", "CFG-MP-MOCK"),
+    ("snapshot_man1_storage_swap", "CFG-M1-MOCK"),
+    ("snapshot_floquet_storage_swap", "CFG-FL-MOCK"),
+])
+def test_mock_station_never_writes_config_snapshots(monkeypatch, method, version_id):
+    """Mock configs hold values fitted from zero data; keep them out of the store."""
+    import experiments.station as s
+
+    def _boom(*a, **k):
+        raise AssertionError("a mock snapshot must not open the version database")
+    monkeypatch.setattr(s, "get_database", _boom)
+    monkeypatch.setattr(s, "ConfigVersionManager", _boom)
+
+    inst = s.MultimodeStation.__new__(s.MultimodeStation)
+    inst._is_mock = True
+    assert getattr(inst, method)(update_main=True) == version_id

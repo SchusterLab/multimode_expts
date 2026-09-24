@@ -1094,6 +1094,16 @@ class MultimodeStation:
         self.recursive_compare(old_cfg, self.hardware_cfg)
         self._sanitize_config_fields()
 
+    def _skip_mock_snapshot(self, code: str) -> str:
+        """-> a placeholder version ID; mock configs never reach the version store.
+
+        A mock run's configs hold values fitted from zero data. The placeholder
+        is not in the database, so loading it fails instead of finding junk.
+        """
+        version_id = f"CFG-{code}-MOCK"
+        print(f"[MOCK STATION] mock mode active; skipping config snapshot ({version_id}).")
+        return version_id
+
     def update_all_station_snapshots(self, update_main: bool = False) -> dict:
         """
         Create config snapshots from current station state.
@@ -1131,6 +1141,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("HW")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
         self._sanitize_config_fields()
@@ -1164,6 +1176,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("MP")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
 
@@ -1196,6 +1210,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("M1")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
 
@@ -1230,6 +1246,8 @@ class MultimodeStation:
         Raises:
             ValueError: If no floquet dataset is loaded
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("FL")
         if self.ds_floquet is None:
             raise ValueError("No floquet dataset loaded in station")
 
