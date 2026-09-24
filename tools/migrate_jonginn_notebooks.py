@@ -26,13 +26,13 @@ stage class can still do all of it.
 
 What is deliberately NOT migrated
 ---------------------------------
-`ExptClass=EncSpec` in every `BatchRunner`, and the `f"{job_id}_{EncSpec.__name__}.h5"`
+`ExptClass=EncSpec` in every runner, and the `f"{job_id}_{EncSpec.__name__}.h5"`
 filename construction. Both are provenance: the queue records the class each
 job was submitted under and the HDF5 file is named after it, so jonginn's
 existing data is named `..._EncodingHamiltonianSpectroscopyExperiment.h5`.
-Changing the acquisition class would orphan it. `from_batch` exists precisely
-so acquisition can keep recording the old class while analysis uses the new
-one.
+Changing the acquisition class would orphan it. The acquired job Experiments
+are wrapped with `<Stage>._from_expts(...)` instead, so acquisition keeps
+recording the old class while analysis uses the new one.
 
 Also not migrated: the `check_program_class(expt, "KerrCavityRamseyExcursionExperiment")`
 string literals. Those name the class historical data recorded, not a class to
@@ -351,11 +351,11 @@ def rewrite_constructions(source, stage_by_receiver):
     Two shapes, because there are two ways an aggregate arrives:
 
       var = <Alias>.from_job_ids(...)      -> var = <Stage>.from_job_ids(...)
-      var = <runner>.execute(...)          -> var = <Stage>.from_batch(<runner>.execute(...))
+      var = <runner>.execute(...)          -> var = <Stage>._from_expts(<runner>.execute(...), ...)
 
-    The second is why `from_batch` exists: `BatchRunner` returns an instance of
-    its `ExptClass`, which stays the acquired class for provenance, so the
-    aggregate has to be re-wrapped rather than built differently.
+    In the second, `execute(configs=...)` returns the job Experiments, whose
+    class stays the acquired class for provenance, so they are wrapped rather
+    than built differently.
     """
     try:
         tree = ast.parse(source)
@@ -391,9 +391,12 @@ def rewrite_constructions(source, stage_by_receiver):
                             + text[len(receiver) + 1 + len(call.func.attr):]))
             notes.append(f"{target}: {receiver}.{call.func.attr} -> {owner}")
         elif call.func.attr == "execute":
-            patches.append((start, end, f"{owner}.from_batch({text})"))
-            notes.append(f"{target}: wrapped runner aggregate in "
-                          f"{owner}.from_batch")
+            runner = ast.unparse(call.func.value)
+            patches.append((start, end, (
+                f"{owner}._from_expts({text}, job_ids={runner}.last_job_ids, "
+                f"station={runner}.station)")))
+            notes.append(f"{target}: wrapped runner result in "
+                          f"{owner}._from_expts")
     for start, end, replacement in sorted(patches, reverse=True):
         source = source[:start] + replacement + source[end:]
     return source, notes
@@ -616,7 +619,7 @@ def traced_to_a_stage(notebook, aliases=()):
 
     Follows one level of indirection, because a campaign loop keeps its
     aggregate in a record: `record["expt"] = diag_expt` where `diag_expt`
-    came from `MBRSpectrumExperiment.from_batch(...)`.
+    came from `MBRSpectrumExperiment._from_expts(...)`.
     """
     # A rebound alias resolves to its stage class: rule 2 changes the binding
     # line, not the call sites, so `DiagPreviewEncSpec.from_job_ids(...)` is

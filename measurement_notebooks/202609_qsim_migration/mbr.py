@@ -25,7 +25,7 @@
 #
 # ## This section was the hub, so its handoffs are now explicit
 #
-# Cells 289-293 bound `EncSpec`, `BatchRunner`, `encspec_modes`,
+# Cells 289-293 bound `EncSpec`, the runner, `encspec_modes`,
 # `encspec_mode_labels`, `encspec_sync_cycles`, `encspec_defaults`,
 # `encspec_calibration_job_ids/files` and `encspec_calibrations` -- and the
 # disorder, tomography and SFF sections then read those names straight out of
@@ -158,7 +158,6 @@ campaign = build_campaign(
 
 # The names the relocated cells below already use.
 EncSpec = campaign.EncSpec
-BatchRunner = campaign.BatchRunner
 floquet_dark_mode_readout = campaign.floquet_dark_mode_readout
 encspec_modes = campaign.modes
 encspec_mode_labels = campaign.mode_labels
@@ -205,7 +204,7 @@ calibration_batch = MBRPhaseCorrectionExperiment.calibration_batch(
     encspec_cycle_pairs, sync_cycles=encspec_sync_cycles, repeats=1,
     reps=RUN.pick(1000, smoke=100),
 )
-calibration_runner = BatchRunner(
+calibration_runner = CharacterizationRunner(
     station=station,
     ExptClass=EncSpec,
     ExptProgram=floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
@@ -214,9 +213,9 @@ calibration_runner = BatchRunner(
     use_queue=RUN.use_queue,
     show=False,
 )
-calibration_expt = MBRPhaseCorrectionExperiment.from_batch(calibration_runner.execute(
-    calibration_batch.configs, batch_size=10, log=True, show=False,
-))
+calibration_expt = MBRPhaseCorrectionExperiment._from_expts(calibration_runner.execute(
+    configs=calibration_batch.configs, batch_size=10, log=True, show=False,
+), job_ids=calibration_runner.last_job_ids, station=calibration_runner.station)
 calibration_expt.analyze()
 encspec_calibrations[encspec_N] = calibration_expt
 calibration_expt.display()
@@ -272,7 +271,7 @@ recalibration_batch = MBRPhaseCorrectionExperiment.calibration_batch(
     reps=recalibration_reps,
     unwrap_mode=recalibration_unwrap_mode,
 )
-recalibration_runner = BatchRunner(
+recalibration_runner = CharacterizationRunner(
     station=station,
     ExptClass=EncSpec,
     ExptProgram=(
@@ -284,12 +283,12 @@ recalibration_runner = BatchRunner(
     use_queue=RUN.use_queue,
     show=False,
 )
-replacement_calibration_expt = MBRPhaseCorrectionExperiment.from_batch(recalibration_runner.execute(
-    recalibration_batch.configs,
+replacement_calibration_expt = MBRPhaseCorrectionExperiment._from_expts(recalibration_runner.execute(
+    configs=recalibration_batch.configs,
     batch_size=recalibration_batch_size,
     log=True,
     show=False,
-))
+), job_ids=recalibration_runner.last_job_ids, station=recalibration_runner.station)
 replacement_calibration_expt.analyze(
     occupations=recalibration_occupations,
     cycle_pairs=recalibration_cycle_pairs,
@@ -364,7 +363,7 @@ print("setup validated; run the next cell to submit jobs")
 
 
 # %%
-orthogonality_runner = BatchRunner(
+orthogonality_runner = CharacterizationRunner(
     station=station,
     ExptClass=EncSpec,
     ExptProgram=(
@@ -376,12 +375,12 @@ orthogonality_runner = BatchRunner(
     use_queue=RUN.use_queue,
     show=False,
 )
-orthogonality_expt = MBROrthogonalityExperiment.from_batch(orthogonality_runner.execute(
-    orthogonality_batch.configs,
+orthogonality_expt = MBROrthogonalityExperiment._from_expts(orthogonality_runner.execute(
+    configs=orthogonality_batch.configs,
     batch_size=1,
     log=True,
     show=False
-))
+), job_ids=orthogonality_runner.last_job_ids, station=orthogonality_runner.station)
 
 
 # %%
@@ -465,12 +464,12 @@ spectroscopy_batch, spectroscopy_runner, calibration_expt, cycle_branches = (
 # %%
 # Submit. Kept separate from the setup above so the job-submitting step is
 # always its own cell.
-spectroscopy_expt = MBRSpectrumExperiment.from_batch(spectroscopy_runner.execute(
-    spectroscopy_batch.configs,
+spectroscopy_expt = MBRSpectrumExperiment._from_expts(spectroscopy_runner.execute(
+    configs=spectroscopy_batch.configs,
     batch_size=encspec_batch_size,
     log=True,
     show=False,
-))
+), job_ids=spectroscopy_runner.last_job_ids, station=spectroscopy_runner.station)
 spectroscopy_data = spectroscopy_expt.analyze(
     occupations=spectroscopy_occupations,
     cycle_branches=cycle_branches,
@@ -531,12 +530,12 @@ propagator_batch, propagator_runner, calibration_expt = build_propagator_batch(
 )
 
 # %%
-propagator_expt = MBRPropagatorExperiment.from_batch(propagator_runner.execute(
-    propagator_batch.configs,
+propagator_expt = MBRPropagatorExperiment._from_expts(propagator_runner.execute(
+    configs=propagator_batch.configs,
     batch_size=1,
     log=True,
     show=False,
-))
+), job_ids=propagator_runner.last_job_ids, station=propagator_runner.station)
 propagator_data = propagator_expt.analyze(
     occupations=propagator_occupations,
 )

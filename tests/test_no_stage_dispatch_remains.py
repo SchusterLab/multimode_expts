@@ -69,8 +69,9 @@ def test_no_notebook_calls_the_retired_stage_dispatch(path):
         expt = <StageClass>.from_job_ids(ids, station=station)
         expt.analyze()
 
-    and for a freshly acquired batch, `<StageClass>.from_batch(runner.execute(...))`,
-    which keeps `BatchRunner` recording the class the data was acquired under.
+    and for a freshly acquired batch,
+    `<StageClass>._from_expts(runner.execute(configs=...), job_ids=...)`, which
+    keeps the runner recording the class the data was acquired under.
     """
     text = _code(path)
     hits = STAGE_ARGUMENT.findall(text)

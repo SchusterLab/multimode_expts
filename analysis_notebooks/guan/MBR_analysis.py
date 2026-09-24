@@ -70,11 +70,11 @@ from slab import AttrDict
 #
 # What did NOT change, so do not touch it:
 #
-# - Acquisition. `BatchRunner(ExptClass=EncSpec, ...)` is unchanged, and so is
+# - Acquisition. `ExptClass=EncSpec` is unchanged, and so is
 #   every `ExptClass=...DarkBaseExperiment`. No class was renamed: names are
-#   recorded in job provenance.
-#   Modules *did* move on 2026-09-12 -- `BatchRunner` to
-#   `experiments/batch_runner.py`, `DarkBaseExperiment` to
+#   recorded in job provenance. (`BatchRunner` merged into
+#   `CharacterizationRunner.execute(configs=...)` on 2026-09-24.)
+#   Modules *did* move on 2026-09-12 -- `DarkBaseExperiment` to
 #   `experiments/qsim/dark_base.py`, each stage's Program to its stage
 #   module. Old addresses still resolve through
 #   `floquet_dark_mode_readout`'s `__getattr__`, so nothing breaks; new code

@@ -45,7 +45,7 @@ with the phase-calibration jobs.
 
 An earlier pass wrapped the three submission cells whole, as
 `submit_pairwise`, `submit_diag_disorder` and `submit_d72`. Each one built the
-`BatchRunner` *and* called `runner.execute` behind a closed keyword list, so
+runner *and* called `runner.execute` behind a closed keyword list, so
 the notebook could not reach `batch_size`, `log` or any other per-run
 argument, and the runner it was submitting through was invisible. Worse, each
 opened by unpacking its whole config object into local names, most of which it
@@ -80,6 +80,8 @@ from scipy.optimize import (
 )
 
 from slab import AttrDict
+
+from experiments.characterization_runner import CharacterizationRunner, json_plain
 
 from experiments.qsim import floquet_dark_mode_readout as d72_module
 from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
@@ -201,7 +203,6 @@ def build_pairwise_plan(campaign, station, N=3, strength_kHz=50.0, seed=20260815
 
 
     EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
     encspec_modes = campaign.modes
     encspec_mode_labels = campaign.mode_labels
     encspec_sync_cycles = campaign.sync_cycles
@@ -386,7 +387,7 @@ def build_pairwise_batch(campaign, station, client, plan, use_queue=True):
         final_occupations=disorder_decoders,
     )
     print(f"{len(batch.configs)} jobs")
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=batch.program,
@@ -495,7 +496,6 @@ def build_diag_disorder_plans(campaign, station, config=None,
     diag_disorder_branch_overrides = config.branch_overrides
 
     EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
     encspec_modes = campaign.modes
     encspec_mode_labels = campaign.mode_labels
     encspec_sync_cycles = campaign.sync_cycles
@@ -772,7 +772,7 @@ def build_diag_realization_batch(campaign, station, client, plan, config,
         reps=config.reps,
         final_occupations=realization_plan["occupations"],
     )
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=batch.program,
@@ -1365,10 +1365,8 @@ def build_d72_plans(campaign, station, config=None):
     # Derived in the source, not a knob.
     d72_mpm_rank_sweep_extra = config.mpm_rank_sweep_extra
     D72EncSpec = campaign.EncSpec
-    D72BatchRunner = campaign.BatchRunner
 
     EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
     encspec_modes = campaign.modes
     encspec_mode_labels = campaign.mode_labels
     encspec_sync_cycles = campaign.sync_cycles
@@ -1792,7 +1790,6 @@ def preview_d72_jobs(campaign, station, plan, config=None):
     # Derived in the source, not a knob.
     d72_mpm_rank_sweep_extra = config.mpm_rank_sweep_extra
     D72EncSpec = campaign.EncSpec
-    D72BatchRunner = campaign.BatchRunner
     d72_branch_overrides = plan["d72_branch_overrides"]
     d72_calibration = plan["d72_calibration"]
     d72_calibration_gauss_sigma = plan["d72_calibration_gauss_sigma"]
@@ -1810,7 +1807,6 @@ def preview_d72_jobs(campaign, station, plan, config=None):
     d72_resolved_self_kerr_kHz = plan["d72_resolved_self_kerr_kHz"]
 
     EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
     encspec_modes = campaign.modes
     encspec_mode_labels = campaign.mode_labels
     encspec_sync_cycles = campaign.sync_cycles
@@ -2109,7 +2105,7 @@ def preview_d72_jobs(campaign, station, plan, config=None):
             in d72_branch_overrides.items()
         )),
         str(getattr(station, "hardware_config_file", "")),
-        repr(D72BatchRunner._plain(dict(encspec_defaults))),
+        repr(json_plain(dict(encspec_defaults))),
         int(d72_reps),
         tuple(map(int, d72_cycles)),
         tuple(map(int, d72_modes)),

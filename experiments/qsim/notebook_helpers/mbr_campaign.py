@@ -5,7 +5,7 @@ Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 
 Primary caller: `measurement_notebooks/202609_qsim_migration/mbr.py`. But this
 module exists mostly because of the *other* callers. The `mbr` section was the
-hub of the source notebook: cells 289-293 bound `EncSpec`, `BatchRunner`,
+hub of the source notebook: cells 289-293 bound `EncSpec`, the runner,
 `encspec_modes`, `encspec_mode_labels`, `encspec_sync_cycles`,
 `encspec_defaults`, `encspec_calibration_job_ids/files` and
 `encspec_calibrations`, and then the disorder, tomography and SFF sections all
@@ -41,6 +41,8 @@ import numpy as np
 
 from slab import AttrDict
 
+from experiments.characterization_runner import CharacterizationRunner
+
 
 @dataclass
 class MBRCampaign:
@@ -52,7 +54,6 @@ class MBRCampaign:
     """
 
     EncSpec: Any
-    BatchRunner: Any
     floquet_dark_mode_readout: Any
     modes: list
     mode_labels: list
@@ -82,7 +83,6 @@ def build_campaign(station, client, floquet_settings, active_reset_settings,
         importlib.reload(floquet_dark_mode_readout)
 
     EncSpec = floquet_dark_mode_readout.EncodingHamiltonianSpectroscopyExperiment
-    BatchRunner = floquet_dark_mode_readout.BatchRunner
 
     modes = list(modes)
     mode_labels = ["M1"] + [f"S{stor}" for stor in modes]
@@ -135,7 +135,6 @@ def build_campaign(station, client, floquet_settings, active_reset_settings,
 
     return MBRCampaign(
         EncSpec=EncSpec,
-        BatchRunner=BatchRunner,
         floquet_dark_mode_readout=floquet_dark_mode_readout,
         modes=modes,
         mode_labels=mode_labels,
@@ -210,7 +209,7 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
         campaign.defaults, campaign.modes, occupations, cycle_pairs,
         sync_cycles=campaign.sync_cycles, repeats=1, reps=reps,
     )
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=campaign.floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
@@ -219,9 +218,9 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
         use_queue=use_queue,
         show=False,
     )
-    calibration_expt = MBRPhaseCorrectionExperiment.from_batch(runner.execute(
-        batch.configs, batch_size=batch_size, log=True, show=False,
-    ))
+    calibration_expt = MBRPhaseCorrectionExperiment._from_expts(runner.execute(
+        configs=batch.configs, batch_size=batch_size, log=True, show=False,
+    ), job_ids=runner.last_job_ids, station=runner.station)
     calibration_expt.analyze()
     campaign.calibrations[N] = calibration_expt
     return calibration_expt
@@ -328,7 +327,7 @@ def build_spectroscopy_batch(campaign, station, client, plan,
         reps=reps,
         final_occupations=plan.final_occupations,
     )
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=batch.program,
@@ -534,7 +533,7 @@ def build_propagator_batch(campaign, station, client, propagator_occupations,
         sync_cycles=campaign.sync_cycles,
         reps=reps,
     )
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=campaign.floquet_dark_mode_readout.EncodingPropagatorProgram,

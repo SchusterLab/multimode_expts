@@ -77,35 +77,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return aggregate
 
     @classmethod
-    def from_batch(cls, aggregate, station=None):
-        """Re-wrap a ``BatchRunner`` aggregate as *this* stage's Experiment.
-
-        ``BatchRunner`` returns an instance of its ``ExptClass``, which is the
-        class each job was recorded under -- provenance, so acquisition cells
-        must keep passing whatever they always passed. Aggregate analysis, on
-        the other hand, now belongs to a stage class. This converts one to the
-        other and re-reads nothing: the loaded child Experiments are reused
-        as-is.
-
-            raw = runner.execute(batch.configs, batch_size=10)
-            expt = MBRPhaseCorrectionExperiment.from_batch(raw)
-            expt.analyze(); expt.display()
-
-        The job IDs and the analysis station come along, so the usual next
-        line -- ``expt.batch_job_ids`` -- keeps working.
-        """
-        if not hasattr(aggregate, "batch_expts"):
-            raise TypeError(
-                "from_batch expects a BatchRunner aggregate (one with "
-                f"batch_expts); got {type(aggregate).__name__}. To load saved "
-                "jobs instead, use from_job_ids or from_job_files.")
-        if station is None:
-            station = getattr(aggregate, "_analysis_station", None)
-        return cls._from_expts(aggregate.batch_expts,
-                               job_ids=getattr(aggregate, "batch_job_ids", None),
-                               station=station)
-
-    @classmethod
     def from_job_files(cls, job_files, timing=None):
         """
         Load child HDF5 files into one analysis object.
@@ -442,16 +413,14 @@ def _stage_migration_message(stage):
 # which matters: every new module imports the still-resident base classes from
 # here, so a top-level re-import would be circular.
 #
-# Values are absolute module paths: the destinations are no longer all under
-# ``experiments.qsim`` (BatchRunner is infrastructure and sits at the top
-# level, and the retired programs sit under ``deprecated/``).
+# Values are absolute module paths: the retired programs sit under
+# ``deprecated/``, not directly under ``experiments.qsim``.
 #
 # Note: ``__dir__`` advertises these names, so the flattening exporter in
 # ``experiments/__init__.py`` does re-export them to the ``experiments``
 # namespace. That is harmless -- it resolves to the very same class object the
 # defining module exports, so the second write is idempotent.
 _MOVED_TO = {
-    "BatchRunner": "experiments.batch_runner",
     "BroadbandGeValidationProgram": "experiments.qsim.dark_mode_broadband_ge_validation",
     "EncodingOrthogonalityProgram": "experiments.qsim.mbr_orthogonality",
     "EncodingPropagatorProgram": "experiments.qsim.mbr_propagator",

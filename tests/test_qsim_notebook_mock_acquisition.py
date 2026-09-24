@@ -8,11 +8,12 @@ nothing is submitted to the job queue.
 
 Two shapes of test, because the runners differ:
 
-- Themes driven by `CharacterizationRunner` run end to end: its `execute()`
+- Single-job themes run end to end: `CharacterizationRunner.execute()`
   switches to `run_local()` when `station.is_mock`.
-- The MBR themes use `BatchRunner`, which is queue-only. They are validated by
-  building their configs through the refactored helpers and then instantiating
-  and compiling the program directly -- the same qick path, without a queue.
+- The MBR themes submit many jobs through `execute(configs=...)`. They are
+  validated by building their configs through the refactored helpers and then
+  instantiating and compiling the program directly -- the same qick path,
+  without a queue.
 
 Each `CharacterizationRunner` test also loads the file the mock run saved
 back with both normal loaders (`assert_reloads`) and checks the array shapes,
@@ -29,7 +30,7 @@ import numpy as np
 import pytest
 from slab import AttrDict
 
-from experiments import MultimodeStation
+from experiments import CharacterizationRunner, MultimodeStation
 from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS,
     FLOQUET_DEFAULTS,
@@ -548,18 +549,16 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
 
 
 # --------------------------------------------------------------------------
-# BatchRunner is queue-only, so the MBR themes get a different shape.
+# The MBR themes: many jobs per acquisition.
 # --------------------------------------------------------------------------
 
 
-def test_batch_runner_refuses_the_queue_in_mock_mode(mock_station, defaults):
+def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
     """A mock session must not submit real jobs.
 
-    `BatchRunner.execute` overrides `CharacterizationRunner.execute` and has
-    no `run_local` path, so before this guard existed a mock MBR run submitted
-    to the production queue -- where the worker runs whatever is checked out
-    at the main path, against real hardware unless it was started with
-    --mock.
+    Before this guard existed a mock MBR run submitted to the production
+    queue -- where the worker runs whatever is checked out at the main path,
+    against real hardware unless it was started with --mock.
     """
     from experiments.qsim.notebook_helpers.mbr_campaign import (
         build_campaign,
@@ -583,7 +582,7 @@ def test_batch_runner_refuses_the_queue_in_mock_mode(mock_station, defaults):
         np.arange(0, 3, dtype=int),
         sync_cycles=campaign.sync_cycles, repeats=1, reps=20,
     )
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station, ExptClass=campaign.EncSpec,
         ExptProgram=campaign.floquet_dark_mode_readout
         .EntireFloquetCyclePhaseCalibrationProgram,
@@ -591,7 +590,8 @@ def test_batch_runner_refuses_the_queue_in_mock_mode(mock_station, defaults):
         job_client=client, show=False,
     )
     with pytest.raises(RuntimeError, match="station has mock instruments"):
-        runner.execute(batch.configs[:1], batch_size=1, log=False, show=False)
+        runner.execute(configs=batch.configs[:1], batch_size=1, use_queue=True,
+                       log=False, show=False)
 
 
 MBR_BATCHES = [
@@ -608,7 +608,7 @@ def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
 
     This is the layer the stage-2 split actually changed: `build_campaign` and
     the four `*_batch` classmethods it feeds. The program is instantiated
-    directly rather than through `BatchRunner.execute`, which would queue.
+    directly rather than through `execute(configs=...)`, which would acquire.
     """
     from experiments.qsim.notebook_helpers.mbr_campaign import (
         build_campaign,
@@ -666,7 +666,7 @@ def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
     configs = list(batch.configs)
     assert configs, f"{which} produced no configs"
 
-    runner = campaign.BatchRunner(
+    runner = CharacterizationRunner(
         station=station, ExptClass=campaign.EncSpec,
         ExptProgram=ProgramClass,
         default_expt_cfg=batch.default_expt_cfg,

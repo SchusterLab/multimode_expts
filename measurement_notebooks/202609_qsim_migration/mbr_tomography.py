@@ -153,12 +153,12 @@ hamtom_plan = build_tomography_plan(
 # ### 8-2. Run the complete $5\times5$ propagator batch — submits five jobs
 
 # %%
-hamtom_expt = hamtom_plan["runner"].execute(
-    hamtom_plan["batch"].configs,
+hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_plan["runner"].execute(
+    configs=hamtom_plan["batch"].configs,
     batch_size=hamtom_plan["batch_size"],
     log=True,
     show=False,
-)
+), job_ids=hamtom_plan["runner"].last_job_ids, station=station)
 print("tomography jobs:", hamtom_expt.batch_job_ids)
 
 # %% [markdown]

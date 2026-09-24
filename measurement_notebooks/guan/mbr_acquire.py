@@ -25,11 +25,13 @@
 #
 # **No class was renamed.** Class names are recorded in job provenance --
 # saved files are `JOB-<id>_<ClassName>.h5` -- so renaming one would orphan
-# data. `BatchRunner(ExptClass=..., ExptProgram=...)` still works exactly as
-# before.
+# data. Many jobs go through
+# `CharacterizationRunner(ExptClass=..., ExptProgram=...).execute(configs=...)`
+# (`BatchRunner` merged into it on 2026-09-24).
 #
 # **Modules did move**, as of 2026-09-12: each stage's Program now lives
-# beside its Experiment, and `BatchRunner` is `experiments/batch_runner.py`.
+# beside its Experiment. The old aggregate Experiments are in
+# `experiments/qsim/legacy_mbr.py` since 2026-09-24.
 # Every old address still resolves -- `floquet_dark_mode_readout` forwards
 # moved names through a module-level `__getattr__`, which matters for more
 # than notebooks, since the queue records `program_module` per job and
@@ -134,10 +136,11 @@ calibration_expts = run_stage(
 )
 
 # %% [markdown]
-# On prod, `run_stage` returns the aggregate from `BatchRunner`, so analysis is
-# the three-line pattern:
+# `run_stage` returns a list of job Experiments. Wrap it in the stage class,
+# then analysis is the three-line pattern:
 #
 # ```python
+# calibration_expts = MBRPhaseCorrectionExperiment._from_expts(calibration_expts)
 # calibration_expts.analyze()
 # calibration_expts.display()
 # correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(

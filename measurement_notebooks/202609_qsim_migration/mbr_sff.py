@@ -170,7 +170,7 @@ sff = build_sff_plan(
 # and the ensemble analysis divides by it.
 
 # %%
-sff_visibility_runner = campaign.BatchRunner(
+sff_visibility_runner = CharacterizationRunner(
     station=station,
     ExptClass=sff["SFFExperiment"],
     ExptProgram=sff["plan"].program,
@@ -181,15 +181,15 @@ sff_visibility_runner = campaign.BatchRunner(
 )
 
 # configs[:1] is the depth-zero visibility configuration.
-sff_visibility_batch = sff_visibility_runner.execute(
-    sff["plan"].configs[:1],
+sff_visibility_expts = sff_visibility_runner.execute(
+    configs=sff["plan"].configs[:1],
     batch_size=1,
     log=True,
     show=False,
 )
-print("visibility job:", sff_visibility_batch.batch_job_ids)
+print("visibility job:", sff_visibility_runner.last_job_ids)
 
-sff_visibility_expt = plot_sff_visibility(sff_visibility_batch, sff)
+sff_visibility_expt = plot_sff_visibility(sff_visibility_expts, sff)
 
 # %% [markdown]
 # ### 9-3. Run the 2000-realization ensemble — submits jobs
@@ -198,7 +198,7 @@ sff_visibility_expt = plot_sff_visibility(sff_visibility_batch, sff)
 # configuration was already measured above.
 
 # %%
-sff_disorder_runner = campaign.BatchRunner(
+sff_disorder_runner = CharacterizationRunner(
     station=station,
     ExptClass=sff["SFFExperiment"],
     ExptProgram=sff["plan"].program,
@@ -213,7 +213,7 @@ sff_disorder_runner = campaign.BatchRunner(
 # it already sent.
 try:
     sff_disorder_batch = sff_disorder_runner.execute(
-        sff["plan"].configs[1:],
+        configs=sff["plan"].configs[1:],
         batch_size=sff["batch_size"],
         log=True,
         show=False,
@@ -223,10 +223,10 @@ except BaseException:
           sff_disorder_runner.last_job_ids)
     raise
 
-print("completed disorder jobs:", len(sff_disorder_batch.batch_job_ids))
-if sff_disorder_batch.batch_job_ids:  # local runs have no queue job IDs
-    print("first job:", sff_disorder_batch.batch_job_ids[0])
-    print("last job:", sff_disorder_batch.batch_job_ids[-1])
+print("completed disorder jobs:", len(sff_disorder_batch))
+if sff_disorder_runner.last_job_ids:  # local runs have no queue job IDs
+    print("first job:", sff_disorder_runner.last_job_ids[0])
+    print("last job:", sff_disorder_runner.last_job_ids[-1])
 
 # %% [markdown]
 # ### 9-4. Analyze and plot the measured SFF — no jobs

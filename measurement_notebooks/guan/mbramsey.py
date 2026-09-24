@@ -271,7 +271,7 @@ calibration_batch = EncSpec.calibration_batch(
     repeats=1, 
     reps=500,
 )
-calibration_runner = meas.BatchRunner(
+calibration_runner = meas.CharacterizationRunner(
     station=station, 
     ExptClass=EncSpec,
     ExptProgram=meas.EntireFloquetCyclePhaseCalibrationProgram,
@@ -279,14 +279,13 @@ calibration_runner = meas.BatchRunner(
     job_client=client, 
     show=False,
 )
-calibration_expt = meas.MBRPhaseCorrectionExperiment.from_batch(
+calibration_expt = meas.MBRPhaseCorrectionExperiment._from_expts(
     calibration_runner.execute(
-        calibration_batch.configs, 
+        configs=calibration_batch.configs, 
         batch_size=10, 
         log=True, 
         show=False,
-    )
-)
+    ), job_ids=calibration_runner.last_job_ids, station=calibration_runner.station)
 calibration_expt.analyze(
     occupations=encspec_occupations,
     cycle_pairs=encspec_cycle_pairs, repeats=calibration_batch.repeats,
@@ -318,11 +317,10 @@ for correction_sign in [1., -1.]:
     for config in sign_batch.configs:
         config['final_analyzer_phase_per_cycle_deg'] = correction_per_cycle
 
-    sign_expt = meas.MBRPhaseCorrectionExperiment.from_batch(
+    sign_expt = meas.MBRPhaseCorrectionExperiment._from_expts(
         calibration_runner.execute(
-            sign_batch.configs, batch_size=2, log=True, show=False,
-        )
-    )
+            configs=sign_batch.configs, batch_size=2, log=True, show=False,
+        ), job_ids=calibration_runner.last_job_ids, station=calibration_runner.station)
     sign_expt.analyze(
         occupations=[encspec_sign_occupation],
         cycle_pairs=encspec_cycle_pairs, repeats=sign_batch.repeats,
@@ -377,18 +375,17 @@ spectroscopy_batch = EncSpec.spectroscopy_batch(
     encspec_correction.phase_by_occupation, detunings=encspec_detunings,
     sync_cycles=encspec_scramble_sync_cycles, reps=300,
 )
-spectroscopy_runner = floquet_dark_mode_readout.BatchRunner(
+spectroscopy_runner = meas.CharacterizationRunner(
     station=station, 
     ExptClass=EncSpec,
     ExptProgram=floquet_dark_mode_readout.NPhotonHamiltonianSpectroscopyProgram,
     default_expt_cfg=spectroscopy_batch.default_expt_cfg,
     job_client=client, show=False,
 )
-spectroscopy_expt = meas.MBRSpectrumExperiment.from_batch(
+spectroscopy_expt = meas.MBRSpectrumExperiment._from_expts(
     spectroscopy_runner.execute(
-        spectroscopy_batch.configs, batch_size=8, log=True, show=False,
-    )
-)
+        configs=spectroscopy_batch.configs, batch_size=8, log=True, show=False,
+    ), job_ids=spectroscopy_runner.last_job_ids, station=spectroscopy_runner.station)
 # Six arguments came out of this call: photon_number, detunings,
 # couplings_MHz, floquet_cycle_us, physical_kerr_MHz, correction and
 # mode_labels. None of them was ever read -- the old dispatch took `**kwargs`

@@ -21,7 +21,7 @@ rather than depending on the acquisition notebook having run.
 
 **The two job submissions are not here.** An earlier pass wrapped cells 363
 and 365 whole, as `measure_visibility` and `run_ensemble`, which hid both the
-`BatchRunner` construction and a closed keyword list in front of
+runner construction and a closed keyword list in front of
 `runner.execute` -- the notebook could no longer reach `batch_size`, `log`, or
 anything else per run. Both cells now build their runner and call `execute`
 inline, as `mbr_campaign.build_spectroscopy_batch` already expects of its
@@ -304,10 +304,11 @@ def build_sff_plan(campaign, station, client, config=None):
     }
 
 
-def plot_sff_visibility(sff_visibility_batch, sff):
+def plot_sff_visibility(sff_visibility_expts, sff):
     """Plot the depth-zero encoder/decoder visibility (cell 363 tail).
 
-    The one job it reports on is `runner.execute(sff["plan"].configs[:1], ...)`
+    The one job it reports on is
+    `runner.execute(configs=sff["plan"].configs[:1], ...)`
     in the notebook. Run it before the full ensemble: the ensemble analysis
     divides by this visibility.
 
@@ -316,7 +317,7 @@ def plot_sff_visibility(sff_visibility_batch, sff):
     sff_dimension = sff["dimension"]
     sff_occupations = sff["occupations"]
 
-    sff_visibility_expt = sff_visibility_batch.batch_expts[0]
+    sff_visibility_expt = sff_visibility_expts[0]
     sff_visibility = (
         np.asarray(sff_visibility_expt.data.visibility_real, dtype=float)
         + 1j * np.asarray(sff_visibility_expt.data.visibility_imag, dtype=float)
@@ -336,7 +337,6 @@ def plot_sff_visibility(sff_visibility_batch, sff):
     plt.grid(alpha=0.25)
     plt.show()
 
-    print("visibility job:", sff_visibility_batch.batch_job_ids)
     print("five weakest occupations:")
     for sff_index in np.argsort(sff_visibility_magnitude)[:5]:
         print(

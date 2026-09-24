@@ -43,6 +43,13 @@ Usage (Local Mode - Direct Execution):
 
     # Runs directly on hardware, bypassing job queue
     expt = runner.run_local(some_param=123)
+
+Usage (Many Jobs):
+    # One job per override dict. In queue mode at most batch_size jobs wait in
+    # the queue at a time, so the worker always has work but a long campaign
+    # is not queued all at once. Returns a list of Experiments, in order.
+    expts = runner.execute(configs=[dict(reps=100), dict(reps=200)], batch_size=10)
+    runner.last_job_ids   # queue job IDs; empty for local runs
 """
 
 from copy import deepcopy
@@ -125,6 +132,38 @@ def default_postprocessor(station, expt):
     return None
 
 
+def json_plain(obj):
+    """Convert numpy values in a config to plain types for the queue's JSON."""
+    if isinstance(obj, dict):
+        return {key: json_plain(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_plain(value) for value in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj
+
+
+def _is_real_job_client(client):
+    """Does this client talk to the actual job server?
+
+    Imported lazily so this module does not pull in job_server at import
+    time, and returns False if job_server is unavailable -- in which case
+    nothing could reach a real queue anyway.
+    """
+    try:
+        from job_server import JobClient
+    except Exception:
+        return False
+    return isinstance(client, JobClient)
+
+
+# run() keywords that act after the job finishes; everything else except
+# ``priority`` goes to the preprocessor.
+_COLLECT_KEYS = ("postprocess", "poll_interval", "timeout", "log", "show", "display_kwargs")
+
+
 def mock_run_defaults(kwargs: dict, local: bool) -> dict:
     """Defaults for a run on a mock station: acquire and save only.
 
@@ -193,6 +232,7 @@ class CharacterizationRunner:
         self.program = ExptProgram
         self.job_client = job_client
         self.last_job_result = None  # Stores JobResult from most recent run()
+        self.last_job_ids = []  # Queue job IDs of the most recent run()/execute()
         self.use_queue = use_queue
         self.show = show
 
@@ -393,12 +433,20 @@ class CharacterizationRunner:
                 "job_client is required for run(). Either pass job_client to "
                 "CharacterizationRunner() or use run_local() for direct execution."
             )
+        job_id = self._submit(priority=priority, **kwargs)
+        self.last_job_ids = [job_id]
+        return self._collect(
+            job_id,
+            postprocess=postprocess,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            log=log,
+            show=show,
+            display_kwargs=display_kwargs,
+        )
 
-        # Get experiment module path from class
-        experiment_module = self.ExptClass.__module__
-        experiment_class = self.ExptClass.__name__
-
-        # Get program module and class if provided
+    def _submit(self, priority: int = 0, **kwargs) -> str:
+        """Preprocess one config, submit it to the job queue, return the job ID."""
         program_module = None
         program_class = None
         if self.program is not None:
@@ -408,47 +456,41 @@ class CharacterizationRunner:
         # Run preprocessor to get final config
         expt_config = self.preprocessor(self.station, self.default_expt_cfg, **kwargs)
 
-        # Convert to dict for JSON serialization, handling numpy types
-        def convert_numpy(obj):
-            if isinstance(obj, dict):
-                return {k: convert_numpy(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy(item) for item in obj]
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, (np.integer, np.floating)):
-                return obj.item()
-            return obj
-
-        expt_config_dict = convert_numpy(dict(expt_config))
-
-        # Serialize station config to pass with job
-        station_config_json = self._serialize_station_config()
-
-        # Submit job to queue
-        job_id = self.job_client.submit_job(
-            experiment_class=experiment_class,
-            experiment_module=experiment_module,
-            expt_config=expt_config_dict,
-            station_config=station_config_json,
+        return self.job_client.submit_job(
+            experiment_class=self.ExptClass.__name__,
+            experiment_module=self.ExptClass.__module__,
+            expt_config=json_plain(dict(expt_config)),
+            # The station config as it is now, including any updates made by
+            # earlier postprocessors.
+            station_config=self._serialize_station_config(),
             user=self.station.user,
             priority=priority,
             program_class=program_class,
             program_module=program_module,
         )
 
-        # Wait for completion
+    def _collect(
+        self,
+        job_id: str,
+        postprocess: bool = True,
+        poll_interval: float = 2.0,
+        timeout: Optional[float] = None,
+        log: Optional[bool] = None,
+        show: Optional[bool] = None,
+        display_kwargs: Optional[dict] = None,
+        verbose: bool = True,
+    ) -> Experiment:
+        """Wait for one queued job, load its Experiment, postprocess and render."""
         result = self.job_client.wait_for_completion(
             job_id,
             poll_interval=poll_interval,
             timeout=timeout,
-            verbose=True,
+            verbose=verbose,
         )
 
         # Store result for later access (job_id, config versions, etc.)
         self.last_job_result = result
 
-        # Check for failure
         if not result.is_successful():
             raise RuntimeError(
                 f"Job {job_id} {result.status}: {result.error_message or 'No details'}"
@@ -457,7 +499,6 @@ class CharacterizationRunner:
         # Load the expt object from pickle file
         expt = result.load_expt()
 
-        # Run postprocessor
         if postprocess:
             self.postprocessor(self.station, expt)
 
@@ -550,43 +591,119 @@ class CharacterizationRunner:
 
         return expt
 
-    def execute(self, use_queue: Optional[bool] = None, **kwargs) -> Experiment:
+    def execute(
+        self,
+        configs: Optional[list] = None,
+        batch_size: int = 10,
+        use_queue: Optional[bool] = None,
+        allow_queue_in_mock: bool = False,
+        **kwargs,
+    ) -> Union[Experiment, list]:
         """
-        Run experiment using configured or specified execution mode.
+        Run one job, or one job per override dict, in the configured mode.
 
-        This is a convenience method that dispatches to run() or run_local()
-        based on the use_queue flag, allowing notebooks to toggle execution
-        mode without changing individual experiment calls.
+        Dispatches to run() or run_local() based on the use_queue flag, so
+        notebooks can toggle execution mode without changing individual calls.
 
         Args:
-            use_queue: Override instance setting. If None, uses self.use_queue.
-                       True = run() via job queue, False = run_local()
+            configs: None runs one job and returns its Experiment. A list of
+                override dicts runs one job per dict, in order, and returns a
+                list of Experiments. Each dict is merged over **kwargs.
+            batch_size: With configs in queue mode, the most jobs waiting in the
+                queue at a time. The next group is submitted when the current
+                one is collected. Local runs go one at a time and ignore it.
+            use_queue: Override instance setting. If None, uses self.use_queue,
+                except on a mock station, which then runs locally.
+                True = run() via job queue, False = run_local()
+            allow_queue_in_mock: use_queue=True on a mock station raises,
+                because the worker runs the main checkout against real
+                hardware unless it was started with --mock. Set True if it was.
             **kwargs: Passed to run() or run_local(). On a mock station,
                 postprocess and go_kwargs['analyze'] default to False
                 (see mock_run_defaults).
 
         Returns:
-            Completed Experiment object
+            Completed Experiment, or a list of them if configs is given.
+            Queue job IDs are in self.last_job_ids.
         """
         mode = use_queue if use_queue is not None else self.use_queue
+        is_mock = getattr(self.station, "is_mock", False)
+        # A mock station runs locally unless this call asks for the queue.
+        if is_mock and use_queue is None:
+            mode = False
 
-        # Auto-default for mock instruments: silently switch to local when
-        # using the inherited default; warn if user explicitly opted in.
-        if mode and getattr(self.station, "is_mock", False):
-            if use_queue is True:
-                import warnings
-                warnings.warn(
-                    "use_queue=True with mock instruments — worker on the queue "
-                    "will run against real hardware unless it was also started "
-                    "with --mock.",
-                    RuntimeWarning,
-                )
-            else:
-                mode = False
-        if getattr(self.station, "is_mock", False):
-            kwargs = mock_run_defaults(kwargs, local=not mode)
+        if mode and self.job_client is None:
+            raise ValueError(
+                "job_client is required for queue mode. Pass job_client to "
+                "CharacterizationRunner(), or use_queue=False for direct execution."
+            )
+        if (mode and is_mock and not allow_queue_in_mock
+                and _is_real_job_client(self.job_client)):
+            raise RuntimeError(
+                "execute() would submit to the job queue, but this station has "
+                "mock instruments. The queue worker would run the main checkout "
+                "against real hardware unless it was started with --mock. Pass "
+                "use_queue=False for local execution, or start a mock worker "
+                "and pass allow_queue_in_mock=True."
+            )
 
-        if mode:
-            return self.run(**kwargs)
-        else:
-            return self.run_local(**kwargs)
+        if configs is None:
+            if is_mock:
+                kwargs = mock_run_defaults(kwargs, local=not mode)
+            return self.run(**kwargs) if mode else self.run_local(**kwargs)
+
+        if (isinstance(batch_size, (bool, np.bool_))
+                or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
+            raise ValueError("batch_size must be a positive integer")
+        configs = list(configs)
+        if not configs:
+            raise ValueError("configs cannot be empty")
+
+        jobs = []
+        for overrides in configs:
+            run_kwargs = {**kwargs, **overrides}
+            if is_mock:
+                run_kwargs = mock_run_defaults(run_kwargs, local=not mode)
+            jobs.append(run_kwargs)
+
+        if not mode:
+            self.last_job_ids = []
+            return [self.run_local(**run_kwargs) for run_kwargs in jobs]
+        return self._run_queue_batches(jobs, batch_size)
+
+    def _run_queue_batches(self, jobs: list, batch_size: int) -> list:
+        """Submit at most batch_size jobs, collect them in order, repeat.
+
+        If anything fails or is interrupted, the jobs still waiting in the
+        queue are cancelled, so the queue is not left holding jobs nobody
+        is waiting for.
+        """
+        expts = []
+        self.last_job_ids = []
+        self.last_job_result = None
+        for start in range(0, len(jobs), batch_size):
+            group = jobs[start:start + batch_size]
+            print(f"batch {start // batch_size + 1}: {len(group)} jobs")
+            pending = []
+            try:
+                for run_kwargs in group:
+                    submit_kwargs = {k: v for k, v in run_kwargs.items()
+                                     if k not in _COLLECT_KEYS}
+                    job_id = self._submit(**submit_kwargs)
+                    pending.append((job_id, run_kwargs))
+                    self.last_job_ids.append(job_id)
+
+                while pending:
+                    job_id, run_kwargs = pending[0]
+                    collect_kwargs = {k: run_kwargs[k] for k in _COLLECT_KEYS
+                                      if k in run_kwargs}
+                    expts.append(self._collect(job_id, verbose=False, **collect_kwargs))
+                    pending.pop(0)
+            except BaseException:  # includes KeyboardInterrupt
+                for job_id, _ in pending:
+                    try:
+                        self.job_client.cancel_job(job_id)
+                    except Exception:
+                        pass
+                raise
+        return expts

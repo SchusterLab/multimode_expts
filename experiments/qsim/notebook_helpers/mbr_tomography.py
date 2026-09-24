@@ -32,6 +32,7 @@ from itertools import product
 import matplotlib.pyplot as plt
 import numpy as np
 
+from experiments.characterization_runner import CharacterizationRunner
 from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
 
@@ -61,7 +62,6 @@ def build_tomography_plan(campaign, station, client, N=1, step=10,
     encspec_sync_cycles = campaign.sync_cycles
     floquet_dark_mode_readout = campaign.floquet_dark_mode_readout
     EncSpec = campaign.EncSpec
-    BatchRunner = campaign.BatchRunner
 
     if hamtom_N not in encspec_calibrations:
         raise RuntimeError(
@@ -96,7 +96,7 @@ def build_tomography_plan(campaign, station, client, N=1, step=10,
         sync_cycles=encspec_sync_cycles,
         reps=hamtom_reps,
     )
-    hamtom_runner = BatchRunner(
+    hamtom_runner = CharacterizationRunner(
         station=station,
         ExptClass=EncSpec,
         ExptProgram=(
@@ -222,10 +222,10 @@ def analyze_tomography(hamtom_expt, plan):
     hamtom_depth = plan["depth"]
     hamtom_cycle_us = plan["cycle_us"]
 
-    # BatchRunner returns the acquisition class; tomography needs the
+    # execute(configs=...) returns the job Experiments; tomography needs the
     # aggregate propagator analyzer, reusing the already acquired children.
     if not isinstance(hamtom_expt, MBRPropagatorExperiment):
-        hamtom_expt = MBRPropagatorExperiment.from_batch(hamtom_expt)
+        hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_expt)
 
     hamtom_data = hamtom_expt.analyze(
         occupations=hamtom_occupations,

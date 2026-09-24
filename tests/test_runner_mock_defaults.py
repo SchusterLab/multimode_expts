@@ -4,7 +4,8 @@
 Mock data is all zeros. A fit on it gives NaN or an error, and a
 postprocessor would write that result into the station config for the next
 cell. So on a mock station, `execute()` of `CharacterizationRunner`,
-`SweepRunner` and `BatchRunner` defaults to no analyze and no postprocess
+and `SweepRunner` (including `execute(configs=...)`) defaults to no analyze
+and no postprocess
 (see `mock_run_defaults` and docs/qsim/mock_suite_plan.md, step 1).
 An explicit argument from the caller still wins.
 
@@ -15,7 +16,6 @@ Run:  pixi run python -m pytest tests/test_runner_mock_defaults.py -v
 """
 from slab import AttrDict
 
-from experiments.batch_runner import BatchRunner
 from experiments.characterization_runner import CharacterizationRunner, mock_run_defaults
 from experiments.sweep_runner import SweepRunner
 
@@ -32,8 +32,8 @@ def _counting_postprocessor():
     return post, calls
 
 
-def _char_runner(station, post, Runner=CharacterizationRunner):
-    return Runner(
+def _char_runner(station, post):
+    return CharacterizationRunner(
         station=station,
         ExptClass=MockExperiment,
         default_expt_cfg=AttrDict(dict(start=0, step=60, expts=10)),
@@ -116,25 +116,24 @@ def test_sweep_real_defaults_unchanged(station):
 
 def test_batch_mock_acquires_only(station):
     post, calls = _counting_postprocessor()
-    batch = _char_runner(station, post, Runner=BatchRunner).execute(
-        [dict(), dict()], use_queue=False)
-    assert len(batch.batch_expts) == 2
-    assert all(e._analysis is None for e in batch.batch_expts)
+    expts = _char_runner(station, post).execute(configs=[dict(), dict()])
+    assert len(expts) == 2
+    assert all(e._analysis is None for e in expts)
     assert calls == []
 
 
 def test_batch_mock_explicit_wins(station):
     post, calls = _counting_postprocessor()
-    batch = _char_runner(station, post, Runner=BatchRunner).execute(
-        [dict(go_kwargs=dict(analyze=True, save=False))], postprocess=True, use_queue=False)
-    assert batch.batch_expts[0]._analysis is not None
+    expts = _char_runner(station, post).execute(
+        configs=[dict(go_kwargs=dict(analyze=True, save=False))], postprocess=True)
+    assert expts[0]._analysis is not None
     assert len(calls) == 1
 
 
 def test_batch_real_defaults_unchanged(station):
     station._is_mock = False
     post, calls = _counting_postprocessor()
-    batch = _char_runner(station, post, Runner=BatchRunner).execute(
-        [dict(go_kwargs=dict(save=False))], use_queue=False, show=False)
-    assert batch.batch_expts[0]._analysis is not None
+    expts = _char_runner(station, post).execute(
+        configs=[dict(go_kwargs=dict(save=False))], show=False)
+    assert expts[0]._analysis is not None
     assert len(calls) == 1

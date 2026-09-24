@@ -69,7 +69,7 @@ STAGE_MODULES = {
     "EncodingHamiltonianSpectroscopyExperiment":
         "experiments.qsim.floquet_dark_mode_readout",
 }
-LOADERS = ("from_job_files", "from_job_ids", "_from_expts", "from_batch")
+LOADERS = ("from_job_files", "from_job_ids", "_from_expts")
 STAGE_ARGUMENT = re.compile(
     r"\bstage\s*=\s*['\"](?:calibration|spectrum|orthogonality|propagator)['\"]")
 
@@ -91,6 +91,8 @@ def _successor_sources():
     out = []
     for directory in SUCCESSOR_DIRS:
         for path in sorted(directory.rglob("*.py")):
+            if ".ipynb_checkpoints" in path.parts:
+                continue              # Jupyter autosaves, not tracked
             out.append((
                 str(path.relative_to(REPO_ROOT)),
                 [path.read_text(encoding="utf-8", errors="replace")],
@@ -254,8 +256,8 @@ def test_acquisition_provenance_is_untouched(notebook):
 
     The queue records `experiment_class`/`experiment_module` per job and the
     saved file is `JOB-<id>_<ClassName>.h5`, so pointing acquisition at a
-    stage class would orphan every dataset jonginn has. `from_batch` exists so
-    the aggregate can be re-wrapped for analysis without touching this.
+    stage class would orphan every dataset jonginn has. `_from_expts` wraps
+    the acquired jobs for analysis without touching this.
     """
     name, cells = notebook
     text = "\n".join(cells)

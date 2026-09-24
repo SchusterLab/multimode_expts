@@ -172,12 +172,12 @@ disorder_batch, disorder_runner, disorder_cycle_branches = build_pairwise_batch(
     plan=pairwise_plan,
 )
 
-disorder_expt = MBRSpectrumExperiment.from_batch(disorder_runner.execute(
-    disorder_batch.configs,
+disorder_expt = MBRSpectrumExperiment._from_expts(disorder_runner.execute(
+    configs=disorder_batch.configs,
     batch_size=pairwise_plan["disorder_batch_size"],
     log=True,
     show=False,
-))
+), job_ids=disorder_runner.last_job_ids, station=disorder_runner.station)
 disorder_expt.analyze(
     cycle_branches=disorder_cycle_branches,
     spectrum_method="mpm",
@@ -256,12 +256,12 @@ for realization_plan in diag_plan["diag_disorder_plans"]:
         realization_plan=realization_plan,
     )
     try:
-        diag_expt = MBRSpectrumExperiment.from_batch(diag_runner.execute(
-            diag_batch.configs,
+        diag_expt = MBRSpectrumExperiment._from_expts(diag_runner.execute(
+            configs=diag_batch.configs,
             batch_size=diag_config.batch_size,
             log=True,
             show=False,
-        ))
+        ), job_ids=diag_runner.last_job_ids, station=diag_runner.station)
     except BaseException:
         # An interrupted submission still has to name the jobs it sent.
         print(f"r={diag_realization} submitted before interruption:",
@@ -400,7 +400,7 @@ for realization_plan in d72_plan["d72_plans"]:
         continue
 
     # build_d72_plans already built the batch for each realization.
-    d72_runner = campaign.BatchRunner(
+    d72_runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
         ExptProgram=realization_plan.batch.program,
@@ -410,12 +410,12 @@ for realization_plan in d72_plan["d72_plans"]:
         show=False,
     )
     try:
-        d72_expt = MBRSpectrumExperiment.from_batch(d72_runner.execute(
-            realization_plan.batch.configs,
+        d72_expt = MBRSpectrumExperiment._from_expts(d72_runner.execute(
+            configs=realization_plan.batch.configs,
             batch_size=d72_config.batch_size,
             log=True,
             show=False,
-        ))
+        ), job_ids=d72_runner.last_job_ids, station=d72_runner.station)
     except BaseException:
         print(f"r={realization_plan.realization} submitted before "
               "interruption:",

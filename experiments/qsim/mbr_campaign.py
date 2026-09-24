@@ -36,8 +36,8 @@ recorded campaign instead, :func:`config_set_for_job` reads the four version
 IDs out of job provenance; anything not pinned is then fetched from the archive
 on the measurement PC via ``$MULTIMODE_CONFIG_ARCHIVE``.
 
-**The queue is optional.** ``BatchRunner.execute`` requires a ``job_client``,
-so off-prod :func:`run_stage` falls back to acquiring in-process. A local job
+**The queue is optional.** Queue mode needs a ``job_client``, so off-prod
+:func:`run_stage` falls back to acquiring in-process. A local job
 server plus ``worker --mock`` is the way to exercise the queue itself; that is
 a separate concern from whether the programs are right.
 """
@@ -50,7 +50,7 @@ from pathlib import Path
 import numpy as np
 from slab import AttrDict
 
-from experiments.batch_runner import BatchRunner
+from experiments.characterization_runner import CharacterizationRunner
 from experiments.floquet_timing import config_archive
 from experiments.qsim import floquet_dark_mode_readout as fdmr
 from experiments.qsim.legacy_mbr import (
@@ -343,24 +343,24 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
     """Acquire one stage, through the queue if a client is given.
 
     With a ``job_client`` this is the production path and goes through
-    ``BatchRunner``, so provenance and HDF5 output happen as usual. Without
-    one it acquires in-process, which is the only option off-prod; the return
-    value is then a list of acquired Experiments rather than an aggregate.
-    Queued jobs analyze their own quadratures before saving. ``show`` and
-    ``log`` control per-job plots and lab-notebook entries;
+    ``CharacterizationRunner.execute(configs=...)``, so provenance and HDF5
+    output happen as usual. Without one it acquires in-process, which is the
+    only option off-prod. Either way the return value is a list of acquired
+    Experiments. Queued jobs analyze their own quadratures before saving.
+    ``show`` and ``log`` control per-job plots and lab-notebook entries;
     ``log=None`` follows ``station.log_measurements``.
-    Analyze the returned aggregate separately.
+    Analyze the returned Experiments separately.
     """
     owner, program, batch = build_stage(
         stage, defaults, swap_stors, occupations, **kwargs)
 
     if job_client is not None:
-        runner = BatchRunner(
+        runner = CharacterizationRunner(
             station=station, ExptClass=owner, ExptProgram=program,
             default_expt_cfg=batch.default_expt_cfg,
             job_client=job_client, show=show)
-        return runner.execute(batch.configs, batch_size=batch_size,show=show,
-                              log=log)
+        return runner.execute(configs=batch.configs, batch_size=batch_size,
+                              use_queue=True, show=show, log=log)
 
     acquired = []
     for override in batch.configs:
