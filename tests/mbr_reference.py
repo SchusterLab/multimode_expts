@@ -294,6 +294,15 @@ def converted_orthogonality(out_root):
     return MBROrthogonalityExperiment.from_manifest(converted.manifest_path)
 
 
+def converted_propagator(out_root):
+    """-> MBRHamTomoExperiment for August N=1 (q = 0, 20), through the migration script."""
+    from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+
+    converted = migration_tool().migrate_propagator(
+        PROPAGATOR_IDS, out_root=out_root, load_shots=False)
+    return MBRHamTomoExperiment.from_manifest(converted.manifest_path)
+
+
 # --------------------------------------------------------------------------
 # Flattening, so a nested analysis result can be compared field by field
 # --------------------------------------------------------------------------

@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Hamiltonian tomography from propagator matrices.
+"""Hamiltonian tomography from propagator matrices, through MBRHamTomoExperiment.
 
 Why this file exists
 --------------------
 `analyze_propagator_dynamics` was the one method of 114 that the god-file
-split lost outright: the `stage='propagator'` dispatch's `calibration=` branch
-called it, the branch was not carried into `MBRPropagatorExperiment.analyze`,
-and no definition survived anywhere in `experiments/` or `fitting/`.
-`qsim_experiments.ipynb` cells 242 and 263 are its only callers, and both ask
-for it by passing `calibration=`.
-
-It is restored verbatim, so these tests are characterization rather than
-specification: they pin what the method does, not that it is right. It never
-had a test, which is part of why its loss was invisible.
+split lost outright, and it never had a test, which is part of why its loss
+was invisible. It was restored verbatim; the redesign
+(docs/qsim/mbr_redesign.md, step 5) moved it to
+`fitting/qsim/mbr_propagator.py`, and `MBRHamTomoExperiment.analyze` calls it
+when it has a calibration set. These tests are characterization rather than
+specification: they pin what the method does, not that it is right.
 
 The fixture is a *synthetic* propagator built from a known Hamiltonian, so
 the two estimators have a right answer to be checked against:
@@ -22,21 +19,30 @@ the two estimators have a right answer to be checked against:
 with `E_endpoint` diagonal, which is the structure the method assumes
 (`<i|U(q)|j> = D_i U_q E_j`). That makes the eigenphase route exact and the
 finite-difference route accurate to its own truncation error. No hardware, no
-saved data.
+saved data: the matrices are written into synthetic `MBROrthoColumnExperiment`
+jobs as excited-state probabilities, and the q = 0 self-returns into
+synthetic `MBRStarkCalExperiment` jobs, so the whole path from job data to
+tomography runs.
 
 Run:  pixi run python -m pytest tests/test_propagator_dynamics.py -v
 """
 from itertools import product
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from slab import AttrDict
 
-from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment
+from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES, MBRStarkCalExperiment
 
 FLOQUET_CYCLE_US = 0.5
 STEP = 2                        # even, so [0, 2, 4] is a valid FD triple
 CYCLES = [0, STEP, 2 * STEP]
+SWAP_STORS = [1]                # modes M1, S1
 
 
 def _fixed_n_basis(photon_number, mode_count):
@@ -46,6 +52,61 @@ def _fixed_n_basis(photon_number, mode_count):
               if sum(state) == photon_number]
     states.sort(reverse=True)
     return states
+
+
+def _synthetic_job(job_class, expt, sweep, returns, cycle_us, name):
+    """A job whose data give ``complex_return == returns`` in its ``analyze``.
+
+    With Ig = 0 and Ie = 1 the signal is Pe, and Pe at [prep, analyzer] =
+    [0, 0], [180, 0], [0, 90], [180, 90] is chosen so that Q_0 = Re A and
+    Q_90 = -Im A. The stand-in ``prog`` carries the Floquet timing, like the
+    one ``experiments.saved_jobs`` attaches to saved data.
+    """
+    returns = np.asarray(returns, dtype=complex)
+    job = job_class.__new__(job_class)
+    job.cfg = AttrDict(dict(
+        expt=dict(expt, qubits=[0]),
+        device=dict(readout=dict(Ig=[0.], Ie=[1.]), manipulate=dict(kerr=[-0.001]))))
+    job.data = dict(xpts=np.asarray(RAMSEY_PHASES), ypts=np.asarray(sweep),
+                    avgi=np.stack([(1 + returns.real) / 2, (1 - returns.real) / 2,
+                                   (1 - returns.imag) / 2, (1 + returns.imag) / 2], axis=1))
+    job.prog = SimpleNamespace(calculate_floquet_cycle_us=lambda: cycle_us,
+                               m1s_pi_fracs=[40] * 7, source="synthetic")
+    job.fname = f"{name}.h5"
+    return job
+
+
+def _tomography(occupations, matrices, cycles, self_returns, cycle_us=FLOQUET_CYCLE_US,
+                calibration_cycle_us=None):
+    """-> MBRHamTomoExperiment over synthetic jobs, with its calibration set.
+
+    ``self_returns`` maps occupation -> q = 0 self-return; None gives no
+    calibration set.
+    """
+    parts = []
+    for cycle, matrix in zip(cycles, matrices):
+        columns = [_synthetic_job(
+            MBROrthoColumnExperiment,
+            MBROrthoColumnExperiment.job_config(initial, occupations, SWAP_STORS, cycle=cycle),
+            occupations, matrix[:, i], cycle_us, f"column_{i}_q{cycle}")
+            for i, initial in enumerate(occupations)]
+        parts.append(MBROrthogonalityExperiment.from_children(columns))
+    calibration = None
+    if self_returns is not None:
+        calibration = MBRCalibrationSetExperiment.from_children([_synthetic_job(
+            MBRStarkCalExperiment,
+            MBRStarkCalExperiment.job_config(occupation, [0, 1, 2], SWAP_STORS),
+            [0, 1, 2], [value] * 3, calibration_cycle_us or cycle_us, f"stark_{i}")
+            for i, (occupation, value) in enumerate(self_returns.items())])
+    return MBRHamTomoExperiment.from_parts(parts, calibration=calibration)
+
+
+def _matrices(hamiltonian_MHz, endpoint, cycle_us):
+    return np.asarray([
+        endpoint[:, None]
+        * _expm(-2j * np.pi * hamiltonian_MHz * (cycle * cycle_us))
+        * endpoint[None, :]
+        for cycle in CYCLES])
 
 
 @pytest.fixture
@@ -68,29 +129,11 @@ def tomography():
     # method divides out. Complex, so the phase has to be handled too.
     endpoint = np.array([0.81 + 0.05j, 0.74 - 0.03j, 0.88 + 0.01j])
 
-    matrices = []
-    for cycle in CYCLES:
-        time_us = cycle * FLOQUET_CYCLE_US
-        evolution = _expm(-2j * np.pi * hamiltonian_MHz * time_us)
-        matrices.append(endpoint[:, None] * evolution * endpoint[None, :])
-    matrices = np.asarray(matrices)
-
-    reconstruction = AttrDict(dict(
-        occupations=[list(state) for state in occupations],
-        mode_labels=["M1", "S1"],
-        cycles=np.asarray(CYCLES, dtype=int),
-        matrices=matrices,
-    ))
+    matrices = _matrices(hamiltonian_MHz, endpoint, FLOQUET_CYCLE_US)
     # The calibration supplies the q=0 self-return per occupation, which is
     # endpoint^2 for this construction.
-    calibration = AttrDict(dict(
-        mode_labels=["M1", "S1"],
-        results=[AttrDict(dict(occupation=list(state),
-                               physical_cycles=[0],
-                               complex_return=[endpoint[i] ** 2]))
-                 for i, state in enumerate(occupations)],
-    ))
-    return reconstruction, calibration, hamiltonian_MHz, endpoint
+    self_returns = {state: endpoint[i] ** 2 for i, state in enumerate(occupations)}
+    return occupations, matrices, self_returns, hamiltonian_MHz, endpoint
 
 
 def _expm(matrix):
@@ -99,9 +142,9 @@ def _expm(matrix):
     return vectors @ np.diag(np.exp(values)) @ np.linalg.inv(vectors)
 
 
-def _run(reconstruction, calibration, **kwargs):
-    return MBRPropagatorExperiment.analyze_propagator_dynamics(
-        reconstruction, calibration, FLOQUET_CYCLE_US, **kwargs)
+def _run(tomography, **kwargs):
+    occupations, matrices, self_returns, _, _ = tomography
+    return _tomography(occupations, matrices, CYCLES, self_returns).analyze(**kwargs)
 
 
 def test_eigenphase_recovers_the_known_hamiltonian(tomography):
@@ -111,9 +154,9 @@ def test_eigenphase_recovers_the_known_hamiltonian(tomography):
     same batch's q=0 matrix cancels the fixed D and E factors, so the answer
     does not depend on the endpoint inefficiency at all.
     """
-    reconstruction, calibration, hamiltonian_MHz, _ = tomography
+    hamiltonian_MHz = tomography[3]
 
-    result = _run(reconstruction, calibration)
+    result = _run(tomography)
 
     expected = np.sort(np.linalg.eigvalsh(hamiltonian_MHz))
     got = np.sort(result.eigenphase.eigenfrequencies_MHz)
@@ -126,9 +169,7 @@ def test_eigenphase_poles_sit_on_the_unit_circle(tomography):
     A radius far from 1 is how this estimator reports that the data are not
     describable by a single unitary generator.
     """
-    reconstruction, calibration, _, _ = tomography
-
-    result = _run(reconstruction, calibration)
+    result = _run(tomography)
 
     np.testing.assert_allclose(result.eigenphase.pole_radii, 1.0, atol=1e-9)
     assert result.eigenphase.cycle == STEP
@@ -150,9 +191,9 @@ def test_finite_difference_recovers_the_same_hamiltonian(tomography):
     exact here, the derivative is only as good as `2.pi.H.s.T << 1`, and at
     `s.T = 1 us` with frequencies of ~0.05 MHz that product is ~0.3.
     """
-    reconstruction, calibration, hamiltonian_MHz, _ = tomography
+    hamiltonian_MHz = tomography[3]
 
-    result = _run(reconstruction, calibration)
+    result = _run(tomography)
 
     assert result.finite_difference is not None
     assert list(result.finite_difference.cycles) == CYCLES
@@ -175,25 +216,13 @@ def test_finite_difference_is_second_order(tomography):
     defect the missing test let through, since the eigenphase route would
     keep looking perfect either way.
     """
-    _, calibration, hamiltonian_MHz, endpoint = tomography
-    occupations = _fixed_n_basis(2, 2)
+    occupations, _, self_returns, hamiltonian_MHz, endpoint = tomography
     exact = np.sort(np.linalg.eigvalsh(hamiltonian_MHz))
 
     errors = {}
     for cycle_us in (0.5, 0.25, 0.125, 0.0625):
-        matrices = np.asarray([
-            endpoint[:, None]
-            * _expm(-2j * np.pi * hamiltonian_MHz * (cycle * cycle_us))
-            * endpoint[None, :]
-            for cycle in CYCLES])
-        reconstruction = AttrDict(dict(
-            occupations=[list(state) for state in occupations],
-            mode_labels=["M1", "S1"],
-            cycles=np.asarray(CYCLES, dtype=int),
-            matrices=matrices,
-        ))
-        result = MBRPropagatorExperiment.analyze_propagator_dynamics(
-            reconstruction, calibration, cycle_us)
+        result = _tomography(occupations, _matrices(hamiltonian_MHz, endpoint, cycle_us),
+                             CYCLES, self_returns, cycle_us=cycle_us).analyze()
         got = np.sort(result.finite_difference.eigenfrequencies_MHz)
         errors[STEP * cycle_us] = np.max(np.abs(got - exact))
 
@@ -210,18 +239,16 @@ def test_semigroup_residual_is_small_for_a_real_semigroup(tomography):
     This is the diagnostic that says whether the finite-difference number
     means anything, so it must actually be near zero on clean input.
     """
-    reconstruction, calibration, _, _ = tomography
-
-    result = _run(reconstruction, calibration)
+    result = _run(tomography)
 
     assert result.finite_difference.semigroup_relative_residual < 1e-9
 
 
 def test_endpoint_normalization_makes_the_zero_cycle_the_identity(tomography):
     """Dividing by sqrt(self-return) outer product should undo D and E at q=0."""
-    reconstruction, calibration, _, endpoint = tomography
+    endpoint = tomography[4]
 
-    result = _run(reconstruction, calibration)
+    result = _run(tomography)
 
     np.testing.assert_allclose(result.calibration_self_returns, endpoint ** 2)
     assert result.endpoint_normalized_zero_cycle_identity_residual < 1e-9
@@ -231,9 +258,9 @@ def test_endpoint_normalization_makes_the_zero_cycle_the_identity(tomography):
 
 def test_an_explicit_eigenphase_cycle_is_honoured(tomography):
     """And it changes the alias period, which is the reason to choose it."""
-    reconstruction, calibration, hamiltonian_MHz, _ = tomography
+    hamiltonian_MHz = tomography[3]
 
-    result = _run(reconstruction, calibration, eigenphase_cycle=2 * STEP)
+    result = _run(tomography, eigenphase_cycle=2 * STEP)
 
     assert result.eigenphase.cycle == 2 * STEP
     np.testing.assert_allclose(
@@ -251,79 +278,61 @@ def test_an_explicit_eigenphase_cycle_is_honoured(tomography):
     (STEP + 1, "not acquired"),
 ])
 def test_bad_eigenphase_cycles_are_rejected(tomography, bad_cycle, why):
-    reconstruction, calibration, _, _ = tomography
     with pytest.raises(ValueError, match="eigenphase_cycle"):
-        _run(reconstruction, calibration, eigenphase_cycle=bad_cycle)
+        _run(tomography, eigenphase_cycle=bad_cycle)
 
 
 def test_finite_difference_cycles_must_be_an_even_triple(tomography):
-    reconstruction, calibration, _, _ = tomography
     with pytest.raises(ValueError, match="finite_difference_cycles"):
-        _run(reconstruction, calibration, finite_difference_cycles=[0, 1, 2])
+        _run(tomography, finite_difference_cycles=[0, 1, 2])
 
 
 def test_an_incomplete_basis_is_rejected(tomography):
     """Generalized eigenanalysis needs the whole fixed-N sector.
 
-    Dropping a row leaves a matrix that is still square-looking per cycle but
-    no longer represents the sector, and the answer would be silently wrong.
+    Dropping a state leaves a matrix that is still square per cycle but no
+    longer represents the sector, and the answer would be silently wrong.
     """
-    reconstruction, calibration, _, _ = tomography
-    reconstruction.occupations = reconstruction.occupations[:2]
-    reconstruction.matrices = reconstruction.matrices[:, :2, :2]
+    occupations, matrices, self_returns, _, _ = tomography
+    tomo = _tomography(occupations[:2], matrices[:, :2, :2], CYCLES, self_returns)
     with pytest.raises(ValueError, match="complete fixed-N basis"):
-        _run(reconstruction, calibration)
+        tomo.analyze()
 
 
 def test_a_missing_zero_cycle_is_rejected(tomography):
     """Everything here is relative to M_0, so q=0 is not optional."""
-    reconstruction, calibration, _, _ = tomography
-    reconstruction.cycles = np.asarray([STEP, 2 * STEP], dtype=int)
-    reconstruction.matrices = reconstruction.matrices[1:]
+    occupations, matrices, self_returns, _, _ = tomography
+    tomo = _tomography(occupations, matrices[1:], CYCLES[1:], self_returns)
     with pytest.raises(ValueError, match="needs q=0"):
-        _run(reconstruction, calibration)
+        tomo.analyze()
 
 
 def test_a_calibration_missing_an_occupation_is_rejected(tomography):
-    reconstruction, calibration, _, _ = tomography
-    calibration.results = calibration.results[:-1]
+    occupations, matrices, self_returns, _, _ = tomography
+    del self_returns[occupations[-1]]
+    tomo = _tomography(occupations, matrices, CYCLES, self_returns)
     with pytest.raises(ValueError, match="calibration is missing"):
-        _run(reconstruction, calibration)
+        tomo.analyze()
 
 
 def test_mismatched_cycle_times_are_rejected(tomography):
     """The calibration and the propagator must describe the same Floquet cycle."""
-    reconstruction, calibration, _, _ = tomography
-    calibration.hardware = AttrDict(dict(
-        floquet_cycle_us=FLOQUET_CYCLE_US * 1.1))
+    occupations, matrices, self_returns, _, _ = tomography
+    tomo = _tomography(occupations, matrices, CYCLES, self_returns,
+                       calibration_cycle_us=FLOQUET_CYCLE_US * 1.1)
     with pytest.raises(ValueError, match="cycle times differ"):
-        _run(reconstruction, calibration)
+        tomo.analyze()
 
 
 def test_analyze_runs_tomography_only_when_given_a_calibration(tomography):
-    """`analyze(calibration=...)` is how cells 242 and 263 reach all this.
+    """Without a calibration set, ``analyze`` only stacks the matrices."""
+    occupations, matrices, self_returns, _, _ = tomography
 
-    Without the argument `analyze` is reconstruction only, which is what the
-    class did for every caller between the split and the restoration.
-    """
-    reconstruction, calibration, _, _ = tomography
+    plain = _tomography(occupations, matrices, CYCLES, None).analyze()
+    assert "eigenphase" not in plain
+    np.testing.assert_allclose(plain.matrices, matrices, atol=1e-12)
+    assert plain.floquet_cycle_us == FLOQUET_CYCLE_US
 
-    expt = MBRPropagatorExperiment.__new__(MBRPropagatorExperiment)
-    expt.batch_expts = []
-    expt._analysis_station = None
-    expt.data = AttrDict()
-
-    # Stand in for the reconstruction step, which needs saved jobs.
-    MBRPropagatorExperiment.reconstruct_propagator = staticmethod(
-        lambda expts, occupations=None: reconstruction)
-    try:
-        plain = expt.analyze()
-        assert "eigenphase" not in plain
-
-        with_tomography = expt.analyze(calibration=calibration,
-                                       floquet_cycle_us=FLOQUET_CYCLE_US)
-        assert "eigenphase" in with_tomography
-        assert with_tomography.floquet_cycle_us == FLOQUET_CYCLE_US
-        assert with_tomography.calibration is not None
-    finally:
-        del MBRPropagatorExperiment.reconstruct_propagator
+    with_tomography = _tomography(occupations, matrices, CYCLES, self_returns).analyze()
+    assert "eigenphase" in with_tomography
+    assert with_tomography.calibration is not None

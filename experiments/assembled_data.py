@@ -55,9 +55,18 @@ def code_version():
     return commit + ("+dirty" if dirty else "")
 
 
-def new_stem(class_name):
-    """-> a file stem that sorts by time, e.g. ``260924_153012_MBRCalibrationSetExperiment``."""
-    return f"{datetime.now():%y%m%d_%H%M%S}_{class_name}"
+def new_stem(class_name, directory):
+    """-> a file stem that sorts by time, e.g. ``260924_153012_MBRCalibrationSetExperiment``.
+
+    A second save in the same second in ``directory`` gets ``_2``, ``_3``, ...
+    so it never overwrites the first.
+    """
+    stem = f"{datetime.now():%y%m%d_%H%M%S}_{class_name}"
+    candidate, count = stem, 1
+    while any((Path(directory) / f"{candidate}{suffix}").exists() for suffix in (".yaml", ".h5")):
+        count += 1
+        candidate = f"{stem}_{count}"
+    return candidate
 
 
 def _relative(path, base):
@@ -193,6 +202,10 @@ class AssembledExperiment:
     def assembled_attrs(self):
         return {}
 
+    def _child_files(self):
+        """-> the files ``save()`` lists as ``raw_files``: the job HDF5s."""
+        return [Path(child.fname) for child in self.children]
+
     @classmethod
     def _load_children(cls, manifest, timing=None):
         from experiments.saved_jobs import load_experiment
@@ -232,10 +245,10 @@ class AssembledExperiment:
             raise ValueError("run analyze() before save()")
         if notes is not None:
             self.notes = notes
-        raw_files = [Path(child.fname) for child in self.children]
+        raw_files = self._child_files()
         if directory is None:
             directory = experiment_root(raw_files[0]) / ASSEMBLED_DIR
-        stem = new_stem(type(self).__name__)
+        stem = new_stem(type(self).__name__, directory)
         manifest_path = Path(directory) / f"{stem}.yaml"
         h5_path = Path(directory) / f"{stem}.h5"
         version = code_version()

@@ -39,6 +39,13 @@ Kinds
     ``MBROrthoColumnExperiment`` file per job, then one
     ``MBROrthogonalityExperiment`` manifest and assembled HDF5.
     Example: 35 files -> 35 + 1 + 1.
+``propagator``
+    Old ``EncodingPropagatorProgram`` jobs, one per initial occupation, each
+    sweeping cycles x decoders x analyzer phase 0/90 -> one
+    ``MBROrthoColumnExperiment`` file per job and cycle, one
+    ``MBROrthogonalityExperiment`` per cycle, then one
+    ``MBRHamTomoExperiment`` over them. Example: 5 files at q = 0, 20 ->
+    10 columns, 2 + 2 orthogonality files, 1 + 1 tomography files.
 
 Each converted file records the old job IDs and file paths it came from
 (``converted_from``) and its new job class (``job_class``), and carries the
@@ -69,6 +76,7 @@ from slab.experiment import NpEncoder  # noqa: E402
 from experiments import assembled_data  # noqa: E402
 from experiments.job_paths import job_records, resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment  # noqa: E402
+from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment  # noqa: E402
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment  # noqa: E402
 from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment  # noqa: E402
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment  # noqa: E402
@@ -470,8 +478,31 @@ def migrate_orthogonality(job_ids, out_root=None, load_shots=True, notes="", tim
     return ortho
 
 
+def migrate_propagator(job_ids, out_root=None, load_shots=True, notes="", timing=None):
+    """Convert one propagator dataset. -> the saved MBRHamTomoExperiment.
+
+    No calibration set is attached: the old jobs name none. Pass one to
+    ``MBRHamTomoExperiment.from_parts`` to run the tomography.
+    """
+    paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
+    out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
+    for job in jobs:
+        if "cycle_decoder_analyzers" not in job.cfg.expt:
+            raise ValueError(f"{job.job_id} is not a propagator job")
+    parts = []
+    for children, sources in convert_columns(jobs, out_root / assembled_data.CONVERTED_DIR).values():
+        ortho = MBROrthogonalityExperiment.from_children(children, job_ids=sources, notes=notes)
+        ortho.analyze()
+        ortho.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
+        parts.append(ortho)
+    tomo = MBRHamTomoExperiment.from_parts(parts, notes=notes)
+    tomo.analyze()
+    tomo.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
+    return tomo
+
+
 MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum,
-              "orthogonality": migrate_orthogonality}
+              "orthogonality": migrate_orthogonality, "propagator": migrate_propagator}
 
 
 def main(argv=None):

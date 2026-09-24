@@ -192,6 +192,17 @@ still need. Exception: their runner calls move in step 1.
   Fixture: `september_N3_orthogonality` in `tests/data/mbr_datasets.json` (35 jobs, given by
   the user). Gate: `tests/test_mbr_orthogonality.py`; the new matrix equals the old
   `reconstruct_orthogonality` (xfail baseline, XPASS).
+- Step 5 done (2026-09-24). `experiments/qsim/mbr_ham_tomo.py` (`MBRHamTomoExperiment`,
+  `from_parts`; its manifest lists the parts' manifests, through the new
+  `AssembledExperiment._child_files` hook). The tomography is a plain function,
+  `fitting/qsim/mbr_propagator.analyze_propagator_dynamics`, run only when a calibration
+  set is given (it needs each occupation's q = 0 self-return). Migration kind `propagator`
+  (old job -> one OrthoColumn per cycle -> one Orthogonality per cycle -> HamTomo).
+  Fixture: `august_N1_propagator` (5 jobs, q = 0, 20; the user is not sure it is the set in
+  the logged plots, so it gates code only). `tests/test_propagator_dynamics.py` now runs on
+  synthetic OrthoColumn and StarkCal jobs through `MBRHamTomoExperiment`; it is exact on its
+  synthetic data, so it stays blocking. Also fixed: `save()` no longer overwrites a set
+  saved in the same second (`new_stem` adds `_2`, `_3`, ...).
 
 ### Handoff for steps 4-6
 
