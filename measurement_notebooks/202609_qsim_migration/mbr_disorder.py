@@ -67,18 +67,17 @@ from itertools import combinations_with_replacement, product
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Unset: a science run through the queue. The suite driver,
-# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
 RUN = run_settings()
 from experiments.qsim.notebook_helpers.mbr_campaign import (
     acquire_calibration,
@@ -109,15 +108,15 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
-    run=RUN,
+    log_measurements=not RUN.smoke,
+    mock=RUN.mock,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
+client = JobClient()
 
 # %%
 # Dataset choice: the phase-calibration jobs for the sector being measured.
@@ -135,11 +134,12 @@ campaign = build_campaign(
     calibration_job_ids=encspec_calibration_job_ids,
     reps=1000,
 )
-if RUN.sandbox:
-    # Suite run: there are no job IDs to load, so acquire a calibration
+if RUN.smoke:
+    # Smoke run: no calibration job IDs to load, so acquire a calibration
     # on the same cycle grid as mbr.py's "Run a new calibration" cell.
     acquire_calibration(
         campaign, station, client, N=3,
+        use_queue=RUN.use_queue,
         cycle_pairs=np.arange(0, 65, dtype=int),
         reps=RUN.pick(1000, smoke=100),
     )
@@ -168,6 +168,7 @@ disorder_batch, disorder_runner, disorder_cycle_branches = build_pairwise_batch(
     campaign=campaign,
     station=station,
     client=client,
+    use_queue=RUN.use_queue,
     plan=pairwise_plan,
 )
 
@@ -249,6 +250,7 @@ for realization_plan in diag_plan["diag_disorder_plans"]:
         campaign=campaign,
         station=station,
         client=client,
+        use_queue=RUN.use_queue,
         plan=diag_plan,
         config=diag_config,
         realization_plan=realization_plan,
@@ -404,6 +406,7 @@ for realization_plan in d72_plan["d72_plans"]:
         ExptProgram=realization_plan.batch.program,
         default_expt_cfg=realization_plan.batch.default_expt_cfg,
         job_client=client,
+        use_queue=RUN.use_queue,
         show=False,
     )
     try:

@@ -54,7 +54,7 @@
 # against the clock-quantized definition. It is preserved as found rather than
 # corrected, because fixing it here would have been a silent physics change.
 #
-# Setup is `experiments/qsim/notebook_helpers/qsim_session.py` (cells 2-6).
+# The defaults of cells 2-6 are in `experiments/qsim/notebook_helpers/defaults.py`.
 # `ds_floquet` dataset initialization is the tail of
 # `multiphoton_calibration.py`, which the surface map puts there.
 #
@@ -74,20 +74,18 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-# Imported under the names the relocated cells already use, so their bodies
-# did not have to be edited. Definitions are in qsim_session.py.
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+# Imported under the names the relocated cells already use.
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Unset: a science run through the queue. The suite driver,
-# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
 RUN = run_settings()
 from experiments.qsim.notebook_helpers.floquet_calibration import (
     error_amp_floquet_postproc,
@@ -108,8 +106,7 @@ from experiments.qsim.notebook_helpers.floquet_bare_readout import (
 )
 
 # %%
-# The config versions this campaign ran against. A scientific choice, so it
-# stays written down here rather than defaulting inside open_session.
+# The config versions this campaign ran against.
 config_dict = {
     "hardware_config": "CFG-HW-20260915-00001",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -117,17 +114,15 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260909-00043",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="guan",
     experiment_name="260915_qsim_migration",
     project="test_migration",
-    config_dict=config_dict,
-    run=RUN,
+    log_measurements=not RUN.smoke,
+    mock=RUN.mock,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
-db = session.db
-config_manager = session.config_manager
+client = JobClient()
 
 # %% [markdown] jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}
 # # Single shot
@@ -184,6 +179,7 @@ ss_runner = CharacterizationRunner(
     default_expt_cfg = singleshot_defaults,
     postprocessor = singleshot_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 ss = ss_runner.execute(
@@ -238,6 +234,7 @@ floquet_freq_chev_runner = CharacterizationRunner(
     preprocessor=floquet_freq_chev_preproc,
     postprocessor=floquet_freq_chev_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -347,6 +344,7 @@ error_amp_floquet_runner = CharacterizationRunner(
     ),
     postprocessor=error_amp_floquet_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -505,6 +503,7 @@ sideband_stark_error_amp_runner = CharacterizationRunner(
     preprocessor=sideband_stark_error_amp_preproc,
     postprocessor=sideband_stark_error_amp_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -616,6 +615,7 @@ if you_have_to_do_amp_chev == True:
         preprocessor=floquet_gain_chev_preproc,
         # postprocessor=floquet_gain_chev_postproc,
         job_client=client,
+        use_queue=RUN.use_queue,
     )
 
     detune_span = 0.5
@@ -707,6 +707,7 @@ error_amp_floquet_runner = CharacterizationRunner(
     ),
     postprocessor=error_amp_floquet_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -868,6 +869,7 @@ sideband_stark_error_amp_runner = CharacterizationRunner(
     preprocessor=sideband_stark_error_amp_preproc,
     postprocessor=sideband_stark_error_amp_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -1006,6 +1008,7 @@ dmscramble_runner = CharacterizationRunner(
     preprocessor=sideband_scramble_preproc,
     postprocessor=None,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%

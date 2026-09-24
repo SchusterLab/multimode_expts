@@ -37,7 +37,7 @@ from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
 
 
 def build_tomography_plan(campaign, station, client, N=1, step=10,
-                          reps=1000, batch_size=5):
+                          reps=1000, batch_size=5, use_queue=True):
     """Build the q=[0, s, 2s] plan and print the workload (cell 352).
 
     Submits nothing. Raises if the N-photon calibration has not been loaded,
@@ -104,6 +104,7 @@ def build_tomography_plan(campaign, station, client, N=1, step=10,
         ),
         default_expt_cfg=hamtom_batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
 

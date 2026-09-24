@@ -59,18 +59,17 @@ from itertools import product
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Unset: a science run through the queue. The suite driver,
-# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
 RUN = run_settings()
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
@@ -94,15 +93,15 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
-    run=RUN,
+    log_measurements=not RUN.smoke,
+    mock=RUN.mock,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
+client = JobClient()
 
 # %%
 # The campaign base, and the N=1 calibration this pilot needs. Fill in the
@@ -123,11 +122,12 @@ campaign = build_campaign(
 )
 
 hamtom_N = 1
-if RUN.sandbox:
-    # Suite run: there are no job IDs to load, so acquire a calibration
+if RUN.smoke:
+    # Smoke run: no calibration job IDs to load, so acquire a calibration
     # on the same cycle grid as mbr.py's "Run a new calibration" cell.
     acquire_calibration(
         campaign, station, client, N=hamtom_N,
+        use_queue=RUN.use_queue,
         cycle_pairs=np.arange(0, 65, dtype=int),
         reps=RUN.pick(1000, smoke=100),
     )
@@ -142,6 +142,7 @@ hamtom_plan = build_tomography_plan(
     campaign=campaign,
     station=station,
     client=client,
+    use_queue=RUN.use_queue,
     N=hamtom_N,
     step=10,
     reps=RUN.pick(1000, smoke=100),

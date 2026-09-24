@@ -356,7 +356,7 @@ def build_pairwise_plan(campaign, station, N=3, strength_kHz=50.0, seed=20260815
     }
 
 
-def build_pairwise_batch(campaign, station, client, plan):
+def build_pairwise_batch(campaign, station, client, plan, use_queue=True):
     """Phase-correct the pairwise plan and build its batch and runner.
 
     Cell 320's build half. Submits nothing: the notebook calls
@@ -392,6 +392,7 @@ def build_pairwise_batch(campaign, station, client, plan):
         ExptProgram=batch.program,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
     return batch, runner, cycle_branches
@@ -732,7 +733,7 @@ def build_diag_disorder_plans(campaign, station, config=None,
 
 
 def build_diag_realization_batch(campaign, station, client, plan, config,
-                                 realization_plan):
+                                 realization_plan, use_queue=True):
     """Build one diagonal-disorder realization's batch and runner.
 
     Cell 327's build half, for a single realization. Submits nothing: the
@@ -777,6 +778,7 @@ def build_diag_realization_batch(campaign, station, client, plan, config,
         ExptProgram=batch.program,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
     return batch, runner, cycle_branches

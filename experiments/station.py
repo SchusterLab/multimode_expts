@@ -172,7 +172,6 @@ class MultimodeStation:
         mock: Optional[bool] = None,
         project: Optional[str] = None,
         log_measurements: bool = False,
-        sandbox: bool = False,
     ):
         """
         Initialize the measurement station.
@@ -187,12 +186,6 @@ class MultimodeStation:
             mock: If True, install MockQickSoc + MockYokogawa stubs (no FPGA bytes go out).
                   If False or None (default), connect to real hardware. See use_mock_instruments()
                   for mid-session swap that preserves in-memory state.
-            sandbox: If True, this session is a test run of code that is not
-                  the main checkout (a worktree, a refactor branch). Every
-                  runner executes locally instead of through the job queue,
-                  whose worker only runs the main checkout, and nothing is
-                  written to the lab-notebook vault. Works with real or mock
-                  instruments.
         """
         self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
@@ -209,7 +202,6 @@ class MultimodeStation:
         # or via the `log_measurements=True` kwarg above. Per-call `log=True`
         # on a runner.run/.run_local/.execute always overrides.
         self.log_measurements = log_measurements
-        self.sandbox = bool(sandbox)
 
         # Determine mock mode. Default to real (mock must be explicit) —
         # off-prod-PC support will need its own code path, not the mock flag.
@@ -685,9 +677,6 @@ class MultimodeStation:
         """
         if self._is_mock:
             print("[log_measurement] mock mode active; skipping vault write.")
-            return None
-        if self.sandbox:
-            print("[log_measurement] sandbox session; skipping vault write.")
             return None
         if self.vault_root is None:
             print(

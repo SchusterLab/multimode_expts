@@ -42,8 +42,8 @@
 # config after looking at a plot is the scientific choice, so it is still
 # written out cell by cell. None of the helper functions writes to the station.
 #
-# Setup is now `experiments/qsim/notebook_helpers/qsim_session.py` (source
-# cells 2-6).
+# The defaults of source cells 2-6 are in
+# `experiments/qsim/notebook_helpers/defaults.py`.
 #
 # Its neighbours: `floquet_calibration.py`, `mbr.py`, `mbr_disorder.py`,
 # `mbr_tomography.py`, `mbr_sff.py`, `floquet_displacement_kerr.py`.
@@ -59,20 +59,18 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-# Imported under the names the relocated cells already use, so their bodies
-# did not have to be edited. Definitions are in qsim_session.py.
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+# Imported under the names the relocated cells already use.
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Unset: a science run through the queue. The suite driver,
-# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
 RUN = run_settings()
 from experiments.qsim.notebook_helpers.multiphoton_calibration import (
     analyze_swap_chevron,
@@ -90,8 +88,7 @@ from experiments.qsim.notebook_helpers.multiphoton_calibration import (
 )
 
 # %%
-# The config versions this campaign ran against. A scientific choice, so it
-# stays written down here rather than defaulting inside open_session.
+# The config versions this campaign ran against.
 config_dict = {
     "hardware_config": "CFG-HW-20260904-00019",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -99,17 +96,15 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
-    run=RUN,
+    log_measurements=not RUN.smoke,
+    mock=RUN.mock,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
-db = session.db
-config_manager = session.config_manager
+client = JobClient()
 
 # %%
 station.ds_storage.df
@@ -209,6 +204,7 @@ broadband_amprabi_runner = CharacterizationRunner(
     default_expt_cfg=broadband_amprabi_defaults,
     preprocessor=broadband_amprabi_preproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -303,7 +299,7 @@ broadband_error_amp_runner = CharacterizationRunner(
     ExptClass=ErrorAmplificationExperiment,
     default_expt_cfg=broadband_error_amp_defaults,
     job_client=client,
-    use_queue=True,
+    use_queue=RUN.use_queue,
     show=False,
 )
 
@@ -473,6 +469,7 @@ broadband_validation_runner = CharacterizationRunner(
     ExptProgram=BroadbandGeValidationProgram,
     default_expt_cfg=broadband_validation_defaults,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -625,6 +622,7 @@ multiphoton_swap_chevron_runner = SweepRunner(
     sweep_param='freq',
     postprocessor=None,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 
@@ -710,7 +708,7 @@ multiphoton_swap_error_amp_runner = CharacterizationRunner(
     ExptClass=ErrorAmplificationExperiment,
     default_expt_cfg=multiphoton_swap_error_amp_defaults,
     job_client=client,
-    use_queue=True,
+    use_queue=RUN.use_queue,
     show=False,
 )
 
@@ -920,6 +918,7 @@ odd_validation_runner = CharacterizationRunner(
     ExptClass=SidebandGeneralExperiment,
     default_expt_cfg=odd_validation_defaults,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 multiphoton_swap_odd_validation = odd_validation_runner.execute(
@@ -1063,6 +1062,7 @@ ss_runner = CharacterizationRunner(
     default_expt_cfg = singleshot_defaults,
     postprocessor = singleshot_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 ss = ss_runner.execute(

@@ -52,7 +52,7 @@
 # and build the batch) so that `execute()` stays a visible separate step.
 # `ensure_calibration` there is the eight lines cells 305 and 316 shared.
 #
-# Setup is `experiments/qsim/notebook_helpers/qsim_session.py` (cells 2-6).
+# The defaults of cells 2-6 are in `experiments/qsim/notebook_helpers/defaults.py`.
 #
 # Its neighbours: `mbr_disorder.py`, `mbr_tomography.py`, `mbr_sff.py`,
 # `multiphoton_calibration.py`, `floquet_calibration.py`.
@@ -68,20 +68,18 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-# Imported under the names the relocated cells already use, so their bodies
-# did not have to be edited. Definitions are in qsim_session.py.
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+# Imported under the names the relocated cells already use.
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Unset: a science run through the queue. The suite driver,
-# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
 RUN = run_settings()
 
 # The four aggregate MBR stages. `EncodingHamiltonianSpectroscopyExperiment`
@@ -112,8 +110,7 @@ from experiments.qsim.notebook_helpers.mbr_campaign import (
 )
 
 # %%
-# The config versions this campaign ran against. A scientific choice, so it
-# stays written down here rather than defaulting inside open_session.
+# The config versions this campaign ran against.
 config_dict = {
     "hardware_config": "CFG-HW-20260904-00019",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -121,17 +118,15 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
-    run=RUN,
+    log_measurements=not RUN.smoke,
+    mock=RUN.mock,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
-db = session.db
-config_manager = session.config_manager
+client = JobClient()
 
 # %% [markdown]
 # # N-photon Hamiltonian spectroscopy
@@ -216,6 +211,7 @@ calibration_runner = BatchRunner(
     ExptProgram=floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
     default_expt_cfg=calibration_batch.default_expt_cfg,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 calibration_expt = MBRPhaseCorrectionExperiment.from_batch(calibration_runner.execute(
@@ -285,6 +281,7 @@ recalibration_runner = BatchRunner(
     ),
     default_expt_cfg=recalibration_batch.default_expt_cfg,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 replacement_calibration_expt = MBRPhaseCorrectionExperiment.from_batch(recalibration_runner.execute(
@@ -376,6 +373,7 @@ orthogonality_runner = BatchRunner(
     ),
     default_expt_cfg=orthogonality_batch.default_expt_cfg,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 orthogonality_expt = MBROrthogonalityExperiment.from_batch(orthogonality_runner.execute(
@@ -457,6 +455,7 @@ spectroscopy_batch, spectroscopy_runner, calibration_expt, cycle_branches = (
         campaign=campaign,
         station=station,
         client=client,
+        use_queue=RUN.use_queue,
         plan=spectroscopy_plan,
         cycle_chunks=encspec_cycle_chunks,
         reps=encspec_reps,
@@ -525,6 +524,7 @@ propagator_batch, propagator_runner, calibration_expt = build_propagator_batch(
     campaign=campaign,
     station=station,
     client=client,
+    use_queue=RUN.use_queue,
     propagator_occupations=propagator_occupations,
     propagator_cycles=propagator_cycles,
     reps=RUN.pick(1000, smoke=100),

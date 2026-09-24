@@ -1,7 +1,7 @@
 """Run the qsim migration notebooks top to bottom, as the refactor's test suite.
 
     pixi run python tools/run_qsim_suite.py --mode mock
-    pixi run python tools/run_qsim_suite.py --mode sandbox --only mbr
+    pixi run python tools/run_qsim_suite.py --mode hardware --only mbr
     pixi run python tools/run_qsim_suite.py --suite analysis
     pixi run python tools/run_qsim_suite.py --list
 
@@ -9,9 +9,11 @@ Each notebook is executed in a fresh kernel and saved as an executed
 ``.ipynb`` with its plots, under ``--out``. Judge a hardware run by opening
 those; this script only reports which notebooks raised, and where.
 
-Modes and profiles are the ones in
-``experiments/qsim/notebook_helpers/run_mode.py``; this script passes them to
-the kernels through the environment. ``--profile`` defaults to ``smoke``.
+This script passes its settings to the kernels through the environment; see
+``experiments/qsim/notebook_helpers/run_mode.py``. Every runner executes
+directly (``use_queue`` off), because the queue worker runs only the main
+checkout. ``--mode mock`` uses mock instruments, ``--mode hardware`` the real
+ones. ``--profile`` defaults to ``smoke``.
 
 Cell tags (jupytext: ``# %% tags=["suite-skip"]``) take cells out of a run:
 
@@ -19,7 +21,7 @@ Cell tags (jupytext: ``# %% tags=["suite-skip"]``) take cells out of a run:
   this instead"), and cells that need a person's judgement first.
 - ``mock-skip``: not in mock mode. Cells that only make sense on real data.
 
-Sandbox mode drives the real device from this checkout. Before it starts, it
+Hardware mode drives the real device from this checkout. Before it starts, it
 takes the main checkout's worker lock: it refuses if a worker is running, and
 while it holds the lock no worker can start. Tell the other users first.
 """
@@ -148,7 +150,7 @@ def hold_worker_lock():
     try:
         lock.acquire()
     except RuntimeError as exc:
-        sys.exit(f"{exc}\nStop the worker before a sandbox run.")
+        sys.exit(f"{exc}\nStop the worker before a hardware run.")
     print(f"holding {lock_path}: no worker can start until this run ends")
     return lock
 
@@ -156,7 +158,7 @@ def hold_worker_lock():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--suite", choices=sorted(SUITES), default="measurement")
-    parser.add_argument("--mode", choices=("mock", "sandbox"), default="mock",
+    parser.add_argument("--mode", choices=("mock", "hardware"), default="mock",
                         help="measurement suite only; the analysis suite has no station")
     parser.add_argument("--profile", choices=("smoke", "full"), default="smoke")
     parser.add_argument("--configs", default=None,
@@ -188,7 +190,8 @@ def main(argv=None):
     mode = args.mode if args.suite == "measurement" else "analysis"
     os.environ["MULTIMODE_RUN_PROFILE"] = args.profile
     if args.suite == "measurement":
-        os.environ["MULTIMODE_RUN_MODE"] = args.mode
+        os.environ["MULTIMODE_RUN_MOCK"] = "1" if args.mode == "mock" else "0"
+        os.environ["MULTIMODE_RUN_USE_QUEUE"] = "0"
     if args.configs:
         os.environ["MULTIMODE_RUN_CONFIGS"] = args.configs
     os.environ.setdefault("MPLBACKEND", "module://matplotlib_inline.backend_inline")
@@ -200,7 +203,7 @@ def main(argv=None):
           f"configs={args.configs or 'notebook'}")
     print(f"executed notebooks -> {out_dir}")
 
-    lock = hold_worker_lock() if mode == "sandbox" else None
+    lock = hold_worker_lock() if mode == "hardware" else None
     results = []
     try:
         for path in notebooks:

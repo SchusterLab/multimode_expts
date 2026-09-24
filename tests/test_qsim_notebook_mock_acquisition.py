@@ -22,6 +22,15 @@ import numpy as np
 import pytest
 from slab import AttrDict
 
+from experiments import MultimodeStation
+from experiments.qsim.notebook_helpers.defaults import (
+    ACTIVE_RESET_DEFAULTS,
+    FLOQUET_DEFAULTS,
+    MEASUREMENT_CONFIG_DEFAULTS,
+)
+from experiments.qsim.notebook_helpers.run_mode import RunSettings
+from job_server import JobClient
+
 CONFIG_DICT = {
     "hardware_config": "CFG-HW-20260904-00019",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -31,37 +40,28 @@ CONFIG_DICT = {
 
 
 @pytest.fixture(scope="module")
-def mock_session():
+def mock_station():
     """A mock station plus job client, built once for the module."""
     pytest.importorskip("qick")
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
 
-    from experiments.qsim.notebook_helpers.qsim_session import open_session
-
     try:
-        session = open_session(
+        station = MultimodeStation(
             user="pytest",
             experiment_name="260818_qsim_spectroscopy",
             project="EncSpec",
-            config_dict=CONFIG_DICT,
-            log_measurements=False,
-            verbose=False,
             mock=True,
+            **RunSettings().station_configs(CONFIG_DICT),
         )
     except Exception as exc:  # missing config versions, no soccfg snapshot, ...
         pytest.skip(f"cannot build a mock station here: {type(exc).__name__}: {exc}")
-    assert session.station.is_mock, "open_session(mock=True) did not mock"
-    return session
+    assert station.is_mock, "MultimodeStation(mock=True) did not mock"
+    return station, JobClient()
 
 
 @pytest.fixture(scope="module")
 def defaults():
-    from experiments.qsim.notebook_helpers.qsim_session import (
-        ACTIVE_RESET_DEFAULTS,
-        FLOQUET_DEFAULTS,
-        MEASUREMENT_CONFIG_DEFAULTS,
-    )
     return ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS, MEASUREMENT_CONFIG_DEFAULTS
 
 
@@ -70,7 +70,7 @@ def defaults():
 # --------------------------------------------------------------------------
 
 
-def test_broadband_amplitude_rabi_builds(mock_session, defaults):
+def test_broadband_amplitude_rabi_builds(mock_station, defaults):
     """multiphoton_calibration.py's broadband ge calibration."""
     import experiments as meas
     from experiments import CharacterizationRunner
@@ -78,7 +78,7 @@ def test_broadband_amplitude_rabi_builds(mock_session, defaults):
         broadband_amprabi_preproc,
     )
 
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
     pi_ge = station.hardware_cfg.device.qubit.pulses.pi_ge
     ge_freqs = np.asarray(
         station.hardware_cfg.device.multiphoton.pi["gn-en"].frequency[:4],
@@ -113,7 +113,7 @@ def test_broadband_amplitude_rabi_builds(mock_session, defaults):
     assert expt is not None
 
 
-def test_single_shot_histogram_builds(mock_session, defaults):
+def test_single_shot_histogram_builds(mock_station, defaults):
     """multiphoton_calibration.py's single-shot readout calibration."""
     import experiments as meas
     from experiments import CharacterizationRunner
@@ -122,7 +122,7 @@ def test_single_shot_histogram_builds(mock_session, defaults):
     )
 
     _, _, measurement_defaults = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
     runner = CharacterizationRunner(
         station=station,
         ExptClass=meas.HistogramExperiment,
@@ -144,7 +144,7 @@ def test_single_shot_histogram_builds(mock_session, defaults):
     assert expt is not None
 
 
-def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
+def test_floquet_error_amplification_sweep_builds(mock_station, defaults):
     """floquet_calibration.py's error-amplification cells.
 
     The loop is inline here because it is inline in the notebook: the cell
@@ -160,7 +160,7 @@ def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
     )
 
     active_reset_defaults, floquet_defaults, _ = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
 
     cfg = AttrDict(dict(
         reps=20, rounds=1, qubits=[0], active_reset=False, man_mode_no=1,
@@ -232,7 +232,7 @@ def test_floquet_error_amplification_sweep_builds(mock_session, defaults):
     assert gain_expts[0] is not None
 
 
-def test_bare_scramble_sweep_builds(mock_session, defaults):
+def test_bare_scramble_sweep_builds(mock_station, defaults):
     """floquet_calibration.py's bare dark-mode readout check.
 
     Inline, like the notebook cell it stands in for.
@@ -247,7 +247,7 @@ def test_bare_scramble_sweep_builds(mock_session, defaults):
     )
 
     active_reset_defaults, floquet_defaults, _ = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
 
     cfg = AttrDict(dict(
         expts=1, reps=20, rounds=1, qubits=[0], ro_stor=0, init_fock=True,
@@ -313,7 +313,7 @@ def test_bare_scramble_sweep_builds(mock_session, defaults):
 
 
 def test_displacement_kerr_builds_without_the_uncalibrated_mode(
-        mock_session, defaults):
+        mock_station, defaults):
     """floquet_displacement_kerr.py, minus storage mode 6.
 
     The notebook sweeps modes [4, 5, 6, 7], but `M1-S6` has `pi=nan` in
@@ -326,7 +326,7 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
     from experiments.qsim import floquet_dark_mode_readout as fdm
 
     active_reset_defaults, floquet_defaults, _ = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
     modes = [4, 5, 7]
 
     runner = CharacterizationRunner(
@@ -355,13 +355,13 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
     assert expt is not None
 
 
-def test_storage_mode_6_has_no_calibrated_pi_length(mock_session):
+def test_storage_mode_6_has_no_calibrated_pi_length(mock_station):
     """Pin the config gap that stops the Kerr theme's full mode list.
 
     If someone recalibrates M1-S6 and this starts failing, the Kerr notebook
     can go back to sweeping [4, 5, 6, 7] and the test above can be widened.
     """
-    station = mock_session.station
+    station, _ = mock_station
     pi_length = station.ds_storage.get_pi("M1-S6")
     assert np.isnan(pi_length), (
         "M1-S6 now has a calibrated pi length "
@@ -374,7 +374,7 @@ def test_storage_mode_6_has_no_calibrated_pi_length(mock_session):
     [("flat_top", "ok"), ("preload_flattop", "rejected"), ("gauss", "rejected")],
 )
 def test_floquet_chevron_only_accepts_the_legacy_flat_top(
-        mock_session, defaults, waveform, expected):
+        mock_station, defaults, waveform, expected):
     """`FloquetChevronProgram` sets `length` unconditionally.
 
     `experiments/qsim/floquet_chevron.py` line 15 does
@@ -394,7 +394,7 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
     )
 
     active_reset_defaults, floquet_defaults, _ = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
 
     for stor in range(1, 8):
         station.ds_floquet.update_waveform(f"M1-S{stor}", waveform)
@@ -436,7 +436,7 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
 # --------------------------------------------------------------------------
 
 
-def test_batch_runner_refuses_the_queue_in_mock_mode(mock_session, defaults):
+def test_batch_runner_refuses_the_queue_in_mock_mode(mock_station, defaults):
     """A mock session must not submit real jobs.
 
     `BatchRunner.execute` overrides `CharacterizationRunner.execute` and has
@@ -454,7 +454,7 @@ def test_batch_runner_refuses_the_queue_in_mock_mode(mock_session, defaults):
     )
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
 
     campaign = build_campaign(
         station=station, client=client,
@@ -489,7 +489,7 @@ MBR_BATCHES = [
 
 
 @pytest.mark.parametrize("which", MBR_BATCHES)
-def test_mbr_batch_builds_and_compiles(mock_session, defaults, which):
+def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
     """Each MBR batch's configs assemble into a compilable qick program.
 
     This is the layer the stage-2 split actually changed: `build_campaign` and
@@ -511,7 +511,7 @@ def test_mbr_batch_builds_and_compiles(mock_session, defaults, which):
     from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
-    station, client = mock_session.station, mock_session.client
+    station, client = mock_station
 
     campaign = build_campaign(
         station=station, client=client,

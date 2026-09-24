@@ -1,59 +1,41 @@
-"""How a qsim migration notebook is being run: for science, or as a test.
+"""Run settings a qsim migration notebook reads from the environment.
 
-The notebooks under `measurement_notebooks/202609_qsim_migration/` are both
-the working acquisition entry points and the refactor's test suite. One
-notebook body serves both, and this module holds the only difference: a
-`RunSettings` read from the environment, which `tools/run_qsim_suite.py` sets
-and an interactive kernel normally leaves unset.
+`tools/run_qsim_suite.py` sets these to drive the notebooks from the command
+line. An interactive kernel normally leaves them unset, which gives a normal
+science run.
 
-Modes (`MULTIMODE_RUN_MODE`):
-
-- ``queue`` (default): the normal science run. Jobs go through the job
-  queue, data goes to the notebook's own experiment folder, the notebook's
-  config versions are used as written, and measurements are logged.
-- ``mock``: mocked instruments. Programs are built and compiled for real,
-  acquisition returns zeros. Needs no server and no hardware.
-- ``sandbox``: real instruments, but the code under test is this checkout,
-  not the main one the queue worker runs. Every runner executes locally, and
-  nothing is logged to the vault. Stop the worker first: nothing else stops a
-  worker job and a sandbox run from sharing the hardware.
-
-`mock` and `sandbox` both write to a dated ``<yymmdd>_suite_<mode>`` folder,
-not the notebook's, and load configs by absolute path from the version
-archive, because a worktree's own config database is empty.
-
-Profiles (`MULTIMODE_RUN_PROFILE`): ``full`` (default) or ``smoke``. A
-notebook states both values where it sets a size, as
-``RUN.pick(1000, smoke=100)``, so the smoke value sits beside the science
-value it stands in for.
-
-Configs (`MULTIMODE_RUN_CONFIGS`): unset uses the notebook's `config_dict`.
-``main`` uses the current main versions read from the main checkout's job
-database -- what the device is calibrated to today, which is usually what a
-sandbox run on hardware wants. A path to a JSON file uses the four version
-IDs in it.
+- `MULTIMODE_RUN_MOCK` (default 0): pass to `MultimodeStation(mock=...)`.
+  Mock or real instruments.
+- `MULTIMODE_RUN_USE_QUEUE` (default 1): pass to each runner's `use_queue`.
+  Submit to the job server, or run directly on this kernel's station. The
+  worker only runs the main checkout, so test code from a worktree with 0.
+- `MULTIMODE_RUN_PROFILE`: ``full`` (default) or ``smoke``. A notebook writes
+  both sizes as ``RUN.pick(1000, smoke=100)``.
+- `MULTIMODE_RUN_CONFIGS`: unset uses the notebook's `config_dict`. ``main``
+  uses the current main versions in the main checkout's job database. A path
+  to a JSON file uses the four version IDs in it.
 """
 
 import json
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from experiments.local_env import load_env
+from experiments.qsim.mbr_campaign import archived
 
-MODE_VAR = "MULTIMODE_RUN_MODE"
+MOCK_VAR = "MULTIMODE_RUN_MOCK"
+USE_QUEUE_VAR = "MULTIMODE_RUN_USE_QUEUE"
 PROFILE_VAR = "MULTIMODE_RUN_PROFILE"
 CONFIGS_VAR = "MULTIMODE_RUN_CONFIGS"
 MAIN_DB_VAR = "MULTIMODE_MAIN_JOBS_DB"
 
-MODES = ("queue", "mock", "sandbox")
 PROFILES = ("full", "smoke")
 
 DEFAULT_MAIN_DB = "C:/python/multimode_expts/job_server/jobs.db"
 
-# config_dict key -> MultimodeStation keyword and archive kind.
+# config_dict key -> MultimodeStation keyword.
 _STATION_KWARG = {
     "hardware_config": "hardware_config",
     "multiphoton_config": "multiphoton_config",
@@ -64,25 +46,16 @@ _STATION_KWARG = {
 
 @dataclass(frozen=True)
 class RunSettings:
-    mode: str = "queue"
+    mock: bool = False
+    use_queue: bool = True
     profile: str = "full"
     configs: str | None = None
 
     def __post_init__(self):
-        if self.mode not in MODES:
-            raise ValueError(f"{MODE_VAR}={self.mode!r}; expected one of {MODES}")
         if self.profile not in PROFILES:
             raise ValueError(
                 f"{PROFILE_VAR}={self.profile!r}; expected one of {PROFILES}"
             )
-
-    @property
-    def mock(self) -> bool:
-        return self.mode == "mock"
-
-    @property
-    def sandbox(self) -> bool:
-        return self.mode in ("mock", "sandbox")
 
     @property
     def smoke(self) -> bool:
@@ -92,30 +65,44 @@ class RunSettings:
         """-> `smoke` under the smoke profile, else `full`."""
         return smoke if self.smoke else full
 
-    def experiment_name(self, name: str) -> str:
-        """-> the notebook's own folder for science, a dated suite folder otherwise."""
-        if not self.sandbox:
-            return name
-        return f"{datetime.now():%y%m%d}_suite_{self.mode}"
+    def station_configs(self, config_dict: dict) -> dict:
+        """-> the config keywords for `MultimodeStation`.
 
-    def config_dict(self, notebook_config_dict: dict) -> dict:
-        """-> the four config version IDs this run uses."""
-        if self.configs is None:
-            return dict(notebook_config_dict)
+        Through the queue: the version IDs, as before. Direct: absolute paths
+        from the version archive, because the local job database may not know
+        the versions (a worktree, or a machine other than the measurement PC).
+        """
         if self.configs == "main":
-            return main_config_ids()
-        return json.loads(Path(self.configs).read_text())
+            config_dict = main_config_ids()
+        elif self.configs is not None:
+            config_dict = json.loads(Path(self.configs).read_text())
+        missing = set(_STATION_KWARG) - set(config_dict)
+        if missing:
+            raise KeyError(f"config_dict is missing keys: {sorted(missing)}")
+        if self.use_queue:
+            return {_STATION_KWARG[key]: config_dict[key] for key in _STATION_KWARG}
+        return station_config_paths(config_dict)
 
     def __str__(self):
-        configs = self.configs or "notebook"
-        return f"mode={self.mode} profile={self.profile} configs={configs}"
+        return (f"mock={self.mock} use_queue={self.use_queue} "
+                f"profile={self.profile} configs={self.configs or 'notebook'}")
+
+
+def _flag(var: str, default: bool) -> bool:
+    raw = os.environ.get(var)
+    if raw is None or raw == "":
+        return default
+    if raw in ("0", "1"):
+        return raw == "1"
+    raise ValueError(f"{var}={raw!r}; expected 0 or 1")
 
 
 def run_settings() -> RunSettings:
     """-> the settings in the environment (or the repo-root .env)."""
     load_env()
     return RunSettings(
-        mode=os.environ.get(MODE_VAR, "queue"),
+        mock=_flag(MOCK_VAR, False),
+        use_queue=_flag(USE_QUEUE_VAR, True),
         profile=os.environ.get(PROFILE_VAR, "full"),
         configs=os.environ.get(CONFIGS_VAR) or None,
     )
@@ -124,15 +111,9 @@ def run_settings() -> RunSettings:
 def station_config_paths(config_dict: dict) -> dict:
     """-> MultimodeStation keywords, each an absolute path to an archived version.
 
-    Absolute paths bypass the station's database lookup, which is what makes a
-    worktree work: its own jobs.db is empty. The archive is the pinned copies
-    under tests/data/config_set first, then $MULTIMODE_CONFIG_ARCHIVE.
+    The archive is the pinned copies under tests/data/config_set first, then
+    $MULTIMODE_CONFIG_ARCHIVE.
     """
-    from experiments.qsim.mbr_campaign import archived
-
-    missing = set(_STATION_KWARG) - set(config_dict)
-    if missing:
-        raise KeyError(f"config_dict is missing keys: {sorted(missing)}")
     return {
         _STATION_KWARG[key]: str(archived(_STATION_KWARG[key], config_dict[key]))
         for key in _STATION_KWARG

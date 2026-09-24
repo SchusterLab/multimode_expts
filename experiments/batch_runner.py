@@ -23,7 +23,7 @@ from copy import deepcopy
 import numpy as np
 from slab import AttrDict
 
-from experiments.characterization_runner import CharacterizationRunner, sandbox_local
+from experiments.characterization_runner import CharacterizationRunner
 
 
 def _is_real_job_client(client):
@@ -79,7 +79,6 @@ class BatchRunner(CharacterizationRunner):
         save each acquired experiment.
         """
         mode = self.use_queue if use_queue is None else use_queue
-        mode = sandbox_local(self.station, mode)
         if mode and self.job_client is None:
             raise ValueError("job_client is required")
 

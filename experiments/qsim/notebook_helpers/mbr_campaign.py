@@ -194,7 +194,7 @@ def ensure_calibration(campaign, N, station):
 
 
 def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
-                        batch_size=10, occupations=None):
+                        batch_size=10, occupations=None, use_queue=True):
     """Acquire a fresh N-photon phase calibration and cache it on the campaign.
 
     The "Run a new calibration" cell of `mbr.py`, as a function, so the
@@ -216,6 +216,7 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
         ExptProgram=campaign.floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
     calibration_expt = MBRPhaseCorrectionExperiment.from_batch(runner.execute(
@@ -286,7 +287,7 @@ def select_spectroscopy_occupations(batch_encspec_N, mode_labels,
 
 
 def build_spectroscopy_batch(campaign, station, client, plan,
-                             cycle_chunks, reps, detunings=None):
+                             cycle_chunks, reps, detunings=None, use_queue=True):
     """Phase-correct the plan and build its batch and runner (cell 305 tail).
 
     Returns (batch, runner, calibration_expt, cycle_branches). Submits
@@ -333,6 +334,7 @@ def build_spectroscopy_batch(campaign, station, client, plan,
         ExptProgram=batch.program,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
 
@@ -506,7 +508,7 @@ def merge_replacement_calibration(campaign, station, N,
 
 
 def build_propagator_batch(campaign, station, client, propagator_occupations,
-                           propagator_cycles, reps=1000):
+                           propagator_cycles, reps=1000, use_queue=True):
     """Phase-correct and build the propagator batch and runner (cell 316).
 
     Submits nothing. Returns (batch, runner, calibration_expt).
@@ -538,6 +540,7 @@ def build_propagator_batch(campaign, station, client, propagator_occupations,
         ExptProgram=campaign.floquet_dark_mode_readout.EncodingPropagatorProgram,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
+        use_queue=use_queue,
         show=False,
     )
     return batch, runner, calibration_expt
