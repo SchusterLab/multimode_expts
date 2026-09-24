@@ -1,27 +1,53 @@
-# Mock suite: what it checks, and the work left (2026-09-23)
+# Qsim notebook suite: what checks what (revised 2026-09-23)
 
 The qsim migration notebooks (`measurement_notebooks/202609_qsim_migration/`)
-are both working notebooks and a test suite, run by `tools/run_qsim_suite.py`.
-This file is the plan for making `--mode mock` runs pass for real reasons.
+are working notebooks copied from the old source notebooks. The goal is basic
+guardrails, so that bad code can be cut out without working blind. A rewrite
+from the ground up is likely.
 
-## The rule
+The first version of this plan tried to make every notebook pass in mock
+mode. That was dropped: pytest already checks, in mock, the parts of these
+notebooks that mock mode can check. So each layer has one check:
 
-Mock mode and real-data tests check different things.
+| Layer | Checked by | Runs where |
+| --- | --- | --- |
+| Library code: program build, ASM compile, mock acquisition, HDF5 save and reload | pytest mock tests (below) | anywhere, about 1 min |
+| Analysis numerics | pytest on real saved files (`tests/test_mbr_analysis_golden.py`, `tests/test_analysis_is_offline.py`) | where the data are |
+| Notebook wiring: imports and names between cells | `tests/test_qsim_notebooks_static.py` | anywhere, seconds |
+| Physics | a hardware run of the notebook, judged by a person looking at the plots | pippin only |
 
-- **Mock mode checks acquisition code:** imports and notebook plumbing, config
-  assembly, qick program build and ASM compile (parameter checks), the
-  acquisition loop, the HDF5 save, and reload of the saved file with the
-  normal loader. Mock data is all zeros. So mock mode does **not** run
-  `analyze`, `display` or postprocessors, and no value fitted from mock data
-  goes into a later cell.
-- **Analysis code is checked on real saved files** (the pattern of
-  `tests/test_mbr_analysis_golden.py` and `tests/test_analysis_is_offline.py`).
-  Postprocessors are tested here too, with fits from real data.
+## The rules
+
+- **The notebooks are a suite for hardware runs.** `tools/run_qsim_suite.py
+  --mode hardware` runs them; the runner reports only crashes.
+- **Mock mode is an optional pre-flight**, only for `floquet_calibration`,
+  `multiphoton_calibration` and `floquet_displacement_kerr` (about 1 min
+  together). If a pre-flight breaks, do not spend time on it: drop the
+  notebook from mock (`HARDWARE_ONLY` in the runner).
+- **The MBR notebooks never run in mock** (`HARDWARE_ONLY`). Every cell after
+  their phase calibration needs a real calibration: its phases go into the
+  pulse configs of the later jobs.
+- **When you cut code, its guardrail is the pytest next to it**, not a
+  notebook. Before you remove or rewrite a module, check that a pytest covers
+  it, and add one if not.
 - **A mock run changes nothing shared.** Data goes to `mock_data`. The vault
-  skips mock (`log_measurement`). Config snapshots skip mock and return
-  `CFG-XX-MOCK` (commit `5066eb0`).
-- **Hardware runs** (`--mode hardware`) are judged by a person looking at the
-  saved plots. The runner only reports crashes.
+  skips mock. Config snapshots skip mock and return `CFG-XX-MOCK`.
+
+## The pytest mock tests
+
+- `tests/test_qsim_notebook_mock_acquisition.py`: each non-MBR experiment
+  family, built and acquired through its runner as in the notebook cell.
+  `assert_reloads` loads the saved file with `from_h5file` and
+  `saved_jobs.load_h5` and pins the array shapes. Also compiles the four MBR
+  batch types, with zero phases in place of a calibration.
+- `tests/test_mbr_acquire_mock.py`: every MBR stage (calibration, spectrum,
+  propagator, orthogonality, SFF) built, compiled and acquired from committed
+  pinned configs, and reloaded with `load_job`.
+- `tests/test_runner_mock_defaults.py`: on a mock station, runner `execute()`
+  only acquires and saves (no analyze, no postprocess).
+
+The acquisition tests copy the notebook cell bodies, so they can drift from
+the notebooks. That is accepted: the static check covers the notebook side.
 
 ## Done
 
@@ -32,85 +58,29 @@ Mock mode and real-data tests check different things.
 - `5066eb0` mock stations do not write config snapshots.
 - `5466268` the runner reports cells tagged `raises-exception` as xfail, and
   as XPASS if they ran clean.
-- `d90f871` step 1: on a mock station, runner `execute()` defaults to acquire
-  and save only.
-- `436da60` step 2 for `floquet_calibration`, `multiphoton_calibration` and
-  `floquet_displacement_kerr`: all pass `--mode mock` (smoke). Manual
+- `d90f871` on a mock station, runner `execute()` defaults to acquire and
+  save only. An explicit argument from the caller still wins.
+- `436da60` the three pre-flight notebooks pass mock (smoke). Manual
   `expt.display()` calls moved into the runner (`show=`, `display_kwargs=`);
   acquire + fit cells split, fit/accept halves tagged `mock-skip`. Kerr
   `storage_reset` drops mode 6 (no pi time in the pinned M1 config).
-- Step 3: `assert_reloads` in `tests/test_qsim_notebook_mock_acquisition.py`
-  reloads each `CharacterizationRunner` / `SweepRunner` family's mock file and
-  pins its array shapes. MBR files already reload in
-  `tests/test_mbr_acquire_mock.py` (`load_job`).
+- `b990aed` `assert_reloads`: reload and shape checks for mock files.
+- MBR notebooks marked `HARDWARE_ONLY`; `tests/test_qsim_notebooks_static.py`
+  added.
 
-Still open: step 2 for the four MBR notebooks, which waits on step 4.
+## Known issues, not fixed
 
-## Work left
-
-Do these in order. Commit after each step.
-
-### 1. Runner mock defaults
-
-In mock mode, make `CharacterizationRunner`, `SweepRunner` and `BatchRunner`
-default to acquire and save only: `analyze=False`, `display=False`,
-`postprocess=False`. `execute()` already defaults to local in mock mode, so
-put the new defaults in the same place. An explicit argument from the caller
-still wins.
-
-- Check `run_local(postprocess=..., go_kwargs=...)` and `Experiment.go(save,
-  analyze, display)` for the exact flags.
-- `BatchRunner` aggregates its jobs (`_aggregate`). Check whether the
-  aggregate calls `analyze`.
-- Tests: `tests/test_characterization_runner.py` has mock tests that expect
-  the postprocessor to run (`test_runner_postprocessor`). Those tests call
-  `run_local(postprocess=True)` explicitly, so they should still pass. Check.
-
-### 2. Notebook tags
-
-For each measurement notebook, run it alone in mock mode and fix failures one
-at a time:
-
-    pixi run python tools/run_qsim_suite.py --mode mock --only floquet_calibration
-
-Executed copies with tracebacks go to `.suite_runs/<timestamp>_measurement_mock/`.
-
-- A cell that reads a fit result (`expt.data['fit_...']`, the accept cells,
-  hand checks of fitted values): tag `mock-skip`. Later cells then build
-  with the station's calibrated config values.
-- A known code bug: tag `raises-exception`, with a one-line comment giving
-  the reason. Only do this if later cells do not need that cell's output.
-- Do not change physics code to make mock pass.
-
-Failures seen on 2026-09-23 (mock, smoke, qick 0.2.291):
-
-| Notebook | Cell | Error | Likely cause |
-| --- | --- | --- | --- |
-| `floquet_calibration` | "Source cell 72: one fixed +/-1 MHz span" | `RuntimeError: ('unsupported pulse parameter(s)', {'length'})` from `FloquetChevronProgram.core_pulses` (`experiments/qsim/floquet_chevron.py:15`) | Known bug (the user says xfail): sets `length` on an arb pulse. Tag `raises-exception`. |
-| `multiphoton_calibration` | first `ErrorAmplificationExperiment` cell (about cell 37) | `ValueError: cannot convert float NaN to integer` in `us2cycles` (`experiments/single_qubit/error_amplification.py:102`) | An earlier fit on zeros gives NaN. |
-| `floquet_displacement_kerr` | the 2D job cell | same NaN, through `active_reset` -> `man_stor_swap` -> `custom_pulse` (`experiments/MM_base.py:577`) | NaN from a fit, or an empty row in the M1 or storage-swap CSV. Check which. |
-| `mbr`, `mbr_tomography`, `mbr_sff`, `mbr_disorder` | calibration cell | `RuntimeError: (N, 0, 0, 0, 0) has too few valid IQ points` in `MBRPhaseCorrectionExperiment.analyze_cycle_phase` | Analysis of mock zeros. See step 4. |
-
-### 3. Reload check
-
-After a mock acquisition, load the new file with the normal loader
-(`from_h5file` / `experiments/saved_jobs.py`) and check the array shapes,
-without fitting. This finds a change in the file layout that the real-data
-analysis tests (with older files) cannot find. One pytest per experiment
-family in `tests/test_qsim_notebook_mock_acquisition.py` is enough.
-
-### 4. MBR calibration in mock
-
-`experiments/qsim/notebook_helpers/mbr_campaign.py:acquire_calibration` runs
-`calibration_expt.analyze()` on the data it acquired. In smoke runs the MBR
-notebooks call it (`if RUN.smoke:`), and each notebook takes about 20 minutes
-before it fails. Decide with the user:
-
-- (a) in mock, acquire and save but skip the analysis. The later cells need a
-  calibration, so they must then be tagged `mock-skip`.
-- (b) in mock, load a real calibration by job ID from saved HDF5
-  (`ensure_calibration`). This works only where the data are (pippin or a
-  mounted data tree).
+- `FloquetChevronProgram` sets `length` on an arb pulse
+  (`experiments/qsim/floquet_chevron.py:15`), so the frequency chevron cannot
+  build under `preload_flattop`. `floquet_calibration` cell 72 is tagged
+  `raises-exception`; `test_floquet_chevron_only_accepts_the_legacy_flat_top`
+  records it.
+- `M1-S6` has no pi time in `CFG-M1-20260904-00014`
+  (`test_storage_mode_6_has_no_calibrated_pi_length`).
+- In the MBR notebooks, `merge_replacement_calibration` rebuilds the
+  calibration from job IDs, so it cannot work on a local (no queue) run.
+- A mock MBR calibration takes about 20 min, from slow code in the hot path
+  (benchmarked on the laptop). Not a target for now.
 
 ## Things to know
 
@@ -124,5 +94,7 @@ before it fails. Decide with the user:
   0.2.291 (`645f8905`) for this code. Another user may switch it for tProc v2
   tests. Check `qick.__version__` first if a station fails to start with a
   `KeyError` on the soccfg.
+- The static check runs ruff through `pixi exec`, so ruff is not a project
+  dependency. The first run downloads it.
 - Do not run `--mode hardware` unless the user asks. It drives the real
   device, and it takes the main worker lock.

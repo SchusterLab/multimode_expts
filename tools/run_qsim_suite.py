@@ -25,6 +25,14 @@ Cell tags (jupytext: ``# %% tags=["suite-skip"]``) take cells out of a run:
 raise and the run continues. The summary counts these as xfail, and a tagged
 cell that ran clean as xpass, so a fixed bug shows up.
 
+The measurement notebooks are a suite for hardware runs. Mock mode is an
+optional pre-flight for the notebooks that support it; the MBR notebooks
+(``HARDWARE_ONLY``) do not, because every cell after their phase calibration
+needs a real one. Their building blocks are checked by pytest instead
+(``tests/test_mbr_acquire_mock.py``, ``tests/test_mbr_analysis_golden.py``),
+and ``tests/test_qsim_notebooks_static.py`` checks every notebook's names and
+imports. See docs/qsim/mock_suite_plan.md.
+
 Hardware mode drives the real device from this checkout. Before it starts, it
 takes the main checkout's worker lock: it refuses if a worker is running, and
 while it holds the lock no worker can start. Tell the other users first.
@@ -64,6 +72,9 @@ SUITES = {
         for name in ("mbr", "mbr_disorder", "mbr_sampling", "mbr_spectral_validation")
     ],
 }
+
+# No mock run: every cell after the phase calibration needs a real one.
+HARDWARE_ONLY = {"mbr", "mbr_tomography", "mbr_sff", "mbr_disorder"}
 
 MAIN_WORKER_LOCK_VAR = "MULTIMODE_MAIN_WORKER_LOCK"
 DEFAULT_MAIN_WORKER_LOCK = "C:/python/multimode_expts/job_server/worker.lock"
@@ -203,6 +214,13 @@ def main(argv=None):
         return 0
 
     mode = args.mode if args.suite == "measurement" else "analysis"
+    if mode == "mock":
+        hardware_only = [p.stem for p in notebooks if p.stem in HARDWARE_ONLY]
+        if args.only and hardware_only:
+            sys.exit(f"{hardware_only} run on hardware only (see HARDWARE_ONLY)")
+        if hardware_only:
+            print(f"skipped, hardware only: {', '.join(hardware_only)}")
+        notebooks = [p for p in notebooks if p.stem not in HARDWARE_ONLY]
     os.environ["MULTIMODE_RUN_PROFILE"] = args.profile
     if args.suite == "measurement":
         os.environ["MULTIMODE_RUN_MOCK"] = "1" if args.mode == "mock" else "0"
