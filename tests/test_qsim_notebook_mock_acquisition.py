@@ -476,7 +476,7 @@ def test_batch_runner_refuses_the_queue_in_mock_mode(mock_station, defaults):
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client, show=False,
     )
-    with pytest.raises(RuntimeError, match="no local mock path"):
+    with pytest.raises(RuntimeError, match="station has mock instruments"):
         runner.execute(batch.configs[:1], batch_size=1, log=False, show=False)
 
 
