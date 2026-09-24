@@ -33,6 +33,12 @@ Kinds
     ``MBRSpectrumExperiment`` manifest and assembled HDF5. The optional
     ``calibration_job_ids`` are converted first, as ``stark_cal``, and become
     the spectrum's calibration set.
+``orthogonality``
+    Old ``EncodingOrthogonalityProgram`` jobs, one per initial occupation,
+    each sweeping every decoder at analyzer phase 0 and 90 (``q = 0``) -> one
+    ``MBROrthoColumnExperiment`` file per job, then one
+    ``MBROrthogonalityExperiment`` manifest and assembled HDF5.
+    Example: 35 files -> 35 + 1 + 1.
 
 Each converted file records the old job IDs and file paths it came from
 (``converted_from``) and its new job class (``job_class``), and carries the
@@ -63,6 +69,8 @@ from slab.experiment import NpEncoder  # noqa: E402
 from experiments import assembled_data  # noqa: E402
 from experiments.job_paths import job_records, resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment  # noqa: E402
+from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment  # noqa: E402
+from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment  # noqa: E402
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment  # noqa: E402
 from experiments.qsim.mbr_stark_cal import (  # noqa: E402
     RAMSEY_PHASES,
@@ -344,7 +352,126 @@ def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=N
     return spectrum
 
 
-MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum}
+# --------------------------------------------------------------------------
+# orthogonality: split old column jobs into one OrthoColumn per cycle
+# --------------------------------------------------------------------------
+
+# Old sweep and program-set keys that the new column layout replaces.
+OLD_COLUMN_KEYS = (
+    "orthogonality_decoder_occupations", "orthogonality_analyzer_phases",
+    "decoder_analyzer_rows", "decoder_analyzer_row",
+    "propagator_cycles", "propagator_occupations",
+    "propagator_decoder_phase_correction_deg", "phase_correction_location",
+    "cycle_decoder_analyzers", "cycle_decoder_analyzer",
+    "spectroscopy_prep_phases", "spectroscopy_prep_phase", ANALYZER_KEY,
+    "spectroscopy_final_occupations", "final_analyzer_phase_per_cycle_deg",
+)
+
+
+def column_rows(job):
+    """-> (decoders, [(cycle, decoder, analyzer phase) per saved row], pulse, analysis).
+
+    ``pulse`` and ``analysis`` are the per-decoder Stark corrections the old
+    job played on the pulse and left to analysis, in deg / cycle.
+    """
+    ecfg = job.cfg.expt
+    if "decoder_analyzer_rows" in ecfg:  # EncodingOrthogonalityProgram
+        decoders = [tuple(int(n) for n in o) for o in ecfg.orthogonality_decoder_occupations]
+        phases = [float(phi) for phi in ecfg.orthogonality_analyzer_phases]
+        rows = [(0, decoders[int(row) // 2], phases[int(row) % 2])
+                for row in np.asarray(job.data["ypts"]).tolist()]
+        zeros = [0.] * len(decoders)
+        return decoders, rows, zeros, zeros
+    if "cycle_decoder_analyzers" in ecfg:  # EncodingPropagatorProgram
+        decoders = [tuple(int(n) for n in o) for o in ecfg.propagator_occupations]
+        rows = [(int(row[0]), tuple(int(n) for n in row[1:-1]), float(row[-1]))
+                for row in np.asarray(job.data["ypts"]).tolist()]
+        correction = [float(phi) for phi in ecfg.propagator_decoder_phase_correction_deg]
+        zeros = [0.] * len(decoders)
+        location = ecfg.get("phase_correction_location", "analysis")
+        if location not in ("pulse", "analysis"):
+            raise ValueError(f"{job.job_id}: phase_correction_location {location!r}")
+        return (decoders, rows, *((correction, zeros) if location == "pulse"
+                                  else (zeros, correction)))
+    raise ValueError(f"{job.job_id} is not an orthogonality or propagator job")
+
+
+def split_column_job(job):
+    """-> {cycle: (cfg, data)}, one new-layout OrthoColumn per cycle of an old job.
+
+    The old outer sweep packs (cycle, decoder, analyzer phase) into one row;
+    the inner sweep is the preparation phase 0/180. Each new column sweeps
+    the decoders (outer) and :data:`RAMSEY_PHASES` (inner).
+    """
+    decoders, rows, pulse, analysis = column_rows(job)
+    if not np.allclose(job.data["xpts"], [0., 180.]):
+        raise ValueError(f"{job.job_id}: preparation phases {job.data['xpts']}")
+    index = {row: i for i, row in enumerate(rows)}
+    if len(index) != len(rows):
+        raise ValueError(f"{job.job_id}: repeated sweep rows")
+    cycles = sorted({row[0] for row in rows})
+    if len(rows) != 2 * len(cycles) * len(decoders):
+        raise ValueError(f"{job.job_id}: {len(rows)} rows do not cover "
+                         f"{len(cycles)} cycles x {len(decoders)} decoders x 2 phases")
+    shots = all(key in job.data for key in SHOT_KEYS)
+    base = AttrDict(_strip(job.cfg, OLD_COLUMN_KEYS))
+
+    columns = {}
+    for cycle in cycles:
+        # Old point p = 2 * row + prep; new order is decoder, analyzer, prep.
+        points = [2 * index[(cycle, decoder, phi)] + prep
+                  for decoder in decoders for phi in (0., 90.) for prep in (0, 1)]
+        data = dict(xpts=np.asarray(RAMSEY_PHASES), ypts=np.asarray(decoders))
+        for key in POINT_KEYS:
+            data[key] = np.asarray(job.data[key]).reshape(-1)[points].reshape(len(decoders), 4)
+        if shots:
+            for key in SHOT_KEYS:
+                data[key] = np.asarray(job.data[key])[points]
+        cfg = deepcopy(base)
+        ecfg = cfg.expt
+        ecfg.floquet_cycle = int(cycle)
+        ecfg.decoder_occupations = [list(decoder) for decoder in decoders]
+        ecfg.decoder_phase_per_cycle_deg = list(pulse)
+        if any(analysis):
+            ecfg.analysis_phase_per_cycle_deg = list(analysis)
+        ecfg.ramsey_phases = deepcopy(RAMSEY_PHASES)
+        ecfg.swept_params = ["decoder_occupation", "ramsey_phase"]
+        ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
+        columns[cycle] = (cfg, data)
+    return columns
+
+
+def convert_columns(jobs, converted_dir):
+    """-> {cycle: ([OrthoColumn jobs], [source job IDs])} for old column jobs."""
+    by_cycle = {}
+    for job in jobs:
+        for cycle, (cfg, data) in split_column_job(job).items():
+            path = converted_dir / (f"converted_{job.job_id}_q{cycle}_"
+                                    f"{MBROrthoColumnExperiment.__name__}.h5")
+            child = write_converted(MBROrthoColumnExperiment, "MBROrthoColumnProgram",
+                                    [job], cfg, data, path)
+            children, sources = by_cycle.setdefault(cycle, ([], []))
+            children.append(child)
+            sources.append(job.job_id)
+    return dict(sorted(by_cycle.items()))
+
+
+def migrate_orthogonality(job_ids, out_root=None, load_shots=True, notes="", timing=None):
+    """Convert one zero-cycle orthogonality dataset. -> the saved MBROrthogonalityExperiment."""
+    paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
+    out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
+    for job in jobs:
+        if "decoder_analyzer_rows" not in job.cfg.expt:
+            raise ValueError(f"{job.job_id} is not an orthogonality job")
+    (children, sources), = convert_columns(jobs, out_root / assembled_data.CONVERTED_DIR).values()
+    ortho = MBROrthogonalityExperiment.from_children(children, job_ids=sources, notes=notes)
+    ortho.analyze()
+    ortho.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
+    return ortho
+
+
+MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum,
+              "orthogonality": migrate_orthogonality}
 
 
 def main(argv=None):

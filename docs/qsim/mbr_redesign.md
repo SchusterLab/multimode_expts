@@ -183,6 +183,15 @@ still need. Exception: their runner calls move in step 1.
   `MBRRamseyProgram` inherits `SidebandScrambleProgram, DarkBaseProgram` directly; it does
   not use `SidebandScrambleDarkProgramNewNew` (that class adds only a dark-mode
   `core_pulses`, which MBR never plays). Untangling the big qsim mixins is out of scope here.
+- Step 4 done (2026-09-24). `experiments/qsim/mbr_ortho_column.py` (job + Program; outer
+  sweep `decoder_occupation`, per-decoder pulse correction `decoder_phase_per_cycle_deg`),
+  `MBROrthogonalityExperiment` in `experiments/qsim/mbr_orthogonality.py` (assembled; square
+  matrix, columns in the jobs' decoder order), migration kind `orthogonality`. Converted old
+  propagator jobs that left their correction to analysis carry it as
+  `analysis_phase_per_cycle_deg`; the assembled `matrix` applies it, `raw_matrix` does not.
+  Fixture: `september_N3_orthogonality` in `tests/data/mbr_datasets.json` (35 jobs, given by
+  the user). Gate: `tests/test_mbr_orthogonality.py`; the new matrix equals the old
+  `reconstruct_orthogonality` (xfail baseline, XPASS).
 
 ### Handoff for steps 4-6
 

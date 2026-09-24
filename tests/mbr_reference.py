@@ -272,6 +272,29 @@ def run_stark_cal_analysis(out_root):
 
 
 # --------------------------------------------------------------------------
+# Orthogonality and propagator sets
+# --------------------------------------------------------------------------
+#
+# Given by the user on 2026-09-24 (see ``notes`` in mbr_datasets.json).
+# September N=3: 35 zero-cycle orthogonality jobs, one per initial occupation,
+# modes M1, S2..S5. August N=1: 5 propagator jobs at q = 0 and 20; the lab log
+# does not confirm that it is the set in the logged plots, so it gates code,
+# not physics.
+
+ORTHOGONALITY_IDS = dataset("september_N3_orthogonality", "orthogonality")
+PROPAGATOR_IDS = dataset("august_N1_propagator", "propagator")
+
+
+def converted_orthogonality(out_root):
+    """-> MBROrthogonalityExperiment for September N=3, through the migration script."""
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+
+    converted = migration_tool().migrate_orthogonality(
+        ORTHOGONALITY_IDS, out_root=out_root, load_shots=False)
+    return MBROrthogonalityExperiment.from_manifest(converted.manifest_path)
+
+
+# --------------------------------------------------------------------------
 # Flattening, so a nested analysis result can be compared field by field
 # --------------------------------------------------------------------------
 #
