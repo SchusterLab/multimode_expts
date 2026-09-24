@@ -471,10 +471,9 @@ class MultimodeStation:
         validators see a complete soccfg), then installs MockQickSoc +
         MockYokogawa stubs. Does not claim real yokos.
 
-        soccfg source: on the prod PC, fetched live from the Pyro proxy (and the
-        committed snapshot refreshed); off it, loaded from the committed JSON
-        snapshot — no FPGA, no proxy, accurate unit conversions and channel
-        shape. See docs/reference/mock_mode_architecture.md.
+        soccfg source: the committed JSON snapshot, on every machine — no FPGA,
+        no proxy, accurate unit conversions and channel shape. See
+        docs/reference/mock_mode_architecture.md.
 
         After this, use_real_instruments() will raise — reconstruct the
         station with mock=False to switch to real mode.
@@ -484,30 +483,15 @@ class MultimodeStation:
         print("[MOCK STATION] Mock hardware initialized (real soccfg + MockQickSoc)")
 
     def _resolve_mock_soccfg(self) -> QickConfig:
-        """soccfg for mock mode: live proxy on the prod PC, committed snapshot off it.
+        """soccfg for mock mode: always the committed snapshot, never the proxy.
 
-        Off-prod-PC we skip the proxy entirely (it would only time out). On the
-        prod PC we prefer the live proxy and opportunistically refresh the
-        snapshot, falling back to the snapshot if the proxy is unreachable
-        (e.g. board powered off).
+        Mock mode must not touch the board, even on the prod PC: the board may
+        be running someone else's firmware (a tProc v2 test, say), and a live
+        fetch would both break the mock run and overwrite the snapshot with
+        that firmware. Only a real station refreshes the snapshot.
         """
-        qick_alias = self.hardware_cfg["aliases"]["soc"]
-        if not is_production_pc():
-            print(f"[MOCK STATION] Off-prod-PC: loading soccfg from {SOCCFG_SNAPSHOT_PATH}")
-            return read_soccfg_snapshot()
-        try:
-            real_im = InstrumentManager(ns_address="192.168.137.26")
-            soccfg = QickConfig(real_im[qick_alias].get_cfg())
-        except Exception as e:
-            print(f"[MOCK STATION] Live proxy unreachable ({e!r}); "
-                  f"falling back to committed soccfg snapshot.")
-            return read_soccfg_snapshot()
-        try:
-            if write_soccfg_snapshot_if_changed(soccfg):
-                print(f"[MOCK STATION] Updated soccfg snapshot: {SOCCFG_SNAPSHOT_PATH}")
-        except Exception as e:
-            print(f"[MOCK STATION] WARNING: could not update soccfg snapshot ({e!r})")
-        return soccfg
+        print(f"[MOCK STATION] Loading soccfg from {SOCCFG_SNAPSHOT_PATH}")
+        return read_soccfg_snapshot()
 
     def _install_mock_instruments(self):
         """Build mock im + yokos and assign to self. Does not touch soc/configs."""

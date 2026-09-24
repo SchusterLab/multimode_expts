@@ -32,7 +32,7 @@ a parallel mock framework; we use the existing PC-side split.
 
 | Real (unchanged from production) | Mocked (no-op stub) |
 |---|---|
-| `qick.QickConfig` (fetched from live Pyro proxy at init) | `qick.QickSoc` proxy → `MockQickSoc` |
+| `qick.QickConfig` (loaded from the committed snapshot at init) | `qick.QickSoc` proxy → `MockQickSoc` |
 | Full `hardware_cfg`, `multimode_cfg` from version DB | `slab.InstrumentManager` → `MockInstrumentManager` (dict subclass holding `MockQickSoc`) |
 | `ds_storage`, `ds_floquet` datasets | `YokogawaGS200` → `MockYokogawa` (no-op with action-trace prints) |
 | The entire qick program-build + ASM-compile path | Output paths (redirected to `C:/experiments/mock_data/...`) |
@@ -110,28 +110,25 @@ real lab notebook. Two guards:
 There is no override flag. If you need to test the logging path itself, flip
 out of mock mode briefly with `station.use_real_instruments()`.
 
-## soccfg snapshot (off-prod-PC mock fallback)
+## soccfg snapshot (mock mode firmware shape)
 
 The qick library's program-init validators need a complete `soccfg`
-(`QickConfig`) dict describing the loaded firmware. On the prod PC this is
-fetched live from the Pyro proxy. Off the prod PC (laptops, dev machines) there
-is no proxy, so mock mode loads a **committed JSON snapshot** of the firmware
-shape instead — a fully-functional `QickConfig` with accurate unit conversions
+(`QickConfig`) dict describing the loaded firmware. Mock mode loads a
+**committed JSON snapshot** of the firmware shape, on every machine including
+the prod PC. It never contacts the Pyro proxy: the board may be running other
+firmware (e.g. another user's tProc v2 test), which would break the mock run
+and overwrite the snapshot. The snapshot is a fully-functional `QickConfig` with accurate unit conversions
 and real channel shape (not a hand-rolled identity stub).
 
 - **File:** `configs/soccfg_snapshot.json`, a serialized `QickConfig`
   (`soccfg.dump_cfg()` ↔ `QickConfig(cfg=path)`).
 - **Generation / refresh:** automatic. Any successful live soccfg fetch on the
-  prod PC (real init, or prod-PC mock init) calls
+  prod PC (real init only) calls
   `write_soccfg_snapshot_if_changed()`, which rewrites the file only when the
   firmware actually changed — git stays clean otherwise. First-time generation
   happens the next time a real station runs on the prod PC.
 - **Resolution (`_resolve_mock_soccfg`):**
-  - On the prod PC (`is_production_pc()`): live proxy preferred (and snapshot
-    refreshed); falls back to the snapshot if the proxy is unreachable (board
-    powered off).
-  - Off the prod PC: load the snapshot directly, skipping the proxy entirely
-    (a proxy attempt off-prod would only hang and time out).
+  always the snapshot, on and off the prod PC. No proxy contact.
 - **Helpers** live in `experiments/station.py`: `SOCCFG_SNAPSHOT_PATH`,
   `read_soccfg_snapshot()`, `write_soccfg_snapshot_if_changed()`.
 
@@ -152,8 +149,7 @@ whose identity unit-conversions made absolute pulse timing inaccurate.
 ## Out of scope / deferred
 
 - **Soccfg JSON snapshot in repo.** ✅ Done — see "soccfg snapshot" above.
-  `is_production_pc()` now drives `_resolve_mock_soccfg`, so off-prod-PC mock
-  init works with no proxy.
+  Mock init reads the snapshot on every machine, so it works with no proxy.
 - **Off-prod-PC config DB / output paths.** The soccfg half of off-prod-PC
   support is done. Still missing: the config DB (`_initialize_configs` reads
   the version DB) and the hardcoded `C:/experiments/mock_data` output path

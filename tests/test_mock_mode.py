@@ -243,16 +243,18 @@ def test_write_snapshot_if_changed_semantics(tmp_path, monkeypatch):
     assert s.write_soccfg_snapshot_if_changed(FakeCfg('{"a": 2}')) is True
 
 
-def test_resolve_mock_soccfg_offprod_uses_snapshot_no_proxy(monkeypatch):
-    """Off-prod-PC, mock soccfg must come from the snapshot without any proxy
-    contact (a proxy attempt off-prod would only hang and time out)."""
+@pytest.mark.parametrize("on_prod", [False, True])
+def test_resolve_mock_soccfg_uses_snapshot_no_proxy(monkeypatch, on_prod):
+    """Mock soccfg must come from the snapshot without any proxy contact, on
+    the prod PC too: the board may run other firmware, and mock must not
+    touch it."""
     import experiments.station as s
     if not s.SOCCFG_SNAPSHOT_PATH.exists():
         pytest.skip("no committed soccfg snapshot in this checkout")
-    monkeypatch.setattr(s, "is_production_pc", lambda: False)
+    monkeypatch.setattr(s, "is_production_pc", lambda: on_prod)
     # Detonate if anything tries to reach the proxy.
     def _boom(*a, **k):
-        raise AssertionError("off-prod path must not construct InstrumentManager")
+        raise AssertionError("mock soccfg must not construct InstrumentManager")
     monkeypatch.setattr(s, "InstrumentManager", _boom)
 
     inst = s.MultimodeStation.__new__(s.MultimodeStation)
