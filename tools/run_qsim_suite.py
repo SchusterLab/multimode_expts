@@ -21,6 +21,10 @@ Cell tags (jupytext: ``# %% tags=["suite-skip"]``) take cells out of a run:
   this instead"), and cells that need a person's judgement first.
 - ``mock-skip``: not in mock mode. Cells that only make sense on real data.
 
+``raises-exception`` (nbclient's own tag) marks a known failure: the cell may
+raise and the run continues. The summary counts these as xfail, and a tagged
+cell that ran clean as xpass, so a fixed bug shows up.
+
 Hardware mode drives the real device from this checkout. Before it starts, it
 takes the main checkout's worker lock: it refuses if a worker is running, and
 while it holds the lock no worker can start. Tell the other users first.
@@ -91,8 +95,19 @@ def first_line(cell):
     return cell.source.strip().splitlines()[0][:70] if cell.source.strip() else ""
 
 
+def expected_failures(nb):
+    """-> (xfail, xpass): indices of raises-exception cells that raised / did not."""
+    xfail, xpass = [], []
+    for index, cell in enumerate(nb.cells):
+        if "raises-exception" not in cell.metadata.get("tags", []):
+            continue
+        raised = any(o.get("output_type") == "error" for o in cell.get("outputs", []))
+        (xfail if raised else xpass).append(index)
+    return xfail, xpass
+
+
 def run_notebook(path, out_dir, skip, cell_timeout):
-    """Execute one notebook; -> (ok, seconds, error summary or None)."""
+    """Execute one notebook; -> (ok, seconds, error summary or None, xfail, xpass)."""
     import nbformat
     from nbclient import NotebookClient
     from nbclient.exceptions import CellExecutionError
@@ -135,7 +150,7 @@ def run_notebook(path, out_dir, skip, cell_timeout):
     out = out_dir / f"{path.parent.parent.name}__{path.stem}.ipynb"
     nbformat.write(nb, out)
     print(f"  -> {out}")
-    return error is None, seconds, error
+    return (error is None, seconds, error, *expected_failures(nb))
 
 
 def hold_worker_lock():
@@ -207,10 +222,10 @@ def main(argv=None):
     results = []
     try:
         for path in notebooks:
-            ok, seconds, error = run_notebook(
+            ok, seconds, error, xfail, xpass = run_notebook(
                 path, out_dir, skipped_tags(mode), args.cell_timeout
             )
-            results.append((path.stem, ok, seconds, error))
+            results.append((path.stem, ok, seconds, error, xfail, xpass))
             if not ok and not args.keep_going:
                 break
     finally:
@@ -218,13 +233,17 @@ def main(argv=None):
             lock.release()
 
     print("\nsummary")
-    for name, ok, seconds, error in results:
+    for name, ok, seconds, error, xfail, xpass in results:
         status = "ok  " if ok else "FAIL"
-        print(f"  {status} {name:28s} {seconds:7.0f} s  {error or ''}")
+        known = "".join([
+            f" xfail cells {xfail}" if xfail else "",
+            f" XPASS cells {xpass}" if xpass else "",
+        ])
+        print(f"  {status} {name:28s} {seconds:7.0f} s {known} {error or ''}")
     not_run = [p.stem for p in notebooks][len(results):]
     if not_run:
         print(f"  not run: {', '.join(not_run)}")
-    return 0 if all(ok for _, ok, _, _ in results) and not not_run else 1
+    return 0 if all(r[1] for r in results) and not not_run else 1
 
 
 if __name__ == "__main__":

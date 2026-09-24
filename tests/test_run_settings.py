@@ -108,4 +108,18 @@ def test_every_suite_notebook_parses_and_keeps_its_station_cell():
         raw = jupytext.read(path)
         for cell in raw.cells:
             for tag in cell.metadata.get("tags", []):
-                assert tag in {"suite-skip", "mock-skip"}, (path.name, tag)
+                assert tag in {"suite-skip", "mock-skip", "raises-exception"}, (path.name, tag)
+
+
+def test_expected_failures_split_raised_from_clean():
+    import nbformat
+    from tools.run_qsim_suite import expected_failures
+
+    nb = nbformat.v4.new_notebook()
+    raised = nbformat.v4.new_code_cell("1/0", metadata={"tags": ["raises-exception"]})
+    raised.outputs = [nbformat.v4.new_output("error", ename="ZeroDivisionError",
+                                             evalue="", traceback=[])]
+    clean = nbformat.v4.new_code_cell("1", metadata={"tags": ["raises-exception"]})
+    plain = nbformat.v4.new_code_cell("2")
+    nb.cells = [plain, raised, clean]
+    assert expected_failures(nb) == ([1], [2])
