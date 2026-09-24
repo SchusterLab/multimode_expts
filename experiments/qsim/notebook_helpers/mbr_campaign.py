@@ -219,7 +219,7 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
         show=False,
     )
     calibration_expt = MBRPhaseCorrectionExperiment._from_expts(runner.execute(
-        configs=batch.configs, batch_size=batch_size, log=True, show=False,
+        overrides=batch.configs, batch_size=batch_size, log=True, show=False,
     ), job_ids=runner.last_job_ids, station=runner.station)
     calibration_expt.analyze()
     campaign.calibrations[N] = calibration_expt

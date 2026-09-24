@@ -214,7 +214,7 @@ calibration_runner = CharacterizationRunner(
     show=False,
 )
 calibration_expt = MBRPhaseCorrectionExperiment._from_expts(calibration_runner.execute(
-    configs=calibration_batch.configs, batch_size=10, log=True, show=False,
+    overrides=calibration_batch.configs, batch_size=10, log=True, show=False,
 ), job_ids=calibration_runner.last_job_ids, station=calibration_runner.station)
 calibration_expt.analyze()
 encspec_calibrations[encspec_N] = calibration_expt
@@ -284,7 +284,7 @@ recalibration_runner = CharacterizationRunner(
     show=False,
 )
 replacement_calibration_expt = MBRPhaseCorrectionExperiment._from_expts(recalibration_runner.execute(
-    configs=recalibration_batch.configs,
+    overrides=recalibration_batch.configs,
     batch_size=recalibration_batch_size,
     log=True,
     show=False,
@@ -376,7 +376,7 @@ orthogonality_runner = CharacterizationRunner(
     show=False,
 )
 orthogonality_expt = MBROrthogonalityExperiment._from_expts(orthogonality_runner.execute(
-    configs=orthogonality_batch.configs,
+    overrides=orthogonality_batch.configs,
     batch_size=1,
     log=True,
     show=False
@@ -465,7 +465,7 @@ spectroscopy_batch, spectroscopy_runner, calibration_expt, cycle_branches = (
 # Submit. Kept separate from the setup above so the job-submitting step is
 # always its own cell.
 spectroscopy_expt = MBRSpectrumExperiment._from_expts(spectroscopy_runner.execute(
-    configs=spectroscopy_batch.configs,
+    overrides=spectroscopy_batch.configs,
     batch_size=encspec_batch_size,
     log=True,
     show=False,
@@ -531,7 +531,7 @@ propagator_batch, propagator_runner, calibration_expt = build_propagator_batch(
 
 # %%
 propagator_expt = MBRPropagatorExperiment._from_expts(propagator_runner.execute(
-    configs=propagator_batch.configs,
+    overrides=propagator_batch.configs,
     batch_size=1,
     log=True,
     show=False,

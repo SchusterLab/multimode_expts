@@ -70,7 +70,7 @@ def test_no_notebook_calls_the_retired_stage_dispatch(path):
         expt.analyze()
 
     and for a freshly acquired batch,
-    `<StageClass>._from_expts(runner.execute(configs=...), job_ids=...)`, which
+    `<StageClass>._from_expts(runner.execute(overrides=...), job_ids=...)`, which
     keeps the runner recording the class the data was acquired under.
     """
     text = _code(path)

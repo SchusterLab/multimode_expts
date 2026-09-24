@@ -73,7 +73,7 @@ from slab import AttrDict
 # - Acquisition. `ExptClass=EncSpec` is unchanged, and so is
 #   every `ExptClass=...DarkBaseExperiment`. No class was renamed: names are
 #   recorded in job provenance. (`BatchRunner` merged into
-#   `CharacterizationRunner.execute(configs=...)` on 2026-09-24.)
+#   `CharacterizationRunner.execute(overrides=...)` on 2026-09-24.)
 #   Modules *did* move on 2026-09-12 -- `DarkBaseExperiment` to
 #   `experiments/qsim/dark_base.py`, each stage's Program to its stage
 #   module. Old addresses still resolve through

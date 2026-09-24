@@ -154,7 +154,7 @@ hamtom_plan = build_tomography_plan(
 
 # %%
 hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_plan["runner"].execute(
-    configs=hamtom_plan["batch"].configs,
+    overrides=hamtom_plan["batch"].configs,
     batch_size=hamtom_plan["batch_size"],
     log=True,
     show=False,

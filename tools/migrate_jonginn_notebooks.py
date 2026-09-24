@@ -353,7 +353,7 @@ def rewrite_constructions(source, stage_by_receiver):
       var = <Alias>.from_job_ids(...)      -> var = <Stage>.from_job_ids(...)
       var = <runner>.execute(...)          -> var = <Stage>._from_expts(<runner>.execute(...), ...)
 
-    In the second, `execute(configs=...)` returns the job Experiments, whose
+    In the second, `execute(overrides=...)` returns the job Experiments, whose
     class stays the acquired class for provenance, so they are wrapped rather
     than built differently.
     """

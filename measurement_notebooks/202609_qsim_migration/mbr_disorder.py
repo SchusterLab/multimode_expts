@@ -173,7 +173,7 @@ disorder_batch, disorder_runner, disorder_cycle_branches = build_pairwise_batch(
 )
 
 disorder_expt = MBRSpectrumExperiment._from_expts(disorder_runner.execute(
-    configs=disorder_batch.configs,
+    overrides=disorder_batch.configs,
     batch_size=pairwise_plan["disorder_batch_size"],
     log=True,
     show=False,
@@ -257,7 +257,7 @@ for realization_plan in diag_plan["diag_disorder_plans"]:
     )
     try:
         diag_expt = MBRSpectrumExperiment._from_expts(diag_runner.execute(
-            configs=diag_batch.configs,
+            overrides=diag_batch.configs,
             batch_size=diag_config.batch_size,
             log=True,
             show=False,
@@ -411,7 +411,7 @@ for realization_plan in d72_plan["d72_plans"]:
     )
     try:
         d72_expt = MBRSpectrumExperiment._from_expts(d72_runner.execute(
-            configs=realization_plan.batch.configs,
+            overrides=realization_plan.batch.configs,
             batch_size=d72_config.batch_size,
             log=True,
             show=False,

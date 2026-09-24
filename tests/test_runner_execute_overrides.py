@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CharacterizationRunner.execute(configs=...) runs one job per override dict.
+"""CharacterizationRunner.execute(overrides=...) runs one job per override dict.
 
 This is the old `BatchRunner` path, merged into `CharacterizationRunner`
 (docs/qsim/mbr_redesign.md, section 4). In queue mode at most `batch_size`
@@ -16,7 +16,7 @@ through.
 Not tested here: anything about physics, or the real job server. The fake
 `job_client` below is the whole queue.
 
-Run:  pixi run python -m pytest tests/test_runner_execute_configs.py -v
+Run:  pixi run python -m pytest tests/test_runner_execute_overrides.py -v
 """
 import json
 
@@ -91,7 +91,7 @@ def _runner(station, **kwargs):
 def test_queue_returns_the_job_experiments_in_order(station):
     runner, client = _runner(station)
 
-    expts = runner.execute(configs=[{}, {}, {}], batch_size=2, use_queue=True,
+    expts = runner.execute(overrides=[{}, {}, {}], batch_size=2, use_queue=True,
                            log=False, show=False)
 
     assert len(client.submitted) == 3
@@ -101,11 +101,11 @@ def test_queue_returns_the_job_experiments_in_order(station):
 
 
 def test_batch_size_bounds_the_jobs_in_the_queue(station):
-    """With batch_size=2 and 5 configs the groups are 2/2/1, and every job
+    """With batch_size=2 and 5 override dicts the groups are 2/2/1, and every job
     still comes back, in config order."""
     runner, client = _runner(station)
 
-    expts = runner.execute(configs=[{"reps": i} for i in range(5)],
+    expts = runner.execute(overrides=[{"reps": i} for i in range(5)],
                            batch_size=2, use_queue=True, log=False, show=False)
 
     assert client.max_in_queue == 2
@@ -118,7 +118,7 @@ def test_batch_size_bounds_the_jobs_in_the_queue(station):
 def test_each_config_is_merged_over_the_shared_kwargs(station):
     runner, client = _runner(station)
 
-    runner.execute(configs=[{"reps": 1}, {}], use_queue=True, start=7,
+    runner.execute(overrides=[{"reps": 1}, {}], use_queue=True, start=7,
                    log=False, show=False)
 
     configs = [kw["expt_config"] for _, kw in client.submitted]
@@ -131,7 +131,7 @@ def test_rejects_bad_batch_size(station, batch_size):
     `batch_size=True` would silently mean 1."""
     runner, _ = _runner(station)
     with pytest.raises(ValueError, match="batch_size"):
-        runner.execute(configs=[{}], batch_size=batch_size, use_queue=True)
+        runner.execute(overrides=[{}], batch_size=batch_size, use_queue=True)
 
 
 def test_queue_mode_requires_a_job_client(station):
@@ -143,13 +143,13 @@ def test_queue_mode_requires_a_job_client(station):
         show=False,
     )
     with pytest.raises(ValueError, match="job_client"):
-        runner.execute(configs=[{}], use_queue=True)
+        runner.execute(overrides=[{}], use_queue=True)
 
 
-def test_rejects_empty_configs(station):
+def test_rejects_empty_overrides(station):
     runner, _ = _runner(station)
-    with pytest.raises(ValueError, match="configs cannot be empty"):
-        runner.execute(configs=[], use_queue=True)
+    with pytest.raises(ValueError, match="overrides cannot be empty"):
+        runner.execute(overrides=[], use_queue=True)
 
 
 def test_records_provenance(station):
@@ -157,7 +157,7 @@ def test_records_provenance(station):
     worker re-imports by these strings."""
     runner, client = _runner(station, ExptProgram=None)
 
-    runner.execute(configs=[{}], batch_size=1, use_queue=True, log=False, show=False)
+    runner.execute(overrides=[{}], batch_size=1, use_queue=True, log=False, show=False)
 
     _, kwargs = client.submitted[0]
     assert kwargs["experiment_class"] == "MockExperiment"
@@ -173,7 +173,7 @@ def test_records_the_program_when_there_is_one(station):
 
     runner, client = _runner(station, ExptProgram=FakeProgram)
 
-    runner.execute(configs=[{}], batch_size=1, use_queue=True, log=False, show=False)
+    runner.execute(overrides=[{}], batch_size=1, use_queue=True, log=False, show=False)
 
     _, kwargs = client.submitted[0]
     assert kwargs["program_class"] == "FakeProgram"
@@ -204,7 +204,7 @@ def test_a_failed_job_raises_and_cancels_the_rest(station):
     runner, _ = _runner(station, job_client=client)
 
     with pytest.raises(RuntimeError, match="JOB-002"):
-        runner.execute(configs=[{}, {}, {}], batch_size=3, use_queue=True,
+        runner.execute(overrides=[{}, {}, {}], batch_size=3, use_queue=True,
                        log=False, show=False)
 
     assert "JOB-003" in client.cancelled
@@ -220,7 +220,7 @@ def test_local_mode_runs_each_config(station):
         show=False,
     )
 
-    expts = runner.execute(configs=[dict(expts=4), dict(expts=6)])
+    expts = runner.execute(overrides=[dict(expts=4), dict(expts=6)])
 
     assert [len(e.data["xpts"]) for e in expts] == [4, 6]
     assert runner.last_job_ids == []
@@ -231,7 +231,7 @@ def test_mock_station_runs_locally_unless_the_call_asks(station):
     runner, client = _runner(station)
     runner.default_expt_cfg = AttrDict(dict(start=0, step=60, expts=3))
 
-    expts = runner.execute(configs=[{}])
+    expts = runner.execute(overrides=[{}])
 
     assert client.submitted == []
     assert len(expts) == 1

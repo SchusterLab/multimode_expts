@@ -281,7 +281,7 @@ calibration_runner = meas.CharacterizationRunner(
 )
 calibration_expt = meas.MBRPhaseCorrectionExperiment._from_expts(
     calibration_runner.execute(
-        configs=calibration_batch.configs, 
+        overrides=calibration_batch.configs, 
         batch_size=10, 
         log=True, 
         show=False,
@@ -319,7 +319,7 @@ for correction_sign in [1., -1.]:
 
     sign_expt = meas.MBRPhaseCorrectionExperiment._from_expts(
         calibration_runner.execute(
-            configs=sign_batch.configs, batch_size=2, log=True, show=False,
+            overrides=sign_batch.configs, batch_size=2, log=True, show=False,
         ), job_ids=calibration_runner.last_job_ids, station=calibration_runner.station)
     sign_expt.analyze(
         occupations=[encspec_sign_occupation],
@@ -384,7 +384,7 @@ spectroscopy_runner = meas.CharacterizationRunner(
 )
 spectroscopy_expt = meas.MBRSpectrumExperiment._from_expts(
     spectroscopy_runner.execute(
-        configs=spectroscopy_batch.configs, batch_size=8, log=True, show=False,
+        overrides=spectroscopy_batch.configs, batch_size=8, log=True, show=False,
     ), job_ids=spectroscopy_runner.last_job_ids, station=spectroscopy_runner.station)
 # Six arguments came out of this call: photon_number, detunings,
 # couplings_MHz, floquet_cycle_us, physical_kerr_MHz, correction and

@@ -26,7 +26,7 @@
 # **No class was renamed.** Class names are recorded in job provenance --
 # saved files are `JOB-<id>_<ClassName>.h5` -- so renaming one would orphan
 # data. Many jobs go through
-# `CharacterizationRunner(ExptClass=..., ExptProgram=...).execute(configs=...)`
+# `CharacterizationRunner(ExptClass=..., ExptProgram=...).execute(overrides=...)`
 # (`BatchRunner` merged into it on 2026-09-24).
 #
 # **Modules did move**, as of 2026-09-12: each stage's Program now lives

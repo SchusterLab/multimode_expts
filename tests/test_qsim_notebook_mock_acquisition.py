@@ -10,7 +10,7 @@ Two shapes of test, because the runners differ:
 
 - Single-job themes run end to end: `CharacterizationRunner.execute()`
   switches to `run_local()` when `station.is_mock`.
-- The MBR themes submit many jobs through `execute(configs=...)`. They are
+- The MBR themes submit many jobs through `execute(overrides=...)`. They are
   validated by building their configs through the refactored helpers and then
   instantiating and compiling the program directly -- the same qick path,
   without a queue.
@@ -590,7 +590,7 @@ def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
         job_client=client, show=False,
     )
     with pytest.raises(RuntimeError, match="station has mock instruments"):
-        runner.execute(configs=batch.configs[:1], batch_size=1, use_queue=True,
+        runner.execute(overrides=batch.configs[:1], batch_size=1, use_queue=True,
                        log=False, show=False)
 
 
@@ -608,7 +608,7 @@ def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
 
     This is the layer the stage-2 split actually changed: `build_campaign` and
     the four `*_batch` classmethods it feeds. The program is instantiated
-    directly rather than through `execute(configs=...)`, which would acquire.
+    directly rather than through `execute(overrides=...)`, which would acquire.
     """
     from experiments.qsim.notebook_helpers.mbr_campaign import (
         build_campaign,

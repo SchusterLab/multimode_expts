@@ -53,7 +53,7 @@ class MBRCalibrationSetExperiment:
 
     # -- acquisition ------------------------------------------------------
 
-    def job_configs(self):
+    def job_overrides(self):
         """-> one expt-config override dict per occupation."""
         return [self.child_class.job_config(occupation, self.cycle_pairs,
                                             self.swap_stors, self.sync_cycles,
@@ -70,7 +70,7 @@ class MBRCalibrationSetExperiment:
             raise TypeError(
                 f"runner.ExptClass is {runner.ExptClass.__name__}; "
                 f"{type(self).__name__} needs {self.child_class.__name__}")
-        children = runner.execute(configs=self.job_configs(),
+        children = runner.execute(overrides=self.job_overrides(),
                                   batch_size=batch_size, **execute_kwargs)
         self.children = list(children)
         self.job_ids = list(runner.last_job_ids)
@@ -82,7 +82,7 @@ class MBRCalibrationSetExperiment:
         """Assemble already acquired or loaded StarkCal jobs.
 
         The occupations, cycle pairs and swap modes are read from the jobs'
-        configs, in job order.
+        cfg.expt, in job order.
         """
         children = list(children)
         if not children:

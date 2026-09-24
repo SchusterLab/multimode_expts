@@ -308,7 +308,7 @@ def plot_sff_visibility(sff_visibility_expts, sff):
     """Plot the depth-zero encoder/decoder visibility (cell 363 tail).
 
     The one job it reports on is
-    `runner.execute(configs=sff["plan"].configs[:1], ...)`
+    `runner.execute(overrides=sff["plan"].configs[:1], ...)`
     in the notebook. Run it before the full ensemble: the ensemble analysis
     divides by this visibility.
 

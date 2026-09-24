@@ -63,8 +63,9 @@ Notes:
 
 ## 4. Runner
 
-- `CharacterizationRunner.execute(configs=None, batch_size=..., **kwargs)`.
-  No `configs`: one job, as today. With `configs` (a list of override dicts):
+- `CharacterizationRunner.execute(overrides=None, batch_size=..., **kwargs)`.
+  No `overrides`: one job, as today. With `overrides` (a list of override dicts,
+  each going to the preprocessor like the kwargs of a single call, not a `cfg.expt`):
   one job per dict, at most `batch_size` in the queue, returns a list of job instances.
 - It supports queue and direct dispatch, real and mock, through the existing
   `run`/`run_local` code. Mock station + queue raises unless explicitly allowed.
@@ -76,7 +77,7 @@ Notes:
 
 ```python
 spectrum = MBRSpectrumExperiment(occupations=..., cycles=..., calibration=cal)
-spectrum.acquire(runner, batch_size=10)   # build configs -> runner.execute -> assemble
+spectrum.acquire(runner, batch_size=10)   # build overrides -> runner.execute -> assemble
 spectrum.save()                           # manifest YAML + assembled HDF5
 spectrum.analyze(); spectrum.display()
 spectrum = MBRSpectrumExperiment.from_manifest(path)   # re-assemble from raw job files
@@ -134,7 +135,7 @@ and `test_no_stage_dispatch_remains.py` when the old stage classes go).
 
 1. Move the four old MBR classes to `legacy_mbr.py` (section 2) and point all importers
    there. Then the runner merge (section 4). Move every `BatchRunner` and `from_batch`
-   caller to `CharacterizationRunner.execute(configs=...)`, including the later-phase
+   caller to `CharacterizationRunner.execute(overrides=...)`, including the later-phase
    code (disorder, SFF, tomography helpers and notebooks). For later-phase code, change
    only the runner calls; its classes stay on `legacy_mbr.py`. This includes
    `experiments/qsim/mbr_campaign.py` (`run_stage`) and `notebook_helpers/mbr_campaign.py`.

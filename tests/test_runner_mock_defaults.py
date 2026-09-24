@@ -4,7 +4,7 @@
 Mock data is all zeros. A fit on it gives NaN or an error, and a
 postprocessor would write that result into the station config for the next
 cell. So on a mock station, `execute()` of `CharacterizationRunner`,
-and `SweepRunner` (including `execute(configs=...)`) defaults to no analyze
+and `SweepRunner` (including `execute(overrides=...)`) defaults to no analyze
 and no postprocess
 (see `mock_run_defaults` and docs/qsim/mock_suite_plan.md, step 1).
 An explicit argument from the caller still wins.
@@ -116,7 +116,7 @@ def test_sweep_real_defaults_unchanged(station):
 
 def test_batch_mock_acquires_only(station):
     post, calls = _counting_postprocessor()
-    expts = _char_runner(station, post).execute(configs=[dict(), dict()])
+    expts = _char_runner(station, post).execute(overrides=[dict(), dict()])
     assert len(expts) == 2
     assert all(e._analysis is None for e in expts)
     assert calls == []
@@ -125,7 +125,7 @@ def test_batch_mock_acquires_only(station):
 def test_batch_mock_explicit_wins(station):
     post, calls = _counting_postprocessor()
     expts = _char_runner(station, post).execute(
-        configs=[dict(go_kwargs=dict(analyze=True, save=False))], postprocess=True)
+        overrides=[dict(go_kwargs=dict(analyze=True, save=False))], postprocess=True)
     assert expts[0]._analysis is not None
     assert len(calls) == 1
 
@@ -134,6 +134,6 @@ def test_batch_real_defaults_unchanged(station):
     station._is_mock = False
     post, calls = _counting_postprocessor()
     expts = _char_runner(station, post).execute(
-        configs=[dict(go_kwargs=dict(save=False))], show=False)
+        overrides=[dict(go_kwargs=dict(save=False))], show=False)
     assert expts[0]._analysis is not None
     assert len(calls) == 1

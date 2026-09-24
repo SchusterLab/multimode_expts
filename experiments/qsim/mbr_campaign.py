@@ -340,7 +340,7 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
     """Acquire one stage, through the queue if a client is given.
 
     With a ``job_client`` this is the production path and goes through
-    ``CharacterizationRunner.execute(configs=...)``, so provenance and HDF5
+    ``CharacterizationRunner.execute(overrides=...)``, so provenance and HDF5
     output happen as usual. Without one it acquires in-process, which is the
     only option off-prod. Either way the return value is a list of acquired
     Experiments. Queued jobs analyze their own quadratures before saving.
@@ -356,7 +356,7 @@ def run_stage(station, stage, defaults, swap_stors, occupations,
             station=station, ExptClass=owner, ExptProgram=program,
             default_expt_cfg=batch.default_expt_cfg,
             job_client=job_client, show=show)
-        return runner.execute(configs=batch.configs, batch_size=batch_size,
+        return runner.execute(overrides=batch.configs, batch_size=batch_size,
                               use_queue=True, show=show, log=log)
 
     acquired = []

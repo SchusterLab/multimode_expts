@@ -48,7 +48,7 @@ Usage (Many Jobs):
     # One job per override dict. In queue mode at most batch_size jobs wait in
     # the queue at a time, so the worker always has work but a long campaign
     # is not queued all at once. Returns a list of Experiments, in order.
-    expts = runner.execute(configs=[dict(reps=100), dict(reps=200)], batch_size=10)
+    expts = runner.execute(overrides=[dict(reps=100), dict(reps=200)], batch_size=10)
     runner.last_job_ids   # queue job IDs; empty for local runs
 """
 
@@ -593,7 +593,7 @@ class CharacterizationRunner:
 
     def execute(
         self,
-        configs: Optional[list] = None,
+        overrides: Optional[list] = None,
         batch_size: int = 10,
         use_queue: Optional[bool] = None,
         allow_queue_in_mock: bool = False,
@@ -606,10 +606,12 @@ class CharacterizationRunner:
         notebooks can toggle execution mode without changing individual calls.
 
         Args:
-            configs: None runs one job and returns its Experiment. A list of
+            overrides: None runs one job and returns its Experiment. A list of
                 override dicts runs one job per dict, in order, and returns a
-                list of Experiments. Each dict is merged over **kwargs.
-            batch_size: With configs in queue mode, the most jobs waiting in the
+                list of Experiments. Each dict is merged over **kwargs and goes
+                to the preprocessor, like the kwargs of a single call; it is
+                not a cfg.expt.
+            batch_size: With overrides in queue mode, the most jobs waiting in the
                 queue at a time. The next group is submitted when the current
                 one is collected. Local runs go one at a time and ignore it.
             use_queue: Override instance setting. If None, uses self.use_queue,
@@ -623,7 +625,7 @@ class CharacterizationRunner:
                 (see mock_run_defaults).
 
         Returns:
-            Completed Experiment, or a list of them if configs is given.
+            Completed Experiment, or a list of them if overrides is given.
             Queue job IDs are in self.last_job_ids.
         """
         mode = use_queue if use_queue is not None else self.use_queue
@@ -647,7 +649,7 @@ class CharacterizationRunner:
                 "and pass allow_queue_in_mock=True."
             )
 
-        if configs is None:
+        if overrides is None:
             if is_mock:
                 kwargs = mock_run_defaults(kwargs, local=not mode)
             return self.run(**kwargs) if mode else self.run_local(**kwargs)
@@ -655,13 +657,13 @@ class CharacterizationRunner:
         if (isinstance(batch_size, (bool, np.bool_))
                 or not isinstance(batch_size, (int, np.integer)) or batch_size < 1):
             raise ValueError("batch_size must be a positive integer")
-        configs = list(configs)
-        if not configs:
-            raise ValueError("configs cannot be empty")
+        overrides = list(overrides)
+        if not overrides:
+            raise ValueError("overrides cannot be empty")
 
         jobs = []
-        for overrides in configs:
-            run_kwargs = {**kwargs, **overrides}
+        for job_overrides in overrides:
+            run_kwargs = {**kwargs, **job_overrides}
             if is_mock:
                 run_kwargs = mock_run_defaults(run_kwargs, local=not mode)
             jobs.append(run_kwargs)

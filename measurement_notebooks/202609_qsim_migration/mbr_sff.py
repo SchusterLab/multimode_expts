@@ -182,7 +182,7 @@ sff_visibility_runner = CharacterizationRunner(
 
 # configs[:1] is the depth-zero visibility configuration.
 sff_visibility_expts = sff_visibility_runner.execute(
-    configs=sff["plan"].configs[:1],
+    overrides=sff["plan"].configs[:1],
     batch_size=1,
     log=True,
     show=False,
@@ -213,7 +213,7 @@ sff_disorder_runner = CharacterizationRunner(
 # it already sent.
 try:
     sff_disorder_batch = sff_disorder_runner.execute(
-        configs=sff["plan"].configs[1:],
+        overrides=sff["plan"].configs[1:],
         batch_size=sff["batch_size"],
         log=True,
         show=False,

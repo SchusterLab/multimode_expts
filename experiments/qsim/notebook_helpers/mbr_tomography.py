@@ -222,7 +222,7 @@ def analyze_tomography(hamtom_expt, plan):
     hamtom_depth = plan["depth"]
     hamtom_cycle_us = plan["cycle_us"]
 
-    # execute(configs=...) returns the job Experiments; tomography needs the
+    # execute(overrides=...) returns the job Experiments; tomography needs the
     # aggregate propagator analyzer, reusing the already acquired children.
     if not isinstance(hamtom_expt, MBRPropagatorExperiment):
         hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_expt)
