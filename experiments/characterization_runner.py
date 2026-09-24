@@ -125,6 +125,30 @@ def default_postprocessor(station, expt):
     return None
 
 
+def sandbox_local(station, mode: bool) -> bool:
+    """-> False if the station is a sandbox, else ``mode`` unchanged.
+
+    A sandbox session runs code that is not the main checkout, and the queue
+    worker only runs the main checkout -- so a queued job would test the wrong
+    code. Every runner routes through here before choosing run() or
+    run_local(), and it wins over any use_queue setting.
+    """
+    if mode and getattr(station, "sandbox", False):
+        print("[runner] sandbox session: running locally, not through the job queue.")
+        return False
+    return mode
+
+
+def refuse_queue_in_sandbox(station):
+    """Raise if a sandbox session reaches a queue-submitting run() directly."""
+    if getattr(station, "sandbox", False):
+        raise RuntimeError(
+            "run() submits to the job queue, whose worker runs the main "
+            "checkout, but this station is a sandbox. Use execute() or "
+            "run_local()."
+        )
+
+
 class CharacterizationRunner:
     """
     Manages execution of single-point characterization experiments.
@@ -369,6 +393,7 @@ class CharacterizationRunner:
             ValueError: If job_client is not configured
             RuntimeError: If job fails or is cancelled
         """
+        refuse_queue_in_sandbox(self.station)
         if self.job_client is None:
             raise ValueError(
                 "job_client is required for run(). Either pass job_client to "
@@ -562,6 +587,7 @@ class CharacterizationRunner:
                 )
             else:
                 mode = False
+        mode = sandbox_local(self.station, mode)
 
         if mode:
             return self.run(**kwargs)

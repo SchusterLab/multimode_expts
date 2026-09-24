@@ -27,6 +27,7 @@ from experiments.local_env import load_env
 from job_server import JobClient
 from job_server.config_versioning import ConfigVersionManager
 from job_server.database import get_database
+from experiments.qsim.notebook_helpers.run_mode import station_config_paths
 
 # Cell 2 hard-coded the main checkout. Worktrees share the same config store,
 # so this stays pointed at the main path rather than the importing tree -- but
@@ -81,6 +82,7 @@ def open_session(
     config_dir=CONFIG_DIR,
     verbose=True,
     mock=False,
+    run=None,
 ):
     """Open the database, job client and station for a measurement notebook.
 
@@ -97,6 +99,11 @@ def open_session(
     `station.is_mock` and dispatches locally instead of through the job queue,
     so a mock session needs no server. The job-server health check is skipped
     for the same reason -- there may not be one running.
+
+    `run` is a `run_mode.RunSettings`. The default (``queue``) changes
+    nothing. ``mock`` and ``sandbox`` open a sandbox station: configs by
+    absolute archive path, a dated suite folder instead of `experiment_name`,
+    local execution, and no vault logging. See `run_mode.py`.
     """
     missing = {"hardware_config", "man1_storage_swap", "floquet_storage_swap"} - set(
         config_dict
@@ -104,11 +111,31 @@ def open_session(
     if missing:
         raise KeyError(f"config_dict is missing required keys: {sorted(missing)}")
 
+    station_configs = dict(
+        storage_man_file=config_dict["man1_storage_swap"],
+        hardware_config=config_dict["hardware_config"],
+        floquet_file=config_dict["floquet_storage_swap"],
+    )
+    sandbox = False
+    if run is not None and run.sandbox:
+        config_dict = run.config_dict(config_dict)
+        station_configs = station_config_paths(config_dict)
+        experiment_name = run.experiment_name(experiment_name)
+        log_measurements = False
+        mock = run.mock
+        sandbox = True
+        print(f"[qsim_session] {run}: sandbox station, local execution, "
+              f"data under {experiment_name}")
+        for key, value in config_dict.items():
+            print(f"  {key}: {value}")
+
     db = get_database()
     config_manager = ConfigVersionManager(config_dir)
     client = JobClient()
 
-    if verbose and not mock:
+    if verbose and sandbox:
+        print(f"Welcome {user}! (sandbox; job queue not used)")
+    elif verbose and not mock:
         health = client.health_check()
         print(f"Server status: {health['status']}")
         print(f"Pending jobs: {health['pending_jobs']}")
@@ -123,9 +150,8 @@ def open_session(
         project=project,
         log_measurements=log_measurements,
         mock=mock,
-        storage_man_file=config_dict["man1_storage_swap"],
-        hardware_config=config_dict["hardware_config"],
-        floquet_file=config_dict["floquet_storage_swap"],
+        sandbox=sandbox,
+        **station_configs,
     )
 
     return QsimSession(

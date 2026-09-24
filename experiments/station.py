@@ -42,6 +42,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 import socket
+import tempfile
 
 import numpy as np
 import yaml
@@ -55,6 +56,7 @@ from slab.instruments import InstrumentManager
 from slab.instruments.voltsource import YokogawaGS200
 
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
+from experiments.local_env import load_env
 from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
 
 from job_server.database import get_database
@@ -170,6 +172,7 @@ class MultimodeStation:
         mock: Optional[bool] = None,
         project: Optional[str] = None,
         log_measurements: bool = False,
+        sandbox: bool = False,
     ):
         """
         Initialize the measurement station.
@@ -184,6 +187,12 @@ class MultimodeStation:
             mock: If True, install MockQickSoc + MockYokogawa stubs (no FPGA bytes go out).
                   If False or None (default), connect to real hardware. See use_mock_instruments()
                   for mid-session swap that preserves in-memory state.
+            sandbox: If True, this session is a test run of code that is not
+                  the main checkout (a worktree, a refactor branch). Every
+                  runner executes locally instead of through the job queue,
+                  whose worker only runs the main checkout, and nothing is
+                  written to the lab-notebook vault. Works with real or mock
+                  instruments.
         """
         self.repo_root = Path(__file__).resolve().parent.parent
         self.experiment_name = (
@@ -200,6 +209,7 @@ class MultimodeStation:
         # or via the `log_measurements=True` kwarg above. Per-call `log=True`
         # on a runner.run/.run_local/.execute always overrides.
         self.log_measurements = log_measurements
+        self.sandbox = bool(sandbox)
 
         # Determine mock mode. Default to real (mock must be explicit) —
         # off-prod-PC support will need its own code path, not the mock flag.
@@ -418,11 +428,19 @@ class MultimodeStation:
     def _initialize_output_paths_mock(self):
         """Create output directories for mock mode.
 
-        Hardcoded to C:/experiments/mock_data on the prod PC. Off-prod-PC mode
-        will eventually need its own path resolution — flagged in
-        docs/mock_mode_architecture_plan.md.
+        $MULTIMODE_MOCK_DATA_ROOT if set (the repo-root .env works too), else
+        C:/experiments/mock_data on the prod PC and the system temp directory
+        anywhere else. The Windows path used to apply everywhere, which on a
+        Mac became a relative ``C:`` folder inside the checkout.
         """
-        self.output_root = Path("C:/experiments/mock_data")
+        load_env()
+        raw = os.environ.get("MULTIMODE_MOCK_DATA_ROOT")
+        if raw:
+            self.output_root = Path(raw)
+        elif is_production_pc():
+            self.output_root = Path("C:/experiments/mock_data")
+        else:
+            self.output_root = Path(tempfile.gettempdir()) / "multimode_mock_data"
 
         # Create directories (real directories for data file testing)
         self.experiment_path = self.output_root / self.experiment_name
@@ -683,6 +701,9 @@ class MultimodeStation:
         """
         if self._is_mock:
             print("[log_measurement] mock mode active; skipping vault write.")
+            return None
+        if self.sandbox:
+            print("[log_measurement] sandbox session; skipping vault write.")
             return None
         if self.vault_root is None:
             print(

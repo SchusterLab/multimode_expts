@@ -69,6 +69,11 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 from experiments.qsim.notebook_helpers.multiphoton_calibration import (
     analyze_swap_chevron,
     broadband_amprabi_preproc,
@@ -99,6 +104,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -172,9 +178,9 @@ station.hardware_cfg.device.qubit.pulses.pi_ge_broadband
 # =====================================
 broadband_amprabi_defaults = AttrDict(dict(
     start=0,
-    step=200,
-    expts=151,       # gain = 0 ... 30000
-    reps=200,
+    step=RUN.pick(200, smoke=1000),
+    expts=RUN.pick(151, smoke=31),       # gain = 0 ... 30000
+    reps=RUN.pick(200, smoke=100),
     rounds=1,
     sigma_test=broadband_sigma,
     qubit=0,
@@ -368,7 +374,8 @@ bb.gain[0] = best_gain
 # %% [markdown]
 # ### Fine
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse scan above, narrower.
 bb_freq_center = float(bb.frequency[0])
 bb_freq_band = 1.0
 bb_freq_points = 51
@@ -391,7 +398,8 @@ best_frequency, best_frequency_err = fit_broadband_frequency(
 # Accept the fine frequency fit.
 bb.frequency[0] = best_frequency
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse scan above, narrower.
 bb_gain_center = int(round(float(bb.gain[0])))
 bb_gain_start, bb_gain_stop, bb_gain_step = broadband_gain_grid(
     current_gain=bb_gain_center,
@@ -470,7 +478,7 @@ broadband_validation_runner = CharacterizationRunner(
 # %%
 # Execute and inspect the configured ['qubit', 'ge_broadband', 'pi', phase]
 broadband_validation = broadband_validation_runner.execute(
-    reps=500,
+    reps=RUN.pick(500, smoke=100),
     show=False,
     log=True,
 )
@@ -578,11 +586,11 @@ multiphoton_swap_endpoint_decoder = multiphoton_swap_sequences['endpoint_decoder
 
 # %%
 chevron_frequency_span_MHz = 0.40
-chevron_frequency_points = 25
-chevron_length_points = 41
+chevron_frequency_points = RUN.pick(25, smoke=7)
+chevron_length_points = RUN.pick(41, smoke=21)
 chevron_length_stop_us = 2.2 * station.ds_storage.get_pi(multiphoton_swap_pulse_name)
 chevron_gain = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
-chevron_reps = 100
+chevron_reps = RUN.pick(100, smoke=50)
 
 chevron_center_MHz = float(station.ds_storage.get_freq(multiphoton_swap_pulse_name))
 chevron_channel = 'low' if chevron_center_MHz < 1800 else 'high'
@@ -715,7 +723,7 @@ coarse_frequency_center_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
 coarse_frequency_half_span_MHz = 0.10
-coarse_frequency_points = 31
+coarse_frequency_points = RUN.pick(31, smoke=11)
 
 multiphoton_swap_coarse_frequency = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
@@ -759,7 +767,7 @@ coarse_gain_start, coarse_gain_stop, coarse_gain_step, coarse_gain_points = (
     even_gain_grid(
         center=coarse_gain_center,
         half_span=2000,
-        step=200,
+        step=RUN.pick(200, smoke=800),
         gain_limit=multiphoton_swap_gain_limit,
     )
 )
@@ -797,7 +805,8 @@ print('accepted coarse gain:', selected_gain)
 # %% [markdown]
 # ### 4-3. Fine gain
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 fine_gain_center = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
 fine_gain_start, fine_gain_stop, fine_gain_step, fine_gain_points = even_gain_grid(
     center=fine_gain_center,
@@ -830,7 +839,8 @@ _x, _return_error, fine_gain_candidate = score_return_error(
     as_int=True,
 )
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_gain = int(np.clip(fine_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
 print('accepted fine gain:', selected_gain)
@@ -839,7 +849,8 @@ print('accepted fine gain:', selected_gain)
 # %% [markdown]
 # ### 4-4. Fine frequency
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 fine_frequency_center_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
@@ -867,7 +878,8 @@ _x, _return_error, fine_frequency_candidate_MHz = score_return_error(
     title='fine frequency',
 )
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_frequency_MHz = fine_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
 station.ds_storage.update_precision(
@@ -894,7 +906,7 @@ odd_validation_defaults.update(dict(
     start=0.0,
     step=validation_pi_us,
     expts=2,
-    reps=300,
+    reps=RUN.pick(300, smoke=100),
     flux_drive=[
         'low' if validation_frequency_MHz < 1800 else 'high',
         validation_frequency_MHz,
@@ -930,7 +942,7 @@ multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     n_start=0,
     n_step=1,
     n_pulses=1,
-    reps=300,
+    reps=RUN.pick(300, smoke=100),
     postprocess=False,
     show=False,
     log=True,
@@ -1024,7 +1036,7 @@ station.ds_floquet.df
 # in the helper module.
 # =====================================
 singleshot_defaults = AttrDict(dict(
-    reps=5000,
+    reps=RUN.pick(5000, smoke=1000),
     relax_delay=500,
     check_f=False,
     active_reset=False,

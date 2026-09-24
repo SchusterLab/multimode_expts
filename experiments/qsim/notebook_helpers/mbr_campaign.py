@@ -193,6 +193,39 @@ def ensure_calibration(campaign, N, station):
     return calibration_expt
 
 
+def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
+                        batch_size=10, occupations=None):
+    """Acquire a fresh N-photon phase calibration and cache it on the campaign.
+
+    The "Run a new calibration" cell of `mbr.py`, as a function, so the
+    notebooks that otherwise load a calibration by job ID can acquire one
+    instead -- which the test suite needs, because it has no job IDs.
+    `occupations` defaults to the whole fixed-N basis.
+    """
+    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+
+    if occupations is None:
+        occupations = fixed_n_occupations(N, len(campaign.mode_labels))
+    batch = MBRPhaseCorrectionExperiment.calibration_batch(
+        campaign.defaults, campaign.modes, occupations, cycle_pairs,
+        sync_cycles=campaign.sync_cycles, repeats=1, reps=reps,
+    )
+    runner = campaign.BatchRunner(
+        station=station,
+        ExptClass=campaign.EncSpec,
+        ExptProgram=campaign.floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
+        default_expt_cfg=batch.default_expt_cfg,
+        job_client=client,
+        show=False,
+    )
+    calibration_expt = MBRPhaseCorrectionExperiment.from_batch(runner.execute(
+        batch.configs, batch_size=batch_size, log=True, show=False,
+    ))
+    calibration_expt.analyze()
+    campaign.calibrations[N] = calibration_expt
+    return calibration_expt
+
+
 # --------------------------------------------------------------------------
 # Cell 305, split at its own substeps.
 # --------------------------------------------------------------------------

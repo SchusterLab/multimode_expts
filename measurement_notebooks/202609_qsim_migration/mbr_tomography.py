@@ -67,9 +67,15 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
 from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
 from experiments.qsim.notebook_helpers.mbr_campaign import (
+    acquire_calibration,
     build_campaign,
     ensure_calibration,
 )
@@ -93,6 +99,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -116,7 +123,16 @@ campaign = build_campaign(
 )
 
 hamtom_N = 1
-ensure_calibration(campaign, hamtom_N, station)
+if RUN.sandbox:
+    # Suite run: there are no job IDs to load, so acquire a calibration
+    # on the same cycle grid as mbr.py's "Run a new calibration" cell.
+    acquire_calibration(
+        campaign, station, client, N=hamtom_N,
+        cycle_pairs=np.arange(0, 65, dtype=int),
+        reps=RUN.pick(1000, smoke=100),
+    )
+else:
+    ensure_calibration(campaign, hamtom_N, station)
 
 # %% [markdown]
 # ### 8-1. Build the $q=[0,s,2s]$ plan and check acquisition size — no jobs
@@ -128,7 +144,7 @@ hamtom_plan = build_tomography_plan(
     client=client,
     N=hamtom_N,
     step=10,
-    reps=1000,
+    reps=RUN.pick(1000, smoke=100),
     batch_size=5,
 )
 

@@ -67,7 +67,13 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 from experiments.qsim.notebook_helpers.mbr_campaign import (
+    acquire_calibration,
     build_campaign,
     ensure_calibration,
 )
@@ -92,6 +98,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -114,7 +121,16 @@ campaign = build_campaign(
     reps=1000,
 )
 
-ensure_calibration(campaign, 3, station)
+if RUN.sandbox:
+    # Suite run: there are no job IDs to load, so acquire a calibration
+    # on the same cycle grid as mbr.py's "Run a new calibration" cell.
+    acquire_calibration(
+        campaign, station, client, N=3,
+        cycle_pairs=np.arange(0, 65, dtype=int),
+        reps=RUN.pick(1000, smoke=100),
+    )
+else:
+    ensure_calibration(campaign, 3, station)
 
 # %% [markdown]
 # ### 9-1. Settings and workload preview — no jobs
@@ -124,7 +140,7 @@ ensure_calibration(campaign, 3, station)
 # %%
 sff_config = SFFConfig(
     N=3,
-    realization_count=2000,
+    realization_count=RUN.pick(2000, smoke=10),
     # 4 = two shots in each of the two independent replicas.
     total_reps_per_realization=4,
     disorder_strength_kHz=50.0,
@@ -133,10 +149,10 @@ sff_config = SFFConfig(
     # so this theme does not depend on the disorder campaign.
     max_time_us=80.0,
     cycle_step=2,
-    visibility_reps=1000,
+    visibility_reps=RUN.pick(1000, smoke=100),
     realizations_per_job=5,
     batch_size=14,
-    bootstrap_samples=300,
+    bootstrap_samples=RUN.pick(300, smoke=20),
     branch_overrides={},
 )
 
@@ -206,8 +222,9 @@ except BaseException:
     raise
 
 print("completed disorder jobs:", len(sff_disorder_batch.batch_job_ids))
-print("first job:", sff_disorder_batch.batch_job_ids[0])
-print("last job:", sff_disorder_batch.batch_job_ids[-1])
+if sff_disorder_batch.batch_job_ids:  # local runs have no queue job IDs
+    print("first job:", sff_disorder_batch.batch_job_ids[0])
+    print("last job:", sff_disorder_batch.batch_job_ids[-1])
 
 # %% [markdown]
 # ### 9-4. Analyze and plot the measured SFF — no jobs

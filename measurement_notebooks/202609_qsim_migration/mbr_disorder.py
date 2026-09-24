@@ -75,7 +75,13 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 from experiments.qsim.notebook_helpers.mbr_campaign import (
+    acquire_calibration,
     build_campaign,
     ensure_calibration,
 )
@@ -108,6 +114,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -128,7 +135,16 @@ campaign = build_campaign(
     calibration_job_ids=encspec_calibration_job_ids,
     reps=1000,
 )
-ensure_calibration(campaign, 3, station)
+if RUN.sandbox:
+    # Suite run: there are no job IDs to load, so acquire a calibration
+    # on the same cycle grid as mbr.py's "Run a new calibration" cell.
+    acquire_calibration(
+        campaign, station, client, N=3,
+        cycle_pairs=np.arange(0, 65, dtype=int),
+        reps=RUN.pick(1000, smoke=100),
+    )
+else:
+    ensure_calibration(campaign, 3, station)
 
 # %% [markdown]
 # ## 7. Disorder-resolved spectroscopy
@@ -142,8 +158,8 @@ pairwise_plan = build_pairwise_plan(
     N=3,
     strength_kHz=50.0,
     seed=20260815,
-    pair_count=10,
-    reps=300,
+    pair_count=RUN.pick(10, smoke=2),
+    reps=RUN.pick(300, smoke=100),
     batch_size=1,
 )
 
@@ -179,14 +195,14 @@ plt.show()
 # %%
 diag_config = DiagDisorderConfig(
     N=3,
-    realization_count=20,
+    realization_count=RUN.pick(20, smoke=1),
     strength_kHz=50.0,
     master_seed=20260816,
-    selected_states=10,
+    selected_states=RUN.pick(10, smoke=3),
     max_cycle=200,
     min_time_points=100,
     nyquist_margin=1.35,
-    reps=1200,
+    reps=RUN.pick(1200, smoke=100),
     batch_size=2,
     edge_fraction=0.10,
     gap_ratio_bins=15,
@@ -305,7 +321,7 @@ plot_diag_level_statistics(plan=diag_plan, config=diag_config)
 d72_config = D72Config(
     # Physics and disorder ensemble.
     N=3,
-    realization_count=2,
+    realization_count=RUN.pick(2, smoke=1),
     disorder_strength_kHz=50.0,
     master_seed=20260903,
     # State/channel constraints. None removes the cap; 1 keeps only hard-core
@@ -314,7 +330,7 @@ d72_config = D72Config(
     forbidden_states=[
         # [1, 0, 1, 0, 1],
     ],
-    channel_count=15,
+    channel_count=RUN.pick(15, smoke=3),
     required_support=1,
     allow_diagonal=True,
     allow_offdiagonal=True,
@@ -327,7 +343,7 @@ d72_config = D72Config(
     step_autocalculate=False,
     cycle_step=2,  # used when step_autocalculate is False
     cycle_chunk_points=200,
-    reps=1000,
+    reps=RUN.pick(1000, smoke=100),
     batch_size=2,
     # None uses the signed Kerr in the current hardware configuration.
     self_kerr_kHz=None,

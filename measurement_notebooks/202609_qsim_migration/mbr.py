@@ -78,6 +78,11 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 
 # The four aggregate MBR stages. `EncodingHamiltonianSpectroscopyExperiment`
 # is still the loading layer and the shared numerics, and is still the class
@@ -121,6 +126,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -179,7 +185,9 @@ print("registered calibration sectors:", sorted(encspec_calibration_job_ids))
 #
 # Change only `encspec_N` to select the fixed-photon-number sector.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. Needs registered calibration job IDs, and the next cell is
+# its alternative.
 encspec_N = 3
 calibration_expt = ensure_calibration(campaign, encspec_N, station)
 calibration_expt.display()
@@ -199,7 +207,8 @@ encspec_cycle_pairs = np.arange(0, 65, dtype=int)  # physical cycles: 0, 2, ...,
 
 calibration_batch = MBRPhaseCorrectionExperiment.calibration_batch(
     encspec_defaults, encspec_modes, encspec_calibration_occupations,
-    encspec_cycle_pairs, sync_cycles=encspec_sync_cycles, repeats=1, reps=1000,
+    encspec_cycle_pairs, sync_cycles=encspec_sync_cycles, repeats=1,
+    reps=RUN.pick(1000, smoke=100),
 )
 calibration_runner = BatchRunner(
     station=station,
@@ -234,7 +243,8 @@ encspec_calibration_occupations = fixed_n_occupations(
 # ]
 
 recalibration_occupations = [entry for entry in encspec_calibration_occupations if entry[1] > 0]
-recalibration_reps = 1000
+recalibration_occupations = RUN.pick(recalibration_occupations, smoke=recalibration_occupations[:2])
+recalibration_reps = RUN.pick(1000, smoke=100)
 recalibration_batch_size = 2
 recalibration_repeats = 1
 recalibration_N = int(encspec_N)
@@ -320,7 +330,7 @@ encspec_calibrations[encspec_N].display()
 
 # %%
 orthogonality_N = int(encspec_N)
-orthogonality_reps = 1000
+orthogonality_reps = RUN.pick(1000, smoke=100)
 orthogonality_occupations = fixed_n_occupations(
     orthogonality_N, len(encspec_mode_labels), descending=False
 )
@@ -408,7 +418,7 @@ print(
 
 # %%
 # Set one value only: None for one matrix element, or N for all diagonal rows.
-batch_encspec_N = 3 # int or None;
+batch_encspec_N = RUN.pick(3, smoke=None) # int or None;
 if batch_encspec_N is None:
     occupation = [
         [1, 0, 1, 1, 0],
@@ -424,8 +434,10 @@ else:
     occupation = None
     decoder_occupation = None
 
-encspec_cycle_chunks = floquet_cycle_list_gen(0, 300, 300, 2)
-encspec_reps = 500 #1200
+encspec_cycle_chunks = floquet_cycle_list_gen(
+    0, RUN.pick(300, smoke=60), RUN.pick(300, smoke=60), 2
+)
+encspec_reps = RUN.pick(500, smoke=100) #1200
 encspec_batch_size = 1 if batch_encspec_N is None else 10
 encspec_batch_size = 2
 
@@ -515,7 +527,7 @@ propagator_batch, propagator_runner, calibration_expt = build_propagator_batch(
     client=client,
     propagator_occupations=propagator_occupations,
     propagator_cycles=propagator_cycles,
-    reps=1000,
+    reps=RUN.pick(1000, smoke=100),
 )
 
 # %%

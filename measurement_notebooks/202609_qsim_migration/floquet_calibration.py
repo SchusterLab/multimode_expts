@@ -84,6 +84,11 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 from experiments.qsim.notebook_helpers.floquet_calibration import (
     error_amp_floquet_postproc,
     error_amp_floquet_preproc,
@@ -117,6 +122,7 @@ session = open_session(
     experiment_name="260915_qsim_migration",
     project="test_migration",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -130,7 +136,7 @@ config_manager = session.config_manager
 # Define defaults, smart config preprocessing and post-measurement updates
 # =====================================
 singleshot_defaults = AttrDict(dict(
-    reps=5000,
+    reps=RUN.pick(5000, smoke=1000),
     relax_delay=500,
     check_f=False,
     active_reset=False,
@@ -236,7 +242,7 @@ floquet_freq_chev_runner = CharacterizationRunner(
 
 # %%
 # Source cell 72: one fixed +/-1 MHz span for every mode.
-stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
+stor_modes_to_run = RUN.pick([1, 2, 5, 6, 7], smoke=[1]) #list(range(1,8))
 detune_span = 1.0
 
 freq_len_expt = [None] * len(stor_modes_to_run)
@@ -244,7 +250,7 @@ for i, init_stor in enumerate(stor_modes_to_run):
     print(f'Running Floquet Frequency vs Length Chevron for Storage Mode {init_stor}')
     freq_len_expt[i] = floquet_freq_chev_runner.execute(
         init_stor=init_stor,
-        detunes=np.linspace(-detune_span, detune_span, 51).tolist(),
+        detunes=np.linspace(-detune_span, detune_span, RUN.pick(51, smoke=11)).tolist(),
         reps=100,
         relax_delay=200,
         active_reset=True,
@@ -267,7 +273,8 @@ station.update_all_station_snapshots()
 #
 # Source cell 76. Same loop as above with a per-mode span table.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse chevron loop above, with narrower spans.
 stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
 freq_span_expt = [ 0.5,  0.3, None, None,  0.2,  0.2,  0.2] # by stor-1, None -> default
 default_span = 1.0
@@ -344,7 +351,7 @@ error_amp_floquet_runner = CharacterizationRunner(
 
 # %%
 # stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
-stor_modes_to_run = [4, 5]
+stor_modes_to_run = RUN.pick([4, 5], smoke=[4])
 
 # Both span lists are indexed by stor-1; None falls back to the default below.
 freq_span_list = [0.1, 0.1, None, None, 0.15, 0.1, 0.05] # set for the Coarse
@@ -408,7 +415,8 @@ for i, stor_i in enumerate(stor_modes_to_run):
 # literal `reset_dump_mode=1` rather than the shared default, which is
 # preserved here rather than quietly normalized.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse loop above, with halved spans.
 stor_modes_to_run = [7]
 
 span_divisor = 2
@@ -525,7 +533,8 @@ for init_storA in stor_modes_to_run:
 # %%
 station.update_all_station_snapshots()
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A redo of one pair from the loop above.
 # Source cell 91: one directed pair only.
 init_storA, init_storB = 5, 3
 
@@ -546,7 +555,8 @@ phase_expts[init_storA - 1][init_storB - 1] = sideband_stark_error_amp_runner.ex
 # %%
 station.snapshot_floquet_storage_swap(update_main=False)
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A hand-entered value.
 station.ds_floquet.update_len('M1-S4', 0.065348)
 
 # %%
@@ -632,7 +642,8 @@ if you_have_to_do_amp_chev == True:
 # %%
 floquet_gain_chev_postproc(station, freq_len_expt[0])
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. Hand-entered values.
 # station.ds_floquet.update_gain("M1-S6", 13648)
 station.ds_floquet.update_gain("M1-S2", 3700)
 # station.ds_floquet.update_freq("M1-S4", 878.2990264499939)
@@ -775,7 +786,8 @@ station.update_all_station_snapshots()
 # Source cell 113: spans halved, and it reuses whatever `stor_modes_to_run`
 # the cell above left bound.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse loop above, with halved spans.
 span_divisor = 2
 error_amp_freq1 = [None] * len(stor_modes_to_run)
 error_amp_gain1 = [None] * len(stor_modes_to_run)
@@ -861,7 +873,7 @@ sideband_stark_error_amp_runner = CharacterizationRunner(
 # %%
 # Source cell 116. From here on the buffer flag and sync cycles are forwarded.
 # stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
-stor_modes_to_run = [1, 2, 3, 4] #list(range(1,8))
+stor_modes_to_run = RUN.pick([1, 2, 3, 4], smoke=[1, 2]) #list(range(1,8))
 
 do_active_reset = True
 relax_delay = 200
@@ -896,7 +908,8 @@ station.update_all_station_snapshots()
 #
 # Source cell 119: one directed pair, on a wider and finer phase grid.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A redo of one pair from the loop above.
 init_storA, init_storB = 2, 6
 
 print("Starting experiment for storage modes:", init_storA, "from", init_storB)
@@ -921,7 +934,8 @@ phase_expts[init_storA - 1][init_storB - 1] = sideband_stark_error_amp_runner.ex
 # Source cell 121: measure only the pairs that involve a newly added mode,
 # skipping those where both modes were already calibrated.
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. Extends a campaign already calibrated by hand.
 stor_modes_to_add = [2] #list(range(1,8))
 pre_existing_store_modes = [4, 5, 6]
 
@@ -995,12 +1009,14 @@ dmscramble_runner = CharacterizationRunner(
 )
 
 # %%
-floquet_cycles_list = floquet_cycle_list_gen(0, 2000, 2000, 15)
+floquet_cycles_list = floquet_cycle_list_gen(
+    0, RUN.pick(2000, smoke=300), RUN.pick(2000, smoke=300), 15
+)
 
 swap_stors = [1, 2, 3, 4]
 # meas_stors = [0, 2, 6]
 # meas_stors = [0]
-meas_stors = [0] + swap_stors
+meas_stors = RUN.pick([0] + swap_stors, smoke=[0, 1])
 # meas_stors = [0, 1, 2, 3, 4]
 dark_swaps = [4, 5]
 
@@ -1014,7 +1030,7 @@ for meas_stor in tqdm(meas_stors):
     scramble_sub_expts = []
     for floquet_cycles in floquet_cycles_list:
         scramble_sub_expts.append(dmscramble_runner.execute(
-            reps=300,
+            reps=RUN.pick(300, smoke=100),
             init_fock=True,
             init_stor=0,
             ro_stor=meas_stor,

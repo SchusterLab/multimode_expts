@@ -69,6 +69,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 
+from experiments.characterization_runner import (
+    refuse_queue_in_sandbox,
+    sandbox_local,
+)
+
 if TYPE_CHECKING:
     from experiments.station import MultimodeStation
     from job_server.client import JobClient, JobResult
@@ -371,6 +376,7 @@ class SweepRunner:
             ValueError: If job_client is not configured
             RuntimeError: If any job fails or is cancelled
         """
+        refuse_queue_in_sandbox(self.station)
         if self.job_client is None:
             raise ValueError(
                 "job_client is required for run(). Either pass job_client to "
@@ -808,6 +814,7 @@ class SweepRunner:
                 )
             else:
                 mode = False
+        mode = sandbox_local(self.station, mode)
 
         if mode:
             return self.run(sweep_start, sweep_stop, sweep_npts, **kwargs)

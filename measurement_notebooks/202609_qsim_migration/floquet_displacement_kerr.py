@@ -53,6 +53,11 @@ from experiments.qsim.notebook_helpers.qsim_session import (
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Unset: a science run through the queue. The suite driver,
+# tools/run_qsim_suite.py, sets mock or sandbox mode and the smoke profile.
+RUN = run_settings()
 
 # %%
 # The config versions this campaign ran against. A scientific choice, so it
@@ -69,6 +74,7 @@ session = open_session(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     config_dict=config_dict,
+    run=RUN,
 )
 station = session.station
 client = session.client
@@ -89,14 +95,14 @@ importlib.reload(floquet_dark_mode_readout)
 
 DispKerr = floquet_dark_mode_readout.FloquetDisplacementKerrExperiment
 floquet_kerr_modes = [4, 5, 6, 7]
-floquet_kerr_cycle_pairs = np.arange(0, 31, dtype=int)
-floquet_kerr_displace_gains = np.arange(2000, 6001, 1000)
+floquet_kerr_cycle_pairs = np.arange(0, 31, RUN.pick(1, smoke=3), dtype=int)
+floquet_kerr_displace_gains = np.arange(2000, 6001, RUN.pick(1000, smoke=2000))
 floquet_kerr_ramsey_freq = 0.2  # MHz; keep below 1 / (4 * floquet_kerr_cycle_us)
 
 floquet_kerr_defaults = AttrDict(dict(
     expts=1,
     rounds=1,
-    reps=500,
+    reps=RUN.pick(500, smoke=100),
     qubits=[0],
     active_reset=True,
     man_reset=True,
