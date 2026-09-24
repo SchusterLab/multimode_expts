@@ -180,3 +180,45 @@ still need. Exception: their runner calls move in step 1.
   `AssembledExperiment` base in `experiments/assembled_data.py`, migration kind `spectrum`
   (joins time chunks; old off-diagonal pair jobs are refused until the disorder phase).
   The quick-plot and complete-basis baselines run on converted data and still match.
+  `MBRRamseyProgram` inherits `SidebandScrambleProgram, DarkBaseProgram` directly; it does
+  not use `SidebandScrambleDarkProgramNewNew` (that class adds only a dark-mode
+  `core_pulses`, which MBR never plays). Untangling the big qsim mixins is out of scope here.
+
+### Handoff for steps 4-6
+
+Patterns set in steps 2-3; follow them:
+
+- **Job class**: subclass `DarkBaseExperiment`; default its Program in `__init__`
+  (`program or MBRxxxProgram`); a `job_config(...)` staticmethod returns runner overrides;
+  inner sweep `ramsey_phase` over `RAMSEY_PHASES` (`mbr_stark_cal.py`), outer sweep the 1D
+  axis; `analyze()` builds `complex_return = Q_0 - i Q_90` and never raises except for
+  `Ig == Ie` (a raise loses the job before save). Program subclasses `MBRRamseyProgram` and
+  sets `spectroscopy_prep_phase`/`spectroscopy_analyzer_phase` from `ramsey_phase` in
+  `initialize()`. See `mbr_time_trace.py`.
+- **Assembled class**: subclass `AssembledExperiment` (`experiments/assembled_data.py`);
+  implement `job_overrides`, `from_children`, `analyze`, `display`, `manifest_parameters`,
+  `assembled_arrays`, `assembled_attrs`; `_from_manifest_kwargs` for linked sets. `acquire`
+  checks `runner.ExptClass is child_class`. See `mbr_spectrum.py`.
+- **Migration**: `tools/migrate_mbr_jobs.py`; reuse `merge_phase_jobs` and
+  `write_converted`; converted files carry `converted_from`, `job_class`, `derived_params`.
+- **Tests**: a gate file per step (mock acquire on both pinned config sets, plus
+  `from_manifest`/`analyze`/`display`/`save` on data converted into `tmp_path`); ported
+  baselines convert in `tmp_path` and are `xfail(strict=False, "physics audit pending")`;
+  an ASM check that the new Program compiles to the old one's pulses.
+
+Step 4 notes: the old programs are `EncodingOrthogonalityProgram` (`mbr_orthogonality.py`)
+and `EncodingPropagatorProgram` (`mbr_propagator.py`); both sweep `cycle_decoder_analyzer`
+and decode `spectroscopy_final_occupations`. The propagator program applies the decoder
+correction on the pulse only when `phase_correction_location == "pulse"`; the old
+orthogonality/propagator analysis is in `deprecated/legacy_mbr.py`
+(`reconstruct_orthogonality`, `reconstruct_propagator`, `propagator_batch`).
+
+Open items, not yet done:
+
+- `EncodingHamiltonianSpectroscopyExperiment` still owns `from_job_files`, `_quadrature`
+  and `_from_expts`; move what the later-phase code needs to a helper before deleting it.
+- `_MOVED_TO` in `floquet_dark_mode_readout.py` still lists the old MBR programs; remove
+  each entry when its program is deleted (step 6).
+- Old off-diagonal pair jobs (`offdiag_cycles`) have no conversion (disorder phase).
+- `measurement_notebooks/guan/mbramsey.py` uses `floquet_dark_mode_readout` without
+  importing it (older than the redesign).

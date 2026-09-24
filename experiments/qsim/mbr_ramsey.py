@@ -7,9 +7,11 @@ qubit half-pi (analyzer phase) -> readout. The job programs
 (``MBRTimeTraceProgram``, ``MBRStarkCalProgram``, ...) subclass it and set
 what they sweep.
 
-It sits on ``SidebandScrambleDarkProgramNewNew``, which stays a standalone
-dark-mode program used by the Floquet calibration notebooks, so it is not
-merged in here.
+It inherits the Floquet playback from ``SidebandScrambleProgram`` and reset,
+readout and Floquet pulse setup from ``DarkBaseProgram``, in that MRO order.
+It does not use ``SidebandScrambleDarkProgramNewNew``: that program adds
+only a dark-mode ``core_pulses``, which this sequence never plays, and it
+stays a standalone dark-mode program.
 
 ``NPhotonHamiltonianSpectroscopyProgram`` is the program the old diagonal
 spectroscopy jobs recorded: this sequence with the preparation and analyzer
@@ -22,12 +24,11 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.mbr_spectroscopy_program import (
-    SidebandScrambleDarkProgramNewNew,
-)
+from experiments.qsim.dark_base import DarkBaseProgram
+from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 
-class MBRRamseyProgram(SidebandScrambleDarkProgramNewNew):
+class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
     """Many-body Ramsey sequence: encode, evolve, decode, analyze.
 
     The shared base of the MBR job programs (docs/qsim/mbr_redesign.md,

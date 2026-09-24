@@ -7,9 +7,8 @@ load/read from ``DarkBaseProgram``, in that MRO order, so
 ``super().core_pulses()`` is the scramble and the encoding methods come from
 the dark base.
 
-It is also the base of ``MBRRamseyProgram`` (``mbr_ramsey.py``), the pulse
-sequence the MBR job programs share. ``NPhotonHamiltonianSpectroscopyProgram``
-moved there too.
+The MBR programs used to subclass it; they now live in ``mbr_ramsey.py`` and
+inherit its two parents directly.
 """
 
 
