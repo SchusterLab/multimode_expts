@@ -1,5 +1,7 @@
 # Qsim refactor: the working surface map
 
+> For MBR classes, programs and runners, `docs/qsim/mbr_redesign.md` supersedes this file.
+
 Updated 2026-09-15. **Stage 1 (library decomposition) is done. Stage 2
 (notebook decomposition) has landed structurally.** Jonginn's
 `qsim_experiments.ipynb` (Q) and `data_postprocess.ipynb` (P) are now sixteen
