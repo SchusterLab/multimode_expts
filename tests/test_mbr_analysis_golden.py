@@ -176,20 +176,13 @@ def _load_baseline(path):
     return out
 
 
-@pytest.fixture(scope="module")
-def analysis():
-    """The default (FFT) reference analysis, run once per module."""
-    expt, result = run_reference_analysis()
-    return expt, result, flatten_result(result)
+def assert_matches_baseline(flat, baseline):
+    """Compare a flattened result against its npz baseline, or bless it.
 
-
-@pytest.mark.parametrize("method", sorted(BASELINES))
-def test_baseline_matches(method):
-    """Every pinned field of the analysis result is unchanged, per method."""
-    _, result = run_reference_analysis(spectrum_method=method)
-    flat = drop_gauge_dependent(flatten_result(result))
-    baseline = BASELINES[method]
-
+    Fields that appear or disappear fail as loudly as changed values: a stale
+    baseline that only compares the subset it already holds is not a
+    regression test.
+    """
     if _blessing() or not baseline.exists():
         if not baseline.exists() and not _blessing():
             pytest.fail(
@@ -204,13 +197,12 @@ def test_baseline_matches(method):
 
     new = set(flat) - set(expected)
     gone = set(expected) - set(flat)
-    assert not gone, f"fields disappeared from the analysis result: {sorted(gone)}"
-    assert not new, f"fields appeared without re-blessing: {sorted(new)}"
+    assert not gone, f"fields disappeared from the analysis result: {sorted(gone)[:10]}"
+    assert not new, f"{len(new)} fields appeared without re-blessing: {sorted(new)[:10]}"
 
     mismatched = []
     for path, want in sorted(expected.items()):
-        got = flat[path]
-        want_arr, got_arr = np.asarray(want), np.asarray(got)
+        want_arr, got_arr = np.asarray(want), np.asarray(flat[path])
 
         if want_arr.shape != got_arr.shape:
             mismatched.append(f"{path}: shape {want_arr.shape} -> {got_arr.shape}")
@@ -222,10 +214,25 @@ def test_baseline_matches(method):
             continue
 
         if not np.allclose(want_arr, got_arr, rtol=RTOL, atol=ATOL, equal_nan=True):
-            worst = np.nanmax(np.abs(np.asarray(got_arr, float) - np.asarray(want_arr, float)))
+            worst = np.nanmax(np.abs(np.asarray(got_arr, complex) - np.asarray(want_arr, complex)))
             mismatched.append(f"{path}: max abs deviation {worst:.3e}")
 
     assert not mismatched, "analysis output changed:\n  " + "\n  ".join(mismatched)
+
+
+@pytest.fixture(scope="module")
+def analysis():
+    """The default (FFT) reference analysis, run once per module."""
+    expt, result = run_reference_analysis()
+    return expt, result, flatten_result(result)
+
+
+@pytest.mark.parametrize("method", sorted(BASELINES))
+def test_baseline_matches(method):
+    """Every pinned field of the analysis result is unchanged, per method."""
+    _, result = run_reference_analysis(spectrum_method=method)
+    flat = drop_gauge_dependent(flatten_result(result))
+    assert_matches_baseline(flat, BASELINES[method])
 
 
 def test_analysis_needs_no_station_or_database(analysis):
@@ -322,36 +329,7 @@ def test_complete_basis_baseline_matches(branch):
     flat.update(flatten_result(expt.analyze_level_statistics(data=data), "levels"))
     flat.update(flatten_result(expt.analyze_sff(data=data), "sff"))
     flat = drop_gauge_dependent(flat)
-
-    baseline = COMPLETE_BASIS_BASELINES[branch]
-    if _blessing() or not baseline.exists():
-        if not baseline.exists() and not _blessing():
-            pytest.fail(f"No baseline at {baseline}; bless it once.")
-        _save_baseline(flat, baseline)
-        pytest.skip(f"baseline written ({len(flat)} fields); re-run to compare")
-
-    expected = _load_baseline(baseline)
-
-    gone = set(expected) - set(flat)
-    new = set(flat) - set(expected)
-    assert not gone, f"fields disappeared from the analysis result: {sorted(gone)[:10]}"
-    # The sibling test above has always had this check; this one did not, so
-    # the baseline silently stopped covering 6722 matrix-pencil candidate
-    # fields that the result grew. A stale baseline that only compares the
-    # subset it already holds is not a regression test.
-    assert not new, (f"{len(new)} fields appeared without re-blessing: "
-                     f"{sorted(new)[:10]}")
-    mismatched = []
-    for path, want in sorted(expected.items()):
-        want_arr, got_arr = np.asarray(want), np.asarray(flat[path])
-        if want_arr.shape != got_arr.shape:
-            mismatched.append(f"{path}: shape {want_arr.shape} -> {got_arr.shape}")
-        elif want_arr.dtype.kind in "OUSb":
-            if not np.array_equal(want_arr, got_arr):
-                mismatched.append(f"{path}: {want_arr!r} -> {got_arr!r}")
-        elif not np.allclose(want_arr, got_arr, rtol=RTOL, atol=ATOL, equal_nan=True):
-            mismatched.append(f"{path}: values differ")
-    assert not mismatched, "analysis output changed:\n  " + "\n  ".join(mismatched)
+    assert_matches_baseline(flat, COMPLETE_BASIS_BASELINES[branch])
 
 
 @pytest.mark.slow
