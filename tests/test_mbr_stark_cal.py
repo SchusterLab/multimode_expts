@@ -181,3 +181,44 @@ def test_from_manifest_analyze_display_save(converted, tmp_path):
     assert reloaded.occupations == calibration.occupations
     assert reloaded.job_ids == calibration.job_ids
     np.testing.assert_array_equal(reloaded.analyze().phase_mod180, data.phase_mod180)
+
+
+def test_with_replacements_swaps_only_the_named_rows(converted):
+    _, saved = converted
+    base = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    again = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    target = base.occupations[1]
+    replacement = MBRCalibrationSetExperiment.from_children(
+        [again.children[1]], job_ids=["NEW-ID"])
+
+    merged = base.with_replacements(replacement)
+    assert merged.occupations == base.occupations
+    assert merged.children[0] is base.children[0]
+    assert merged.children[1] is again.children[1]
+    assert merged.job_ids == [base.job_ids[0], "NEW-ID"]
+    np.testing.assert_array_equal(merged.analyze().phase_mod180,
+                                  base.analyze().phase_mod180)
+    assert target in merged.occupations
+
+
+def test_with_replacements_refuses_other_hardware(converted):
+    from types import SimpleNamespace
+
+    _, saved = converted
+    base = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    other = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    child = other.children[0]
+    cycle_us = child.prog.calculate_floquet_cycle_us()
+    child.prog = SimpleNamespace(calculate_floquet_cycle_us=lambda: 1.1 * cycle_us,
+                                 m1s_pi_fracs=child.prog.m1s_pi_fracs, source="changed")
+    with pytest.raises(ValueError, match="Floquet hardware changed"):
+        base.with_replacements(MBRCalibrationSetExperiment.from_children([child]))
+
+
+def test_with_replacements_refuses_unknown_occupations(converted):
+    _, saved = converted
+    base = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    other = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
+    other.children[0].cfg.expt.spectroscopy_occupations = [9, 0, 0, 0, 0]
+    with pytest.raises(ValueError, match="not in this calibration set"):
+        base.with_replacements(MBRCalibrationSetExperiment.from_children([other.children[0]]))

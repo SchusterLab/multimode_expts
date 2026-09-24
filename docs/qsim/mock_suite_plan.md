@@ -80,8 +80,9 @@ the notebooks. That is accepted: the static check covers the notebook side.
   records it.
 - `M1-S6` has no pi time in `CFG-M1-20260904-00014`
   (`test_storage_mode_6_has_no_calibrated_pi_length`).
-- In the MBR notebooks, `merge_replacement_calibration` rebuilds the
-  calibration from job IDs, so it cannot work on a local (no queue) run.
+- (Fixed in MBR redesign step 6.) `merge_replacement_calibration` rebuilt
+  the calibration from job IDs, so it could not work on a local run.
+  `MBRCalibrationSetExperiment.with_replacements` reuses the job objects.
 - A mock MBR calibration takes about 20 min, from slow code in the hot path
   (benchmarked on the laptop). Not a target for now.
 

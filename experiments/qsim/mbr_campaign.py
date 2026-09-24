@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Acquire a many-body-Ramsey campaign: one config, four stages, either target.
+"""Matched config sets, mock stations and the shared defaults for MBR acquisition.
 
-This is the acquisition half of the post-refactor caller. It exists so the
-exemplar scripts stay thin, and so the same code can run in two places:
+The acquisition itself is each assembled class's ``acquire(runner)``
+(docs/qsim/mbr_redesign.md, section 5). This module supplies what every
+acquisition needs around it, so that the same code runs in two places:
 
 * on the measurement PC, submitting through the job queue, and
 * off-prod in mock mode, where the qick library still builds every program and
@@ -11,14 +12,15 @@ exemplar scripts stay thin, and so the same code can run in two places:
 The second mode is what makes the MBR programs testable at all. The whole
 suite can be green while a Floquet swap plays the wrong envelope, because
 nothing in it builds a program from a real dataset row -- that is exactly how
-the preload_flattop envelope bug survived. A mock acquisition catches it.
+the preload_flattop envelope bug survived. A mock acquisition catches it;
+:func:`smoke` runs one for every MBR product.
 
-Three things about acquisition that are easy to get wrong
---------------------------------------------------------
+Two things about acquisition that are easy to get wrong
+------------------------------------------------------
 
-**Drive stages through the Experiment, never the Program.** A stage config
-carries a plural key (``cycle_decoder_analyzers``) and the program body reads
-the singular one (``cycle_decoder_analyzer``). The expansion in between lives
+**Drive jobs through the Experiment, never the Program.** A job config
+carries a plural key (``decoder_occupations``) and the program body reads
+the singular one (``decoder_occupation``). The expansion in between lives
 in ``DarkBaseExperiment.acquire``, so instantiating a Program directly fails
 with a bare ``AttributeError``.
 
@@ -35,33 +37,16 @@ runs on a fresh checkout with no mount and no environment variables:
 recorded campaign instead, :func:`config_set_for_job` reads the four version
 IDs out of job provenance; anything not pinned is then fetched from the archive
 on the measurement PC via ``$MULTIMODE_CONFIG_ARCHIVE``.
-
-**The queue is optional.** Queue mode needs a ``job_client``, so off-prod
-:func:`run_stage` falls back to acquiring in-process. A local job
-server plus ``worker --mock`` is the way to exercise the queue itself; that is
-a separate concern from whether the programs are right.
 """
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from pathlib import Path
 
-import numpy as np
 from slab import AttrDict
 
 from experiments.characterization_runner import CharacterizationRunner
 from experiments.floquet_timing import config_archive
-from experiments.qsim import floquet_dark_mode_readout as fdmr
-# The module, not its classes: experiments/__init__.py exports every class a
-# walked module holds, and the legacy names must not shadow the new ones.
-from experiments.qsim.deprecated import legacy_mbr
-from experiments.qsim.mbr_orthogonality import EncodingOrthogonalityProgram
-from experiments.qsim.mbr_phase_correction import (
-    EntireFloquetCyclePhaseCalibrationProgram,
-)
-from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
-from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVENANCE = REPO_ROOT / "tests" / "data" / "job_provenance.json"
@@ -221,12 +206,12 @@ def mock_station(user: str = "guan", **station_kwargs):
 
 
 # --------------------------------------------------------------------------
-# The one default config. Stage builders override from here; nothing else
+# The one default config. Job configs override from here; nothing else
 # should define these keys, so a campaign has a single place to read.
 # --------------------------------------------------------------------------
 
 def mbr_defaults(swap_stors, **overrides) -> AttrDict:
-    """-> the shared expt config for every MBR stage.
+    """-> the shared expt config for every MBR job.
 
     Deliberately does not set ``floquet_waveform``: the envelope is a property
     of the swap calibration, read per mode from the dataset row. Setting it
@@ -260,133 +245,46 @@ def mbr_defaults(swap_stors, **overrides) -> AttrDict:
 
 
 # --------------------------------------------------------------------------
-# Stages. Each entry says which Experiment owns the analysis, which Program
-# acquires, and how to turn campaign parameters into a batch.
+# Mock acquisition of every MBR product at negligible depth
 # --------------------------------------------------------------------------
 
-def _calibration_batch(defaults, swap_stors, occupations, cycle_pairs=(0, 1, 2),
-                       sync_cycles=1, reps=1500, **kwargs):
-    batch = legacy_mbr.MBRPhaseCorrectionExperiment.calibration_batch(
-        defaults, swap_stors, occupations, np.asarray(cycle_pairs),
-        sync_cycles=sync_cycles, reps=reps, **kwargs)
-    return batch
+# Cycle grids small enough to compile fast and large enough to reach the
+# Floquet playback: StarkCal pairs, TimeTrace cycles, and the Orthogonality q.
+SMOKE_CYCLE_PAIRS = (0, 1, 2)
+SMOKE_CYCLES = (0, 4)
+SMOKE_ORTHO_CYCLES = (0, 4)
 
 
-def _spectrum_batch(defaults, swap_stors, occupations, cycles=(0, 4),
-                    phase_by_occupation=None, sync_cycles=1, reps=1000,
-                    **kwargs):
-    final_occupations = kwargs.get("final_occupations")
-    if final_occupations is None:
-        final_occupations = occupations
-    phase_by_occupation = phase_by_occupation or {
-        tuple(o): 0.0 for o in final_occupations}
-    return legacy_mbr.MBRSpectrumExperiment.spectroscopy_batch(
-        defaults, swap_stors, occupations, [np.asarray(cycles)],
-        phase_by_occupation=phase_by_occupation,
-        sync_cycles=sync_cycles, reps=reps, **kwargs)
+def smoke(station=None, swap_stors=(1, 2, 3, 4), occupations=None, reps=10,
+          sync_cycles=1):
+    """Acquire every MBR product at negligible depth, on a mock station.
 
-
-def _propagator_batch(defaults, swap_stors, occupations, cycles=(0, 4),
-                      phase_by_occupation=None, sync_cycles=1, reps=1000,
-                      **kwargs):
-    phase_by_occupation = phase_by_occupation or {
-        tuple(o): 0.0 for o in occupations}
-    return legacy_mbr.MBRPropagatorExperiment.propagator_batch(
-        defaults, swap_stors, occupations, list(cycles),
-        phase_by_occupation=phase_by_occupation,
-        sync_cycles=sync_cycles, reps=reps, **kwargs)
-
-
-def _orthogonality_batch(defaults, swap_stors, occupations, sync_cycles=1,
-                         reps=1000, **kwargs):
-    return legacy_mbr.MBROrthogonalityExperiment.orthogonality_batch(
-        defaults, swap_stors, occupations,
-        sync_cycles=sync_cycles, reps=reps, **kwargs)
-
-
-# Each stage's Program now lives in the same module as its Experiment, so
-# both are imported directly. This used to name the Program by string and
-# resolve it off the god module; the indirection bought nothing once the
-# Program moved next to its owner.
-STAGES = {
-    "calibration": (legacy_mbr.MBRPhaseCorrectionExperiment,
-                    EntireFloquetCyclePhaseCalibrationProgram,
-                    _calibration_batch),
-    "spectrum": (legacy_mbr.MBRSpectrumExperiment,
-                 NPhotonHamiltonianSpectroscopyProgram,
-                 _spectrum_batch),
-    "propagator": (legacy_mbr.MBRPropagatorExperiment,
-                   EncodingPropagatorProgram,
-                   _propagator_batch),
-    "orthogonality": (legacy_mbr.MBROrthogonalityExperiment,
-                      EncodingOrthogonalityProgram,
-                      _orthogonality_batch),
-}
-
-
-def build_stage(stage, defaults, swap_stors, occupations, **kwargs):
-    """-> (OwnerExperiment, ProgramClass, batch) for one stage."""
-    if stage not in STAGES:
-        raise KeyError(f"unknown stage {stage!r}; expected {sorted(STAGES)}")
-    owner, program, builder = STAGES[stage]
-    batch = builder(defaults, swap_stors, occupations, **kwargs)
-    return owner, batch.get("program", program), batch
-
-
-def run_stage(station, stage, defaults, swap_stors, occupations,
-              job_client=None, batch_size=1, show=False, log=None, **kwargs):
-    """Acquire one stage, through the queue if a client is given.
-
-    With a ``job_client`` this is the production path and goes through
-    ``CharacterizationRunner.execute(overrides=...)``, so provenance and HDF5
-    output happen as usual. Without one it acquires in-process, which is the
-    only option off-prod. Either way the return value is a list of acquired
-    Experiments. Queued jobs analyze their own quadratures before saving.
-    ``show`` and ``log`` control per-job plots and lab-notebook entries;
-    ``log=None`` follows ``station.log_measurements``.
-    Analyze the returned Experiments separately.
+    The cheapest end-to-end check that the acquisition path is intact: each
+    assembled class builds its jobs, and each job builds, compiles and
+    acquires through ``CharacterizationRunner`` (direct execution; a mock
+    station never uses the queue). Returns ``{name: assembled}`` with names
+    ``stark_cal``, ``time_trace`` and ``ortho_column_q{q}``.
     """
-    owner, program, batch = build_stage(
-        stage, defaults, swap_stors, occupations, **kwargs)
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
-    if job_client is not None:
-        runner = CharacterizationRunner(
-            station=station, ExptClass=owner, ExptProgram=program,
-            default_expt_cfg=batch.default_expt_cfg,
-            job_client=job_client, show=show)
-        return runner.execute(overrides=batch.configs, batch_size=batch_size,
-                              use_queue=True, show=show, log=log)
-
-    acquired = []
-    for override in batch.configs:
-        expt = owner(soccfg=station.soccfg, path=station.data_path,
-                     prefix=f"{owner.__name__}_{stage}",
-                     config_file=station.hardware_config_file,
-                     program=program)
-        expt.cfg = AttrDict(deepcopy(station.hardware_cfg))
-        expt.cfg.expt = AttrDict(deepcopy(batch.default_expt_cfg))
-        expt.cfg.expt.update(override)
-        if "relax_delay" in expt.cfg.expt:
-            expt.cfg.device.readout.relax_delay = [expt.cfg.expt.relax_delay]
-        expt.im = station.im
-        expt.acquire(progress=False)
-        acquired.append(expt)
-    return acquired
-
-
-def smoke(station=None, swap_stors=(1, 2, 3, 4), occupations=None,
-          stages=tuple(STAGES), reps=10, **kwargs):
-    """Build, compile and acquire every stage at negligible depth.
-
-    The cheapest end-to-end check that the acquisition path is intact. Returns
-    ``{stage: n_jobs_acquired}``.
-    """
     station = station if station is not None else mock_station()
+    if not station.is_mock:
+        raise RuntimeError("smoke() acquires; it runs only on a mock station")
     occupations = occupations or [[0, 0, 0, 0, 3], [1, 0, 0, 0, 2]]
-    defaults = mbr_defaults(swap_stors, reps=reps)
-    out = {}
-    for stage in stages:
-        acquired = run_stage(station, stage, defaults, swap_stors, occupations,
-                             reps=reps, **kwargs)
-        out[stage] = len(acquired)
-    return out
+    products = {
+        "stark_cal": MBRCalibrationSetExperiment(
+            occupations, SMOKE_CYCLE_PAIRS, swap_stors, sync_cycles=sync_cycles, reps=reps),
+        "time_trace": MBRSpectrumExperiment(
+            occupations, SMOKE_CYCLES, swap_stors, sync_cycles=sync_cycles, reps=reps),
+    }
+    for cycle in SMOKE_ORTHO_CYCLES:
+        products[f"ortho_column_q{cycle}"] = MBROrthogonalityExperiment(
+            occupations, swap_stors, cycle=cycle, sync_cycles=sync_cycles, reps=reps)
+    for product in products.values():
+        runner = CharacterizationRunner(
+            station=station, ExptClass=product.child_class,
+            default_expt_cfg=mbr_defaults(swap_stors, reps=reps), show=False)
+        product.acquire(runner, batch_size=len(occupations), log=False, show=False)
+    return products

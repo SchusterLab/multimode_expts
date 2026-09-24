@@ -7,8 +7,10 @@ shape and dtype. The numbers are compared, non-blocking, with the old
 
 - Job class: the Program builds, compiles and acquires in mock mode on both
   pinned config sets, through ``Orthogonality.acquire(runner)``. Its pulses
-  are the old orthogonality program's at q = 0, and the old propagator
-  program's (with the correction on the pulse) at q > 0.
+  are the old propagator program's (with the correction on the pulse) at
+  q > 0. At q = 0 they matched the old orthogonality program's too, checked
+  before that program was deleted in redesign step 6; the ASM goldens
+  (``ortho_column_q0``) pin them now.
 - Assembled class: on converted fixture data (the September N=3 set, through
   ``tools/migrate_mbr_jobs.py``), ``from_manifest``, ``analyze``,
   ``display`` and ``save`` finish.
@@ -31,10 +33,7 @@ from experiments.qsim.mbr_campaign import (
     pinned_sets,
 )
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment, MBROrthoColumnProgram
-from experiments.qsim.mbr_orthogonality import (
-    EncodingOrthogonalityProgram,
-    MBROrthogonalityExperiment,
-)
+from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
 from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 from experiments.saved_jobs import load_job
@@ -90,22 +89,6 @@ def _program_cfg(st, **expt):
     cfg.device.storage._ds_floquet = st.ds_floquet
     cfg.expt = AttrDict(dict(mbr_defaults(SWAP_STORS, reps=10), **expt))
     return cfg
-
-
-def test_ortho_column_pulses_at_q0_are_the_old_orthogonality_program(station):
-    """At one point of the sweep, the new program compiles to the old one's ASM."""
-    _, st = station
-    initial, decoder = OCCUPATIONS[0], OCCUPATIONS[1]
-    new_expt = MBROrthoColumnExperiment.job_config(initial, OCCUPATIONS, SWAP_STORS)
-    new = MBROrthoColumnProgram(soccfg=st.soccfg, cfg=_program_cfg(
-        st, **new_expt, decoder_occupation=decoder, ramsey_phase=[180., 90.]))
-    old = EncodingOrthogonalityProgram(soccfg=st.soccfg, cfg=_program_cfg(
-        st, **new_expt, orthogonality_decoder_occupations=OCCUPATIONS,
-        orthogonality_analyzer_phases=[0., 90.],
-        decoder_analyzer_row=2 * OCCUPATIONS.index(decoder) + 1,
-        spectroscopy_prep_phase=180.))
-    assert render(new) == render(old)
-    assert len(render(new).splitlines()) > 100, "compiled to almost nothing"
 
 
 def test_ortho_column_pulses_at_q_are_the_old_propagator_program(station):

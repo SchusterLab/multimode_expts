@@ -30,15 +30,15 @@
 # $E/h=-\arg(\lambda)/(2\pi sT)$ is in the principal Floquet zone and is
 # defined modulo $1/(sT)$.
 #
-# **Run 8-1 through 8-4 in order.** An older experiment acquired without all
-# three cycles cannot be passed to 8-3.
+# **Run 8-1 through 8-4 in order.** A data set without all three depths
+# cannot be passed to 8-3.
 #
-# The source read `EncSpec`, `encspec_defaults`, `encspec_modes` and the
-# calibration cache out of the live kernel, having run the acquisition
-# notebook's section 1 first. That dependency is now an explicit
-# `build_campaign` call, so this notebook stands alone -- though it still
-# needs an N=1 phase calibration to exist, and will say so rather than
-# guessing if one has not been registered.
+# Each depth is one `MBROrthogonalityExperiment` (the matrix $M_q$), acquired
+# and saved on its own; `MBRHamTomoExperiment.from_parts` combines them
+# (docs/qsim/mbr_redesign.md). The campaign base is an explicit
+# `build_campaign` call, so this notebook stands alone -- though it needs a
+# saved N=1 `MBRCalibrationSetExperiment`, and says so rather than guessing
+# if none is given.
 #
 # `fit_shared_step` was a `def` nested in cell 356 closing over four notebook
 # names; it is a module-level function in
@@ -72,12 +72,13 @@ from experiments.qsim.notebook_helpers.run_mode import run_settings
 # Set by tools/run_qsim_suite.py. Unset: through the queue in the main
 # checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
 from experiments.qsim.notebook_helpers.mbr_campaign import (
-    acquire_calibration,
     build_campaign,
-    ensure_calibration,
+    campaign_runner,
+    fixed_n_occupations,
 )
 from experiments.qsim.notebook_helpers.mbr_tomography import (
     analyze_tomography,
@@ -104,11 +105,10 @@ station = MultimodeStation(
 client = JobClient()
 
 # %%
-# The campaign base, and the N=1 calibration this pilot needs. Fill in the
-# job IDs for the sector you are working on -- a dataset choice.
-encspec_calibration_job_ids = {
-    # 1: [f"JOB-20260722-{job:05d}" for job in range(557, 567)],
-}
+# The campaign base, and the N=1 calibration this pilot needs. The
+# calibration is a dataset choice: the manifest YAML of a saved
+# MBRCalibrationSetExperiment (under <experiment>/assembled_data/).
+hamtom_calibration_manifest = None
 
 campaign = build_campaign(
     station=station,
@@ -117,22 +117,30 @@ campaign = build_campaign(
     active_reset_settings=active_reset_default_dict,
     measurement_settings=measurement_config_default_dict,
     modes=[1, 2, 3, 4],
-    calibration_job_ids=encspec_calibration_job_ids,
     reps=1000,
 )
 
 hamtom_N = 1
 if RUN.smoke:
-    # Smoke run: no calibration job IDs to load, so acquire a calibration
-    # on the same cycle grid as mbr.py's "Run a new calibration" cell.
-    acquire_calibration(
-        campaign, station, client, N=hamtom_N,
-        use_queue=RUN.use_queue,
-        cycle_pairs=np.arange(0, 65, dtype=int),
-        reps=RUN.pick(1000, smoke=100),
+    # Smoke run: no saved calibration to load, so acquire one on the same
+    # cycle grid as mbr.py's "Run a new calibration" cell.
+    hamtom_calibration = MBRCalibrationSetExperiment(
+        fixed_n_occupations(hamtom_N, len(campaign.mode_labels)),
+        cycle_pairs=np.arange(0, 65, dtype=int), swap_stors=campaign.modes,
+        sync_cycles=campaign.sync_cycles, reps=RUN.pick(1000, smoke=100),
     )
+    hamtom_calibration.acquire(
+        campaign_runner(campaign, station, client, MBRStarkCalExperiment,
+                        use_queue=RUN.use_queue),
+        batch_size=10, log=True, show=False,
+    )
+    hamtom_calibration.analyze()
+    hamtom_calibration.save()
+elif hamtom_calibration_manifest is None:
+    raise RuntimeError("set hamtom_calibration_manifest to a saved N=1 calibration set")
 else:
-    ensure_calibration(campaign, hamtom_N, station)
+    hamtom_calibration = MBRCalibrationSetExperiment.from_manifest(
+        hamtom_calibration_manifest)
 
 # %% [markdown]
 # ### 8-1. Build the $q=[0,s,2s]$ plan and check acquisition size — no jobs
@@ -142,6 +150,7 @@ hamtom_plan = build_tomography_plan(
     campaign=campaign,
     station=station,
     client=client,
+    calibration=hamtom_calibration,
     use_queue=RUN.use_queue,
     N=hamtom_N,
     step=10,
@@ -150,16 +159,21 @@ hamtom_plan = build_tomography_plan(
 )
 
 # %% [markdown]
-# ### 8-2. Run the complete $5\times5$ propagator batch — submits five jobs
+# ### 8-2. Acquire the three $5	imes5$ matrices — submits fifteen jobs
+#
+# One saved `MBROrthogonalityExperiment` per depth, then the tomography that
+# combines them. Each part's manifest is saved as soon as it is acquired.
 
 # %%
-hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_plan["runner"].execute(
-    overrides=hamtom_plan["batch"].configs,
-    batch_size=hamtom_plan["batch_size"],
-    log=True,
-    show=False,
-), job_ids=hamtom_plan["runner"].last_job_ids, station=station)
-print("tomography jobs:", hamtom_expt.batch_job_ids)
+for hamtom_part in hamtom_plan["parts"]:
+    hamtom_part.acquire(hamtom_plan["runner"], batch_size=hamtom_plan["batch_size"],
+                        log=True, show=False)
+    hamtom_part.analyze()
+    hamtom_part.save()
+    print(f"q={hamtom_part.cycle}: jobs {hamtom_part.job_ids}")
+
+hamtom_expt = MBRHamTomoExperiment.from_parts(
+    hamtom_plan["parts"], calibration=hamtom_calibration)
 
 # %% [markdown]
 # ### 8-3. Analyze three depths and fit one shared transfer matrix — no jobs
@@ -171,6 +185,7 @@ print("tomography jobs:", hamtom_expt.batch_job_ids)
     hamtom_corrected_fit,
     hamtom_theory_frequencies_MHz,
 ) = analyze_tomography(hamtom_expt, hamtom_plan)
+hamtom_expt.save()
 
 # %% [markdown]
 # ### 8-4. Three-depth diagnostics — no jobs

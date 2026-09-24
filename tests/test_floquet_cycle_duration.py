@@ -18,11 +18,10 @@ import pytest
 
 from experiments.floquet_timing import floquet_cycle_us
 from experiments.qsim.mbr_campaign import (
-    mbr_defaults,
     mock_station,
     pinned_config_set,
     pinned_sets,
-    run_stage,
+    smoke,
 )
 
 SWAP_STORS = [1, 2, 3, 4]
@@ -33,10 +32,8 @@ OCCUPATIONS = [[0, 0, 0, 0, 3], [1, 0, 0, 0, 2]]
 def program(request):
     """A compiled program per pinned config set (gauss and preload_flattop)."""
     station = mock_station(**pinned_config_set(request.param))
-    acquired = run_stage(station, "propagator",
-                         mbr_defaults(SWAP_STORS, reps=10),
-                         SWAP_STORS, OCCUPATIONS, reps=10)
-    return acquired[0].prog
+    products = smoke(station, SWAP_STORS, OCCUPATIONS, reps=10)
+    return products["ortho_column_q4"].children[0].prog
 
 
 def _resolver_style(prog):

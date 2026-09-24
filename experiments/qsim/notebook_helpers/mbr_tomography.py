@@ -12,9 +12,17 @@ preserves a time-homogeneous matrix model. The reported
 `E/h = -arg(lambda) / (2 pi s T)` is in the principal Floquet zone and is
 defined modulo `1/(sT)`.
 
-Run the three steps in order. An older experiment acquired without all three
-cycles cannot be analyzed here -- `analyze_tomography` will not synthesize the
-missing depth.
+Run the steps in order: `build_tomography_plan` makes one
+`MBROrthogonalityExperiment` per depth (submits nothing); the notebook
+acquires and saves each part, then combines them with
+`MBRHamTomoExperiment.from_parts`; `analyze_tomography` runs the analysis.
+A data set without all three depths cannot be analyzed here --
+`analyze_tomography` will not synthesize the missing depth.
+
+The Stark correction is played on the pulse, so `raw_matrices` and
+`matrices` agree for new jobs and the raw and phase-corrected fits below are
+the same; they differ only for converted old jobs that left the correction
+to analysis.
 
 `fit_shared_step` was a `def` nested inside cell 356 that closed over four
 notebook names (`hamtom_data`, `hamtom_step`, `hamtom_depth`,
@@ -22,114 +30,65 @@ notebook names (`hamtom_data`, `hamtom_step`, `hamtom_depth`,
 because the move is what broke that closure.
 
 This theme reads the campaign base built by `mbr_campaign.build_campaign`
-rather than depending on the acquisition notebook having run.
+rather than depending on the acquisition notebook having run. The
+calibration is a saved `MBRCalibrationSetExperiment`.
 
 Temporary home, per the stage-2 instructions.
 """
 
-from itertools import product
-
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.characterization_runner import CharacterizationRunner
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment
+from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+from experiments.qsim.mbr_saved import saved_parameters
+from experiments.qsim.notebook_helpers.mbr_campaign import (
+    campaign_runner,
+    fixed_n_occupations,
+)
 
 
-def build_tomography_plan(campaign, station, client, N=1, step=10,
+def build_tomography_plan(campaign, station, client, calibration, N=1, step=10,
                           reps=1000, batch_size=5, use_queue=True):
     """Build the q=[0, s, 2s] plan and print the workload (cell 352).
 
-    Submits nothing. Raises if the N-photon calibration has not been loaded,
-    rather than silently acquiring one -- a missing calibration is a missing
-    scientific input.
+    Submits nothing. ``calibration`` is the saved N-photon
+    `MBRCalibrationSetExperiment`; each part's jobs record its manifest and
+    play its per-decoder correction.
 
-    Returns a dict of the `hamtom_*` names the later steps need.
+    Returns a dict with the parts (one `MBROrthogonalityExperiment` per
+    depth, in depth order), the runner, and the numbers the later steps need.
     """
-    hamtom_N = N
-    hamtom_step = step
-    hamtom_reps = reps
-    hamtom_batch_size = batch_size
-    # Derived in cell 352 lines 9-10.
-    hamtom_depth = 2 * hamtom_step
-    hamtom_cycles = [0, hamtom_step, hamtom_depth]
+    hamtom_depth = 2 * step
+    hamtom_cycles = [0, step, hamtom_depth]
+    if calibration.manifest_path is None:
+        raise RuntimeError("save() the calibration set first, so the jobs can record it")
+    hamtom_cycle_us = float(saved_parameters(calibration.children).hardware.floquet_cycle_us)
+    hamtom_occupations = fixed_n_occupations(N, len(campaign.mode_labels))
+    parts = [MBROrthogonalityExperiment(hamtom_occupations, campaign.modes, cycle=cycle,
+                                        calibration=calibration,
+                                        sync_cycles=campaign.sync_cycles, reps=reps)
+             for cycle in hamtom_cycles]
+    runner = campaign_runner(campaign, station, client, MBROrthoColumnExperiment,
+                             use_queue=use_queue)
 
-    encspec_calibrations = campaign.calibrations
-    encspec_defaults = campaign.defaults
-    encspec_mode_labels = campaign.mode_labels
-    encspec_modes = campaign.modes
-    encspec_sync_cycles = campaign.sync_cycles
-    floquet_dark_mode_readout = campaign.floquet_dark_mode_readout
-    EncSpec = campaign.EncSpec
-
-    if hamtom_N not in encspec_calibrations:
-        raise RuntimeError(
-            "Run or load the N=1 calibration in Section 1 first."
-        )
-
-    hamtom_calibration = encspec_calibrations[hamtom_N]
-    hamtom_cycle_us = float(
-        hamtom_calibration.data.hardware.floquet_cycle_us
-    )
-    hamtom_occupations = [
-        list(occupation)
-        for occupation in product(
-            range(hamtom_N + 1),
-            repeat=len(encspec_mode_labels),
-        )
-        if sum(occupation) == hamtom_N
-    ]
-    hamtom_occupations.sort(reverse=True)
-    hamtom_correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
-        hamtom_calibration,
-        cycle_branches={
-            tuple(occupation): 0 for occupation in hamtom_occupations
-        },
-    )
-    hamtom_batch = MBRPropagatorExperiment.propagator_batch(
-        encspec_defaults,
-        encspec_modes,
-        hamtom_occupations,
-        hamtom_cycles,
-        phase_by_occupation=hamtom_correction.phase_by_occupation,
-        sync_cycles=encspec_sync_cycles,
-        reps=hamtom_reps,
-    )
-    hamtom_runner = CharacterizationRunner(
-        station=station,
-        ExptClass=EncSpec,
-        ExptProgram=(
-            floquet_dark_mode_readout.EncodingPropagatorProgram
-        ),
-        default_expt_cfg=hamtom_batch.default_expt_cfg,
-        job_client=client,
-        use_queue=use_queue,
-        show=False,
-    )
-
+    jobs = len(parts) * len(hamtom_occupations)
+    points_per_job = 4 * len(hamtom_occupations)
+    total_points = jobs * points_per_job
     # Rough scale from the 3.76 s/point estimate used in Section 7-1.
-    hamtom_serial_minutes = (
-        hamtom_batch.total_points * 3.76
-        * hamtom_reps / 1200.0 / 60.0
-    )
-    hamtom_parallel_jobs = min(
-        hamtom_batch_size, len(hamtom_batch.configs)
-    )
-    print("basis order:", [
-        tuple(occupation) for occupation in hamtom_occupations
-    ])
+    hamtom_serial_minutes = total_points * 3.76 * reps / 1200.0 / 60.0
+    hamtom_parallel_jobs = min(batch_size, len(hamtom_occupations))
+    print("basis order:", [tuple(occupation) for occupation in hamtom_occupations])
     print(
         f"Floquet cycle={hamtom_cycle_us:.6f} us; "
         f"q={hamtom_cycles}; step time="
-        f"{hamtom_step * hamtom_cycle_us:.6f} us; max time="
+        f"{step * hamtom_cycle_us:.6f} us; max time="
         f"{hamtom_depth * hamtom_cycle_us:.6f} us"
     )
     print(
-        f"jobs={len(hamtom_batch.configs)}, "
-        f"points/job={hamtom_batch.points_per_job}, "
-        f"total points={hamtom_batch.total_points}, "
-        f"program repetitions={hamtom_batch.total_points * hamtom_reps:,}"
+        f"jobs={jobs}, points/job={points_per_job}, "
+        f"total points={total_points}, "
+        f"program repetitions={total_points * reps:,}"
     )
     print(
         f"rough time={hamtom_serial_minutes:.1f} min serialized, "
@@ -138,17 +97,17 @@ def build_tomography_plan(campaign, station, client, N=1, step=10,
     )
 
     return {
-        "N": hamtom_N,
-        "step": hamtom_step,
+        "N": N,
+        "step": step,
         "depth": hamtom_depth,
         "cycles": hamtom_cycles,
         "cycle_us": hamtom_cycle_us,
-        "reps": hamtom_reps,
-        "batch_size": hamtom_batch_size,
-        "calibration": hamtom_calibration,
+        "reps": reps,
+        "batch_size": batch_size,
+        "calibration": calibration,
         "occupations": hamtom_occupations,
-        "batch": hamtom_batch,
-        "runner": hamtom_runner,
+        "parts": parts,
+        "runner": runner,
     }
 
 
@@ -210,26 +169,24 @@ def fit_shared_step(matrices, cycles, step, depth, cycle_us):
     return hamtom_fit_shared_step(matrices)
 
 
-def analyze_tomography(hamtom_expt, plan):
+def analyze_tomography(tomo, plan):
     """Analyze the three depths and fit both raw and corrected (cell 356).
 
-    Returns (data, raw_fit, corrected_fit, theory_frequencies_MHz).
+    ``tomo`` is the `MBRHamTomoExperiment` over the plan's parts, with the
+    plan's calibration. Returns (data, raw_fit, corrected_fit,
+    theory_frequencies_MHz).
     """
-    hamtom_occupations = plan["occupations"]
-    hamtom_calibration = plan["calibration"]
     hamtom_cycles = plan["cycles"]
     hamtom_step = plan["step"]
     hamtom_depth = plan["depth"]
     hamtom_cycle_us = plan["cycle_us"]
+    if tomo.calibration is None:
+        raise ValueError("the tomography needs the calibration set; "
+                         "pass it to MBRHamTomoExperiment.from_parts")
+    if tomo.cycles != hamtom_cycles:
+        raise ValueError(f"tomography has q={tomo.cycles}, the plan {hamtom_cycles}")
 
-    # execute(overrides=...) returns the job Experiments; tomography needs the
-    # aggregate propagator analyzer, reusing the already acquired children.
-    if not isinstance(hamtom_expt, MBRPropagatorExperiment):
-        hamtom_expt = MBRPropagatorExperiment._from_expts(hamtom_expt)
-
-    hamtom_data = hamtom_expt.analyze(
-        occupations=hamtom_occupations,
-        calibration=hamtom_calibration,
+    hamtom_data = tomo.analyze(
         finite_difference_cycles=hamtom_cycles,
         eigenphase_cycle=hamtom_step,
     )

@@ -18,9 +18,9 @@ from tests import asm_golden
 KEYS = sorted(p.name[: -len(".txt.gz")]
               for p in asm_golden.GOLDEN_DIR.glob("*.txt.gz"))
 
-# Pinned so a config set or stage disappearing fails loudly instead of
+# Pinned so a config set or product disappearing fails loudly instead of
 # silently shrinking the checked surface to nothing.
-EXPECTED_KEY_COUNT = 24
+EXPECTED_KEY_COUNT = 16
 
 
 def test_every_pinned_program_is_covered():
@@ -32,7 +32,7 @@ def test_every_pinned_program_is_covered():
 
 @pytest.fixture(scope="module")
 def compiled():
-    """Every stage of every pinned set, compiled once for the whole module."""
+    """Every product of every pinned set, compiled once for the whole module."""
     from experiments.qsim.mbr_campaign import pinned_sets
 
     out = {}

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Pulse-level golden: the tProc program every MBR stage compiles to.
+"""Pulse-level golden: the tProc program every MBR job class compiles to.
 
 Why a separate net
 ------------------
-``test_mbr_acquire_mock`` proves each stage still builds, compiles and
+``test_mbr_acquire_mock`` proves each job class still builds, compiles and
 acquires, and it checks one specific envelope property. That is enough to
-catch a stage that stops working; it is not enough to certify a *move* of
+catch a job class that stops working; it is not enough to certify a *move* of
 pulse code, because a pulse bug is silent by construction -- the program
 compiles and "acquires" either way, and the only evidence of the error is the
 instruction stream itself.
@@ -25,6 +25,13 @@ register-bank playback.
 Determinism was checked before pinning: two runs of all 12 programs in a set
 produce byte-identical listings.
 
+Each golden is the last program a job compiled (last sweep point, Ramsey
+phase [180, 90]). Keys are ``{set}__{product}__{job}``, the products of
+:func:`experiments.qsim.mbr_campaign.smoke`: ``stark_cal``, ``time_trace``,
+``ortho_column_q0`` and ``ortho_column_q4``. They were renamed from the old
+per-stage keys in redesign step 6, each checked byte-identical to the old
+golden of the same pulses first (see that commit message).
+
 Regenerate with ``pixi run python -m tests.asm_golden``, and read the diff
 before committing it -- that diff is the review.
 """
@@ -35,12 +42,10 @@ from pathlib import Path
 import numpy as np
 
 from experiments.qsim.mbr_campaign import (
-    STAGES,
-    mbr_defaults,
     mock_station,
     pinned_config_set,
     pinned_sets,
-    run_stage,
+    smoke,
 )
 
 GOLDEN_DIR = Path(__file__).parent / "data" / "asm_golden"
@@ -80,17 +85,15 @@ def render(prog):
 
 
 def programs(set_name):
-    """Compile every stage's every job for one config set.
+    """Compile every product's every job for one config set.
 
     Yields ``(key, prog)`` with ``key`` naming the golden file.
     """
     station = mock_station(**pinned_config_set(set_name))
-    defaults = mbr_defaults(SWAP_STORS, reps=REPS)
-    for stage in sorted(STAGES):
-        acquired = run_stage(station, stage, defaults, SWAP_STORS,
-                             OCCUPATIONS, reps=REPS)
-        for index, expt in enumerate(acquired):
-            yield f"{set_name}__{stage}__{index}", expt.prog
+    products = smoke(station, SWAP_STORS, OCCUPATIONS, reps=REPS)
+    for name in sorted(products):
+        for index, expt in enumerate(products[name].children):
+            yield f"{set_name}__{name}__{index}", expt.prog
 
 
 def path_for(key):

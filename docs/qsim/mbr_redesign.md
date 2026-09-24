@@ -153,7 +153,18 @@ and `test_no_stage_dispatch_remains.py` when the old stage classes go).
    Delete the old MBR classes and programs that nothing imports. Delete
    `legacy_mbr.py` when nothing imports it.
 
-Later phase, not now: DisorderEnsemble, and the disorder / SFF / sampling /
+7. Disorder / SFF (the "later phase" below). **Status: needs a concrete plan first.**
+   Do not start porting before the user approves a written plan. It must settle at least:
+   the `MBRDisorderEnsembleExperiment` design; an assembled class (or none) for
+   off-diagonal TimeTraces, which the pairwise and D72 plans use; conversion of the old
+   off-diagonal pair jobs (`offdiag_cycles`); what happens to `DisorderSFFExperiment`,
+   which is its own hardware depth-sweep program and not a set of Ramsey traces; and the
+   dataset ID lists (the user builds them). Scale: about 11k lines of
+   `notebook_helpers/mbr_disorder*`, `mbr_sampling`, `mbr_spectral_validation`,
+   `mbr_sff_campaign` plus `experiments/qsim/mbr_sff.py`. After step 7, delete
+   `legacy_mbr.py`, `EncodingHamiltonianSpectroscopyExperiment` and the old programs.
+
+Later phase (step 7): DisorderEnsemble, and the disorder / SFF / sampling /
 spectral-validation notebooks and their `notebook_helpers`. Until they are ported,
 they keep the old classes they import (from `legacy_mbr.py`). Do not delete code they
 still need. Exception: their runner calls move in step 1.
@@ -203,6 +214,23 @@ still need. Exception: their runner calls move in step 1.
   synthetic OrthoColumn and StarkCal jobs through `MBRHamTomoExperiment`; it is exact on its
   synthetic data, so it stays blocking. Also fixed: `save()` no longer overwrites a set
   saved in the same second (`new_stem` adds `_2`, `_3`, ...).
+
+- Step 6, measurement side (2026-09-24). `measurement_notebooks/202609_qsim_migration/mbr.py`
+  and `mbr_tomography.py` (+ `notebook_helpers/mbr_tomography.py`) use the new classes.
+  The stage/batch driver is deleted: `STAGES`, `_*_batch`, `build_stage`, `run_stage` in
+  `experiments/qsim/mbr_campaign.py`, which keeps only config sets, mock stations,
+  `mbr_defaults`, and `smoke()` (every product acquired in mock mode). Its tests
+  (`asm_golden`, `test_mbr_acquire_mock`, `test_floquet_cycle_duration`, the MBR part of
+  `test_qsim_notebook_mock_acquisition`) run on the new classes; the 16 ASM goldens were
+  checked byte-identical to the old ones before the rename. `notebook_helpers/mbr_campaign.py`
+  keeps `build_campaign`, `fixed_n_occupations`, the new `campaign_runner`, and the old-class
+  `ensure_calibration` / `acquire_calibration` for the disorder/SFF notebooks.
+  `MBRCalibrationSetExperiment.with_replacements` replaces `merge_replacement_calibration`.
+  Deleted: `EncodingOrthogonalityProgram`. Kept, still used by step-7 code:
+  `EncodingPropagatorProgram`, `EntireFloquetCyclePhaseCalibrationProgram`,
+  `NPhotonHamiltonianSpectroscopyProgram`, `legacy_mbr.py`.
+  Left on purpose (user decision): the `guan/` and `jonginn/` sandboxes and `dormant/`
+  notebooks; they go when the new canonical notebooks replace them.
 
 ### Handoff for steps 4-6
 

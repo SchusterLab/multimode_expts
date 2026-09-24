@@ -553,6 +553,20 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
 # --------------------------------------------------------------------------
 
 
+def _campaign(mock_station, defaults):
+    from experiments.qsim.notebook_helpers.mbr_campaign import build_campaign
+
+    active_reset_defaults, floquet_defaults, measurement_defaults = defaults
+    station, client = mock_station
+    return build_campaign(
+        station=station, client=client,
+        floquet_settings=floquet_defaults,
+        active_reset_settings=active_reset_defaults,
+        measurement_settings=measurement_defaults,
+        modes=[1, 2, 3, 4], calibration_job_ids={}, reps=20,
+    )
+
+
 def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
     """A mock session must not submit real jobs.
 
@@ -560,133 +574,89 @@ def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
     queue -- where the worker runs whatever is checked out at the main path,
     against real hardware unless it was started with --mock.
     """
-    from experiments.qsim.notebook_helpers.mbr_campaign import (
-        build_campaign,
-        fixed_n_occupations,
-    )
-    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+    from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
 
-    active_reset_defaults, floquet_defaults, measurement_defaults = defaults
     station, client = mock_station
-
-    campaign = build_campaign(
-        station=station, client=client,
-        floquet_settings=floquet_defaults,
-        active_reset_settings=active_reset_defaults,
-        measurement_settings=measurement_defaults,
-        modes=[1, 2, 3, 4], calibration_job_ids={}, reps=20,
-    )
+    campaign = _campaign(mock_station, defaults)
     occupations = fixed_n_occupations(1, len(campaign.mode_labels))
-    batch = MBRPhaseCorrectionExperiment.calibration_batch(
-        campaign.defaults, campaign.modes, occupations,
-        np.arange(0, 3, dtype=int),
-        sync_cycles=campaign.sync_cycles, repeats=1, reps=20,
-    )
+    calibration = MBRCalibrationSetExperiment(
+        occupations, range(3), campaign.modes, sync_cycles=campaign.sync_cycles, reps=20)
     runner = CharacterizationRunner(
-        station=station, ExptClass=campaign.EncSpec,
-        ExptProgram=campaign.floquet_dark_mode_readout
-        .EntireFloquetCyclePhaseCalibrationProgram,
-        default_expt_cfg=batch.default_expt_cfg,
-        job_client=client, show=False,
+        station=station, ExptClass=calibration.child_class,
+        default_expt_cfg=campaign.defaults, job_client=client, show=False,
     )
     with pytest.raises(RuntimeError, match="station has mock instruments"):
-        runner.execute(overrides=batch.configs[:1], batch_size=1, use_queue=True,
-                       log=False, show=False)
+        runner.execute(overrides=calibration.job_overrides()[:1], batch_size=1,
+                       use_queue=True, log=False, show=False)
 
 
-MBR_BATCHES = [
-    "phase_calibration",
+MBR_PRODUCTS = [
+    "calibration_set",
     "orthogonality",
-    "propagator",
-    "spectroscopy",
+    "ham_tomo_part",
+    "spectrum",
 ]
 
 
-@pytest.mark.parametrize("which", MBR_BATCHES)
-def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
-    """Each MBR batch's configs assemble into a compilable qick program.
+@pytest.mark.parametrize("which", MBR_PRODUCTS)
+def test_mbr_jobs_build_and_compile(mock_station, defaults, which):
+    """Each MBR product's job overrides assemble into a compilable qick program.
 
-    This is the layer the stage-2 split actually changed: `build_campaign` and
-    the four `*_batch` classmethods it feeds. The program is instantiated
-    directly rather than through `execute(overrides=...)`, which would acquire.
+    ``build_campaign`` supplies the defaults every notebook runner uses, and
+    each assembled class's ``job_overrides`` the per-job part. The program is
+    instantiated directly rather than through ``execute(overrides=...)``,
+    which would acquire.
     """
-    from experiments.qsim.notebook_helpers.mbr_campaign import (
-        build_campaign,
-        fixed_n_occupations,
-    )
-    from experiments.qsim.notebook_helpers.floquet_calibration import (
-        floquet_cycle_list_gen,
-    )
-    from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
-    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-    from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
-    from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+    from experiments.qsim.mbr_ortho_column import MBROrthoColumnProgram
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    from experiments.qsim.mbr_stark_cal import MBRStarkCalProgram
+    from experiments.qsim.mbr_time_trace import MBRTimeTraceProgram
+    from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
 
-    active_reset_defaults, floquet_defaults, measurement_defaults = defaults
     station, client = mock_station
-
-    campaign = build_campaign(
-        station=station, client=client,
-        floquet_settings=floquet_defaults,
-        active_reset_settings=active_reset_defaults,
-        measurement_settings=measurement_defaults,
-        modes=[1, 2, 3, 4], calibration_job_ids={}, reps=20,
-    )
-    fdm = campaign.floquet_dark_mode_readout
+    campaign = _campaign(mock_station, defaults)
     # N=1 is the smallest complete sector: five occupations, not thirty-five.
     occupations = fixed_n_occupations(1, len(campaign.mode_labels))
-    phases = {tuple(o): 0.0 for o in occupations}
+    common = dict(sync_cycles=campaign.sync_cycles, reps=20)
+    product = {
+        "calibration_set": lambda: MBRCalibrationSetExperiment(
+            occupations, range(3), campaign.modes, **common),
+        "orthogonality": lambda: MBROrthogonalityExperiment(
+            occupations, campaign.modes, **common),
+        "ham_tomo_part": lambda: MBROrthogonalityExperiment(
+            occupations, campaign.modes, cycle=2, **common),
+        "spectrum": lambda: MBRSpectrumExperiment(
+            occupations, [0, 2, 4], campaign.modes, **common),
+    }[which]()
+    ProgramClass = {"calibration_set": MBRStarkCalProgram,
+                    "spectrum": MBRTimeTraceProgram}.get(which, MBROrthoColumnProgram)
 
-    if which == "phase_calibration":
-        batch = MBRPhaseCorrectionExperiment.calibration_batch(
-            campaign.defaults, campaign.modes, occupations,
-            np.arange(0, 3, dtype=int),
-            sync_cycles=campaign.sync_cycles, repeats=1, reps=20)
-        ProgramClass = fdm.EntireFloquetCyclePhaseCalibrationProgram
-    elif which == "orthogonality":
-        batch = MBROrthogonalityExperiment.orthogonality_batch(
-            campaign.defaults, campaign.modes, occupations,
-            sync_cycles=campaign.sync_cycles, reps=20)
-        ProgramClass = fdm.EncodingOrthogonalityProgram
-    elif which == "propagator":
-        batch = MBRPropagatorExperiment.propagator_batch(
-            campaign.defaults, campaign.modes, occupations, [0, 2],
-            phase_by_occupation=phases,
-            sync_cycles=campaign.sync_cycles, reps=20)
-        ProgramClass = fdm.EncodingPropagatorProgram
-    else:
-        batch = MBRSpectrumExperiment.spectroscopy_batch(
-            campaign.defaults, campaign.modes, occupations,
-            floquet_cycle_list_gen(0, 4, 4, 2), phases,
-            detunings=[0.0] * len(campaign.modes),
-            sync_cycles=campaign.sync_cycles, reps=20,
-            final_occupations=[list(o) for o in occupations])
-        ProgramClass = batch.program
-
-    configs = list(batch.configs)
-    assert configs, f"{which} produced no configs"
+    overrides = product.job_overrides()
+    assert len(overrides) == len(occupations), f"{which} produced the wrong job count"
 
     runner = CharacterizationRunner(
-        station=station, ExptClass=campaign.EncSpec,
-        ExptProgram=ProgramClass,
-        default_expt_cfg=batch.default_expt_cfg,
-        job_client=client, show=False,
+        station=station, ExptClass=product.child_class,
+        default_expt_cfg=campaign.defaults, job_client=client, show=False,
     )
     cfg = AttrDict(dict(
-        runner.preprocessor(station, runner.default_expt_cfg, **configs[0])
+        runner.preprocessor(station, runner.default_expt_cfg, **overrides[0])
     ))
 
     # acquire()'s sweep loop sets each singular swept key from its plural
     # list; building the program directly skips that, so stand in for it.
     for name in list(cfg.get("swept_params") or []):
-        if name not in cfg:
-            values = cfg.get(f"{name}s")
-            assert values is not None and len(values), (
-                f"{which}: swept param {name!r} has no {name}s list"
-            )
-            cfg[name] = list(values)[0]
+        values = cfg.get(f"{name}s")
+        assert values is not None and len(values), (
+            f"{which}: swept param {name!r} has no {name}s list"
+        )
+        cfg[name] = list(values)[0]
 
     full = AttrDict(dict(station.hardware_cfg))
+    full.device.storage._ds_storage = station.ds_storage
+    full.device.storage._ds_floquet = station.ds_floquet
     full.expt = cfg
     program = ProgramClass(soccfg=station.soccfg, cfg=full)
     program.compile()

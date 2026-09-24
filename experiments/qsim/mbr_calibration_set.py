@@ -83,6 +83,40 @@ class MBRCalibrationSetExperiment(AssembledExperiment):
         calibration._check_children()
         return calibration
 
+    def with_replacements(self, replacement, notes=None):
+        """-> a new set: this one, with the occupations of ``replacement`` re-measured.
+
+        ``replacement`` is a set acquired over some of this set's occupations.
+        Every other occupation keeps its job, so its phase cannot move. Refuses
+        a different mode order or Floquet hardware (cycle time, couplings,
+        Kerr), and, through ``from_children``, different cycle pairs or swap
+        modes. Save the result to give later jobs a manifest to record.
+        """
+        unknown = set(replacement.occupations) - set(self.occupations)
+        if unknown:
+            raise ValueError(f"not in this calibration set: {sorted(unknown)}")
+        mine = saved_parameters(self.children)
+        theirs = saved_parameters(replacement.children)
+        if mine.mode_labels != theirs.mode_labels:
+            raise ValueError("replacement calibration uses a different mode order")
+        if (not np.isclose(mine.hardware.floquet_cycle_us, theirs.hardware.floquet_cycle_us)
+                or not np.allclose(mine.hardware.couplings_MHz, theirs.hardware.couplings_MHz)
+                or not np.isclose(mine.hardware.physical_kerr_MHz,
+                                  theirs.hardware.physical_kerr_MHz)):
+            raise ValueError("Floquet hardware changed; do not mix partial calibration jobs")
+
+        new_children = dict(zip(replacement.occupations, replacement.children))
+        children = [new_children.get(occupation, child)
+                    for occupation, child in zip(self.occupations, self.children)]
+        job_ids = []
+        if (len(self.job_ids) == len(self.children)
+                and len(replacement.job_ids) == len(replacement.children)):
+            new_ids = dict(zip(replacement.occupations, replacement.job_ids))
+            job_ids = [new_ids.get(occupation, job_id)
+                       for occupation, job_id in zip(self.occupations, self.job_ids)]
+        return type(self).from_children(children, job_ids=job_ids,
+                                        notes=self.notes if notes is None else notes)
+
     # -- analysis ---------------------------------------------------------
 
     def analyze(self):

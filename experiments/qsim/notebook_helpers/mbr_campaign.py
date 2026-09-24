@@ -1,43 +1,32 @@
-"""The shared MBR campaign base, and the spectroscopy steps built on it.
+"""The shared MBR campaign base: defaults, mode labels, and a runner per job class.
 
 Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
-286-317 by the stage-2 notebook decomposition.
-
-Primary caller: `measurement_notebooks/202609_qsim_migration/mbr.py`. But this
-module exists mostly because of the *other* callers. The `mbr` section was the
-hub of the source notebook: cells 289-293 bound `EncSpec`, the runner,
-`encspec_modes`, `encspec_mode_labels`, `encspec_sync_cycles`,
-`encspec_defaults`, `encspec_calibration_job_ids/files` and
-`encspec_calibrations`, and then the disorder, tomography and SFF sections all
-read those names out of the live kernel. Splitting them into separate notebooks
-means that handoff has to become explicit, which is what `build_campaign` is
-for:
+286-317 by the stage-2 notebook decomposition. The `mbr` section was the hub
+of the source notebook: cells 289-293 bound the defaults, modes and
+calibrations that the disorder, tomography and SFF sections then read out of
+the live kernel. `build_campaign` makes that handoff explicit:
 
     campaign = build_campaign(station, client, floquet_settings=...,
                               active_reset_settings=...,
                               measurement_settings=...)
 
-So `mbr_disorder.py`, `mbr_tomography.py` and `mbr_sff.py` each open by
-building the same campaign base rather than depending on `mbr.py` having been
-run first.
+so each MBR notebook builds the same base rather than depending on another
+having run first. `campaign_runner` gives the `CharacterizationRunner` an
+assembled class's `acquire(runner)` needs (docs/qsim/mbr_redesign.md,
+section 5).
 
-`ensure_calibration` was the same eight lines in cells 305 and 316; it is one
-function here.
-
-Temporary home, per the stage-2 instructions. In particular nothing here was
-reconciled with the four aggregate stage classes it calls
-(`MBRPhaseCorrectionExperiment`, `MBRSpectrumExperiment`,
-`MBROrthogonalityExperiment`, `MBRPropagatorExperiment`) or with
-`EncodingHamiltonianSpectroscopyExperiment`, which is still both the loading
-layer and the class every job was acquired under.
+Old-class part, until the disorder/SFF port (redesign step 7):
+`ensure_calibration`, `acquire_calibration`, and the `EncSpec`,
+`floquet_dark_mode_readout`, `calibration_job_ids`, `calibration_files` and
+`calibrations` fields serve only `mbr_disorder.py` and `mbr_sff.py`, which
+still use the old `MBRPhaseCorrectionExperiment`. New code uses
+`MBRCalibrationSetExperiment` (acquire, save, `from_manifest`) instead.
 """
 
 import importlib
 from dataclasses import dataclass, field
 from itertools import product
 from typing import Any
-
-import numpy as np
 
 from slab import AttrDict
 
@@ -146,6 +135,22 @@ def build_campaign(station, client, floquet_settings, active_reset_settings,
     )
 
 
+def campaign_runner(campaign, station, client, ExptClass, use_queue=True):
+    """-> the runner for one MBR job class, over the campaign defaults.
+
+    Pass it to an assembled class's `acquire`, e.g.
+    `MBRSpectrumExperiment(...).acquire(campaign_runner(..., MBRTimeTraceExperiment))`.
+    """
+    return CharacterizationRunner(
+        station=station,
+        ExptClass=ExptClass,
+        default_expt_cfg=campaign.defaults,
+        job_client=client,
+        use_queue=use_queue,
+        show=False,
+    )
+
+
 def fixed_n_occupations(N, n_modes, descending=True):
     """Every occupation of `n_modes` modes holding exactly N photons.
 
@@ -164,6 +169,9 @@ def fixed_n_occupations(N, n_modes, descending=True):
 
 def ensure_calibration(campaign, N, station):
     """Return the N-photon phase calibration, loading it from HDF5 if needed.
+
+    Old class (`MBRPhaseCorrectionExperiment`); for the disorder and SFF
+    notebooks until redesign step 7.
 
     Cells 305 and 316 had these same eight lines. Raises rather than guessing
     if no job IDs were registered for that photon number -- a missing
@@ -196,6 +204,9 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
                         batch_size=10, occupations=None, use_queue=True):
     """Acquire a fresh N-photon phase calibration and cache it on the campaign.
 
+    Old class (`MBRPhaseCorrectionExperiment`); for the disorder and SFF
+    notebooks until redesign step 7.
+
     The "Run a new calibration" cell of `mbr.py`, as a function, so the
     notebooks that otherwise load a calibration by job ID can acquire one
     instead -- which the test suite needs, because it has no job IDs.
@@ -224,349 +235,3 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
     calibration_expt.analyze()
     campaign.calibrations[N] = calibration_expt
     return calibration_expt
-
-
-# --------------------------------------------------------------------------
-# Cell 305, split at its own substeps.
-# --------------------------------------------------------------------------
-
-
-@dataclass
-class SpectroscopyPlan:
-    occupations: list
-    final_occupations: list
-    display_occupation: Any
-    N: int
-
-
-def select_spectroscopy_occupations(batch_encspec_N, mode_labels,
-                                    occupation=None, decoder_occupation=None):
-    """Resolve which matrix elements to measure (first half of cell 305).
-
-    Two modes, exactly as the source markdown describes. With
-    `batch_encspec_N=None`, `occupation` and `decoder_occupation` name the
-    encoder/decoder pairs for individual matrix elements. With
-    `batch_encspec_N=N`, those two are ignored and every diagonal occupation
-    in the fixed-N sector is acquired, which is what the complete-basis DOS
-    display needs.
-    """
-    if batch_encspec_N is None:
-        if occupation is None or decoder_occupation is None:
-            raise ValueError(
-                "single-pair mode requires occupation and decoder_occupation"
-            )
-        N = sum(occupation[0])
-        for occupation_indv, decoder_occupation_indv in zip(
-                occupation, decoder_occupation):
-            if len(occupation_indv) != len(mode_labels):
-                raise ValueError("occupation has the wrong mode count")
-            if len(decoder_occupation_indv) != len(mode_labels):
-                raise ValueError("decoder_occupation has the wrong mode count")
-            if sum(occupation_indv) != N:
-                raise ValueError("encoder and decoder photon numbers differ")
-            if sum(decoder_occupation_indv) != N:
-                raise ValueError("encoder and decoder photon numbers differ")
-        occupations = [list(state) for state in occupation]
-        final_occupations = [list(state) for state in decoder_occupation]
-        display_occupation = list(occupation[0])
-    else:
-        N = int(batch_encspec_N)
-        if N < 0:
-            raise ValueError("batch_encspec_N must be non-negative")
-        occupations = fixed_n_occupations(N, len(mode_labels))
-        final_occupations = [list(state) for state in occupations]
-        display_occupation = None
-
-    return SpectroscopyPlan(
-        occupations=occupations,
-        final_occupations=final_occupations,
-        display_occupation=display_occupation,
-        N=N,
-    )
-
-
-def build_spectroscopy_batch(campaign, station, client, plan,
-                             cycle_chunks, reps, detunings=None, use_queue=True):
-    """Phase-correct the plan and build its batch and runner (cell 305 tail).
-
-    Returns (batch, runner, calibration_expt, cycle_branches). Submits
-    nothing; the notebook calls `runner.execute` so that job submission stays
-    a visible, separate step.
-    """
-    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-    from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-
-    calibration_expt = ensure_calibration(campaign, plan.N, station)
-
-    cycle_branches = {
-        tuple(state): 0 for state in plan.final_occupations
-    }
-    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
-        calibration_expt,
-        cycle_branches=cycle_branches,
-    )
-    missing_calibrations = [
-        tuple(state)
-        for state in plan.final_occupations
-        if tuple(state) not in correction.phase_by_occupation
-    ]
-    if missing_calibrations:
-        raise ValueError(f"missing calibration rows: {missing_calibrations}")
-
-    if detunings is None:
-        detunings = [0.] * len(campaign.modes)
-
-    batch = MBRSpectrumExperiment.spectroscopy_batch(
-        campaign.defaults,
-        campaign.modes,
-        plan.occupations,
-        cycle_chunks,
-        correction.phase_by_occupation,
-        detunings=detunings,
-        sync_cycles=campaign.sync_cycles,
-        reps=reps,
-        final_occupations=plan.final_occupations,
-    )
-    runner = CharacterizationRunner(
-        station=station,
-        ExptClass=campaign.EncSpec,
-        ExptProgram=batch.program,
-        default_expt_cfg=batch.default_expt_cfg,
-        job_client=client,
-        use_queue=use_queue,
-        show=False,
-    )
-
-    print("N:", plan.N)
-    print("occupations:", len(plan.occupations))
-    print("jobs:", len(batch.configs))
-    return batch, runner, calibration_expt, cycle_branches
-
-
-# --------------------------------------------------------------------------
-# Cells 297 and 298: replace selected calibration occupations.
-# --------------------------------------------------------------------------
-
-
-def validate_recalibration_occupations(campaign, N, recalibration_occupations):
-    """Check the requested rows against the active calibration (cell 297 head).
-
-    Returns (base_calibration_expt, recalibration_keys). Every check here was
-    in the source; they are the reason this is worth having as one call.
-    """
-    if N not in campaign.calibrations:
-        raise RuntimeError(f"load or acquire the N={N} calibration first")
-    base_calibration_expt = campaign.calibrations[N]
-    base_occupation_keys = {
-        tuple(occupation)
-        for occupation in base_calibration_expt.data.occupations
-    }
-    recalibration_keys = [
-        tuple(occupation) for occupation in recalibration_occupations
-    ]
-    if len(set(recalibration_keys)) != len(recalibration_keys):
-        raise ValueError("recalibration occupations must be unique")
-    for occupation in recalibration_occupations:
-        if len(occupation) != len(campaign.mode_labels):
-            raise ValueError(f"wrong mode count: {occupation}")
-        if sum(occupation) != N:
-            raise ValueError(f"wrong photon number: {occupation}")
-        if tuple(occupation) not in base_occupation_keys:
-            raise ValueError(
-                f"occupation is absent from the active calibration: {occupation}"
-            )
-    return base_calibration_expt, recalibration_keys
-
-
-def merge_replacement_calibration(campaign, station, N,
-                                  replacement_calibration_expt,
-                                  recalibration_keys,
-                                  recalibration_cycle_pairs):
-    """Swap the re-measured rows into the active calibration (cell 298).
-
-    Refuses to mix jobs whose Floquet hardware differs, and afterwards
-    verifies that no non-target row moved. Both checks were in the source and
-    both raise rather than warn.
-
-    Mutates `campaign` -- `calibrations`, `calibration_job_ids` and
-    `calibration_files` for this N -- and returns
-    (updated_calibration_expt, old_phase_by_occupation,
-    new_phase_by_occupation).
-    """
-    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-
-    old_calibration_expt = campaign.calibrations[N]
-    old_occupation_order = [
-        tuple(occupation)
-        for occupation in old_calibration_expt.data.occupations
-    ]
-    recalibration_key_set = set(recalibration_keys)
-
-    if list(old_calibration_expt.data.mode_labels) != list(
-            replacement_calibration_expt.data.mode_labels):
-        raise ValueError("replacement calibration uses a different mode order")
-    old_hardware = old_calibration_expt.data.hardware
-    new_hardware = replacement_calibration_expt.data.hardware
-    if (
-        not np.isclose(
-            old_hardware.floquet_cycle_us,
-            new_hardware.floquet_cycle_us,
-        )
-        or not np.allclose(
-            old_hardware.couplings_MHz,
-            new_hardware.couplings_MHz,
-        )
-        or not np.isclose(
-            old_hardware.physical_kerr_MHz,
-            new_hardware.physical_kerr_MHz,
-        )
-    ):
-        raise ValueError(
-            "Floquet hardware changed; do not mix partial calibration jobs"
-        )
-
-    old_job_ids = list(old_calibration_expt.batch_job_ids)
-    old_expts = list(old_calibration_expt.batch_expts)
-    new_job_ids = list(replacement_calibration_expt.batch_job_ids)
-    new_expts = list(replacement_calibration_expt.batch_expts)
-    if len(old_job_ids) != len(old_expts):
-        raise RuntimeError("old calibration jobs and IDs are not aligned")
-    if len(new_job_ids) != len(new_expts):
-        raise RuntimeError("replacement calibration jobs and IDs are not aligned")
-
-    old_phase_by_occupation = {
-        tuple(occupation): float(phase)
-        for occupation, phase in zip(
-            old_calibration_expt.data.occupations,
-            old_calibration_expt.data.phase_mod180,
-        )
-    }
-    merged_expts = []
-    merged_job_ids = []
-    for expt, job_id in zip(old_expts, old_job_ids):
-        occupation_key = tuple(expt.cfg.expt.spectroscopy_occupations)
-        if occupation_key in recalibration_key_set:
-            continue
-        merged_expts.append(expt)
-        merged_job_ids.append(job_id)
-    for expt, job_id in zip(new_expts, new_job_ids):
-        merged_expts.append(expt)
-        merged_job_ids.append(job_id)
-
-    updated_calibration_expt = MBRPhaseCorrectionExperiment.from_job_files(
-        merged_expts,
-        station=station,
-    )
-    updated_calibration_expt.batch_job_ids = merged_job_ids
-    updated_calibration_expt.analyze(
-        occupations=old_occupation_order,
-        cycle_pairs=recalibration_cycle_pairs,
-    )
-    new_phase_by_occupation = {
-        tuple(occupation): float(phase)
-        for occupation, phase in zip(
-            updated_calibration_expt.data.occupations,
-            updated_calibration_expt.data.phase_mod180,
-        )
-    }
-    for occupation_key in old_occupation_order:
-        if occupation_key in recalibration_key_set:
-            continue
-        if not np.isclose(
-            old_phase_by_occupation[occupation_key],
-            new_phase_by_occupation[occupation_key],
-        ):
-            raise RuntimeError(
-                f"non-target calibration changed: {occupation_key}"
-            )
-
-    campaign.calibrations[N] = updated_calibration_expt
-    campaign.calibration_job_ids[N] = merged_job_ids
-    campaign.calibration_files[N] = [
-        station.data_path / f"{job_id}_{campaign.EncSpec.__name__}.h5"
-        for job_id in merged_job_ids
-    ]
-
-    for occupation_key in recalibration_keys:
-        print(
-            occupation_key,
-            f"{old_phase_by_occupation[occupation_key]:+.6f}",
-            "->",
-            f"{new_phase_by_occupation[occupation_key]:+.6f}",
-            "deg / cycle",
-        )
-    print("active calibration rows:", len(old_occupation_order))
-    print("replacement jobs:", new_job_ids)
-    return (updated_calibration_expt, old_phase_by_occupation,
-            new_phase_by_occupation)
-
-
-# --------------------------------------------------------------------------
-# Cell 316: propagator setup.
-# --------------------------------------------------------------------------
-
-
-def build_propagator_batch(campaign, station, client, propagator_occupations,
-                           propagator_cycles, reps=1000, use_queue=True):
-    """Phase-correct and build the propagator batch and runner (cell 316).
-
-    Submits nothing. Returns (batch, runner, calibration_expt).
-    """
-    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-    from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
-
-    N = sum(propagator_occupations[0])
-    calibration_expt = ensure_calibration(campaign, N, station)
-
-    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
-        calibration_expt,
-        cycle_branches={
-            tuple(occupation): 0 for occupation in propagator_occupations
-        },
-    )
-    batch = MBRPropagatorExperiment.propagator_batch(
-        campaign.defaults,
-        campaign.modes,
-        propagator_occupations,
-        propagator_cycles,
-        phase_by_occupation=correction.phase_by_occupation,
-        sync_cycles=campaign.sync_cycles,
-        reps=reps,
-    )
-    runner = CharacterizationRunner(
-        station=station,
-        ExptClass=campaign.EncSpec,
-        ExptProgram=campaign.floquet_dark_mode_readout.EncodingPropagatorProgram,
-        default_expt_cfg=batch.default_expt_cfg,
-        job_client=client,
-        use_queue=use_queue,
-        show=False,
-    )
-    return batch, runner, calibration_expt
-
-
-def plot_propagator_matrices(propagator_data):
-    """|U| at each acquired cycle depth (cell 317 tail).
-
-    Returns (fig, axes).
-    """
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(
-        1,
-        len(propagator_data.cycles),
-        figsize=(5 * len(propagator_data.cycles), 4),
-        constrained_layout=True,
-    )
-    for axis, cycle, matrix in zip(
-        np.atleast_1d(axes),
-        propagator_data.cycles,
-        propagator_data.matrices,
-    ):
-        image = axis.imshow(np.abs(matrix), origin="upper", cmap="magma")
-        axis.set_title(f"cycle {cycle}: |U|")
-        axis.set_xlabel("encoder")
-        axis.set_ylabel("decoder")
-        fig.colorbar(image, ax=axis)
-    plt.show()
-    return fig, axes

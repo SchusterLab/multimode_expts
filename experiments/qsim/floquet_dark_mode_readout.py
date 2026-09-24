@@ -340,7 +340,6 @@ def _stage_migration_message(stage):
 # defining module exports, so the second write is idempotent.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "experiments.qsim.dark_mode_broadband_ge_validation",
-    "EncodingOrthogonalityProgram": "experiments.qsim.mbr_orthogonality",
     "EncodingPropagatorProgram": "experiments.qsim.mbr_propagator",
     "EncodingStarkShiftCalibrationProgram": "experiments.qsim.floquet_phase_calibration",
     "EntireFloquetCyclePhaseCalibrationProgram": "experiments.qsim.mbr_phase_correction",
