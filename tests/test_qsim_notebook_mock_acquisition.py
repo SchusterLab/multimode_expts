@@ -564,7 +564,7 @@ def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
         build_campaign,
         fixed_n_occupations,
     )
-    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
     station, client = mock_station
@@ -617,10 +617,10 @@ def test_mbr_batch_builds_and_compiles(mock_station, defaults, which):
     from experiments.qsim.notebook_helpers.floquet_calibration import (
         floquet_cycle_list_gen,
     )
-    from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
-    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-    from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
-    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
     station, client = mock_station

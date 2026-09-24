@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import percentile_filter
 from scipy.signal import find_peaks, savgol_filter
 
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_loading import (
     job_id_generator,
     load_encoding_spectroscopy,

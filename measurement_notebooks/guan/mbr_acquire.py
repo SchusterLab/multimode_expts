@@ -31,7 +31,7 @@
 #
 # **Modules did move**, as of 2026-09-12: each stage's Program now lives
 # beside its Experiment. The old aggregate Experiments are in
-# `experiments/qsim/legacy_mbr.py` since 2026-09-24.
+# `experiments/qsim/deprecated/legacy_mbr.py` since 2026-09-24.
 # Every old address still resolves -- `floquet_dark_mode_readout` forwards
 # moved names through a module-level `__getattr__`, which matters for more
 # than notebooks, since the queue records `program_module` per job and
@@ -157,7 +157,7 @@ if client is None:
     phase_by_occupation = {tuple(o): 0.0 for o in OCCUPATIONS}
     print(f"{len(calibration_expts)} calibration jobs acquired (mock)")
 else:
-    from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 
     calibration_expts.analyze()
     calibration_expts.display()

@@ -27,7 +27,7 @@ GODCLASS = "EncodingHamiltonianSpectroscopyExperiment"
 
 STAGES = [
     dict(stage="spectrum",
-         module="legacy_mbr",
+         module="deprecated.legacy_mbr",
          cls="MBRSpectrumExperiment",
          pin="be90ca8",
          # ``subsample_spectroscopy_shots`` used to be pinned here. Its
@@ -49,7 +49,7 @@ STAGES = [
               "MBRSpectrumExperiment.display_local_density_of_states"),
          ]),
     dict(stage="calibration",
-         module="legacy_mbr",
+         module="deprecated.legacy_mbr",
          cls="MBRPhaseCorrectionExperiment",
          pin="c8ce067",
          methods=["_calibration_data", "phase_correction_from_calibration",
@@ -66,7 +66,7 @@ STAGES = [
               "MBRPhaseCorrectionExperiment.display_cycle_phase"),
          ]),
     dict(stage="orthogonality",
-         module="legacy_mbr",
+         module="deprecated.legacy_mbr",
          cls="MBROrthogonalityExperiment",
          pin="ac03ea1",
          # ``display_orthogonality`` and ``orthogonality_batch`` were pinned
@@ -76,7 +76,7 @@ STAGES = [
          # covers what replaced them.
          methods=["reconstruct_orthogonality"]),
     dict(stage="propagator",
-         module="legacy_mbr",
+         module="deprecated.legacy_mbr",
          cls="MBRPropagatorExperiment",
          pin="77473d3",
          # ``reconstruct_propagator`` and ``propagator_batch`` were pinned
@@ -125,7 +125,7 @@ def after():
     root = Path(_repo_root())
     return {
         s["stage"]: _methods(
-            (root / "experiments" / "qsim" / f"{s['module']}.py").read_text(
+            (root / "experiments" / "qsim" / (s["module"].replace(".", "/") + ".py")).read_text(
                 encoding="utf-8"),
             s["cls"])
         for s in STAGES
@@ -230,7 +230,7 @@ _TWO_ROLES = pytest.mark.xfail(
 @_TWO_ROLES
 def test_orthogonality_display_runs_on_its_own_class():
     import matplotlib.pyplot as plt
-    from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
 
     expt = MBROrthogonalityExperiment.__new__(MBROrthogonalityExperiment)
     expt.data = _orthogonality_data()
@@ -243,7 +243,7 @@ def test_orthogonality_display_runs_on_its_own_class():
 def test_orthogonality_display_rejects_foreign_data():
     """The guard has to survive the move, or a spectrum plots as a matrix."""
     from slab import AttrDict
-    from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
 
     expt = MBROrthogonalityExperiment.__new__(MBROrthogonalityExperiment)
     expt.data = AttrDict(dict(spectrum={}))
@@ -328,14 +328,14 @@ def test_an_unknown_stage_lists_the_real_ones():
 # typo, which is the failure these lock out.
 
 def _spectrum_expt():
-    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
     return MBRSpectrumExperiment.__new__(MBRSpectrumExperiment)
 
 
 def test_the_analyze_signature_names_its_knobs():
     """The point of the change: discoverable from the signature, not the body."""
     import inspect
-    from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+    from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 
     parameters = inspect.signature(MBRSpectrumExperiment.analyze).parameters
     for name in ("occupations", "calibration", "cycle_branches",
@@ -347,7 +347,7 @@ def test_the_analyze_signature_names_its_knobs():
 
 
 def test_matrix_pencil_options_lose_their_prefix():
-    from experiments.qsim.legacy_mbr import _matrix_pencil_options
+    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
 
     assert _matrix_pencil_options({"mpm_pencil_length": 7}) == {
         "pencil_length": 7}
@@ -358,7 +358,7 @@ def test_matrix_pencil_options_lose_their_prefix():
 
 def test_a_misspelled_matrix_pencil_option_raises():
     """The old kwargs.get chain ignored this, so the knob silently did nothing."""
-    from experiments.qsim.legacy_mbr import _matrix_pencil_options
+    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
 
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         _matrix_pencil_options({"mpm_pencil_lenght": 7})
@@ -376,7 +376,7 @@ def test_an_unknown_analyze_argument_raises():
 
 def test_the_forwarded_options_reach_analyze_matrix_pencil():
     """Equivalence to the old 19-line block rests on this actually forwarding."""
-    from experiments.qsim.legacy_mbr import _matrix_pencil_options
+    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
     from fitting.qsim import matrix_pencil
 
     forwarded = _matrix_pencil_options({
@@ -431,24 +431,24 @@ def test_every_old_mpm_default_matched_the_callee():
 # --------------------------------------------------------------------------
 
 EXPLICIT = [
-    ("legacy_mbr", "MBRPhaseCorrectionExperiment", "analyze",
+    ("deprecated.legacy_mbr", "MBRPhaseCorrectionExperiment", "analyze",
      ["data", "occupations", "cycle_pairs", "repeats"]),
-    ("legacy_mbr", "MBRPhaseCorrectionExperiment", "display",
+    ("deprecated.legacy_mbr", "MBRPhaseCorrectionExperiment", "display",
      ["data", "ncols"]),
-    ("legacy_mbr", "MBROrthogonalityExperiment", "analyze",
+    ("deprecated.legacy_mbr", "MBROrthogonalityExperiment", "analyze",
      ["data", "occupations"]),
-    ("legacy_mbr", "MBROrthogonalityExperiment", "display",
+    ("deprecated.legacy_mbr", "MBROrthogonalityExperiment", "display",
      ["data", "figsize"]),
-    ("legacy_mbr", "MBROrthogonalityExperiment",
+    ("deprecated.legacy_mbr", "MBROrthogonalityExperiment",
      "display_orthogonality", ["data", "figsize"]),
-    ("legacy_mbr", "MBROrthogonalityExperiment",
+    ("deprecated.legacy_mbr", "MBROrthogonalityExperiment",
      "orthogonality_batch",
      ["default_expt_cfg", "swap_stors", "occupations", "sync_cycles", "reps",
       "correction_mode"]),
     # The last four came back with the tomography branch. They were read out
     # of `**kwargs` by the old string dispatch; naming them is the same
     # treatment the other three stages got.
-    ("legacy_mbr", "MBRPropagatorExperiment", "analyze",
+    ("deprecated.legacy_mbr", "MBRPropagatorExperiment", "analyze",
      ["data", "occupations", "calibration", "floquet_cycle_us",
       "finite_difference_cycles", "eigenphase_cycle"]),
 ]
@@ -512,7 +512,7 @@ def test_an_unknown_stage_argument_raises(module, cls, method):
 PORTED = [
     dict(method="analyze_propagator_dynamics",
          pin="22a1e7c",
-         module="legacy_mbr",
+         module="deprecated.legacy_mbr",
          cls="MBRPropagatorExperiment",
          edits=[
              # `_calibration_data` moved to the calibration stage, and
@@ -543,7 +543,7 @@ def test_ported_method_is_unchanged(spec):
     assert spec["method"] in old, (
         f"{spec['method']} was not on {GODCLASS} at {spec['pin']}")
     new = _methods(
-        (root / "experiments" / "qsim" / f"{spec['module']}.py").read_text(
+        (root / "experiments" / "qsim" / (spec["module"].replace(".", "/") + ".py")).read_text(
             encoding="utf-8"),
         spec["cls"])
     assert spec["method"] in new, f"{spec['method']} is missing from {spec['cls']}"

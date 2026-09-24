@@ -2,7 +2,7 @@
 """EntireFloquetCyclePhaseCalibrationProgram: the pulse program of the old jobs.
 
 The aggregate class ``MBRPhaseCorrectionExperiment`` that used to live here moved without
-changes to ``experiments/qsim/legacy_mbr.py`` (``docs/qsim/mbr_redesign.md``,
+changes to ``experiments/qsim/deprecated/legacy_mbr.py`` (``docs/qsim/mbr_redesign.md``,
 section 2).
 """
 from copy import deepcopy

@@ -90,10 +90,10 @@ RUN = run_settings()
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
-from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
 
 from experiments.qsim.notebook_helpers.floquet_calibration import (
     floquet_cycle_list_gen,

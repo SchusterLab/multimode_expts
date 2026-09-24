@@ -93,10 +93,10 @@ from fitting.wigner import WignerAnalysis
 from experiments.qsim.floquet_dark_mode_readout import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.legacy_mbr import MBROrthogonalityExperiment
-from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
 
 from experiments.qsim.notebook_helpers.mbr_loading import (
     job_id_generator,

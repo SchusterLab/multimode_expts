@@ -84,8 +84,8 @@ from slab import AttrDict
 from experiments.characterization_runner import CharacterizationRunner, json_plain
 
 from experiments.qsim import floquet_dark_mode_readout as d72_module
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 
 
 @dataclass

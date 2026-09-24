@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 
 from experiments.job_paths import data_root, vault_root
 from experiments.local_env import load_env
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from slab import AttrDict
 
 # ===========================================================================

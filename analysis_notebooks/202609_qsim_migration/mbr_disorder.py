@@ -83,8 +83,8 @@ import experiments as meas
 from slab import AttrDict
 
 from experiments.job_paths import data_root
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers import mbr_disorder_preview as preview
 from experiments.qsim.notebook_helpers import mbr_disorder_h5 as h5only
 

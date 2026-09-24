@@ -27,7 +27,7 @@ M1-storage pulses with the opposite sign.
 
 The stage program variants are in their own modules -- calibration in
 ``mbr_phase_correction``, propagator in ``mbr_propagator``, orthogonality in
-``mbr_orthogonality``. Their old aggregate Experiments are in ``legacy_mbr``.
+``mbr_orthogonality``. Their old aggregate Experiments are in ``deprecated/legacy_mbr``.
 """
 from copy import deepcopy
 

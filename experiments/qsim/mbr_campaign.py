@@ -53,12 +53,9 @@ from slab import AttrDict
 from experiments.characterization_runner import CharacterizationRunner
 from experiments.floquet_timing import config_archive
 from experiments.qsim import floquet_dark_mode_readout as fdmr
-from experiments.qsim.legacy_mbr import (
-    MBROrthogonalityExperiment,
-    MBRPhaseCorrectionExperiment,
-    MBRPropagatorExperiment,
-    MBRSpectrumExperiment,
-)
+# The module, not its classes: experiments/__init__.py exports every class a
+# walked module holds, and the legacy names must not shadow the new ones.
+from experiments.qsim.deprecated import legacy_mbr
 from experiments.qsim.mbr_orthogonality import EncodingOrthogonalityProgram
 from experiments.qsim.mbr_phase_correction import (
     EntireFloquetCyclePhaseCalibrationProgram,
@@ -271,7 +268,7 @@ def mbr_defaults(swap_stors, **overrides) -> AttrDict:
 
 def _calibration_batch(defaults, swap_stors, occupations, cycle_pairs=(0, 1, 2),
                        sync_cycles=1, reps=1500, **kwargs):
-    batch = MBRPhaseCorrectionExperiment.calibration_batch(
+    batch = legacy_mbr.MBRPhaseCorrectionExperiment.calibration_batch(
         defaults, swap_stors, occupations, np.asarray(cycle_pairs),
         sync_cycles=sync_cycles, reps=reps, **kwargs)
     return batch
@@ -285,7 +282,7 @@ def _spectrum_batch(defaults, swap_stors, occupations, cycles=(0, 4),
         final_occupations = occupations
     phase_by_occupation = phase_by_occupation or {
         tuple(o): 0.0 for o in final_occupations}
-    return MBRSpectrumExperiment.spectroscopy_batch(
+    return legacy_mbr.MBRSpectrumExperiment.spectroscopy_batch(
         defaults, swap_stors, occupations, [np.asarray(cycles)],
         phase_by_occupation=phase_by_occupation,
         sync_cycles=sync_cycles, reps=reps, **kwargs)
@@ -296,7 +293,7 @@ def _propagator_batch(defaults, swap_stors, occupations, cycles=(0, 4),
                       **kwargs):
     phase_by_occupation = phase_by_occupation or {
         tuple(o): 0.0 for o in occupations}
-    return MBRPropagatorExperiment.propagator_batch(
+    return legacy_mbr.MBRPropagatorExperiment.propagator_batch(
         defaults, swap_stors, occupations, list(cycles),
         phase_by_occupation=phase_by_occupation,
         sync_cycles=sync_cycles, reps=reps, **kwargs)
@@ -304,7 +301,7 @@ def _propagator_batch(defaults, swap_stors, occupations, cycles=(0, 4),
 
 def _orthogonality_batch(defaults, swap_stors, occupations, sync_cycles=1,
                          reps=1000, **kwargs):
-    return MBROrthogonalityExperiment.orthogonality_batch(
+    return legacy_mbr.MBROrthogonalityExperiment.orthogonality_batch(
         defaults, swap_stors, occupations,
         sync_cycles=sync_cycles, reps=reps, **kwargs)
 
@@ -314,16 +311,16 @@ def _orthogonality_batch(defaults, swap_stors, occupations, sync_cycles=1,
 # resolve it off the god module; the indirection bought nothing once the
 # Program moved next to its owner.
 STAGES = {
-    "calibration": (MBRPhaseCorrectionExperiment,
+    "calibration": (legacy_mbr.MBRPhaseCorrectionExperiment,
                     EntireFloquetCyclePhaseCalibrationProgram,
                     _calibration_batch),
-    "spectrum": (MBRSpectrumExperiment,
+    "spectrum": (legacy_mbr.MBRSpectrumExperiment,
                  NPhotonHamiltonianSpectroscopyProgram,
                  _spectrum_batch),
-    "propagator": (MBRPropagatorExperiment,
+    "propagator": (legacy_mbr.MBRPropagatorExperiment,
                    EncodingPropagatorProgram,
                    _propagator_batch),
-    "orthogonality": (MBROrthogonalityExperiment,
+    "orthogonality": (legacy_mbr.MBROrthogonalityExperiment,
                       EncodingOrthogonalityProgram,
                       _orthogonality_batch),
 }

@@ -85,7 +85,7 @@ from experiments.qsim.notebook_helpers.mbr_campaign import (
     build_campaign,
     ensure_calibration,
 )
-from experiments.qsim.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
     D72Config,
     DiagDisorderConfig,

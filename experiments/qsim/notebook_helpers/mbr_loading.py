@@ -33,7 +33,7 @@ copies, so they are unaffected.
 
 import numpy as np
 
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.saved_jobs import load_aggregate
 
 CALIBRATION_PROGRAM = "EntireFloquetCyclePhaseCalibrationProgram"

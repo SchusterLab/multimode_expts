@@ -33,8 +33,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from experiments.characterization_runner import CharacterizationRunner
-from experiments.qsim.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.legacy_mbr import MBRPropagatorExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
 
 
 def build_tomography_plan(campaign, station, client, N=1, step=10,
