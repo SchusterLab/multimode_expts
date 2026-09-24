@@ -213,6 +213,39 @@ def run_complete_basis_analysis(branch="as_acquired_fft", **overrides):
 
 
 # --------------------------------------------------------------------------
+# The phase calibration on its own: September N=3
+# --------------------------------------------------------------------------
+#
+# The complete-basis fixture already runs a calibration, but only as an input
+# to the spectrum, so the calibration's own output is pinned only through what
+# the spectrum happens to consume. This set pins it directly. It is the future
+# MBRStarkCalExperiment, and it sits on the critical path of every spectrum.
+#
+# 70 jobs, one per occupation and analyzer phase (0 and 90 deg), covering the
+# whole 35-state N=3 sector under one config triple. Chosen over reusing the
+# August calibration because it is the newer acquisition path: preload_flattop
+# swaps and 65 cycle pairs, where August has gauss swaps and 17. There is no
+# spectroscopy set under the same configuration (the jobs after it are
+# propagator runs), so this fixture pins the calibration alone.
+
+STARK_CAL_IDS = dataset("september_N3", "calibration")
+
+
+def run_stark_cal_analysis():
+    """-> (calibration_expt, analysis_result, correction) for September N=3.
+
+    Timing is resolved from the provenance sidecar, not supplied, so this also
+    exercises the resolver on a third configuration.
+    """
+    calibration = load_aggregate_resolved(
+        STARK_CAL_IDS, owner=MBRPhaseCorrectionExperiment)
+    data = calibration.analyze()
+    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
+        calibration)
+    return calibration, data, correction
+
+
+# --------------------------------------------------------------------------
 # Flattening, so a nested analysis result can be compared field by field
 # --------------------------------------------------------------------------
 #

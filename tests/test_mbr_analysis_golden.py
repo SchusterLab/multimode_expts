@@ -395,3 +395,85 @@ def test_august_timing_reproduces_the_pickled_value():
     timing = resolve_floquet_timing(cfg, "CFG-FL-20260814-00076")
     assert timing["floquet_cycle_us"] == 0.7254464285714286
     assert timing["m1s_pi_fracs"] == [40] * 7
+
+
+# --------------------------------------------------------------------------
+# Phase calibration on its own: the future MBRStarkCalExperiment
+# --------------------------------------------------------------------------
+#
+# The complete-basis tests above run a calibration too, but only as an input to
+# the spectrum, so they pin just the part of it the spectrum consumes. This
+# pins the calibration's own output -- per-occupation returns, phase fits,
+# unwrapping, phase per cycle -- and the correction the spectroscopy program is
+# built from. See ``tests/mbr_reference.py`` for why this dataset.
+
+STARK_CAL_BASELINE = Path(__file__).parent / "data" / "mbr_stark_cal_20260905.npz"
+
+
+@pytest.fixture(scope="module")
+def stark_cal():
+    from tests.mbr_reference import run_stark_cal_analysis
+
+    return run_stark_cal_analysis()
+
+
+def _stark_cal_flat(data, correction):
+    flat = flatten_result(data, "calibration")
+    flat.update(flatten_result(correction, "correction"))
+    # Source file names pin which two jobs each occupation was paired from.
+    # Only the name: the directory depends on where the data is mounted.
+    return {path: (np.array([Path(str(f)).name for f in np.atleast_1d(value)])
+                   if path.endswith(".fnames") else value)
+            for path, value in flat.items()}
+
+
+def test_stark_cal_baseline_matches(stark_cal):
+    """Every field of the calibration and its correction is unchanged."""
+    _, data, correction = stark_cal
+    assert_matches_baseline(_stark_cal_flat(data, correction), STARK_CAL_BASELINE)
+
+
+def test_stark_cal_covers_the_n3_sector(stark_cal):
+    """The fixture is still the whole N=3 sector, two jobs per occupation."""
+    _, data, correction = stark_cal
+    occupations = [tuple(map(int, o)) for o in data.occupations]
+    assert len(set(occupations)) == 35
+    assert all(sum(o) == 3 for o in occupations)
+    assert all(len(r.fnames) == 2 for r in data.results)
+    assert len(correction.phase_by_occupation) == 35
+
+
+def test_stark_cal_timing_comes_from_its_own_config(stark_cal):
+    """The cycle time is September's, resolved from its versioned config.
+
+    A third configuration for the resolver, next to July's and August's in
+    ``test_timing_resolver_is_not_a_constant``.
+    """
+    _, data, _ = stark_cal
+    assert data.hardware.source == "versioned config CFG-FL-20260905-00045"
+    assert data.hardware.floquet_cycle_us == pytest.approx(0.2139136904761905, rel=1e-15)
+
+
+def test_stark_cal_golden_detects_a_data_change():
+    """The baseline is sensitive, not vacuous.
+
+    Scales the raw quadratures of one of the 70 jobs by one part in a million.
+    If the pinned fields did not depend on the data -- a flatten that lost the
+    per-occupation results, say -- this would stay green.
+    """
+    if _blessing():
+        pytest.skip("would bless the perturbed result")
+    from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
+    from tests.mbr_reference import STARK_CAL_IDS, load_aggregate_resolved
+
+    calibration = load_aggregate_resolved(
+        STARK_CAL_IDS, owner=MBRPhaseCorrectionExperiment)
+    child = calibration.batch_expts[0].data
+    for key in ("avgi", "avgq", "amps", "Pe", "return_quadrature"):
+        child[key] = np.asarray(child[key]) * (1 + 1e-6)
+    data = calibration.analyze()
+    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
+        calibration)
+
+    with pytest.raises(AssertionError, match="analysis output changed"):
+        assert_matches_baseline(_stark_cal_flat(data, correction), STARK_CAL_BASELINE)
