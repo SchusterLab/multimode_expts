@@ -3,6 +3,8 @@
 Every test points ``MULTIMODE_ENV_FILE`` at its own tmp_path file and resets
 the module's one-shot flag, so none of them read the developer's real .env.
 """
+import os
+
 import pytest
 
 from experiments import local_env
@@ -11,7 +13,12 @@ from experiments import local_env
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(local_env, "_loaded", False)
+    # load_env() writes os.environ directly, and monkeypatch.delenv on an
+    # unset variable records nothing to undo, so restore the whole thing.
+    saved = dict(os.environ)
     yield
+    os.environ.clear()
+    os.environ.update(saved)
 
 
 def _file(tmp_path, text, monkeypatch):
@@ -27,7 +34,6 @@ def test_sets_unset_variables(tmp_path, monkeypatch):
 
     applied = local_env.load_env()
 
-    import os
     assert applied == {"MULTIMODE_DATA_ROOT": "/Volumes/pippin/experiments"}
     assert os.environ["MULTIMODE_DATA_ROOT"] == "/Volumes/pippin/experiments"
 
@@ -39,7 +45,6 @@ def test_real_environment_wins(tmp_path, monkeypatch):
 
     assert local_env.load_env() == {}
 
-    import os
     assert os.environ["MULTIMODE_PATH_BACKEND"] == "index"
 
 
