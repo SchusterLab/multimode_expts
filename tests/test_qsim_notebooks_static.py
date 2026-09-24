@@ -72,15 +72,13 @@ def test_notebook_imports_resolve(path):
 
 
 def test_notebooks_have_no_undefined_names():
-    """ruff F821, run through `pixi exec` so it needs no project dependency."""
-    pixi = shutil.which("pixi")
-    if pixi is None:
-        pytest.skip("pixi is not on PATH")
+    """ruff F821. ruff is a project dependency, so `pixi run` has it."""
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        pytest.skip("ruff is not on PATH; run through `pixi run pytest`")
     result = subprocess.run(
-        [pixi, "exec", "ruff", "check", "--select", "F821",
-         "--output-format", "concise", *map(str, NOTEBOOKS)],
+        [ruff, "check", "--select", "F821", "--output-format", "concise",
+         *map(str, NOTEBOOKS)],
         capture_output=True, text=True, cwd=REPO_ROOT,
     )
-    if result.returncode not in (0, 1):  # 1 = violations found
-        pytest.skip(f"ruff did not run: {result.stderr.strip()[-300:]}")
-    assert result.returncode == 0, result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr

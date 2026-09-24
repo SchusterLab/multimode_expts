@@ -94,7 +94,5 @@ the notebooks. That is accepted: the static check covers the notebook side.
   0.2.291 (`645f8905`) for this code. Another user may switch it for tProc v2
   tests. Check `qick.__version__` first if a station fails to start with a
   `KeyError` on the soccfg.
-- The static check runs ruff through `pixi exec`, so ruff is not a project
-  dependency. The first run downloads it.
 - Do not run `--mode hardware` unless the user asks. It drives the real
   device, and it takes the main worker lock.
