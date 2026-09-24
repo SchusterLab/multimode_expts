@@ -54,7 +54,8 @@ from experiments.qsim.notebook_helpers.defaults import (
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
+# Set by tools/run_qsim_suite.py. Unset: through the queue in the main
+# checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
 
 # %%
@@ -71,7 +72,6 @@ station = MultimodeStation(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     log_measurements=not RUN.smoke,
-    mock=RUN.mock,
     **RUN.station_configs(config_dict),
 )
 client = JobClient()
@@ -141,7 +141,7 @@ floquet_kerr_expt = floquet_kerr_runner.execute(
     show=False,
 )
 
-# %% tags=["mock-skip"]
+# %%
 
 floquet_kerr_expt.analyze(debug=False)
 floquet_kerr_expt.display(save_fig=False)
@@ -150,5 +150,5 @@ plt.show()
 print('Floquet Kerr:', floquet_kerr_expt.data.Kerr * 1e3, '+/-', floquet_kerr_expt.data.Kerr_err * 1e3, 'kHz')
 print('linear detuning:', floquet_kerr_expt.data.detuning_g * 1e3, '+/-', floquet_kerr_expt.data.detuning_g_err * 1e3, 'kHz')
 
-# %% tags=["mock-skip"]
+# %%
 plt.plot(floquet_kerr_expt.data['avgi'][1])

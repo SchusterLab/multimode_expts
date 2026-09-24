@@ -1,41 +1,36 @@
 """Run the qsim migration notebooks top to bottom, as the refactor's test suite.
 
-    pixi run python tools/run_qsim_suite.py --mode mock
-    pixi run python tools/run_qsim_suite.py --mode hardware --only mbr
+    pixi run python tools/run_qsim_suite.py --hardware
+    pixi run python tools/run_qsim_suite.py --hardware --only mbr
     pixi run python tools/run_qsim_suite.py --suite analysis
     pixi run python tools/run_qsim_suite.py --list
 
 Each notebook is executed in a fresh kernel and saved as an executed
-``.ipynb`` with its plots, under ``--out``. Judge a hardware run by opening
-those; this script only reports which notebooks raised, and where.
+``.ipynb`` with its plots, under ``--out``. Judge a run by opening those;
+this script only reports which notebooks raised, and where.
+
+The measurement notebooks are a suite for hardware runs only. What mock mode
+can check is checked by pytest instead (``tests/test_qsim_notebook_mock_acquisition.py``,
+``tests/test_mbr_acquire_mock.py``), and ``tests/test_qsim_notebooks_static.py``
+checks every notebook's names and imports. See docs/qsim/mock_suite_plan.md.
 
 This script passes its settings to the kernels through the environment; see
 ``experiments/qsim/notebook_helpers/run_mode.py``. Every runner executes
 directly (``use_queue`` off), because the queue worker runs only the main
-checkout. ``--mode mock`` uses mock instruments, ``--mode hardware`` the real
-ones. ``--profile`` defaults to ``smoke``.
+checkout. ``--profile`` defaults to ``smoke``.
 
-Cell tags (jupytext: ``# %% tags=["suite-skip"]``) take cells out of a run:
+Cell tags (jupytext: ``# %% tags=["suite-skip"]``):
 
 - ``suite-skip``: never run by the suite. Alternatives to another cell ("run
   this instead"), and cells that need a person's judgement first.
-- ``mock-skip``: not in mock mode. Cells that only make sense on real data.
+- ``raises-exception`` (nbclient's own tag) marks a known failure: the cell
+  may raise and the run continues. The summary counts these as xfail, and a
+  tagged cell that ran clean as xpass, so a fixed bug shows up.
 
-``raises-exception`` (nbclient's own tag) marks a known failure: the cell may
-raise and the run continues. The summary counts these as xfail, and a tagged
-cell that ran clean as xpass, so a fixed bug shows up.
-
-The measurement notebooks are a suite for hardware runs. Mock mode is an
-optional pre-flight for the notebooks that support it; the MBR notebooks
-(``HARDWARE_ONLY``) do not, because every cell after their phase calibration
-needs a real one. Their building blocks are checked by pytest instead
-(``tests/test_mbr_acquire_mock.py``, ``tests/test_mbr_analysis_golden.py``),
-and ``tests/test_qsim_notebooks_static.py`` checks every notebook's names and
-imports. See docs/qsim/mock_suite_plan.md.
-
-Hardware mode drives the real device from this checkout. Before it starts, it
-takes the main checkout's worker lock: it refuses if a worker is running, and
-while it holds the lock no worker can start. Tell the other users first.
+The measurement suite drives the real device from this checkout, so it runs
+only with ``--hardware``. Before it starts, it takes the main checkout's worker lock: it refuses if a worker is
+running, and while it holds the lock no worker can start. Tell the other
+users first.
 """
 
 import argparse
@@ -73,18 +68,11 @@ SUITES = {
     ],
 }
 
-# No mock run: every cell after the phase calibration needs a real one.
-HARDWARE_ONLY = {"mbr", "mbr_tomography", "mbr_sff", "mbr_disorder"}
-
 MAIN_WORKER_LOCK_VAR = "MULTIMODE_MAIN_WORKER_LOCK"
 DEFAULT_MAIN_WORKER_LOCK = "C:/python/multimode_expts/job_server/worker.lock"
 
 
-def skipped_tags(mode):
-    tags = {"suite-skip"}
-    if mode == "mock":
-        tags.add("mock-skip")
-    return tags
+SKIPPED_TAGS = {"suite-skip"}
 
 
 def load_notebook(path, skip):
@@ -184,8 +172,8 @@ def hold_worker_lock():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--suite", choices=sorted(SUITES), default="measurement")
-    parser.add_argument("--mode", choices=("mock", "hardware"), default="mock",
-                        help="measurement suite only; the analysis suite has no station")
+    parser.add_argument("--hardware", action="store_true",
+                        help="required for the measurement suite: it drives the real device")
     parser.add_argument("--profile", choices=("smoke", "full"), default="smoke")
     parser.add_argument("--configs", default=None,
                         help="'main', a JSON file of version IDs, or unset for each "
@@ -213,17 +201,12 @@ def main(argv=None):
             print(path.relative_to(REPO_ROOT))
         return 0
 
-    mode = args.mode if args.suite == "measurement" else "analysis"
-    if mode == "mock":
-        hardware_only = [p.stem for p in notebooks if p.stem in HARDWARE_ONLY]
-        if args.only and hardware_only:
-            sys.exit(f"{hardware_only} run on hardware only (see HARDWARE_ONLY)")
-        if hardware_only:
-            print(f"skipped, hardware only: {', '.join(hardware_only)}")
-        notebooks = [p for p in notebooks if p.stem not in HARDWARE_ONLY]
+    mode = "hardware" if args.suite == "measurement" else "analysis"
+    if mode == "hardware" and not args.hardware:
+        sys.exit("the measurement suite drives the real device and takes the "
+                 "main worker lock; pass --hardware to run it")
     os.environ["MULTIMODE_RUN_PROFILE"] = args.profile
     if args.suite == "measurement":
-        os.environ["MULTIMODE_RUN_MOCK"] = "1" if args.mode == "mock" else "0"
         os.environ["MULTIMODE_RUN_USE_QUEUE"] = "0"
     if args.configs:
         os.environ["MULTIMODE_RUN_CONFIGS"] = args.configs
@@ -241,7 +224,7 @@ def main(argv=None):
     try:
         for path in notebooks:
             ok, seconds, error, xfail, xpass = run_notebook(
-                path, out_dir, skipped_tags(mode), args.cell_timeout
+                path, out_dir, SKIPPED_TAGS, args.cell_timeout
             )
             results.append((path.stem, ok, seconds, error, xfail, xpass))
             if not ok and not args.keep_going:

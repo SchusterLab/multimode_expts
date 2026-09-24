@@ -85,7 +85,8 @@ from experiments.qsim.notebook_helpers.defaults import (
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
+# Set by tools/run_qsim_suite.py. Unset: through the queue in the main
+# checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
 from experiments.qsim.notebook_helpers.floquet_calibration import (
     error_amp_floquet_postproc,
@@ -119,7 +120,6 @@ station = MultimodeStation(
     experiment_name="260915_qsim_migration",
     project="test_migration",
     log_measurements=not RUN.smoke,
-    mock=RUN.mock,
     **RUN.station_configs(config_dict),
 )
 client = JobClient()
@@ -258,7 +258,7 @@ for i, init_stor in enumerate(stor_modes_to_run):
         use_queue=False,
     )
 
-# %% tags=["mock-skip"]
+# %%
 for i in range(len(stor_modes_to_run)):
     floquet_freq_chev_postproc(station, freq_len_expt[i])
 
@@ -627,7 +627,7 @@ if you_have_to_do_amp_chev == True:
             debug=False,
         )
 
-# %% tags=["mock-skip"]
+# %%
 floquet_gain_chev_postproc(station, freq_len_expt[0])
 
 # %% tags=["suite-skip"]

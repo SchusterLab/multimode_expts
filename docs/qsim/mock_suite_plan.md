@@ -18,19 +18,19 @@ notebooks that mock mode can check. So each layer has one check:
 
 ## The rules
 
-- **The notebooks are a suite for hardware runs.** `tools/run_qsim_suite.py
-  --mode hardware` runs them; the runner reports only crashes.
-- **Mock mode is an optional pre-flight**, only for `floquet_calibration`,
-  `multiphoton_calibration` and `floquet_displacement_kerr` (about 1 min
-  together). If a pre-flight breaks, do not spend time on it: drop the
-  notebook from mock (`HARDWARE_ONLY` in the runner).
-- **The MBR notebooks never run in mock** (`HARDWARE_ONLY`). Every cell after
-  their phase calibration needs a real calibration: its phases go into the
-  pulse configs of the later jobs.
+- **The notebooks run on real hardware only.** `tools/run_qsim_suite.py
+  --hardware` runs them; the runner reports only crashes. The notebooks have
+  no mock switch. (For the MBR notebooks mock could not work anyway: every
+  cell after the phase calibration needs a real calibration, because its
+  phases go into the pulse configs of the later jobs.)
+- **`use_queue` follows the checkout.** Unset `MULTIMODE_RUN_USE_QUEUE`
+  means the queue in the main checkout and a direct run in a linked worktree,
+  because the worker runs only the main checkout's code
+  (`run_mode.is_main_checkout`). The suite runner always runs directly.
 - **When you cut code, its guardrail is the pytest next to it**, not a
   notebook. Before you remove or rewrite a module, check that a pytest covers
   it, and add one if not.
-- **A mock run changes nothing shared.** Data goes to `mock_data`. The vault
+- **The station's mock mode stays, for pytest.** A mock run changes nothing shared. Data goes to `mock_data`. The vault
   skips mock. Config snapshots skip mock and return `CFG-XX-MOCK`.
 
 ## The pytest mock tests
@@ -65,8 +65,11 @@ the notebooks. That is accepted: the static check covers the notebook side.
   acquire + fit cells split, fit/accept halves tagged `mock-skip`. Kerr
   `storage_reset` drops mode 6 (no pi time in the pinned M1 config).
 - `b990aed` `assert_reloads`: reload and shape checks for mock files.
-- MBR notebooks marked `HARDWARE_ONLY`; `tests/test_qsim_notebooks_static.py`
-  added.
+- `9c48f99` `tests/test_qsim_notebooks_static.py`: imports resolve, no
+  undefined names (ruff F821). `e4f0439` ruff is a project dependency.
+- Mock scaffold removed from the notebooks and the suite runner: no
+  `MULTIMODE_RUN_MOCK`, no `--mode`, no `mock-skip` tags. The cells split for
+  mock stay split. The measurement suite needs `--hardware`.
 
 ## Known issues, not fixed
 
@@ -94,5 +97,5 @@ the notebooks. That is accepted: the static check covers the notebook side.
   0.2.291 (`645f8905`) for this code. Another user may switch it for tProc v2
   tests. Check `qick.__version__` first if a station fails to start with a
   `KeyError` on the soccfg.
-- Do not run `--mode hardware` unless the user asks. It drives the real
+- Do not run the measurement suite (`--hardware`) unless the user asks. It drives the real
   device, and it takes the main worker lock.

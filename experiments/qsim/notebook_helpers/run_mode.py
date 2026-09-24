@@ -2,13 +2,14 @@
 
 `tools/run_qsim_suite.py` sets these to drive the notebooks from the command
 line. An interactive kernel normally leaves them unset, which gives a normal
-science run.
+science run on real hardware. (The notebooks do not run in mock mode; pytest
+checks what mock mode can. See docs/qsim/mock_suite_plan.md.)
 
-- `MULTIMODE_RUN_MOCK` (default 0): pass to `MultimodeStation(mock=...)`.
-  Mock or real instruments.
-- `MULTIMODE_RUN_USE_QUEUE` (default 1): pass to each runner's `use_queue`.
-  Submit to the job server, or run directly on this kernel's station. The
-  worker only runs the main checkout, so test code from a worktree with 0.
+- `MULTIMODE_RUN_USE_QUEUE`: pass to each runner's `use_queue`. Submit to the
+  job server, or run directly on this kernel's station. Unset: 1 in the main
+  checkout, 0 in a linked git worktree. The worker runs only the main
+  checkout's code, so a queued job from a worktree would not run the
+  worktree's code.
 - `MULTIMODE_RUN_PROFILE`: ``full`` (default) or ``smoke``. A notebook writes
   both sizes as ``RUN.pick(1000, smoke=100)``.
 - `MULTIMODE_RUN_CONFIGS`: unset uses the notebook's `config_dict`. ``main``
@@ -25,7 +26,6 @@ from pathlib import Path
 from experiments.local_env import load_env
 from experiments.qsim.mbr_campaign import archived
 
-MOCK_VAR = "MULTIMODE_RUN_MOCK"
 USE_QUEUE_VAR = "MULTIMODE_RUN_USE_QUEUE"
 PROFILE_VAR = "MULTIMODE_RUN_PROFILE"
 CONFIGS_VAR = "MULTIMODE_RUN_CONFIGS"
@@ -44,9 +44,19 @@ _STATION_KWARG = {
 }
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def is_main_checkout(repo_root: Path = REPO_ROOT) -> bool:
+    """Is this the main checkout, not a linked worktree?
+
+    In a linked worktree `.git` is a file that points to the main one.
+    """
+    return (repo_root / ".git").is_dir()
+
+
 @dataclass(frozen=True)
 class RunSettings:
-    mock: bool = False
     use_queue: bool = True
     profile: str = "full"
     configs: str | None = None
@@ -84,7 +94,7 @@ class RunSettings:
         return station_config_paths(config_dict)
 
     def __str__(self):
-        return (f"mock={self.mock} use_queue={self.use_queue} "
+        return (f"use_queue={self.use_queue} "
                 f"profile={self.profile} configs={self.configs or 'notebook'}")
 
 
@@ -101,8 +111,7 @@ def run_settings() -> RunSettings:
     """-> the settings in the environment (or the repo-root .env)."""
     load_env()
     return RunSettings(
-        mock=_flag(MOCK_VAR, False),
-        use_queue=_flag(USE_QUEUE_VAR, True),
+        use_queue=_flag(USE_QUEUE_VAR, is_main_checkout()),
         profile=os.environ.get(PROFILE_VAR, "full"),
         configs=os.environ.get(CONFIGS_VAR) or None,
     )

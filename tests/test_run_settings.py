@@ -6,11 +6,16 @@ Run:  pixi run pytest tests/test_run_settings.py -v
 import jupytext
 import pytest
 
-from experiments.qsim.notebook_helpers.run_mode import RunSettings, run_settings
-from tools.run_qsim_suite import load_notebook, skipped_tags
+from experiments.qsim.notebook_helpers import run_mode
+from experiments.qsim.notebook_helpers.run_mode import (
+    RunSettings,
+    is_main_checkout,
+    run_settings,
+)
+from tools.run_qsim_suite import SKIPPED_TAGS, load_notebook
 
-RUN_VARS = ("MULTIMODE_RUN_MOCK", "MULTIMODE_RUN_USE_QUEUE",
-            "MULTIMODE_RUN_PROFILE", "MULTIMODE_RUN_CONFIGS")
+RUN_VARS = ("MULTIMODE_RUN_USE_QUEUE", "MULTIMODE_RUN_PROFILE",
+            "MULTIMODE_RUN_CONFIGS")
 
 CONFIG_DICT = {
     "hardware_config": "CFG-HW-1",
@@ -31,8 +36,9 @@ def clean_env(monkeypatch):
 
 
 def test_default_settings_are_a_normal_run(clean_env):
+    clean_env.setattr(run_mode, "is_main_checkout", lambda: True)
     run = run_settings()
-    assert (run.mock, run.use_queue, run.profile, run.configs) == (False, True, "full", None)
+    assert (run.use_queue, run.profile, run.configs) == (True, "full", None)
     assert run.pick(1000, smoke=10) == 1000
     # Through the queue, the station gets the version IDs unchanged.
     assert run.station_configs(CONFIG_DICT) == {
@@ -43,18 +49,36 @@ def test_default_settings_are_a_normal_run(clean_env):
     }
 
 
-def test_the_two_flags_are_independent(clean_env):
-    clean_env.setenv("MULTIMODE_RUN_MOCK", "0")
+def test_a_worktree_runs_directly_by_default(clean_env):
+    # The worker runs only the main checkout's code.
+    clean_env.setattr(run_mode, "is_main_checkout", lambda: False)
+    assert run_settings().use_queue is False
+
+
+def test_use_queue_flag_overrides_the_checkout_default(clean_env):
+    clean_env.setattr(run_mode, "is_main_checkout", lambda: False)
+    clean_env.setenv("MULTIMODE_RUN_USE_QUEUE", "1")
+    assert run_settings().use_queue is True
+    clean_env.setattr(run_mode, "is_main_checkout", lambda: True)
     clean_env.setenv("MULTIMODE_RUN_USE_QUEUE", "0")
     clean_env.setenv("MULTIMODE_RUN_PROFILE", "smoke")
     run = run_settings()
-    assert (run.mock, run.use_queue, run.smoke) == (False, False, True)
+    assert (run.use_queue, run.smoke) == (False, True)
     assert run.pick(1000, smoke=10) == 10
 
 
+def test_is_main_checkout(tmp_path):
+    # In a linked worktree, .git is a file that points to the main checkout.
+    (tmp_path / "main" / ".git").mkdir(parents=True)
+    (tmp_path / "worktree").mkdir()
+    (tmp_path / "worktree" / ".git").write_text("gitdir: ../main/.git/worktrees/w")
+    assert is_main_checkout(tmp_path / "main")
+    assert not is_main_checkout(tmp_path / "worktree")
+
+
 def test_bad_flag_is_refused(clean_env):
-    clean_env.setenv("MULTIMODE_RUN_MOCK", "yes")
-    with pytest.raises(ValueError, match="MULTIMODE_RUN_MOCK"):
+    clean_env.setenv("MULTIMODE_RUN_USE_QUEUE", "yes")
+    with pytest.raises(ValueError, match="MULTIMODE_RUN_USE_QUEUE"):
         run_settings()
 
 
@@ -78,22 +102,17 @@ a = 1
 # %% tags=["suite-skip"]
 b = 2
 
-# %% tags=["mock-skip"]
+# %% tags=["raises-exception"]
 c = 3
 '''
 
 
-@pytest.mark.parametrize("mode, kept", [
-    ("mock", ["a = 1"]),
-    ("hardware", ["a = 1", "c = 3"]),
-    ("analysis", ["a = 1", "c = 3"]),
-])
-def test_driver_drops_tagged_cells(tmp_path, mode, kept):
+def test_driver_drops_suite_skip_cells(tmp_path):
     path = tmp_path / "nb.py"
     path.write_text(NOTEBOOK)
-    nb, dropped = load_notebook(path, skipped_tags(mode))
-    assert [c.source for c in nb.cells] == kept
-    assert dropped == 3 - len(kept)
+    nb, dropped = load_notebook(path, SKIPPED_TAGS)
+    assert [c.source for c in nb.cells] == ["a = 1", "c = 3"]
+    assert dropped == 1
 
 
 def test_every_suite_notebook_parses_and_keeps_its_station_cell():
@@ -102,13 +121,13 @@ def test_every_suite_notebook_parses_and_keeps_its_station_cell():
     from tools.run_qsim_suite import SUITES
 
     for path in SUITES["measurement"]:
-        nb, _ = load_notebook(path, skipped_tags("mock"))
+        nb, _ = load_notebook(path, SKIPPED_TAGS)
         sources = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
-        assert "mock=RUN.mock" in sources, path.name
+        assert "MultimodeStation(" in sources, path.name
         raw = jupytext.read(path)
         for cell in raw.cells:
             for tag in cell.metadata.get("tags", []):
-                assert tag in {"suite-skip", "mock-skip", "raises-exception"}, (path.name, tag)
+                assert tag in {"suite-skip", "raises-exception"}, (path.name, tag)
 
 
 def test_expected_failures_split_raised_from_clean():

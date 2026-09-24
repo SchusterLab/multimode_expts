@@ -79,7 +79,8 @@ from experiments.qsim.notebook_helpers.defaults import (
 )
 from experiments.qsim.notebook_helpers.run_mode import run_settings
 
-# Set by tools/run_qsim_suite.py. Unset: a normal run through the queue.
+# Set by tools/run_qsim_suite.py. Unset: through the queue in the main
+# checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
 
 # The four aggregate MBR stages. `EncodingHamiltonianSpectroscopyExperiment`
@@ -123,7 +124,6 @@ station = MultimodeStation(
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
     log_measurements=not RUN.smoke,
-    mock=RUN.mock,
     **RUN.station_configs(config_dict),
 )
 client = JobClient()
