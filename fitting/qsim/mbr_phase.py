@@ -178,3 +178,44 @@ def saved_correction(expts):
     return AttrDict(dict(phase_by_occupation=phase_by_occupation, 
                          modes=modes, 
                          application_sign=application_sign))
+
+
+def fit_closed_cycle_phase(complex_return, physical_cycles, radius_fraction=0.1):
+    """Fit the phase per physical Floquet cycle of one closed-cycle return.
+
+    The per-occupation fit of the closed-pair calibration: drop points whose
+    magnitude is below ``radius_fraction`` of the median, unwrap with
+    :func:`unwrap_cycle_phase`, then fit a line against the physical cycle
+    count. Same arithmetic as the ``pair`` mode of the old
+    ``MBRPhaseCorrectionExperiment.analyze_cycle_phase``.
+
+    Returns an AttrDict with ``return_phase`` and ``phase_fit`` (deg, per
+    point), ``relative_return`` (|A|/|A(0)|), ``valid_mask``,
+    ``phase_per_cycle`` and ``phase_error`` (deg / physical cycle). Raises
+    ValueError if fewer than three points are valid.
+    """
+    complex_return = np.asarray(complex_return)
+    physical_cycles = np.asarray(physical_cycles)
+    magnitude = np.abs(complex_return)
+    positive = magnitude[np.isfinite(magnitude) & (magnitude > 0.)]
+    radius_floor = radius_fraction * np.median(positive) if len(positive) else 0.
+    valid_mask = np.isfinite(complex_return) & (magnitude > radius_floor)
+    closed_mask = np.ones(len(complex_return), dtype=bool)
+    if np.count_nonzero(valid_mask) < 3:
+        raise ValueError(
+            f"only {np.count_nonzero(valid_mask)} valid IQ points; need 3")
+
+    phase = unwrap_cycle_phase(complex_return, physical_cycles, valid_mask, closed_mask)
+    parameters, covariance = np.polyfit(physical_cycles[valid_mask],
+                                        phase[valid_mask], 1, cov=True)
+    relative_return = magnitude.copy()
+    if magnitude[0] > 1e-12:
+        relative_return = magnitude / magnitude[0]
+    return AttrDict(dict(
+        return_phase=phase,
+        phase_fit=parameters[0] * physical_cycles + parameters[1],
+        relative_return=relative_return,
+        valid_mask=valid_mask,
+        phase_per_cycle=float(parameters[0]),
+        phase_error=float(np.sqrt(covariance[0, 0])),
+    ))

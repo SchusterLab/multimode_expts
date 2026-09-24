@@ -330,6 +330,23 @@ def load_job(job_id, path=None, timing=None, provenance=None, load_shots=False):
     return SavedJob(job_id, cfg, data, path, prog)
 
 
+def load_experiment(cls, path, timing=None, provenance=None, load_shots=False):
+    """-> an instance of the job class ``cls`` holding one saved job.
+
+    Like :func:`load_job`, but the result is a real ``cls`` instance, so its
+    own ``analyze`` and ``display`` run on the saved data. ``__init__`` is
+    bypassed, as in ``Experiment.from_h5file``: the instance has no
+    instruments and cannot acquire.
+    """
+    path = Path(path)
+    records = job_records(required=False) if provenance is None else provenance
+    job = load_job(job_id_from_path(path), path=path, timing=timing,
+                   provenance=records, load_shots=load_shots)
+    expt = cls.__new__(cls)
+    expt.__dict__.update(vars(job))
+    return expt
+
+
 def load_aggregate(ids, owner, *, program_class=None, timing=None,
                    load_shots=False, provenance=None, analyze=False):
     """Build one aggregate Experiment for ``ids`` from HDF5 alone.

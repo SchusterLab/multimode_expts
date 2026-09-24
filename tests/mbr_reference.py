@@ -231,18 +231,34 @@ def run_complete_basis_analysis(branch="as_acquired_fft", **overrides):
 STARK_CAL_IDS = dataset("september_N3", "calibration")
 
 
-def run_stark_cal_analysis():
-    """-> (calibration_expt, analysis_result, correction) for September N=3.
+def migration_tool():
+    """-> the ``tools/migrate_mbr_jobs.py`` module (tools/ is not a package)."""
+    import importlib.util
 
-    Timing is resolved from the provenance sidecar, not supplied, so this also
-    exercises the resolver on a third configuration.
+    path = Path(__file__).resolve().parents[1] / "tools" / "migrate_mbr_jobs.py"
+    spec = importlib.util.spec_from_file_location("migrate_mbr_jobs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_stark_cal_analysis(out_root):
+    """-> (calibration_set, correction) for September N=3.
+
+    The 70 old jobs go through the migration script into ``out_root`` (35
+    ``MBRStarkCalExperiment`` files and one ``MBRCalibrationSetExperiment``
+    manifest), and the set is re-assembled from that manifest, so this runs
+    the whole path old data takes to the new classes. Timing is resolved
+    from the provenance sidecar during conversion, which also exercises the
+    resolver on a third configuration.
     """
-    calibration = load_aggregate_resolved(
-        STARK_CAL_IDS, owner=MBRPhaseCorrectionExperiment)
-    data = calibration.analyze()
-    correction = MBRPhaseCorrectionExperiment.phase_correction_from_calibration(
-        calibration)
-    return calibration, data, correction
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+
+    converted = migration_tool().migrate_stark_cal(
+        STARK_CAL_IDS, out_root=out_root, load_shots=False)
+    calibration = MBRCalibrationSetExperiment.from_manifest(converted.manifest_path)
+    calibration.analyze()
+    return calibration, calibration.phase_correction()
 
 
 # --------------------------------------------------------------------------

@@ -45,6 +45,7 @@ from experiments.qsim.floquet_register_bank import (
     _play_preloaded_floquet_register_bank_entry,
     _prepare_preloaded_floquet_register_bank,
 )
+from experiments.qsim import mbr_saved
 from experiments.qsim.utils import flatten_exp_lists
 
 from copy import copy, deepcopy
@@ -131,102 +132,19 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
         return load_aggregate(job_ids, owner=cls, timing=timing,
                               program_class=program_class)
 
-    @staticmethod
-    def _first_scalar(value):
-        """
-        This is to avoid a conflict due to different data type of 
-        self Kerr. Sometimes it is stored as a list, sometimes as a float...
-        """
-        
-        values = np.asarray(value).reshape(-1)
-        if len(values) == 0:
-            raise ValueError("saved scalar config is empty")
-        return float(values[0])
-
-    @staticmethod
-    def _saved_detunings(ecfg, mode_count):
-        """
-        This is to avoid a conflict due to different data type of 
-        detuning. Sometimes it is stored as a list, sometimes as an np array...
-        """
-        
-        detunings = ecfg.get("detunings", None)
-        if detunings is None or detunings is False or np.asarray(detunings).size == 0:
-            detunings = [0.] * mode_count
-        return np.asarray(detunings, dtype=float)
+    # Hardware parameters of saved jobs live in experiments/qsim/mbr_saved.py,
+    # shared with the new MBR classes (docs/qsim/mbr_redesign.md, section 2).
+    _first_scalar = staticmethod(mbr_saved.first_scalar)
+    _saved_detunings = staticmethod(mbr_saved.saved_detunings)
 
     @classmethod
     def _saved_parameters(cls, expts, station=None):
+        """Swap modes, detunings, mode labels and hardware of sister jobs.
+
+        See :func:`experiments.qsim.mbr_saved.saved_parameters`. ``station``
+        is accepted and ignored, as before: there is no station fallback.
         """
-        Check whether all the sister expts have the same params,
-        and return the params as an AttrDict.
-
-        The Floquet timing comes from each child's ``prog``. During acquisition
-        that is the live compiled program; for saved data it is the stand-in
-        that :mod:`experiments.saved_jobs` attaches, carrying timing recovered
-        from the file's ``derived_params`` attribute or from the versioned
-        config. There is no station fallback, deliberately -- see below.
-        
-        Returning params are:
-            - `swap_stors`
-            - `detunings`
-            - `mode_labels`
-            - `hardware_parameters`
-                - `floquet_cycles_us`
-                - `couplings_MHz`
-                - `physical_kerr_MHz`
-        """
-        
-        first_cfg = expts[0].cfg
-        first_expt_cfg = first_cfg.expt
-        swap_stors = [int(stor) for stor in first_expt_cfg.swap_stors]
-        detunings = cls._saved_detunings(first_expt_cfg, len(swap_stors))
-        physical_kerr_MHz = -abs(cls._first_scalar(first_cfg.device.manipulate.kerr))
-        if len(detunings) != len(swap_stors) or not np.all(np.isfinite(detunings)):
-            raise ValueError("saved detunings do not match swap_stors")
-
-        program_hardware = []
-        sync_cycles = int(first_expt_cfg.get("scramble_sync_cycles", 10))
-        floquet_gauss_sigma = first_expt_cfg.get("floquet_gauss_sigma", None)
-        floquet_waveform = first_expt_cfg.get("floquet_waveform", None)
-        for expt in expts:
-            cfg = expt.cfg
-            ecfg = cfg.expt
-            prog = getattr(expt, "prog", None)
-            if prog is not None and hasattr(prog, "calculate_floquet_cycle_us") and hasattr(prog, "m1s_pi_fracs"):
-                floquet_cycle_us = float(prog.calculate_floquet_cycle_us())
-                pi_fracs = np.asarray([prog.m1s_pi_fracs[stor - 1] for stor in swap_stors], dtype=float)
-                couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
-                # `source` says where the timing came from: a live compiled
-                # program during acquisition, or one of the recovered sources
-                # that experiments.saved_jobs resolves offline.
-                program_hardware.append((floquet_cycle_us, couplings_MHz,
-                                         getattr(prog, "source", "saved program")))
-                break
-
-        if program_hardware:
-            floquet_cycle_us, couplings_MHz, hardware_source = program_hardware[0]
-        else:
-            # Deliberately no station fallback. Asking the *current* station
-            # substitutes today's calibration for the historical one, and does
-            # it silently: when the swap dataset moved gauss_sigma 0.04 -> 0.02
-            # us between 2026-08-14 and 08-25, that fallback returned roughly
-            # half the correct cycle time and every energy with it. The cycle
-            # time is not a measurement -- it is computed from immutable
-            # versioned config, so it is recovered exactly or not at all.
-            raise RuntimeError(
-                "no Floquet timing on these children. Load them through "
-                "experiments.saved_jobs (from_job_ids / from_job_files), which "
-                "reads the file's own 'derived_params' attribute or recomputes "
-                "the timing from the versioned config, and takes timing= for "
-                "files that have neither.")
-        if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0. or not np.all(np.isfinite(couplings_MHz)) or np.min(couplings_MHz) <= 0.:
-            raise ValueError("saved Floquet hardware parameters must be finite and positive")
-        hardware = AttrDict(dict(floquet_cycle_us=float(floquet_cycle_us), couplings_MHz=np.asarray(couplings_MHz), physical_kerr_MHz=physical_kerr_MHz, source=hardware_source))
-        return AttrDict(dict(swap_stors=swap_stors, 
-                             detunings=detunings, 
-                             mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors], 
-                             hardware=hardware))
+        return mbr_saved.saved_parameters(expts)
 
     def analyze(self, data=None, **kwargs):
         """Convert one saved job's two preparation phases to a real quadrature.

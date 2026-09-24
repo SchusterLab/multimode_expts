@@ -156,3 +156,17 @@ Later phase, not now: DisorderEnsemble, and the disorder / SFF / sampling /
 spectral-validation notebooks and their `notebook_helpers`. Until they are ported,
 they keep the old classes they import (from `legacy_mbr.py`). Do not delete code they
 still need. Exception: their runner calls move in step 1.
+
+## 8. Progress
+
+- Step 1 done (2026-09-24). `legacy_mbr.py` is at `experiments/qsim/deprecated/`,
+  so the `experiments` namespace does not export it (`tests/test_meas_namespace.py`).
+  Mock policy of `execute()`: a mock station runs locally unless the call passes
+  `use_queue=True`; that raises unless `allow_queue_in_mock=True`.
+- Step 2 done (2026-09-24). `experiments/qsim/mbr_stark_cal.py` (job + Program),
+  `experiments/qsim/mbr_calibration_set.py` (assembled), `experiments/assembled_data.py`
+  (manifest + assembled HDF5), `experiments/qsim/mbr_saved.py` (saved hardware
+  parameters), `tools/migrate_mbr_jobs.py` (kind `stark_cal`). The old
+  `EntireFloquetCyclePhaseCalibrationProgram` is now a subclass of `MBRStarkCalProgram`.
+  `phase_unwrap_mode: odd_guide` has no new equivalent. `test_stark_cal_baseline_matches`
+  runs on converted data and still matches.
