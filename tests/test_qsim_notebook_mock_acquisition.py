@@ -14,10 +14,17 @@ Two shapes of test, because the runners differ:
   building their configs through the refactored helpers and then instantiating
   and compiling the program directly -- the same qick path, without a queue.
 
+Each `CharacterizationRunner` test also loads the file the mock run saved
+back with both normal loaders (`assert_reloads`) and checks the array shapes,
+without fitting. The real-data analysis tests read older files, so they
+cannot see a change in the layout that new acquisitions write.
+
 These are slow-ish (each builds a station from versioned configs) and depend
 on config versions present on the measurement PC, so they skip cleanly
 elsewhere.
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
 from slab import AttrDict
@@ -29,6 +36,7 @@ from experiments.qsim.notebook_helpers.defaults import (
     MEASUREMENT_CONFIG_DEFAULTS,
 )
 from experiments.qsim.notebook_helpers.run_mode import RunSettings
+from experiments.saved_jobs import load_h5
 from job_server import JobClient
 
 CONFIG_DICT = {
@@ -63,6 +71,38 @@ def mock_station():
 @pytest.fixture(scope="module")
 def defaults():
     return ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS, MEASUREMENT_CONFIG_DEFAULTS
+
+
+def assert_reloads(expt, station, shapes):
+    """The file a mock run saved loads back, with the layout in `shapes`.
+
+    Both normal loaders: `Experiment.from_h5file` (what analysis notebooks
+    use) and `saved_jobs.load_h5` (the offline path). `shapes` pins each
+    array the analysis reads, as the shape the config asks for. Every array
+    in memory must also be in the file with the same shape, except the
+    `_`-keys SweepRunner adds after its final save. No fit: mock data is all
+    zeros.
+    """
+    fname = Path(expt.fname)
+    assert fname.is_file(), f"{fname} was not saved"
+    assert Path(station.output_root) in fname.parents, (
+        f"mock run saved outside mock_data: {fname}")
+
+    reloaded = type(expt).from_h5file(str(fname))
+    cfg, data = load_h5(fname, load_shots=True)
+    assert cfg.expt == reloaded.cfg.expt
+    assert cfg.expt.reps == expt.cfg.expt.reps
+
+    for key, shape in shapes.items():
+        assert key in data, f"{key!r} not in {fname.name}"
+        assert data[key].shape == shape, (
+            f"{key!r}: file has {data[key].shape}, config gives {shape}")
+    for key, value in expt.data.items():
+        if key.startswith("_"):
+            continue
+        assert key in data, f"{key!r} is in memory but not in {fname.name}"
+        assert data[key].shape == np.shape(value), key
+        assert reloaded.data[key].shape == np.shape(value), key
 
 
 # --------------------------------------------------------------------------
@@ -111,6 +151,8 @@ def test_broadband_amplitude_rabi_builds(mock_station, defaults):
         pre_sweep_pulse=[], show=False, log=False,
     )
     assert expt is not None
+    assert_reloads(expt, station, {
+        key: (4,) for key in ("xpts", "avgi", "avgq", "amps", "phases")})
 
 
 def test_single_shot_histogram_builds(mock_station, defaults):
@@ -142,6 +184,9 @@ def test_single_shot_histogram_builds(mock_station, defaults):
         postprocess=False, log=False, show=False,
     )
     assert expt is not None
+    # check_f=False: g and e only, one point per rep.
+    assert_reloads(expt, station, {
+        key: (200,) for key in ("Ig", "Qg", "Ie", "Qe")})
 
 
 def test_floquet_error_amplification_sweep_builds(mock_station, defaults):
@@ -230,6 +275,11 @@ def test_floquet_error_amplification_sweep_builds(mock_station, defaults):
 
     assert freq_expts[0] is not None
     assert gain_expts[0] is not None
+    # n_pulses=2 rows by expts=5 points, for both scans.
+    for expt in (freq_expts[0], gain_expts[0]):
+        assert_reloads(expt, station, {
+            "x_pts": (5,), "N_pts": (2,), "avgi": (2, 5), "avgq": (2, 5),
+            "amp": (2, 5), "phase": (2, 5)})
 
 
 def test_bare_scramble_sweep_builds(mock_station, defaults):
@@ -310,6 +360,11 @@ def test_bare_scramble_sweep_builds(mock_station, defaults):
         expts.append(sub_expts)
 
     assert expts and expts[0]
+    # Two floquet_cycles points. Shots: 20 reps x 3 readouts each (active
+    # reset reads twice before the measurement).
+    assert_reloads(expts[0][0], station, {
+        "xpts": (2,), "avgi": (2,), "avgq": (2,),
+        "idata": (2, 60), "qdata": (2, 60)})
 
 
 def test_displacement_kerr_builds_without_the_uncalibrated_mode(
@@ -345,7 +400,7 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
             update_phases=True, zero_floquet_gain=False, man_mode_no=1,
             perform_wigner=False, do_g_and_e=False, ramsey_freq=0.2,
             displace_gains=np.arange(2000, 4001, 1000),
-            n_cycle_pairs=np.arange(0, 3, dtype=int),
+            n_cycle_pairs=np.arange(0, 4, dtype=int),
             swept_params=["displace_gain", "n_cycle_pair"],
         )),
         job_client=client,
@@ -353,6 +408,62 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
     )
     expt = runner.execute(postprocess=False, log=False, show=False)
     assert expt is not None
+    # 3 displacement gains x 4 cycle pairs: the two axes differ in length,
+    # so a swapped axis order fails here.
+    assert_reloads(expt, station, {
+        "avgi": (3, 4), "avgq": (3, 4), "idata": (12, 60), "qdata": (12, 60),
+        "xpts": (4,), "ypts": (3,)})
+
+
+def test_multiphoton_swap_chevron_sweep_reloads(mock_station, defaults):
+    """multiphoton_calibration.py's frequency-length chevron (SweepRunner).
+
+    N=1 on M1-S2, so the row already exists and the shared station's
+    ds_storage is not changed. The mother experiment's file is the one the
+    chevron analysis reads: one row per frequency point.
+    """
+    from experiments import SweepRunner
+    from experiments.qsim.notebook_helpers.multiphoton_calibration import (
+        build_swap_pulse_sequences,
+    )
+    from experiments.single_qubit.sideband_general import (
+        SidebandGeneralExperiment,
+    )
+
+    active_reset_defaults, _, _ = defaults
+    station, client = mock_station
+    pulse_name = "M1-S2"
+    sequences = build_swap_pulse_sequences(station, 1)
+    center = float(station.ds_storage.get_freq(pulse_name))
+    gain = station.ds_storage.get_gain(pulse_name)
+    n_lengths, n_freqs = 5, 3
+
+    runner = SweepRunner(
+        station=station,
+        ExptClass=SidebandGeneralExperiment,
+        default_expt_cfg=AttrDict(dict(
+            start=0.0, step=0.1, expts=n_lengths, reps=20, rounds=1,
+            qubit=0, qubits=[0],
+            flux_drive=["low", center, gain, 0.0], length_placeholder=0.0,
+            prepulse=True, pre_sweep_pulse=sequences["prep_pulse"],
+            postpulse=True, post_sweep_pulse=sequences["endpoint_decoder"],
+            update_post_pulse_phase=[False, 0.0], active_reset=False,
+            man_reset=True, storage_reset=[2],
+            reset_dump_mode=active_reset_defaults["reset_dump_mode"],
+            dump_reset_iter_num=active_reset_defaults["dump_reset_iter_num"],
+            relax_delay=2500,
+        )),
+        sweep_param="freq",
+        postprocessor=None,
+        job_client=client,
+    )
+    mother = runner.execute(
+        sweep_start=center - 0.2, sweep_stop=center + 0.2, sweep_npts=n_freqs,
+        gain=gain, log=False,
+    )
+    assert_reloads(mother, station, {
+        "freq_sweep": (n_freqs,), "xpts": (n_freqs, n_lengths),
+        "avgi": (n_freqs, n_lengths), "avgq": (n_freqs, n_lengths)})
 
 
 def test_storage_mode_6_has_no_calibrated_pi_length(mock_station):
@@ -425,7 +536,12 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
     )
 
     if expected == "ok":
-        assert run() is not None
+        expt = run()
+        assert expt is not None
+        # 3 detunings by the program's length points.
+        n_lengths = len(expt.data["xpts"])
+        assert_reloads(expt, station, {
+            "avgi": (3, n_lengths), "avgq": (3, n_lengths), "ypts": (3,)})
     else:
         with pytest.raises(RuntimeError, match="unsupported pulse parameter"):
             run()

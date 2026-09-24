@@ -32,6 +32,19 @@ Mock mode and real-data tests check different things.
 - `5066eb0` mock stations do not write config snapshots.
 - `5466268` the runner reports cells tagged `raises-exception` as xfail, and
   as XPASS if they ran clean.
+- `d90f871` step 1: on a mock station, runner `execute()` defaults to acquire
+  and save only.
+- `436da60` step 2 for `floquet_calibration`, `multiphoton_calibration` and
+  `floquet_displacement_kerr`: all pass `--mode mock` (smoke). Manual
+  `expt.display()` calls moved into the runner (`show=`, `display_kwargs=`);
+  acquire + fit cells split, fit/accept halves tagged `mock-skip`. Kerr
+  `storage_reset` drops mode 6 (no pi time in the pinned M1 config).
+- Step 3: `assert_reloads` in `tests/test_qsim_notebook_mock_acquisition.py`
+  reloads each `CharacterizationRunner` / `SweepRunner` family's mock file and
+  pins its array shapes. MBR files already reload in
+  `tests/test_mbr_acquire_mock.py` (`load_job`).
+
+Still open: step 2 for the four MBR notebooks, which waits on step 4.
 
 ## Work left
 
