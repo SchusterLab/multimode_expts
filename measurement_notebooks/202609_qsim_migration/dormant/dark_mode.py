@@ -105,7 +105,8 @@ print(f"Welcome {user}!")
 # is still the loading layer and the shared numerics, and is still the class
 # every job here was acquired under -- so it stays, and these four sit beside
 # it. See analysis_notebooks/guan/MBR_analysis.py for the worked example.
-from experiments.qsim.floquet_dark_mode_readout import (
+# Moved to deprecated/ in MBR redesign step 7e (docs/qsim/mbr_step7_plan.md).
+from experiments.qsim.deprecated.encoding_spectroscopy import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment

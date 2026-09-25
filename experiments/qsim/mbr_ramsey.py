@@ -418,12 +418,3 @@ class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
         self.sync_all()
         self.measure_wrapper()
-
-
-class NPhotonHamiltonianSpectroscopyProgram(MBRRamseyProgram):
-    """The old diagonal spectroscopy program: one analyzer phase per job.
-
-    Same sequence as :class:`MBRRamseyProgram`, with
-    ``spectroscopy_prep_phase`` swept and ``spectroscopy_analyzer_phase`` a
-    scalar in the config.
-    """

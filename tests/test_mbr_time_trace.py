@@ -30,7 +30,7 @@ from experiments.qsim.mbr_campaign import (
     pinned_config_set,
     pinned_sets,
 )
-from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
+from experiments.qsim.deprecated.mbr_nphoton_program import NPhotonHamiltonianSpectroscopyProgram
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment, MBRTimeTraceProgram

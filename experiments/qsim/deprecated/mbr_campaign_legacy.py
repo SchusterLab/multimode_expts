@@ -22,6 +22,12 @@ from typing import Any
 from slab import AttrDict
 
 from experiments.characterization_runner import CharacterizationRunner
+from experiments.qsim.deprecated.encoding_spectroscopy import (
+    EncodingHamiltonianSpectroscopyExperiment,
+)
+from experiments.qsim.deprecated.mbr_phase_correction import (
+    EntireFloquetCyclePhaseCalibrationProgram,
+)
 from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
 
 
@@ -63,7 +69,7 @@ def build_campaign(station, client, floquet_settings, active_reset_settings,
     if reload_module:
         importlib.reload(floquet_dark_mode_readout)
 
-    EncSpec = floquet_dark_mode_readout.EncodingHamiltonianSpectroscopyExperiment
+    EncSpec = EncodingHamiltonianSpectroscopyExperiment
 
     modes = list(modes)
     mode_labels = ["M1"] + [f"S{stor}" for stor in modes]
@@ -185,7 +191,7 @@ def acquire_calibration(campaign, station, client, N, cycle_pairs, reps,
     runner = CharacterizationRunner(
         station=station,
         ExptClass=campaign.EncSpec,
-        ExptProgram=campaign.floquet_dark_mode_readout.EntireFloquetCyclePhaseCalibrationProgram,
+        ExptProgram=EntireFloquetCyclePhaseCalibrationProgram,
         default_expt_cfg=batch.default_expt_cfg,
         job_client=client,
         use_queue=use_queue,

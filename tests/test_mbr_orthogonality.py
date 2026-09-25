@@ -34,7 +34,7 @@ from experiments.qsim.mbr_campaign import (
 )
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment, MBROrthoColumnProgram
 from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
+from experiments.qsim.deprecated.mbr_propagator import EncodingPropagatorProgram
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 from experiments.saved_jobs import load_job
 from tests.asm_golden import render

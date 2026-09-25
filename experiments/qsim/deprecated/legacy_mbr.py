@@ -20,11 +20,11 @@ from scipy.linalg import eig as generalized_eig
 from slab import AttrDict
 
 from experiments.qsim.dark_base import readout_lane_count
-from experiments.qsim.floquet_dark_mode_readout import (
+from experiments.qsim.deprecated.encoding_spectroscopy import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.mbr_propagator import EncodingPropagatorProgram
-from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
+from experiments.qsim.deprecated.mbr_propagator import EncodingPropagatorProgram
+from experiments.qsim.deprecated.mbr_nphoton_program import NPhotonHamiltonianSpectroscopyProgram
 from experiments.qsim.utils import flatten_exp_lists
 from fitting.qsim import level_statistics as level_statistics_analysis
 from fitting.qsim import matrix_pencil as matrix_pencil_analysis

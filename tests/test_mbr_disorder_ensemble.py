@@ -271,3 +271,18 @@ def test_realization_spectrum_plays_the_detunings(diagonal_disorder):
     for override in overrides:
         np.testing.assert_allclose(override["detunings"], -np.asarray(record["onsite_MHz"]))
         assert override["calibration_manifest"] == str(calibration.manifest_path)
+
+
+def test_station_floquet_hardware_runs_on_a_mock_station():
+    """The live-station timing moved to experiments.floquet_timing (step 7e)."""
+    from experiments.floquet_timing import station_floquet_hardware
+    from experiments.qsim.deprecated.encoding_spectroscopy import (
+        EncodingHamiltonianSpectroscopyExperiment,
+    )
+
+    st = mock_station(**pinned_config_set("preload_current"))
+    timing = station_floquet_hardware(st, SWAP_STORS, 10)
+    assert timing.floquet_cycle_us > 0 and timing.physical_kerr_MHz <= 0
+    assert np.asarray(timing.couplings_MHz).shape == (len(SWAP_STORS),)
+    old = EncodingHamiltonianSpectroscopyExperiment.hardware_parameters(st, SWAP_STORS, 10)
+    assert old.floquet_cycle_us == timing.floquet_cycle_us

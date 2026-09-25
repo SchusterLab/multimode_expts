@@ -1017,13 +1017,11 @@ floquet_default_dict["floquet_waveform"] = WAVEFORM_TO_USE if RESET_FLOQUET_DATA
 # station.snapshot_floquet_storage_swap(update_main=False)
 
 # %%
-import importlib
-from experiments.qsim import floquet_dark_mode_readout
-importlib.reload(floquet_dark_mode_readout)
+from experiments.floquet_timing import station_floquet_hardware
 
 TROTTER_MODES_IN_USE = [1, 2, 3, 4]  # Use the same modes as the intended scramble.
 # Same DAC-envelope and integer tProc sync timing as the spectroscopy program.
-floquet_timing = floquet_dark_mode_readout.EncodingHamiltonianSpectroscopyExperiment.hardware_parameters(
+floquet_timing = station_floquet_hardware(
     station, TROTTER_MODES_IN_USE, floquet_default_dict['scramble_sync_cycles'],
     floquet_waveform=floquet_default_dict.get('floquet_waveform'),
 )

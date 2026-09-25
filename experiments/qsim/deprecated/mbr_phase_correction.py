@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""EntireFloquetCyclePhaseCalibrationProgram: the pulse program of the old jobs.
+"""EntireFloquetCyclePhaseCalibrationProgram: the pulse program of the old jobs -- DEPRECATED.
+
+Moved from `experiments/qsim/mbr_phase_correction.py` on 2026-09-24 (MBR
+redesign step 7e), without changes. New jobs use `MBRStarkCalProgram`.
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
 
 The aggregate class ``MBRPhaseCorrectionExperiment`` that used to live here moved without
 changes to ``experiments/qsim/deprecated/legacy_mbr.py`` (``docs/qsim/mbr_redesign.md``,

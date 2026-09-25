@@ -1,6 +1,7 @@
 # MBR redesign, step 7 plan: disorder / SFF
 
-Status: approved by guan, 2026-09-24. jonginn reads it next (questions in section 7). It uses
+Status: approved by guan and done (7a-7e), 2026-09-24. jonginn reads it next (questions in
+section 7). It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 
 ## 0. Decisions (guan, 2026-09-24)
@@ -281,6 +282,28 @@ Many helper functions are notebook cells copied as whole blocks, with no data fl
     - The notebooks now pass the values that the old cells hard-coded over their arguments
       (preview realization 12, excluded occupation (0, 3, 0, 0, 0), level plot r=14 at 0.5
       bins), so they print what the source printed.
-- **7e next:** move the old classes and programs, remove the MBR `_MOVED_TO` entries, change
-  the base name in `floquet_phase_calibration.py`, add the "no live import of
-  `deprecated/`" test, fix the handoff note in `mbr_redesign.md`.
+- **7e done** (2026-09-24).
+  - Moved to `deprecated/` without changes: `EncodingHamiltonianSpectroscopyExperiment` and
+    the stage map (`encoding_spectroscopy.py`), `NPhotonHamiltonianSpectroscopyProgram`
+    (`mbr_nphoton_program.py`), `mbr_propagator.py` (`EncodingPropagatorProgram`),
+    `mbr_phase_correction.py` (`EntireFloquetCyclePhaseCalibrationProgram`). Their MBR
+    `_MOVED_TO` entries are removed; `floquet_dark_mode_readout.py` keeps only the non-MBR
+    re-exports (out of scope).
+  - `hardware_parameters` (live station timing, used by the live
+    `multiphoton_calibration.py`) is now the plain function
+    `experiments.floquet_timing.station_floquet_hardware`; the old class keeps it as an alias.
+  - `floquet_phase_calibration.py` subclasses `MBRRamseyProgram` directly (the old class was
+    an empty subclass of it; same pulses).
+  - The six old `dormant/` notebooks that import the old base class point at its new
+    address, so they keep loading.
+  - New test `tests/test_no_live_deprecated_imports.py`: no live module or canonical notebook
+    imports `experiments.qsim.deprecated`.
+  - `test_mbr_stage_split.py` reads the god class from its new file (and from the old one at
+    its pinned commits).
+  - Not changed, and now broken (user decision: the sandboxes stay as they are):
+    `measurement_notebooks/guan/mbramsey.py` and
+    `measurement_notebooks/jonginn/qsim_experiments_highkerr_untracked_refactored.ipynb` use
+    the old names through `floquet_dark_mode_readout`.
+- **After step 7** (guan and jonginn): delete the moved code, or rewrite what is still needed
+  (SFF from the start; shot sampling if needed; D72 only after a valid init != final
+  calibration). The questions in section 7 are open.

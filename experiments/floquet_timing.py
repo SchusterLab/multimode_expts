@@ -42,6 +42,7 @@ from pathlib import Path
 
 import numpy as np
 from qick import QickConfig
+from slab import AttrDict
 
 from experiments.dataset import FloquetStorageSwapDataset
 from experiments.local_env import load_env
@@ -244,3 +245,82 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
         couplings_MHz=couplings_MHz,
         source=f"versioned config {floquet_version_id}",
     )
+
+
+def station_floquet_hardware(station, 
+                        swap_stors, 
+                        sync_cycles, 
+                        floquet_gauss_sigma=None,
+                        floquet_waveform=None):
+    """
+    Moved from ``EncodingHamiltonianSpectroscopyExperiment.hardware_parameters``
+    in MBR redesign step 7e (2026-09-24), without changes. Asks the *live*
+    station, so it gives today's calibration: for saved jobs use
+    :func:`resolve_floquet_timing` or ``experiments.qsim.mbr_saved``.
+
+    Returns hardware related physical paramters such as
+        - floquet_cycle_us: time for a single floquet cycle in a microsecond
+        - couplings_MHz: an array of effective BS coupling between man and stor
+        - physical_kerr_MHz: self Kerr on a central mode (manipulate)
+    All the values are calculated from the config/expt_cfg input
+    """
+    
+    if (isinstance(sync_cycles, (bool, np.bool_))
+            or not isinstance(sync_cycles, (int, np.integer)) or sync_cycles < 0):
+        raise ValueError("sync_cycles must be a nonnegative integer")
+    ramp_sigma = station.hardware_cfg.device.manipulate.ramp_sigma
+    if isinstance(ramp_sigma, (list, tuple, np.ndarray)):
+        ramp_sigma = ramp_sigma[0]
+    pulse_us = []
+    pi_fracs = []
+    cycle_tproc_cycles = 0
+    for stor in swap_stors:
+        pulse_name = f"M1-S{stor}"
+        if station.ds_floquet.get_freq(pulse_name) < FLUX_HIGH_THRESHOLD_MHZ:
+            gen_ch = station.hardware_cfg.hw.soc.dacs.flux_low.ch[0]
+        else:
+            gen_ch = station.hardware_cfg.hw.soc.dacs.flux_high.ch[0]
+        waveform = floquet_waveform if floquet_waveform is not None else station.ds_floquet.get_waveform(pulse_name)
+        # Match calculate_floquet_cycle_us: round each envelope segment
+        # to its generator clock before adding the tProc sync interval.
+        if waveform in ("gauss", "gaussian", "arb"):
+            sigma = floquet_gauss_sigma
+            if sigma is None:
+                sigma = station.ds_floquet.get_gauss_sigma(pulse_name)
+            sigma_cycles = station.soccfg.us2cycles(sigma, gen_ch=gen_ch)
+            pulse_cycles = sigma_cycles * station.ds_floquet.get_gauss_n_sigma(pulse_name)
+        elif waveform == "preload_flattop":
+            flat_cycles = station.soccfg.us2cycles(station.ds_floquet.get_len(pulse_name), gen_ch=gen_ch)
+            ramp_cycles = station.soccfg.us2cycles(station.ds_floquet.get_ramp_sigma(pulse_name), gen_ch=gen_ch)
+            pulse_cycles = flat_cycles + 6 * ramp_cycles
+        else:
+            flat_cycles = station.soccfg.us2cycles(station.ds_floquet.get_len(pulse_name), gen_ch=gen_ch)
+            ramp_cycles = station.soccfg.us2cycles(ramp_sigma, gen_ch=gen_ch)
+            pulse_cycles = flat_cycles + 6 * ramp_cycles
+        pulse_us.append(station.soccfg.cycles2us(pulse_cycles, gen_ch=gen_ch))
+        clock_ratio = float(station.soccfg["tprocs"][0]["f_time"]) / float(station.soccfg["gens"][gen_ch]["f_fabric"])
+        cycle_tproc_cycles += int(pulse_cycles * clock_ratio + sync_cycles)
+        pi_fracs.append(station.ds_floquet.get_pi_frac(pulse_name))
+
+    # Match the integer synci advances, not the unquantized pulse+gap sum.
+    floquet_cycle_us = station.soccfg.cycles2us(cycle_tproc_cycles)
+    if not np.all(np.isfinite(pulse_us + pi_fracs)) or min(pulse_us + pi_fracs) <= 0.:
+        raise ValueError("Floquet pulse lengths and pi fractions must be finite and positive")
+    if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0.:
+        raise ValueError("Floquet cycle duration must be finite and positive")
+
+    # 2 * pi * g * t_swap = pi / 2 -> g = 1/ 4/ t_swap
+    # pi_frac repetitions of each pulse+sync block make a full swap:
+    # g_{bare} = 1/ 4 / n_frac / (t_pulse + t_sync)
+    # len(swap_stors) -> g_{eff} * T_F = g_{bare} * (t_pulse+t_sync) = 1/4/n_frac
+    # So g_{eff} = 1/4/n_frac/T_F
+    couplings_MHz = [1. / (4. * pi_frac * floquet_cycle_us) for pi_frac in pi_fracs]
+    physical_kerr_MHz = station.hardware_cfg.device.manipulate.kerr
+    if isinstance(physical_kerr_MHz, (list, tuple, np.ndarray)):
+        physical_kerr_MHz = physical_kerr_MHz[0]
+    physical_kerr_MHz = -abs(physical_kerr_MHz)
+    if not np.isfinite(physical_kerr_MHz):
+        raise ValueError("physical Kerr must be finite")
+    return AttrDict(dict(floquet_cycle_us=floquet_cycle_us,
+                         couplings_MHz=np.asarray(couplings_MHz),
+                         physical_kerr_MHz=physical_kerr_MHz))

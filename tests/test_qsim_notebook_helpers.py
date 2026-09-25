@@ -106,7 +106,7 @@ def one_encspec_file():
 
 def test_library_loader_reads_a_saved_encspec_file():
     """`from_h5file` is the canonical path the repo documents."""
-    from experiments.qsim.floquet_dark_mode_readout import (
+    from experiments.qsim.deprecated.encoding_spectroscopy import (
         EncodingHamiltonianSpectroscopyExperiment,
     )
 

@@ -61,7 +61,7 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 from slab import AttrDict
-from experiments.qsim.floquet_dark_mode_readout import EncodingHamiltonianSpectroscopyExperiment
+from experiments.qsim.deprecated.encoding_spectroscopy import EncodingHamiltonianSpectroscopyExperiment
 
 
 def make_plain(value):

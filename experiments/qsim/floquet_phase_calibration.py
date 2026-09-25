@@ -25,11 +25,11 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
+from experiments.qsim.mbr_ramsey import MBRRamseyProgram
 
 
 class EncodingStarkShiftCalibrationProgram(
-        NPhotonHamiltonianSpectroscopyProgram):
+        MBRRamseyProgram):
     """Measure the raw Floquet-pulse phase of one occupation basis state.
 
     ``spectroscopy_occupations`` selects the encoded occupation string and
@@ -140,7 +140,7 @@ class EncodingStarkShiftCalibrationProgram(
 
 
 class FloquetPhaseAccumulationProgram(
-        NPhotonHamiltonianSpectroscopyProgram):
+        MBRRamseyProgram):
     """Measure the phase of one closed N=1 access path.
 
     ``spectroscopy_occupations`` selects M1 or one storage access path and

@@ -67,7 +67,7 @@ STAGE_MODULES = {
     "MBROrthogonalityExperiment": "experiments.qsim.deprecated.legacy_mbr",
     "MBRPropagatorExperiment": "experiments.qsim.deprecated.legacy_mbr",
     "EncodingHamiltonianSpectroscopyExperiment":
-        "experiments.qsim.floquet_dark_mode_readout",
+        "experiments.qsim.deprecated.encoding_spectroscopy",
 }
 LOADERS = ("from_job_files", "from_job_ids", "_from_expts")
 STAGE_ARGUMENT = re.compile(

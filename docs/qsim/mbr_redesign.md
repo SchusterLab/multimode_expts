@@ -251,6 +251,11 @@ still need. Exception: their runner calls move in step 1.
 
 ### Handoff for step 7 (disorder / SFF)
 
+**Superseded, 2026-09-24:** step 7 is done (7a-7e); see `docs/qsim/mbr_step7_plan.md`,
+sections 0 and 8. One statement below was wrong: the D72 dataset lists did exist (in
+`mbr_disorder_h5.build_dataset_manifest`); they are now in `tests/data/mbr_datasets.json`
+as `d72_*`, marked not converted. Only the pairwise datasets have no list.
+
 Step 7 starts with a written plan the user approves (see its entry in section 7). Facts
 found in steps 4-6b, so the plan does not have to rediscover them:
 
@@ -280,7 +285,7 @@ found in steps 4-6b, so the plan does not have to rediscover them:
     (the source cell was lost in the notebook split).
 - **Data facts:** the saved off-diagonal batch `JOB-20260823-00005..08` was recorded under
   program class `EncodingPropagatorProgram`. The pairwise and D72 disorder datasets have no
-  ID lists; the user builds them from the lab logs. `tests/data/job_provenance.json` lacks
+  ID lists (wrong for D72; see the note above); the user builds them from the lab logs. `tests/data/job_provenance.json` lacks
   most jobs outside the listed datasets; export more with `tools/export_job_provenance.py`
   (read-only).
 - **Conversion so far:** only diagonal spectra. `migrate_spectrum` refuses old pair jobs

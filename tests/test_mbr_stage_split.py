@@ -22,7 +22,10 @@ from pathlib import Path
 
 import pytest
 
-GOD = "experiments/qsim/floquet_dark_mode_readout.py"
+# The god class's file at the pinned commits, and where it lives now (moved
+# to deprecated/ in MBR redesign step 7e).
+GOD_AT_PIN = "experiments/qsim/floquet_dark_mode_readout.py"
+GOD = "experiments/qsim/deprecated/encoding_spectroscopy.py"
 GODCLASS = "EncodingHamiltonianSpectroscopyExperiment"
 
 STAGES = [
@@ -112,10 +115,10 @@ def before():
     out = {}
     for pin in {s["pin"] for s in STAGES}:
         shown = subprocess.run(
-            ["git", "-C", root, "show", f"{pin}:{GOD}"],
+            ["git", "-C", root, "show", f"{pin}:{GOD_AT_PIN}"],
             capture_output=True, text=True, encoding="utf-8")
         assert shown.returncode == 0, (
-            f"cannot read {GOD} at {pin}: {shown.stderr}")
+            f"cannot read {GOD_AT_PIN} at {pin}: {shown.stderr}")
         out[pin] = _methods(shown.stdout, GODCLASS)
     return out
 
@@ -279,7 +282,7 @@ def test_the_god_analyze_has_no_stage_branches():
 @pytest.mark.parametrize("stage", sorted(BY_STAGE))
 def test_the_stage_error_names_its_replacement(stage):
     """The traceback is the migration note, so it must be actionable."""
-    from experiments.qsim.floquet_dark_mode_readout import (
+    from experiments.qsim.deprecated.encoding_spectroscopy import (
         STAGE_CLASSES,
         EncodingHamiltonianSpectroscopyExperiment as God,
     )
@@ -300,7 +303,7 @@ def test_the_stage_error_names_its_replacement(stage):
 
 def test_the_named_replacement_actually_imports():
     """A message naming a class that does not exist is worse than no message."""
-    from experiments.qsim.floquet_dark_mode_readout import STAGE_CLASSES
+    from experiments.qsim.deprecated.encoding_spectroscopy import STAGE_CLASSES
 
     for stage, target in STAGE_CLASSES.items():
         module, _, name = target.rpartition(".")
@@ -309,7 +312,7 @@ def test_the_named_replacement_actually_imports():
 
 
 def test_an_unknown_stage_lists_the_real_ones():
-    from experiments.qsim.floquet_dark_mode_readout import (
+    from experiments.qsim.deprecated.encoding_spectroscopy import (
         EncodingHamiltonianSpectroscopyExperiment as God,
     )
     expt = God.__new__(God)
@@ -534,10 +537,10 @@ def test_ported_method_is_unchanged(spec):
     """
     root = Path(_repo_root())
     shown = subprocess.run(
-        ["git", "-C", str(root), "show", f"{spec['pin']}:{GOD}"],
+        ["git", "-C", str(root), "show", f"{spec['pin']}:{GOD_AT_PIN}"],
         capture_output=True, text=True, encoding="utf-8")
     assert shown.returncode == 0, (
-        f"cannot read {GOD} at {spec['pin']}: {shown.stderr}")
+        f"cannot read {GOD_AT_PIN} at {spec['pin']}: {shown.stderr}")
 
     old = _methods(shown.stdout, GODCLASS)
     assert spec["method"] in old, (

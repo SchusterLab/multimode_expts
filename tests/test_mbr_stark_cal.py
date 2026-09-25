@@ -36,7 +36,7 @@ from experiments.qsim.mbr_stark_cal import (
     MBRStarkCalExperiment,
     MBRStarkCalProgram,
 )
-from experiments.qsim.mbr_phase_correction import (
+from experiments.qsim.deprecated.mbr_phase_correction import (
     EntireFloquetCyclePhaseCalibrationProgram,
 )
 from tests.mbr_reference import STARK_CAL_IDS, migration_tool

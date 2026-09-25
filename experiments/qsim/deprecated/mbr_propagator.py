@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
-"""EncodingPropagatorProgram: the pulse program of the old jobs.
+"""EncodingPropagatorProgram: the pulse program of the old jobs -- DEPRECATED.
+
+Moved from `experiments/qsim/mbr_propagator.py` on 2026-09-24 (MBR redesign
+step 7e), without changes except imports. New jobs use `MBROrthoColumnProgram`.
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
 
 The aggregate class ``MBRPropagatorExperiment`` that used to live here moved without
 changes to ``experiments/qsim/deprecated/legacy_mbr.py`` (``docs/qsim/mbr_redesign.md``,
 section 2).
 """
-from experiments.qsim.mbr_ramsey import NPhotonHamiltonianSpectroscopyProgram
+from experiments.qsim.deprecated.mbr_nphoton_program import NPhotonHamiltonianSpectroscopyProgram
 
 
 class EncodingPropagatorProgram(
