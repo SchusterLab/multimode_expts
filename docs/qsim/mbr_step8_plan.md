@@ -1,6 +1,6 @@
 # MBR redesign, step 8 plan: a usable MBR surface
 
-Status: approved by guan 2026-09-25 (order A, B, D, C). 8A and 8B done; 8D next, then 8C (waits for question 3). It uses
+Status: approved by guan 2026-09-25 (order A, B, D, C). 8A, 8B and 8D done; 8C waits for question 3. It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 
 ## 0. Goal and scope (guan, 2026-09-25)
@@ -21,7 +21,7 @@ into the MBR base, it moves out of the MBR path.
 |---|---|---|
 | 8A | The MBR base: remove the dark-mode chain from the MBR program and experiment | ASM golden, mock acquire |
 | 8B | Matrix Pencil and `MBRSpectrumExperiment`: readable steps | analysis golden (needs the data mount) |
-| 8D | Measurement notebooks: single elements and propagator through class `acquire` | dryrun tool |
+| 8D | Measurement notebook `mbr.py`: section 4 through the spectrum class | dryrun tool |
 | 8C | Analysis notebook: a short canonical path; the rest to `dormant/` or an audit notebook | analysis suite |
 
 8C waits for the answers in section 4.
@@ -123,3 +123,14 @@ pinned configs, both compile to the same program). `test_pulse_layer_layout.py` 
 - `MBRSpectrumExperiment.analyze`: the calibration merge-tolerance block is now
   `_matrix_pencil_merge_options`, with its own test (no golden uses that mode).
 - `analyze_sff`: the docstring says what it is (question 4.2).
+
+## 6. 8D: what was done
+
+- `mbr.py` section 4 ("single matrix elements", hand-built TimeTrace jobs) is now
+  "selected occupations": an `MBRSpectrumExperiment` over a subset. Only diagonal traces
+  are canonical (decision 7-2).
+- Section 5 (propagator) stays as it is: `MBRHamTomoExperiment` has no `acquire` on
+  purpose (each part takes hours, with decisions between parts; see its docstring). The
+  survey called this a gap; it is the design.
+- `mbr_tomography.py` and `mbr_disorder.py` still call the `notebook_helpers` planners.
+  That is the `notebook_helpers` promotion work, not 8D.

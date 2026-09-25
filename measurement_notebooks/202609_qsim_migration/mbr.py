@@ -315,38 +315,31 @@ print(spectrum.job_ids)
 spectrum.display_occupations(occupations=spectrum.occupations[:3])
 
 # %% [markdown]
-# ## 4. Single matrix elements
+# ## 4. Selected occupations
 #
-# One `MBRTimeTraceExperiment` per (initial, final) pair; final != initial is
-# an off-diagonal element. The analyzer correction is the calibration's value
-# for the *final* occupation. Off-diagonal traces have no assembled class yet
-# (disorder phase), so these are plain jobs.
+# The time traces of a few chosen occupations: section 3's class over a
+# subset, so not the complete basis (the DOS is a projected trace). Only
+# diagonal traces are canonical (decision 7-2 in `docs/qsim/mbr_step7_plan.md`).
 
 # %%
-element_pairs = [
-    # (initial, final)
-    ([1, 0, 1, 1, 0], [1, 0, 1, 1, 0]),
-    # ([0, 0, 1, 1, 1], [1, 0, 1, 1, 0]),
+selected_occupations = [
+    [1, 0, 1, 1, 0],
 ]
-element_cycles = np.arange(0, RUN.pick(300, smoke=60), 2)
+selected = MBRSpectrumExperiment(
+    selected_occupations,
+    np.arange(0, RUN.pick(300, smoke=60), 2),
+    campaign.modes,
+    calibration=calibration,
+    sync_cycles=campaign.sync_cycles,
+    reps=RUN.pick(500, smoke=100),
+)
 
-element_overrides = [
-    MBRTimeTraceExperiment.job_config(
-        initial, final, element_cycles, campaign.modes,
-        phase_per_cycle_deg=calibration.phase_for(final),
-        calibration_manifest=calibration.manifest_path,
-        sync_cycles=campaign.sync_cycles,
-        reps=RUN.pick(500, smoke=100),
-    )
-    for initial, final in element_pairs
-]
-element_runner = runner_for(MBRTimeTraceExperiment)
-element_traces = element_runner.execute(overrides=element_overrides, batch_size=2,
-                                        log=True, show=False)
-for trace in element_traces:
-    trace.display()
+# %%
+selected.acquire(runner_for(MBRTimeTraceExperiment), batch_size=2, log=True, show=False)
+selected.analyze()
+selected.display_occupations(occupations=selected.occupations)
 plt.show()
-print("job ids:", element_runner.last_job_ids)
+print("manifest:", selected.save())
 
 # %% [markdown]
 # ## 5. Propagator
