@@ -153,7 +153,7 @@ and `test_no_stage_dispatch_remains.py` when the old stage classes go).
    Delete the old MBR classes and programs that nothing imports. Delete
    `legacy_mbr.py` when nothing imports it.
 
-7. Disorder / SFF (the "later phase" below). **Status: needs a concrete plan first.**
+7. Disorder / SFF (the "later phase" below). **Status: plan approved 2026-09-24, see `docs/qsim/mbr_step7_plan.md`. It replaces the text below where they differ.**
    Do not start porting before the user approves a written plan. It must settle at least:
    the `MBRDisorderEnsembleExperiment` design; an assembled class (or none) for
    off-diagonal TimeTraces, which the pairwise and D72 plans use; conversion of the old
