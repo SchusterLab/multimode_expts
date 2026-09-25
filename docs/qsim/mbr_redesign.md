@@ -249,6 +249,50 @@ still need. Exception: their runner calls move in step 1.
   The report's "N=4" sector was a second N=1 set (config `CFG-FL-20260717-00029`); dropped
   for now, and `analyze_sector` checks the photon number again.
 
+### Handoff for step 7 (disorder / SFF)
+
+Step 7 starts with a written plan the user approves (see its entry in section 7). Facts
+found in steps 4-6b, so the plan does not have to rediscover them:
+
+- **Old-class code still in use**, all only for step-7 callers:
+  - `notebook_helpers/mbr_campaign.py`: `ensure_calibration`, `acquire_calibration` and the
+    `EncSpec` / `calibration_*` campaign fields (used by `mbr_disorder.py`, `mbr_sff.py`).
+  - `notebook_helpers/mbr_n3_reprocess.py`: `reprocess_n3_spectroscopy` (used by
+    `mbr_sampling`, `mbr_spectral_validation`) and `fit_self_kerr_from_peak_overlap` (used by
+    `mbr_disorder_campaign`). The new-class twin is `fit_self_kerr`; both share
+    `_self_kerr_scan`.
+  - `notebook_helpers/mbr_saved_reanalysis.py`: `load_disorder_calibrated`,
+    `load_disorder_as_acquired` (old bodies, moved unchanged).
+  - `notebook_helpers/mbr_loading.py` (`load_encoding_spectroscopy`) and legacy
+    `MBRSpectrumExperiment.spectroscopy_batch`, which names `EncodingPropagatorProgram` for
+    off-diagonal pair jobs; so that program, `NPhotonHamiltonianSpectroscopyProgram`,
+    `EntireFloquetCyclePhaseCalibrationProgram` and `legacy_mbr.py` cannot go before step 7.
+  - The `dormant/` notebooks import the legacy classes (header only); the user leaves them.
+- **Known failures, present before the redesign** (tagged `raises-exception` in the
+  analysis `mbr.py`):
+  - The disorder theory check in `load_disorder_calibrated`: theory rebuilt from the saved
+    config differs from the saved `theory_energies_MHz` by up to 0.3 kHz on every level
+    (asserted to 1e-10). Physics question: which Hamiltonian inputs changed.
+  - The 5b disorder range `JOB-20260816-00011..80`: jobs 73-80 do not exist in `jobs.db`,
+    11-12 have no program class. The dataset lists `august_disorder_r0..3` exist; the 5b
+    partition is a dataset question for the user.
+  - Two cells read `encspec_N3_trace`, `encspec_N3_trace_mpm` etc.; no code defines them
+    (the source cell was lost in the notebook split).
+- **Data facts:** the saved off-diagonal batch `JOB-20260823-00005..08` was recorded under
+  program class `EncodingPropagatorProgram`. The pairwise and D72 disorder datasets have no
+  ID lists; the user builds them from the lab logs. `tests/data/job_provenance.json` lacks
+  most jobs outside the listed datasets; export more with `tools/export_job_provenance.py`
+  (read-only).
+- **Conversion so far:** only diagonal spectra. `migrate_spectrum` refuses old pair jobs
+  (`offdiag_cycles`). Converted data and manifests are in `260526_qsim_darkmode` and
+  `260814_qsim_encspec` (`converted_data/`, `assembled_data/`); the disorder realizations
+  `august_disorder_r0` also converted cleanly as a diagonal Spectrum in a test run.
+- **Checking ported notebooks off hardware:** `tools/dryrun_qsim_notebook.py` runs a
+  measurement notebook on a mock station (with stubs for what mock data cannot do; see its
+  docstring). The analysis suite (`tools/run_qsim_suite.py --suite analysis`) runs offline.
+  For every port so far, old and new paths were compared on the same raw files (scripts
+  loaded the old module with `git show HEAD:...`); do the same for step 7.
+
 ### Handoff for steps 4-6
 
 Patterns set in steps 2-3; follow them:
