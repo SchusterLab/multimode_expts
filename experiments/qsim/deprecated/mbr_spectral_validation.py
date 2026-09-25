@@ -1,5 +1,11 @@
 """Spectral validation: does the recovered level statistics support a claim?
 
+DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_spectral_validation.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+decision 2 (its data is D72 Sep10). Cell 188 moved to `notebook_helpers/mbr_n3_reprocess.py`. Known problem when moved: six functions return None where the notebook uses the result (`collect_row_singular_records`, `build_corrected_traces_and_halves`, `prepare_precision_inputs`, `run_precision_search`, `fit_halves_independently`, `select_row_pooled_levels`).
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 188, 252-255 and 277-306 by the stage-2 notebook decomposition. Primary
 caller: `analysis_notebooks/202609_qsim_migration/mbr_spectral_validation.py`.
@@ -101,242 +107,14 @@ from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 # wrap_frequency is cell 274's. Importing them keeps one definition rather
 # than a third copy -- see the TODO in mbr_disorder_h5 about that loader not
 # yet being reconciled with the library.
-from experiments.qsim.notebook_helpers.mbr_disorder_h5 import (
+from experiments.qsim.deprecated.mbr_disorder_h5 import (
     SavedSpectroscopyExperiment,
     wrap_frequency,
 )
 
 
-# ------------------------------------------------------------------------
-# Cell 188.
-# ------------------------------------------------------------------------
-
-def matrix_pencil_global_diagnostic(encspec_reprocessed):
-    """Global-only Matrix Pencil (cell 188).
-
-    Uses no Hamiltonian energies and no FFT peak positions. The next
-    step performs the rowwise selection and merging."""
-    # Global-only Matrix Pencil diagnostic; the next cell performs rowwise selection and merging.
-    # No Hamiltonian energies or FFT peak positions are used.
-    from numpy.lib.stride_tricks import sliding_window_view
-
-    matrix_pencil_data = encspec_reprocessed
-    matrix_pencil_requested_max_modes = 35
-    matrix_pencil_numerical_floor = 1e-10
-    matrix_pencil_min_persistence_fraction = 0.6
-
-    reconstruction = matrix_pencil_data.reconstruction
-    spectrum = matrix_pencil_data.spectrum
-    if not hasattr(reconstruction, 'A'):
-        raise ValueError('Matrix Pencil requires complex reconstruction.A; a magnitude-only merged spectrum cannot be used')
-
-    time_us = np.asarray(spectrum.time_us, dtype=float)
-    complex_return = np.asarray(reconstruction.A, dtype=complex)
-    if complex_return.ndim != 2 or complex_return.shape[1] != len(time_us):
-        raise ValueError('reconstruction.A must have shape (occupation, time point)')
-    if len(time_us) < 5:
-        raise ValueError('Matrix Pencil requires at least five time points')
-
-    sample_time_us = time_us[1] - time_us[0]
-    if sample_time_us <= 0. or not np.allclose(np.diff(time_us), sample_time_us):
-        raise ValueError('Matrix Pencil requires uniformly spaced time points')
-    if np.any(np.abs(complex_return[:, 0]) < 1e-12):
-        raise ValueError('at least one occupation has zero return at the first time point')
-    complex_return = complex_return / complex_return[:, :1]
-
-    # 1. Every row supplies a shifted pair of Hankel matrices with the same poles.
-    sample_count = complex_return.shape[1]
-    pencil_length = sample_count // 2
-    unshifted_blocks = []
-    shifted_blocks = []
-    for row in complex_return:
-        windows = sliding_window_view(row, pencil_length + 1)
-        unshifted_blocks.append(windows[:, :-1])
-        shifted_blocks.append(windows[:, 1:])
-    unshifted = np.vstack(unshifted_blocks)
-    shifted = np.vstack(shifted_blocks)
-
-    # 2. SVD separates the shared exponential subspace from small residual directions.
-    left_vectors, singular_values, right_vectors_h = np.linalg.svd(
-        unshifted,
-        full_matrices=False,
-    )
-    relative_singular_values = singular_values / singular_values[0]
-    numerical_rank = np.count_nonzero(
-        relative_singular_values > matrix_pencil_numerical_floor
-    )
-    maximum_rank = min(
-        matrix_pencil_requested_max_modes,
-        pencil_length,
-        numerical_rank,
-    )
-    if maximum_rank < 1:
-        raise RuntimeError('the Hankel matrix has no usable singular direction')
-
-    # 3. Solve the reduced pencil at every allowed rank instead of fixing the number of tones.
-    rank_results = {}
-    for rank in range(1, maximum_rank + 1):
-        left = left_vectors[:, :rank]
-        right = right_vectors_h[:rank].conj().T
-        shifted_reduced = left.conj().T @ shifted @ right
-        inverse_singular_values = np.diag(1. / singular_values[:rank])
-        reduced_pencil = inverse_singular_values @ shifted_reduced
-        poles = np.linalg.eigvals(reduced_pencil)
-
-        frequencies_MHz = -np.angle(poles) / (2. * np.pi * sample_time_us)
-        pole_radii = np.abs(poles)
-        decay_per_us = -np.log(np.maximum(pole_radii, np.finfo(float).tiny)) / sample_time_us
-        order = np.argsort(frequencies_MHz)
-        rank_results[rank] = dict(
-            frequencies_MHz=frequencies_MHz[order],
-            pole_radii=pole_radii[order],
-            decay_per_us=decay_per_us[order],
-        )
-
-    # 4. A maximum-rank pole is more credible when lower-rank solutions return near it.
-    resolution_MHz = 1. / (sample_count * sample_time_us)
-    maximum_rank_result = rank_results[maximum_rank]
-    maximum_rank_frequencies = maximum_rank_result['frequencies_MHz']
-    anchor_groups = []
-    for index, frequency in enumerate(maximum_rank_frequencies):
-        if not anchor_groups:
-            anchor_groups.append([index])
-            continue
-
-        previous_index = anchor_groups[-1][-1]
-        previous_frequency = maximum_rank_frequencies[previous_index]
-        if frequency - previous_frequency <= resolution_MHz:
-            anchor_groups[-1].append(index)
-        else:
-            anchor_groups.append([index])
-
-    anchor_indices = []
-    for group in anchor_groups:
-        group_radii = maximum_rank_result['pole_radii'][group]
-        distance_from_unit_circle = np.abs(np.log(np.maximum(
-            group_radii,
-            np.finfo(float).tiny,
-        )))
-        representative = group[np.argmin(distance_from_unit_circle)]
-        anchor_indices.append(representative)
-
-    ranked_candidates = []
-    for index in anchor_indices:
-        frequency = maximum_rank_result['frequencies_MHz'][index]
-        radius = maximum_rank_result['pole_radii'][index]
-        decay = maximum_rank_result['decay_per_us'][index]
-        matched_frequencies = []
-        for result in rank_results.values():
-            distances = np.abs(result['frequencies_MHz'] - frequency)
-            nearest = np.argmin(distances)
-            if distances[nearest] <= resolution_MHz:
-                matched_frequencies.append(result['frequencies_MHz'][nearest])
-
-        ranked_candidates.append(dict(
-            frequency_MHz=float(np.median(matched_frequencies)),
-            persistence=len(matched_frequencies),
-            pole_radius=float(radius),
-            decay_per_us=float(decay),
-        ))
-    ranked_candidates.sort(
-        key=lambda candidate: (
-            -candidate['persistence'],
-            abs(np.log(max(candidate['pole_radius'], np.finfo(float).tiny))),
-        )
-    )
-    minimum_persistence = int(np.ceil(
-        matrix_pencil_min_persistence_fraction * maximum_rank
-    ))
-    stable_candidates = [
-        candidate
-        for candidate in ranked_candidates
-        if candidate['persistence'] >= minimum_persistence
-    ]
-
-    encspec_matrix_pencil = dict(
-        sample_time_us=sample_time_us,
-        pencil_length=pencil_length,
-        maximum_algebraic_rank=maximum_rank,
-        resolution_MHz=resolution_MHz,
-        singular_values=singular_values,
-        relative_singular_values=relative_singular_values,
-        rank_results=rank_results,
-        ranked_candidates=ranked_candidates,
-        minimum_persistence=minimum_persistence,
-        stable_candidates=stable_candidates,
-    )
-
-    # 5. Plot the rank information without pretending that the maximum rank is the mode count.
-    nyquist_MHz = 0.5 / sample_time_us
-    figure, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
-    singular_index = np.arange(1, len(singular_values) + 1)
-    axes[0].semilogy(singular_index, relative_singular_values, 'o-')
-    axes[0].set(
-        xlabel='singular-value index',
-        ylabel='singular value / largest singular value',
-        title='Hankel singular values; no rank selected',
-    )
-
-    plot_candidates = sorted(
-        ranked_candidates,
-        key=lambda candidate: candidate['frequency_MHz'],
-    )
-    candidate_frequencies = [candidate['frequency_MHz'] for candidate in plot_candidates]
-    candidate_persistence = [candidate['persistence'] for candidate in plot_candidates]
-    axes[1].vlines(
-        candidate_frequencies,
-        0.,
-        candidate_persistence,
-        color='0.75',
-    )
-    axes[1].scatter(
-        candidate_frequencies,
-        candidate_persistence,
-        color='0.6',
-        s=70,
-        label='all maximum-rank candidates',
-    )
-    stable_frequencies = [candidate['frequency_MHz'] for candidate in stable_candidates]
-    stable_persistence = [candidate['persistence'] for candidate in stable_candidates]
-    axes[1].scatter(
-        stable_frequencies,
-        stable_persistence,
-        color='tab:red',
-        s=85,
-        label='recurrent candidates',
-    )
-    for frequency, persistence in zip(stable_frequencies, stable_persistence):
-        axes[1].annotate(
-            f'{frequency:.4f}',
-            (frequency, persistence),
-            xytext=(0, 7),
-            textcoords='offset points',
-            ha='center',
-            fontsize=8,
-            rotation=45,
-        )
-    axes[1].axvline(0., color='0.7', linewidth=1.)
-    axes[1].set(
-        xlim=(-nyquist_MHz, nyquist_MHz),
-        ylim=(0., maximum_rank + 1.),
-        xlabel='energy E/h (MHz)',
-        ylabel='number of ranks returning near this frequency',
-        title=f'red: returned in at least {minimum_persistence} of {maximum_rank} ranks',
-    )
-    axes[1].legend()
-    figure.suptitle(
-        f'data-only multichannel Matrix Pencil; algebraic ceiling={maximum_rank}, not a selected mode count'
-    )
-    dict(
-        minimum_persistence=minimum_persistence,
-        stable_candidates=[
-            (
-                round(candidate['frequency_MHz'], 6),
-                candidate['persistence'],
-            )
-            for candidate in stable_candidates
-        ],
-    )
+# Cell 188 (`matrix_pencil_global_diagnostic`) moved to
+# `experiments/qsim/notebook_helpers/mbr_n3_reprocess.py` in step 7a.
 
 
 # ------------------------------------------------------------------------

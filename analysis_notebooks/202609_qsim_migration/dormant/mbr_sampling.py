@@ -16,6 +16,11 @@
 # %% [markdown]
 # # Shot and sampling studies
 #
+# **DORMANT.** Moved from `analysis_notebooks/202609_qsim_migration/mbr_sampling.py` on 2026-09-24 (MBR redesign step 7a),
+# without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+# decision 5 (shot sampling is dormant). Not maintained; may break when live code changes. If it breaks,
+# add a note here and do not fix it.
+#
 # Split out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 # 193-203 by the stage-2 notebook decomposition. On the surface map this is
 # one of the two "measurement and inference studies" workspaces.
@@ -64,12 +69,13 @@ import experiments as meas
 from slab import AttrDict
 
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers.mbr_loading import (
+from experiments.qsim.deprecated.mbr_loading import (
     job_id_generator,
     load_encoding_spectroscopy,
 )
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
-from experiments.qsim.notebook_helpers import mbr_sampling as sampling
+from experiments.qsim.deprecated import mbr_n3_reprocess_legacy as n3_legacy
+from experiments.qsim.deprecated import mbr_sampling as sampling
 
 # %% [markdown]
 # ## Load the N=3 dataset these studies replay
@@ -96,7 +102,7 @@ encspec_cycle_branches = {}
 encspec_legacy = True
 encspec_manual_kerr_MHz = -19.756e-3
 
-encspec_reprocessed = n3.reprocess_n3_spectroscopy(
+encspec_reprocessed = n3_legacy.reprocess_n3_spectroscopy(
     calibration_expt=calibration_expt,
     spectroscopy_expt=spectroscopy_expt,
     cycle_branches=encspec_cycle_branches,

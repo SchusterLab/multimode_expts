@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """Disorder-averaged spectral form factor for the many-body Ramsey Floquet map.
 
+DEPRECATED. Moved from `experiments/qsim/mbr_sff.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+decision 3 (SFF is to be deleted and written again later). The negative-phase-step check makes it fail on zero-mean detunings.
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 The SFF, ``|Tr U|^2 / D^2``, is the standard diagnostic for whether a
 many-body spectrum shows level repulsion: its dip-ramp-plateau shape separates
 chaotic from integrable dynamics, and it is what the level-statistics analysis

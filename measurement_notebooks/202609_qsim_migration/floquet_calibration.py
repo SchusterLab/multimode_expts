@@ -59,7 +59,7 @@
 # `multiphoton_calibration.py`, which the surface map puts there.
 #
 # Its neighbours: `multiphoton_calibration.py`, `mbr.py`, `mbr_disorder.py`,
-# `mbr_tomography.py`, `mbr_sff.py`, `floquet_displacement_kerr.py`.
+# `mbr_tomography.py`, `floquet_displacement_kerr.py`.
 
 # %%
 # %load_ext autoreload

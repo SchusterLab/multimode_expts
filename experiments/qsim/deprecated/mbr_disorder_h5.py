@@ -1,5 +1,11 @@
 """Reprocess saved disorder spectroscopy from HDF5 only.
 
+DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_disorder_h5.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+decision 2 (D72 off-diagonal data; no valid Stark-shift phase calibration for init != final).
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 256-276 by the stage-2 notebook decomposition. Primary caller:
 `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`.

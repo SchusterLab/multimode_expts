@@ -38,7 +38,7 @@
 #
 # Long cells are now named functions in `experiments/qsim/notebook_helpers/`:
 # `mbr_n2_spectroscopy.py`, `mbr_n3_reprocess.py`, `mbr_replot.py`,
-# `mbr_saved_reanalysis.py` and `mbr_loading.py`. Each module's docstring
+# `mbr_saved_reanalysis.py` (and `mbr_loading.py`, now in `deprecated/`). Each module's docstring
 # records which source cells it came from and which apparent duplicates were
 # checked before being merged.
 #
@@ -55,9 +55,9 @@
 #
 # `encspec_reprocessed`, built in workspace 2, was read out of the live kernel
 # by what are now two separate notebooks -- `mbr_sampling.py` and
-# `mbr_spectral_validation.py`. Both now build it themselves by calling
-# `reprocess_n3_spectroscopy`. Source cell 188, the global Matrix-Pencil
-# diagnostic, went to `mbr_spectral_validation.py` and is not repeated here.
+# `mbr_spectral_validation.py`. Both are dormant since MBR redesign step 7a
+# (`dormant/`; see `docs/qsim/mbr_step7_plan.md`). Source cell 188, the global
+# Matrix-Pencil diagnostic, came back here in step 7a (section 2).
 #
 # ## Saved data now comes from manifests (MBR redesign step 6b)
 #
@@ -68,12 +68,12 @@
 # The manifest paths are the dataset choices now.
 #
 # Still on the old classes until redesign step 7 (disorder/SFF), and marked
-# "step 7" where they appear: the disorder realizations in section 5 and the
-# saved off-diagonal batch in section 3. Two cells in section 2 read names no
+# "step 7" where they appear: the disorder realizations in section 5. The
+# saved off-diagonal batch of section 3 moved to
+# `dormant/mbr_disorder_offdiag.py` in step 7a. Two cells in section 2 read names no
 # code defines any more (see there); they are tagged `raises-exception`.
 #
-# Its neighbours: `mbr_disorder.py`, `mbr_sampling.py`,
-# `mbr_spectral_validation.py`, and `dormant/`.
+# Its neighbours: `mbr_disorder.py` and `dormant/`.
 
 # %%
 # %load_ext autoreload
@@ -101,10 +101,6 @@ from fitting.wigner import WignerAnalysis
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-# Step 7: the saved off-diagonal batch in section 3 still needs the old class.
-from experiments.qsim.deprecated.legacy_mbr import (
-    MBRSpectrumExperiment as LegacySpectrumExperiment,
-)
 from experiments.qsim.notebook_helpers import mbr_n2_spectroscopy as n2
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
 from experiments.qsim.notebook_helpers import mbr_replot as replot
@@ -292,6 +288,16 @@ encspec_reprocessed = spectroscopy_expt.analyze(
     spectrum_method='mpm',
 )
 spectroscopy_expt.display(spectrum_method='mpm')
+
+# %% [markdown]
+# ### Global-only Matrix Pencil (source cell 188)
+#
+# Uses no Hamiltonian energies and no FFT peak positions. Moved here from
+# `mbr_spectral_validation.py` in MBR redesign step 7a (the rest of that
+# notebook is dormant).
+
+# %%
+n3.matrix_pencil_global_diagnostic(encspec_reprocessed)
 
 # %% [markdown]
 # ### Incoherent versus coherent summation
@@ -529,33 +535,6 @@ else:
         occupation=spectroscopy_display_occupation,
         spectrum_method="mpm",
     )
-plt.show()
-
-# %% [markdown]
-# ## Reanalyze a saved spectroscopy batch
-#
-# Source cell 314. Loads four known-good interleaved off-diagonal jobs without
-# acquiring new data. Replace the job list to analyze another saved batch.
-#
-# Loads from HDF5: no station, and so no risk of picking up today's
-# calibration in place of the one these jobs ran under.
-#
-# Step 7: these are old off-diagonal pair jobs, which the migration cannot
-# convert yet, so this cell stays on the old class.
-
-# %%
-saved_spectroscopy_job_ids = [
-    f"JOB-20260823-{job:05d}" for job in range(5, 9)
-]
-saved_spectroscopy_expt = LegacySpectrumExperiment.from_job_ids(
-    saved_spectroscopy_job_ids,
-)
-saved_spectroscopy_expt.analyze(
-    cycle_branches={(0, 0, 2, 0, 0): 0},
-)
-saved_spectroscopy_expt.display(
-    occupation=[0, 0, 1, 1, 0],
-)
 plt.show()
 
 # %% [markdown]

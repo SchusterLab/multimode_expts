@@ -1,5 +1,11 @@
 """Shot-count and randomized-occupation sampling studies on saved N=3 data.
 
+DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_sampling.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+decision 5 (shot sampling is dormant). Known problem when moved: its loader does not load shots, so the shot-subsampling and random-occupation parts fail.
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 193-203 by the stage-2 notebook decomposition. Primary caller:
 `analysis_notebooks/202609_qsim_migration/mbr_sampling.py`.

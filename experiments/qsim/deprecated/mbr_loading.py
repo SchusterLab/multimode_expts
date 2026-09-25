@@ -1,5 +1,11 @@
 """Job-number-to-experiment loading for the MBR analysis notebooks.
 
+DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_loading.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+its only callers moved to `dormant/`.
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cell 4 by
 the stage-2 notebook split, then reduced to two functions when the loading
 path was purged of the job server.

@@ -53,7 +53,7 @@
 # have run. The defaults of cells 2-6 are in
 # `experiments/qsim/notebook_helpers/defaults.py`.
 #
-# Its neighbours: `mbr_disorder.py`, `mbr_tomography.py`, `mbr_sff.py`,
+# Its neighbours: `mbr_disorder.py`, `mbr_tomography.py`,
 # `multiphoton_calibration.py`, `floquet_calibration.py`.
 
 # %%

@@ -57,14 +57,13 @@ SUITES = {
             "floquet_calibration",
             "mbr",
             "mbr_tomography",
-            "mbr_sff",
             "mbr_disorder",
             "floquet_displacement_kerr",
         )
     ],
     "analysis": [
         ANALYSIS_DIR / f"{name}.py"
-        for name in ("mbr", "mbr_disorder", "mbr_sampling", "mbr_spectral_validation")
+        for name in ("mbr", "mbr_disorder")
     ],
 }
 
@@ -179,7 +178,7 @@ def main(argv=None):
                         help="'main', a JSON file of version IDs, or unset for each "
                              "notebook's own config_dict")
     parser.add_argument("--only", default=None,
-                        help="comma-separated notebook names, e.g. mbr,mbr_sff")
+                        help="comma-separated notebook names, e.g. mbr,mbr_disorder")
     parser.add_argument("--keep-going", action="store_true",
                         help="run the remaining notebooks after one fails")
     parser.add_argument("--cell-timeout", type=int, default=1800)

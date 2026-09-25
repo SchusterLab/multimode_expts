@@ -1,5 +1,11 @@
 """Disorder-averaged spectral form factor: the 2000-realization ensemble.
 
+DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_sff_campaign.py` on 2026-09-24 (MBR redesign
+step 7a), without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+decision 3 (SFF is to be deleted).
+Not maintained; may break when live code changes. If it breaks, add a note here
+and do not fix it.
+
 Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 359-369 by the stage-2 notebook decomposition. Primary caller:
 `measurement_notebooks/202609_qsim_migration/mbr_sff.py`.
@@ -41,6 +47,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.mbr_sff import DisorderSFFExperiment
 
 
 @dataclass
@@ -99,9 +106,9 @@ def build_sff_plan(campaign, station, client, config=None):
     encspec_mode_labels = campaign.mode_labels
     encspec_modes = campaign.modes
     encspec_sync_cycles = campaign.sync_cycles
-    floquet_dark_mode_readout = campaign.floquet_dark_mode_readout
+
     EncSpec = campaign.EncSpec
-    SFFExperiment = floquet_dark_mode_readout.DisorderSFFExperiment
+    SFFExperiment = DisorderSFFExperiment
 
     if sff_total_reps_per_realization < 2 or sff_total_reps_per_realization % 2:
         raise ValueError("sff_total_reps_per_realization must be a positive even integer")

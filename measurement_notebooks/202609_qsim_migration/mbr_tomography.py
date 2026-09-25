@@ -44,7 +44,7 @@
 # names; it is a module-level function in
 # `experiments/qsim/notebook_helpers/mbr_tomography.py` now.
 #
-# Its neighbours: `mbr.py`, `mbr_disorder.py`, `mbr_sff.py`,
+# Its neighbours: `mbr.py`, `mbr_disorder.py`,
 # `floquet_displacement_kerr.py`.
 
 # %%

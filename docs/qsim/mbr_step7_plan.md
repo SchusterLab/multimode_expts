@@ -88,18 +88,19 @@ made them no longer exists.
 | `notebook_helpers/mbr_disorder_preview.py` (7-1 datasets) | port | stays |
 | `notebook_helpers/mbr_disorder_h5.py` (D72 loader, `SavedSpectroscopyExperiment`, Sep05 decoder-clock correction) | move | `deprecated/mbr_disorder_h5.py` |
 | `notebook_helpers/mbr_spectral_validation.py` | move, except one function | `deprecated/mbr_spectral_validation.py` |
-| its `matrix_pencil_global_diagnostic` (uses only `A` and `time_us`) | port | `fitting/qsim/` |
+| its `matrix_pencil_global_diagnostic` (uses only `A` and `time_us`) | move | `notebook_helpers/mbr_n3_reprocess.py` (a plotting diagnostic on N=3 data, like its neighbours there) |
 | `notebook_helpers/mbr_sampling.py` (shot sampling, decision 5) | move | `deprecated/` |
 | `notebook_helpers/mbr_saved_reanalysis.py`: `load_disorder_*` (August) | port | stays |
-| `notebook_helpers/mbr_n3_reprocess.py`: `reprocess_n3_spectroscopy` | move | `deprecated/` (has a new-class twin in analysis `mbr.py`) |
-| same file: `fit_self_kerr_from_peak_overlap` (no callers) | move | `deprecated/` |
+| `notebook_helpers/mbr_n3_reprocess.py`: `reprocess_n3_spectroscopy` | move | `deprecated/mbr_n3_reprocess_legacy.py` (has a new-class twin in analysis `mbr.py`) |
+| same file: `fit_self_kerr_from_peak_overlap` (no callers) | move | `deprecated/mbr_n3_reprocess_legacy.py` |
 | `notebook_helpers/mbr_loading.py` | move | `deprecated/` |
 | `notebook_helpers/mbr_campaign.py`: `ensure_calibration`, `acquire_calibration`, `EncSpec` fields | port | use `MBRCalibrationSetExperiment` |
 | `experiments/qsim/mbr_sff.py`, `notebook_helpers/mbr_sff_campaign.py` | move, "to be deleted" | `deprecated/` |
 | `EncodingHamiltonianSpectroscopyExperiment` (`floquet_dark_mode_readout.py`) | move | `deprecated/` |
 | `EncodingPropagatorProgram`, `EntireFloquetCyclePhaseCalibrationProgram`, `NPhotonHamiltonianSpectroscopyProgram` | move | `deprecated/` |
 | `legacy_mbr.py` | stays in `deprecated/` | |
-| MBR and SFF `_MOVED_TO` entries | remove | importers use the `deprecated/` path directly (keep `SidebandScrambleDarkProgramNewNew`) |
+| SFF `_MOVED_TO` entries | remove (7a) | importers use the `deprecated/` path directly |
+| MBR `_MOVED_TO` entries | remove (7e) | importers use the `deprecated/` path directly (keep `SidebandScrambleDarkProgramNewNew`) |
 
 `floquet_phase_calibration.py` and `deprecated/single_photon_spectroscopy.py` subclass
 `NPhotonHamiltonianSpectroscopyProgram`. Change their base name to `MBRRamseyProgram` (the old
@@ -122,7 +123,8 @@ class is an empty subclass of it), so that live code does not import `deprecated
 ### Rules for moved code
 - A header says: moved on <date>, why (section 0), and "not maintained; may break when live
   code changes". If it breaks later, add a note to the header. Do not fix it.
-- Live code must not import `experiments.qsim.deprecated`. A new test checks this.
+- Live code must not import `experiments.qsim.deprecated` at the end of step 7. A new test
+  checks this (7e).
 - Tests of moved code move out of the blocking suite. The SFF mock tests
   (`tests/test_mbr_acquire_mock.py:161-243`) and the sampling tests (if any) go to one file,
   `tests/test_deprecated_mbr.py`. When one breaks, it gets
@@ -169,9 +171,12 @@ class is an empty subclass of it), so that live code does not import `deprecated
 
 ## 5. Order (each sub-step ends green, as in `mbr_redesign.md` section 7)
 
-- **7a. Move.** Do all the moves in section 2 first, as one commit. Change imports only, add
-  the "live code does not import `deprecated/`" test, and move the tests of moved code. The
-  suite must be green after this step, before any port.
+- **7a. Move.** Move the whole modules, functions and notebook sections of section 2 that have
+  no live user, as one commit. Change imports only, and move the tests of moved code. The suite
+  must be green after this step, before any port.
+  The old classes and programs (`EncodingHamiltonianSpectroscopyExperiment`, the three old
+  programs, the `_MOVED_TO` entries) still have live users until 7b-7d port them. They move in
+  7e, when their live users are gone.
 - **7b. Base work.**
   - `fitting/qsim/mbr_disorder.py`.
   - Replace the `EncSpec` theory and hardware calls in the live helpers.
@@ -188,6 +193,10 @@ class is an empty subclass of it), so that live code does not import `deprecated
     one, and builds the ensemble with `from_parts`.
   - Gate: `tools/dryrun_qsim_notebook.py` on a mock station.
 - **7e. Close.**
+  - Move the old classes and programs (see 7a) to `deprecated/`, remove the MBR
+    `_MOVED_TO` entries, and change the base name in `floquet_phase_calibration.py`.
+  - Add the test "live code does not import `experiments.qsim.deprecated`" (tests are not
+    live code).
   - Fix the handoff note in `mbr_redesign.md`.
   - Record there what is left in `deprecated/` and why.
   - `legacy_mbr.py` and the old programs stay in `deprecated/`. guan and jonginn delete them

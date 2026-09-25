@@ -132,7 +132,9 @@ def _import_block(path):
 
 def test_there_are_analysis_notebooks_to_check():
     """Guards the glob above: an empty parametrization would pass silently."""
-    assert len(ANALYSIS_NOTEBOOKS) >= 4, [p.name for p in ANALYSIS_NOTEBOOKS]
+    # Two since MBR redesign step 7a moved mbr_sampling and
+    # mbr_spectral_validation to dormant/ (docs/qsim/mbr_step7_plan.md).
+    assert len(ANALYSIS_NOTEBOOKS) >= 2, [p.name for p in ANALYSIS_NOTEBOOKS]
 
 
 @pytest.mark.parametrize("notebook", ANALYSIS_NOTEBOOKS, ids=lambda p: p.stem)

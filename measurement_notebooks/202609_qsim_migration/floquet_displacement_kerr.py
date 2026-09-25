@@ -31,7 +31,7 @@
 # `experiments/qsim/floquet_dark_mode_readout.py`.
 #
 # Its neighbours: `multiphoton_calibration.py`, `floquet_calibration.py`,
-# `mbr.py`, `mbr_disorder.py`, `mbr_tomography.py`, `mbr_sff.py`.
+# `mbr.py`, `mbr_disorder.py`, `mbr_tomography.py`.
 # %%
 # %load_ext autoreload
 # %autoreload 2

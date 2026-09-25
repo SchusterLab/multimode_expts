@@ -21,6 +21,11 @@
 # half; the reports are
 # `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`.
 #
+# **MBR redesign step 7a (2026-09-24):** the pairwise preview and 7-2 (D72)
+# moved to `dormant/mbr_disorder_offdiag.py`; only 7-1 is left here. See
+# `docs/qsim/mbr_step7_plan.md`. The table below describes the notebook before
+# the split.
+#
 # The split follows the source headings' own annotations, which already
 # labelled each step "— no jobs" or "— submits jobs".
 #
@@ -53,7 +58,7 @@
 # argument here. Passing None falls back the way the source did: to the signed
 # Kerr saved with the phase-calibration jobs.
 #
-# Its neighbours: `mbr.py`, `mbr_tomography.py`, `mbr_sff.py`.
+# Its neighbours: `mbr.py`, `mbr_tomography.py`.
 
 # %%
 # %load_ext autoreload
@@ -87,18 +92,11 @@ from experiments.qsim.notebook_helpers.mbr_campaign import (
 )
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
-    D72Config,
     DiagDisorderConfig,
-    analyze_d72,
     analyze_diag_disorder,
-    build_d72_plans,
     build_diag_disorder_plans,
     build_diag_realization_batch,
-    build_pairwise_batch,
-    build_pairwise_plan,
-    check_d72_visibility,
     plot_diag_level_statistics,
-    preview_d72_jobs,
 )
 
 # %%
@@ -149,46 +147,6 @@ else:
 # %% [markdown]
 # ## 7. Disorder-resolved spectroscopy
 #
-# A pairwise-detuning preview first (source cells 319-320).
-
-# %%
-pairwise_plan = build_pairwise_plan(
-    campaign=campaign,
-    station=station,
-    N=3,
-    strength_kHz=50.0,
-    seed=20260815,
-    pair_count=RUN.pick(10, smoke=2),
-    reps=RUN.pick(300, smoke=100),
-    batch_size=1,
-)
-
-# %%
-disorder_batch, disorder_runner, disorder_cycle_branches = build_pairwise_batch(
-    campaign=campaign,
-    station=station,
-    client=client,
-    use_queue=RUN.use_queue,
-    plan=pairwise_plan,
-)
-
-disorder_expt = MBRSpectrumExperiment._from_expts(disorder_runner.execute(
-    overrides=disorder_batch.configs,
-    batch_size=pairwise_plan["disorder_batch_size"],
-    log=True,
-    show=False,
-), job_ids=disorder_runner.last_job_ids, station=disorder_runner.station)
-disorder_expt.analyze(
-    cycle_branches=disorder_cycle_branches,
-    spectrum_method="mpm",
-    mpm_requested_max_modes=len(pairwise_plan["disorder_theory"].energies_MHz),
-    mpm_match_decay=False,
-)
-disorder_expt.display(spectrum_method="fft")
-disorder_expt.display(spectrum_method="mpm")
-plt.show()
-
-# %% [markdown]
 # ### 7-1. Diagonal disorder spectroscopy
 #
 # #### 7-1a. Settings — no jobs
@@ -311,137 +269,6 @@ for each in diag_disorder_records.keys():
 # %%
 plot_diag_level_statistics(plan=diag_plan, config=diag_config)
 
-# %% [markdown]
-# ### 7-2. Occupation-constrained disorder spectroscopy
-#
-# #### 7-2a. Settings and channel-selection helper — no jobs
-#
-# The thirty knobs of source cell 338. Their comments are preserved on the
-# `D72Config` fields; the values below are the source's.
-
-# %%
-d72_config = D72Config(
-    # Physics and disorder ensemble.
-    N=3,
-    realization_count=RUN.pick(2, smoke=1),
-    disorder_strength_kHz=50.0,
-    master_seed=20260903,
-    # State/channel constraints. None removes the cap; 1 keeps only hard-core
-    # states; 2 excludes |3> states.
-    max_occupation=3,
-    forbidden_states=[
-        # [1, 0, 1, 0, 1],
-    ],
-    channel_count=RUN.pick(15, smoke=3),
-    required_support=1,
-    allow_diagonal=True,
-    allow_offdiagonal=True,
-    # A diagnostic/submit guard after calibration access is normalized.
-    min_acceptable_visibility=1e-4,
-    # Coherence-limited sampling and acquisition.
-    max_time_us=80.0,
-    min_time_points=50,
-    nyquist_margin=1.35,
-    step_autocalculate=False,
-    cycle_step=2,  # used when step_autocalculate is False
-    cycle_chunk_points=200,
-    reps=RUN.pick(1000, smoke=100),
-    batch_size=2,
-    # None uses the signed Kerr in the current hardware configuration.
-    self_kerr_kHz=None,
-    branch_overrides={},
-    # None uses the active common calibration, then the common file map.
-    calibration_job_ids=None,
-    # Diagnostics and Matrix-Pencil settings.
-    theory_plot_realizations=1,
-    match_tolerance_bins=1.5,
-    mpm_minimum_consecutive_ranks=3,
-    mpm_minimum_supporting_rows=1,
-    mpm_merge_frequency_tolerance="calibration",
-    mpm_calibration_sigma_multiplier=3.0,
-    mpm_frequency_tolerance_floor_kHz=0.1,
-    mpm_dedup_frequency_tolerance_kHz=0.1,
-)
-
-# %% [markdown]
-# #### 7-2b. Build constrained theory plans and select channels — no jobs
-
-# %%
-d72_plan = build_d72_plans(
-    campaign=campaign,
-    station=station,
-    config=d72_config,
-)
-
-# %% [markdown]
-# #### 7-2c. Choose the coherence-limited cycle grid, preview jobs, and plot theory — no jobs
-#
-# This is the guard before the batches go in. Read its output before running
-# 7-2d.
-
-# %%
-d72_records = preview_d72_jobs(
-    campaign=campaign,
-    station=station,
-    plan=d72_plan,
-    config=d72_config,
-)
-
-# %% [markdown]
-# #### 7-2d. Run the constrained disorder batches — submits jobs
-
-# %%
-check_d72_visibility(d72_plan)
-
-for realization_plan in d72_plan["d72_plans"]:
-    if realization_plan.realization in d72_records:
-        print(f"skip r={realization_plan.realization}: already completed "
-              "in this 7-2 campaign")
-        continue
-
-    # build_d72_plans already built the batch for each realization.
-    d72_runner = CharacterizationRunner(
-        station=station,
-        ExptClass=campaign.EncSpec,
-        ExptProgram=realization_plan.batch.program,
-        default_expt_cfg=realization_plan.batch.default_expt_cfg,
-        job_client=client,
-        use_queue=RUN.use_queue,
-        show=False,
-    )
-    try:
-        d72_expt = MBRSpectrumExperiment._from_expts(d72_runner.execute(
-            overrides=realization_plan.batch.configs,
-            batch_size=d72_config.batch_size,
-            log=True,
-            show=False,
-        ), job_ids=d72_runner.last_job_ids, station=d72_runner.station)
-    except BaseException:
-        print(f"r={realization_plan.realization} submitted before "
-              "interruption:",
-              list(map(str, getattr(d72_runner, "last_job_ids", []))))
-        raise
-
-    d72_records[realization_plan.realization] = AttrDict(dict(
-        plan=realization_plan,
-        expt=d72_expt,
-        job_ids=list(map(str, d72_expt.batch_job_ids)),
-        cycle_branches=realization_plan.cycle_branches,
-        data=None,
-    ))
-    print(f"finished 7-2 acquisition r={realization_plan.realization}:",
-          d72_records[realization_plan.realization].job_ids)
-
-# %% [markdown]
-# #### 7-2e. Matrix-Pencil rank stability, calibration merge, and theory matching — no jobs
-
-# %%
-d72_records = analyze_d72(
-    plan=d72_plan,
-    d72_records=d72_records,
-    config=d72_config,
-    d72_analysis_error="raise",
-)
 
 # %%
 station.update_all_station_snapshots()

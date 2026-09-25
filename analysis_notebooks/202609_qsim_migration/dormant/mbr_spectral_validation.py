@@ -16,6 +16,11 @@
 # %% [markdown]
 # # Spectral validation
 #
+# **DORMANT.** Moved from `analysis_notebooks/202609_qsim_migration/mbr_spectral_validation.py` on 2026-09-24 (MBR redesign step 7a),
+# without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+# decision 2 (its data is D72 Sep10); cell 188 moved to `analysis_notebooks/202609_qsim_migration/mbr.py`. Not maintained; may break when live code changes. If it breaks,
+# add a note here and do not fix it.
+#
 # Split out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 # 188, 252-255 and 277-306 by the stage-2 notebook decomposition. On the
 # surface map this is the second "measurement and inference studies"
@@ -83,14 +88,15 @@ from slab import AttrDict
 
 from experiments.job_paths import data_root
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers.mbr_loading import (
+from experiments.qsim.deprecated.mbr_loading import (
     job_id_generator,
     load_encoding_spectroscopy,
 )
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
-from experiments.qsim.notebook_helpers import mbr_disorder_h5 as h5only
+from experiments.qsim.deprecated import mbr_n3_reprocess_legacy as n3_legacy
+from experiments.qsim.deprecated import mbr_disorder_h5 as h5only
 from experiments.qsim.notebook_helpers import mbr_disorder_preview as dpreview
-from experiments.qsim.notebook_helpers import mbr_spectral_validation as sv
+from experiments.qsim.deprecated import mbr_spectral_validation as sv
 
 # %% [markdown]
 # # Global-only Matrix Pencil (source cell 188)
@@ -104,7 +110,7 @@ calibration_expt, spectroscopy_expt = load_encoding_spectroscopy(
     job_id_generator([20260722, 20260723], [683, 1], [712, 40]),
     job_id_generator(20260723, [48, 87], [85, 149], step=[1, 2]),
 )
-encspec_reprocessed = n3.reprocess_n3_spectroscopy(
+encspec_reprocessed = n3_legacy.reprocess_n3_spectroscopy(
     calibration_expt=calibration_expt,
     spectroscopy_expt=spectroscopy_expt,
     cycle_branches={},

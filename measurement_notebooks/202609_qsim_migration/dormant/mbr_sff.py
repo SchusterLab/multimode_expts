@@ -16,6 +16,11 @@
 # %% [markdown]
 # # Disorder-averaged spectral form factor
 #
+# **DORMANT.** Moved from `measurement_notebooks/202609_qsim_migration/mbr_sff.py` on 2026-09-24 (MBR redesign step 7a),
+# without changes except imports. Why: `docs/qsim/mbr_step7_plan.md`,
+# decision 3 (SFF is to be deleted). Not maintained; may break when live code changes. If it breaks,
+# add a note here and do not fix it.
+#
 # Split out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 # 359-369 by the stage-2 notebook decomposition. One of the adjacent
 # extensions on the surface map, kept as its own recipe.
@@ -77,7 +82,7 @@ from experiments.qsim.notebook_helpers.mbr_campaign import (
     build_campaign,
     ensure_calibration,
 )
-from experiments.qsim.notebook_helpers.mbr_sff_campaign import (
+from experiments.qsim.deprecated.mbr_sff_campaign import (
     SFFConfig,
     analyze_and_plot_sff,
     build_sff_plan,
