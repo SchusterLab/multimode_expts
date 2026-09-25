@@ -36,6 +36,7 @@ Regenerate with ``pixi run python -m tests.asm_golden``, and read the diff
 before committing it -- that diff is the review.
 """
 import gzip
+from copy import deepcopy
 import hashlib
 from pathlib import Path
 
@@ -94,6 +95,20 @@ def programs(set_name):
     for name in sorted(products):
         for index, expt in enumerate(products[name].children):
             yield f"{set_name}__{name}__{index}", expt.prog
+    for index, expt in enumerate(products["time_trace"].children):
+        yield f"{set_name}__time_trace_hwloop__{index}", hardware_loop_program(expt)
+
+
+def hardware_loop_program(expt):
+    """The last program of a time-trace job, compiled with the hardware loop.
+
+    No MBR job uses ``floquet_hardware_loop`` (the StarkCal program refuses
+    it), so the smoke products never reach it. It is pinned anyway, so that
+    moving the Floquet playback code (step 8A2) is checked on that branch too.
+    """
+    cfg = deepcopy(expt.cfg)
+    cfg.expt.floquet_hardware_loop = True
+    return expt.ProgramClass(soccfg=expt.soccfg, cfg=cfg)
 
 
 def path_for(key):

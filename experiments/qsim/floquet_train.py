@@ -242,80 +242,39 @@ class FloquetTrain:
         disorder_phase_offsets=None,
         decoder_phase_offsets=None,
     ):
-        """
-        Play the calibrated ordered Floquet pulse train while using the
-        caller-provided phase_offsets as the live frame tracker.
+        """Play ``floquet_cycle`` cycles of the ordered Floquet train.
 
-        If cfg.expt.palindrome_scramble is True, consecutive Floquet cycles
-        alternate direction:
+        ``phase_offsets`` is the caller's live phase ledger (module
+        docstring): each pulse plays at the ledger's phase for its mode, and
+        with ``update_phases`` the ledger advances after every pulse. Load,
+        scramble and read share it, in time order.
 
-            cycle 0: swap_stors
-            cycle 1: reversed(swap_stors)
-            cycle 2: swap_stors
-            ...
+        - ``disorder_phase_offsets`` advances by the phase each detuning
+          (``cfg.expt.detunings``) builds up over the whole scramble.
+        - ``decoder_phase_offsets``, if given, advances by
+          ``decoder_phase_matrix`` after every pulse.
 
-        This keeps the number of pulses per floquet_cycle unchanged. With an
-        even floquet_cycle, each forward cycle has a reverse partner.
-        Otherwise it preserves the configured swap_stors order.
+        Settings from ``cfg.expt``: ``floquet_cycle``, ``detunings``,
+        ``update_phases``, ``scramble_sync_cycles``, and two ways to play:
 
-        Correct continuous sequence:
-
-            load dark mode
-                updates phase_offsets
-
-            scramble
-                emits pulses with current phase_offsets
-                updates the same phase_offsets after every pulse
-
-            read dark mode
-                consumes the final phase_offsets
-
-        Keeping this implementation on DarkBaseProgram makes the Floquet path
-        independent of the implementation details in sideband_scramble.py.
-        If ``decoder_phase_offsets`` is supplied, it is updated after every
-        physical Floquet pulse using ``decoder_phase_matrix``.
+        - ``floquet_hardware_loop``: one tProc loop over one cycle
+          (:meth:`_play_floquet_hardware_loop`);
+        - otherwise every pulse is emitted (:meth:`_play_floquet_software_loop`),
+          and ``palindrome_scramble`` plays every second cycle in reverse order.
         """
         ecfg = self.cfg.expt
         swap_stors = list(swap_stors)
-
-        if len(phase_offsets) != len(swap_stors):
-            raise ValueError(
-                f"phase_offsets length {len(phase_offsets)} does not match "
-                f"swap_stors length {len(swap_stors)}"
-            )
-        if decoder_phase_offsets is not None \
-                and len(decoder_phase_offsets) != len(swap_stors) + 1:
-            raise ValueError(
-                "decoder_phase_offsets must be ordered as "
-                "[M1 photon lowering, M1-S4, ...]"
-            )
-        raw_detunings = ecfg.get("detunings", None)
-        if raw_detunings is None or raw_detunings is False:
-            detunings = [0.0] * len(swap_stors)
-        else:
-            detunings = list(raw_detunings)
-            if len(detunings) == 0:
-                detunings = [0.0] * len(swap_stors)
-        if len(detunings) != len(swap_stors):
-            raise AssertionError(
-                "length of detunings doesn't match that of swap_stors"
-            )
-        detunings = [float(d) for d in detunings]
-
         if disorder_phase_offsets is None:
             disorder_phase_offsets = [0.0] * len(swap_stors)
-        if len(disorder_phase_offsets) != len(swap_stors):
-            raise ValueError(
-                f"disorder_phase_offsets length {len(disorder_phase_offsets)} "
-                f"does not match swap_stors length {len(swap_stors)}"
-            )
+        self._check_scramble_ledgers(phase_offsets, swap_stors,
+                                     disorder_phase_offsets, decoder_phase_offsets)
+        detunings = self._scramble_detunings(swap_stors)
 
         update_phases = ecfg.get("update_phases", True)
         scramble_sync_cycles = int(ecfg.get("scramble_sync_cycles", 10))
         palindrome_scramble = bool(ecfg.get("palindrome_scramble", False))
         floquet_hardware_loop = bool(ecfg.get("floquet_hardware_loop", False))
         floquet_cycle = int(ecfg.floquet_cycle)
-
         if floquet_cycle < 0:
             raise ValueError("floquet_cycle must be non-negative")
         if floquet_hardware_loop and palindrome_scramble:
@@ -323,24 +282,10 @@ class FloquetTrain:
                 "floquet_hardware_loop does not support palindrome_scramble"
             )
 
-        # Deep copy the calibrated Floquet pulse parameters before applying
-        # the per-storage detunings for this experiment.
-        all_pulse_args = []
-        for i_stor, stor in enumerate(swap_stors):
-            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
-            pulse_args["freq"] += self.freq2reg(
-                detunings[i_stor],
-                gen_ch=pulse_args["ch"],
-            )
-            all_pulse_args.append(pulse_args)
-
-        forward_sequence = list(range(len(swap_stors)))
-        reverse_sequence = list(reversed(forward_sequence))
-
+        all_pulse_args = self._detuned_floquet_pulse_args(swap_stors, detunings)
         scramble_elapsed_us = floquet_cycle * self.calculate_floquet_cycle_us(swap_stors)
 
         self.sync_all()
-
         if ecfg.get("debug", False):
             print("[DarkScramble] using shared phase_offsets for scramble")
             print("[DarkScramble] initial phase_offsets:", phase_offsets)
@@ -361,239 +306,14 @@ class FloquetTrain:
             print("[DarkScramble] pulse args:", all_pulse_args)
 
         if floquet_hardware_loop and floquet_cycle > 0 and swap_stors:
-            first_cycle_phases = [0.0] * len(swap_stors)
-            phase_offsets_after_cycle = list(phase_offsets)
-
-            # Later pulses include the shifts from earlier pulses in cycle 0.
-            for i_stor in forward_sequence:
-                stor = swap_stors[i_stor]
-                first_cycle_phases[i_stor] = self._mod360(
-                    phase_offsets_after_cycle[i_stor]
-                )
-                if update_phases:
-                    self._advance_phase_offsets(
-                        phase_offsets=phase_offsets_after_cycle,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
-
-            phase_step_per_cycle = [
-                self._mod360(phase_after - phase_before)
-                for phase_before, phase_after in zip(
-                    phase_offsets,
-                    phase_offsets_after_cycle,
-                )
-            ]
-
-            use_preloaded_register_bank = all(
-                self.m1s_waveform_mode[stor - 1] == "preload_flattop"
-                for stor in swap_stors
-            )
-            if use_preloaded_register_bank:
-                result = _prepare_preloaded_floquet_register_bank(
-                    self,
-                    all_pulse_args,
-                    first_cycle_phases,
-                    phase_step_per_cycle,
-                    reserved_registers=1,
-                )
-                register_bank, loop_page, loop_register = result
-            else:
-                phase_registers = []
-                next_register_by_page = {}
-                for pulse_args in all_pulse_args:
-                    ch = pulse_args["ch"]
-                    page = self.ch_page(ch)
-                    if page == 0:
-                        raise RuntimeError(
-                            "floquet_hardware_loop cannot use page 0 scratch "
-                            "registers"
-                        )
-
-                    phase_register = next_register_by_page.get(page, 1)
-                    phase_step_register = phase_register + 1
-                    next_register_by_page[page] = phase_step_register + 1
-                    phase_registers.append(
-                        (page, phase_register, phase_step_register)
-                    )
-
-                loop_page = phase_registers[0][0]
-                loop_register = next_register_by_page.get(loop_page, 1)
-                next_register_by_page[loop_page] = loop_register + 1
-
-                register_maps = list(self._gen_regmap.values()) + list(
-                    self._ro_regmap.values()
-                )
-                for page, next_register in next_register_by_page.items():
-                    first_special_register = min(
-                        register
-                        for register_page, register in register_maps
-                        if register_page == page and register > 0
-                    )
-                    if next_register > first_special_register:
-                        raise RuntimeError(
-                            "floquet_hardware_loop does not have enough "
-                            f"scratch registers on page {page}"
-                        )
-
-                for i_stor, pulse_args in enumerate(all_pulse_args):
-                    ch = pulse_args["ch"]
-                    gen_manager_name = self._gen_mgrs[ch].__class__.__name__
-                    if gen_manager_name != "FullSpeedGenManager":
-                        raise RuntimeError(
-                            "floquet_hardware_loop requires a full-speed "
-                            f"generator; channel {ch} uses {gen_manager_name}"
-                        )
-
-                    page, phase_register, phase_step_register = \
-                        phase_registers[i_stor]
-                    self.safe_regwi(
-                        page,
-                        phase_register,
-                        self.deg2reg(
-                            first_cycle_phases[i_stor], gen_ch=ch),
-                    )
-                    self.safe_regwi(
-                        page,
-                        phase_step_register,
-                        self.deg2reg(
-                            phase_step_per_cycle[i_stor], gen_ch=ch),
-                    )
-
-            self.safe_regwi(loop_page, loop_register, floquet_cycle - 1)
-
-            floquet_loop_number = getattr(self, "_floquet_loop_number", 0)
-            self._floquet_loop_number = floquet_loop_number + 1
-            floquet_loop_label = f"FLOQUET_LOOP_{floquet_loop_number}"
-
-            if not use_preloaded_register_bank:
-                # Configure the next legacy waveform while the current pulse
-                # is playing.  The setup margin remains unchanged.
-                first_pulse_args = all_pulse_args[forward_sequence[0]]
-                first_pulse_args["phase"] = 0
-                self.set_pulse_registers(**first_pulse_args)
-            self.label(floquet_loop_label)
-
-            for step_idx, i_stor in enumerate(forward_sequence):
-                stor = swap_stors[i_stor]
-                if ecfg.get("debug", False):
-                    print(
-                        f"[DarkScramble] hardware step={step_idx}, "
-                        f"stor={stor}, "
-                        f"first_phase_deg={first_cycle_phases[i_stor]:.3f}, "
-                        f"phase_step_deg={phase_step_per_cycle[i_stor]:.3f}"
-                    )
-
-                if use_preloaded_register_bank:
-                    entry = register_bank[i_stor]
-                    _play_preloaded_floquet_register_bank_entry(self, entry)
-                    self.math(
-                        entry["register_page"],
-                        entry["phase_register"],
-                        entry["phase_register"],
-                        "+",
-                        entry["phase_step_register"],
-                    )
-                else:
-                    pulse_args = all_pulse_args[i_stor]
-                    ch = pulse_args["ch"]
-                    page, phase_register, phase_step_register = \
-                        phase_registers[i_stor]
-                    self.mathi(
-                        page,
-                        self.sreg(ch, "phase"),
-                        phase_register,
-                        "+",
-                        0,
-                    )
-                    self.pulse(ch)
-                    self.math(
-                        page,
-                        phase_register,
-                        phase_register,
-                        "+",
-                        phase_step_register,
-                    )
-
-                    next_i_stor = forward_sequence[
-                        (step_idx + 1) % len(forward_sequence)
-                    ]
-                    next_pulse_args = all_pulse_args[next_i_stor]
-                    next_pulse_args["phase"] = 0
-                    self.set_pulse_registers(**next_pulse_args)
-                self.sync_all(scramble_sync_cycles)
-
-            self.loopnz(loop_page, loop_register, floquet_loop_label)
-
-            for i_stor in range(len(swap_stors)):
-                phase_offsets[i_stor] = self._mod360(
-                    phase_offsets[i_stor]
-                    + floquet_cycle * phase_step_per_cycle[i_stor]
-                )
-
-            if decoder_phase_offsets is not None:
-                for _ in range(floquet_cycle):
-                    for stor in swap_stors:
-                        self._advance_decoder_phase_offsets(
-                            decoder_phase_offsets=decoder_phase_offsets,
-                            swap_stors=swap_stors,
-                            pulsed_stor=stor,
-                        )
+            self._play_floquet_hardware_loop(
+                all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
+                update_phases, scramble_sync_cycles, decoder_phase_offsets)
         else:
-            # Keep pulse settings in registers; only write each Python-computed phase.
-            register_bank = {}
-            preloaded_indices = [i for i, stor in enumerate(swap_stors)
-                                 if self.m1s_waveform_mode[stor - 1] == "preload_flattop"]
-            if floquet_cycle > 0 and preloaded_indices:
-                bank, _, _ = _prepare_preloaded_floquet_register_bank(
-                    self, [all_pulse_args[i] for i in preloaded_indices],
-                    [0.0] * len(preloaded_indices), [0.0] * len(preloaded_indices))
-                register_bank = dict(zip(preloaded_indices, bank))
-
-            for kk in range(floquet_cycle):
-                if palindrome_scramble and kk % 2:
-                    cycle_sequence = reverse_sequence
-                else:
-                    cycle_sequence = forward_sequence
-
-                for step_idx, i_stor in enumerate(cycle_sequence):
-                    stor = swap_stors[i_stor]
-                    pulse_args = all_pulse_args[i_stor]
-
-                    phase_deg = self._mod360(phase_offsets[i_stor])
-                    pulse_args["phase"] = self.deg2reg(
-                        phase_deg,
-                        gen_ch=pulse_args["ch"],
-                    )
-
-                    if ecfg.get("debug", False) and kk == 0:
-                        print(
-                            f"[DarkScramble] cycle={kk}, step={step_idx}, "
-                            f"stor={stor}, phase_deg={phase_deg:.3f}, "
-                            f"stark_phase={phase_offsets[i_stor]:.3f}"
-                        )
-
-                    if i_stor in register_bank:
-                        entry = register_bank[i_stor]
-                        self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
-                        _play_preloaded_floquet_register_bank_entry(self, entry)
-                    else:
-                        self.setup_and_pulse(**pulse_args)
-                    self.sync_all(scramble_sync_cycles)
-
-                    if decoder_phase_offsets is not None:
-                        self._advance_decoder_phase_offsets(
-                            decoder_phase_offsets=decoder_phase_offsets,
-                            swap_stors=swap_stors,
-                            pulsed_stor=stor,
-                        )
-
-                    if update_phases:
-                        self._advance_phase_offsets(
-                            phase_offsets=phase_offsets,
-                            swap_stors=swap_stors,
-                            pulsed_stor=stor,
-                        )
+            self._play_floquet_software_loop(
+                all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
+                update_phases, scramble_sync_cycles, palindrome_scramble,
+                decoder_phase_offsets)
 
         for j_stor, detuning_MHz in enumerate(detunings):
             disorder_phase_offsets[j_stor] = self._mod360(
@@ -606,6 +326,327 @@ class FloquetTrain:
             print("[DarkScramble] final disorder_phase_offsets:", disorder_phase_offsets)
 
         self.sync_all()
+
+    @staticmethod
+    def _check_scramble_ledgers(phase_offsets, swap_stors,
+                                disorder_phase_offsets, decoder_phase_offsets):
+        """Each ledger has one entry per mode (decoder: one more, for M1)."""
+        if len(phase_offsets) != len(swap_stors):
+            raise ValueError(
+                f"phase_offsets length {len(phase_offsets)} does not match "
+                f"swap_stors length {len(swap_stors)}"
+            )
+        if decoder_phase_offsets is not None \
+                and len(decoder_phase_offsets) != len(swap_stors) + 1:
+            raise ValueError(
+                "decoder_phase_offsets must be ordered as "
+                "[M1 photon lowering, M1-S4, ...]"
+            )
+        if len(disorder_phase_offsets) != len(swap_stors):
+            raise ValueError(
+                f"disorder_phase_offsets length {len(disorder_phase_offsets)} "
+                f"does not match swap_stors length {len(swap_stors)}"
+            )
+
+    def _scramble_detunings(self, swap_stors):
+        """-> ``cfg.expt.detunings`` in MHz, one per mode; zeros if unset."""
+        raw_detunings = self.cfg.expt.get("detunings", None)
+        if raw_detunings is None or raw_detunings is False \
+                or len(raw_detunings) == 0:
+            return [0.0] * len(swap_stors)
+        if len(raw_detunings) != len(swap_stors):
+            raise AssertionError(
+                "length of detunings doesn't match that of swap_stors"
+            )
+        return [float(d) for d in raw_detunings]
+
+    def _detuned_floquet_pulse_args(self, swap_stors, detunings):
+        """-> copies of the calibrated pulse arguments, with the detunings added."""
+        all_pulse_args = []
+        for stor, detuning_MHz in zip(swap_stors, detunings):
+            pulse_args = deepcopy(self.m1s_kwargs[stor - 1])
+            pulse_args["freq"] += self.freq2reg(
+                detuning_MHz,
+                gen_ch=pulse_args["ch"],
+            )
+            all_pulse_args.append(pulse_args)
+        return all_pulse_args
+
+    def _play_floquet_software_loop(
+            self, all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
+            update_phases, scramble_sync_cycles, palindrome_scramble,
+            decoder_phase_offsets):
+        """Emit every pulse of every cycle, each at the ledger's phase.
+
+        Preloaded modes keep their pulse settings in a register bank, so each
+        pulse writes only its phase; the other modes use ``setup_and_pulse``.
+        """
+        ecfg = self.cfg.expt
+        forward_sequence = list(range(len(swap_stors)))
+        reverse_sequence = list(reversed(forward_sequence))
+
+        register_bank = {}
+        preloaded_indices = [i for i, stor in enumerate(swap_stors)
+                             if self.m1s_waveform_mode[stor - 1] == "preload_flattop"]
+        if floquet_cycle > 0 and preloaded_indices:
+            bank, _, _ = _prepare_preloaded_floquet_register_bank(
+                self, [all_pulse_args[i] for i in preloaded_indices],
+                [0.0] * len(preloaded_indices), [0.0] * len(preloaded_indices))
+            register_bank = dict(zip(preloaded_indices, bank))
+
+        for kk in range(floquet_cycle):
+            if palindrome_scramble and kk % 2:
+                cycle_sequence = reverse_sequence
+            else:
+                cycle_sequence = forward_sequence
+
+            for step_idx, i_stor in enumerate(cycle_sequence):
+                stor = swap_stors[i_stor]
+                pulse_args = all_pulse_args[i_stor]
+
+                phase_deg = self._mod360(phase_offsets[i_stor])
+                pulse_args["phase"] = self.deg2reg(
+                    phase_deg,
+                    gen_ch=pulse_args["ch"],
+                )
+
+                if ecfg.get("debug", False) and kk == 0:
+                    print(
+                        f"[DarkScramble] cycle={kk}, step={step_idx}, "
+                        f"stor={stor}, phase_deg={phase_deg:.3f}, "
+                        f"stark_phase={phase_offsets[i_stor]:.3f}"
+                    )
+
+                if i_stor in register_bank:
+                    entry = register_bank[i_stor]
+                    self.safe_regwi(entry["register_page"], entry["phase_register"], pulse_args["phase"])
+                    _play_preloaded_floquet_register_bank_entry(self, entry)
+                else:
+                    self.setup_and_pulse(**pulse_args)
+                self.sync_all(scramble_sync_cycles)
+
+                if decoder_phase_offsets is not None:
+                    self._advance_decoder_phase_offsets(
+                        decoder_phase_offsets=decoder_phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+                if update_phases:
+                    self._advance_phase_offsets(
+                        phase_offsets=phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
+
+    def _floquet_cycle_phases(self, phase_offsets, swap_stors, update_phases):
+        """-> (phase of each pulse in cycle 0, phase step per cycle), in degrees.
+
+        Later pulses of cycle 0 include the shifts from earlier pulses. The
+        ledger itself is not changed. The step is the same for every cycle,
+        which is what lets one tProc loop play them all.
+        """
+        first_cycle_phases = [0.0] * len(swap_stors)
+        phase_offsets_after_cycle = list(phase_offsets)
+        for i_stor, stor in enumerate(swap_stors):
+            first_cycle_phases[i_stor] = self._mod360(
+                phase_offsets_after_cycle[i_stor]
+            )
+            if update_phases:
+                self._advance_phase_offsets(
+                    phase_offsets=phase_offsets_after_cycle,
+                    swap_stors=swap_stors,
+                    pulsed_stor=stor,
+                )
+
+        phase_step_per_cycle = [
+            self._mod360(phase_after - phase_before)
+            for phase_before, phase_after in zip(
+                phase_offsets,
+                phase_offsets_after_cycle,
+            )
+        ]
+        return first_cycle_phases, phase_step_per_cycle
+
+    def _write_floquet_phase_registers(self, all_pulse_args, first_cycle_phases,
+                                       phase_step_per_cycle):
+        """Give each pulse a phase and a phase-step register, and write them.
+
+        For modes that are not preloaded. Registers are taken from 1 up on
+        each channel's page, below the page's first register that qick uses.
+        -> (``[(page, phase_register, phase_step_register)]`` per pulse,
+        loop page, loop register).
+        """
+        phase_registers = []
+        next_register_by_page = {}
+        for pulse_args in all_pulse_args:
+            ch = pulse_args["ch"]
+            page = self.ch_page(ch)
+            if page == 0:
+                raise RuntimeError(
+                    "floquet_hardware_loop cannot use page 0 scratch "
+                    "registers"
+                )
+
+            phase_register = next_register_by_page.get(page, 1)
+            phase_step_register = phase_register + 1
+            next_register_by_page[page] = phase_step_register + 1
+            phase_registers.append(
+                (page, phase_register, phase_step_register)
+            )
+
+        loop_page = phase_registers[0][0]
+        loop_register = next_register_by_page.get(loop_page, 1)
+        next_register_by_page[loop_page] = loop_register + 1
+
+        register_maps = list(self._gen_regmap.values()) + list(
+            self._ro_regmap.values()
+        )
+        for page, next_register in next_register_by_page.items():
+            first_special_register = min(
+                register
+                for register_page, register in register_maps
+                if register_page == page and register > 0
+            )
+            if next_register > first_special_register:
+                raise RuntimeError(
+                    "floquet_hardware_loop does not have enough "
+                    f"scratch registers on page {page}"
+                )
+
+        for i_stor, pulse_args in enumerate(all_pulse_args):
+            ch = pulse_args["ch"]
+            gen_manager_name = self._gen_mgrs[ch].__class__.__name__
+            if gen_manager_name != "FullSpeedGenManager":
+                raise RuntimeError(
+                    "floquet_hardware_loop requires a full-speed "
+                    f"generator; channel {ch} uses {gen_manager_name}"
+                )
+
+            page, phase_register, phase_step_register = \
+                phase_registers[i_stor]
+            self.safe_regwi(
+                page,
+                phase_register,
+                self.deg2reg(
+                    first_cycle_phases[i_stor], gen_ch=ch),
+            )
+            self.safe_regwi(
+                page,
+                phase_step_register,
+                self.deg2reg(
+                    phase_step_per_cycle[i_stor], gen_ch=ch),
+            )
+        return phase_registers, loop_page, loop_register
+
+    def _play_floquet_hardware_loop(
+            self, all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
+            update_phases, scramble_sync_cycles, decoder_phase_offsets):
+        """Play one cycle inside a tProc ``loopnz``, for depths the
+        instruction memory cannot hold unrolled.
+
+        The phases live in tProc registers: cycle 0's phase per pulse, plus
+        a constant step added after each pulse. After the loop the Python
+        ledgers advance by ``floquet_cycle`` steps, so they end where the
+        software loop would leave them.
+        """
+        ecfg = self.cfg.expt
+        first_cycle_phases, phase_step_per_cycle = self._floquet_cycle_phases(
+            phase_offsets, swap_stors, update_phases)
+
+        use_preloaded_register_bank = all(
+            self.m1s_waveform_mode[stor - 1] == "preload_flattop"
+            for stor in swap_stors
+        )
+        if use_preloaded_register_bank:
+            register_bank, loop_page, loop_register = \
+                _prepare_preloaded_floquet_register_bank(
+                    self,
+                    all_pulse_args,
+                    first_cycle_phases,
+                    phase_step_per_cycle,
+                    reserved_registers=1,
+                )
+        else:
+            phase_registers, loop_page, loop_register = \
+                self._write_floquet_phase_registers(
+                    all_pulse_args, first_cycle_phases, phase_step_per_cycle)
+
+        self.safe_regwi(loop_page, loop_register, floquet_cycle - 1)
+
+        floquet_loop_number = getattr(self, "_floquet_loop_number", 0)
+        self._floquet_loop_number = floquet_loop_number + 1
+        floquet_loop_label = f"FLOQUET_LOOP_{floquet_loop_number}"
+
+        if not use_preloaded_register_bank:
+            # Configure the next legacy waveform while the current pulse
+            # is playing.  The setup margin remains unchanged.
+            first_pulse_args = all_pulse_args[0]
+            first_pulse_args["phase"] = 0
+            self.set_pulse_registers(**first_pulse_args)
+        self.label(floquet_loop_label)
+
+        for i_stor, stor in enumerate(swap_stors):
+            if ecfg.get("debug", False):
+                print(
+                    f"[DarkScramble] hardware step={i_stor}, "
+                    f"stor={stor}, "
+                    f"first_phase_deg={first_cycle_phases[i_stor]:.3f}, "
+                    f"phase_step_deg={phase_step_per_cycle[i_stor]:.3f}"
+                )
+
+            if use_preloaded_register_bank:
+                entry = register_bank[i_stor]
+                _play_preloaded_floquet_register_bank_entry(self, entry)
+                self.math(
+                    entry["register_page"],
+                    entry["phase_register"],
+                    entry["phase_register"],
+                    "+",
+                    entry["phase_step_register"],
+                )
+            else:
+                pulse_args = all_pulse_args[i_stor]
+                ch = pulse_args["ch"]
+                page, phase_register, phase_step_register = \
+                    phase_registers[i_stor]
+                self.mathi(
+                    page,
+                    self.sreg(ch, "phase"),
+                    phase_register,
+                    "+",
+                    0,
+                )
+                self.pulse(ch)
+                self.math(
+                    page,
+                    phase_register,
+                    phase_register,
+                    "+",
+                    phase_step_register,
+                )
+
+                next_pulse_args = all_pulse_args[(i_stor + 1) % len(swap_stors)]
+                next_pulse_args["phase"] = 0
+                self.set_pulse_registers(**next_pulse_args)
+            self.sync_all(scramble_sync_cycles)
+
+        self.loopnz(loop_page, loop_register, floquet_loop_label)
+
+        for i_stor in range(len(swap_stors)):
+            phase_offsets[i_stor] = self._mod360(
+                phase_offsets[i_stor]
+                + floquet_cycle * phase_step_per_cycle[i_stor]
+            )
+
+        if decoder_phase_offsets is not None:
+            for _ in range(floquet_cycle):
+                for stor in swap_stors:
+                    self._advance_decoder_phase_offsets(
+                        decoder_phase_offsets=decoder_phase_offsets,
+                        swap_stors=swap_stors,
+                        pulsed_stor=stor,
+                    )
 
     def _play_m1s_frac_train(
         self,

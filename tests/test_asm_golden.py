@@ -20,7 +20,7 @@ KEYS = sorted(p.name[: -len(".txt.gz")]
 
 # Pinned so a config set or product disappearing fails loudly instead of
 # silently shrinking the checked surface to nothing.
-EXPECTED_KEY_COUNT = 16
+EXPECTED_KEY_COUNT = 20
 
 
 def test_every_pinned_program_is_covered():
