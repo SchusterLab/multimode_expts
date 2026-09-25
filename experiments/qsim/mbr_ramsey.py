@@ -46,9 +46,7 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
     """Many-body Ramsey sequence: encode, evolve, decode, analyze.
 
     The shared base of the MBR job programs (docs/qsim/mbr_redesign.md,
-    section 3). Moved without changes from
-    ``NPhotonHamiltonianSpectroscopyProgram``, which is now an empty subclass
-    kept for the old jobs.
+    section 3).
 
     ``spectroscopy_prep_phase`` is theta on the first qubit half-pi pulse, and
     ``spectroscopy_analyzer_phase`` is phi on the final qubit half-pi pulse.
@@ -57,23 +55,19 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
     therefore the complex return is ``A = Q_0 - i Q_90``.
     A complete fixed-N basis is summed in the notebook.
 
-    ``decoder_phase_matrix[row, column]`` tracks decoder control axes. Row 0
-    is the common f_n-g_(n+1) axis. The remaining rows are the M1-storage
-    decoder axes in ``swap_stors`` order. Columns are the physical Floquet
-    pulses, also in ``swap_stors`` order.
+    The AC Stark phase that the Floquet train builds up is removed on the
+    final qubit half-pi: its phase is shifted by
+    ``-floquet_cycle * final_analyzer_phase_per_cycle_deg``, the per-cycle
+    phase of the decoded occupation from the StarkCal calibration set
+    (``spectroscopy_phase_correction_mode='final_analyzer'``, the only mode).
 
-    Every played Floquet pulse advances all measured decoder-axis slopes.
-    During decoding the accumulated M1 slope is subtracted from every inverse
-    f_n-g_(n+1) pulse.  The storage rows are defined as
-    ``mode_path_storage - mode_path_M1`` and are added to the inverse
-    M1-storage pulses because those pulse phases enter the recovered return
-    amplitude with the opposite sign.
-
-    ``spectroscopy_phase_correction_mode='decoder'`` keeps this original
-    decoder-pulse correction.  ``'final_analyzer'`` skips the decoder matrix
-    and subtracts
-    ``floquet_cycle * final_analyzer_phase_per_cycle_deg`` from the final
-    qubit half-pi instead.
+    Until step 8A4 there was also a ``'decoder'`` mode: a per-pulse phase
+    correction of the decoder from a measured ``decoder_phase_matrix``, and a
+    ``storage_phase_matrix`` for the encoder/decoder storage swaps. Kerr
+    makes that per-pulse frame differ from the final-half-pi one (a gauge
+    issue), and the final half-pi method replaced it (guan, 2026-09-25). Old
+    jobs taken in ``'decoder'`` mode still load and analyze; the analysis
+    reads the mode from the saved config.
     """
 
     # The active reset plays this man reset, not MM_base's. The MBR jobs
@@ -216,44 +210,18 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
         return pulses_with_wait
 
     def initialize(self):
-        """
-        The primary purpose of overriding `initialize` method is for the initialization of phase calibration matrix.
-        For now, `storage_phase_matrix` is not really being used, as the phase accumulating during floquet cycle matters.
-        There are two mode of calibration:  `decoder` and `final_analyzer`
-        1. `decoder`
-        - uses `decoder_phase_matrix` for the calibration of ac stark shift on every sideband transition including fn_gn+1.
-        2. `final_analyzer`
-        - uses `expt.cfg.final_analyzer_phase_per_cycle_deg` at the final hpi to calibrate ac stark shift out collectively.
-        """
-        
+        """Check the job settings, build the encoder and decoder pulse lists,
+        and set up the Floquet pulses."""
         ecfg = self.cfg.expt
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
         if len(set(swap_stors)) != len(swap_stors):
             raise ValueError(f"swap_stors must be distinct; got {swap_stors}")
         if any(stor < 1 or stor > 7 for stor in swap_stors):
             raise ValueError(f"swap_stors entries must be in 1..7; got {swap_stors}")
-
-        matrix_shape = (len(swap_stors), len(swap_stors))
-        storage_phase_matrix = ecfg.get("storage_phase_matrix", None)
-        if storage_phase_matrix is not None:
-            storage_phase_matrix = np.asarray(
-                storage_phase_matrix, dtype=float)
-            if storage_phase_matrix.shape != matrix_shape:
-                raise ValueError(f"storage_phase_matrix must have shape {matrix_shape}; got {storage_phase_matrix.shape}")
-            ecfg.storage_phase_matrix = storage_phase_matrix
-
-        decoder_matrix_shape = (len(swap_stors) + 1,len(swap_stors),)
-        
-        decoder_phase_matrix = ecfg.get("decoder_phase_matrix", None)
-        self.decoder_phase_matrix_is_calibrated = decoder_phase_matrix is not None
-
-        if decoder_phase_matrix is None:
-            self.decoder_phase_matrix = np.zeros(decoder_matrix_shape)
-        else:
-            decoder_phase_matrix = np.asarray(decoder_phase_matrix,dtype=float,)
-            if decoder_phase_matrix.shape != decoder_matrix_shape:
-                raise ValueError(f"decoder_phase_matrix must have shape {decoder_matrix_shape}; got {decoder_phase_matrix.shape}")
-            self.decoder_phase_matrix = decoder_phase_matrix.copy()
+        for key in ("decoder_phase_matrix", "storage_phase_matrix"):
+            if ecfg.get(key, None) is not None:
+                raise ValueError(f"{key} is no longer used: the AC Stark phase is removed on the final half-pi "
+                                 "(final_analyzer_phase_per_cycle_deg)")
 
         if "spectroscopy_occupations" in ecfg:
             occupations = list(ecfg.spectroscopy_occupations)
@@ -333,9 +301,10 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
         analyzer_phase = float(ecfg.get("spectroscopy_analyzer_phase", 0.0))
-        phase_correction_mode = str(ecfg.get("spectroscopy_phase_correction_mode", "decoder"))
-        if phase_correction_mode not in ("decoder", "final_analyzer"):
-            raise ValueError("spectroscopy_phase_correction_mode must be 'decoder' or 'final_analyzer'")
+        phase_correction_mode = str(ecfg.get("spectroscopy_phase_correction_mode", "final_analyzer"))
+        if phase_correction_mode != "final_analyzer":
+            raise ValueError("spectroscopy_phase_correction_mode must be 'final_analyzer'; "
+                             "the 'decoder' mode was removed in MBR redesign step 8A4")
 
         ecfg.spectroscopy_occupations = occupations
         ecfg.spectroscopy_final_occupations = final_occupations
@@ -351,7 +320,6 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
         self.MM_base_initialize()
         self.swap_ds = self.cfg.device.storage._ds_floquet
         self.retrieve_swap_parameters()
-        self.storage_phase_matrix = ecfg.get("storage_phase_matrix", None)
         self.man_mode_idx = ecfg.get("man_mode_no", 1) - 1
         self._initialize_floquet_pulses()
         self.sync_all(200)
@@ -360,9 +328,6 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
         ecfg = self.cfg.expt
         cfg = AttrDict(self.cfg)
         swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        phase_correction_mode = ecfg.spectroscopy_phase_correction_mode
-        update_decoder_phases = (ecfg.get("update_phases", True) and phase_correction_mode == "decoder")
-        storage_phase_offsets = [0.0] * len(swap_stors)
         phase_offsets = [0.0] * len(swap_stors)
         disorder_phase_offsets = [0.0] * len(swap_stors)
 
@@ -376,68 +341,35 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
 
         # (|g,0> + exp(i theta)|e,0>) / sqrt(2) ->
         # (|g,0> + exp(i theta)|g,n>) / sqrt(2)
-        encoder_pulses = deepcopy(self.encoder_pulses)
-        for pulse in encoder_pulses:
-            if pulse[0] != "storage":
-                continue
-
-            stor = self._storage_mode_from_pulse_name(pulse[1])
-            stor_index = swap_stors.index(stor)
-            pulse[3] = self._mod360(pulse[3] + storage_phase_offsets[stor_index])
-            self._advance_storage_phase_offsets(phase_offsets=storage_phase_offsets,swap_stors=swap_stors,pulsed_stor=stor)
-
-        prepulse_cfg = [["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],] + encoder_pulses
+        prepulse_cfg = [["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],] + deepcopy(self.encoder_pulses)
         prepulse_cfg = self._add_wait_after_storage_pulses(prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
         self.sync_all()
         self.custom_pulse(cfg, prepulse.pulse, prefix="floquet_spec_pre_")
         self.sync_all()
 
-        decoder_phase_deg = [0.0] * (len(swap_stors) + 1)
-        if update_decoder_phases and not self.decoder_phase_matrix_is_calibrated:
-            raise RuntimeError("decoder_phase_matrix is missing. Run the exact-path Floquet phase calibration before spectroscopy.")
-
-        # U(t)|n>. Each physical Floquet pulse advances the measured decoder
-        # phase slopes in decoder_phase_deg. The inverse decoder later uses
-        # the opposite sign to cancel those slopes.
+        # U(t)|n>. The Floquet train tracks its own pulse phases in
+        # phase_offsets; the detunings leave their phase in
+        # disorder_phase_offsets.
         self._play_scramble_with_phase_offsets(
             phase_offsets=phase_offsets,
             swap_stors=swap_stors,
             disorder_phase_offsets=disorder_phase_offsets,
-            decoder_phase_offsets=(decoder_phase_deg if update_decoder_phases else None),
         )
 
-        # Decode |n> to |e,0>, then interfere it with |g,0>.
+        # Decode |n> to |e,0>, then interfere it with |g,0>. Each inverse
+        # storage swap carries the phase its mode's detuning built up.
         postpulse_cfg = self._get_inverse_pulses(self.decoder_encoder_pulses)
         for pulse in postpulse_cfg:
-            # Every f_n-g_(n+1) pulse transfers one M1 photon, so all n use
-            # the same M1-frame correction. N ladder steps then give N times
-            # that phase without an explicit photon-number multiplier.
-            if pulse[0] == "multiphoton" and pulse[1].startswith("f") and "-g" in pulse[1]:
-                pulse[3] = self._mod360(pulse[3] - decoder_phase_deg[0])
+            if pulse[0] == "storage":
+                stor_index = swap_stors.index(self._storage_mode_from_pulse_name(pulse[1]))
+                pulse[3] = self._mod360(pulse[3] + disorder_phase_offsets[stor_index])
 
-            elif pulse[0] == "storage":
-                stor = self._storage_mode_from_pulse_name(pulse[1])
-                stor_index = swap_stors.index(stor)
-                pulse[3] = self._mod360(
-                    pulse[3]
-                    + storage_phase_offsets[stor_index]
-                    + decoder_phase_deg[stor_index + 1]
-                    + disorder_phase_offsets[stor_index]
-                )
-                self._advance_storage_phase_offsets(
-                    phase_offsets=storage_phase_offsets,
-                    swap_stors=swap_stors,
-                    pulsed_stor=stor,
-                )
-
-        analyzer_phase = float(ecfg.spectroscopy_analyzer_phase)
-        if phase_correction_mode == "final_analyzer":
-            # Q_phi = Re[A exp(+i phi)], so a measured +Gamma phase is
-            # removed by shifting the final analyzer by -Gamma.
-            analyzer_phase -= (int(ecfg.floquet_cycle)* float(ecfg.final_analyzer_phase_per_cycle_deg))
-
-        postpulse_cfg.append(["qubit", "ge", "hpi",self._mod360(analyzer_phase),])
+        # Q_phi = Re[A exp(+i phi)], so a measured +Gamma phase is
+        # removed by shifting the final analyzer by -Gamma.
+        analyzer_phase = (float(ecfg.spectroscopy_analyzer_phase)
+                          - int(ecfg.floquet_cycle) * float(ecfg.final_analyzer_phase_per_cycle_deg))
+        postpulse_cfg.append(["qubit", "ge", "hpi", self._mod360(analyzer_phase),])
         postpulse_cfg = self._add_wait_after_storage_pulses(postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()

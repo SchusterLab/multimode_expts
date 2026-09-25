@@ -72,8 +72,6 @@ from numpy.lib.stride_tricks import sliding_window_view
 # defining module exports, so the second write is idempotent.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "experiments.qsim.dark_mode_broadband_ge_validation",
-    "EncodingStarkShiftCalibrationProgram": "experiments.qsim.floquet_phase_calibration",
-    "FloquetPhaseAccumulationProgram": "experiments.qsim.floquet_phase_calibration",
     "SidebandScrambleDarkProgramNewNew": "experiments.qsim.mbr_spectroscopy_program",
     "SinglePhotonFloquetSpectroscopyProgram":
         "experiments.qsim.deprecated.single_photon_spectroscopy",

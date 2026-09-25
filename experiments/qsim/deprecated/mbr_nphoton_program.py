@@ -7,6 +7,10 @@ use `MBRTimeTraceProgram`. See `docs/qsim/mbr_step7_plan.md`.
 
 Not maintained; may break when live code changes. If it breaks, add a note here
 and do not fix it.
+
+2026-09-25 (step 8A4): `MBRRamseyProgram` now refuses the 'decoder'
+phase-correction mode (which was the default when the key was unset) and any
+`decoder_phase_matrix`. Old job configs that use them no longer compile here.
 """
 from experiments.qsim.mbr_ramsey import MBRRamseyProgram
 

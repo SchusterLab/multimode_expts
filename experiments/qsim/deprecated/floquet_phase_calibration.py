@@ -1,5 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Floquet phase calibrations measured one pulse column at a time.
+"""Floquet phase calibrations measured one pulse column at a time -- DEPRECATED.
+
+Moved from `experiments/qsim/floquet_phase_calibration.py` on 2026-09-25 (MBR
+redesign step 8A4), without changes. These programs measured the per-pulse
+`decoder_phase_matrix` for the old `'decoder'` phase-correction mode. That mode
+is removed: the AC Stark phase is now removed on the final half-pi, calibrated
+by `MBRStarkCalExperiment` (guan, 2026-09-25; see
+`docs/qsim/mbr_step8_plan.md`). The paragraph below, which says they feed the
+live MBR stages, is from before that change.
+
+Broken since the move: `MBRRamseyProgram` no longer sets
+`storage_phase_matrix`, which `_advance_storage_phase_offsets` reads. Not
+maintained; do not fix.
+
 
 Both programs measure a *repeatable diagonal phase* -- the phase a mode
 acquires when the Floquet drive is applied and then undone, so the intended

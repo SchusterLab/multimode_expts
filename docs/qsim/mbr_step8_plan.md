@@ -1,6 +1,6 @@
 # MBR redesign, step 8 plan: a usable MBR surface
 
-Status: approved by guan 2026-09-25 (order A, B, D, C). 8A in progress. It uses
+Status: approved by guan 2026-09-25 (order A, B, D, C). 8A done (8A1-8A4); 8B next. It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 
 ## 0. Goal and scope (guan, 2026-09-25)
@@ -77,7 +77,12 @@ hardware loop or the `decoder` mode.
 3. **8A3, small fixes.** Correct the docstrings; `mbr_defaults` agrees with the jobs on
    `floquet_hardware_loop`.
 
-8A does not remove the unused options (section 2). That is question 4.1.
+4. **8A4, the old phase correction out** (decision 4.1). `MBRRamseyProgram` removes the AC
+   Stark phase only on the final half-pi. It refuses `'decoder'` mode, `decoder_phase_matrix`
+   and `storage_phase_matrix`. `FloquetTrain` loses `decoder_phase_offsets`.
+   `floquet_phase_calibration.py` (the programs that measured the matrix) moves to
+   `deprecated/`. Palindrome stays. Net: ASM golden byte-identical; a test that the removed
+   options are refused.
 
 Found in 8A (for the `notebook_helpers` cleanup): `notebook_helpers/mbr_campaign.build_campaign`
 has its own copy of the MBR defaults. It duplicates `mbr_campaign.mbr_defaults` (whose docstring
@@ -89,12 +94,16 @@ pinned configs, both compile to the same program). `test_pulse_layer_layout.py` 
 
 ## 4. Questions
 
-1. (guan) Remove the options that no canonical job uses (`decoder` mode and
-   `decoder_phase_matrix`, `palindrome_scramble`, `storage_phase_matrix`, the hardware loop)
-   from the MBR path? The deprecated `NPhotonHamiltonianSpectroscopyProgram` then stops
-   working (decision 7-1: moved code is not maintained). Proposal: yes, after 8A.
-2. (guan) Remove `analyze_sff` and `display_sff` from `MBRSpectrumExperiment`, to agree with
-   decision 7-3? Proposal: yes, in 8B.
+1. **Decided (guan, 2026-09-25).** The `'decoder'` mode and `storage_phase_matrix` are from
+   the per-pulse AC Stark frame tracking. With Kerr, that frame and the final-half-pi frame
+   differ by a gauge. We chose the final half-pi because it was easier than fixing the
+   per-pulse one. So they go to `deprecated/` (done in 8A4). **Palindrome stays**: it is a
+   symmetric (second-order) Trotter step, and MBR's free evolution is a Trotter train. The
+   hardware loop stays in `FloquetTrain` (dark-mode code uses it).
+2. **Decided (guan, 2026-09-25): keep SFF.** `MBRSpectrumExperiment.analyze_sff` is
+   |sum_n A_n(t) / D|^2 over the complete fixed-N basis. That is the direct measurement; the
+   spectrum is its FFT. Decision 7-3 was about the other SFF, the disorder-ensemble
+   `DisorderSFFExperiment`. 8B makes `analyze_sff` readable.
 3. (guan, jonginn) 8C, the canonical analysis notebook. Proposal: keep load manifest ->
    `analyze` -> `display` for the calibration set, the spectrum and disorder, and the self-Kerr
    fit as a class method. Move out the N=2 raw reprocessing, the FFT / peak-finder / MPM

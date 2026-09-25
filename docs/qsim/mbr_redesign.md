@@ -60,6 +60,8 @@ Notes:
   programs that are replaced.
 - Out of scope: the Floquet calibration programs in `floquet_phase_calibration.py`,
   and all programs outside MBR.
+  (Step 8A4, 2026-09-25: `floquet_phase_calibration.py` moved to `deprecated/` with the
+  'decoder' mode it calibrated; see `mbr_step8_plan.md`.)
 
 ## 4. Runner
 

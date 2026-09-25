@@ -245,3 +245,23 @@ def test_recorded_timing_agrees_with_the_archive_resolver(station, tmp_path):
     assert resolved["floquet_cycle_us"] == pytest.approx(
         recorded["floquet_cycle_us"], rel=1e-12), set_name
     assert list(resolved["m1s_pi_fracs"]) == list(recorded["m1s_pi_fracs"])
+
+
+@pytest.mark.parametrize("override", [
+    {"spectroscopy_phase_correction_mode": "decoder"},
+    {"decoder_phase_matrix": np.zeros((5, 4)).tolist()},
+    {"storage_phase_matrix": np.zeros((4, 4)).tolist()},
+])
+def test_removed_phase_corrections_are_refused(products, override):
+    """Step 8A4 removed the per-pulse 'decoder' correction and its matrices.
+
+    A config that still carries one must fail to compile, not compile a
+    program that silently ignores the correction it asks for.
+    """
+    from copy import deepcopy
+
+    expt = products["time_trace"].children[0]
+    cfg = deepcopy(expt.cfg)
+    cfg.expt.update(override)
+    with pytest.raises(ValueError, match="decoder|no longer used"):
+        expt.ProgramClass(soccfg=expt.soccfg, cfg=cfg)

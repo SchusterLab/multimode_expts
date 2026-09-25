@@ -30,9 +30,9 @@ the end, which is only equal to the unrolled result because the step is
 constant -- which is why it refuses ``palindrome_scramble``.
 
 Requirements on the host program: ``m1s_kwargs``, ``m1s_waveform_mode``,
-``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``, ``swap_ds``,
-``storage_phase_matrix``, ``decoder_phase_matrix``, and the qick program
-methods.
+``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``, ``swap_ds``, and the qick
+program methods; ``storage_phase_matrix`` too, for
+``_advance_storage_phase_offsets`` (dark-mode programs only).
 """
 from copy import deepcopy
 
@@ -92,8 +92,6 @@ class FloquetTrain:
 
             phase[stor_B] += get_phase_from("M1-S{stor_B}", "M1-S{pulsed_stor}")
 
-        The separate decoder_phase_matrix is directional and must never be
-        used here. It is applied only to the decoder storage swaps and f0g1.
         """
         advance_floquet_offsets(
             phase_offsets=phase_offsets,
@@ -226,21 +224,11 @@ class FloquetTrain:
             pulsed_column=swap_stors.index(pulsed_stor),
         )
 
-    def _advance_decoder_phase_offsets(
-            self, decoder_phase_offsets, swap_stors, pulsed_stor):
-        """Advance every decoder axis after one physical Floquet pulse."""
-        advance_matrix_offsets(
-            offsets=decoder_phase_offsets,
-            matrix=self.decoder_phase_matrix,
-            pulsed_column=swap_stors.index(pulsed_stor),
-        )
-
     def _play_scramble_with_phase_offsets(
         self,
         phase_offsets,
         swap_stors,
         disorder_phase_offsets=None,
-        decoder_phase_offsets=None,
     ):
         """Play ``floquet_cycle`` cycles of the ordered Floquet train.
 
@@ -249,10 +237,8 @@ class FloquetTrain:
         with ``update_phases`` the ledger advances after every pulse. Load,
         scramble and read share it, in time order.
 
-        - ``disorder_phase_offsets`` advances by the phase each detuning
-          (``cfg.expt.detunings``) builds up over the whole scramble.
-        - ``decoder_phase_offsets``, if given, advances by
-          ``decoder_phase_matrix`` after every pulse.
+        ``disorder_phase_offsets`` advances by the phase each detuning
+        (``cfg.expt.detunings``) builds up over the whole scramble.
 
         Settings from ``cfg.expt``: ``floquet_cycle``, ``detunings``,
         ``update_phases``, ``scramble_sync_cycles``, and two ways to play:
@@ -266,8 +252,7 @@ class FloquetTrain:
         swap_stors = list(swap_stors)
         if disorder_phase_offsets is None:
             disorder_phase_offsets = [0.0] * len(swap_stors)
-        self._check_scramble_ledgers(phase_offsets, swap_stors,
-                                     disorder_phase_offsets, decoder_phase_offsets)
+        self._check_scramble_ledgers(phase_offsets, swap_stors, disorder_phase_offsets)
         detunings = self._scramble_detunings(swap_stors)
 
         update_phases = ecfg.get("update_phases", True)
@@ -308,12 +293,11 @@ class FloquetTrain:
         if floquet_hardware_loop and floquet_cycle > 0 and swap_stors:
             self._play_floquet_hardware_loop(
                 all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
-                update_phases, scramble_sync_cycles, decoder_phase_offsets)
+                update_phases, scramble_sync_cycles)
         else:
             self._play_floquet_software_loop(
                 all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
-                update_phases, scramble_sync_cycles, palindrome_scramble,
-                decoder_phase_offsets)
+                update_phases, scramble_sync_cycles, palindrome_scramble)
 
         for j_stor, detuning_MHz in enumerate(detunings):
             disorder_phase_offsets[j_stor] = self._mod360(
@@ -328,19 +312,12 @@ class FloquetTrain:
         self.sync_all()
 
     @staticmethod
-    def _check_scramble_ledgers(phase_offsets, swap_stors,
-                                disorder_phase_offsets, decoder_phase_offsets):
-        """Each ledger has one entry per mode (decoder: one more, for M1)."""
+    def _check_scramble_ledgers(phase_offsets, swap_stors, disorder_phase_offsets):
+        """Each ledger has one entry per mode."""
         if len(phase_offsets) != len(swap_stors):
             raise ValueError(
                 f"phase_offsets length {len(phase_offsets)} does not match "
                 f"swap_stors length {len(swap_stors)}"
-            )
-        if decoder_phase_offsets is not None \
-                and len(decoder_phase_offsets) != len(swap_stors) + 1:
-            raise ValueError(
-                "decoder_phase_offsets must be ordered as "
-                "[M1 photon lowering, M1-S4, ...]"
             )
         if len(disorder_phase_offsets) != len(swap_stors):
             raise ValueError(
@@ -374,8 +351,7 @@ class FloquetTrain:
 
     def _play_floquet_software_loop(
             self, all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
-            update_phases, scramble_sync_cycles, palindrome_scramble,
-            decoder_phase_offsets):
+            update_phases, scramble_sync_cycles, palindrome_scramble):
         """Emit every pulse of every cycle, each at the ledger's phase.
 
         Preloaded modes keep their pulse settings in a register bank, so each
@@ -424,13 +400,6 @@ class FloquetTrain:
                 else:
                     self.setup_and_pulse(**pulse_args)
                 self.sync_all(scramble_sync_cycles)
-
-                if decoder_phase_offsets is not None:
-                    self._advance_decoder_phase_offsets(
-                        decoder_phase_offsets=decoder_phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
 
                 if update_phases:
                     self._advance_phase_offsets(
@@ -541,14 +510,14 @@ class FloquetTrain:
 
     def _play_floquet_hardware_loop(
             self, all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
-            update_phases, scramble_sync_cycles, decoder_phase_offsets):
+            update_phases, scramble_sync_cycles):
         """Play one cycle inside a tProc ``loopnz``, for depths the
         instruction memory cannot hold unrolled.
 
         The phases live in tProc registers: cycle 0's phase per pulse, plus
         a constant step added after each pulse. After the loop the Python
-        ledgers advance by ``floquet_cycle`` steps, so they end where the
-        software loop would leave them.
+        ledger advances by ``floquet_cycle`` steps, so it ends where the
+        software loop would leave it.
         """
         ecfg = self.cfg.expt
         first_cycle_phases, phase_step_per_cycle = self._floquet_cycle_phases(
@@ -638,15 +607,6 @@ class FloquetTrain:
                 phase_offsets[i_stor]
                 + floquet_cycle * phase_step_per_cycle[i_stor]
             )
-
-        if decoder_phase_offsets is not None:
-            for _ in range(floquet_cycle):
-                for stor in swap_stors:
-                    self._advance_decoder_phase_offsets(
-                        decoder_phase_offsets=decoder_phase_offsets,
-                        swap_stors=swap_stors,
-                        pulsed_stor=stor,
-                    )
 
     def _play_m1s_frac_train(
         self,
