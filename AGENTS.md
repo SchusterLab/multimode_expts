@@ -5,6 +5,18 @@ this repo. Human contributors: see `README.md` for install/run, and `docs/` for
 long-form design specs. This file is for the things we otherwise re-explain at
 the start of every session.
 
+## Start here: current state and paper trail
+
+- **Read `docs/STATUS.md` first.** It says where things stand now, what is next, and
+  which docs are current. Read `docs/log/` only when you need the history.
+- At the end of a work session that changes the state, **overwrite** `docs/STATUS.md`
+  (update its date) and **add** one `docs/log/YYYY-MM-DD_<topic>.md`: what was done,
+  decisions and who made them, what was found. Do not edit a log entry after its day;
+  write a new one. A newer entry wins over an older one.
+- Design specs (`docs/qsim/*.md` etc.) start with a `Status:` line. When one is
+  replaced, say so on that line and name the successor. Keep specs to the design; put
+  progress and handoff notes in the log.
+
 ## Python setup
 
 - **Always `pixi run python`, not bare `python`/`python3`.** The repo lives in a
@@ -27,7 +39,7 @@ the start of every session.
 | `analysis_notebooks/`, `measurement_notebooks/` | Notebooks with per-user sandboxing. Not a library — do not import from outside |
 | `simulation/` | Historical standalone QuTiP notebooks. Largely outdated and to be deprecated. |
 | `tests/` | pytest. |
-| `docs/` | Design specs, architecture notes, historical worklogs etc, not structured documentation yet |
+| `docs/` | `STATUS.md` (current state, start here), `log/` (dated session records), design specs, architecture notes, history |
 | `tools/` | One-off maintenance scripts |
 
 
