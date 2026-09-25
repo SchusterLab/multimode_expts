@@ -268,45 +268,12 @@ class MBRSpectrumExperiment(AssembledExperiment):
             spectrum_method=spectrum_method,
         ))
         if spectrum_method == "matrix_pencil":
-            merge_tolerance_bins = matrix_pencil_options.get("merge_frequency_tolerance_bins")
-            row_calibration_se_MHz = None
-            if isinstance(merge_tolerance_bins, str):
-                if merge_tolerance_bins.lower() != "calibration":
-                    raise ValueError("mpm_merge_frequency_tolerance_bins must be numeric, None, or 'calibration'")
-                if calibration is None:
-                    raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
-
-                calibration_occupations = [tuple(occupation) for occupation in calibration.occupations]
-                phase_slope_se = np.asarray(calibration.phase_error, dtype=float)
-                if phase_slope_se.shape != (len(calibration_occupations),):
-                    raise ValueError("calibration.phase_error must contain one slope standard error per occupation")
-
-                calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
-                if not np.isfinite(calibration_cycle_us) or calibration_cycle_us <= 0.:
-                    raise ValueError("calibration Floquet cycle must be finite and positive")
-
-                calibration_se_MHz = {
-                    occupation: abs(float(slope_se)) / (360. * calibration_cycle_us)
-                    for occupation, slope_se in zip(calibration_occupations, phase_slope_se)
-                }
-                reconstruction = postprocessed.reconstruction
-                final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
-                missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
-                if missing_errors:
-                    raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
-                row_calibration_se_MHz = np.asarray([calibration_se_MHz[occupation] for occupation in final_occupations])
-                merge_tolerance_bins = None
-
-            merge_floor_MHz = 1e-3 * mpm_merge_frequency_tolerance_floor_kHz
-            matrix_pencil_options["merge_frequency_tolerance_bins"] = merge_tolerance_bins
-            if row_calibration_se_MHz is not None:
-                matrix_pencil_options["row_frequency_standard_errors_MHz"] = row_calibration_se_MHz
-            matrix_pencil_options.setdefault("merge_frequency_tolerance_sigma", mpm_calibration_sigma_multiplier)
-            matrix_pencil_options.setdefault("merge_frequency_tolerance_floor_MHz", merge_floor_MHz)
             self.data.matrix_pencil = matrix_pencil_analysis.analyze_matrix_pencil(
                 postprocessed.reconstruction,
                 spectrum,
-                **matrix_pencil_options,
+                **self._matrix_pencil_merge_options(
+                    matrix_pencil_options, calibration, postprocessed.reconstruction,
+                    mpm_calibration_sigma_multiplier, mpm_merge_frequency_tolerance_floor_kHz),
             )
         if shot_subsampling is not None:
             self.data.shot_subsampling = shot_subsampling
@@ -384,6 +351,50 @@ class MBRSpectrumExperiment(AssembledExperiment):
             hardware_source=str(data.hardware.source),
             mode_labels=list(data.mode_labels),
         )
+
+    @staticmethod
+    def _matrix_pencil_merge_options(options, calibration, reconstruction, sigma, floor_kHz):
+        """-> the Matrix Pencil options, with the cross-row merge tolerance resolved.
+
+        ``mpm_merge_frequency_tolerance_bins='calibration'`` merges by the
+        phase-calibration standard errors instead of FFT bins: each row gets
+        the frequency standard error of its final occupation's phase slope,
+        ``|slope error (deg/cycle)| / (360 * cycle time)``. ``sigma`` and
+        ``floor_kHz`` set the tolerance in that mode
+        (:class:`fitting.qsim.matrix_pencil._MergeTolerance`).
+        """
+        options = dict(options)
+        merge_tolerance_bins = options.get("merge_frequency_tolerance_bins")
+        if isinstance(merge_tolerance_bins, str):
+            if merge_tolerance_bins.lower() != "calibration":
+                raise ValueError("mpm_merge_frequency_tolerance_bins must be numeric, None, or 'calibration'")
+            if calibration is None:
+                raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
+
+            calibration_occupations = [tuple(occupation) for occupation in calibration.occupations]
+            phase_slope_se = np.asarray(calibration.phase_error, dtype=float)
+            if phase_slope_se.shape != (len(calibration_occupations),):
+                raise ValueError("calibration.phase_error must contain one slope standard error per occupation")
+            calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
+            if not np.isfinite(calibration_cycle_us) or calibration_cycle_us <= 0.:
+                raise ValueError("calibration Floquet cycle must be finite and positive")
+
+            calibration_se_MHz = {
+                occupation: abs(float(slope_se)) / (360. * calibration_cycle_us)
+                for occupation, slope_se in zip(calibration_occupations, phase_slope_se)
+            }
+            final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
+            missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
+            if missing_errors:
+                raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
+            options["row_frequency_standard_errors_MHz"] = np.asarray(
+                [calibration_se_MHz[occupation] for occupation in final_occupations])
+            merge_tolerance_bins = None
+
+        options["merge_frequency_tolerance_bins"] = merge_tolerance_bins
+        options.setdefault("merge_frequency_tolerance_sigma", sigma)
+        options.setdefault("merge_frequency_tolerance_floor_MHz", 1e-3 * floor_kHz)
+        return options
 
     # -- carried over from the old MBRSpectrumExperiment -------------------
 

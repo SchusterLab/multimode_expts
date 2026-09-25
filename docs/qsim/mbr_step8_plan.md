@@ -1,6 +1,6 @@
 # MBR redesign, step 8 plan: a usable MBR surface
 
-Status: approved by guan 2026-09-25 (order A, B, D, C). 8A done (8A1-8A4); 8B next. It uses
+Status: approved by guan 2026-09-25 (order A, B, D, C). 8A and 8B done; 8D next, then 8C (waits for question 3). It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 
 ## 0. Goal and scope (guan, 2026-09-25)
@@ -20,7 +20,7 @@ into the MBR base, it moves out of the MBR path.
 | Chunk | What | Net |
 |---|---|---|
 | 8A | The MBR base: remove the dark-mode chain from the MBR program and experiment | ASM golden, mock acquire |
-| 8B | Matrix Pencil and `MBRSpectrumExperiment`: readable steps, SFF out | analysis golden (needs the data mount) |
+| 8B | Matrix Pencil and `MBRSpectrumExperiment`: readable steps | analysis golden (needs the data mount) |
 | 8D | Measurement notebooks: single elements and propagator through class `acquire` | dryrun tool |
 | 8C | Analysis notebook: a short canonical path; the rest to `dormant/` or an audit notebook | analysis suite |
 
@@ -109,3 +109,17 @@ pinned configs, both compile to the same program). `test_pulse_layer_layout.py` 
    fit as a class method. Move out the N=2 raw reprocessing, the FFT / peak-finder / MPM
    comparisons, the report replots, and the Aug 15-17 reproduction (keep that one usable until
    the physics audit ends).
+
+## 5. 8B: what was done
+
+- `fitting/qsim/matrix_pencil.py`: the two long functions are now the five steps of the
+  module docstring, one function each; one `_FrequencyCircle` for the modulo-sampling
+  arithmetic (it was defined twice, inline); one `_row_settings` for the checks both
+  entry points share; `_MergeTolerance` for the two cross-row merge modes; one
+  `_windowed_spectrum` for the FFT that the global fit and `refit_occupation` share.
+  Same results: the two MPM goldens match at 1e-12; a temporary harness compared the
+  new code with the old on 1032 synthetic cases over every option (rtol 1e-10, because
+  threaded BLAS in `lstsq` is not bit-reproducible run to run).
+- `MBRSpectrumExperiment.analyze`: the calibration merge-tolerance block is now
+  `_matrix_pencil_merge_options`, with its own test (no golden uses that mode).
+- `analyze_sff`: the docstring says what it is (question 4.2).
