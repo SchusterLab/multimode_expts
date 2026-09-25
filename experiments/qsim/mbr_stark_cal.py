@@ -24,8 +24,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.dark_base import DarkBaseExperiment
-from experiments.qsim.mbr_ramsey import MBRRamseyProgram
+from experiments.qsim.mbr_ramsey import MBRJobExperiment, MBRRamseyProgram
 from fitting.qsim import mbr_phase
 
 # [preparation, analyzer] half-pi phases in degrees, the inner sweep of a job.
@@ -149,7 +148,7 @@ class MBRStarkCalProgram(MBRRamseyProgram):
         self.measure_wrapper()
 
 
-class MBRStarkCalExperiment(DarkBaseExperiment):
+class MBRStarkCalExperiment(MBRJobExperiment):
     """Job: the closed-cycle return of one occupation vs cycle pairs.
 
     ``acquire`` sweeps ``n_cycle_pair`` (outer) and ``ramsey_phase`` (inner),
@@ -157,12 +156,7 @@ class MBRStarkCalExperiment(DarkBaseExperiment):
     ``complex_return`` and fits the phase per physical cycle.
     """
 
-    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
-                 expt_params=None, program=None, progress=None, **kwargs):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
-                         config_file=config_file, expt_params=expt_params,
-                         program=program or MBRStarkCalProgram,
-                         progress=progress, **kwargs)
+    default_program = MBRStarkCalProgram
 
     @staticmethod
     def job_config(occupation, cycle_pairs, swap_stors, sync_cycles=10, reps=1500):

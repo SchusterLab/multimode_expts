@@ -21,7 +21,7 @@ Two things about acquisition that are easy to get wrong
 **Drive jobs through the Experiment, never the Program.** A job config
 carries a plural key (``decoder_occupations``) and the program body reads
 the singular one (``decoder_occupation``). The expansion in between lives
-in ``DarkBaseExperiment.acquire``, so instantiating a Program directly fails
+in ``MBRJobExperiment.acquire``, so instantiating a Program directly fails
 with a bare ``AttributeError``.
 
 **Pass a matched config set.** The four configs are versioned independently
@@ -231,7 +231,7 @@ def mbr_defaults(swap_stors, **overrides) -> AttrDict:
         floquet_cycle=0,
         palindrome_scramble=False,
         scramble_sync_cycles=1,
-        floquet_hardware_loop=True,
+        floquet_hardware_loop=False,  # every job sets False; StarkCal refuses True
         swap_stors=swap_stors,
         detunings=[0.] * len(swap_stors),
         spectroscopy_prep_phases=[0., 180.],

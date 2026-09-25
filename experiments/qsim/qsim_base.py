@@ -21,6 +21,30 @@ from fitting.fit_utils import guess_freq
 from experiments.MM_base import MMAveragerProgram
 
 
+def readout_lane_count(cfg):
+    """-> how many readouts one shot of ``cfg`` produces.
+
+    A shot is one science measurement plus whatever heralds precede it, so
+    the raw single-shot arrays are interleaved with this period and the
+    science lane is the last one.
+
+    One definition, because two agreeing copies is one copy plus a
+    liability: ``acquire`` writes this into ``cfg.read_num`` at acquisition
+    time, and the shot subsampler has to recover the same number from jobs
+    saved before that field existed. If the two ever disagree, subsampling
+    reads the wrong lane and silently returns other readouts' shots.
+    """
+    read_num = 1
+    if cfg.expt.get('parity_check', False):
+        read_num += 1
+    if cfg.expt.get('active_reset', False):
+        params = MMAveragerProgram.get_active_reset_params(cfg)
+        read_num += MMAveragerProgram.active_reset_read_num(**params)
+    if cfg.expt.get('multiparity_readout', False):
+        read_num += 1
+    return read_num
+
+
 class QsimBaseProgram(MMAveragerProgram):
     """
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 

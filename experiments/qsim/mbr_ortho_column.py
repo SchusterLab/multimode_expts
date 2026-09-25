@@ -24,8 +24,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.qsim.dark_base import DarkBaseExperiment
-from experiments.qsim.mbr_ramsey import MBRRamseyProgram
+from experiments.qsim.mbr_ramsey import MBRJobExperiment, MBRRamseyProgram
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 
 
@@ -50,19 +49,14 @@ class MBROrthoColumnProgram(MBRRamseyProgram):
         super().initialize()
 
 
-class MBROrthoColumnExperiment(DarkBaseExperiment):
+class MBROrthoColumnExperiment(MBRJobExperiment):
     """Job: the return of one initial occupation into every decoder, at one ``q``.
 
     ``acquire`` sweeps ``decoder_occupation`` (outer) and ``ramsey_phase``
     (inner), so ``avgi`` has shape ``(n_decoders, 4)``.
     """
 
-    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
-                 expt_params=None, program=None, progress=None, **kwargs):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
-                         config_file=config_file, expt_params=expt_params,
-                         program=program or MBROrthoColumnProgram,
-                         progress=progress, **kwargs)
+    default_program = MBROrthoColumnProgram
 
     @staticmethod
     def job_config(initial, decoders, swap_stors, cycle=0, decoder_phases_deg=None,

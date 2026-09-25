@@ -33,7 +33,7 @@ Lane bookkeeping stays with the caller
 --------------------------------------
 Which interleaved lane holds the science measurement is acquisition
 knowledge, so the caller passes one lane count per job (see
-``experiments.qsim.dark_base.readout_lane_count``). This module then needs
+``experiments.qsim.qsim_base.readout_lane_count``). This module then needs
 nothing from ``experiments``.
 """
 from copy import copy

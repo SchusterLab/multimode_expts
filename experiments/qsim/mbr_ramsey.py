@@ -7,28 +7,42 @@ qubit half-pi (analyzer phase) -> readout. The job programs
 (``MBRTimeTraceProgram``, ``MBRStarkCalProgram``, ...) subclass it and set
 what they sweep.
 
-It inherits the Floquet playback from ``SidebandScrambleProgram`` and reset,
-readout and Floquet pulse setup from ``DarkBaseProgram``, in that MRO order.
-It does not use ``SidebandScrambleDarkProgramNewNew``: that program adds
-only a dark-mode ``core_pulses``, which this sequence never plays, and it
-stays a standalone dark-mode program.
+The bases, and what each gives:
 
-``NPhotonHamiltonianSpectroscopyProgram`` is the program the old diagonal
-spectroscopy jobs recorded: this sequence with the preparation and analyzer
-phases as scalars in the config. It is kept, unchanged, until its callers
-move (redesign step 6).
+- ``QsimBaseProgram``: the M1-Sx swap parameters and Floquet waveforms
+  (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``), on top of
+  ``MMAveragerProgram`` (reset, pulse creator, readout);
+- ``FloquetTrain``: the Floquet playback and its phase bookkeeping;
+- ``man_reset`` from ``ManipulateModePulses``, set explicitly (see there).
+
+Until step 8A1 this class was built on the dark-mode chain
+(``SidebandScrambleProgram``, ``DarkBaseProgram``). It used none of the
+dark-mode pulses; ``tests/test_asm_golden.py`` checks that the compiled
+programs did not change.
+
+``MBRJobExperiment`` is the shared base of the job experiments: it owns
+``acquire``.
 """
 from copy import deepcopy
 
 import numpy as np
 from slab import AttrDict
 
+from tqdm import tqdm_notebook as tqdm
+
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.dark_base import DarkBaseProgram
-from experiments.qsim.sideband_scramble import SidebandScrambleProgram
+from experiments.qsim.floquet_train import FloquetTrain
+from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
+from experiments.qsim.qsim_base import (
+    QsimBaseExperiment,
+    QsimBaseProgram,
+    readout_lane_count,
+)
+from experiments.qsim.utils import ensure_list_in_cfg
+from fitting.fit_display_classes import GeneralFitting
 
 
-class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
+class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
     """Many-body Ramsey sequence: encode, evolve, decode, analyze.
 
     The shared base of the MBR job programs (docs/qsim/mbr_redesign.md,
@@ -61,6 +75,11 @@ class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
     ``floquet_cycle * final_analyzer_phase_per_cycle_deg`` from the final
     qubit half-pi instead.
     """
+
+    # The active reset plays this man reset, not MM_base's. The MBR jobs
+    # always did, through DarkBaseProgram; the other two ManipulateModePulses
+    # methods are dark-mode readout and are not needed here.
+    man_reset = ManipulateModePulses.man_reset
 
     @staticmethod
     def _storage_swap_pulse_name(storage_mode,
@@ -307,7 +326,8 @@ class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
         if ecfg.get("palindrome_scramble", False) and int(ecfg.floquet_cycle) % 2:
             raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
         
-        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark","perform_wigner", "parity_readout", "multiparity_readout"):
+        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark", "perform_wigner",
+                     "init_alpha", "parity_readout", "multiparity_readout"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
 
@@ -327,7 +347,14 @@ class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
         ecfg.spectroscopy_photon_number = photon_number
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
-        super().initialize()
+
+        self.MM_base_initialize()
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+        self.storage_phase_matrix = ecfg.get("storage_phase_matrix", None)
+        self.man_mode_idx = ecfg.get("man_mode_no", 1) - 1
+        self._initialize_floquet_pulses()
+        self.sync_all(200)
 
     def body(self):
         ecfg = self.cfg.expt
@@ -418,3 +445,78 @@ class MBRRamseyProgram(SidebandScrambleProgram, DarkBaseProgram):
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
         self.sync_all()
         self.measure_wrapper()
+
+
+class MBRJobExperiment(QsimBaseExperiment):
+    """Base of the MBR job experiments: one job, a 2D sweep, raw shots kept.
+
+    ``cfg.expt.swept_params`` is ``[outer, "ramsey_phase"]``: the job's own
+    sweep (cycles, cycle pairs, or decoders) and, inside it, the four
+    [preparation, analyzer] phase pairs. Each point compiles and runs its own
+    program. ``data`` has ``xpts`` (inner values), ``ypts`` (outer values),
+    ``avgi``/``avgq``/``amps``/``phases`` of shape (outer, inner), and the
+    raw ``idata``/``qdata`` per point, with ``cfg.read_num`` readouts per shot.
+
+    Subclasses set ``default_program``.
+    """
+
+    default_program = None
+
+    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
+                 expt_params=None, program=None, progress=None, **kwargs):
+        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
+                         config_file=config_file, expt_params=expt_params,
+                         program=program or self.default_program,
+                         progress=progress, **kwargs)
+
+    def acquire(self, progress=False, debug=False):
+        ensure_list_in_cfg(self.cfg)
+        ecfg = self.cfg.expt
+        read_num = readout_lane_count(self.cfg)
+        self.cfg.read_num = read_num
+
+        self.outer_param, self.inner_param = ecfg.swept_params
+        outer_values = ecfg[self.outer_param + "s"]
+        inner_values = ecfg[self.inner_param + "s"]
+
+        # With pre-selection, a point's average keeps only the shots whose
+        # herald readout found the qubit in g.
+        pre_select = ecfg.get("active_reset", False) and ecfg.get("pre_selection_reset", False)
+
+        avgi_points, avgq_points, idata, qdata = [], [], [], []
+        for outer in tqdm(outer_values, disable=not progress):
+            ecfg[self.outer_param] = outer
+            for inner in inner_values:
+                ecfg[self.inner_param] = inner
+                self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
+                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
+                                               threshold=None,
+                                               load_pulses=True,
+                                               progress=False,
+                                               debug=debug,
+                                               readouts_per_experiment=read_num)
+                point_i, point_q = self.prog.collect_shots()
+                idata.append(point_i)
+                qdata.append(point_q)
+                if pre_select:
+                    avgi, avgq = GeneralFitting.filter_shots_per_point(
+                        point_i, point_q, read_num,
+                        threshold=self.cfg.device.readout.threshold[ecfg.qubits[0]],
+                        pre_selection=True)
+                else:
+                    # The science readout is the last of the shot.
+                    avgi, avgq = avgi[0][-1], avgq[0][-1]
+                avgi_points.append(avgi)
+                avgq_points.append(avgq)
+
+        shape = (len(outer_values), len(inner_values))
+        avgi = np.reshape(np.array(avgi_points), shape)
+        avgq = np.reshape(np.array(avgq_points), shape)
+        self.data = dict(
+            avgi=avgi, avgq=avgq,
+            amps=np.abs(avgi + 1j * avgq),
+            phases=np.angle(avgi + 1j * avgq),
+            idata=idata, qdata=qdata,
+            xpts=inner_values, ypts=outer_values,
+        )
+        return self.data

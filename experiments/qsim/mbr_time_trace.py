@@ -19,8 +19,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.qsim.dark_base import DarkBaseExperiment
-from experiments.qsim.mbr_ramsey import MBRRamseyProgram
+from experiments.qsim.mbr_ramsey import MBRJobExperiment, MBRRamseyProgram
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 
 
@@ -40,19 +39,14 @@ class MBRTimeTraceProgram(MBRRamseyProgram):
         super().initialize()
 
 
-class MBRTimeTraceExperiment(DarkBaseExperiment):
+class MBRTimeTraceExperiment(MBRJobExperiment):
     """Job: the return of one (initial, final) pair vs Floquet cycles.
 
     ``acquire`` sweeps ``floquet_cycle`` (outer) and ``ramsey_phase``
     (inner), so ``avgi`` has shape ``(n_cycles, 4)``.
     """
 
-    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
-                 expt_params=None, program=None, progress=None, **kwargs):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
-                         config_file=config_file, expt_params=expt_params,
-                         program=program or MBRTimeTraceProgram,
-                         progress=progress, **kwargs)
+    default_program = MBRTimeTraceProgram
 
     @staticmethod
     def job_config(initial, final, cycles, swap_stors, phase_per_cycle_deg=0.,

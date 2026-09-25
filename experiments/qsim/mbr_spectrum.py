@@ -39,7 +39,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.assembled_data import AssembledExperiment
-from experiments.qsim.dark_base import readout_lane_count
+from experiments.qsim.qsim_base import readout_lane_count
 from experiments.qsim.mbr_saved import saved_parameters
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 from fitting.qsim import level_statistics as level_statistics_analysis

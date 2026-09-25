@@ -44,7 +44,11 @@ from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram
 from experiments.qsim.dark_mode_encoding import DarkModeEncoding
 from experiments.qsim.floquet_train import FloquetTrain
 from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import (
+    QsimBaseExperiment,
+    QsimBaseProgram,
+    readout_lane_count,
+)
 from experiments.qsim.utils import ensure_list_in_cfg
 from fitting.fit_display_classes import GeneralFitting
 
@@ -115,30 +119,6 @@ def classify_two_parity_readouts(expt, point_idx=0, threshold=None, e_is_high_I=
     out['mean_n_mod4'] = np.mean(n_mod4)
 
     return out
-
-
-def readout_lane_count(cfg):
-    """-> how many readouts one shot of ``cfg`` produces.
-
-    A shot is one science measurement plus whatever heralds precede it, so
-    the raw single-shot arrays are interleaved with this period and the
-    science lane is the last one.
-
-    One definition, because two agreeing copies is one copy plus a
-    liability: ``acquire`` writes this into ``cfg.read_num`` at acquisition
-    time, and the shot subsampler has to recover the same number from jobs
-    saved before that field existed. If the two ever disagree, subsampling
-    reads the wrong lane and silently returns other readouts' shots.
-    """
-    read_num = 1
-    if cfg.expt.get('parity_check', False):
-        read_num += 1
-    if cfg.expt.get('active_reset', False):
-        params = MMAveragerProgram.get_active_reset_params(cfg)
-        read_num += MMAveragerProgram.active_reset_read_num(**params)
-    if cfg.expt.get('multiparity_readout', False):
-        read_num += 1
-    return read_num
 
 
 class DarkBaseExperiment(QsimBaseExperiment):

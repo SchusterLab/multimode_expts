@@ -61,3 +61,26 @@ def test_both_bases_share_the_other_two(method):
             is getattr(ManipulateModePulses, method))
     assert (getattr(DarkBaseRProgram, method)
             is getattr(ManipulateModePulses, method))
+
+
+def test_mbr_base_plays_the_dark_man_reset():
+    """The MBR jobs left the dark-mode chain in step 8A1 but kept its reset.
+
+    Through ``DarkBaseProgram`` they always played ``ManipulateModePulses``'s
+    ``man_reset``. The ASM golden does not catch a change here: with its
+    pinned configs, MM_base's ``man_reset`` compiles to the same program
+    (checked by mutation, 2026-09-25). So this test is the only net.
+    """
+    from experiments.qsim.mbr_ramsey import MBRRamseyProgram
+
+    assert MBRRamseyProgram.man_reset is ManipulateModePulses.man_reset
+
+
+def test_mbr_base_is_not_built_on_the_dark_mode_chain():
+    from experiments.qsim.mbr_ramsey import MBRJobExperiment, MBRRamseyProgram
+    from experiments.qsim.dark_base import DarkBaseExperiment
+    from experiments.qsim.sideband_scramble import SidebandScrambleProgram
+
+    assert DarkBaseProgram not in MBRRamseyProgram.__mro__
+    assert SidebandScrambleProgram not in MBRRamseyProgram.__mro__
+    assert DarkBaseExperiment not in MBRJobExperiment.__mro__
