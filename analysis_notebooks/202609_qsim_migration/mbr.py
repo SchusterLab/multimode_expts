@@ -59,6 +59,19 @@
 # `reprocess_n3_spectroscopy`. Source cell 188, the global Matrix-Pencil
 # diagnostic, went to `mbr_spectral_validation.py` and is not repeated here.
 #
+# ## Saved data now comes from manifests (MBR redesign step 6b)
+#
+# The N=1, N=2, N=3 and quickplot data sets are saved `MBRSpectrumExperiment`
+# manifests: the old jobs were converted once with `tools/migrate_mbr_jobs.py`
+# into `<experiment>/converted_data/` and `assembled_data/`, and each spectrum
+# loads its calibration set with it (`MBRSpectrumExperiment.from_manifest`).
+# The manifest paths are the dataset choices now.
+#
+# Still on the old classes until redesign step 7 (disorder/SFF), and marked
+# "step 7" where they appear: the disorder realizations in section 5 and the
+# saved off-diagonal batch in section 3. Two cells in section 2 read names no
+# code defines any more (see there); they are tagged `raises-exception`.
+#
 # Its neighbours: `mbr_disorder.py`, `mbr_sampling.py`,
 # `mbr_spectral_validation.py`, and `dormant/`.
 
@@ -86,21 +99,11 @@ from experiments.MM_dual_rail_base import MM_dual_rail_base
 from fitting.fit_display_classes import GeneralFitting
 from fitting.wigner import WignerAnalysis
 
-# The four aggregate MBR stages. `EncodingHamiltonianSpectroscopyExperiment`
-# is still the loading layer and the shared numerics, and is still the class
-# every job here was acquired under -- so it stays, and these four sit beside
-# it. See analysis_notebooks/guan/MBR_analysis.py for the worked example.
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-)
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
-
-from experiments.qsim.notebook_helpers.mbr_loading import (
-    job_id_generator,
-    load_encoding_spectroscopy,
+from experiments.job_paths import data_root
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+# Step 7: the saved off-diagonal batch in section 3 still needs the old class.
+from experiments.qsim.deprecated.legacy_mbr import (
+    MBRSpectrumExperiment as LegacySpectrumExperiment,
 )
 from experiments.qsim.notebook_helpers import mbr_n2_spectroscopy as n2
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
@@ -252,21 +255,16 @@ n2.plot_shifted_spectra(
 # %% [markdown]
 # # 2. N=3 encoding-Hamiltonian spectroscopy reprocessing
 #
-# Loads the full N=3 calibration and spectroscopy jobs once from their HDF5
-# files, then runs a series of independent diagnostics on the result.
+# Loads the full N=3 spectrum (July 2026) and its calibration set once, then
+# runs a series of independent diagnostics on the result.
 
 # %%
-# Dataset choice: the complete N=3 calibration and spectroscopy job ranges.
-calibration_job_ids = job_id_generator([20260722, 20260723], [683, 1], [712, 40])
-spectroscopy_job_ids = job_id_generator(
-    20260723, [48, 87], [85, 149], step=[1, 2]
-)
+# Dataset choice: the complete July N=3 sector (tests/data/mbr_datasets.json
+# `july_N3`), converted to the new layout.
+july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
 
-calibration_expt, spectroscopy_expt = load_encoding_spectroscopy(
-    MBRSpectrumExperiment,
-    calibration_job_ids,
-    spectroscopy_job_ids,
-)
+spectroscopy_expt = MBRSpectrumExperiment.from_manifest(july_n3_manifest)
+calibration_expt = spectroscopy_expt.calibration
 
 # %% [markdown]
 # These jobs used the old `+cycle*correction` analyzer convention. The current
@@ -282,13 +280,18 @@ encspec_cycle_branches = {
 encspec_legacy = True
 encspec_manual_kerr_MHz = -19.756e-3  # signed; 0. for the zero-Kerr frame
 
-encspec_reprocessed = n3.reprocess_n3_spectroscopy(
-    calibration_expt=calibration_expt,
-    spectroscopy_expt=spectroscopy_expt,
+# Undo the old correction and apply the calibration again with the selected
+# signed Kerr (the spectrum's own calibration set).
+encspec_reprocessed = spectroscopy_expt.analyze(
+    phase_frame='manual_kerr',
+    manual_kerr_MHz=encspec_manual_kerr_MHz,
     cycle_branches=encspec_cycle_branches,
     legacy=encspec_legacy,
-    manual_kerr_MHz=encspec_manual_kerr_MHz,
+    fft_window='raw',
+    zero_padding=1,
+    spectrum_method='mpm',
 )
+spectroscopy_expt.display(spectrum_method='mpm')
 
 # %% [markdown]
 # ### Incoherent versus coherent summation
@@ -421,23 +424,25 @@ aligned_peaks, candidate_indices, _fig = n3.find_ridge_peaks(
 # ### The worked path from job ranges to a spectrum
 #
 # Source cell 189 called itself a tutorial: it is the one place the route from
-# job ranges to a choice of raw FFT or rowwise Matrix Pencil is written out
+# saved data to a choice of raw FFT or rowwise Matrix Pencil is written out
 # end to end.
+#
+# The two cells after it read `encspec_N3_spectrum`, `encspec_N3_time_us`,
+# `encspec_N3_trace` and `encspec_N3_trace_mpm`. No code defines those names:
+# the source cell that built the summed trace and its Matrix-Pencil fit did
+# not survive the notebook split, and `load_and_analyze_n3` never returned
+# them. Both cells are tagged `raises-exception` until someone rebuilds that
+# step; it is analysis, not plumbing, so it was not guessed here.
 
 # %%
 n3_result = n3.load_and_analyze_n3(
-    calibration_job_ids=job_id_generator(
-        [20260722, 20260723], [683, 1], [712, 40]
-    ),
-    spectroscopy_job_ids=job_id_generator(
-        20260723, [48, 87], [85, 149], step=[1, 2]
-    ),
+    july_n3_manifest,
     cycle_branches={},
     manual_kerr_MHz=-19.756e-3,
     spectrum_method='matrix_pencil',
 )
 
-# %%
+# %% tags=["raises-exception"]
 encspec_N3_energy_limit_MHz, _fig = n3.compare_trace_with_mpm(
     encspec_N3_spectrum=n3_result['encspec_N3_spectrum'],
     encspec_N3_time_us=n3_result['encspec_N3_time_us'],
@@ -445,7 +450,7 @@ encspec_N3_energy_limit_MHz, _fig = n3.compare_trace_with_mpm(
     encspec_N3_trace_mpm=n3_result['encspec_N3_trace_mpm'],
 )
 
-# %%
+# %% tags=["raises-exception"]
 # Matrix-Pencil rank diagnostic for the summed trace (source cell 192).
 diagnostic = n3_result['encspec_N3_trace_mpm'].diagnostic
 
@@ -481,13 +486,13 @@ spectroscopy_occupations = [
 ]
 cycle_branches = dict(encspec_cycle_branches)
 
+# `legacy=True`: the July jobs predate the recorded analyzer sign. The old
+# scan could not pass it and raised on these data.
 best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data = (
-    n3.fit_self_kerr_from_peak_overlap(
-        spectroscopy_expt=spectroscopy_expt,
-        spectroscopy_data=spectroscopy_data,
-        calibration_expt=calibration_expt,
-        spectroscopy_occupations=spectroscopy_occupations,
+    n3.fit_self_kerr(
+        spectroscopy_expt,
         cycle_branches=cycle_branches,
+        legacy=True,
         kerr_grid_kHz=np.arange(-5.0, 0.0 + 1e-9, 0.005),
         energy_limit_MHz=0.08,
         min_man_photons=2,
@@ -506,7 +511,6 @@ best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data = (
 spectroscopy_display_occupation = None
 
 spectroscopy_expt.analyze(
-    occupations=spectroscopy_occupations,
     cycle_branches=cycle_branches,
     spectrum_method="mpm",
 )
@@ -535,12 +539,15 @@ plt.show()
 #
 # Loads from HDF5: no station, and so no risk of picking up today's
 # calibration in place of the one these jobs ran under.
+#
+# Step 7: these are old off-diagonal pair jobs, which the migration cannot
+# convert yet, so this cell stays on the old class.
 
 # %%
 saved_spectroscopy_job_ids = [
     f"JOB-20260823-{job:05d}" for job in range(5, 9)
 ]
-saved_spectroscopy_expt = MBRSpectrumExperiment.from_job_ids(
+saved_spectroscopy_expt = LegacySpectrumExperiment.from_job_ids(
     saved_spectroscopy_job_ids,
 )
 saved_spectroscopy_expt.analyze(
@@ -557,11 +564,16 @@ plt.show()
 # Source cells 205-211. The `replot_*` settings that cell 206 kept at notebook
 # scope are now one `ReplotConfig`; its defaults are those values, so building
 # it with no arguments reproduces the original figures.
+#
+# The source also had a sector keyed 4. Its jobs are a second complete N=1
+# set (under the Floquet config of the July N=2 set), not N=4; the check that
+# would have caught that was commented out. Dropped for now; `analyze_sector`
+# checks the photon number again.
 
 # %%
 replot_config = replot.ReplotConfig(
     manual_kerr_MHz=-19.756e-3,
-    cycle_branches={1: {}, 2: {}, 3: {}, 4: {}},
+    cycle_branches={1: {}, 2: {}, 3: {}},
     fft_window='raw',
     zero_padding=1,
     overview_figsize=(15, 12.3),
@@ -569,49 +581,26 @@ replot_config = replot.ReplotConfig(
     legend_fontsize=9,
     suptitle_fontsize=14,
     overview_legend_ncols=3,
-    EncSpec=MBRSpectrumExperiment,
 )
 
-# Dataset choice: (date, first job number, last job number, step).
-replot_job_ranges = {
-    1: dict(
-        calibration=[(20260722, 557, 566, 1)],
-        spectroscopy=[(20260722, 577, 595, 1)],
-    ),
-    2: dict(
-        calibration=[(20260722, 35, 64, 1)],
-        spectroscopy=[(20260722, 215, 244, 1)],
-    ),
-    3: dict(
-        calibration=[
-            (20260722, 683, 712, 1),
-            (20260723, 1, 40, 1),
-        ],
-        spectroscopy=[
-            (20260723, 48, 85, 1),
-            (20260723, 87, 149, 2),
-        ],
-    ),
-    4: dict(
-        calibration=[(20260721, 423, 432, 1)],
-        spectroscopy=[(20260722, 5, 14, 1)],
-    ),
+# Dataset choice: one saved spectrum per photon number (July 2026 sets,
+# tests/data/mbr_datasets.json), with its calibration set linked.
+replot_manifests = {
+    1: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163501_MBRSpectrumExperiment.yaml",
+    2: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163502_MBRSpectrumExperiment.yaml",
+    3: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml",
 }
 
 # N=2 has one occupation on a different time grid, so only its FFT rows can
 # join the report spectrum -- not its time traces.
-replot_N2_supplement_ranges = dict(
-    calibration=[(20260722, 425, 426, 1)],
-    spectroscopy=[(20260722, 452, 454, 1)],
-)
+replot_N2_supplement_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163503_MBRSpectrumExperiment.yaml"
 replot_N2_supplement_occupation = (0, 0, 0, 0, 2)
 
 # %%
 replot_runs = replot.load_and_analyze_sectors(
     config=replot_config,
-    job_ranges=replot_job_ranges,
-    sectors=(1, 2, 3, 4),
-    n2_supplement_ranges=replot_N2_supplement_ranges,
+    manifests=replot_manifests,
+    n2_supplement_manifest=replot_N2_supplement_manifest,
     n2_supplement_occupation=replot_N2_supplement_occupation,
 )
 
@@ -651,7 +640,6 @@ for replot_N, replot_plot_kind, replot_panel in replot_single_panel_requests:
         replot_panel,
         runs=replot_runs,
         panel_names_by_kind=replot_panel_names_by_kind,
-        EncSpec=replot_config.EncSpec,
         figsize=replot_config.single_panel_figsize,
         figure_dpi=replot_config.figure_dpi,
         legend_fontsize=replot_config.legend_fontsize,
@@ -709,14 +697,15 @@ plt.show()
 # ## 5a. With the phase calibration applied
 
 # %%
-# Complete N=3 phase calibration: 35 occupations x analyzer phases 0/90.
-saved_n3_calibration_job_ids = saved.saved_job_range(20260815, 113, 182)
+# Complete N=3 spectroscopy with its calibration set (tests/data/
+# mbr_datasets.json `august_N3`), converted to the new layout.
+saved_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
+# The four-realization quick-plot set (`august_quickplot`).
+saved_four_realization_manifest = data_root() / "260814_qsim_encspec" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
 
-# Complete N=3 spectroscopy: 35 occupations x analyzer phases 0/90.
-saved_n3_spectroscopy_job_ids = (
-    saved.saved_job_range(20260815, 183, 242)
-    + saved.saved_job_range(20260816, 1, 10)
-)
+# Step 7: the disorder realizations are still loaded from job IDs with the
+# old classes, which also need the calibration as old jobs.
+saved_n3_calibration_job_ids = saved.saved_job_range(20260815, 113, 182)
 
 # Ten theory-selected occupations x analyzer phases 0/90 per realization.
 saved_disorder_job_ids = {
@@ -748,8 +737,8 @@ saved_zero_padding = 1
 # Source cell 219: the four-realization dataset, loaded and analyzed on its
 # own. It uses its own two-entry branch table and a plain FFT spectrum, not
 # the manual-Kerr frame used for the N=3 set below.
-data_four_realization = MBRSpectrumExperiment.from_job_ids(
-    saved.saved_job_range(20260815, 9, 16),
+data_four_realization = MBRSpectrumExperiment.from_manifest(
+    saved_four_realization_manifest,
 )
 
 branches = {
@@ -766,10 +755,8 @@ _ = data_four_realization.analyze(
 data_four_realization.display()
 
 # %%
-saved_calibrated = saved.load_saved_calibrated(
-    saved_n3_calibration_job_ids=saved_n3_calibration_job_ids,
-    saved_n3_spectroscopy_job_ids=saved_n3_spectroscopy_job_ids,
-    saved_disorder_job_ids=saved_disorder_job_ids,
+saved_calibrated = saved.load_n3_calibrated(
+    saved_n3_manifest,
     saved_n3_cycle_branches=saved_n3_cycle_branches,
     saved_n3_manual_kerr_MHz=saved_n3_manual_kerr_MHz,
     saved_fft_window=saved_fft_window,
@@ -778,7 +765,20 @@ saved_calibrated = saved.load_saved_calibrated(
 saved_n3_calibration_expt = saved_calibrated["saved_n3_calibration_expt"]
 saved_n3_spectroscopy_expt = saved_calibrated["saved_n3_spectroscopy_expt"]
 saved_n3_data = saved_calibrated.get("saved_n3_data")
-saved_disorder_records = saved_calibrated["saved_disorder_records"]
+saved_disorder_records = {}
+
+# %% tags=["raises-exception"]
+# Step 7: old classes. Known failure, also before the redesign: the rebuilt
+# disorder theory differs from the theory saved with the jobs (up to 0.3 kHz,
+# every level), and the loader asserts they agree to 1e-10. A physics
+# question for the disorder port, not a loading one.
+saved_disorder_records = saved.load_disorder_calibrated(
+    saved_n3_calibration_job_ids=saved_n3_calibration_job_ids,
+    saved_disorder_job_ids=saved_disorder_job_ids,
+    saved_n3_cycle_branches=saved_n3_cycle_branches,
+    saved_fft_window=saved_fft_window,
+    saved_zero_padding=saved_zero_padding,
+)
 
 # %%
 # Optional report figures from the reconstructed data.
@@ -790,9 +790,8 @@ if saved_show_calibration:
     saved_n3_calibration_expt.display()
     plt.show()
 if saved_show_n3:
-    saved_n3_spectroscopy_expt.display(
-        data=saved_n3_data, level_statistics=False
-    )
+    # saved_n3_data is the spectrum's latest analysis, which display() shows.
+    saved_n3_spectroscopy_expt.display(level_statistics=False)
     plt.show()
 
 # %% [markdown]
@@ -811,15 +810,10 @@ if saved_show_n3:
 # N=3 and disorder sets.
 
 # %%
-saved_four_realization_job_ids = saved.saved_job_range(20260815, 9, 16)
 offline_four_realization_branches = {
     (3, 0, 0, 0, 0): 1,
     (2, 0, 0, 1, 0): 1,
 }
-saved_n3_job_ids = (
-    saved.saved_job_range(20260815, 183, 242)
-    + saved.saved_job_range(20260816, 1, 10)
-)
 # NOTE: this range is not the same partition 5a uses. 5a splits 20260816
 # 13-72 plus 20260817 1-20 into four realizations; this asks for 11-80 as a
 # single realization 0, and `load_saved_as_acquired` checks that every child
@@ -835,19 +829,28 @@ offline_fft_window = "raw"
 offline_zero_padding = 1
 
 # %%
-saved_as_acquired = saved.load_saved_as_acquired(
-    saved_four_realization_job_ids=saved_four_realization_job_ids,
+saved_as_acquired = saved.load_n3_as_acquired(
+    saved_four_realization_manifest,
     offline_four_realization_branches=offline_four_realization_branches,
-    saved_n3_job_ids=saved_n3_job_ids,
-    saved_disorder_job_ids=offline_disorder_job_ids,
-    EncSpec=MBRSpectrumExperiment,
+    n3_manifest=saved_n3_manifest,
     offline_fft_window=offline_fft_window,
     offline_zero_padding=offline_zero_padding,
 )
 data_four_realization = saved_as_acquired["data_four_realization"]
 saved_n3_spectroscopy_expt = saved_as_acquired["saved_n3_spectroscopy_expt"]
 saved_n3_data = saved_as_acquired["saved_n3_data"]
-saved_disorder_records = saved_as_acquired["saved_disorder_records"]
+saved_disorder_records = {}
+
+# %% tags=["raises-exception"]
+# Step 7: old classes. Known failure: the range asks for
+# JOB-20260816-00011..80, but jobs 73-80 do not exist in the job database
+# (JobPathError), and 11-12 are not spectroscopy jobs. See the NOTE on
+# `offline_disorder_job_ids`; the right partition is a dataset question.
+saved_disorder_records = saved.load_disorder_as_acquired(
+    offline_disorder_job_ids,
+    offline_fft_window=offline_fft_window,
+    offline_zero_padding=offline_zero_padding,
+)
 
 # %%
 # Optional figures; all data above came from local H5 files.
@@ -855,9 +858,8 @@ offline_show_n3 = True
 offline_show_disorder = True
 
 if offline_show_n3:
-    saved_n3_spectroscopy_expt.display(
-        data=saved_n3_data, level_statistics=False
-    )
+    # saved_n3_data is the spectrum's latest analysis, which display() shows.
+    saved_n3_spectroscopy_expt.display(level_statistics=False)
     plt.show()
 
 # %% [markdown]
@@ -869,10 +871,12 @@ if offline_show_n3:
 data_sets = {
     0: data_four_realization,
     1: saved_n3_spectroscopy_expt,
-    2: saved_disorder_records[0].expt,
 }
+# Step 7: the disorder set joins only when its (old-class) loader succeeded.
+if saved_disorder_records:
+    data_sets[2] = saved_disorder_records[0].expt
 
-data_set_index = 2
+data_set_index = 2 if 2 in data_sets else 1
 pp_data = data_sets[data_set_index]
 
 # %%

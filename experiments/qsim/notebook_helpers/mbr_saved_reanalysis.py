@@ -36,6 +36,13 @@ recovered from the file's own provenance instead. Nothing here builds a
 station, and `make_local_loader` is deleted along with the hard-coded
 `C:\experiments` glob it wrapped.
 
+Old and new classes (MBR redesign step 6b). The N=3 and four-realization
+sets are saved `MBRSpectrumExperiment` manifests (old jobs converted with
+`tools/migrate_mbr_jobs.py`): `load_n3_calibrated` and
+`load_n3_as_acquired`. The disorder realizations stay on the old loaded
+aggregates until redesign step 7: `load_disorder_calibrated` and
+`load_disorder_as_acquired` carry the old bodies unchanged.
+
 Temporary home, per the stage-2 instructions.
 """
 
@@ -47,7 +54,10 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import (
+    MBRSpectrumExperiment as LegacySpectrumExperiment,
+)
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate
 
 
@@ -77,74 +87,46 @@ def occupation_pairs(expt, label):
     return list(grouped)
 
 
-def load_saved_calibrated(saved_n3_calibration_job_ids,
-                          saved_n3_spectroscopy_job_ids,
-                          saved_disorder_job_ids,
-                          saved_n3_cycle_branches,
-                          saved_n3_manual_kerr_MHz,
-                          saved_fft_window="raw",
-                          saved_zero_padding=1,
-                          timing=None):
-    """Reanalyze the saved jobs *with* the N=3 phase calibration (cell 222).
+def load_n3_calibrated(spectrum_manifest,
+                       saved_n3_cycle_branches,
+                       saved_n3_manual_kerr_MHz,
+                       saved_fft_window="raw",
+                       saved_zero_padding=1):
+    """Reanalyze the saved N=3 spectrum *with* its phase calibration (cell 222).
 
-    No `runner.execute()` appears here or anywhere below -- this path only
-    reads jobs that already ran, and reads them from HDF5 alone.
+    ``spectrum_manifest`` is a saved `MBRSpectrumExperiment` with its
+    calibration set linked. No `runner.execute()` appears here -- this path
+    only reads jobs that already ran.
 
     `saved_n3_manual_kerr_MHz=None` selects the source's alternative branch,
-    which derives the Kerr phase frame from the data instead of imposing one.
+    which keeps the as-acquired frame instead of imposing a Kerr frame.
 
-    `timing` is the manual escape hatch for files carrying no provenance; see
-    :mod:`experiments.saved_jobs`. Leave it None whenever the provenance
-    sidecar covers the job range, which for these datasets it does.
-
-    The parameters keep the `saved_*` names the moved body already uses --
-    they were cell 221's notebook globals -- so no line of the body needed
-    renaming.
-
-    Returns a dict of the `saved_*` names the following cells read, including
-    `saved_disorder_records`.
+    Returns a dict of the `saved_*` names the following cells read.
     """
-    saved_n3_calibration_expt = load_aggregate(
-        saved_n3_calibration_job_ids,
-        owner=MBRPhaseCorrectionExperiment,
-        timing=timing,
-        analyze=True,
-    )
-    saved_n3_calibration_occupations = [
-        tuple(map(int, occupation))
-        for occupation in saved_n3_calibration_expt.data.occupations
-    ]
+    saved_n3_spectroscopy_expt = MBRSpectrumExperiment.from_manifest(spectrum_manifest)
+    saved_n3_calibration_expt = saved_n3_spectroscopy_expt.calibration
+    if saved_n3_calibration_expt is None:
+        raise RuntimeError(f"{spectrum_manifest} links no calibration set")
+    saved_n3_calibration_expt.analyze()
+    saved_n3_calibration_occupations = list(saved_n3_calibration_expt.occupations)
     if (
         len(saved_n3_calibration_occupations) != 35
         or any(sum(occupation) != 3 for occupation in saved_n3_calibration_occupations)
     ):
         raise RuntimeError("calibration is not the complete 35-state N=3 sector")
-    # Was: assert the timing came from the pickle's compiled program. There is
-    # no pickle now, so assert instead that it was *recovered* rather than
-    # guessed, and say which of the recovered sources answered.
+    # Assert the timing was *recovered* rather than guessed, and say which of
+    # the recovered sources answered.
     hardware_source = saved_n3_calibration_expt.data.hardware.source
     if not hardware_source or "station" in hardware_source:
         raise RuntimeError(
             f"calibration timing came from {hardware_source!r}, which is not a "
             f"recovered historical value")
     print(f"Floquet timing recovered from: {hardware_source}")
-
-    saved_n3_spectroscopy_expt = load_aggregate(
-        saved_n3_spectroscopy_job_ids,
-        owner=MBRSpectrumExperiment,
-        timing=timing,
-    )
-    saved_n3_spectroscopy_occupations = occupation_pairs(
-        saved_n3_spectroscopy_expt,
-        "N=3 spectroscopy",
-    )
-    if set(saved_n3_spectroscopy_occupations) != set(saved_n3_calibration_occupations):
+    if set(saved_n3_spectroscopy_expt.occupations) != set(saved_n3_calibration_occupations):
         raise RuntimeError("N=3 spectroscopy and calibration occupations differ")
 
     # Exact reconstruction in the frame that was physically acquired.
     saved_n3_as_acquired_data = saved_n3_spectroscopy_expt.analyze(
-        calibration=saved_n3_calibration_expt,
-        occupations=saved_n3_calibration_occupations,
         phase_frame="as_acquired",
         fft_window=saved_fft_window,
         zero_padding=saved_zero_padding,
@@ -156,8 +138,6 @@ def load_saved_calibrated(saved_n3_calibration_job_ids,
         saved_n3_data = saved_n3_as_acquired_data
     else:
         saved_n3_data = saved_n3_spectroscopy_expt.analyze(
-            calibration=saved_n3_calibration_expt,
-            occupations=saved_n3_calibration_occupations,
             phase_frame="manual_kerr",
             manual_kerr_MHz=float(saved_n3_manual_kerr_MHz),
             cycle_branches=saved_n3_cycle_branches,
@@ -166,9 +146,50 @@ def load_saved_calibrated(saved_n3_calibration_job_ids,
             spectrum_method="fft",
         )
 
+    hardware = saved_n3_calibration_expt.data.hardware
+    print(
+        f"calibration: {len(saved_n3_calibration_occupations)} occupations; "
+        f"Tcycle={hardware.floquet_cycle_us:.9f} us; "
+        f"g={1e3 * np.asarray(hardware.couplings_MHz)} kHz"
+    )
+    print(
+        f"N=3 full spectroscopy: {len(saved_n3_spectroscopy_expt.children)} traces, "
+        f"{len(saved_n3_data.reconstruction.occupations)} occupations; "
+        f"frame={saved_n3_data.phase_frame}; "
+        f"K={1e3 * saved_n3_data.spectrum.physical_kerr_MHz:.4f} kHz"
+    )
+    return {
+        name: value
+        for name, value in locals().items()
+        if name.startswith("saved_") or name == "hardware"
+    }
+
+
+def load_disorder_calibrated(saved_n3_calibration_job_ids,
+                             saved_disorder_job_ids,
+                             saved_n3_cycle_branches,
+                             saved_fft_window="raw",
+                             saved_zero_padding=1,
+                             timing=None):
+    """The disorder realizations *with* the N=3 phase calibration (cell 222).
+
+    Old loaded aggregates, from job IDs, until redesign step 7: the
+    calibration is loaded again here as the old `MBRPhaseCorrectionExperiment`,
+    which the old `analyze(calibration=...)` needs. The body is the disorder
+    half of the former `load_saved_calibrated`, unchanged.
+
+    Returns `saved_disorder_records`.
+    """
+    saved_n3_calibration_expt = load_aggregate(
+        saved_n3_calibration_job_ids,
+        owner=MBRPhaseCorrectionExperiment,
+        timing=timing,
+        analyze=True,
+    )
+
     saved_disorder_records = {}
     for realization, job_ids in sorted(saved_disorder_job_ids.items()):
-        expt = load_aggregate(job_ids, owner=MBRSpectrumExperiment, timing=timing)
+        expt = load_aggregate(job_ids, owner=LegacySpectrumExperiment, timing=timing)
         cfg0 = expt.batch_expts[0].cfg.expt
         saved_realizations = {
             int(child.cfg.expt.disorder_realization)
@@ -232,62 +253,30 @@ def load_saved_calibrated(saved_n3_calibration_job_ids,
             data=data,
         ))
 
-    hardware = saved_n3_calibration_expt.data.hardware
-    print(
-        f"calibration: {len(saved_n3_calibration_job_ids)} jobs; "
-        f"Tcycle={hardware.floquet_cycle_us:.9f} us; "
-        f"g={1e3 * np.asarray(hardware.couplings_MHz)} kHz"
-    )
-    print(
-        f"N=3 full spectroscopy: {len(saved_n3_spectroscopy_job_ids)} jobs, "
-        f"{len(saved_n3_data.reconstruction.occupations)} occupations; "
-        f"frame={saved_n3_data.phase_frame}; "
-        f"K={1e3 * saved_n3_data.spectrum.physical_kerr_MHz:.4f} kHz"
-    )
     for realization, record in saved_disorder_records.items():
         print(
             f"disorder r={realization}: {len(record.job_ids)} jobs, "
             f"{len(record.data.reconstruction.occupations)} occupations; "
             f"K={1e3 * record.data.spectrum.physical_kerr_MHz:.4f} kHz"
         )
-
-    return {
-        name: value
-        for name, value in locals().items()
-        if name.startswith("saved_") or name == "hardware"
-    }
+    return saved_disorder_records
 
 
-def load_saved_as_acquired(saved_four_realization_job_ids,
-                           offline_four_realization_branches,
-                           saved_n3_job_ids,
-                           saved_disorder_job_ids,
-                           EncSpec=MBRSpectrumExperiment,
-                           offline_fft_window="raw",
-                           offline_zero_padding=1,
-                           timing=None):
-    """The same datasets with *no* calibration applied, in the as-acquired
-    frame (cell 232).
+def load_n3_as_acquired(four_realization_manifest,
+                        offline_four_realization_branches,
+                        n3_manifest,
+                        offline_fft_window="raw",
+                        offline_zero_padding=1):
+    """The four-realization and N=3 sets in the as-acquired frame (cell 232).
 
-    This is the honest name for what used to be `load_saved_local`. Its
-    children come from the same HDF5 files as
-    :func:`load_saved_calibrated`, so comparing the two compares phase frames
-    and nothing else -- previously it also compared two loading paths, which
-    made a disagreement ambiguous.
-
-    Job IDs replace the old `(dates, starts, finishes)` triples and the
-    per-dataset `project_name`: :func:`experiments.job_paths.resolve_job_paths`
-    finds each file from the job ID, so the caller no longer has to know which
-    experiment directory a dataset landed in. The four-realization set lives in
-    a different project than the N=3 and disorder sets, which is exactly the
-    bookkeeping that used to need two project names.
+    Same files as :func:`load_n3_calibrated`, so comparing the two compares
+    phase frames and nothing else. Both arguments are saved
+    `MBRSpectrumExperiment` manifests.
 
     Returns a dict of the `saved_*` and `data_*` names the following cells
     read.
     """
-    data_four_realization = load_aggregate(
-        saved_four_realization_job_ids, owner=EncSpec, timing=timing,
-    )
+    data_four_realization = MBRSpectrumExperiment.from_manifest(four_realization_manifest)
     data_four_realization.analyze(
         phase_frame="as_acquired",
         cycle_branches=offline_four_realization_branches,
@@ -296,29 +285,49 @@ def load_saved_as_acquired(saved_four_realization_job_ids,
         spectrum_method="fft",
     )
 
-
-    # Full N=3 spectroscopy: 35 occupations x analyzer phases 0/90.
-    saved_n3_spectroscopy_expt = load_aggregate(
-        saved_n3_job_ids, owner=EncSpec, timing=timing,
-    )
-    saved_n3_occupations = occupation_pairs(
-        saved_n3_spectroscopy_expt, "N=3 spectroscopy"
-    )
+    # Full N=3 spectroscopy: 35 occupations.
+    saved_n3_spectroscopy_expt = MBRSpectrumExperiment.from_manifest(n3_manifest)
+    saved_n3_occupations = list(saved_n3_spectroscopy_expt.occupations)
     if len(saved_n3_occupations) != 35 or any(
         sum(occupation) != 3 for occupation in saved_n3_occupations
     ):
         raise RuntimeError("spectroscopy is not the complete 35-state N=3 sector")
     saved_n3_data = saved_n3_spectroscopy_expt.analyze(
-        occupations=saved_n3_occupations,
         phase_frame="as_acquired",
         fft_window=offline_fft_window,
         zero_padding=offline_zero_padding,
         spectrum_method="fft",
     )
+    print(
+        f"Four-realization data, as acquired: "
+        f"{len(data_four_realization.children)} traces"
+    )
+    print(
+        f"N=3, as acquired: {len(saved_n3_spectroscopy_expt.children)} traces, "
+        f"{len(saved_n3_occupations)} occupations"
+    )
+    return {
+        name: value
+        for name, value in locals().items()
+        if name.startswith(("saved_", "data_", "offline_"))
+    }
+
+
+def load_disorder_as_acquired(saved_disorder_job_ids,
+                              offline_fft_window="raw",
+                              offline_zero_padding=1,
+                              timing=None):
+    """The disorder realizations in the as-acquired frame (cell 232).
+
+    Old loaded aggregates, from job IDs, until redesign step 7. The body is
+    the disorder half of the former `load_saved_as_acquired`, unchanged.
+
+    Returns `saved_disorder_records`.
+    """
     # Disorder spectroscopy: ten selected occupations x analyzer phases 0/90.
     saved_disorder_records = {}
     for realization, job_ids in sorted(saved_disorder_job_ids.items()):
-        expt = load_aggregate(job_ids, owner=EncSpec, timing=timing)
+        expt = load_aggregate(job_ids, owner=LegacySpectrumExperiment, timing=timing)
         cfg0 = expt.batch_expts[0].cfg.expt
         saved_realizations = {
             int(child.cfg.expt.disorder_realization) for child in expt.batch_expts
@@ -346,26 +355,13 @@ def load_saved_as_acquired(saved_four_realization_job_ids,
         )
 
     print(
-        f"Four-realization data, as acquired: "
-        f"{len(data_four_realization.batch_job_ids)} H5 jobs"
-    )
-    print(
-        f"N=3, as acquired: {len(saved_n3_spectroscopy_expt.batch_job_ids)} H5 jobs, "
-        f"{len(saved_n3_occupations)} occupations"
-    )
-    print(
         "Disorder, as acquired: "
         + ", ".join(
             f"r={realization} ({len(record.expt.batch_job_ids)} H5 jobs)"
             for realization, record in saved_disorder_records.items()
         )
     )
-
-    return {
-        name: value
-        for name, value in locals().items()
-        if name.startswith(("saved_", "data_", "offline_"))
-    }
+    return saved_disorder_records
 
 
 def coherent_normalized_trace_spectrum(data, scale_theory=True):

@@ -138,12 +138,34 @@ def test_no_successor_still_passes_stage(successor):
     assert not offenders, f"{name}: stage= still present"
 
 
+def _imported_names(source):
+    """-> {local name: object} for the top-level `from x import y` lines of a file."""
+    names = {}
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return names
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            for alias in node.names:
+                local = alias.asname or alias.name
+                if local in STAGE_MODULES:
+                    module = importlib.import_module(node.module)
+                    names[local] = getattr(module, alias.name)
+    return names
+
+
 def test_every_successor_stage_attribute_exists(successor, stage_classes):
     """The check that catches the next move out from under the new entry points."""
     name, chunks = successor
     missing = []
     for source in chunks:
+        imported = _imported_names(source)
         for cls_name, cls in stage_classes.items():
+            # Since MBR redesign step 6b a successor may import the new class
+            # under the old name (experiments.qsim.mbr_spectrum); check the
+            # class the file actually imports.
+            cls = imported.get(cls_name, cls)
             for attr in re.findall(rf"\b{cls_name}\.(\w+)", source):
                 if not hasattr(cls, attr):
                     missing.append(f"{cls_name}.{attr}")

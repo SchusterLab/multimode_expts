@@ -22,6 +22,13 @@ left as silent reassignments, since both look like debugging that stayed:
 split they read it out of the live kernel; now they call
 `reprocess_n3_spectroscopy` themselves, or load the same jobs.
 
+Old and new classes (MBR redesign step 6b). `reprocess_n3_spectroscopy` and
+`fit_self_kerr_from_peak_overlap` still take the old loaded aggregates: the
+step-7 notebooks (`mbr_sampling`, `mbr_spectral_validation`, `mbr_disorder`)
+call them. `load_and_analyze_n3` and `fit_self_kerr` take a saved
+`MBRSpectrumExperiment`, whose calibration comes linked. The plot
+diagnostics read only `expt.data` and take either.
+
 Temporary home, per the stage-2 instructions. In particular the ridge finder
 and the peak-finding diagnostics were not reconciled with each other or with
 `MBRSpectrumExperiment`'s own spectrum methods -- they are deliberately kept
@@ -33,11 +40,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import percentile_filter
 from scipy.signal import find_peaks, savgol_filter
 
-from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers.mbr_loading import (
-    job_id_generator,
-    load_encoding_spectroscopy,
-)
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 
 def reprocess_n3_spectroscopy(calibration_expt, spectroscopy_expt,
@@ -423,43 +426,28 @@ def find_ridge_peaks(encspec_reprocessed, max_candidates=35,
     return aligned_peaks, candidate_indices, plt.gcf()
 
 
-def load_and_analyze_n3(calibration_job_ids, spectroscopy_job_ids,
+def load_and_analyze_n3(spectrum_manifest,
                         cycle_branches=None,
                         manual_kerr_MHz=-19.756e-3,
-                        spectrum_method='matrix_pencil',
-                        EncSpec=MBRSpectrumExperiment,
-                        timing=None):
-    """Load the N=3 jobs from HDF5 and analyze them (cell 189).
+                        spectrum_method='matrix_pencil'):
+    """Load the saved N=3 spectrum and analyze it (cell 189).
 
-    Cell 189 called itself a tutorial: it is the worked path from job ranges
+    Cell 189 called itself a tutorial: it is the worked path from saved data
     to a choice of raw FFT or rowwise Matrix Pencil. Kept because it is the
     only place that path is written out end to end.
 
-    Returns whatever the source's last binding produced, as a dict of the
-    `encspec_N3_*` names the following cells read.
+    ``spectrum_manifest`` is a saved `MBRSpectrumExperiment` with its
+    calibration set linked (old jobs reach it through
+    `tools/migrate_mbr_jobs.py`). Returns the `mpm_*` names as a dict.
     """
-    mpm_cycle_branches = {} if cycle_branches is None else cycle_branches
-    mpm_manual_kerr_MHz = manual_kerr_MHz
-    mpm_spectrum_method = spectrum_method
-
-    # 1. Give complete job ranges. load_encoding_spectroscopy keeps only the requested calibration and spectroscopy programs and skips failed/unrelated jobs.
-    mpm_calibration_job_ids = job_id_generator([20260722, 20260723], [683, 1], [712, 40])
-    mpm_spectroscopy_job_ids = job_id_generator(20260723, [48, 87], [85, 149], step=[1, 2])
-    mpm_calibration_expt, mpm_spectroscopy_expt = load_encoding_spectroscopy(
-        EncSpec,
-        mpm_calibration_job_ids,
-        mpm_spectroscopy_job_ids,
-        timing=timing,
-        calibration_program_name='EntireFloquetCyclePhaseCalibrationProgram',
-        spectroscopy_program_name='NPhotonHamiltonianSpectroscopyProgram',
-    )
+    # 1. Load the traces and their calibration set from the manifest.
+    mpm_spectroscopy_expt = MBRSpectrumExperiment.from_manifest(spectrum_manifest)
+    mpm_calibration_expt = mpm_spectroscopy_expt.calibration
 
     # 2. Set the physical phase frame. Unlisted occupations use branch 0.
-    mpm_cycle_branches = {
-        # (3, 0, 0, 0, 0): 1,
-    }
-    mpm_manual_kerr_MHz = -19.756e-3
-    mpm_spectrum_method = 'mpm' # use 'fft' for the existing FFT-only path
+    mpm_cycle_branches = {} if cycle_branches is None else cycle_branches
+    mpm_manual_kerr_MHz = manual_kerr_MHz
+    mpm_spectrum_method = spectrum_method  # 'fft' for the FFT-only path
 
     # 3. These are the current MPM defaults. Keep them together so every heuristic choice is visible and editable.
     mpm_options = dict(
@@ -486,7 +474,6 @@ def load_and_analyze_n3(calibration_job_ids, spectroscopy_job_ids,
 
     # 4. Reconstruct A(t), apply the requested Kerr/branch frame, calculate the reference FFT, then run MPM when selected.
     mpm_data = mpm_spectroscopy_expt.analyze(
-        calibration=mpm_calibration_expt,
         phase_frame='manual_kerr',
         manual_kerr_MHz=mpm_manual_kerr_MHz,
         cycle_branches=mpm_cycle_branches,
@@ -498,7 +485,7 @@ def load_and_analyze_n3(calibration_job_ids, spectroscopy_job_ids,
     )
 
     # 5. FFT keeps the original four-panel display. MPM shows raw FFT 2D, fitted-return FFT 2D, and the reconstructed DOS together.
-    mpm_spectroscopy_expt.display(data=mpm_data, show_mpm_poles=True, plot_mpm_theory=False)
+    mpm_spectroscopy_expt.display(show_mpm_poles=True)
 
     if mpm_data.spectrum_method == 'matrix_pencil':
         print('selected frequencies (MHz):', np.round(mpm_data.matrix_pencil.selected_frequencies_MHz, 6))
@@ -596,10 +583,57 @@ def compare_trace_with_mpm(encspec_N3_spectrum, encspec_N3_time_us,
 
 def fit_self_kerr_from_peak_overlap(
         spectroscopy_expt, spectroscopy_data, calibration_expt,
-        spectroscopy_occupations, cycle_branches,
+        spectroscopy_occupations, cycle_branches, **scan_options):
+    """The self-Kerr scan on the old loaded aggregates (see `_self_kerr_scan`).
+
+    For the disorder campaign until redesign step 7; new code uses
+    `fit_self_kerr`.
+    """
+    def analyze_at(kerr_MHz):
+        return spectroscopy_expt.analyze(
+            calibration=calibration_expt,
+            occupations=spectroscopy_occupations,
+            cycle_branches=cycle_branches,
+            phase_frame="manual_kerr",
+            manual_kerr_MHz=kerr_MHz,
+            spectrum_method="fft",
+        )
+
+    return _self_kerr_scan(spectroscopy_expt, spectroscopy_data, analyze_at,
+                           **scan_options)
+
+
+def fit_self_kerr(spectrum, cycle_branches, legacy=None, **scan_options):
+    """The self-Kerr scan on a loaded `MBRSpectrumExperiment` (see `_self_kerr_scan`).
+
+    Uses the spectrum's own calibration set and its last analysis as the
+    starting data. ``legacy`` goes to ``analyze``: jobs saved before the
+    analyzer sign was recorded (the July 2026 sets) need ``legacy=True``,
+    which the old scan could not pass. Returns (best_self_kerr_kHz,
+    kerr_fit_scores, data).
+    """
+    def analyze_at(kerr_MHz):
+        return spectrum.analyze(
+            cycle_branches=cycle_branches,
+            phase_frame="manual_kerr",
+            manual_kerr_MHz=kerr_MHz,
+            legacy=legacy,
+            spectrum_method="fft",
+        )
+
+    if not spectrum.data:
+        raise ValueError("run spectrum.analyze() first")
+    return _self_kerr_scan(spectrum, spectrum.data, analyze_at, **scan_options)
+
+
+def _self_kerr_scan(
+        spectroscopy_expt, spectroscopy_data, analyze_at,
         kerr_grid_kHz=None, energy_limit_MHz=0.08,
         min_man_photons=2, baseline_quantile=0.20):
     """Scan the signed M1 self-Kerr for best experiment--theory peak overlap.
+
+    ``analyze_at(kerr_MHz)`` re-analyzes in the manual-Kerr frame at one
+    grid point and returns the data.
 
     From `qsim_experiments.ipynb` cell 309, not data_postprocess -- the
     surface map routes that notebook's cells 308-314 to the analysis side,
@@ -669,14 +703,7 @@ def fit_self_kerr_from_peak_overlap(
         kerr_fit_n_M1 = kerr_fit_occupations_array[kerr_fit_rows, 0]
 
         for kerr_kHz in kerr_grid_kHz:
-            candidate_data = spectroscopy_expt.analyze(
-                calibration=calibration_expt,
-                occupations=spectroscopy_occupations,
-                cycle_branches=cycle_branches,
-                phase_frame="manual_kerr",
-                manual_kerr_MHz=kerr_kHz * 1e-3,
-                spectrum_method="fft",
-            )
+            candidate_data = analyze_at(kerr_kHz * 1e-3)
             use_energy = (
                 np.abs(candidate_data.spectrum.energy_MHz)
                 < kerr_fit_energy_limit_MHz
@@ -705,14 +732,7 @@ def fit_self_kerr_from_peak_overlap(
         best_self_kerr_kHz = float(kerr_grid_kHz[best_kerr_index])
 
         # analyze() mutates spectroscopy_expt.data, so restore the best grid point.
-        spectroscopy_data = spectroscopy_expt.analyze(
-            calibration=calibration_expt,
-            occupations=spectroscopy_occupations,
-            cycle_branches=cycle_branches,
-            phase_frame="manual_kerr",
-            manual_kerr_MHz=best_self_kerr_kHz * 1e-3,
-            spectrum_method="fft",
-        )
+        spectroscopy_data = analyze_at(best_self_kerr_kHz * 1e-3)
 
         print("fit occupations:", kerr_fit_occupations)
         print(f"best signed M1 self-Kerr = {best_self_kerr_kHz:.3f} kHz")

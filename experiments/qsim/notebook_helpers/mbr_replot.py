@@ -22,7 +22,10 @@ overview-figure loop (cell 209), the panel export loop (cell 210) and the
 time-trace request list (cell 211) are all dataset and figure choices.
 
 `load_and_analyze_sectors` is the exception: it is cell 208's loop, which is
-pure plumbing over the four photon-number sectors. Its N=2 supplement handling
+pure plumbing over the photon-number sectors. Each sector is a saved
+`MBRSpectrumExperiment` manifest (old jobs reach it through
+`tools/migrate_mbr_jobs.py`); its calibration set comes linked. Its N=2
+supplement handling
 is optional rather than assumed, because that supplement is a property of one
 dataset -- one occupation was acquired on a different time grid, so only its
 FFT rows can join the report spectrum, not its time traces.
@@ -40,9 +43,8 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.saved_jobs import load_aggregate
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from fitting.qsim.level_statistics import merge_spectra
 
 
 @dataclass
@@ -51,7 +53,7 @@ class ReplotConfig:
 
     manual_kerr_MHz: float = -19.756e-3
     cycle_branches: dict = field(
-        default_factory=lambda: {1: {}, 2: {}, 3: {}, 4: {}}
+        default_factory=lambda: {1: {}, 2: {}, 3: {}}
     )
     fft_window: str = "raw"
     zero_padding: int = 1
@@ -66,54 +68,29 @@ class ReplotConfig:
     suptitle_fontsize: int = 14
     overview_legend_ncols: int = 3
 
-    # Cell 206 aliased this to MBRSpectrumExperiment. Kept configurable
-    # because the source treated it as a knob.
-    EncSpec: Any = MBRSpectrumExperiment
 
-
-def expand_job_ranges(ranges):
-    return [
-        f'JOB-{date}-{number:05d}'
-        for date, first, last, step in ranges
-        for number in range(first, last + 1, step)
-    ]
-
-
-def load_sector(job_ranges, config, timing=None):
+def load_sector(manifest_path):
     """-> (calibration_expt, spectroscopy_expt, load_info) for one sector.
 
-    Both aggregates come from HDF5 via :mod:`experiments.saved_jobs`. The job
-    ranges for these sectors were submitted interleaved with other programs,
-    so each is filtered by the program class recorded in the provenance
-    sidecar -- which is checked before a file is opened, rather than by
-    unpickling each job and inspecting its `prog`.
+    ``manifest_path`` is a saved `MBRSpectrumExperiment`; its calibration
+    set is loaded with it, from the manifest it links.
     """
-    calibration_expt = load_aggregate(
-        expand_job_ranges(job_ranges['calibration']),
-        owner=MBRPhaseCorrectionExperiment,
-        program_class='EntireFloquetCyclePhaseCalibrationProgram',
-        timing=timing,
-        analyze=True,
-    )
-    spectroscopy_expt = load_aggregate(
-        expand_job_ranges(job_ranges['spectroscopy']),
-        owner=config.EncSpec,
-        program_class='NPhotonHamiltonianSpectroscopyProgram',
-        timing=timing,
-    )
-
+    spectroscopy_expt = MBRSpectrumExperiment.from_manifest(manifest_path)
+    calibration_expt = spectroscopy_expt.calibration
+    if calibration_expt is None:
+        raise ValueError(f"{manifest_path} links no calibration set; the report "
+                         f"frame (manual Kerr) needs one")
     load_info = AttrDict(dict(
-        calibration_loaded_ids=calibration_expt.batch_job_ids,
-        spectroscopy_loaded_ids=spectroscopy_expt.batch_job_ids,
-        calibration_skipped=calibration_expt.skipped_jobs,
-        spectroscopy_skipped=spectroscopy_expt.skipped_jobs,
+        manifest=str(manifest_path),
+        calibration_manifest=str(calibration_expt.manifest_path),
+        calibration_loaded_ids=list(calibration_expt.job_ids),
+        spectroscopy_loaded_ids=list(spectroscopy_expt.job_ids),
     ))
     return calibration_expt, spectroscopy_expt, load_info
 
 
-def analyze_sector(N, calibration_expt, spectroscopy_expt, config):
+def analyze_sector(N, spectroscopy_expt, config):
     analyze_kwargs = dict(
-        calibration=calibration_expt,
         phase_frame='manual_kerr',
         manual_kerr_MHz=config.manual_kerr_MHz,
         cycle_branches=config.cycle_branches[N],
@@ -126,8 +103,8 @@ def analyze_sector(N, calibration_expt, spectroscopy_expt, config):
         analyze_kwargs['mpm_merge_frequency_tolerance_bins'] = 0.5
 
     data = spectroscopy_expt.analyze(**analyze_kwargs)
-    # if int(data.photon_number) != N:
-    #     raise ValueError(f'expected N={N}, loaded N={data.photon_number}')
+    if int(data.photon_number) != N:
+        raise ValueError(f'expected N={N}, loaded N={data.photon_number}')
     return data
 
 
@@ -249,12 +226,12 @@ def annotate_theory_scaling(fig, data, plot_kind):
 
 def plot_single_spectroscopy_panel(
         N, plot_kind, panel, runs, panel_names_by_kind, *,
-        EncSpec=MBRSpectrumExperiment, show_poles=True, figsize=None,
+        show_poles=True, figsize=None,
         figure_dpi=None, legend_fontsize=None, save_path=None,
         save_dpi=300):
     """Export one report subplot as its own figure (cell 210).
 
-    `runs`, `panel_names_by_kind` and `ReplotEncSpec` were notebook globals
+    `runs` and `panel_names_by_kind` were notebook globals
     that this body read; they are arguments now, because the move is what
     broke them. `panel_names_by_kind` is cell 210's own settings block, which
     stayed in the notebook.
@@ -482,7 +459,7 @@ def plot_single_spectroscopy_panel(
         )
 
     elif plot_kind == 'fft' and panel == 'local_dos':
-        EncSpec.display_local_density_of_states(
+        MBRSpectrumExperiment.display_local_density_of_states(
             spectrum, occupations, ax=ax
         )
         ax.set_title(
@@ -645,26 +622,21 @@ def plot_time_traces(
     return fig
 
 
-def load_and_analyze_sectors(config, job_ranges,
-                             sectors=(1, 2, 3, 4),
-                             n2_supplement_ranges=None,
-                             n2_supplement_occupation=None,
-                             timing=None):
+def load_and_analyze_sectors(config, manifests, sectors=None,
+                             n2_supplement_manifest=None,
+                             n2_supplement_occupation=None):
     """Load every photon-number sector, then merge the N=2 supplement (cell 208).
 
-    Returns `runs`, keyed by photon number. Each entry holds the calibration
-    and spectroscopy experiments, the report and MPM data, the trace sources,
-    and the load info.
+    ``manifests`` maps photon number -> saved `MBRSpectrumExperiment`
+    manifest. Returns `runs`, keyed by photon number. Each entry holds the
+    calibration and spectroscopy experiments, the report and MPM data, the
+    trace sources, and the load info.
     """
     runs = {}
 
-    for N in sectors:
-        calibration_expt, spectroscopy_expt, load_info = load_sector(
-            job_ranges[N], config, timing=timing
-        )
-        sector_data = analyze_sector(
-            N, calibration_expt, spectroscopy_expt, config
-        )
+    for N in (sorted(manifests) if sectors is None else sectors):
+        calibration_expt, spectroscopy_expt, load_info = load_sector(manifests[N])
+        sector_data = analyze_sector(N, spectroscopy_expt, config)
         runs[N] = AttrDict(dict(
             calibration_expt=calibration_expt,
             spectroscopy_expt=spectroscopy_expt,
@@ -680,16 +652,13 @@ def load_and_analyze_sectors(config, job_ranges,
             len(sector_data.reconstruction.occupations), 'occupations',
         )
 
-    if n2_supplement_ranges is None or n2_supplement_occupation is None:
+    if n2_supplement_manifest is None or n2_supplement_occupation is None:
         return runs
 
     # N=2 has one occupation on a different time grid. Analyze it separately,
     # then merge only the FFT rows for the complete report spectrum.
-    supp_calibration_expt, supp_expt, supp_load_info = load_sector(
-        n2_supplement_ranges, config, timing=timing
-    )
+    _, supp_expt, supp_load_info = load_sector(n2_supplement_manifest)
     supp_data = supp_expt.analyze(
-        calibration=supp_calibration_expt,
         phase_frame='manual_kerr',
         manual_kerr_MHz=config.manual_kerr_MHz,
         cycle_branches={n2_supplement_occupation: 0},
@@ -708,7 +677,7 @@ def load_and_analyze_sectors(config, job_ranges,
             f'expected {n2_supplement_occupation}'
         )
 
-    complete_data = config.EncSpec.merge_spectra([
+    complete_data = merge_spectra([
         runs[2].mpm_data,
         supp_data,
     ])

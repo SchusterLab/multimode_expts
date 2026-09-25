@@ -232,6 +232,23 @@ still need. Exception: their runner calls move in step 1.
   Left on purpose (user decision): the `guan/` and `jonginn/` sandboxes and `dormant/`
   notebooks; they go when the new canonical notebooks replace them.
 
+- Step 6b, analysis side, the ready half (2026-09-24). Six old datasets converted into the
+  prod data tree with `tools/migrate_mbr_jobs.py` (`converted_data/` + `assembled_data/`):
+  July N=1, N=2, N=2 supplement, N=3 and August N=3 under `260526_qsim_darkmode`, the
+  August quickplot under `260814_qsim_encspec`. `analysis_notebooks/202609_qsim_migration/mbr.py`
+  loads them by manifest (`data_root() / ...`); `mbr_replot` and the N=3 parts of
+  `mbr_n3_reprocess` / `mbr_saved_reanalysis` use the new classes. Old and new paths were
+  compared on the same raw files: spectra, returns and Matrix Pencil frequencies are
+  identical. Still old-class, step 7: the disorder realizations (`load_disorder_*`), the
+  saved off-diagonal batch, `reprocess_n3_spectroscopy` and
+  `fit_self_kerr_from_peak_overlap` (shared with step-7 notebooks; the new
+  `fit_self_kerr` serves the new class). The notebook runs in the analysis suite with four
+  tagged known failures, all present before the port: cells reading `encspec_N3_*` (the
+  source cell that built them is lost), the disorder theory check (rebuilt vs saved theory
+  differ by up to 0.3 kHz), and the 5b disorder range (jobs 20260816-73..80 do not exist).
+  The report's "N=4" sector was a second N=1 set (config `CFG-FL-20260717-00029`); dropped
+  for now, and `analyze_sector` checks the photon number again.
+
 ### Handoff for steps 4-6
 
 Patterns set in steps 2-3; follow them:
