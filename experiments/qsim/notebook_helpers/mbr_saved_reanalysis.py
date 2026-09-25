@@ -23,7 +23,7 @@ the frames differ. What was *not* real:
 - cells 222 and 232 defined the same occupation-pairing check twice, with
   identical bodies and only the name different
   (`_saved_occupation_pairs` / `_offline_occupation_pairs`). One copy, named
-  `occupation_pairs`.
+  `occupation_pairs` (old job layout only; now in `deprecated/`).
 - cells 226/234, 227/235 and 228/236 are the same dataset-picking and
   trace-plotting code, differing only in line wrapping and a trailing comma.
   They became `plot_occupation_trace_panels` plus, in the notebook, one
@@ -36,12 +36,12 @@ recovered from the file's own provenance instead. Nothing here builds a
 station, and `make_local_loader` is deleted along with the hard-coded
 `C:\experiments` glob it wrapped.
 
-Old and new classes (MBR redesign step 6b). The N=3 and four-realization
-sets are saved `MBRSpectrumExperiment` manifests (old jobs converted with
-`tools/migrate_mbr_jobs.py`): `load_n3_calibrated` and
-`load_n3_as_acquired`. The disorder realizations stay on the old loaded
-aggregates until redesign step 7: `load_disorder_calibrated` and
-`load_disorder_as_acquired` carry the old bodies unchanged.
+Old and new classes (MBR redesign steps 6b and 7c). The N=3 and
+four-realization sets are saved `MBRSpectrumExperiment` manifests, and the
+disorder realizations a saved `MBRDisorderEnsembleExperiment` (old jobs
+converted with `tools/migrate_mbr_jobs.py`). The old-class disorder loaders
+and `occupation_pairs` moved to
+`experiments/qsim/deprecated/mbr_saved_reanalysis_legacy.py`.
 
 Temporary home, per the stage-2 instructions.
 """
@@ -53,38 +53,14 @@ import numpy as np
 
 from slab import AttrDict
 
-from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.qsim.deprecated.legacy_mbr import (
-    MBRSpectrumExperiment as LegacySpectrumExperiment,
-)
+from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.saved_jobs import load_aggregate
 
 
 def saved_job_range(date, first, last):
     """Inclusive job-ID range (cells 213 and 218, identical)."""
     return [f"JOB-{date}-{number:05d}" for number in range(first, last + 1)]
 
-
-def occupation_pairs(expt, label):
-    """Group a batch's children by occupation and check both analyzer phases.
-
-    Cells 222 and 232 defined this twice with identical bodies, under
-    the names `_saved_occupation_pairs` and `_offline_occupation_pairs`.
-    """
-    grouped = {}
-    for child in expt.batch_expts:
-        cfg = child.cfg.expt
-        occupation = tuple(map(int, cfg.spectroscopy_occupations))
-        grouped.setdefault(occupation, []).append(
-            float(cfg.spectroscopy_analyzer_phase)
-        )
-    for occupation, phases in grouped.items():
-        if len(phases) != 2 or not np.allclose(sorted(phases), [0.0, 90.0]):
-            raise RuntimeError(
-                f"{label}: {occupation} has analyzer phases {phases}, expected 0/90"
-            )
-    return list(grouped)
 
 
 def load_n3_calibrated(spectrum_manifest,
@@ -165,102 +141,6 @@ def load_n3_calibrated(spectrum_manifest,
     }
 
 
-def load_disorder_calibrated(saved_n3_calibration_job_ids,
-                             saved_disorder_job_ids,
-                             saved_n3_cycle_branches,
-                             saved_fft_window="raw",
-                             saved_zero_padding=1,
-                             timing=None):
-    """The disorder realizations *with* the N=3 phase calibration (cell 222).
-
-    Old loaded aggregates, from job IDs, until redesign step 7: the
-    calibration is loaded again here as the old `MBRPhaseCorrectionExperiment`,
-    which the old `analyze(calibration=...)` needs. The body is the disorder
-    half of the former `load_saved_calibrated`, unchanged.
-
-    Returns `saved_disorder_records`.
-    """
-    saved_n3_calibration_expt = load_aggregate(
-        saved_n3_calibration_job_ids,
-        owner=MBRPhaseCorrectionExperiment,
-        timing=timing,
-        analyze=True,
-    )
-
-    saved_disorder_records = {}
-    for realization, job_ids in sorted(saved_disorder_job_ids.items()):
-        expt = load_aggregate(job_ids, owner=LegacySpectrumExperiment, timing=timing)
-        cfg0 = expt.batch_expts[0].cfg.expt
-        saved_realizations = {
-            int(child.cfg.expt.disorder_realization)
-            for child in expt.batch_expts
-        }
-        if saved_realizations != {int(realization)}:
-            raise RuntimeError(
-                f"manifest r={realization} contains saved realizations {saved_realizations}"
-            )
-
-        occupations = [
-            tuple(map(int, occupation)) for occupation in cfg0.selected_occupations
-        ]
-        paired_occupations = occupation_pairs(expt, f"disorder r={realization}")
-        if set(paired_occupations) != set(occupations):
-            raise RuntimeError(f"disorder r={realization}: selected occupations differ")
-
-        manual_kerr_MHz = float(cfg0.target_manual_kerr_MHz)
-        cycle_branches = {
-            occupation: saved_n3_cycle_branches.get(occupation, 0)
-            for occupation in occupations
-        }
-        data = expt.analyze(
-            calibration=saved_n3_calibration_expt,
-            occupations=occupations,
-            cycle_branches=cycle_branches,
-            phase_frame="manual_kerr",
-            manual_kerr_MHz=manual_kerr_MHz,
-            fft_window=saved_fft_window,
-            zero_padding=saved_zero_padding,
-            spectrum_method="fft",
-        )
-
-        saved_theory_energies_MHz = np.asarray(cfg0.theory_energies_MHz, dtype=float)
-        np.testing.assert_allclose(
-            data.spectrum.energies_MHz,
-            saved_theory_energies_MHz,
-            rtol=0.0,
-            atol=1e-10,
-            err_msg=f"disorder r={realization}: saved theory and rebuilt theory differ",
-        )
-        plan = AttrDict(dict(
-            realization=int(cfg0.disorder_realization),
-            seed=int(cfg0.disorder_seed),
-            strength_kHz=float(cfg0.disorder_strength_kHz),
-            direction=np.asarray(cfg0.disorder_direction, dtype=float),
-            target_onsite_MHz=np.asarray(
-                cfg0.disorder_target_onsite_MHz, dtype=float
-            ),
-            pulse_detunings_MHz=np.asarray(
-                cfg0.disorder_api_detunings_MHz, dtype=float
-            ),
-            occupations=[list(occupation) for occupation in occupations],
-            theory_energies_MHz=saved_theory_energies_MHz,
-            manual_kerr_MHz=manual_kerr_MHz,
-        ))
-        saved_disorder_records[realization] = AttrDict(dict(
-            plan=plan,
-            job_ids=list(job_ids),
-            expt=expt,
-            data=data,
-        ))
-
-    for realization, record in saved_disorder_records.items():
-        print(
-            f"disorder r={realization}: {len(record.job_ids)} jobs, "
-            f"{len(record.data.reconstruction.occupations)} occupations; "
-            f"K={1e3 * record.data.spectrum.physical_kerr_MHz:.4f} kHz"
-        )
-    return saved_disorder_records
-
 
 def load_n3_as_acquired(four_realization_manifest,
                         offline_four_realization_branches,
@@ -313,52 +193,87 @@ def load_n3_as_acquired(four_realization_manifest,
     }
 
 
-def load_disorder_as_acquired(saved_disorder_job_ids,
-                              offline_fft_window="raw",
-                              offline_zero_padding=1,
-                              timing=None):
+def load_disorder_calibrated(ensemble_manifest, saved_n3_cycle_branches,
+                             saved_fft_window="raw", saved_zero_padding=1):
+    """The disorder realizations *with* the N=3 phase calibration (cell 222).
+
+    ``ensemble_manifest`` is the converted `MBRDisorderEnsembleExperiment` of
+    the August realizations, whose parts link the August N=3 calibration set.
+    Each part is analyzed in the manual-Kerr frame at the Kerr its
+    realization recorded (``target_manual_kerr_MHz`` in the old jobs), with
+    the branches of ``saved_n3_cycle_branches`` for its occupations, and its
+    rebuilt theory is checked against the theory saved with the jobs (to
+    1e-10 MHz, as the source did).
+
+    Returns `saved_disorder_records`: ``{realization: AttrDict(plan, job_ids,
+    expt, data)}``, ``expt`` the part.
+    """
+    ensemble = MBRDisorderEnsembleExperiment.from_manifest(ensemble_manifest)
+    saved_disorder_records = {}
+    for record, part in zip(ensemble.realizations, ensemble.children):
+        realization = record["realization"]
+        cycle_branches = {
+            occupation: saved_n3_cycle_branches.get(occupation, 0)
+            for occupation in part.occupations
+        }
+        manual_kerr_MHz = 1e-3 * float(record["self_kerr_kHz"])
+        data = part.analyze(
+            cycle_branches=cycle_branches,
+            phase_frame="manual_kerr",
+            manual_kerr_MHz=manual_kerr_MHz,
+            fft_window=saved_fft_window,
+            zero_padding=saved_zero_padding,
+            spectrum_method="fft",
+        )
+        saved_theory_energies_MHz = np.asarray(record["recorded_theory_energies_MHz"],
+                                               dtype=float)
+        np.testing.assert_allclose(
+            data.spectrum.energies_MHz,
+            saved_theory_energies_MHz,
+            rtol=0.0,
+            atol=1e-10,
+            err_msg=f"disorder r={realization}: saved theory and rebuilt theory differ",
+        )
+        plan = AttrDict(dict(record, manual_kerr_MHz=manual_kerr_MHz,
+                             pulse_detunings_MHz=np.asarray(part.detunings, dtype=float)))
+        saved_disorder_records[realization] = AttrDict(dict(
+            plan=plan, job_ids=list(part.job_ids), expt=part, data=data))
+
+    for realization, record in saved_disorder_records.items():
+        print(
+            f"disorder r={realization}: {len(record.job_ids)} traces, "
+            f"{len(record.data.reconstruction.occupations)} occupations; "
+            f"K={1e3 * record.data.spectrum.physical_kerr_MHz:.4f} kHz"
+        )
+    return saved_disorder_records
+
+
+def load_disorder_as_acquired(ensemble_manifest, offline_fft_window="raw",
+                              offline_zero_padding=1):
     """The disorder realizations in the as-acquired frame (cell 232).
 
-    Old loaded aggregates, from job IDs, until redesign step 7. The body is
-    the disorder half of the former `load_saved_as_acquired`, unchanged.
+    Same ensemble as :func:`load_disorder_calibrated`, so comparing the two
+    compares phase frames and nothing else.
 
-    Returns `saved_disorder_records`.
+    Returns `saved_disorder_records`: ``{realization: AttrDict(expt, data,
+    record)}``.
     """
-    # Disorder spectroscopy: ten selected occupations x analyzer phases 0/90.
+    ensemble = MBRDisorderEnsembleExperiment.from_manifest(ensemble_manifest)
     saved_disorder_records = {}
-    for realization, job_ids in sorted(saved_disorder_job_ids.items()):
-        expt = load_aggregate(job_ids, owner=LegacySpectrumExperiment, timing=timing)
-        cfg0 = expt.batch_expts[0].cfg.expt
-        saved_realizations = {
-            int(child.cfg.expt.disorder_realization) for child in expt.batch_expts
-        }
-        if saved_realizations != {realization}:
-            raise RuntimeError(
-                f"manifest r={realization} contains saved realizations "
-                f"{saved_realizations}"
-            )
-        occupations = [
-            tuple(map(int, occupation)) for occupation in cfg0.selected_occupations
-        ]
-        paired = occupation_pairs(expt, f"disorder r={realization}")
-        if set(paired) != set(occupations):
-            raise RuntimeError(f"disorder r={realization}: occupations differ")
-        data = expt.analyze(
-            occupations=occupations,
+    for record, part in zip(ensemble.realizations, ensemble.children):
+        data = part.analyze(
             phase_frame="as_acquired",
             fft_window=offline_fft_window,
             zero_padding=offline_zero_padding,
             spectrum_method="fft",
         )
-        saved_disorder_records[realization] = AttrDict(
-            dict(expt=expt, data=data, cfg=cfg0)
-        )
-
+        saved_disorder_records[record["realization"]] = AttrDict(
+            dict(expt=part, data=data, record=record))
     print(
         "Disorder, as acquired: "
         + ", ".join(
-            f"r={realization} ({len(record.expt.batch_job_ids)} H5 jobs)"
-            for realization, record in saved_disorder_records.items()
+            f"r={realization} ({len(entry.expt.job_ids)} traces)"
+            for realization, entry in saved_disorder_records.items()
         )
     )
     return saved_disorder_records

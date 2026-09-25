@@ -67,10 +67,10 @@
 # loads its calibration set with it (`MBRSpectrumExperiment.from_manifest`).
 # The manifest paths are the dataset choices now.
 #
-# Still on the old classes until redesign step 7 (disorder/SFF), and marked
-# "step 7" where they appear: the disorder realizations in section 5. The
-# saved off-diagonal batch of section 3 moved to
-# `dormant/mbr_disorder_offdiag.py` in step 7a. Two cells in section 2 read names no
+# The disorder realizations of section 5 are a saved
+# `MBRDisorderEnsembleExperiment` (redesign step 7c). The saved off-diagonal
+# batch of section 3 moved to `dormant/mbr_disorder_offdiag.py` in step 7a.
+# Two cells in section 2 read names no
 # code defines any more (see there); they are tagged `raises-exception`.
 #
 # Its neighbours: `mbr_disorder.py` and `dormant/`.
@@ -682,20 +682,12 @@ saved_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "2
 # The four-realization quick-plot set (`august_quickplot`).
 saved_four_realization_manifest = data_root() / "260814_qsim_encspec" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
 
-# Step 7: the disorder realizations are still loaded from job IDs with the
-# old classes, which also need the calibration as old jobs.
-saved_n3_calibration_job_ids = saved.saved_job_range(20260815, 113, 182)
-
-# Ten theory-selected occupations x analyzer phases 0/90 per realization.
-saved_disorder_job_ids = {
-    0: saved.saved_job_range(20260816, 13, 32),
-    1: saved.saved_job_range(20260816, 33, 52),
-    2: saved.saved_job_range(20260816, 53, 72),
-    3: saved.saved_job_range(20260817, 1, 20),
-}
-
-# Add later completed realizations here, for example:
-# saved_disorder_job_ids[4] = saved.saved_job_range(20260818, FIRST, LAST)
+# The four disorder realizations (`august_disorder_r0`..`r3`: ten
+# theory-selected occupations each), converted to one
+# MBRDisorderEnsembleExperiment whose parts link the August N=3 calibration
+# set (MBR redesign step 7c). A later realization joins by converting it into
+# a new ensemble with tools/migrate_mbr_jobs.py (kind `disorder`).
+saved_disorder_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_195547_MBRDisorderEnsembleExperiment.yaml"
 
 # This reproduces the later plotted/rephased Hamiltonian. Set to None to keep
 # only the exact as-acquired frame (saved device Kerr and analyzer correction).
@@ -747,13 +739,12 @@ saved_n3_data = saved_calibrated.get("saved_n3_data")
 saved_disorder_records = {}
 
 # %% tags=["raises-exception"]
-# Step 7: old classes. Known failure, also before the redesign: the rebuilt
-# disorder theory differs from the theory saved with the jobs (up to 0.3 kHz,
-# every level), and the loader asserts they agree to 1e-10. A physics
-# question for the disorder port, not a loading one.
+# Known failure, also before the redesign: the rebuilt disorder theory
+# differs from the theory saved with the jobs (up to 0.3 kHz, every level),
+# and the loader asserts they agree to 1e-10. A physics question (which
+# Hamiltonian inputs changed), not a loading one.
 saved_disorder_records = saved.load_disorder_calibrated(
-    saved_n3_calibration_job_ids=saved_n3_calibration_job_ids,
-    saved_disorder_job_ids=saved_disorder_job_ids,
+    saved_disorder_manifest,
     saved_n3_cycle_branches=saved_n3_cycle_branches,
     saved_fft_window=saved_fft_window,
     saved_zero_padding=saved_zero_padding,
@@ -793,17 +784,11 @@ offline_four_realization_branches = {
     (3, 0, 0, 0, 0): 1,
     (2, 0, 0, 1, 0): 1,
 }
-# NOTE: this range is not the same partition 5a uses. 5a splits 20260816
-# 13-72 plus 20260817 1-20 into four realizations; this asks for 11-80 as a
-# single realization 0, and `load_saved_as_acquired` checks that every child
-# agrees with its manifest label, so it will raise if these files in fact
-# span several realizations. Kept as the source had it -- deciding which
-# partition is right is a dataset question, not a loading one.
-# `offline_` prefix, not `saved_`: 5a's own `saved_disorder_job_ids` is still
-# live in the kernel at this point and must not be clobbered.
-offline_disorder_job_ids = {
-    0: saved.saved_job_range(20260816, 11, 80),
-}
+# The disorder realizations are 5a's ensemble. The source asked here for
+# JOB-20260816-00011..80 as one realization; that range cannot load (jobs
+# 73-80 do not exist, 11-12 are not spectroscopy jobs), so step 7c uses the
+# 5a partition. Whether the source meant another partition is a dataset
+# question for jonginn.
 offline_fft_window = "raw"
 offline_zero_padding = 1
 
@@ -820,13 +805,9 @@ saved_n3_spectroscopy_expt = saved_as_acquired["saved_n3_spectroscopy_expt"]
 saved_n3_data = saved_as_acquired["saved_n3_data"]
 saved_disorder_records = {}
 
-# %% tags=["raises-exception"]
-# Step 7: old classes. Known failure: the range asks for
-# JOB-20260816-00011..80, but jobs 73-80 do not exist in the job database
-# (JobPathError), and 11-12 are not spectroscopy jobs. See the NOTE on
-# `offline_disorder_job_ids`; the right partition is a dataset question.
+# %%
 saved_disorder_records = saved.load_disorder_as_acquired(
-    offline_disorder_job_ids,
+    saved_disorder_manifest,
     offline_fft_window=offline_fft_window,
     offline_zero_padding=offline_zero_padding,
 )
@@ -851,7 +832,7 @@ data_sets = {
     0: data_four_realization,
     1: saved_n3_spectroscopy_expt,
 }
-# Step 7: the disorder set joins only when its (old-class) loader succeeded.
+# The disorder set joins when its loader succeeded.
 if saved_disorder_records:
     data_sets[2] = saved_disorder_records[0].expt
 

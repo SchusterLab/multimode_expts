@@ -355,3 +355,42 @@ def flatten_result(value, prefix=""):
 
     emit(prefix, value)
     return flat
+
+
+# --------------------------------------------------------------------------
+# Diagonal disorder: the 7-1 campaign (MBR redesign step 7)
+# --------------------------------------------------------------------------
+
+
+def disorder_dataset(name):
+    """-> (calibration job IDs, {realization: job IDs}) of one disorder dataset."""
+    entry = json.loads(DATASETS.read_text())["datasets"][name]
+    return (list(entry.get("calibration", [])),
+            {int(r): list(ids) for r, ids in entry["realizations"].items()})
+
+
+def converted_diagonal_disorder(out_root, realizations=(0, 1)):
+    """-> MBRDisorderEnsembleExperiment for 7-1 realizations, through the migration script.
+
+    The 7-1 calibration becomes a calibration set, each realization's 20 old
+    jobs 10 ``MBRTimeTraceExperiment`` files and one ``MBRSpectrumExperiment``,
+    all in ``out_root``; the ensemble is re-assembled from its manifest.
+    """
+    from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
+
+    calibration, by_realization = disorder_dataset("diagonal_disorder_71")
+    ensemble = migration_tool().migrate_disorder(
+        {r: by_realization[r] for r in realizations}, out_root=out_root,
+        load_shots=False, calibration_job_ids=calibration)
+    return MBRDisorderEnsembleExperiment.from_manifest(ensemble.manifest_path)
+
+
+#: The 7-1 preview cells' analysis (data_postprocess.ipynb cell 246).
+DISORDER_PREVIEW_ANALYSIS = dict(
+    phase_frame="as_acquired",
+    theory_kerr_MHz="recorded",
+    excluded_occupations=[(0, 3, 0, 0, 0)],
+    mpm_track_frequency_tolerance_bins=0.50,
+    mpm_merge_frequency_tolerance_bins=0.50,
+    mpm_dedup_frequency_tolerance_bins=0.50,
+)

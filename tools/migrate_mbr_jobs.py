@@ -14,7 +14,7 @@ YAML (or JSON) file::
     kind: stark_cal                # which conversion
     notes: N=3 sector, preload_flattop swaps, 65 cycle pairs
     job_ids: [JOB-20260905-00075, JOB-20260905-00076, ...]
-    calibration_job_ids: [...]     # kind spectrum only, optional
+    calibration_job_ids: [...]     # kinds spectrum and disorder, optional
 
 Do not guess the grouping of jobs into datasets. If no list exists for a
 dataset, build it from the lab's OneNote logs.
@@ -33,6 +33,15 @@ Kinds
     ``MBRSpectrumExperiment`` manifest and assembled HDF5. The optional
     ``calibration_job_ids`` are converted first, as ``stark_cal``, and become
     the spectrum's calibration set.
+``disorder``
+    Old diagonal disorder jobs, given as ``realizations: {index: [job IDs]}``
+    in place of ``job_ids`` -> one ``spectrum`` conversion per realization,
+    all sharing the calibration set of the optional ``calibration_job_ids``
+    (or of an already converted set, ``calibration_manifest``),
+    then one ``MBRDisorderEnsembleExperiment`` over them. The realization
+    records come from the jobs' ``disorder_*`` (August) or
+    ``diagonal_disorder_*`` (7-1) keys. Old off-diagonal pair jobs are not
+    converted (docs/qsim/mbr_step7_plan.md, decision 2).
 ``orthogonality``
     Old ``EncodingOrthogonalityProgram`` jobs, one per initial occupation,
     each sweeping every decoder at analyzer phase 0 and 90 (``q = 0``) -> one
@@ -314,11 +323,13 @@ def migrate_stark_cal(job_ids, out_root=None, load_shots=True, notes="", timing=
 
 
 def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=None,
-                     calibration_job_ids=None):
+                     calibration_job_ids=None, calibration=None):
     """Convert one diagonal spectroscopy dataset. -> the saved MBRSpectrumExperiment.
 
-    Old off-diagonal pair jobs (``offdiag_cycles``) are not converted yet;
-    they belong to the disorder datasets (later phase).
+    ``calibration`` is an already converted calibration set, used in place of
+    converting ``calibration_job_ids`` (the ``disorder`` kind shares one set).
+    Old off-diagonal pair jobs (``offdiag_cycles``) are refused: they are not
+    converted (docs/qsim/mbr_step7_plan.md, decision 2).
     """
     paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
     out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
@@ -326,11 +337,12 @@ def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=N
     for job in jobs:
         if "offdiag_cycles" in job.cfg.expt:
             raise NotImplementedError(
-                f"{job.job_id} is an old off-diagonal pair job; their conversion "
-                f"comes with the disorder datasets (later phase)")
+                f"{job.job_id} is an old off-diagonal pair job; these are not "
+                f"converted (docs/qsim/mbr_step7_plan.md, decision 2)")
         if "floquet_cycles" not in job.cfg.expt:
             raise ValueError(f"{job.job_id} is not a spectroscopy job")
-    calibration = None
+    if calibration is not None and calibration_job_ids:
+        raise ValueError("pass calibration or calibration_job_ids, not both")
     if calibration_job_ids:
         calibration = migrate_stark_cal(calibration_job_ids, out_root=out_root,
                                         load_shots=load_shots, notes=notes, timing=timing)
@@ -358,6 +370,87 @@ def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=N
     spectrum.analyze()
     spectrum.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
     return spectrum
+
+
+# --------------------------------------------------------------------------
+# disorder: one Spectrum per realization, then the ensemble
+# --------------------------------------------------------------------------
+
+# Old realization keys -> the ensemble's realization record. The August jobs
+# used ``disorder_*``, the 7-1 campaign ``diagonal_disorder_*``.
+REALIZATION_KEYS = {
+    "disorder_": dict(realization="disorder_realization", seed="disorder_seed",
+                      strength_kHz="disorder_strength_kHz",
+                      direction="disorder_direction",
+                      onsite_MHz="disorder_target_onsite_MHz",
+                      selected_occupations="selected_occupations",
+                      recorded_theory_energies_MHz="theory_energies_MHz"),
+    "diagonal_disorder_": dict(realization="diagonal_disorder_realization",
+                               seed="diagonal_disorder_seed",
+                               strength_kHz="diagonal_disorder_strength_kHz",
+                               direction="diagonal_disorder_direction",
+                               onsite_MHz="diagonal_disorder_target_onsite_MHz",
+                               selected_occupations="diagonal_disorder_selected_occupations",
+                               self_kerr_kHz="diagonal_disorder_self_kerr_kHz"),
+}
+
+
+def realization_record(ecfg):
+    """-> the realization record of one old disorder job's cfg.expt."""
+    for prefix, keys in REALIZATION_KEYS.items():
+        if keys["realization"] in ecfg:
+            record = {name: ecfg[key] for name, key in keys.items() if key in ecfg}
+            if prefix == "disorder_" and "target_manual_kerr_MHz" in ecfg:
+                record["self_kerr_kHz"] = 1e3 * float(ecfg.target_manual_kerr_MHz)
+            record["realization"] = int(record["realization"])
+            record["source_keys"] = prefix + "*"
+            return json.loads(json.dumps(record, cls=NpEncoder))
+    raise ValueError("no disorder realization keys in this job")
+
+
+def migrate_disorder(realizations, out_root=None, load_shots=True, notes="", timing=None,
+                     calibration_job_ids=None, calibration_manifest=None):
+    """Convert one disorder dataset. -> the saved MBRDisorderEnsembleExperiment.
+
+    ``realizations`` maps realization index -> the old diagonal job IDs of
+    that realization. Each becomes one ``MBRSpectrumExperiment`` (kind
+    ``spectrum``), all sharing the calibration set converted from
+    ``calibration_job_ids`` -- or the already converted set saved at
+    ``calibration_manifest``. The realization records come from the jobs'
+    ``disorder_*`` / ``diagonal_disorder_*`` keys, which must agree within a
+    realization and name its index. The ensemble is analyzed with the
+    default settings (a failed realization is recorded, not fatal) and saved
+    beside the parts.
+    """
+    from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
+
+    if calibration_job_ids and calibration_manifest:
+        raise ValueError("pass calibration_job_ids or calibration_manifest, not both")
+    calibration = None
+    if calibration_manifest:
+        calibration = MBRCalibrationSetExperiment.from_manifest(calibration_manifest)
+    elif calibration_job_ids:
+        calibration = migrate_stark_cal(calibration_job_ids, out_root=out_root,
+                                        load_shots=load_shots, notes=notes, timing=timing)
+    parts, records = [], []
+    for index, job_ids in sorted(realizations.items(), key=lambda item: int(item[0])):
+        spectrum = migrate_spectrum(job_ids, out_root=out_root, load_shots=load_shots,
+                                    notes=f"{notes} r={index}".strip(), timing=timing,
+                                    calibration=calibration)
+        found = [realization_record(child.cfg.expt) for child in spectrum.children]
+        record = found[0]
+        if any(other != record for other in found[1:]):
+            raise ValueError(f"r={index}: jobs disagree on the realization record")
+        if record["realization"] != int(index):
+            raise ValueError(f"r={index}: the jobs record realization {record['realization']}")
+        parts.append(spectrum)
+        records.append(record)
+
+    ensemble = MBRDisorderEnsembleExperiment.from_parts(
+        parts, realizations=records, calibration=calibration, notes=notes)
+    ensemble.analyze(on_error="skip")
+    ensemble.save(directory=Path(parts[0].manifest_path).parent)
+    return ensemble
 
 
 # --------------------------------------------------------------------------
@@ -502,7 +595,8 @@ def migrate_propagator(job_ids, out_root=None, load_shots=True, notes="", timing
 
 
 MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum,
-              "orthogonality": migrate_orthogonality, "propagator": migrate_propagator}
+              "orthogonality": migrate_orthogonality, "propagator": migrate_propagator,
+              "disorder": migrate_disorder}
 
 
 def main(argv=None):
@@ -520,9 +614,12 @@ def main(argv=None):
         parser.error(f"kind must be one of {sorted(MIGRATIONS)}, got {kind!r}")
     notes = " ".join(str(part) for part in (job_list.get("dataset"), job_list.get("notes")) if part)
     extra = {}
-    if kind == "spectrum" and job_list.get("calibration_job_ids"):
+    if kind in ("spectrum", "disorder") and job_list.get("calibration_job_ids"):
         extra["calibration_job_ids"] = job_list["calibration_job_ids"]
-    result = MIGRATIONS[kind](job_list["job_ids"], out_root=args.out_root,
+    if kind == "disorder" and job_list.get("calibration_manifest"):
+        extra["calibration_manifest"] = job_list["calibration_manifest"]
+    jobs = job_list["realizations"] if kind == "disorder" else job_list["job_ids"]
+    result = MIGRATIONS[kind](jobs, out_root=args.out_root,
                               load_shots=not args.no_shots, notes=notes, **extra)
     print(f"{len(result.children)} converted job files; manifest {result.manifest_path}")
 

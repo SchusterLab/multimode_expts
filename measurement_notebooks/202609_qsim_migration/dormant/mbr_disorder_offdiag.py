@@ -50,7 +50,7 @@ from experiments.qsim.notebook_helpers.run_mode import run_settings
 # Set by tools/run_qsim_suite.py. Unset: through the queue in the main
 # checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
-from experiments.qsim.notebook_helpers.mbr_campaign import (
+from experiments.qsim.deprecated.mbr_campaign_legacy import (
     acquire_calibration,
     build_campaign,
     ensure_calibration,

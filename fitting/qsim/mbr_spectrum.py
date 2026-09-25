@@ -13,15 +13,16 @@ Splitting it is a genuine refactor rather than a move, so it is deliberately
 left for its own commit. The golden baseline covers this function through the
 FFT path, so that split will be verifiable numerically.
 
-TODO(spec 7.5): separate basis/Hamiltonian construction into
-``fitting/qsim/mbr_hamiltonian.py``.
+The basis and Hamiltonian construction is now
+:func:`fitting.qsim.mbr_hamiltonian.fixed_n_hamiltonian` (MBR redesign step 7b),
+so theory can be computed without a reconstruction.
 """
-
-from itertools import product
 
 import numpy as np
 
 from slab import AttrDict
+
+from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
 
 
 def ldos_weights(spectrum):
@@ -136,52 +137,12 @@ def analyze_spectrum(reconstruction,
 
 
 
-    #Here, the Hamiltonian is directly calculated as a matrix in a Fock basis
-    #First, product makes the all possible product states within photon_number
-    #and then those are conditionally stored in fock_basis if the number = photon number
     mode_count = len(reconstruction.occupations[0])
-    fock_basis = [
-        list(occupation) for occupation in product(range(photon_number + 1), repeat=mode_count)
-        if sum(occupation) == photon_number
-    ]
-    #Storing index of each fock basis
-    fock_index = {tuple(occupation): index for index, occupation in enumerate(fock_basis)}
-    #Making Hamiltonian matrix in a fock basis
-    H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
-    # The pulse program adds detuning to the positive storage-M1 sideband, so the rotating-frame onsite energy is -detuning.
-    onsite_MHz = np.concatenate(([0.], -detunings))
-    # updating Hamiltonian indices by estimating
-    # <n_i|H_{diag}|n_j> = \delta_{ij}(delta_i n_i+Kerr/2*n_M*(n_M-1) 
-    #Specifically, the algorithm is
-    #   1. Multiply self Kerr times n_M1
-    #   2. Multiply onsize detuning times n_i
-    # <n_i|H_{coupling}|n_j>  = g \delta_{n_M+1  n_i-1}\sqrt{n_M+1 n_i}+
-    #                           g \delta_{n_M-1  n_i+1}\sqrt{n_M   n_i+1}
-    #Specifically, the algorithm is
-    #For each column occupation,
-    #   1. Loop the iteraction on storage mode index i
-    #   2. Find the state with n_M increased by 1 and n_i decreased by 1 
-    #      using fock_index dictionary
-    #   3. Add g * \sqrt{n_M+1 n_i}
-    #   4. Do the same for the state iwth n_M-1 and n_i+1
-    for column, occupation in enumerate(fock_basis):
-        n_M1 = occupation[0]
-        H_MHz[column, column] = np.dot(onsite_MHz, occupation) + 0.5 * physical_kerr_MHz * n_M1 * (n_M1 - 1)
-        for mode_index, coupling_MHz in enumerate(couplings_MHz, start=1):
-            if n_M1 == 0:
-                continue
-            final_occupation = occupation.copy()
-            final_occupation[0] -= 1
-            final_occupation[mode_index] += 1
-            row = fock_index[tuple(final_occupation)]
-            matrix_element = coupling_MHz * np.sqrt(n_M1 * (occupation[mode_index] + 1))
-            H_MHz[row, column] += matrix_element
-            H_MHz[column, row] += matrix_element
-    #Using np.linalg.eigh, get the eigenvalue of the Hamiltonian Matrix
-    #Returns matrix with the index of (f, k), where k being eigenstate index
-    #And f being fock state index.
-    #So each column is an eigen state in a fock basis
-    energies_MHz, states = np.linalg.eigh(H_MHz)
+    hamiltonian = fixed_n_hamiltonian(photon_number, mode_count, detunings,
+                                      couplings_MHz, physical_kerr_MHz)
+    fock_basis = hamiltonian.fock_basis
+    fock_index = hamiltonian.fock_index
+    energies_MHz, states = hamiltonian.energies_MHz, hamiltonian.states
     #For each occupations for the experiment, calculate its index in the basis
     #that is used for the matrix setup
     basis_rows = [fock_index[tuple(occupation)] for occupation in reconstruction.occupations]

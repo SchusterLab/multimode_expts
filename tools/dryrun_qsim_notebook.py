@@ -15,7 +15,8 @@ What mock data cannot do, and what this script does about it:
   phase fit fails and ``MBRCalibrationSetExperiment.analyze`` refuses. The fit
   is replaced by a zero fit (phase 0 deg / cycle).
 - The same makes every return A(0) = 0, which Matrix Pencil refuses; cells
-  that call ``spectrum_method="mpm"`` are skipped unless ``--keep-mpm``.
+  that contain one of ``MPM_MARKERS`` (``spectrum_method="mpm"`` and the
+  helpers that run Matrix Pencil inside) are skipped unless ``--keep-mpm``.
 - A mock calibration over 65 cycle pairs takes about 20 min, so
   ``np.arange(0, 65, dtype=int)`` in the source is cut to 3 pairs.
 - The tomography math needs a well-conditioned M_0; mock data gives zeros,
@@ -33,6 +34,15 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Cell text that means "runs Matrix Pencil": skipped on mock data.
+MPM_MARKERS = (
+    'spectrum_method="mpm"',
+    'spectrum_method="matrix_pencil"',
+    "analyze_diagonal_disorder(",   # MBRDisorderEnsembleExperiment.analyze
+    "diag_ensemble.display(",       # needs that analysis
+    "diag_ensemble.save(",
+)
 
 
 def main(argv=None):
@@ -81,7 +91,7 @@ def main(argv=None):
         head = cell.split("\n", 1)[0]
         if "[markdown]" in head or "suite-skip" in head:
             continue
-        if not args.keep_mpm and 'spectrum_method="mpm"' in cell:
+        if not args.keep_mpm and any(marker in cell for marker in MPM_MARKERS):
             print(f"--- cell {index} skipped (Matrix Pencil on mock data)", flush=True)
             continue
         start = time.time()

@@ -111,8 +111,6 @@ client = JobClient()
 
 # %%
 campaign = build_campaign(
-    station=station,
-    client=client,
     floquet_settings=floquet_default_dict,
     active_reset_settings=active_reset_default_dict,
     measurement_settings=measurement_config_default_dict,

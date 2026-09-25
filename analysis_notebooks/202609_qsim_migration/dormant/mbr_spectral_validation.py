@@ -95,7 +95,7 @@ from experiments.qsim.deprecated.mbr_loading import (
 from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
 from experiments.qsim.deprecated import mbr_n3_reprocess_legacy as n3_legacy
 from experiments.qsim.deprecated import mbr_disorder_h5 as h5only
-from experiments.qsim.notebook_helpers import mbr_disorder_preview as dpreview
+from experiments.qsim.deprecated import mbr_disorder_preview as dpreview
 from experiments.qsim.deprecated import mbr_spectral_validation as sv
 
 # %% [markdown]

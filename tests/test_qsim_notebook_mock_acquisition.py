@@ -553,17 +553,15 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
 # --------------------------------------------------------------------------
 
 
-def _campaign(mock_station, defaults):
+def _campaign(defaults):
     from experiments.qsim.notebook_helpers.mbr_campaign import build_campaign
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
-    station, client = mock_station
     return build_campaign(
-        station=station, client=client,
         floquet_settings=floquet_defaults,
         active_reset_settings=active_reset_defaults,
         measurement_settings=measurement_defaults,
-        modes=[1, 2, 3, 4], calibration_job_ids={}, reps=20,
+        modes=[1, 2, 3, 4], reps=20,
     )
 
 
@@ -578,7 +576,7 @@ def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
     from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
 
     station, client = mock_station
-    campaign = _campaign(mock_station, defaults)
+    campaign = _campaign(defaults)
     occupations = fixed_n_occupations(1, len(campaign.mode_labels))
     calibration = MBRCalibrationSetExperiment(
         occupations, range(3), campaign.modes, sync_cycles=campaign.sync_cycles, reps=20)
@@ -617,7 +615,7 @@ def test_mbr_jobs_build_and_compile(mock_station, defaults, which):
     from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
 
     station, client = mock_station
-    campaign = _campaign(mock_station, defaults)
+    campaign = _campaign(defaults)
     # N=1 is the smallest complete sector: five occupations, not thirty-five.
     occupations = fixed_n_occupations(1, len(campaign.mode_labels))
     common = dict(sync_cycles=campaign.sync_cycles, reps=20)

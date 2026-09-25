@@ -229,3 +229,58 @@ Many helper functions are notebook cells copied as whole blocks, with no data fl
    converted?
 4. Do the `mbr_spectral_validation` methods also make sense on diagonal data (7-1, August)?
    If yes, they can be ported later on the ensemble.
+
+## 8. Progress
+
+- **7a done** (2026-09-24, `e9fdf85`). Moves only; see its commit message.
+- **7b-7d done together** (2026-09-24). They depended on each other: the new calibration,
+  the theory calls and the new acquisition all touch the same 7-1 functions.
+  - New: `fitting/qsim/mbr_hamiltonian.py` (`fixed_n_hamiltonian`, taken out of
+    `analyze_spectrum`; golden baselines unchanged), `fitting/qsim/mbr_disorder.py`
+    (direction, row selection, cycle grid, gap ratios, level matching, pooled statistics,
+    Tr U / SFF), `experiments/qsim/mbr_disorder_ensemble.py`
+    (`MBRDisorderEnsembleExperiment`), migration kind `disorder` in
+    `tools/migrate_mbr_jobs.py`, `tests/test_mbr_disorder_ensemble.py`.
+  - Rewritten on the new classes: `notebook_helpers/mbr_disorder_campaign.py`
+    (`plan_diagonal_disorder`, `realization_spectrum`, `analyze_diagonal_disorder`),
+    `notebook_helpers/mbr_campaign.py` (no calibration fields; `build_campaign` takes no
+    station or client), `load_disorder_*` in `notebook_helpers/mbr_saved_reanalysis.py`,
+    the measurement and analysis `mbr_disorder.py`, section 5 of the analysis `mbr.py`.
+  - Moved to `deprecated/` without changes: the old 7-1 functions
+    (`mbr_disorder_campaign.py`), `mbr_disorder_preview.py`, the old campaign base
+    (`mbr_campaign_legacy.py`), the old disorder loaders (`mbr_saved_reanalysis_legacy.py`).
+  - Converted into the prod data tree (raw files unchanged):
+    - August r0..r3: `C:\experiments\260526_qsim_darkmode\assembled_data\260924_195547_MBRDisorderEnsembleExperiment.yaml`,
+      linked to the August N=3 calibration set of step 6b.
+    - 7-1 r0..r18: `C:\experiments\260818_qsim_spectroscopy\assembled_data\260924_195637_MBRDisorderEnsembleExperiment.yaml`,
+      with a new calibration set converted from `JOB-20260828-00289..358`. r19 is not
+      converted: it has 11 of 20 jobs. The 7-1 jobs' provenance was exported to
+      `tests/data/job_provenance.json` (read-only, 461 records added, none changed).
+  - Dataset lists: `diagonal_disorder_71` and the six D72 lists (`d72_*`,
+    `"converted": false`, with their archived timing) are in `tests/data/mbr_datasets.json`.
+  - Checks:
+    - The ensemble on converted 7-1 data gives the same poles, theory levels and pooled gap
+      ratios as the old preview cells on the raw files (baseline, XPASS).
+    - The planner picks the same occupations as the old cell-325 code on the same inputs
+      (19 of 19). **For the physics audit:** the occupations recorded in the 7-1 jobs differ
+      from a re-plan with the converted calibration's hardware in 14 of 19 realizations
+      (onsite values and cycle grid are the same). So the campaign's planning inputs at
+      acquisition time were different from what the calibration jobs saved.
+    - Analysis suite: `mbr` ok (known xfail cells 30, 31, 48; cell 48 is the disorder theory
+      check, still 0.3 kHz off), `mbr_disorder` ok (it failed before: no timing).
+    - Mock dry run of the measurement `mbr_disorder.py` finishes; the Matrix Pencil cells
+      are skipped on mock data (`MPM_MARKERS` in `tools/dryrun_qsim_notebook.py`).
+    - pytest: 1058 passed, 1 skipped, 4 xfailed, 9 xpassed.
+  - Behaviour changes, on purpose:
+    - The pulse correction of a new 7-1 acquisition uses the calibration set's Kerr, not the
+      campaign's self-Kerr. The manual-Kerr analysis undoes the played correction first, so
+      the analyzed data do not depend on it.
+    - Analysis `mbr.py` 5b: the source range `JOB-20260816-00011..80` cannot load (jobs
+      73-80 do not exist, 11-12 are not spectroscopy jobs), so 5b now uses the 5a partition
+      (the August ensemble). Whether the source meant another partition is for jonginn.
+    - The notebooks now pass the values that the old cells hard-coded over their arguments
+      (preview realization 12, excluded occupation (0, 3, 0, 0, 0), level plot r=14 at 0.5
+      bins), so they print what the source printed.
+- **7e next:** move the old classes and programs, remove the MBR `_MOVED_TO` entries, change
+  the base name in `floquet_phase_calibration.py`, add the "no live import of
+  `deprecated/`" test, fix the handoff note in `mbr_redesign.md`.
