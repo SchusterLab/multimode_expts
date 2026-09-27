@@ -7,7 +7,7 @@ description: 'HDF5 job files for the N=2 Hamiltonian spectroscopy reprocessing, 
   compares only the measured rows against it -- but the prose overstates what was acquired. Preserved
   as found; confirming which five are absent is a later, theme-specific task. Paths are relative
   to the experiment data root (C:/experiments on the acquisition workstation, $MULTIMODE_DATA_ROOT
-  or the repo-root .env elsewhere); mbr_n2_spectroscopy.load_file_catalog joins them.'
+  or the repo-root .env elsewhere); experiments.qsim.deprecated.mbr_n2_spectroscopy.load_file_catalog joins them.'
 project: 260526_qsim_darkmode
 experiment_class: DarkBaseExperiment
 job_date: 20260721

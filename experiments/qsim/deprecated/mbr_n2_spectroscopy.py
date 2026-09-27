@@ -1,4 +1,11 @@
-"""N=2 Hamiltonian spectroscopy reprocessing from saved job files.
+"""N=2 Hamiltonian spectroscopy reprocessing from saved job files -- DEPRECATED.
+
+Moved from `experiments/qsim/notebook_helpers/mbr_n2_spectroscopy.py` on 2026-09-26 (MBR
+redesign step 8C), without changes. Why: `docs/qsim/mbr_step8_plan.md`, decision 3 (guan): the
+July N=2 files were taken in the removed 'decoder' phase-correction mode (all 40 files: mode
+unset, which meant 'decoder'; nonzero `decoder_phase_matrix`), so they are not canonical data.
+The notebook cells are `analysis_notebooks/202609_qsim_migration/dormant/mbr_n2_decoder_mode.py`.
+Not maintained; may break when live code changes. If it breaks, add a note here and do not fix it.
 
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 168-172 by the stage-2 notebook decomposition. Primary caller:

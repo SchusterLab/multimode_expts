@@ -1,4 +1,10 @@
-"""Report-figure machinery for the MBR spectroscopy replots.
+"""Report-figure machinery for the MBR spectroscopy replots -- DEPRECATED.
+
+Moved from `experiments/qsim/notebook_helpers/mbr_replot.py` on 2026-09-26 (MBR redesign
+step 8C), without changes. Why: `docs/qsim/mbr_step8_plan.md`, decision 3 (guan): the report
+replots leave the canonical analysis notebook. Their notebook cells are
+`analysis_notebooks/202609_qsim_migration/dormant/mbr_replot.py`. Not maintained; may break
+when live code changes. If it breaks, add a note here and do not fix it.
 
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
 206-211 by the stage-2 notebook decomposition. Primary caller:

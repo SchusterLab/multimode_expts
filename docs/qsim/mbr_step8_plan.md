@@ -1,6 +1,6 @@
 # MBR redesign, step 8 plan: a usable MBR surface
 
-Status: approved by guan 2026-09-25 (order A, B, D, C). 8A, 8B and 8D done; 8C waits for question 3. It uses
+Status: approved by guan 2026-09-25 (order A, B, D, C). 8A, 8B, 8D and 8C done. It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 
 ## 0. Goal and scope (guan, 2026-09-25)
@@ -24,7 +24,7 @@ into the MBR base, it moves out of the MBR path.
 | 8D | Measurement notebook `mbr.py`: section 4 through the spectrum class | dryrun tool |
 | 8C | Analysis notebook: a short canonical path; the rest to `dormant/` or an audit notebook | analysis suite |
 
-8C waits for the answers in section 4.
+8C waited for question 3 in section 4 (answered 2026-09-26).
 
 ## 2. 8A: facts (from the survey)
 
@@ -104,11 +104,12 @@ pinned configs, both compile to the same program). `test_pulse_layer_layout.py` 
    |sum_n A_n(t) / D|^2 over the complete fixed-N basis. That is the direct measurement; the
    spectrum is its FFT. Decision 7-3 was about the other SFF, the disorder-ensemble
    `DisorderSFFExperiment`. 8B makes `analyze_sff` readable.
-3. (guan, jonginn) 8C, the canonical analysis notebook. Proposal: keep load manifest ->
-   `analyze` -> `display` for the calibration set, the spectrum and disorder, and the self-Kerr
-   fit as a class method. Move out the N=2 raw reprocessing, the FFT / peak-finder / MPM
-   comparisons, the report replots, and the Aug 15-17 reproduction (keep that one usable until
-   the physics audit ends).
+3. **Decided (guan, 2026-09-26): 8C, the canonical analysis notebook.** Keep the N=3
+   spectrum and "peak finding three ways" (to show where FFT peak finding is weak beside
+   Matrix Pencil); keep the self-Kerr fit (the Kerr calibration procedure is being fixed);
+   keep the Aug 15-17 reproduction for now. Move to `dormant/`: the other N=3 diagnostics, the
+   report replots, and the N=2 section if its data is decoder-mode (it is: section 7).
+   Retired code goes to `dormant/` (notebooks) and `deprecated/` (library) before any `git rm`.
 
 ## 5. 8B: what was done
 
@@ -134,3 +135,18 @@ pinned configs, both compile to the same program). `test_pulse_layer_layout.py` 
   survey called this a gap; it is the design.
 - `mbr_tomography.py` and `mbr_disorder.py` still call the `notebook_helpers` planners.
   That is the `notebook_helpers` promotion work, not 8D.
+
+## 7. 8C: what was done (2026-09-26)
+
+- `analysis_notebooks/202609_qsim_migration/mbr.py`: 864 -> 388 lines. Sections: N=3 spectrum
+  (with peak finding three ways), M1 self-Kerr, the Aug 15-17 reproduction. Unused imports gone.
+- To `dormant/`: `mbr_n3_diagnostics.py` (global MPM diagnostic, incoherent vs coherent FFT,
+  small per-occupation plots, ridge finding, the "tutorial" and its two broken cells),
+  `mbr_replot.py`, `mbr_n2_decoder_mode.py` with `n2_spectroscopy_files.yml`.
+- To `deprecated/`: `mbr_replot.py`, `mbr_n2_spectroscopy.py`, and `mbr_n3_diagnostics.py`
+  (the five functions only the moved cells used). `notebook_helpers/mbr_n3_reprocess.py` keeps
+  `compare_peak_finders` and `fit_self_kerr`.
+- The July 21 N=2 files (the 40 in the catalog) are decoder-mode: mode unset (the old default,
+  'decoder'), nonzero `decoder_phase_matrix`. Every manifest data set (July N=1/2/3 and the N=2
+  supplement, August N=3, quickplot, disorder r0, September N=3, 7-1) was acquired in
+  'final_analyzer' mode with no decoder matrix (read from the raw source files).
