@@ -30,7 +30,7 @@ if you need the history.
 | meas `mbr_tomography.py` | new MBR classes | mock dry run passes up to `analyze_tomography` (mock data gives a singular M_0; expected) |
 | meas `mbr_disorder.py` | new classes, diagonal disorder (7-1) only | mock dry run passes (Matrix Pencil cells skipped on mock data) |
 | meas `multiphoton_calibration.py`, `floquet_calibration.py`, `floquet_displacement_kerr.py` | not touched by the MBR redesign (one timing call in multiphoton) | static import test only |
-| ana `mbr.py` | new classes; step 8C cut it to N=3, self-Kerr, Aug 15-17 reproduction | not rerun after 8C (see the log) |
+| ana `mbr.py` | new classes; step 8C cut it to N=3, self-Kerr, Aug 15-17 reproduction | analysis suite passes, smoke profile (2026-09-26; xfail cell 17 is the known disorder-theory difference) |
 | ana `mbr_disorder.py` | `MBRDisorderEnsembleExperiment` | analysis suite passes |
 | `dormant/` (both sides) | moved-out or old code; loads, not maintained | none |
 
