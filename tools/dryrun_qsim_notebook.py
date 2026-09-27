@@ -52,6 +52,8 @@ def main(argv=None):
                         help="pinned config set for the mock station")
     parser.add_argument("--keep-mpm", action="store_true",
                         help="also run cells that use Matrix Pencil")
+    parser.add_argument("--keep-going", action="store_true",
+                        help="report a failing cell and run the rest")
     args = parser.parse_args(argv)
 
     os.environ["MULTIMODE_RUN_PROFILE"] = "smoke"
@@ -87,18 +89,32 @@ def main(argv=None):
     source = source.replace("np.arange(0, 65, dtype=int)", "np.arange(0, 3, dtype=int)")
     cells = re.split(r"^# %%", source, flags=re.M)[1:]
     namespace = {"__name__": "__main__"}
+    failed = []
     for index, cell in enumerate(cells):
-        head = cell.split("\n", 1)[0]
+        # The rest of the "# %%" line holds the cell's tags, not code.
+        head, _, body = cell.partition("\n")
         if "[markdown]" in head or "suite-skip" in head:
             continue
         if not args.keep_mpm and any(marker in cell for marker in MPM_MARKERS):
             print(f"--- cell {index} skipped (Matrix Pencil on mock data)", flush=True)
             continue
         start = time.time()
-        exec(compile(cell, f"{args.notebook}:cell{index}", "exec"), namespace)
-        plt.close("all")
+        try:
+            exec(compile(body, f"{args.notebook}:cell{index}", "exec"), namespace)
+        except Exception as error:
+            # As in the suite: a raises-exception cell may raise (xfail).
+            if "raises-exception" in head:
+                print(f"--- cell {index} xfail ({type(error).__name__}: {error})", flush=True)
+                continue
+            if not args.keep_going:
+                raise
+            failed.append(index)
+            print(f"--- cell {index} FAILED ({type(error).__name__}: {error})", flush=True)
+            continue
+        finally:
+            plt.close("all")
         print(f"--- cell {index} ok ({time.time() - start:.1f}s)", flush=True)
-    print("DONE")
+    print("DONE" if not failed else f"DONE, failed cells {failed}")
 
 
 if __name__ == "__main__":
