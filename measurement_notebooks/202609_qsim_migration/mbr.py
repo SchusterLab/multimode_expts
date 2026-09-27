@@ -85,7 +85,7 @@ from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
-from experiments.qsim.notebook_helpers.mbr_campaign import (
+from experiments.qsim.mbr_campaign import (
     build_campaign,
     campaign_runner,
     fixed_n_occupations,

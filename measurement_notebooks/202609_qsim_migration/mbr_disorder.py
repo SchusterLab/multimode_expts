@@ -25,8 +25,8 @@
 # `MBRSpectrumExperiment` (diagonal `MBRTimeTraceExperiment` jobs with the
 # realization's detunings), and the campaign one
 # `MBRDisorderEnsembleExperiment` built from the saved realizations. The
-# planning is `notebook_helpers/mbr_disorder_campaign.py`; the old-class
-# version is in `experiments/qsim/deprecated/`. The pairwise preview and 7-2
+# planning is in `experiments/qsim/mbr_disorder_ensemble.py` (since step 9);
+# the old-class version is in `experiments/qsim/deprecated/`. The pairwise preview and 7-2
 # (D72) are in `dormant/mbr_disorder_offdiag.py`
 # (`docs/qsim/mbr_step7_plan.md`, decision 2).
 #
@@ -60,12 +60,12 @@ from experiments.qsim.notebook_helpers.run_mode import run_settings
 # Set by tools/run_qsim_suite.py. Unset: through the queue in the main
 # checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
-from experiments.qsim.notebook_helpers.mbr_campaign import (
+from experiments.qsim.mbr_campaign import (
     build_campaign,
     campaign_runner,
     fixed_n_occupations,
 )
-from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
+from experiments.qsim.mbr_disorder_ensemble import (
     DiagDisorderConfig,
     analyze_diagonal_disorder,
     plan_diagonal_disorder,
@@ -167,7 +167,7 @@ diag_config = DiagDisorderConfig(
 # #### 7-1b. Build the theory-selected plan and check time — no jobs
 
 # %%
-# A fitted M1 self-Kerr (for example `mbr_n3_reprocess.fit_self_kerr` in the
+# A fitted M1 self-Kerr (for example `MBRSpectrumExperiment.fit_self_kerr` in the
 # analysis notebook), if you have one. None falls back to the calibration's.
 best_self_kerr_kHz = None
 

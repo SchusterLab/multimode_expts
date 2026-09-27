@@ -230,3 +230,40 @@ def analyze_propagator_dynamics(reconstruction,
             single_cycle_branch_ambiguous=(eigenphase_cycle != 1),
         )),
     ))
+
+
+def fit_shared_step(matrices, cycles, step, cycle_us):
+    """One s-cycle transfer matrix F fitted to both steps of q = [0, s, 2s].
+
+    Solves ``F M_0 ~= M_s`` and ``F M_s ~= M_2s`` together by least squares.
+    Also gives the residual of the parameter-free prediction
+    ``M_2s = M_s M_0^-1 M_s``. Lower residuals mean the matrix model is closer
+    to time-homogeneous. ``E/h = -arg(lambda) / (2 pi s T)``, in the principal
+    Floquet zone (modulo ``1/(sT)``).
+
+    -> dict: ``transfer``; its ``poles``, ``pole_radii`` and
+    ``frequencies_MHz``, sorted by frequency; ``recurrence_residual`` and
+    ``semigroup_residual``.
+    """
+    matrices = np.asarray(matrices, dtype=complex)
+    index = {int(cycle): position for position, cycle in enumerate(cycles)}
+    M0, M1, M2 = matrices[index[0]], matrices[index[step]], matrices[index[2 * step]]
+
+    design = np.hstack((M0, M1))
+    target = np.hstack((M1, M2))
+    transfer = np.linalg.lstsq(design.T, target.T, rcond=None)[0].T
+    recurrence_residual = np.linalg.norm(target - transfer @ design) / np.linalg.norm(target)
+    predicted_M2 = M1 @ np.linalg.solve(M0, M1)
+    semigroup_residual = np.linalg.norm(M2 - predicted_M2) / np.linalg.norm(M2)
+
+    poles = np.linalg.eigvals(transfer)
+    frequencies_MHz = -np.angle(poles) / (2 * np.pi * step * cycle_us)
+    order = np.argsort(frequencies_MHz)
+    return {
+        "transfer": transfer,
+        "poles": poles[order],
+        "pole_radii": np.abs(poles[order]),
+        "frequencies_MHz": frequencies_MHz[order],
+        "recurrence_residual": float(recurrence_residual),
+        "semigroup_residual": float(semigroup_residual),
+    }

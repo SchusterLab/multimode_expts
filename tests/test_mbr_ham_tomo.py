@@ -104,3 +104,23 @@ def test_matrices_match_the_old_reconstruction(august):
     data = august.analyze()
     np.testing.assert_allclose(data.raw_matrices, old.raw_matrices, rtol=0, atol=1e-12)
     np.testing.assert_allclose(data.matrices, old.matrices, rtol=0, atol=1e-12)
+
+
+def test_fit_shared_step_recovers_a_known_transfer_matrix():
+    """M_q = F^(q/s) M_0 exactly -> the fit returns F's eigenfrequencies, zero residuals."""
+    from fitting.qsim.mbr_propagator import fit_shared_step
+
+    rng = np.random.default_rng(3)
+    step, cycle_us = 10, 0.4
+    frequencies_MHz = np.array([-0.1, 0.02, 0.09])  # inside the zone +-1/(2 s T) = +-0.125 MHz
+    vectors = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
+    F = vectors @ np.diag(np.exp(-2j * np.pi * frequencies_MHz * step * cycle_us)) @ np.linalg.inv(vectors)
+    M0 = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
+    matrices = [M0, F @ M0, F @ F @ M0]
+
+    fit = fit_shared_step(matrices, [0, step, 2 * step], step, cycle_us)
+
+    np.testing.assert_allclose(fit["frequencies_MHz"], np.sort(frequencies_MHz), atol=1e-9)
+    np.testing.assert_allclose(fit["pole_radii"], 1., atol=1e-9)
+    assert fit["recurrence_residual"] < 1e-9
+    assert fit["semigroup_residual"] < 1e-9

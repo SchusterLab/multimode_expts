@@ -41,7 +41,10 @@ on the measurement PC via ``$MULTIMODE_CONFIG_ARCHIVE``.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from itertools import product
 from pathlib import Path
+from typing import Any
 
 from slab import AttrDict
 
@@ -242,6 +245,71 @@ def mbr_defaults(swap_stors, **overrides) -> AttrDict:
     ))
     defaults.update(overrides)
     return defaults
+
+
+# --------------------------------------------------------------------------
+# The campaign base the MBR notebooks share
+# --------------------------------------------------------------------------
+
+@dataclass
+class MBRCampaign:
+    """The modes, their labels, the sync cycles and the defaults of one campaign.
+
+    Each MBR notebook builds the same base with :func:`build_campaign`, so none
+    depends on another having run first. The calibration set is not part of
+    it: each notebook holds its own ``MBRCalibrationSetExperiment``.
+    """
+
+    modes: list
+    mode_labels: list
+    sync_cycles: int
+    defaults: Any
+
+
+def build_campaign(floquet_settings, active_reset_settings, measurement_settings,
+                   modes=(1, 2, 3, 4), reps=1000):
+    """-> the :class:`MBRCampaign` over ``modes``: :func:`mbr_defaults` with the
+    notebook's settings dicts (``notebook_helpers/defaults.py``) applied.
+
+    From the Floquet settings only ``palindrome_scramble`` and
+    ``scramble_sync_cycles`` are used. ``floquet_waveform`` is not: the envelope
+    comes from the swap dataset, per mode (see :func:`mbr_defaults`).
+    ``floquet_hardware_loop`` is not either: every MBR job sets it False.
+    """
+    modes = [int(stor) for stor in modes]
+    sync_cycles = int(floquet_settings["scramble_sync_cycles"])
+    defaults = mbr_defaults(
+        modes,
+        reps=reps,
+        reset_dump_mode=active_reset_settings["reset_dump_mode"],
+        dump_reset_iter_num=active_reset_settings["dump_reset_iter_num"],
+        palindrome_scramble=floquet_settings["palindrome_scramble"],
+        scramble_sync_cycles=sync_cycles,
+        avoid_yoko=measurement_settings["avoid_yoko"],
+        use_multiphoton_swap=measurement_settings["use_multiphoton_swap"],
+    )
+    return MBRCampaign(modes=modes, mode_labels=["M1"] + [f"S{stor}" for stor in modes],
+                       sync_cycles=sync_cycles, defaults=defaults)
+
+
+def campaign_runner(campaign, station, client, ExptClass, use_queue=True):
+    """-> the runner for one MBR job class, over the campaign defaults.
+
+    Pass it to an assembled class's ``acquire``, e.g.
+    ``MBRSpectrumExperiment(...).acquire(campaign_runner(..., MBRTimeTraceExperiment))``.
+    """
+    return CharacterizationRunner(station=station, ExptClass=ExptClass,
+                                  default_expt_cfg=campaign.defaults, job_client=client,
+                                  use_queue=use_queue, show=False)
+
+
+def fixed_n_occupations(N, n_modes, descending=True):
+    """-> every occupation of ``n_modes`` modes with exactly ``N`` photons, as lists."""
+    occupations = [list(state) for state in product(range(N + 1), repeat=n_modes)
+                   if sum(state) == N]
+    if descending:
+        occupations.sort(reverse=True)
+    return occupations
 
 
 # --------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from experiments.qsim.deprecated.encoding_spectroscopy import (
 from experiments.qsim.deprecated.mbr_phase_correction import (
     EntireFloquetCyclePhaseCalibrationProgram,
 )
-from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
+from experiments.qsim.mbr_campaign import fixed_n_occupations
 
 
 @dataclass

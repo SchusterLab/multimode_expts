@@ -11,7 +11,7 @@ Not maintained; may break when live code changes. If it breaks, add a note here
 and do not fix it.
 """
 
-from experiments.qsim.notebook_helpers.mbr_n3_reprocess import _self_kerr_scan
+from experiments.qsim.mbr_spectrum import self_kerr_scan as _self_kerr_scan
 
 
 def reprocess_n3_spectroscopy(calibration_expt, spectroscopy_expt,

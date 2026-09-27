@@ -52,7 +52,6 @@ import matplotlib.pyplot as plt
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
 from experiments.qsim.notebook_helpers import mbr_saved_reanalysis as saved
 
 
@@ -104,8 +103,7 @@ spectroscopy_expt.display(spectrum_method='mpm')
 # finding is weak, beside the Matrix-Pencil spectrum displayed above.
 
 # %%
-_fig, peak_list_raw, peak_list_smoothed = n3.compare_peak_finders(
-    spectroscopy_expt,
+_fig, peak_list_raw, peak_list_smoothed = spectroscopy_expt.display_peak_finders(
     height=0.05,
     prominence=0.01,
 )
@@ -135,8 +133,7 @@ cycle_branches = dict(encspec_cycle_branches)
 # `legacy=True`: the July jobs predate the recorded analyzer sign. The old
 # scan could not pass it and raised on these data.
 best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data = (
-    n3.fit_self_kerr(
-        spectroscopy_expt,
+    spectroscopy_expt.fit_self_kerr(
         cycle_branches=cycle_branches,
         legacy=True,
         kerr_grid_kHz=np.arange(-5.0, 0.0 + 1e-9, 0.005),

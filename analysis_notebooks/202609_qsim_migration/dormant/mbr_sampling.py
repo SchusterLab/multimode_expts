@@ -73,7 +73,6 @@ from experiments.qsim.deprecated.mbr_loading import (
     job_id_generator,
     load_encoding_spectroscopy,
 )
-from experiments.qsim.notebook_helpers import mbr_n3_reprocess as n3
 from experiments.qsim.deprecated import mbr_n3_reprocess_legacy as n3_legacy
 from experiments.qsim.deprecated import mbr_sampling as sampling
 

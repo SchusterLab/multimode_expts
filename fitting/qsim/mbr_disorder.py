@@ -9,7 +9,7 @@ level magnitude (the preview cells' version), and :func:`match_levels` takes
 the matching tolerance directly.
 
 Pure numerics: arrays in, arrays out. ``experiments/qsim/mbr_disorder_ensemble.py``
-and ``notebook_helpers/mbr_disorder_campaign.py`` use these.
+(the ensemble's analysis and the campaign planning) uses these.
 """
 import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, linear_sum_assignment, milp

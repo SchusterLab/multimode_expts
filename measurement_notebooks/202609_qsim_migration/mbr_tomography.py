@@ -40,9 +40,9 @@
 # saved N=1 `MBRCalibrationSetExperiment`, and says so rather than guessing
 # if none is given.
 #
-# `fit_shared_step` was a `def` nested in cell 356 closing over four notebook
-# names; it is a module-level function in
-# `experiments/qsim/notebook_helpers/mbr_tomography.py` now.
+# The plan, the shared-step fit and its display are on `MBRHamTomoExperiment`
+# (`plan_three_depth`, `analyze_shared_step`, `display_shared_step`; since
+# step 9); the fit itself is `fitting.qsim.mbr_propagator.fit_shared_step`.
 #
 # Its neighbours: `mbr.py`, `mbr_disorder.py`,
 # `floquet_displacement_kerr.py`.
@@ -74,17 +74,12 @@ from experiments.qsim.notebook_helpers.run_mode import run_settings
 RUN = run_settings()
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
 from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment
 from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
-from experiments.qsim.notebook_helpers.mbr_campaign import (
+from experiments.qsim.mbr_campaign import (
     build_campaign,
     campaign_runner,
     fixed_n_occupations,
-)
-from experiments.qsim.notebook_helpers.mbr_tomography import (
-    analyze_tomography,
-    build_tomography_plan,
-    fit_shared_step,
-    plot_tomography_diagnostics,
 )
 
 # %%
@@ -144,55 +139,39 @@ else:
 # ### 8-1. Build the $q=[0,s,2s]$ plan and check acquisition size — no jobs
 
 # %%
-hamtom_plan = build_tomography_plan(
-    campaign=campaign,
-    station=station,
-    client=client,
-    calibration=hamtom_calibration,
-    use_queue=RUN.use_queue,
-    N=hamtom_N,
-    step=10,
-    reps=RUN.pick(1000, smoke=100),
-    batch_size=5,
+hamtom_step = 10
+hamtom_batch_size = 5
+hamtom_parts = MBRHamTomoExperiment.plan_three_depth(
+    hamtom_calibration, campaign, N=hamtom_N, step=hamtom_step,
+    reps=RUN.pick(1000, smoke=100), batch_size=hamtom_batch_size,
 )
+hamtom_runner = campaign_runner(campaign, station, client, MBROrthoColumnExperiment,
+                                use_queue=RUN.use_queue)
 
 # %% [markdown]
-# ### 8-2. Acquire the three $5	imes5$ matrices — submits fifteen jobs
+# ### 8-2. Acquire the three $5\times5$ matrices — submits fifteen jobs
 #
 # One saved `MBROrthogonalityExperiment` per depth, then the tomography that
 # combines them. Each part's manifest is saved as soon as it is acquired.
 
 # %%
-for hamtom_part in hamtom_plan["parts"]:
-    hamtom_part.acquire(hamtom_plan["runner"], batch_size=hamtom_plan["batch_size"],
-                        log=True, show=False)
+for hamtom_part in hamtom_parts:
+    hamtom_part.acquire(hamtom_runner, batch_size=hamtom_batch_size, log=True, show=False)
     hamtom_part.analyze()
     hamtom_part.save()
     print(f"q={hamtom_part.cycle}: jobs {hamtom_part.job_ids}")
 
-hamtom_expt = MBRHamTomoExperiment.from_parts(
-    hamtom_plan["parts"], calibration=hamtom_calibration)
+hamtom_expt = MBRHamTomoExperiment.from_parts(hamtom_parts, calibration=hamtom_calibration)
 
 # %% [markdown]
 # ### 8-3. Analyze three depths and fit one shared transfer matrix — no jobs
 
 # %%
-(
-    hamtom_data,
-    hamtom_raw_fit,
-    hamtom_corrected_fit,
-    hamtom_theory_frequencies_MHz,
-) = analyze_tomography(hamtom_expt, hamtom_plan)
+hamtom_data = hamtom_expt.analyze_shared_step(step=hamtom_step)
 hamtom_expt.save()
 
 # %% [markdown]
 # ### 8-4. Three-depth diagnostics — no jobs
 
 # %%
-plot_tomography_diagnostics(
-    hamtom_data=hamtom_data,
-    hamtom_raw_fit=hamtom_raw_fit,
-    hamtom_corrected_fit=hamtom_corrected_fit,
-    hamtom_theory_frequencies_MHz=hamtom_theory_frequencies_MHz,
-    plan=hamtom_plan,
-)
+hamtom_expt.display_shared_step()

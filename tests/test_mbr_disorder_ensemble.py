@@ -234,7 +234,7 @@ def test_baseline_old_preview_analysis_matches(diagonal_disorder):
 def test_plan_matches_the_old_selection_code(diagonal_disorder):
     """The planner picks what the old cell-325 code picks on the same inputs."""
     from experiments.qsim.deprecated.mbr_disorder_campaign import _diag_disorder_select_rows
-    from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
+    from experiments.qsim.mbr_disorder_ensemble import (
         DiagDisorderConfig, plan_diagonal_disorder)
 
     record = diagonal_disorder.realizations[0]
@@ -255,8 +255,8 @@ def test_plan_matches_the_old_selection_code(diagonal_disorder):
 
 
 def test_realization_spectrum_plays_the_detunings(diagonal_disorder):
-    from experiments.qsim.notebook_helpers.mbr_campaign import MBRCampaign
-    from experiments.qsim.notebook_helpers.mbr_disorder_campaign import (
+    from experiments.qsim.mbr_campaign import MBRCampaign
+    from experiments.qsim.mbr_disorder_ensemble import (
         DiagDisorderConfig, plan_diagonal_disorder, realization_spectrum)
 
     config = DiagDisorderConfig(realization_count=1)

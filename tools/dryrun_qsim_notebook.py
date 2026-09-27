@@ -20,7 +20,7 @@ What mock data cannot do, and what this script does about it:
 - A mock calibration over 65 cycle pairs takes about 20 min, so
   ``np.arange(0, 65, dtype=int)`` in the source is cut to 3 pairs.
 - The tomography math needs a well-conditioned M_0; mock data gives zeros,
-  so ``mbr_tomography.py`` stops at ``analyze_tomography``. Expected.
+  so ``mbr_tomography.py`` stops at ``analyze_shared_step``. Expected.
 
 Cells tagged ``suite-skip`` are skipped, as in the suite. Mock job files go
 to the mock station's data path (``C:/experiments/mock_data``). The mock

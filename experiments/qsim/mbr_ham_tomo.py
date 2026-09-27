@@ -32,7 +32,7 @@ from slab import AttrDict
 from experiments.assembled_data import AssembledExperiment
 from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
 from experiments.qsim.mbr_saved import saved_parameters
-from fitting.qsim.mbr_propagator import analyze_propagator_dynamics
+from fitting.qsim.mbr_propagator import analyze_propagator_dynamics, fit_shared_step
 
 
 def endpoint_calibration(calibration):
@@ -104,6 +104,44 @@ class MBRHamTomoExperiment(AssembledExperiment):
         tomo = cls.from_parts(children, calibration=calibration, notes=notes)
         tomo.job_ids = list(job_ids)
         return tomo
+
+    @classmethod
+    def plan_three_depth(cls, calibration, campaign, N=1, step=10, reps=1000, batch_size=5):
+        """-> the parts of the q = [0, s, 2s] pilot, one Orthogonality per depth.
+
+        Submits nothing; prints the workload. ``calibration`` is the saved
+        N-photon calibration set: each part's jobs record its manifest and
+        play its per-decoder correction. ``batch_size`` is only for the time
+        estimate. Acquire each part with an ``MBROrthoColumnExperiment``
+        runner, save it, then combine with :meth:`from_parts` and run
+        :meth:`analyze_shared_step`.
+        """
+        from experiments.qsim.mbr_campaign import fixed_n_occupations
+
+        if calibration.manifest_path is None:
+            raise RuntimeError("save() the calibration set first, so the jobs can record it")
+        cycles = [0, step, 2 * step]
+        cycle_us = float(saved_parameters(calibration.children).hardware.floquet_cycle_us)
+        occupations = fixed_n_occupations(N, len(campaign.mode_labels))
+        parts = [MBROrthogonalityExperiment(occupations, campaign.modes, cycle=cycle,
+                                            calibration=calibration,
+                                            sync_cycles=campaign.sync_cycles, reps=reps)
+                 for cycle in cycles]
+
+        jobs = len(parts) * len(occupations)
+        total_points = jobs * 4 * len(occupations)
+        # 3.76 s per point at 1200 reps: the estimate of the 7-1 campaign.
+        serial_minutes = total_points * 3.76 * reps / 1200.0 / 60.0
+        parallel_jobs = min(batch_size, len(occupations))
+        print("basis order:", [tuple(occupation) for occupation in occupations])
+        print(f"Floquet cycle={cycle_us:.6f} us; q={cycles}; step time={step * cycle_us:.6f} us; "
+              f"max time={2 * step * cycle_us:.6f} us")
+        print(f"jobs={jobs}, points/job={4 * len(occupations)}, total points={total_points}, "
+              f"program repetitions={total_points * reps:,}")
+        print(f"rough time={serial_minutes:.1f} min serialized, or "
+              f"{serial_minutes / parallel_jobs:.1f} min with {parallel_jobs} concurrent workers, "
+              f"plus overhead")
+        return parts
 
     # -- analysis ---------------------------------------------------------
 
@@ -182,6 +220,101 @@ class MBRHamTomoExperiment(AssembledExperiment):
             axis.legend()
         fig.suptitle(r"$|M_q|$" + (" (endpoint normalized)" if tomography else "")
                      + f", {len(labels)} occupations")
+        return fig
+
+    def analyze_shared_step(self, step):
+        """:meth:`analyze` at q = [0, s, 2s], plus one shared s-cycle transfer matrix.
+
+        Fits :func:`fitting.qsim.mbr_propagator.fit_shared_step` to the raw
+        and to the phase-corrected matrices. The Stark correction is played on
+        the pulse, so the two agree for new jobs; they differ only for
+        converted old jobs that left the correction to analysis. For N = 1
+        the zero-detuning theory is the star Hamiltonian: +/- |g| (the bright
+        mode) and zeros. -> ``data``, with ``data.shared_step``.
+        """
+        if self.calibration is None:
+            raise ValueError("the tomography needs the calibration set; "
+                             "pass it to MBRHamTomoExperiment.from_parts")
+        if self.cycles != [0, step, 2 * step]:
+            raise ValueError(f"the shared-step fit needs q=[0, {step}, {2 * step}]; got {self.cycles}")
+        data = self.analyze(finite_difference_cycles=self.cycles, eigenphase_cycle=step)
+        cycle_us = data.floquet_cycle_us
+        theory_MHz = None
+        if all(sum(occupation) == 1 for occupation in self.occupations):
+            bright_MHz = np.linalg.norm(np.asarray(data.hardware.couplings_MHz, dtype=float))
+            theory_MHz = np.asarray([-bright_MHz] + [0.] * (len(self.occupations) - 2) + [bright_MHz])
+        data.shared_step = AttrDict(dict(
+            step=int(step),
+            raw=fit_shared_step(data.raw_matrices, data.cycles, step, cycle_us),
+            corrected=fit_shared_step(data.matrices, data.cycles, step, cycle_us),
+            theory_frequencies_MHz=theory_MHz,
+        ))
+
+        print("finite difference used:", data.finite_difference is not None)
+        print(f"cond(M0)={data.zero_cycle_condition_number:.3g}")
+        print(f"endpoint-normalized M0 identity residual="
+              f"{data.endpoint_normalized_zero_cycle_identity_residual:.3g}")
+        print(f"calibration diagonal mismatch={data.calibration_diagonal_relative_mismatch:.3g}")
+        print(f"q={step} two-depth GEVP E/h (kHz):",
+              np.round(1e3 * data.eigenphase.eigenfrequencies_MHz, 3))
+        print("three-depth shared-step fits (lower residual is better):")
+        for label, fit in (("raw", data.shared_step.raw), ("phase corrected", data.shared_step.corrected)):
+            print(f"  {label}: recurrence={fit['recurrence_residual']:.3g}, "
+                  f"semigroup={fit['semigroup_residual']:.3g}")
+            print("    E/h (kHz):", np.round(1e3 * fit["frequencies_MHz"], 3))
+            print("    |lambda|:", np.round(fit["pole_radii"], 5))
+        if theory_MHz is not None:
+            print("zero-detuning theory E/h (kHz):", np.round(1e3 * theory_MHz, 3))
+        print(f"step-fit alias period={1e3 / (step * cycle_us):.3f} kHz; "
+              f"principal zone=+/-{0.5e3 * data.eigenphase.alias_period_MHz:.3f} kHz")
+        return data
+
+    def display_shared_step(self):
+        """|M_0|, |M_s|, |M_2s|; the shared-step eigenvalues on the unit circle; the
+        three-depth spectrum against theory."""
+        data = self.data
+        if "shared_step" not in data:
+            raise ValueError("run analyze_shared_step(step) first")
+        step = data.shared_step.step
+        index = {int(cycle): position for position, cycle in enumerate(data.cycles)}
+        raw, corrected = data.shared_step.raw, data.shared_step.corrected
+        labels = data.mode_labels
+
+        fig, axes = plt.subplots(1, 5, figsize=(22, 4.2), constrained_layout=True)
+        for axis, cycle, title in ((axes[0], 0, r"$|M_0|$"),
+                                   (axes[1], step, rf"$|M_{{{step}}}|$"),
+                                   (axes[2], 2 * step, rf"$|M_{{{2 * step}}}|$")):
+            image = axis.imshow(np.abs(data.matrices[index[cycle]]), origin="upper", cmap="magma", vmin=0)
+            axis.set_title(title)
+            axis.set_xticks(np.arange(len(labels)), labels, rotation=45)
+            axis.set_yticks(np.arange(len(labels)), labels)
+            axis.set_xlabel("encoder")
+            axis.set_ylabel("decoder")
+            fig.colorbar(image, ax=axis)
+
+        angle = np.linspace(0, 2 * np.pi, 500)
+        axes[3].plot(np.cos(angle), np.sin(angle), color="black", linestyle=":", linewidth=1)
+        axes[3].scatter(raw["poles"].real, raw["poles"].imag, s=55, marker="x", label="raw")
+        axes[3].scatter(corrected["poles"].real, corrected["poles"].imag, s=55,
+                        facecolors="none", edgecolors="C1", label="phase corrected")
+        axes[3].axhline(0, color="0.8", linewidth=0.8)
+        axes[3].axvline(0, color="0.8", linewidth=0.8)
+        axes[3].set_aspect("equal")
+        axes[3].set(xlabel=r"$\mathrm{Re}\,\lambda$", ylabel=r"$\mathrm{Im}\,\lambda$",
+                    title="shared-step eigenvalues")
+        axes[3].legend(fontsize=8)
+
+        axes[4].scatter(np.zeros(len(raw["frequencies_MHz"])), 1e3 * raw["frequencies_MHz"],
+                        s=55, marker="x", label="raw fit")
+        axes[4].scatter(np.ones(len(corrected["frequencies_MHz"])), 1e3 * corrected["frequencies_MHz"],
+                        s=55, facecolors="none", edgecolors="C1", label="phase-corrected fit")
+        theory = data.shared_step.theory_frequencies_MHz
+        if theory is not None:
+            axes[4].scatter(2 * np.ones(len(theory)), 1e3 * theory, marker="x", s=65,
+                            color="black", label="theory")
+        axes[4].set_xticks([0, 1, 2], ["raw", "corrected", "theory"])
+        axes[4].set(xlim=(-0.5, 2.5), ylabel=r"$E/h$ (kHz)", title="three-depth least-squares spectrum")
+        plt.show()
         return fig
 
     # -- persistence ------------------------------------------------------

@@ -554,7 +554,7 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
 
 
 def _campaign(defaults):
-    from experiments.qsim.notebook_helpers.mbr_campaign import build_campaign
+    from experiments.qsim.mbr_campaign import build_campaign
 
     active_reset_defaults, floquet_defaults, measurement_defaults = defaults
     return build_campaign(
@@ -573,7 +573,7 @@ def test_execute_refuses_the_queue_in_mock_mode(mock_station, defaults):
     against real hardware unless it was started with --mock.
     """
     from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
-    from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
+    from experiments.qsim.mbr_campaign import fixed_n_occupations
 
     station, client = mock_station
     campaign = _campaign(defaults)
@@ -612,7 +612,7 @@ def test_mbr_jobs_build_and_compile(mock_station, defaults, which):
     from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
     from experiments.qsim.mbr_stark_cal import MBRStarkCalProgram
     from experiments.qsim.mbr_time_trace import MBRTimeTraceProgram
-    from experiments.qsim.notebook_helpers.mbr_campaign import fixed_n_occupations
+    from experiments.qsim.mbr_campaign import fixed_n_occupations
 
     station, client = mock_station
     campaign = _campaign(defaults)
