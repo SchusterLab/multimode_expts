@@ -60,7 +60,10 @@ class Database:
             db_path: Path to SQLite database file. Creates parent directories
                      if they don't exist. Defaults to data/jobs.db
         """
-        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        # Resolve links: SQLite keeps the WAL beside the path it is given, so a
+        # worktree's jobs.db link would otherwise read the main file without the
+        # main WAL (a stale, "malformed" view) and start a WAL of its own.
+        self.db_path = (Path(db_path) if db_path else DEFAULT_DB_PATH).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.db_url = f"sqlite:///{self.db_path}"
