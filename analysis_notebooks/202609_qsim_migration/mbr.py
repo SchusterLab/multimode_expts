@@ -52,7 +52,7 @@ import matplotlib.pyplot as plt
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.notebook_helpers import mbr_saved_reanalysis as saved
+from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 
 
 # %% [markdown]
@@ -189,9 +189,9 @@ plt.show()
 # Because both read the same files, a disagreement between them is now a
 # statement about phase frames and nothing else.
 #
-# What was *not* a real difference: cells 213/218 defined `saved_job_range`
-# byte-identically, and cells 222/232 defined the same occupation-pairing
-# check under two names with identical bodies. Both are single functions now.
+# Every cell below is the canonical flow: `from_manifest`, then `analyze(...)`
+# with this data set's choices (the loader functions of stage 2 were removed in
+# MBR redesign step 9B).
 
 # %% [markdown]
 # ## 3a. With the phase calibration applied
@@ -247,42 +247,65 @@ _ = data_four_realization.analyze(
 data_four_realization.display()
 
 # %%
-saved_calibrated = saved.load_n3_calibrated(
-    saved_n3_manifest,
-    saved_n3_cycle_branches=saved_n3_cycle_branches,
-    saved_n3_manual_kerr_MHz=saved_n3_manual_kerr_MHz,
-    saved_fft_window=saved_fft_window,
-    saved_zero_padding=saved_zero_padding,
+saved_n3 = MBRSpectrumExperiment.from_manifest(saved_n3_manifest)
+saved_n3_calibration = saved_n3.calibration
+saved_n3_calibration.analyze()
+# The complete N=3 sector, and the timing recovered from the files, not from
+# today's station.
+assert len(saved_n3_calibration.occupations) == 35 and all(
+    sum(o) == 3 for o in saved_n3_calibration.occupations)
+assert set(saved_n3.occupations) == set(saved_n3_calibration.occupations)
+assert "station" not in saved_n3_calibration.data.hardware.source
+print("Floquet timing recovered from:", saved_n3_calibration.data.hardware.source)
+
+saved_n3_data = saved_n3.analyze(
+    phase_frame="as_acquired" if saved_n3_manual_kerr_MHz is None else "manual_kerr",
+    manual_kerr_MHz=saved_n3_manual_kerr_MHz,
+    cycle_branches=saved_n3_cycle_branches if saved_n3_manual_kerr_MHz is not None else 0,
+    fft_window=saved_fft_window,
+    zero_padding=saved_zero_padding,
+    spectrum_method="fft",
 )
-saved_n3_calibration_expt = saved_calibrated["saved_n3_calibration_expt"]
-saved_n3_spectroscopy_expt = saved_calibrated["saved_n3_spectroscopy_expt"]
-saved_n3_data = saved_calibrated.get("saved_n3_data")
-saved_disorder_records = {}
+hardware = saved_n3_calibration.data.hardware
+print(f"Tcycle={hardware.floquet_cycle_us:.9f} us; g={1e3 * np.asarray(hardware.couplings_MHz)} kHz; "
+      f"frame={saved_n3_data.phase_frame}; K={1e3 * saved_n3_data.spectrum.physical_kerr_MHz:.4f} kHz")
+
+# %%
+# The disorder realizations, each in the manual-Kerr frame at the Kerr its
+# record saved, with 3a's branches for its occupations.
+saved_disorder = MBRDisorderEnsembleExperiment.from_manifest(saved_disorder_manifest)
+for record, part in zip(saved_disorder.realizations, saved_disorder.children):
+    part.analyze(
+        phase_frame="manual_kerr",
+        manual_kerr_MHz=1e-3 * float(record["self_kerr_kHz"]),
+        cycle_branches={o: saved_n3_cycle_branches.get(o, 0) for o in part.occupations},
+        fft_window=saved_fft_window,
+        zero_padding=saved_zero_padding,
+        spectrum_method="fft",
+    )
+    print(f"r={record['realization']}: {len(part.job_ids)} traces, "
+          f"K={1e3 * part.data.spectrum.physical_kerr_MHz:.4f} kHz")
 
 # %% tags=["raises-exception"]
 # Known failure, also before the redesign: the rebuilt disorder theory
-# differs from the theory saved with the jobs (up to 0.3 kHz, every level),
-# and the loader asserts they agree to 1e-10. A physics question (which
-# Hamiltonian inputs changed), not a loading one.
-saved_disorder_records = saved.load_disorder_calibrated(
-    saved_disorder_manifest,
-    saved_n3_cycle_branches=saved_n3_cycle_branches,
-    saved_fft_window=saved_fft_window,
-    saved_zero_padding=saved_zero_padding,
-)
+# differs from the theory saved with the jobs (up to 0.3 kHz, every level).
+# A physics question (which Hamiltonian inputs changed), not a loading one.
+saved_disorder_mismatch_MHz = saved_disorder.recorded_theory_mismatch_MHz()
+print("max |rebuilt - recorded| theory level (kHz):",
+      {r: round(1e3 * m, 4) for r, m in saved_disorder_mismatch_MHz.items()})
+assert max(saved_disorder_mismatch_MHz.values()) <= 1e-10
 
 # %%
 # Optional report figures from the reconstructed data.
 saved_show_calibration = False
 saved_show_n3 = True
-saved_show_disorder = True
 
 if saved_show_calibration:
-    saved_n3_calibration_expt.display()
+    saved_n3_calibration.display()
     plt.show()
 if saved_show_n3:
     # saved_n3_data is the spectrum's latest analysis, which display() shows.
-    saved_n3_spectroscopy_expt.display(level_statistics=False)
+    saved_n3.display(level_statistics=False)
     plt.show()
 
 # %% [markdown]
@@ -314,33 +337,37 @@ offline_fft_window = "raw"
 offline_zero_padding = 1
 
 # %%
-saved_as_acquired = saved.load_n3_as_acquired(
-    saved_four_realization_manifest,
-    offline_four_realization_branches=offline_four_realization_branches,
-    n3_manifest=saved_n3_manifest,
-    offline_fft_window=offline_fft_window,
-    offline_zero_padding=offline_zero_padding,
+data_four_realization.analyze(
+    phase_frame="as_acquired",
+    cycle_branches=offline_four_realization_branches,
+    fft_window=offline_fft_window,
+    zero_padding=offline_zero_padding,
+    spectrum_method="fft",
 )
-data_four_realization = saved_as_acquired["data_four_realization"]
-saved_n3_spectroscopy_expt = saved_as_acquired["saved_n3_spectroscopy_expt"]
-saved_n3_data = saved_as_acquired["saved_n3_data"]
-saved_disorder_records = {}
-
-# %%
-saved_disorder_records = saved.load_disorder_as_acquired(
-    saved_disorder_manifest,
-    offline_fft_window=offline_fft_window,
-    offline_zero_padding=offline_zero_padding,
+saved_n3_data = saved_n3.analyze(
+    phase_frame="as_acquired",
+    fft_window=offline_fft_window,
+    zero_padding=offline_zero_padding,
+    spectrum_method="fft",
 )
+for part in saved_disorder.children:
+    part.analyze(
+        phase_frame="as_acquired",
+        fft_window=offline_fft_window,
+        zero_padding=offline_zero_padding,
+        spectrum_method="fft",
+    )
+print("as acquired: four-realization", len(data_four_realization.children), "traces; N=3",
+      len(saved_n3.children), "traces; disorder",
+      [len(part.job_ids) for part in saved_disorder.children], "traces")
 
 # %%
 # Optional figures; all data above came from local H5 files.
 offline_show_n3 = True
-offline_show_disorder = True
 
 if offline_show_n3:
     # saved_n3_data is the spectrum's latest analysis, which display() shows.
-    saved_n3_spectroscopy_expt.display(level_statistics=False)
+    saved_n3.display(level_statistics=False)
     plt.show()
 
 # %% [markdown]
@@ -351,24 +378,16 @@ if offline_show_n3:
 # %%
 data_sets = {
     0: data_four_realization,
-    1: saved_n3_spectroscopy_expt,
+    1: saved_n3,
+    2: saved_disorder.part(0),
 }
-# The disorder set joins when its loader succeeded.
-if saved_disorder_records:
-    data_sets[2] = saved_disorder_records[0].expt
-
-data_set_index = 2 if 2 in data_sets else 1
-pp_data = data_sets[data_set_index]
+pp_data = data_sets[2]
 
 # %%
 occupation_to_plot = (2, 0, 0, 1, 0)
-realization_idx = 0
 
-fig, axes = saved.plot_occupation_trace_panels(
-    pp_data,
-    occupation_to_plot=occupation_to_plot,
-    realization_idx=realization_idx,
-)
+MBRSpectrumExperiment.display_occupation(pp_data.data.reconstruction, pp_data.data.spectrum,
+                                         occupation_to_plot, ldos_weight_cutoff=0.)
 plt.show()
 
 # %% [markdown]
@@ -379,7 +398,7 @@ plt.show()
 # raises rather than silently producing something else.
 
 # %%
-coherent_trace_results, coherent_trace_figures = saved.coherent_trace_report(
-    data_sets,
-    SavedEncSpec=MBRSpectrumExperiment,
-)
+coherent_trace_results = {}
+for index, data_set in data_sets.items():
+    coherent_trace_results[index], _fig = data_set.display_coherent_trace()
+    plt.show()

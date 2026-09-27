@@ -44,3 +44,19 @@ on pippin; not the live `jobs.db` over SMB).
   helper used the calibration set's. They are the same for jobs taken under one config.
 - The N=1 theory of the shared-step display is now written for any number of modes
   (+/- |g| and zeros); the old code wrote it for 4 storage modes.
+
+## 3. 9B: facts
+
+- The four `load_*` functions of `mbr_saved_reanalysis` were `from_manifest` + `analyze(...)` +
+  prints. They are notebook cells now. Their checks stay visible there as asserts (complete
+  N=3 sector; Floquet timing recovered from the files, not from the station).
+- The recorded-theory check is `MBRDisorderEnsembleExperiment.recorded_theory_mismatch_MHz()`;
+  the notebook cell that asserts it keeps the `raises-exception` tag (the known 0.3 kHz
+  difference).
+- `coherent_normalized_trace_spectrum` -> `fitting.qsim.mbr_spectrum.coherent_trace_spectrum`
+  (same arithmetic; the window table is now the module's `FFT_WINDOWS`), shown by
+  `MBRSpectrumExperiment.display_coherent_trace`. `display_result` takes the aggregate panel's
+  title and labels as arguments, so the old report no longer finds an axis by its title.
+- `plot_occupation_trace_panels` was a weaker copy of `MBRSpectrumExperiment.display_occupation`
+  (its "theory (scaled)" curve was not scaled; its `realization_idx` argument was unused).
+  Removed; the notebook calls `display_occupation`.

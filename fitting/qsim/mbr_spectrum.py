@@ -25,6 +25,10 @@ from slab import AttrDict
 from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
 
 
+#: The FFT windows a spectrum can be computed with, by name.
+FFT_WINDOWS = {"raw": np.ones, "hann": np.hanning, "hamming": np.hamming, "blackman": np.blackman}
+
+
 def ldos_weights(spectrum):
     """Local density-of-states weights, summed within each degenerate multiplet.
 
@@ -119,11 +123,9 @@ def analyze_spectrum(reconstruction,
 
     if fft_window is None:
         fft_window = "raw"
-    windows = {"raw": np.ones, "hann": np.hanning,
-               "hamming": np.hamming, "blackman": np.blackman}
-    if fft_window not in windows:
+    if fft_window not in FFT_WINDOWS:
         raise ValueError("fft_window must be 'raw', 'hann', 'hamming', or 'blackman'")
-    window = windows[fft_window](len(cycles))
+    window = FFT_WINDOWS[fft_window](len(cycles))
     if not isinstance(zero_padding, (int, np.integer)) or zero_padding < 1:
         raise ValueError("zero_padding must be an integer >= 1")
     if np.sum(window) <= 0.:
@@ -195,4 +197,70 @@ def analyze_spectrum(reconstruction,
         fft_window=fft_window, 
         zero_padding=zero_padding,
         fft_resolution_MHz=1. / (len(cycles) * sample_time_us),
+    ))
+
+
+def coherent_trace_spectrum(reconstruction, spectrum, scale_theory=True):
+    """|FFT| of the coherent normalized trace sum_n A_n(t) / A_n(0), measured and theory.
+
+    Uses the spectrum's own window and energy grid. On a complete basis this
+    is the FFT of Tr U(t) (the same Z(t) as the SFF). The theory trace is built
+    from ``spectrum.eigenstate_weights`` and scaled to the measured peak if
+    ``scale_theory``. Needs the complex time traces, so a merged
+    (spectrum-only) data set is refused.
+
+    -> AttrDict: ``energy_MHz``, ``A_normalized``, ``measured_trace``,
+    ``theory_trace``, ``measured``, ``theory``, ``theory_unscaled``,
+    ``theory_scale``, ``fft_window``, ``n_fft``.
+    """
+    A = np.asarray(reconstruction.A, dtype=complex)
+    time_us = np.asarray(spectrum.time_us, dtype=float)
+    energy_MHz = np.asarray(spectrum.energy_MHz, dtype=float)
+    if A.ndim != 2 or time_us.ndim != 1 or A.shape[1] != len(time_us):
+        raise ValueError("reconstruction.A must have shape (occupation, time point)")
+    if len(time_us) < 2 or not np.isclose(time_us[0], 0.0):
+        raise ValueError("A/A(0) requires a time grid beginning at zero")
+    if np.any(np.abs(A[:, 0]) < 1e-12):
+        raise ValueError("at least one occupation has zero return amplitude at t=0")
+    sample_time_us = time_us[1] - time_us[0]
+    if sample_time_us <= 0.0 or not np.allclose(np.diff(time_us), sample_time_us):
+        raise ValueError("coherent trace FFT requires a common uniform time grid")
+
+    window_name = spectrum.get("fft_window", "raw") or "raw"
+    if window_name not in FFT_WINDOWS:
+        raise ValueError(f"unsupported FFT window: {window_name!r}")
+    window = FFT_WINDOWS[window_name](len(time_us))
+    if np.sum(window) <= 0.0:
+        raise ValueError(f"{window_name} window has zero coherent gain")
+    n_fft = len(energy_MHz)
+    expected_energy_MHz = np.fft.fftshift(np.fft.fftfreq(n_fft, d=sample_time_us))
+    if energy_MHz.shape != expected_energy_MHz.shape or not np.allclose(energy_MHz, expected_energy_MHz):
+        raise ValueError("saved FFT energy grid does not match the time grid")
+    fft_scale = n_fft / np.sum(window)
+
+    def spectrum_of(trace):
+        return fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(trace * window, n=n_fft)))
+
+    A_normalized = A / A[:, :1]
+    measured_trace = np.sum(A_normalized, axis=0)
+    measured = spectrum_of(measured_trace)
+
+    eigenenergies_MHz = np.asarray(spectrum.energies_MHz, dtype=float)
+    eigenstate_weights = np.asarray(spectrum.eigenstate_weights, dtype=float)
+    if eigenstate_weights.shape != (A.shape[0], len(eigenenergies_MHz)):
+        raise ValueError("theory eigenstate weights do not match occupations and energies")
+    theory_A = eigenstate_weights @ np.exp(-2j * np.pi * np.outer(eigenenergies_MHz, time_us))
+    if np.any(np.abs(theory_A[:, 0]) < 1e-12):
+        raise ValueError("at least one theoretical return is zero at t=0")
+    theory_trace = np.sum(theory_A / theory_A[:, :1], axis=0)
+    theory_unscaled = spectrum_of(theory_trace)
+    theory_scale = 1.0
+    if scale_theory and np.max(theory_unscaled) > 0.0:
+        theory_scale = np.max(measured) / np.max(theory_unscaled)
+    return AttrDict(dict(
+        energy_MHz=energy_MHz, A_normalized=A_normalized,
+        measured_trace=measured_trace, theory_trace=theory_trace,
+        measured=measured, theory=theory_scale * theory_unscaled,
+        theory_unscaled=theory_unscaled, theory_scale=theory_scale,
+        fft_window=window_name, n_fft=n_fft,
     ))

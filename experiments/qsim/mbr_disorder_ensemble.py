@@ -286,6 +286,22 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
             fft_resolution_MHz=float(data.spectrum.fft_resolution_MHz),
         ))
 
+    def recorded_theory_mismatch_MHz(self):
+        """-> {realization: max |rebuilt - recorded| theory level, in MHz}.
+
+        Compares each analyzed part's theory levels with the levels its record
+        saved at acquisition (``recorded_theory_energies_MHz``). Parts that are
+        not analyzed yet, or records without saved levels, are left out.
+        """
+        mismatch = {}
+        for record, part in zip(self.realizations, self.children):
+            recorded = record.get("recorded_theory_energies_MHz")
+            if recorded is None or "spectrum" not in part.data:
+                continue
+            rebuilt = np.asarray(part.data.spectrum.energies_MHz, dtype=float)
+            mismatch[record["realization"]] = float(np.max(np.abs(rebuilt - np.asarray(recorded, dtype=float))))
+        return mismatch
+
     def display(self, gap_ratio_bins=15):
         """Pooled gap-ratio histogram, realization means; the SFF if complete."""
         if "theory" not in self.data:

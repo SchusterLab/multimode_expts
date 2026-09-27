@@ -501,6 +501,29 @@ class MBRSpectrumExperiment(AssembledExperiment):
             raise ValueError("run analyze() first")
         return self_kerr_scan(self, self.data, analyze_at, **scan_options)
 
+    def display_coherent_trace(self, data=None):
+        """:meth:`display_result` with the aggregate panel replaced by the FFT of
+        the coherent normalized trace sum_n A_n(t)/A_n(0)
+        (:func:`fitting.qsim.mbr_spectrum.coherent_trace_spectrum`).
+
+        -> (result, fig).
+        """
+        data = self.data if data is None else data
+        if data.get("spectrum_only", False):
+            raise ValueError("the coherent trace FFT needs reconstruction.A; merged "
+                             "spectrum-only data have discarded the complex time traces")
+        result = mbr_spectrum_analysis.coherent_trace_spectrum(data.reconstruction, data.spectrum)
+        spectrum = copy(data.spectrum)
+        spectrum.measured, spectrum.theory = result.measured, result.theory
+        kind = "complete-basis trace DOS" if data.spectrum.complete_basis else "projected trace spectrum"
+        fig = self.display_result(
+            data.reconstruction, spectrum, data.mode_labels,
+            aggregate_title=kind + "\n" + r"$|\mathcal{F}[\sum_n A_n(t)/A_n(0)]|$",
+            aggregate_labels=("experiment", "theory (same coherent FFT, peak-scaled)"))
+        print(f"{len(data.reconstruction.occupations)} rows, window={result.fft_window}, "
+              f"n_fft={result.n_fft}, complete_basis={data.spectrum.complete_basis}")
+        return result, fig
+
     # -- carried over from the old MBRSpectrumExperiment -------------------
 
     def analyze_matrix_pencil_occupation(self,
@@ -935,9 +958,13 @@ class MBRSpectrumExperiment(AssembledExperiment):
         return fig
 
     @staticmethod
-    def display_result(reconstruction, 
-                       spectrum, 
-                       mode_labels):
+    def display_result(reconstruction, spectrum, mode_labels,
+                       aggregate_title=None, aggregate_labels=("experiment", "theory")):
+        """Local spectra (experiment, theory), the LDOS, and the aggregate spectrum.
+
+        ``aggregate_title`` defaults to "complete-basis DOS" or "projected
+        spectrum"; ``aggregate_labels`` names the two aggregate curves.
+        """
         rows = np.arange(len(reconstruction.occupations))
         labels = [
             str(initial) if tuple(initial) == tuple(final)
@@ -965,11 +992,11 @@ class MBRSpectrumExperiment(AssembledExperiment):
         fig.colorbar(image, ax=axes[0], label="spectral magnitude")
 
         MBRSpectrumExperiment.display_local_density_of_states(spectrum, labels, axes[1, 0])
-        axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
-        axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
-        title = "projected spectrum"
-        if spectrum.complete_basis:
-            title = "complete-basis DOS"
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label=aggregate_labels[0])
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label=aggregate_labels[1])
+        title = aggregate_title
+        if title is None:
+            title = "complete-basis DOS" if spectrum.complete_basis else "projected spectrum"
         axes[1, 1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
         axes[1, 1].legend()
         resolution_label = f"FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz"
