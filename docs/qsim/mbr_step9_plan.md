@@ -60,3 +60,24 @@ on pippin; not the live `jobs.db` over SMB).
 - `plot_occupation_trace_panels` was a weaker copy of `MBRSpectrumExperiment.display_occupation`
   (its "theory (scaled)" curve was not scaled; its `realization_idx` argument was unused).
   Removed; the notebook calls `display_occupation`.
+
+## 4. 9C: facts
+
+- The broadband ge fits are now `ErrorAmplificationExperiment.analyze(periodic=False)` (the new
+  keyword; default unchanged). On all 60 saved scans of this kind in `260818_qsim_spectroscopy`
+  (broadband ge frequency and gain; N-photon storage frequency and gain) the recomputed
+  `prod_avgi` and the fitted center are bit-identical to the old helper's.
+- The swap Chevron uses `SidebandGeneralExperiment.analyze` (the same `ChevronFitting`; its
+  `config` argument is not used by the fit), read through the new `chevron_analysis` property.
+- The sweep-window arithmetic is in the notebook's preprocessors
+  (`broadband_error_amp_preproc`, `multiphoton_swap_error_amp_preproc`, with `center` and
+  `half_band`/`half_span`); the even-return validation still passes `start`/`step` directly.
+- Numerics of the multi-job checks: `fitting/qsim/calibration.py`. Swap pulse sequences:
+  `experiments/qsim/multiphoton_swap.py`. Hooks and small plots are notebook cells.
+- The Floquet dataset reset is preloaded flat-top only; the notebook no longer changes the
+  shared `floquet_default_dict` in place (`floquet_waveform`); the timing call reads the
+  waveform from the dataset. The legacy `M1-S6` length cell (a no-op for the preloaded pulse) is
+  removed.
+- Dry run (`--keep-going`): failing cells went from [11, 16, 18, 44-46, 48-50, 62, 63] to
+  [11, 44-46, 48-50, 62, 63]; the rest are mock-data or pinned-config artifacts (no fit result
+  on mock data; NaN in the pinned config's N-photon row).

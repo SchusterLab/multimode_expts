@@ -221,6 +221,11 @@ class SidebandGeneralExperiment(Experiment):
             data['fit_err_amps'] = pCov_amps
         return data
 
+    @property
+    def chevron_analysis(self):
+        """The ChevronFitting of the last 2D ``analyze``, or None."""
+        return getattr(self, "_chevron_analysis", None)
+
     def display(self, data=None, fit=True, title_str='Sideband General', **kwargs):
         if data is None:
             data = self.data

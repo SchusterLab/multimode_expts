@@ -24,6 +24,7 @@ These are slow-ish (each builds a station from versioned configs) and depend
 on config versions present on the measurement PC, so they skip cleanly
 elsewhere.
 """
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -115,9 +116,14 @@ def test_broadband_amplitude_rabi_builds(mock_station, defaults):
     """multiphoton_calibration.py's broadband ge calibration."""
     import experiments as meas
     from experiments import CharacterizationRunner
-    from experiments.qsim.notebook_helpers.multiphoton_calibration import (
-        broadband_amprabi_preproc,
-    )
+
+    # The notebook's hook, inline there and so inline here.
+    def broadband_amprabi_preproc(station, default_expt_cfg, **kwargs):
+        expt_cfg = deepcopy(default_expt_cfg)
+        expt_cfg.update(kwargs)
+        expt_cfg.qubits = [int(expt_cfg.qubit)]
+        expt_cfg.prepulse = bool(expt_cfg.pre_sweep_pulse)
+        return expt_cfg
 
     station, client = mock_station
     pi_ge = station.hardware_cfg.device.qubit.pulses.pi_ge
@@ -160,9 +166,6 @@ def test_single_shot_histogram_builds(mock_station, defaults):
     """multiphoton_calibration.py's single-shot readout calibration."""
     import experiments as meas
     from experiments import CharacterizationRunner
-    from experiments.qsim.notebook_helpers.multiphoton_calibration import (
-        singleshot_postproc,
-    )
 
     _, _, measurement_defaults = defaults
     station, client = mock_station
@@ -175,7 +178,7 @@ def test_single_shot_histogram_builds(mock_station, defaults):
             pulse_manipulate=False, prepulse=False, pre_sweep_pulse=None,
             gate_based=True, qubits=[0],
         )),
-        postprocessor=singleshot_postproc,
+        postprocessor=None,  # the notebook's readout update; not run here
         job_client=client,
         show=False,
     )
@@ -424,9 +427,7 @@ def test_multiphoton_swap_chevron_sweep_reloads(mock_station, defaults):
     chevron analysis reads: one row per frequency point.
     """
     from experiments import SweepRunner
-    from experiments.qsim.notebook_helpers.multiphoton_calibration import (
-        build_swap_pulse_sequences,
-    )
+    from experiments.qsim.multiphoton_swap import swap_pulse_sequences
     from experiments.single_qubit.sideband_general import (
         SidebandGeneralExperiment,
     )
@@ -434,7 +435,7 @@ def test_multiphoton_swap_chevron_sweep_reloads(mock_station, defaults):
     active_reset_defaults, _, _ = defaults
     station, client = mock_station
     pulse_name = "M1-S2"
-    sequences = build_swap_pulse_sequences(station, 1)
+    sequences = swap_pulse_sequences(station, 1)
     center = float(station.ds_storage.get_freq(pulse_name))
     gain = station.ds_storage.get_gain(pulse_name)
     n_lengths, n_freqs = 5, 3
