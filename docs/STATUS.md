@@ -1,17 +1,20 @@
 # Where things stand
 
-**Last updated: 2026-09-26** (after MBR redesign step 8). This file is overwritten at
+**Last updated: 2026-09-27** (after MBR redesign step 9). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
-`docs/log/` (newest first: `2026-09-26_mbr-step8c.md`). Read this file first; read the log only
+`docs/log/` (newest first: `2026-09-27_mbr-step9.md`). Read this file first; read the log only
 if you need the history.
 
 ## What is next
 
-- **`notebook_helpers` cleanup:** promote the MBR planners (`plan_diagonal_disorder`, the
-  tomography plan, `fit_self_kerr`) into the classes and `fitting/qsim/`; merge the two copies of
-  the MBR defaults (`build_campaign` vs `mbr_defaults`); move `run_mode` out.
-- **jonginn:** `docs/qsim/mbr_step7_plan.md` section 7 (still open); and step 8's removal of the
-  `'decoder'` mode and `floquet_phase_calibration.py` (moved to `deprecated/`).
+- **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
+  `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
+  on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
+- **jonginn:** `docs/qsim/mbr_step7_plan.md` section 7 (still open); step 8's removal of the
+  `'decoder'` mode and `floquet_phase_calibration.py`; step 9's consolidation of the Floquet
+  calibration on the preloaded flat-top; the Stark-phase "not dividing" TODO.
+- **Config database:** the mock-acquisition tests of the calibration notebooks need it (the API
+  tunnel, or a `jobs.db` copy made on pippin; not the live file over SMB).
 - **guan + jonginn:** delete `experiments/qsim/deprecated/` and the `dormant/` notebooks, or
   rewrite what is still needed.
 - **Physics audit** (a separate stage): the numerical baselines are `xfail(strict=False)`.
@@ -26,24 +29,27 @@ if you need the history.
 
 | Notebook | State | Last check |
 |---|---|---|
-| meas `mbr.py` | new MBR classes | mock dry run passes (2026-09-25) |
-| meas `mbr_tomography.py` | new MBR classes | mock dry run passes up to `analyze_tomography` (mock data gives a singular M_0; expected) |
+| meas `mbr.py` | new MBR classes | mock dry run passes (2026-09-27) |
+| meas `mbr_tomography.py` | new MBR classes | mock dry run passes up to `analyze_shared_step` (mock data gives a singular M_0; expected) |
 | meas `mbr_disorder.py` | new classes, diagonal disorder (7-1) only | mock dry run passes (Matrix Pencil cells skipped on mock data) |
-| meas `multiphoton_calibration.py`, `floquet_calibration.py`, `floquet_displacement_kerr.py` | not touched by the MBR redesign (one timing call in multiphoton) | static import test only |
-| ana `mbr.py` | new classes; step 8C cut it to N=3, self-Kerr, Aug 15-17 reproduction | analysis suite passes, smoke profile (2026-09-26; xfail cell 17 is the known disorder-theory difference) |
+| meas `multiphoton_calibration.py` | autocalibrate pattern (step 9C) | dry run `--keep-going`: 9 mock/pinned-config failures, fewer than before |
+| meas `floquet_calibration.py` | preloaded flat-top only, autocalibrate pattern (step 9D) | dry run `--keep-going`: 1 mock failure (chevron postproc, NaN), as before |
+| meas `floquet_displacement_kerr.py` | not touched | dry run: cell 6 fails on mock data (pre-existing) |
+| ana `mbr.py` | N=3, self-Kerr, Aug 15-17 reproduction; canonical-flow cells (step 9B) | analysis suite passes, smoke profile (2026-09-27; xfail cell 18 is the known disorder-theory difference) |
 | ana `mbr_disorder.py` | `MBRDisorderEnsembleExperiment` | analysis suite passes |
 | `dormant/` (both sides) | moved-out or old code; loads, not maintained | none |
 
 How to check:
 - `pixi run pytest` (about 1300 tests, under 2 min);
 - `pixi run python tools/run_qsim_suite.py --suite analysis` (offline, on the prod data tree);
-- `pixi run python tools/dryrun_qsim_notebook.py <measurement notebook>` (mock station);
+- `pixi run python tools/dryrun_qsim_notebook.py <measurement notebook> [--keep-going]` (mock
+  station; `--keep-going` lists every failing cell);
 - the measurement suite (`--suite measurement --hardware`) needs the real device; the redesign
   has not run it.
 
 ## Code map
 
-### `experiments/qsim/` (37 live modules, about 13 kloc)
+### `experiments/qsim/` (39 live modules, about 13 kloc)
 - **MBR, clean** (about 3.5 kloc; rules and patterns in `docs/qsim/mbr_redesign.md`):
   - job classes, each with its own Program: `mbr_stark_cal`, `mbr_time_trace`,
     `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on
@@ -52,35 +58,33 @@ How to check:
   - assembled classes: `mbr_calibration_set`, `mbr_spectrum`, `mbr_orthogonality`,
     `mbr_ham_tomo`, `mbr_disorder_ensemble`;
   - infra: `experiments/assembled_data.py` (manifest + assembled HDF5), `mbr_saved`,
-    `mbr_campaign` (mock stations, pinned config sets, `smoke()`).
+    `mbr_campaign` (the campaign base, mock stations, pinned config sets, `smoke()`).
+- **Calibration support** (step 9): `multiphoton_swap` (N-photon swap sequences),
+  `bare_readout_check`; `floquet_gain_chevron` fits the 2D chevron.
 - **Not MBR, split out of the god module but not cleaned** (about 9 kloc): `dark_base`,
   `qsim_base`, `qsim_base_wigner`, `sideband_*`, `kerr`, `dark_mode_*`, `cooling`,
   `cavity_ramsey_flux_excursion`, ...
 - `floquet_dark_mode_readout.py` (about 100 lines): only the `_MOVED_TO` re-exports that non-MBR
   notebooks still use.
 
-### `experiments/qsim/notebook_helpers/` (about 2.6 kloc; about 20 kloc before step 7)
-| Helper | State |
-|---|---|
-| `mbr_campaign`, `mbr_disorder_campaign`, `mbr_tomography`, `mbr_saved_reanalysis` | on the new classes |
-| `mbr_n3_reprocess` (peak finders, `fit_self_kerr`) | kept while the Kerr calibration is fixed; `mbr_replot`, `mbr_n2_spectroscopy` and the N=3 diagnostics moved to `deprecated/` in 8C |
-| `multiphoton_calibration`, `floquet_calibration`, `floquet_bare_readout` | untouched (stage-2 copied blocks; not MBR) |
-| `defaults`, `run_mode` | small infra |
+### `experiments/qsim/notebook_helpers/` (about 0.2 kloc; about 20 kloc before step 7)
+Only `defaults` and `run_mode`: scaffolding for testing this refactor (step 9, decision 0.1).
 
-### `experiments/qsim/deprecated/` (25 modules, about 17.8 kloc)
+### `experiments/qsim/deprecated/` (27 modules, about 18.4 kloc)
 Moved, frozen, not maintained; each has a header note. Live code never imports it
 (`tests/test_no_live_deprecated_imports.py`). Contents: the old MBR classes and programs
 (`legacy_mbr`, `encoding_spectroscopy`, `mbr_nphoton_program`, `mbr_propagator`,
 `mbr_phase_correction`); off-diagonal / D72 (`mbr_disorder_offdiag`, `mbr_disorder_h5`,
 `mbr_spectral_validation`); SFF (`mbr_sff`, `mbr_sff_campaign`) and shot sampling
 (`mbr_sampling`), both to be deleted or rewritten; the per-pulse phase calibrations for the
-removed `'decoder'` mode (`floquet_phase_calibration`, step 8A4); the old versions of ported helpers; older
-retired code.
+removed `'decoder'` mode (`floquet_phase_calibration`, step 8A4); the hooks of the old
+all-envelope Floquet notebook (`floquet_calibration_hooks`, `floquet_bare_readout`, step 9D); the
+old versions of ported helpers; older retired code.
 
 ### Numerics and data
-- `fitting/qsim/` (about 2.9 kloc, pure functions): `matrix_pencil`, `mbr_spectrum`,
+- `fitting/qsim/` (about 3.1 kloc, pure functions): `matrix_pencil`, `mbr_spectrum`,
   `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
-  `level_statistics`.
+  `level_statistics`, `calibration` (step 9C).
 - Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py`. Converted sets:
   `C:\experiments\<exp>\converted_data\` and `assembled_data\`. Dataset ID lists:
   `tests/data/mbr_datasets.json`.
@@ -94,6 +98,7 @@ retired code.
 | `docs/qsim/mbr_redesign.md` | current spec for the MBR classes (steps 1-7 done; step 8 in its own plan) |
 | `docs/qsim/mbr_step7_plan.md` | step 7 plan and record (done); its section 7 questions are open |
 | `docs/qsim/mbr_step8_plan.md` | step 8 plan and record (done) |
+| `docs/qsim/mbr_step9_plan.md` | step 9 plan and record (done) |
 | `docs/qsim/mock_suite_plan.md` | notebook suite design (revised 2026-09-23) |
 | `docs/qsim/stage2_notebook_map.md` | stage-2 instructions; history |
 | `docs/qsim_refactor_surface_map.md`, `docs/arch_meeting_log.md` | history; `mbr_redesign.md` wins where they differ |
