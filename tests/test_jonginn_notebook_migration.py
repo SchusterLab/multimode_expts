@@ -187,7 +187,7 @@ def test_the_retired_notebooks_are_gone():
 def test_the_successors_exist():
     """Guards against SUCCESSOR_DIRS silently going empty."""
     found = _successor_sources()
-    assert len(found) >= 30, (
+    assert len(found) >= 20, (   # 26 after MBR redesign step 9 folded helpers into classes
         f"expected the stage-2 tree, found {len(found)} files"
     )
 

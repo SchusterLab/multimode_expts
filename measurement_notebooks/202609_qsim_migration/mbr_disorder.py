@@ -167,7 +167,7 @@ diag_config = DiagDisorderConfig(
 # #### 7-1b. Build the theory-selected plan and check time — no jobs
 
 # %%
-# A fitted M1 self-Kerr (for example `MBRSpectrumExperiment.fit_self_kerr` in the
+# A fitted M1 self-Kerr (for example `fit_self_kerr` on `mbr_spectrum`'s class in the
 # analysis notebook), if you have one. None falls back to the calibration's.
 best_self_kerr_kHz = None
 
