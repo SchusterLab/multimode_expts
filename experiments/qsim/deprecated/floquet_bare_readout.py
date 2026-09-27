@@ -1,4 +1,12 @@
-"""Bare-readout check that the MBR campaigns need before they run.
+"""Bare-readout check that the MBR campaigns need before they run -- DEPRECATED.
+
+Moved from `experiments/qsim/notebook_helpers/floquet_bare_readout.py` on 2026-09-27 (MBR redesign
+step 9D), without changes. Why: `docs/qsim/mbr_step9_plan.md`, decisions 0.2 and 0.3 (guan): the
+live `floquet_calibration.py` notebook keeps its hooks inline and calibrates the preloaded
+flat-top only. The notebook these served, with every envelope, is
+`measurement_notebooks/202609_qsim_migration/dormant/floquet_calibration_all_envelopes.py`.
+Not maintained; may break when live code changes. If it breaks, add a note here and do not fix it.
+
 
 Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 150-158 by the stage-2 notebook decomposition. Primary caller:

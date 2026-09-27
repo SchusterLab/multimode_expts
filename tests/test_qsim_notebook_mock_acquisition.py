@@ -199,14 +199,28 @@ def test_floquet_error_amplification_sweep_builds(mock_station, defaults):
     The loop is inline here because it is inline in the notebook: the cell
     body is what this test has to keep working.
     """
-    from functools import partial
-
     import experiments as meas
     from experiments import CharacterizationRunner
-    from experiments.qsim.notebook_helpers.floquet_calibration import (
-        error_amp_floquet_postproc,
-        error_amp_floquet_preproc,
-    )
+
+    gain_coarse = AttrDict(dict(n_pulses=2, span=4000, expts=5))
+    freq_coarse = AttrDict(dict(n_pulses=2, span=0.25, expts=5))
+
+    # The notebook's hooks, inline there and so inline here.
+    def error_amp_floquet_preproc(station, default_expt_cfg, **kwargs):
+        expt_cfg = deepcopy(default_expt_cfg)
+        expt_cfg.update({"gain": gain_coarse, "frequency": freq_coarse}[kwargs["parameter_to_test"]])
+        expt_cfg.update(kwargs)
+        stor_name = f"M{expt_cfg.man_mode_no}-S{expt_cfg.stor_mode_no}"
+        pi_frac = station.ds_floquet.get_pi_frac(stor_name)
+        expt_cfg.pulse_type = ["floquet", f"M{expt_cfg.man_mode_no}-{'D' if expt_cfg.stor_is_dump else 'S'}"
+                                          f"{expt_cfg.stor_mode_no}", f"pi/{pi_frac}", 0]
+        if expt_cfg.parameter_to_test == "frequency":
+            expt_cfg.start = station.ds_floquet.get_freq(stor_name) - expt_cfg.span / 2
+            expt_cfg.step = expt_cfg.span / (expt_cfg.expts - 1)
+        else:
+            expt_cfg.start = int(station.ds_floquet.get_gain(stor_name) - expt_cfg.span / 2)
+            expt_cfg.step = int(expt_cfg.span / (expt_cfg.expts - 1))
+        return expt_cfg
 
     active_reset_defaults, floquet_defaults, _ = defaults
     station, client = mock_station
@@ -225,12 +239,8 @@ def test_floquet_error_amplification_sweep_builds(mock_station, defaults):
         station=station,
         ExptClass=meas.single_qubit.error_amplification.ErrorAmplificationExperiment,
         default_expt_cfg=cfg,
-        preprocessor=partial(
-            error_amp_floquet_preproc,
-            gain_coarse_defaults=AttrDict(dict(n_pulses=2, span=4000, expts=5)),
-            freq_coarse_defaults=AttrDict(dict(n_pulses=2, span=0.25, expts=5)),
-        ),
-        postprocessor=error_amp_floquet_postproc,
+        preprocessor=error_amp_floquet_preproc,
+        postprocessor=None,  # the notebook's ds_floquet update; not run here
         job_client=client,
         show=False,
     )
@@ -293,12 +303,11 @@ def test_bare_scramble_sweep_builds(mock_station, defaults):
     """
     import experiments as meas
     from experiments import CharacterizationRunner
-    from experiments.qsim.notebook_helpers.floquet_bare_readout import (
-        sideband_scramble_preproc,
-    )
-    from experiments.qsim.notebook_helpers.floquet_calibration import (
-        floquet_cycle_list_gen,
-    )
+
+    def sideband_scramble_preproc(station, default_expt_cfg, **kwargs):
+        expt_cfg = deepcopy(default_expt_cfg)
+        expt_cfg.update(kwargs)
+        return expt_cfg
 
     active_reset_defaults, floquet_defaults, _ = defaults
     station, client = mock_station
@@ -324,7 +333,7 @@ def test_bare_scramble_sweep_builds(mock_station, defaults):
     swap_stors = [1, 2, 3, 4]
     meas_stors = [0, 1]
     dark_swaps = [4, 5]
-    floquet_cycles_list = floquet_cycle_list_gen(0, 4, 4, 2)
+    floquet_cycles_list = [np.arange(first, min(first + 4, 4), 2) for first in range(0, 4, 4)]
     detunings = [0] * len(swap_stors)
     reset_stors = meas_stors[1:]
 
@@ -502,9 +511,15 @@ def test_floquet_chevron_only_accepts_the_legacy_flat_top(
     """
     import experiments as meas
     from experiments import CharacterizationRunner
-    from experiments.qsim.notebook_helpers.floquet_calibration import (
-        floquet_freq_chev_preproc,
-    )
+
+    # The dormant notebook's hook (dormant/floquet_calibration_all_envelopes.py).
+    def floquet_freq_chev_preproc(station, default_expt_cfg, **kwargs):
+        expt_cfg = deepcopy(default_expt_cfg)
+        init_stor = kwargs.pop("init_stor")
+        expt_cfg.init_stor = init_stor
+        expt_cfg.lengths = np.linspace(0.01, 3.0 * station.ds_floquet.get_len(f"M1-S{init_stor}"), 10).tolist()
+        expt_cfg.update(kwargs)
+        return expt_cfg
 
     active_reset_defaults, floquet_defaults, _ = defaults
     station, client = mock_station

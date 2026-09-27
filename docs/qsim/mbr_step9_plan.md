@@ -1,6 +1,7 @@
 # MBR redesign, step 9 plan: retire `experiments/qsim/notebook_helpers/`
 
-Status: approved by guan 2026-09-26. 9A in progress. It uses `mbr_redesign.md` for the rules and
+Status: approved by guan 2026-09-26. Done (9A-9D), 2026-09-27: `notebook_helpers/` holds only
+`defaults.py` and `run_mode.py` (decision 0.1). It uses `mbr_redesign.md` for the rules and
 patterns, and continues `mbr_step8_plan.md`.
 
 ## 0. Decisions (guan, 2026-09-26)
@@ -81,3 +82,24 @@ on pippin; not the live `jobs.db` over SMB).
 - Dry run (`--keep-going`): failing cells went from [11, 16, 18, 44-46, 48-50, 62, 63] to
   [11, 44-46, 48-50, 62, 63]; the rest are mock-data or pinned-config artifacts (no fit result
   on mock data; NaN in the pinned config's N-photon row).
+
+## 5. 9D: facts (2026-09-27)
+
+- `floquet_calibration.py` (1066 -> 740 lines) calibrates the preloaded flat-top only: gain
+  chevron, error amplification (coarse, fine), phase accumulation, bare readout check. The hooks
+  are inline. The whole old notebook is `dormant/floquet_calibration_all_envelopes.py`; its
+  helper modules moved unchanged to `deprecated/` (`floquet_calibration_hooks.py`,
+  `floquet_bare_readout.py`).
+- `FloquetGainChevronExperiment.analyze` fits a 2D chevron (`ChevronFitting`, as the old
+  postproc did; before, the 2D case printed "not implemented" and returned None), read through
+  `chevron_analysis`. On all 66 saved gain chevrons of `260818_qsim_spectroscopy` the best
+  detuning and the gain oscillation are identical to the old postproc's.
+- The Floquet error-amp postproc keeps `analyze`'s `periodic=True` fit (decision 0.4: change it
+  with the fix on `main`).
+- The bare readout check (`experiments/qsim/bare_readout_check.py`) takes its time axis from
+  each job's compiled Floquet cycle (`derived_params`), not the old estimate (about 1.2% long).
+  Its preproc's assert, always true before (`'init_alpha' or ...`), now checks.
+- The single-shot `execute` no longer forces `use_queue=False`: the run settings decide, as in
+  the other cells.
+- Dry run (`--keep-going`): failing cells [10] (the chevron postproc on mock data, NaN), the
+  same failure as the old notebook's cell 38; the old flat-top chevron cells are dormant now.

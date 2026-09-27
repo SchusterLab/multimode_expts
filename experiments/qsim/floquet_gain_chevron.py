@@ -1,4 +1,6 @@
-"""Floquet storage-swap gain chevrons with one-dimensional oscillation fitting."""
+"""Floquet storage-swap gain chevrons: detuning x gain, with a chevron fit."""
+
+import numpy as np
 
 import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
@@ -28,19 +30,32 @@ class FloquetGainChevronProgram(QsimBaseProgram):
 
 
 class FloquetGainChevronExperiment(QsimBaseExperiment):
-    """
-    Run Floquet chevron sweeps and fit one-dimensional gain traces.
+    """Floquet swap gain chevron.
 
-    Support sine or decaying-sine fits; two-dimensional fitting is not implemented.
+    A 2D sweep (``swept_params = ['detune', 'gain']``) is fitted with
+    ``ChevronFitting``: ``chevron_analysis.results`` holds the best detuning
+    (``best_frequency_contrast``) and the gain oscillation
+    (``best_fit_params_contrast``). A 1D gain trace is fitted with a sine or
+    a decaying sine.
     """
 
-    def analyze(self, data=None, fit=True, fit_func="sin"):
+    def analyze(self, data=None, fit=True, fit_func="sin", station=None):
         if data is None:
             data = self.data
 
         if len(data["avgi"].shape) > 1:
-            print("Not implemented analysis for 2D chevron")
-            return
+            from fitting.fit_display_classes import ChevronFitting
+
+            analysis = ChevronFitting(
+                frequencies=np.array(data["ypts"]),
+                time=np.array(data["xpts"]),
+                response_matrix=data["avgi"],
+                config=self.cfg,
+                station=station,
+            )
+            analysis.analyze()
+            self._chevron_analysis = analysis
+            return data
 
         if fit:
             # fitparams=[amp, freq (non-angular), phase (deg), decay time, amp offset, decay time offset]
@@ -73,3 +88,8 @@ class FloquetGainChevronExperiment(QsimBaseExperiment):
             data["fit_err_avgq"] = pCov_avgq
             data["fit_err_amps"] = pCov_amps
         return data
+
+    @property
+    def chevron_analysis(self):
+        """The ChevronFitting of the last 2D ``analyze``, or None."""
+        return getattr(self, "_chevron_analysis", None)
