@@ -45,17 +45,14 @@ MPM_MARKERS = (
 )
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("notebook", help="jupytext py:percent notebook")
-    parser.add_argument("--config-set", default="preload_current",
-                        help="pinned config set for the mock station")
-    parser.add_argument("--keep-mpm", action="store_true",
-                        help="also run cells that use Matrix Pencil")
-    parser.add_argument("--keep-going", action="store_true",
-                        help="report a failing cell and run the rest")
-    args = parser.parse_args(argv)
+def run_notebook(notebook, config_set="preload_current", keep_mpm=False,
+                 keep_going=False, on_cell=None):
+    """Run the notebook's code cells on the mock station; -> failed cell indices.
 
+    ``on_cell(index)`` is called before each cell runs. This patches module
+    state (the station, the job client, the Stark-cal fit) for the rest of
+    the process, so call it in a process of its own.
+    """
     os.environ["MULTIMODE_RUN_PROFILE"] = "smoke"
     os.environ["MULTIMODE_RUN_USE_QUEUE"] = "0"
     if str(REPO_ROOT) not in sys.path:
@@ -72,7 +69,7 @@ def main(argv=None):
     from experiments.qsim import mbr_stark_cal
     from experiments.qsim.mbr_campaign import mock_station, pinned_config_set
 
-    station = mock_station(**pinned_config_set(args.config_set))
+    station = mock_station(**pinned_config_set(config_set))
     experiments.MultimodeStation = lambda *a, **k: station
     job_server.JobClient = lambda *a, **k: None
     run_mode.RunSettings.station_configs = lambda self, config_dict: {}
@@ -85,7 +82,7 @@ def main(argv=None):
 
     mbr_stark_cal.mbr_phase.fit_closed_cycle_phase = zero_fit
 
-    source = Path(args.notebook).read_text(encoding="utf-8")
+    source = Path(notebook).read_text(encoding="utf-8")
     source = source.replace("np.arange(0, 65, dtype=int)", "np.arange(0, 3, dtype=int)")
     cells = re.split(r"^# %%", source, flags=re.M)[1:]
     namespace = {"__name__": "__main__"}
@@ -95,18 +92,20 @@ def main(argv=None):
         head, _, body = cell.partition("\n")
         if "[markdown]" in head or "suite-skip" in head:
             continue
-        if not args.keep_mpm and any(marker in cell for marker in MPM_MARKERS):
+        if not keep_mpm and any(marker in cell for marker in MPM_MARKERS):
             print(f"--- cell {index} skipped (Matrix Pencil on mock data)", flush=True)
             continue
+        if on_cell is not None:
+            on_cell(index)
         start = time.time()
         try:
-            exec(compile(body, f"{args.notebook}:cell{index}", "exec"), namespace)
+            exec(compile(body, f"{notebook}:cell{index}", "exec"), namespace)
         except Exception as error:
             # As in the suite: a raises-exception cell may raise (xfail).
             if "raises-exception" in head:
                 print(f"--- cell {index} xfail ({type(error).__name__}: {error})", flush=True)
                 continue
-            if not args.keep_going:
+            if not keep_going:
                 raise
             failed.append(index)
             print(f"--- cell {index} FAILED ({type(error).__name__}: {error})", flush=True)
@@ -114,6 +113,20 @@ def main(argv=None):
         finally:
             plt.close("all")
         print(f"--- cell {index} ok ({time.time() - start:.1f}s)", flush=True)
+    return failed
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("notebook", help="jupytext py:percent notebook")
+    parser.add_argument("--config-set", default="preload_current",
+                        help="pinned config set for the mock station")
+    parser.add_argument("--keep-mpm", action="store_true",
+                        help="also run cells that use Matrix Pencil")
+    parser.add_argument("--keep-going", action="store_true",
+                        help="report a failing cell and run the rest")
+    args = parser.parse_args(argv)
+    failed = run_notebook(args.notebook, args.config_set, args.keep_mpm, args.keep_going)
     print("DONE" if not failed else f"DONE, failed cells {failed}")
 
 
