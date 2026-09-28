@@ -22,7 +22,7 @@ The frequencies are only known modulo `1/dt` (principal alias).
 
 The goal is the level statistics: in particular, whether levels repel. So a fitter is judged
 on two things: how accurately it finds the poles, and how much bias it puts into the
-small-spacing statistics.
+small-gap-ratio statistics.
 
 ## 2. Two failure modes, and why they matter
 
@@ -79,8 +79,8 @@ resolution was before MPM.
 2. Stack the Hankel matrices of all rows, `H = [H_1; ...; H_R]`, each `(N-L) x (L+1)`. The
    rows share the right factor `z^k`, so the columns keep the shift invariance
    (`stacked_hankel_pair` -> `H0 = H[:, :-1]`, `H1 = H[:, 1:]`).
-3. Choose the rank `K` from the singular values of `H0` (`choose_rank`; rule in 4.6).
-4. The poles are the eigenvalues of `S_K^-1 U_K^h H1 V_K` (`shift_invariance_poles`).
+3. Choose the rank `M` from the singular values of `H0` (`choose_rank`; rule in 4.6).
+4. The poles are the eigenvalues of `S_M^-1 U_M^h H1 V_M` (`shift_invariance_poles`).
 5. With the poles fixed, the amplitudes of each row by linear least squares
    (`least_squares_amplitudes`).
 
@@ -141,10 +141,33 @@ given SNR, one frequency offset per row group (Gaussian, width `sigma`). Small d
 differences split the permutation multiplets by a chosen fraction of an FFT bin; Kerr on the
 central mode shifts levels but keeps the symmetry.
 
+**Phase-diagram sampling** (`sample_phase_diagram`). The ideal model is cheap (`D = 35`), so
+the synthetic cases cover the whole plane of Kerr `K / g` and disorder strength `delta / g`
+(`g` the coupling), several disorder draws per point. A draw is as in the disorder campaigns
+(`fitting.qsim.mbr_disorder.disorder_direction`): a random zero-mean unit vector `u` over
+the storage modes (`sum_i u_i = 0`, `sum_i u_i^2 = 1`), and onsite energies `delta_i = delta u_i`.
+The plane holds the regimes that stress a fitter
+in different ways: `K = 0` is linear (Poisson-like levels, but the bosonic ladder gives
+equal spacings); `delta = 0` is highly degenerate; the bulk begins to show level repulsion, not
+fully developed at our low photon number. The pair-separation cases above are extra, on top
+of this plane.
+
+**Decay.** One rate for all levels to start, near `1 / (100 us)` (T2 of order 100 us); the
+real data may later give a better value or a per-level spread.
+
+**Matching** (`match_poles`). One-to-one Hungarian assignment of found poles to the
+*distinct* true levels (levels closer than 1e-3 bin are one level with the summed
+multiplicity), with frequencies wrapped to the principal alias first; within a tolerance
+in bins. It builds on `fitting.qsim.mbr_disorder.match_levels`, which is Hungarian but does
+not wrap aliases or group degenerate levels. `display_match` draws found poles against true
+levels, matches joined (after `MBRDisorderEnsembleExperiment.display_levels`).
+
 ### 5.1 Benchmark 1: ideal data (`run_ideal_bench`)
 
-No noise, no offsets. Each fitter must find every distinct level to 1e-6 of a bin, and the
-weights to 1e-6. Pass/fail. Runs as a pytest.
+No noise, no offsets, over the phase-diagram sample. Pass/fail, runs as a pytest, with a
+tolerance per fitter: B (and later C, D) must find every distinct level to 1e-6 of a bin and
+the weights to 1e-6; A keeps its known defects as strict xfails; E is held to about 0.1 bin,
+the resolution of an FFT.
 
 ### 5.2 Benchmark 2: data with non-idealities (`run_nonideal_bench`)
 
@@ -155,11 +178,11 @@ Per fitter and grid point:
   in half the seeds;
 - false-pole rate (poles with no level within the tolerance of the match);
 - bias of frequencies and weights;
-- the small-spacing statistic (section 7) of the found levels, against the true one.
+- the small-gap-ratio statistic (section 7) of the found levels, against the true one.
 
 It chooses the rank rule and each fitter's settings, and it gives `Lambda_eff` as a function
 of the conditions for benchmark 3. It also answers a question about the experiment: the
-`sigma` above which the small-spacing statistic cannot tell repulsion from no repulsion is a
+`sigma` above which the small-gap-ratio statistic cannot tell repulsion from no repulsion is a
 requirement on the calibration.
 
 ### 5.3 Benchmark 3: real data, no model (`run_self_consistency_bench`)
@@ -175,14 +198,14 @@ Per data set and fitter:
 - **partial basis:** only the bound `w_lambda <= m_lambda`; a weight above 1 where no
   degeneracy is expected is a merge. Nothing is demanded of the rest;
 - stability: merge the found poles again at `Lambda' = 1.25 Lambda_eff`, then `1.5`, ...
-  (the barycenter rule of Michaille and Pique) and record how the small-spacing statistic
+  (the barycenter rule of Michaille and Pique) and record how the small-gap-ratio statistic
   moves. A steep change says the data set is at the edge of its resolution.
 
 ### 5.4 Benchmark 4: real data against the model (`run_model_bench`)
 
 Per data set and fitter: match the poles to the model levels (with the data set's detunings,
 couplings and Kerr); matched fraction, frequency residuals, weight residuals (against
-`tr P_lambda` or the projected weight for a partial basis); and the small-spacing statistic
+`tr P_lambda` or the projected weight for a partial basis); and the small-gap-ratio statistic
 against the model's own. **Validation only**: do not tune on it, because the model's own
 errors (Kerr, detunings) would enter the choice of fitter.
 
@@ -196,19 +219,20 @@ Not known directly. Three estimates:
 - **Upper bound:** per row, the one linear phase roll that best matches the phase-corrected
   data to the model's `A_b(t)`; the spread of these offsets (`model_offset_sigma`). Model
   errors also enter it, so it is an upper bound.
-- **Ceiling:** the `sigma` at which benchmark 2 loses the small-spacing statistic (5.2).
+- **Ceiling:** the `sigma` at which benchmark 2 loses the small-gap-ratio statistic (5.2).
 
 Benchmark 2 sweeps `sigma` from 0 past the ceiling; benchmark 3 uses the floor and the upper
 bound of each data set to bracket its `Lambda_eff`.
 
-## 7. The small-spacing statistic
+## 7. The small-gap-ratio statistic
 
-`<r>` is not used as the score: chaos is not fully developed here, and the phase diagram of
-`<r>` does not follow the textbook limits. Instead, the cumulative spacing distribution at
-small `s`, `I(s0) = P(s < s0)` for `s0` about 0.25 (spacings in units of the local mean
-spacing), averaged over disorder realizations and compared with the model's own prediction.
-This is the part of the distribution that merging and false poles change first. The choice of
-`s0` and of the unfolding is open (section 10).
+The mean `<r>` is not used as the score: chaos is not fully developed here, and the phase
+diagram of `<r>` does not follow the textbook limits. Instead, the small-`r` tail of the
+gap-ratio distribution, `I(r0) = P(r < r0)` (`small_gap_ratio_fraction`), with
+`r_n = min(s_n, s_n+1) / max(s_n, s_n+1)` from `fitting.qsim.mbr_disorder.adjacent_gap_ratios`
+(bulk levels only), pooled over disorder realizations and compared with the model's own
+prediction at the same point. The gap ratio needs no unfolding. Small `r` is the part that
+merging and false poles change first. The choice of `r0` is open (section 10); `0.25` to start.
 
 ## 8. Running it
 
@@ -255,7 +279,7 @@ These keep the code readable top-down, as this file is.
 ## 10. Open questions
 
 - The rank rule (4.6): threshold or MDL; to be chosen by benchmark 2.
-- `s0` and the unfolding for the small-spacing statistic (7).
+- `r0` for the small-gap-ratio statistic (7).
 - The `d` flag threshold (5.3): 0.25 to start; to be set by benchmark 2 for our fitters.
 - Fitter C: how well the offsets are fixed when rows share few poles (benchmark 2, with
   weak and one-row poles).
