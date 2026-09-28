@@ -6,8 +6,11 @@ settings; the summaries of the scores are in :mod:`fitting.qsim.poles.bench_summ
 
 The fits run in ``workers`` processes, each with one BLAS thread: the matrices are small,
 so BLAS threads only add overhead (fitter A at 400 samples: 1.6 s on one thread, 3.2 s on
-the default). The default of 8 workers leaves most of the CPU free: the measurement PC's
-CPU is suspected in its crashes (2026), so do not load all cores for long.
+the default). The default is 1 (serial): on the measurement PC, 8 workers running fitter A
+lost a worker to a native crash (0x80000003, in ``matrix_pencil._track_poles``) within a
+minute in 5 of 5 runs, while serial runs never crashed; that PC's CPU is suspected in its
+BSODs (docs/log/2026-09-28_pole-finding-phase1.md). Use more workers only on a machine
+known to be stable.
 """
 import os
 import time
@@ -21,8 +24,8 @@ from fitting.qsim.poles import fft_peaks, joint_pencil, per_row_reconciled
 from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_levels
 from fitting.qsim.poles.synthetic import Hardware, Nonideal, synthetic_returns
 
-#: Worker processes for the fits; 1 runs them in this process.
-WORKERS = 8
+#: Worker processes for the fits; 1 runs them in this process (see the module docstring).
+WORKERS = 1
 _ONE_THREAD = {name: "1" for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")}
 
 #: The fitters of phase 1, by the letters of spec section 4.

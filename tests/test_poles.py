@@ -189,7 +189,7 @@ def test_parallel_fits_agree_with_serial_fits():
     points = sample_phase_diagram([-3.], [1., 3.3], 1)
     args = (points, [Nonideal(snr=100)], 1)
     serial = run_nonideal_bench(*args, workers=1)
-    parallel = run_nonideal_bench(*args, workers=2)
+    parallel = run_nonideal_bench(*args, workers=2)  # B, E and A on 2 cases: seconds, low load
     for a, b in zip(serial.scores, parallel.scores):
         assert a.fitter == b.fitter
         np.testing.assert_allclose(a.found_MHz, b.found_MHz, atol=1e-9)

@@ -85,5 +85,16 @@ tracking (`_track_poles`: `wrap`, `distance`). A is frozen, so it was not change
 (on these small matrices BLAS threads only add overhead: A at 400 samples 1.6 s on one
 thread, 3.2 s on the default). A 72-fit test: 30 s serial, 4.3 s parallel; the poles agree to
 1e-12 bin, the scores exactly. 8 workers, not 32, because this PC's CPU is suspected in its
-crashes; one run of the first parallel test lost a worker process ("terminated abruptly")
-and did not repeat in five more runs; cause not known.
+crashes.
+
+Then the parallel report failed: a worker died in benchmark 2b. With `faulthandler` in the
+workers: `Windows fatal exception: code 0x80000003` (a breakpoint trap), always at
+`matrix_pencil.py:326` in `_track_poles` (a numpy scalar read), at a different task each run
+(tasks 168, 240, 1563, 642 of 1800), 5 to 47 s into 8 workers, in 5 of 5 parallel runs.
+Serial runs never crashed (several thousand A fits, about 50 CPU-min). An 8-process stress
+test of similar numpy loops without our code ran 24 s without a crash. No Windows
+Application Error event. The load dependence fits the suspected CPU fault (see the
+workstation notes: 5 BSODs, CPU hardware leading); the fixed line fits a software cause as
+well; not settled. Load tests stopped, because a BSOD on pippin also stops the job worker
+and server. `benchmarks.WORKERS` is 1 (serial) until this is understood; the parallel
+code path and its test stay.
