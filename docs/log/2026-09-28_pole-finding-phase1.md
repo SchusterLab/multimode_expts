@@ -132,3 +132,17 @@ spectrum's detunings, couplings and Kerr; a match is within max(level tolerance,
 So: the window decides, as the synthetic benchmarks said; B is a serious candidate. On
 real data, the weight checks (benchmark 3) are the firmer test; a match to the model
 (benchmark 4) needs a model-error floor of about 0.3 kHz.
+
+Two follow-up checks (same notebook, same 16 s):
+
+- **Weights per multiplet** (each pole to its nearest model level): on august_N3 the mean
+  |sum - multiplicity| is B 0.28, A 0.42; B's worst is the missed 5.7 kHz level (1.00), where A
+  gives 0.17. A leaves 14 poles farther than half a bin from any level (total weight 1.24), B
+  one (-0.10). july_N3 (aliased) is poor for both (1.4-1.8).
+- **Poles only one fitter finds** (none from the other within a quarter bin): A's are near a
+  model level about as often as random poles (august_N3 12% vs 9%, august_disorder 20% vs 16%,
+  7-1 31% vs 29%) and weak (median |w| 0.05-0.25): padding, not weak levels. B's are near a
+  level about twice as often as random on the August sets (august_disorder 30% vs 16%) and
+  heavier; on 7-1 neither is better than random.
+
+So on the real data B is at least as good as A and cleaner; B is the lead fitter.

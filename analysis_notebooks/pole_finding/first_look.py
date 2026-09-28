@@ -170,3 +170,66 @@ for ensemble in ("august_disorder", "disorder_71"):
     statistic.append(dict(set=ensemble, model=true, **{name: small_gap_ratio_fraction(
         [fits[l, name].frequencies_MHz for l in labels]) for name in FITTERS}))
 pd.DataFrame(statistic).round(2)
+
+# %% [markdown]
+# ## Weights per multiplet (complete sets)
+#
+# Each pole goes to its nearest model level (on the alias circle); the weights of a level's
+# poles are summed and compared with its multiplicity. A split multiplet then counts as one.
+# "Unassigned" poles are farther than half a bin from every level.
+
+# %%
+from fitting.qsim.poles.matching import alias_distance
+
+multiplets = []
+for label in ("august_N3", "july_N3"):
+    data = spectra[label]
+    time_us = np.asarray(data.spectrum.time_us)
+    dt_us = time_us[1] - time_us[0]
+    levels, multiplicities, _ = model_levels(data, bin_of(data))
+    for name in ("A", "B"):
+        f = fits[label, name]
+        distance = alias_distance(f.frequencies_MHz, levels, 1 / dt_us)
+        nearest = np.argmin(np.abs(distance), axis=1)
+        near = np.abs(distance[np.arange(len(nearest)), nearest]) <= 0.5 * bin_of(data)
+        sums = np.bincount(nearest[near], weights=f.weights[near], minlength=len(levels))
+        multiplets.append(dict(set=label, fitter=name,
+                               mean_abs_error=np.mean(np.abs(sums - multiplicities)),
+                               max_abs_error=np.max(np.abs(sums - multiplicities)),
+                               unassigned_poles=int(np.sum(~near)),
+                               unassigned_weight=f.weights[~near].sum(),
+                               **{f"{1e3 * level:.1f} kHz (m={m})": s
+                                  for level, m, s in zip(levels, multiplicities, sums)}))
+pd.DataFrame(multiplets).set_index(["set", "fitter"]).T.round(2)
+
+# %% [markdown]
+# ## The poles only one fitter finds
+#
+# A pole is "only A" if B has none within a quarter bin (and the other way round). Are those
+# poles near a model level (within max(level tolerance, 0.3 kHz)) more often than random
+# poles of the same count in the same span? And how heavy are they?
+
+# %%
+only = []
+for label, data in spectra.items():
+    time_us = np.asarray(data.spectrum.time_us)
+    dt_us = time_us[1] - time_us[0]
+    bin_MHz = bin_of(data)
+    levels, _, _ = model_levels(data, bin_MHz)
+    tolerance = np.maximum(level_tolerances(levels, bin_MHz), MODEL_ERROR_MHz)
+    for name, other in (("A", "B"), ("B", "A")):
+        mine, theirs = fits[label, name], fits[label, other]
+        shared = match_poles(theirs.frequencies_MHz, mine.frequencies_MHz, 0.25 * bin_MHz, 1 / dt_us)
+        alone = np.setdiff1d(np.arange(len(mine.frequencies_MHz)), shared.level_index)
+        if not len(alone):
+            continue
+        near = np.min(np.abs(alias_distance(mine.frequencies_MHz[alone], levels, 1 / dt_us))
+                      - tolerance[None, :], axis=1) <= 0
+        random = rng.uniform(levels.min(), levels.max(), (200, len(alone)))
+        random_near = np.mean(np.min(np.abs(random[..., None] - levels) - tolerance, axis=-1) <= 0)
+        only.append(dict(set=label.split("/")[0], poles=f"only {name}", count=len(alone),
+                         near_level=np.mean(near), random_near=random_near,
+                         median_abs_weight=np.median(np.abs(mine.weights[alone]))))
+pd.DataFrame(only).groupby(["set", "poles"]).agg(
+    spectra=("count", "size"), per_spectrum=("count", "mean"), near_level=("near_level", "mean"),
+    random_near=("random_near", "mean"), median_abs_weight=("median_abs_weight", "median")).round(2)
