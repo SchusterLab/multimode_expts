@@ -74,4 +74,16 @@ Tests: `tests/test_poles.py`, `tests/test_pole_bench_ideal.py` (benchmark 1),
 - Tune B on benchmark 2 (rank rule, pencil length); write fitter D.
 - Estimate the real SNR per data set, to place the 7-1 data on these curves.
 - Phase 2: benchmarks 3 and 4 on the registry; the three sigma estimates.
-- The report takes 17 min, most of it fitter A: run the fits in parallel before the full grid.
+
+## Later the same day: speed
+
+The report took 17 min, 95% of it fitter A. A profile of one A fit (0.5-0.7 s, 35 rows,
+100 samples) shows no AttrDict cost: the time is the 3675 eigenproblems of its rank sweeps
+(one per rank per row, part of the algorithm) and about 220k scalar Python calls in its pole
+tracking (`_track_poles`: `wrap`, `distance`). A is frozen, so it was not changed. Instead
+(`benchmarks.score_cases`): the fits run in 8 worker processes with one BLAS thread each
+(on these small matrices BLAS threads only add overhead: A at 400 samples 1.6 s on one
+thread, 3.2 s on the default). A 72-fit test: 30 s serial, 4.3 s parallel; the poles agree to
+1e-12 bin, the scores exactly. 8 workers, not 32, because this PC's CPU is suspected in its
+crashes; one run of the first parallel test lost a worker process ("terminated abruptly")
+and did not repeat in five more runs; cause not known.

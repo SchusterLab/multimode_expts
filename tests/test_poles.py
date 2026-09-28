@@ -174,11 +174,23 @@ def test_the_registry_loads_and_its_manifests_exist():
 def test_bench_results_save_and_load(tmp_path):
     points = sample_phase_diagram([-3.], [3.], 1)
     fitters = {"B": FITTERS["B"]}
-    results = [run_ideal_bench(points, fitters=fitters),
-               run_nonideal_bench(points, [Nonideal(snr=100)], 1, fitters=fitters),
-               run_nonideal_bench(points, [Nonideal(snr=100)], 1, fitters=fitters, name="window_100")]
+    results = [run_ideal_bench(points, fitters=fitters, workers=1),
+               run_nonideal_bench(points, [Nonideal(snr=100)], 1, fitters=fitters, workers=1),
+               run_nonideal_bench(points, [Nonideal(snr=100)], 1, fitters=fitters, name="window_100", workers=1)]
     path = save_results(tmp_path / "results.h5", results, note="test")
     loaded = load_scores(path, "window_100")
     assert list(loaded.fitter) == ["B"] and loaded.levels[0] == 35
     with pytest.raises(ValueError, match="distinct names"):
         save_results(tmp_path / "again.h5", results[1:2] * 2)
+
+
+def test_parallel_fits_agree_with_serial_fits():
+    """Workers use one BLAS thread, so results agree only up to rounding."""
+    points = sample_phase_diagram([-3.], [1., 3.3], 1)
+    args = (points, [Nonideal(snr=100)], 1)
+    serial = run_nonideal_bench(*args, workers=1)
+    parallel = run_nonideal_bench(*args, workers=2)
+    for a, b in zip(serial.scores, parallel.scores):
+        assert a.fitter == b.fitter
+        np.testing.assert_allclose(a.found_MHz, b.found_MHz, atol=1e-9)
+        np.testing.assert_array_equal(a.level_resolved, b.level_resolved)
