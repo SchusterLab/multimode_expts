@@ -91,7 +91,7 @@ diag_preview_data = diag_preview_part.analyze(
     mpm_minimum_supporting_rows=1,
 )
 diag_preview_poles_kHz = 1e3 * np.sort(np.asarray(
-    diag_preview_data.matrix_pencil.selected_frequencies_MHz, dtype=float))
+    diag_preview_data.matrix_pencil.modes.frequencies_MHz, dtype=float))
 print(f"r={diag_preview_realization}: MPM poles {len(diag_preview_poles_kHz)}/{diag_preview_dimension}")
 print("MPM frequencies (kHz):", np.round(diag_preview_poles_kHz, 3))
 print("FFT resolution (kHz):", 1e3 * float(diag_preview_data.spectrum.fft_resolution_MHz))

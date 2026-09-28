@@ -1,12 +1,19 @@
 # Where things stand
 
-**Last updated: 2026-09-27** (after MBR redesign step 9). This file is overwritten at
+**Last updated: 2026-09-27** (after the Matrix Pencil cleanup). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
-`docs/log/` (newest first: `2026-09-27_mbr-step9.md`). Read this file first; read the log only
+`docs/log/` (newest first: `2026-09-27_matrix-pencil.md`, `2026-09-27_mbr-step9.md`). Read this file first; read the log only
 if you need the history.
 
 ## What is next
 
+- **Analysis surface, line by line** (started 2026-09-27): run the canonical flow of an analysis
+  notebook on a real data set, then go down the call layers. Loading is clean. Matrix Pencil is
+  restructured (`MatrixPencilSettings`); three algorithm defects are open, pinned as strict
+  xfails in `tests/test_matrix_pencil_synthetic.py` (log of 2026-09-27): the rank sweep capped
+  by `requested_max_modes`, noise-free data, and pole pairs 1-1.5 bins apart merged by the
+  default tolerances. Fixing them changes results; guan wants to understand them first (physics, not
+  only code).
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
@@ -40,7 +47,8 @@ if you need the history.
 | `dormant/` (both sides) | moved-out or old code; loads, not maintained | none |
 
 How to check:
-- `pixi run pytest` (about 1300 tests, under 2 min);
+- `pixi run pytest` (about 1300 tests; more than 2 min off-host, as some tests read the data
+  mount). Matrix Pencil alone: `tests/test_matrix_pencil_*.py`, a few seconds, no mount;
 - `pixi run python tools/run_qsim_suite.py --suite analysis` (offline, on the prod data tree);
 - `pixi run python tools/dryrun_qsim_notebook.py <measurement notebook> [--keep-going]` (mock
   station; `--keep-going` lists every failing cell);
@@ -82,7 +90,8 @@ all-envelope Floquet notebook (`floquet_calibration_hooks`, `floquet_bare_readou
 old versions of ported helpers; older retired code.
 
 ### Numerics and data
-- `fitting/qsim/` (about 3.1 kloc, pure functions): `matrix_pencil`, `mbr_spectrum`,
+- `fitting/qsim/` (about 2.8 kloc, pure functions): `matrix_pencil` (settings are
+  `MatrixPencilSettings`; the FFT of its fits is `mbr_spectrum.local_spectrum`), `mbr_spectrum`,
   `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
   `level_statistics`, `calibration` (step 9C).
 - Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py`. Converted sets:

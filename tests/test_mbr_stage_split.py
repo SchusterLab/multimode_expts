@@ -324,11 +324,9 @@ def test_an_unknown_stage_lists_the_real_ones():
 # ---------------------------------------------------------------------------
 # The explicit analyze signature.
 #
-# Two things changed that nothing else covers. The 19 Matrix-Pencil defaults
-# the old code spelled out were each identical to analyze_matrix_pencil's own,
-# so forwarding only what the caller passed is equivalent -- but only if the
-# forwarding actually works. And the old kwargs.get chain silently ignored a
-# typo, which is the failure these lock out.
+# The old kwargs.get chain silently ignored a typo, which is the failure these
+# lock out. (The Matrix-Pencil options are MatrixPencilSettings fields now;
+# tests/test_matrix_pencil_synthetic.py checks that a typo there is refused.)
 
 def _spectrum_expt():
     from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
@@ -349,24 +347,6 @@ def test_the_analyze_signature_names_its_knobs():
     assert "kwargs" not in parameters
 
 
-def test_matrix_pencil_options_lose_their_prefix():
-    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
-
-    assert _matrix_pencil_options({"mpm_pencil_length": 7}) == {
-        "pencil_length": 7}
-    assert _matrix_pencil_options({}) == {}
-    # Accepted unprefixed too, since that is what the callee actually names.
-    assert _matrix_pencil_options({"pencil_length": 7}) == {"pencil_length": 7}
-
-
-def test_a_misspelled_matrix_pencil_option_raises():
-    """The old kwargs.get chain ignored this, so the knob silently did nothing."""
-    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
-
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        _matrix_pencil_options({"mpm_pencil_lenght": 7})
-
-
 @_TWO_ROLES
 def test_an_unknown_analyze_argument_raises():
     expt = _spectrum_expt()
@@ -375,57 +355,6 @@ def test_an_unknown_analyze_argument_raises():
     # And a plain misspelling of a real parameter, which **kwargs would swallow.
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         expt.analyze(zero_paddding=2)
-
-
-def test_the_forwarded_options_reach_analyze_matrix_pencil():
-    """Equivalence to the old 19-line block rests on this actually forwarding."""
-    from experiments.qsim.deprecated.legacy_mbr import _matrix_pencil_options
-    from fitting.qsim import matrix_pencil
-
-    forwarded = _matrix_pencil_options({
-        "mpm_pencil_length": 5,
-        "mpm_minimum_consecutive_ranks": 4,
-        "mpm_store_rank_sweeps": True,
-    })
-    parameters = inspect.signature(matrix_pencil.analyze_matrix_pencil).parameters
-    for name, value in forwarded.items():
-        assert name in parameters
-        assert parameters[name].default != value, (
-            f"{name} test value equals the default, so this proves nothing")
-
-
-def test_every_old_mpm_default_matched_the_callee():
-    """The collapse is only sound because the two sets of defaults agreed.
-
-    Pins that agreement: if analyze_matrix_pencil changes a default, this is
-    the record of what the pre-collapse call site used to pass.
-    """
-    from fitting.qsim import matrix_pencil
-
-    was = {
-        "requested_max_modes": None, "pencil_length": None,
-        "minimum_consecutive_ranks": 3, "minimum_supporting_rows": 1,
-        "track_frequency_tolerance_bins": 1.5,
-        "merge_frequency_tolerance_bins": None,
-        "dedup_frequency_tolerance_bins": None,
-        "track_decay_tolerance_per_us": None,
-        "dedup_decay_tolerance_per_us": None, "match_decay": True,
-        "numerical_floor": 1e-10, "noise_singular_value_factor": 2.858,
-        "minimum_pole_radius": 0.2, "maximum_pole_radius": 1.05,
-        "require_early_start": True, "rank_sweep_extra": None,
-        "clip_growth": True, "least_squares_rcond": None,
-        "store_rank_sweeps": False,
-    }
-    parameters = inspect.signature(matrix_pencil.analyze_matrix_pencil).parameters
-    # Subset, not equality: new options may be added (e.g. the
-    # calibration-derived merge tolerance). What must not drift is the
-    # default of anything the pre-collapse call site passed.
-    assert set(was) <= set(parameters)
-    for name, value in was.items():
-        assert parameters[name].default == value, (
-            f"{name}: analyze_matrix_pencil now defaults to "
-            f"{parameters[name].default!r}, but the old call site passed "
-            f"{value!r}. Collapsing the block changed behaviour.")
 
 
 # --------------------------------------------------------------------------

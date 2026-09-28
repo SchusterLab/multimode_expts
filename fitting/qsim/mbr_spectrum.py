@@ -29,6 +29,25 @@ from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
 FFT_WINDOWS = {"raw": np.ones, "hann": np.hanning, "hamming": np.hamming, "blackman": np.blackman}
 
 
+def windowed_fft(traces, fft_window, zero_padding):
+    """|FFT| along the last axis, as every spectrum here is computed: window,
+    zero padding, inverse-FFT sign (so E > 0 for exp(-2 pi i E t)), and
+    scaling to the window sum."""
+    sample_count = np.shape(traces)[-1]
+    window = FFT_WINDOWS[fft_window](sample_count)
+    n_fft = zero_padding * sample_count
+    fft_scale = n_fft / np.sum(window)
+    return fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(traces * window, n=n_fft, axis=-1), axes=-1))
+
+
+def local_spectrum(traces, spectrum):
+    """-> the local spectra of ``traces`` (row x time) on ``spectrum``'s grid,
+    normalized per row as ``spectrum.measured_local`` is. Used for fitted
+    returns (Matrix Pencil), so they compare with the measured ones."""
+    return (windowed_fft(traces, spectrum.fft_window, spectrum.zero_padding)
+            / np.asarray(spectrum.fft_normalization)[:, None])
+
+
 def ldos_weights(spectrum):
     """Local density-of-states weights, summed within each degenerate multiplet.
 
@@ -163,12 +182,11 @@ def analyze_spectrum(reconstruction,
     #######   FFT of measured dataset   #########################
     #############################################################
 
-    fft_scale = n_fft / np.sum(window)
-    measured_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(A * window, n=n_fft, axis=1), axes=1))
+    measured_local = windowed_fft(A, fft_window, zero_padding)
     diagonal = np.asarray([tuple(initial) == tuple(final) for initial, final in zip(reconstruction.occupations, final_occupations)])
     fft_normalization = np.where(diagonal, np.maximum(np.abs(A[:, 0]), 1e-12), 1.)
     measured_local /= fft_normalization[:, None]
-    theory_local = fft_scale * np.abs(np.fft.fftshift(np.fft.ifft(theory_A * window, n=n_fft, axis=1), axes=1))
+    theory_local = windowed_fft(theory_A, fft_window, zero_padding)
     measured = np.sum(measured_local, axis=0)
     theory = np.sum(theory_local, axis=0)
     if np.max(theory) > 0.:

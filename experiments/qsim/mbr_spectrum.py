@@ -47,10 +47,19 @@ from fitting.qsim import level_statistics as level_statistics_analysis
 from fitting.qsim import matrix_pencil as matrix_pencil_analysis
 from fitting.qsim import mbr_phase
 from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
+from fitting.qsim.mbr_spectrum import local_spectrum
 from fitting.qsim.mbr_reconstruction import (
     postprocess_reconstruction,
     subsample_spectroscopy_shots,
 )
+
+
+def _spectrum_method(name):
+    """-> ``'fft'`` or ``'matrix_pencil'``; ``'mpm'`` is short for the second."""
+    name = {"mpm": "matrix_pencil"}.get(str(name).lower(), str(name).lower())
+    if name not in ("fft", "matrix_pencil"):
+        raise ValueError("spectrum_method must be 'fft', 'matrix_pencil' or 'mpm'")
+    return name
 
 
 class MBRSpectrumExperiment(AssembledExperiment):
@@ -174,8 +183,6 @@ class MBRSpectrumExperiment(AssembledExperiment):
                 zero_padding=1,
                 shots_per_point=None,
                 shot_seed=None,
-                mpm_calibration_sigma_multiplier=3.0,
-                mpm_merge_frequency_tolerance_floor_kHz=0.1,
                 **matrix_pencil_options):
         """Reconstruct, phase-correct, and transform the sector to a spectrum.
 
@@ -187,21 +194,24 @@ class MBRSpectrumExperiment(AssembledExperiment):
           saved before the analyzer sign was recorded.
         - ``cycle_branches`` picks the 180 deg/cycle branch per occupation:
           int, list, or ``{occupation: branch}``.
-        - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'``; Matrix
-          Pencil goes to ``data.matrix_pencil`` and the FFT is computed either
-          way. ``mpm_*`` keyword arguments go to
-          :func:`fitting.qsim.matrix_pencil.analyze_matrix_pencil`.
+        - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'`` (``'mpm'``);
+          Matrix Pencil goes to ``data.matrix_pencil`` and the FFT is computed
+          either way. ``mpm_*`` keyword arguments are
+          :class:`fitting.qsim.matrix_pencil.MatrixPencilSettings` fields;
+          ``mpm_requested_max_modes`` defaults to the Fock basis size, and
+          ``mpm_merge_frequency_tolerance_bins='calibration'`` merges rows by
+          the phase-calibration errors (:meth:`_calibration_frequency_errors_MHz`).
         - ``shots_per_point`` subsamples the raw shots, with ``shot_seed``.
 
         The calibration set, if any, is ``self.calibration``.
         """
         self._check_children()
-        matrix_pencil_options = matrix_pencil_analysis.strip_option_prefix(matrix_pencil_options)
-        spectrum_method = str(spectrum_method).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
+        spectrum_method = _spectrum_method(spectrum_method)
+        merge_by_calibration = matrix_pencil_options.get("mpm_merge_frequency_tolerance_bins") == "calibration"
+        if merge_by_calibration:
+            del matrix_pencil_options["mpm_merge_frequency_tolerance_bins"]
+        # Checked before the analysis, so a misspelled option fails fast.
+        matrix_pencil_analysis.settings_from_options(matrix_pencil_options)
 
         analysis_children = self.children
         shot_subsampling = None
@@ -269,13 +279,18 @@ class MBRSpectrumExperiment(AssembledExperiment):
             spectrum_method=spectrum_method,
         ))
         if spectrum_method == "matrix_pencil":
-            self.data.matrix_pencil = matrix_pencil_analysis.analyze_matrix_pencil(
-                postprocessed.reconstruction,
-                spectrum,
-                **self._matrix_pencil_merge_options(
-                    matrix_pencil_options, calibration, postprocessed.reconstruction,
-                    mpm_calibration_sigma_multiplier, mpm_merge_frequency_tolerance_floor_kHz),
-            )
+            settings = matrix_pencil_analysis.settings_from_options(
+                matrix_pencil_options, requested_max_modes=len(spectrum.fock_basis))
+            errors_MHz = None
+            if merge_by_calibration:
+                errors_MHz = self._calibration_frequency_errors_MHz(calibration, postprocessed.reconstruction)
+            result = matrix_pencil_analysis.analyze_matrix_pencil(
+                postprocessed.reconstruction, spectrum.time_us, settings,
+                row_frequency_standard_errors_MHz=errors_MHz)
+            reconstructed_local = local_spectrum(result.fit.fitted_return, spectrum)
+            result.spectra = AttrDict(dict(reconstructed_local=reconstructed_local,
+                                           reconstructed=np.sum(reconstructed_local, axis=0)))
+            self.data.matrix_pencil = result
         if shot_subsampling is not None:
             self.data.shot_subsampling = shot_subsampling
         return self.data
@@ -290,13 +305,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
         """
         if not self.data:
             raise ValueError("run analyze() before display()")
-        if spectrum_method is None:
-            spectrum_method = self.data.get("spectrum_method", "fft")
-        spectrum_method = str(spectrum_method).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
+        spectrum_method = _spectrum_method(spectrum_method or self.data.get("spectrum_method", "fft"))
         if occupation is not None:
             if spectrum_method == "matrix_pencil":
                 return self.display_matrix_pencil_occupation(
@@ -354,48 +363,26 @@ class MBRSpectrumExperiment(AssembledExperiment):
         )
 
     @staticmethod
-    def _matrix_pencil_merge_options(options, calibration, reconstruction, sigma, floor_kHz):
-        """-> the Matrix Pencil options, with the cross-row merge tolerance resolved.
+    def _calibration_frequency_errors_MHz(calibration, reconstruction):
+        """-> each row's frequency standard error from the phase calibration.
 
-        ``mpm_merge_frequency_tolerance_bins='calibration'`` merges by the
-        phase-calibration standard errors instead of FFT bins: each row gets
-        the frequency standard error of its final occupation's phase slope,
-        ``|slope error (deg/cycle)| / (360 * cycle time)``. ``sigma`` and
-        ``floor_kHz`` set the tolerance in that mode
+        The error of the row's final occupation's phase slope,
+        ``|slope error (deg/cycle)| / (360 * cycle time)``. Matrix Pencil
+        merges rows by these instead of FFT bins
         (:class:`fitting.qsim.matrix_pencil._MergeTolerance`).
         """
-        options = dict(options)
-        merge_tolerance_bins = options.get("merge_frequency_tolerance_bins")
-        if isinstance(merge_tolerance_bins, str):
-            if merge_tolerance_bins.lower() != "calibration":
-                raise ValueError("mpm_merge_frequency_tolerance_bins must be numeric, None, or 'calibration'")
-            if calibration is None:
-                raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
-
-            calibration_occupations = [tuple(occupation) for occupation in calibration.occupations]
-            phase_slope_se = np.asarray(calibration.phase_error, dtype=float)
-            if phase_slope_se.shape != (len(calibration_occupations),):
-                raise ValueError("calibration.phase_error must contain one slope standard error per occupation")
-            calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
-            if not np.isfinite(calibration_cycle_us) or calibration_cycle_us <= 0.:
-                raise ValueError("calibration Floquet cycle must be finite and positive")
-
-            calibration_se_MHz = {
-                occupation: abs(float(slope_se)) / (360. * calibration_cycle_us)
-                for occupation, slope_se in zip(calibration_occupations, phase_slope_se)
-            }
-            final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
-            missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
-            if missing_errors:
-                raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
-            options["row_frequency_standard_errors_MHz"] = np.asarray(
-                [calibration_se_MHz[occupation] for occupation in final_occupations])
-            merge_tolerance_bins = None
-
-        options["merge_frequency_tolerance_bins"] = merge_tolerance_bins
-        options.setdefault("merge_frequency_tolerance_sigma", sigma)
-        options.setdefault("merge_frequency_tolerance_floor_MHz", 1e-3 * floor_kHz)
-        return options
+        if calibration is None:
+            raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
+        calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
+        calibration_se_MHz = {
+            tuple(occupation): abs(float(slope_se)) / (360. * calibration_cycle_us)
+            for occupation, slope_se in zip(calibration.occupations, calibration.phase_error)
+        }
+        final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
+        missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
+        if missing_errors:
+            raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
+        return np.asarray([calibration_se_MHz[occupation] for occupation in final_occupations])
 
     def display_peak_finders(self, height=0.05, prominence=0.01):
         """FFT peak finding three ways: the summed local spectra with the theory
@@ -526,25 +513,27 @@ class MBRSpectrumExperiment(AssembledExperiment):
 
     # -- carried over from the old MBRSpectrumExperiment -------------------
 
-    def analyze_matrix_pencil_occupation(self,
-                                         occupation,
-                                         data=None,
-                                         matrix_pencil=None,
-                                         least_squares_rcond=None):
-        """Refit one occupation using only the poles found in that row.
-
-        Thin wrapper: supplies ``self.data`` by default, then delegates to
-        :func:`fitting.qsim.matrix_pencil.refit_occupation`. The module is
-        imported under an alias so the historical ``matrix_pencil`` argument
-        name survives the move.
-        """
+    def analyze_matrix_pencil_occupation(self, occupation, data=None):
+        """Refit one occupation (row index or tuple) with only the poles its
+        own row found (:func:`fitting.qsim.matrix_pencil.refit_row`), plus
+        its spectrum and pole weights for display."""
         data = self.data if data is None else data
-        return matrix_pencil_analysis.refit_occupation(
-            occupation,
-            data,
-            matrix_pencil=matrix_pencil,
-            least_squares_rcond=least_squares_rcond,
-        )
+        if data.get("matrix_pencil") is None:
+            raise ValueError("Matrix-Pencil analysis is unavailable; analyze with spectrum_method='matrix_pencil'")
+        reconstruction, spectrum = data.reconstruction, data.spectrum
+        occupations = [tuple(value) for value in reconstruction.occupations]
+        row = occupation if isinstance(occupation, (int, np.integer)) else occupations.index(tuple(occupation))
+        result = matrix_pencil_analysis.refit_row(data.matrix_pencil, reconstruction.A[row], row)
+        is_diagonal = occupations[row] == tuple(reconstruction.final_occupations[row])
+        weights = result.normalized_amplitudes if is_diagonal else result.amplitudes
+        result.local_weights = np.real(weights)
+        result.local_magnitude_weights = np.abs(weights)
+        result.energy_MHz = np.asarray(spectrum.energy_MHz)
+        result.measured_spectrum = np.asarray(spectrum.measured_local[row])
+        result.reconstructed_spectrum = (
+            mbr_spectrum_analysis.windowed_fft(result.fitted_return, spectrum.fft_window, spectrum.zero_padding)
+            / spectrum.fft_normalization[row])
+        return result
 
     def analyze_level_statistics(self,
                                  data=None,
@@ -677,13 +666,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
             raise ValueError("occupation display requires analyzed spectroscopy data")
         if data.get("spectrum_only", False):
             raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
-        if spectrum_method is None:
-            spectrum_method = data.get("spectrum_method", "fft")
-        spectrum_method = str(spectrum_method).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
+        spectrum_method = _spectrum_method(spectrum_method or data.get("spectrum_method", "fft"))
         if occupations is None:
             selections = range(len(data.reconstruction.occupations))
         elif isinstance(occupations, (int, np.integer)):
@@ -834,14 +817,10 @@ class MBRSpectrumExperiment(AssembledExperiment):
         Hamiltonian delta-function DOS.
         """
         data = self.data if data is None else data
-        if "reconstruction" not in data or "spectrum" not in data:
-            raise ValueError("Matrix-Pencil display requires analyzed spectroscopy data")
-        if data.get("spectrum_only", False):
-            raise ValueError("Matrix Pencil requires occupation traces on one common time grid")
-        if matrix_pencil is None:
-            matrix_pencil = data.get("matrix_pencil", None)
+        matrix_pencil = matrix_pencil or data.get("matrix_pencil")
         if matrix_pencil is None:
             raise ValueError("Matrix-Pencil analysis is unavailable; analyze with spectrum_method='matrix_pencil'")
+        modes = matrix_pencil.modes
 
         reconstruction = data.reconstruction
         spectrum = data.spectrum
@@ -856,10 +835,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
         ]
         energy_MHz = np.asarray(spectrum.energy_MHz)
         measured_local = np.asarray(spectrum.measured_local)
-        reconstructed_local = np.asarray(matrix_pencil.reconstructed_local)
         theory_local = np.asarray(spectrum.theory_local)
-        if measured_local.shape != reconstructed_local.shape or measured_local.shape != theory_local.shape:
-            raise ValueError("measured, Matrix-Pencil, and theory spectra use different grids")
 
         fig, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
         measured_axis = axes[0, 0]
@@ -873,7 +849,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
                                       ("measured finite-time FFT", "theory finite-time FFT")):
             image = axis.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
             if show_poles:
-                for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
+                for frequency_MHz in modes.frequencies_MHz:
                     axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.45)
             axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=title)
             axis.set_yticks(rows)
@@ -887,9 +863,9 @@ class MBRSpectrumExperiment(AssembledExperiment):
         fig.colorbar(image, ax=(measured_axis, theory_axis), label="spectral magnitude")
 
         measured_DOS_axis.plot(energy_MHz, spectrum.measured, color="black", linewidth=1.5, label="measured FFT sum")
-        measured_DOS_axis.plot(energy_MHz, matrix_pencil.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
-        measured_DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
-        measured_DOS_axis.plot(matrix_pencil.selected_frequencies_MHz, matrix_pencil.pole_DOS_weights, "o", color="tab:blue", markersize=5)
+        measured_DOS_axis.plot(energy_MHz, matrix_pencil.spectra.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
+        measured_DOS_axis.vlines(modes.frequencies_MHz, 0., modes.DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
+        measured_DOS_axis.plot(modes.frequencies_MHz, modes.DOS_weights, "o", color="tab:blue", markersize=5)
         measured_DOS_title = "measured FFT sum and Matrix-Pencil DOS" if spectrum.complete_basis else "measured projected FFT sum and Matrix-Pencil weights"
         measured_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / pole weight", title=measured_DOS_title)
         measured_DOS_axis.legend()
@@ -907,10 +883,10 @@ class MBRSpectrumExperiment(AssembledExperiment):
         theory_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / DOS weight", title=theory_DOS_title)
         theory_DOS_axis.legend()
         if show_poles:
-            for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
+            for frequency_MHz in modes.frequencies_MHz:
                 measured_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
                 theory_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
-        fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
+        fig.suptitle(f"K={len(modes.frequencies_MHz)} shared poles; global relative residual={matrix_pencil.fit.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
 
     def display_matrix_pencil_occupation(self,

@@ -256,7 +256,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
                             spectrum_method="matrix_pencil", **part_options)
         # The source wrapped the poles into the principal interval, then
         # commented the modulo out; they are used as fitted.
-        poles_MHz = np.sort(np.asarray(data.matrix_pencil.selected_frequencies_MHz,
+        poles_MHz = np.sort(np.asarray(data.matrix_pencil.modes.frequencies_MHz,
                                        dtype=float))
         if theory_kerr_MHz is None:
             theory_levels_MHz = np.asarray(data.spectrum.energies_MHz, dtype=float)

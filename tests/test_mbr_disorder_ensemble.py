@@ -11,6 +11,7 @@ physics audit.
 Run:  pixi run python -m pytest tests/test_mbr_disorder_ensemble.py -v
 """
 from math import comb
+from pathlib import Path
 
 import matplotlib
 import numpy as np
@@ -210,19 +211,23 @@ def test_migration_refuses_off_diagonal_pair_jobs(tmp_path):
                                           load_shots=False, timing=timing)
 
 
+# The deprecated 7-1 preview cells (experiments/qsim/deprecated/mbr_disorder_preview.py)
+# on the old raw files, run once with the Matrix-Pencil code before its 2026-09-27
+# cleanup (commit f57c202). Frozen because the deprecated code no longer runs
+# Matrix Pencil.
+OLD_PREVIEW = Path(__file__).parent / "data" / "disorder_preview_71_r01.npz"
+
+
 @pytest.mark.xfail(strict=False, reason="physics audit pending")
 def test_baseline_old_preview_analysis_matches(diagonal_disorder):
-    """The 7-1 preview cells on the old raw files give the same levels as the ensemble."""
-    from experiments.qsim.deprecated import mbr_disorder_preview as preview
-
-    _, by_realization = disorder_dataset("diagonal_disorder_71")
-    old, _ = preview.analyze_every_realization({r: by_realization[r] for r in (0, 1)})
+    """The 7-1 preview cells gave the same levels as the ensemble."""
+    old = np.load(OLD_PREVIEW)
     new = diagonal_disorder.analyze(**DISORDER_PREVIEW_ANALYSIS)
     for record in new.realizations:
-        np.testing.assert_allclose(record.poles_MHz, np.sort(old[record.realization]["poles_MHz"]),
+        np.testing.assert_allclose(record.poles_MHz, old[f"r{record.realization}.poles_MHz"],
                                    rtol=0, atol=1e-12)
         np.testing.assert_allclose(record.theory_levels_MHz,
-                                   old[record.realization]["theory_levels_MHz"],
+                                   old[f"r{record.realization}.theory_levels_MHz"],
                                    rtol=0, atol=1e-12)
 
 

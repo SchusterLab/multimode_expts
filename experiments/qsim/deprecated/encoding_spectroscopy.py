@@ -206,7 +206,6 @@ class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
     # Matrix-Pencil numerics live in fitting/qsim/matrix_pencil.py (spec 7.5).
     # These wrappers keep the historical call sites and notebook usage working.
     analyze_matrix_pencil = staticmethod(matrix_pencil_analysis.analyze_matrix_pencil)
-    analyze_matrix_pencil_trace = staticmethod(matrix_pencil_analysis.analyze_matrix_pencil_trace)
 
     # Spectrum merging, level statistics and SFF numerics live in
     # fitting/qsim/level_statistics.py (spec 7.5). Wrappers keep the historical
