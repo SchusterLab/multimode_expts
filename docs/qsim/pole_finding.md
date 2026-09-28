@@ -1,6 +1,6 @@
 # Pole finding for MBR spectra: method and benchmark
 
-Status: draft for review, 2026-09-28. Replaces nothing yet. When a fitter is chosen, this file
+Status: draft, 2026-09-28; phase 1 implemented (`fitting/qsim/poles/`). Replaces nothing yet. When a fitter is chosen, this file
 becomes the spec of `fitting/qsim/poles/`, and `fitting/qsim/matrix_pencil.py` (fitter A) is
 retired. History and reasons: `docs/log/2026-09-27_matrix-pencil.md`.
 
@@ -127,7 +127,10 @@ A thin wrapper around `fitting.qsim.matrix_pencil.analyze_matrix_pencil`, output
 The rank sets the number of poles, so it is the main free parameter. Candidates:
 the count of singular values above `k x median` (the current rule; `k = 2.858`), and an
 information criterion (MDL). Benchmark 2 chooses. The rule is one function, `choose_rank`,
-used by every fitter that needs one.
+used by every fitter that needs one. Both rules are capped by a numerical floor (singular
+values below `1e-12` of the largest are zero). Phase 1 default: MDL, pencil length `L = 2N/3`
+(better than `N/2` on clean data, benchmark 1). The threshold rule undercounts when the
+signal fills more than half the singular values, because the median is then a signal value.
 
 ## 5. Benchmarks
 
@@ -157,22 +160,43 @@ real data may later give a better value or a per-level spread.
 
 **Matching** (`match_poles`). One-to-one Hungarian assignment of found poles to the
 *distinct* true levels (levels closer than 1e-3 bin are one level with the summed
-multiplicity), with frequencies wrapped to the principal alias first; within a tolerance
-in bins. It builds on `fitting.qsim.mbr_disorder.match_levels`, which is Hungarian but does
-not wrap aliases or group degenerate levels. `display_match` draws found poles against true
+multiplicity), with frequencies wrapped to the principal alias first. Each level has its
+own tolerance, `min(0.25 bin, 1/4 of its nearest separation)` (`level_tolerances`): with a
+fixed 0.25 bin, close to the mean spacing of a dense spectrum, 35 random poles over the span
+"resolve" 10-20% of the levels closer than a bin; with the cap, 1-8%. The same method as `fitting.qsim.mbr_disorder.match_levels`, which does not wrap
+aliases or group degenerate levels. A level is *resolved* when it and its nearest neighbour
+are both matched (`resolved_levels`): a merged pair then counts as two unresolved levels. `display_match` draws found poles against true
 levels, matches joined (after `MBRDisorderEnsembleExperiment.display_levels`).
 
 ### 5.1 Benchmark 1: ideal data (`run_ideal_bench`)
 
-No noise, no offsets, over the phase-diagram sample. Pass/fail, runs as a pytest, with a
-tolerance per fitter: B (and later C, D) must find every distinct level to 1e-6 of a bin and
-the weights to 1e-6; A keeps its known defects as strict xfails; E is held to about 0.1 bin,
-the resolution of an FFT.
+No noise, no offsets, over the phase-diagram sample. Pass/fail, runs as a pytest
+(`tests/test_pole_bench_ideal.py`). B (and later C, D) must find every distinct level to 1e-6
+of a bin and the weights to 1e-6 (`ideal_pass`), **where the time grid can tell the levels
+apart**: the conditioning `s_min / s_max` of the Vandermonde matrix of the true levels on the
+grid (`vandermonde_conditioning`) is at least 1e-2. Below that no fitter reaches 1e-6 in double
+precision. On the measured grid (100 samples) almost no point of the plane is that well
+conditioned (35 levels in about 25 bins), so the pytest runs the plane on 400 samples: it
+checks the code, not the experiment. A and E are scored, not held to it: A keeps its known
+defects as strict xfails (`tests/test_matrix_pencil_synthetic.py`); E is held to 0.1 bin on
+separated levels (`tests/test_poles.py`).
 
 ### 5.2 Benchmark 2: data with non-idealities (`run_nonideal_bench`)
 
-Grid over SNR, decay, `sigma` and pair separation (in FFT bins); many noise seeds per point.
-Per fitter and grid point:
+Grid over window length, SNR, decay and `sigma`, over the phase-diagram sample (which holds
+the pair separations); many noise seeds per point. Two questions, kept apart (guan,
+2026-09-28):
+
+- **2a. How good is each method?** Window lengths of 100, 200 and 400 samples at the same
+  `dt`, with no decay and with the decay of T2 = 100 us. The known answer is exact, so a
+  fitter is judged on what it can resolve when the data allow it. In the experiment the
+  traces can run long, but past about T2 they are flat, so the decay caps what a longer
+  window adds.
+- **2b. What does the measured grid allow?** 100 samples and decay 0.01 per us; SNR and
+  `sigma` swept. This gives `Lambda_eff` for benchmark 3.
+
+Separations are in bins of the measured grid (12.2 kHz) for every window length. Per fitter
+and grid point:
 
 - resolution probability of a pair against separation; `Lambda_eff` = the separation resolved
   in half the seeds;
@@ -241,12 +265,13 @@ merging and false poles change first. The choice of `r0` is open (section 10); `
 `analysis_notebooks/pole_finding/report.py` (jupytext), laid out as a lab report: Method,
 Benchmark 1, 2, 3, 4, Summary. Each section is a few lines that call one `run_*_bench`. The
 Method section is rendered from the fitters' docstrings and settings, so the text cannot drift
-from what ran. Run headless: `pixi run pole-report --registry <yaml> --fitters A,B,E`
-(executes the notebook to HTML).
+from what ran. Run headless: `pixi run pole-report --fitters A,B,E --size small`
+(`tools/pole_report.py`; executes the notebook to HTML; `--registry` from phase 2).
 
 ### 8.2 Data set registry
 
-A checked-in YAML, one entry per data set: manifest path relative to `data_root()`, label,
+`analysis_notebooks/pole_finding/registry.yaml`, format `fitting.qsim.poles.registry.DataSet`
+(`load_registry`), one entry per data set: manifest path relative to `data_root()`, label,
 complete or partial, disorder parameters, source log reference. guan converts jonginn's logs
 to manifests (with `tools/migrate_mbr_jobs.py`) and to these entries. The benchmark reads
 only the registry.

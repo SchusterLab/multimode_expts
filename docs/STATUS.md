@@ -1,19 +1,24 @@
 # Where things stand
 
-**Last updated: 2026-09-28** (pole finding design; work moves to pippin). This file is overwritten at
+**Last updated: 2026-09-28** (pole finding phase 1, on pippin). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
-`docs/log/` (newest first: `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
+`docs/log/` (newest first: `2026-09-28_pole-finding-phase1.md`, `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
 if you need the history.
 
 ## What is next
 
 - **Pole finding** (guan; on pippin, `C:\python\multimode_expts_guan`): phase 1 of
-  `docs/qsim/pole_finding.md`: `PoleFit`, the model-based synthetic generator, fitters A
-  (wrapper of the frozen `fitting/qsim/matrix_pencil.py`), B (joint pencil) and E (FFT),
-  benchmarks 1 and 2 on small grids, the report skeleton. Code rules: spec section 9. The
-  current Matrix Pencil's three known defects stay as strict xfails
+  `docs/qsim/pole_finding.md` is done (`fitting/qsim/poles/`, report
+  `analysis_notebooks/pole_finding/report.py`, `pixi run pole-report`). Main finding: the
+  measured window (100 samples, 82 us) cannot resolve all 35 levels for any fitter (35 levels
+  in about 25 bins); fitter A (the current code) resolves more close levels than B, but half
+  its poles are false and it biases P(r < 0.25) towards Poisson; B's bias goes to 0 with a
+  longer window. Numbers: `docs/log/2026-09-28_pole-finding-phase1.md`. Next: tune B's rank
+  rule and write fitter D on benchmark 2; the real SNR per data set; parallel fits; then phase
+  2 (benchmarks 3 and 4 on `analysis_notebooks/pole_finding/registry.yaml`). The current
+  Matrix Pencil's three known defects stay as strict xfails
   (`tests/test_matrix_pencil_synthetic.py`); do not fix them there. guan converts jonginn's
-  logs into registry entries (spec 8.2) for phase 3.
+  logs into registry entries (spec 8.2).
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
@@ -93,7 +98,8 @@ old versions of ported helpers; older retired code.
 - `fitting/qsim/` (about 2.8 kloc, pure functions): `matrix_pencil` (settings are
   `MatrixPencilSettings`; the FFT of its fits is `mbr_spectrum.local_spectrum`), `mbr_spectrum`,
   `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
-  `level_statistics`, `calibration` (step 9C).
+  `level_statistics`, `calibration` (step 9C); `poles/` (about 1.1 kloc): the pole-finding
+  fitters and benchmarks (`docs/qsim/pole_finding.md`).
 - Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py`. Converted sets:
   `C:\experiments\<exp>\converted_data\` and `assembled_data\`. Dataset ID lists:
   `tests/data/mbr_datasets.json`.
@@ -104,7 +110,7 @@ old versions of ported helpers; older retired code.
 |---|---|
 | `docs/STATUS.md` | this file: current |
 | `docs/log/` | dated session records; never edited after their day |
-| `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft, 2026-09-28) |
+| `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft; phase 1 done, 2026-09-28) |
 | `docs/qsim/mbr_redesign.md` | current spec for the MBR classes (steps 1-7 done; step 8 in its own plan) |
 | `docs/qsim/mbr_step7_plan.md` | step 7 plan and record (done); its section 7 questions are open |
 | `docs/qsim/mbr_step8_plan.md` | step 8 plan and record (done) |
