@@ -76,3 +76,24 @@ The synthetic tests found three defects of the algorithm, pinned as `xfail(stric
 
 Also: `clip_growth=True` biases the weight of a growing pole (1.04 against 0.75). On July N=3,
 MPM finds 7 of the 8 distinct aliased levels; it misses the 80.9 kHz level (folded to -41 kHz).
+
+## The defects, looked at closer (rank sweeps stored, synthetic data)
+
+- Defects 1 and 2 are one mechanism. At ranks below the true pole count K the pencil gives
+  wrong "average" poles; from rank K up, the true ones. The persistence rule needs a pole at
+  `minimum_consecutive_ranks` (3) ranks, so the sweep must reach K + 2. It stops at
+  `min(requested_max_modes, numerical rank)`: at `requested_max_modes = K` the poles that first
+  appear at ranks K-1 and K have spans 2 and 1 and are dropped. Without noise, the numerical rank
+  is K (the higher singular values are exactly 0), so the same happens for any cap. The poles at
+  rank K are correct in both cases; only the bookkeeping drops them.
+- Defect 3 has three steps, each at the 1.5-bin default: (a) rank 1 gives one pole at the
+  midpoint of the pair, and its track takes one of the two rank-2 poles (small bias only);
+  (b) dedup drops the second stable row candidate as a duplicate of the first (the main loss);
+  (c) with dedup fixed, the cross-row merge puts both rows' candidates in clusters centered on
+  the midpoint (0.43 and 0.49 bins for a 0 / 1 bin pair). All three tolerances must be below the
+  separation.
+- Trade-off, 20 noise seeds, 2 rows, decay 0.01/us, 64 samples: a pair 1 bin apart is resolved
+  in 0/20 at 1.5 bins and 19/20 at 0.5 or 0.2 bins, at noise 0.003-0.03; a pair 0.5 bin apart in
+  0/20, 10-15/20 and 14-19/20. A single pole never split into two within 3 bins, at any of these
+  tolerances. White noise only: drift or non-exponential decay in real data may split poles
+  where synthetic data does not.
