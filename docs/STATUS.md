@@ -9,16 +9,17 @@ if you need the history.
 
 - **Pole finding** (guan; on pippin, `C:\python\multimode_expts_guan`): phase 1 of
   `docs/qsim/pole_finding.md` is done (`fitting/qsim/poles/`, report
-  `analysis_notebooks/pole_finding/report.py`, `pixi run pole-report`). Main finding: the
-  measured window (100 samples, 82 us) cannot resolve all 35 levels for any fitter (35 levels
-  in about 25 bins); fitter A (the current code) resolves more close levels than B, but half
-  its poles are false and it biases P(r < 0.25) towards Poisson; B's bias goes to 0 with a
-  longer window. Numbers: `docs/log/2026-09-28_pole-finding-phase1.md`. Next: tune B's rank
-  rule and write fitter D on benchmark 2; the real SNR per data set; parallel fits; then phase
-  2 (benchmarks 3 and 4 on `analysis_notebooks/pole_finding/registry.yaml`). The current
-  Matrix Pencil's three known defects stay as strict xfails
-  (`tests/test_matrix_pencil_synthetic.py`); do not fix them there. guan converts jonginn's
-  logs into registry entries (spec 8.2).
+  `analysis_notebooks/pole_finding/report.py`, `pixi run pole-report`), plus a first look at the
+  real data (`analysis_notebooks/pole_finding/first_look.py`, 16 s). Findings: the window length
+  decides. The 7-1 set (100 samples, 82 us) loses the small gaps for every fitter; on the August
+  sets (bins 2.3 kHz) A and B agree closely (P(r < 0.25) 0.16 / 0.15 vs the model's 0.18), and B
+  is 50-100 times faster and needs no pole cap: B is the lead candidate. Numbers:
+  `docs/log/2026-09-28_pole-finding-phase1.md`. Benchmarks run serially (`benchmarks.WORKERS = 1`):
+  parallel fitter-A workers crash on pippin (native 0x80000003; cause not settled). Next: weight
+  checks per multiplet (benchmark 3), a model-error floor in the model match (benchmark 4), then
+  tune B and decide on fitter D. The current Matrix Pencil's three known defects stay as strict
+  xfails (`tests/test_matrix_pencil_synthetic.py`); do not fix them there. guan converts
+  jonginn's logs into registry entries (spec 8.2).
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
