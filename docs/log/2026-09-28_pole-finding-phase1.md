@@ -98,3 +98,37 @@ workstation notes: 5 BSODs, CPU hardware leading); the fixed line fits a softwar
 well; not settled. Load tests stopped, because a BSOD on pippin also stops the job worker
 and server. `benchmarks.WORKERS` is 1 (serial) until this is understood; the parallel
 code path and its test stay.
+
+## Later the same day: first look at the real data
+
+guan: before larger benchmarks, get a coarse sense of each fitter on real data.
+`analysis_notebooks/pole_finding/first_look.py` (16 s for 25 spectra): A (the 7-1 ensemble
+analysis settings), B and E on july_N3, august_N3, august_disorder (4 realizations) and the 7-1
+set (19), each in the frame of its analysis notebook. The model's levels come from each
+spectrum's detunings, couplings and Kerr; a match is within max(level tolerance, 0.3 kHz).
+
+- **7-1 (100 samples, bin 12.2 kHz):** no fitter matches the model much better than random
+  poles of the same count (A 7.0 vs 6.0, B 5.2 vs 4.4); P(r < 0.25) is A 0.01, B 0.10 vs the
+  model's 0.24: the small gaps are lost. Synthetic data at the same point with 9 partial rows
+  give the same picture (I(r0) A 0.00, B 0.12 vs 0.21), at SNR 15 as at 100: the window, not
+  the fitter or the noise, is the limit. B's residual gives a noise near 0.08 per sample
+  (SNR about 12-18). The campaign's mean r agreed with theory (0.498); with the small-gap tail
+  gone that says nothing about repulsion.
+- **august_N3 (complete, 150 samples, bin 2.3 kHz, delta = 0):** B finds every model level but
+  one (5.7 kHz, weight 1) with weights near the multiplicities (1.07, 3.12, 0.89, 3.37, 3.02,
+  1.08; total 35.1). The 6- and 10-fold multiplets come out split by 1-2 kHz (about a bin):
+  the device is apparently not as symmetric as the model (zero detunings, equal couplings).
+  A finds 29 poles; 13 have |w| < 0.3.
+- **august_disorder (300 samples, 435 us):** A and B find 31-35 poles; P(r < 0.25) A 0.16,
+  B 0.15 vs the model's 0.18. The matched poles are off by about 0.25 kHz, the size of the
+  known 0.3 kHz gap between the rebuilt and the recorded theory: at this bin, the model's own
+  error sets the match.
+- **july_N3 (40 samples at 8.2 us):** aliased (Nyquist 61 kHz, levels over -113..+81 kHz);
+  aliased multiplets land on each other.
+- **A against B:** on the August sets close in residual (0.22-0.30), model match and
+  P(r < 0.25). A finds 85-93% of B's poles; B finds 45-77% of A's; A's extra poles are
+  mostly weak (the cap of 35 pads). B is 50-100 times faster and needs no cap.
+
+So: the window decides, as the synthetic benchmarks said; B is a serious candidate. On
+real data, the weight checks (benchmark 3) are the firmer test; a match to the model
+(benchmark 4) needs a model-error floor of about 0.3 kHz.
