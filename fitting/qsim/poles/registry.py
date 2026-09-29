@@ -28,11 +28,43 @@ class DataSet(BaseModel):
     disorder: dict = {}
     #: Where the data set is described: the log, notebook cells, dataset list.
     source: str
+    #: The frame its analysis notebook uses (``MBRSpectrumExperiment.analyze``).
+    analysis: "Analysis" = None
+
+
+class Analysis(BaseModel):
+    """How a data set's spectra are analyzed and which model they are compared with."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    phase_frame: Literal["as_acquired", "manual_kerr"] = "as_acquired"
+    #: A number (MHz), or "recorded": each realization's saved self-Kerr.
+    manual_kerr_MHz: float | Literal["recorded"] | None = None
+    #: [occupation, branch] pairs; unlisted occupations use branch 0.
+    cycle_branches: list[tuple[tuple[int, ...], int]] = []
+    #: Undo the old ``+cycle*correction`` analyzer convention (the July jobs).
+    legacy: bool = False
+    #: Occupations left out of the analysis (the 7-1 analysis leaves out (0, 3, 0, 0, 0)).
+    excluded_occupations: list[tuple[int, ...]] = []
+    #: The model's Kerr: the spectrum's analysis Kerr, or each realization's recorded one.
+    model_kerr: Literal["analysis", "recorded"] = "analysis"
+
+    def branches(self, occupations):
+        """-> {occupation: branch} for these occupations."""
+        table = dict(self.cycle_branches)
+        return {tuple(o): table.get(tuple(o), 0) for o in occupations}
+
+
+DataSet.model_rebuild()
 
 
 def load_registry(path=REGISTRY):
     """-> the registry's DataSets, in file order."""
     return [DataSet(**entry) for entry in yaml.safe_load(Path(path).read_text(encoding="utf-8"))]
+
+
+def data_set(label, path=REGISTRY):
+    """-> the registry entry with this label."""
+    return next(entry for entry in load_registry(path) if entry.label == label)
 
 
 def manifest_path(data_set, root):

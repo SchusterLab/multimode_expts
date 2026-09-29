@@ -23,6 +23,15 @@ CAMPAIGN_SETTINGS = MatrixPencilSettings(
     minimum_supporting_rows=1,
     requested_max_modes=comb(3 + 5 - 1, 3),
 )
+#: The 7-1 ensemble analysis as its notebook ran it (``mbr_disorder.py``: 0.5-bin tracking,
+#: merge and dedup tolerances); the saved 7-1 results come from these. On the real August
+#: sets CAMPAIGN_SETTINGS' 0.1-bin dedup lets near-duplicate poles through, and their
+#: least-squares weights blow up (up to 1e8); these do not.
+ANALYSIS_SETTINGS = CAMPAIGN_SETTINGS.model_copy(update=dict(
+    track_frequency_tolerance_bins=0.5,
+    merge_frequency_tolerance_bins=0.5,
+    dedup_frequency_tolerance_bins=0.5,
+))
 
 
 def fit(A, time_us, settings=CAMPAIGN_SETTINGS, row_groups=None):

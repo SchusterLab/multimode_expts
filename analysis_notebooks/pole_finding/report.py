@@ -155,13 +155,10 @@ display(gaps.assign(bias=gaps.found - gaps.true).groupby(["fitter", "snr", "offs
         .bias.agg(["mean", "std"]).round(3).unstack("fitter"))
 
 # %% [markdown]
-# ## Benchmark 3: real data, no model
+# ## Benchmarks 3 and 4: real data
 #
-# Phase 2 (spec 5.3): needs the data set registry (spec 8.2).
-#
-# ## Benchmark 4: real data against the model
-#
-# Phase 2 (spec 5.4).
+# In `analysis_notebooks/pole_finding/real_benchmarks.py` (about 1 min; reads the registry,
+# measures each set's lambda_eff with benchmark 2 at its own conditions).
 
 # %% [markdown]
 # ## Summary and results file

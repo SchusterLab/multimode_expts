@@ -17,7 +17,9 @@ from fitting.qsim.poles.benchmarks import FITTERS, run_ideal_bench, run_nonideal
 from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_levels
 from fitting.qsim.poles.offsets import calibration_sigma, model_offset_sigma
 from fitting.qsim.poles.rank import RankRule
-from fitting.qsim.poles.registry import load_registry, manifest_path
+from fitting.qsim.poles.pole_fit import PoleFit
+from fitting.qsim.poles.real_benchmarks import RealSpectrum, barycenter_merge, multiplet_weights
+from fitting.qsim.poles.registry import data_set, load_registry, manifest_path
 from fitting.qsim.poles.statistics import small_gap_ratio_fraction
 from fitting.qsim.poles.synthetic import (Hardware, Nonideal, distinct_levels, sample_phase_diagram,
                                           synthetic_returns)
@@ -214,3 +216,28 @@ def test_model_offsets_recover_injected_row_offsets():
     sigma, offsets = model_offset_sigma(case.A, model, case.time_us)
     np.testing.assert_allclose(offsets, injected, atol=5e-5)
     assert sigma == pytest.approx(np.std(injected), rel=0.05)
+
+
+# --- Benchmarks 3 and 4 ---------------------------------------------------
+
+def test_barycenter_merge_joins_pairs_closer_than_the_resolution():
+    merged = barycenter_merge([0., 0.1, 1., 3.], weights=[1., 3., 1., 1.], resolution_MHz=0.5)
+    np.testing.assert_allclose(merged, [0.075, 1., 3.])
+    np.testing.assert_allclose(barycenter_merge([0., 0.2, 0.4], [1., 1., 1.], 0.3), [0.1, 0.4])
+
+
+def test_multiplet_weights_sum_a_split_multiplet():
+    time_us = np.arange(100) * 1.
+    spectrum = RealSpectrum("x", "x", True, time_us, np.ones((1, 100)), np.array([0., 0.1]), np.array([3, 1]),
+                            np.array([[3., 1.]]))
+    fit = PoleFit(np.array([-0.001, 0.001, 0.1, 0.3]), np.zeros(4), np.array([[1.4, 1.6, 1., 0.2]]), 4)
+    sums, far = multiplet_weights(fit, spectrum)
+    np.testing.assert_allclose(sums, [3., 1.])
+    assert far == 1
+
+
+def test_registry_frames_give_branches_per_occupation():
+    august = data_set("august_N3")
+    assert august.analysis.manual_kerr_MHz == pytest.approx(-0.0105)
+    assert august.analysis.branches([(2, 1, 0, 0, 0), (0, 0, 0, 0, 3)]) == {(2, 1, 0, 0, 0): 1, (0, 0, 0, 0, 3): 0}
+    assert data_set("diagonal_disorder_71").analysis.excluded_occupations == [(0, 3, 0, 0, 0)]

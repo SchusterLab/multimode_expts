@@ -197,3 +197,34 @@ merging. It is not evidence that the statistic is measured right. Consequences: 
 offset per row group, with the calibration prior; spec 4.2) is needed; and the 1-2 kHz
 splitting of august_N3's degenerate multiplets may be row offsets rather than an asymmetric
 device (a hypothesis for C to test).
+
+## Later the same day: benchmarks 3 and 4 (task 3 of 3)
+
+- The registry entries now carry their analysis frame (`registry.Analysis`), and
+  `experiments/qsim/pole_data.py` (`load_spectra`) builds each spectrum and its model from the
+  entry alone (in `experiments/`, as it needs the experiment classes).
+- `fitting/qsim/poles/real_benchmarks.py`: `run_self_consistency_bench` (residual, d,
+  P(r < 0.25) and after barycenter re-merging at 1.25 and 1.5 lambda_eff, weights per
+  multiplet or heavy poles) and `run_model_bench` (match within max(level tolerance, 0.3 kHz)
+  vs random, errors, P(r < 0.25) vs the model). Notebook
+  `analysis_notebooks/pole_finding/real_benchmarks.py` (32 s).
+- Fitter A has two presets now: `CAMPAIGN_SETTINGS` (the class default, 0.1-bin dedup), and
+  `ANALYSIS_SETTINGS` (the 0.5-bin tolerances the 7-1 notebook ran, from which the saved 7-1
+  results come). With the first, A's weights on the August sets blow up (multiplet error
+  1.6e4, weight errors to 1e8: near-duplicate poles in the least squares); the real
+  benchmarks use the second.
+- B's lambda_eff at each set's conditions (benchmark 2, SNR 100, sigma at the floor): 0.88 bin
+  (7-1), 1.0 bin (August). With it, d = 0.30-0.38 on both disorder sets (flag: 0.25), and
+  re-merging at 1.25 lambda_eff drops P(r < 0.25) from 0.15 to 0.01 on august_disorder:
+  **benchmark 3 flags both disorder sets as at their resolution limit, with no model.**
+- august_N3: multiplet error A 0.42 (14 poles more than half a bin from any level), B 0.28 (1).
+
+## State at the end of the day
+
+Tasks 1-3 are done. B (MDL, L = 2N/3) is the lead fitter; A adds only padding poles. The real
+limit is the data: the 7-1 window, and on the August sets the row offsets (sigma 0.5-1 kHz,
+0.2-0.5 bin), which turn merged pairs into false poles and make P(r < 0.25) look right for the
+wrong reason. Next: fitter C (spec 4.2: B plus one offset per row group with the calibration
+prior), tested on synthetic August data with sigma 0.5-1 kHz and then on august_N3 (do its
+split multiplets close?). Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
+for C and for the new registry entries.

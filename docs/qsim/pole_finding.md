@@ -1,6 +1,6 @@
 # Pole finding for MBR spectra: method and benchmark
 
-Status: draft, 2026-09-28; phase 1 implemented (`fitting/qsim/poles/`). Replaces nothing yet. When a fitter is chosen, this file
+Status: draft, 2026-09-28; phases 1 and 2 implemented (`fitting/qsim/poles/`); B is the lead fitter; C is needed (section 6). Replaces nothing yet. When a fitter is chosen, this file
 becomes the spec of `fitting/qsim/poles/`, and `fitting/qsim/matrix_pencil.py` (fitter A) is
 retired. History and reasons: `docs/log/2026-09-27_matrix-pencil.md`.
 
@@ -271,7 +271,11 @@ from what ran. Run headless: `pixi run pole-report --fitters A,B,E --size small`
 ### 8.2 Data set registry
 
 `analysis_notebooks/pole_finding/registry.yaml`, format `fitting.qsim.poles.registry.DataSet`
-(`load_registry`), one entry per data set: manifest path relative to `data_root()`, label,
+(`load_registry`), one entry per data set: its analysis frame (`Analysis`: phase frame, manual
+Kerr or "recorded", branches, legacy, excluded occupations, the model's Kerr), so that
+`experiments.qsim.pole_data.load_spectra` builds every spectrum from the entry alone
+(benchmarks 3 and 4: `fitting/qsim/poles/real_benchmarks.py`,
+`analysis_notebooks/pole_finding/real_benchmarks.py`); manifest path relative to `data_root()`, label,
 complete or partial, disorder parameters, source log reference. guan converts jonginn's logs
 to manifests (with `tools/migrate_mbr_jobs.py`) and to these entries. The benchmark reads
 only the registry.
