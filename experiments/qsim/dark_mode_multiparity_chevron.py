@@ -14,7 +14,6 @@ from experiments.qsim.utils import ensure_list_in_cfg
 from experiments.qsim.qsim_base import QsimBaseProgram
 from experiments.qsim.dark_base import (
     DarkBaseExperiment,
-    DarkBaseProgram,
     DarkBaseRProgram,
 )
 

@@ -6,9 +6,9 @@ Split out of ``floquet_dark_mode_readout.py`` unchanged.
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.dark_base import DarkBaseProgram
+from experiments.qsim.floquet_train import FloquetProgram
 
-class StorageSwapPhaseAccumulationProgram(DarkBaseProgram):
+class StorageSwapPhaseAccumulationProgram(FloquetProgram):
     """Measure the phase matrix of the ds_storage swap pulses.
 
     ``stor_A`` is the affected Ramsey mode and ``stor_B`` is the pulsed mode.

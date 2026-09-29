@@ -1,6 +1,6 @@
 # qsim Program and Experiment tree: plan (steps 10A-10G)
 
-Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A and 10B done 2026-09-29; 8.3 is
+Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A-10C done 2026-09-29; 8.3 is
 reviewed at 10E. It continues
 `mbr_step9_plan.md`; it uses `mbr_redesign.md` for the rules and patterns.
 
@@ -184,9 +184,9 @@ Stem and infrastructure:
 |---|---|---|
 | `QsimBaseProgram` + `DarkBaseProgram` | `QsimProgram` | `qsim_base.py` |
 | `DarkBaseRProgram` | `QsimRProgram` | `qsim_base.py` |
-| `FloquetTrain` (mixin) | `FloquetProgram` | `floquet_train.py` |
-| `DarkModeEncoding` (mixin) | `DarkModeProgram` | `dark_mode_encoding.py` |
-| `ManipulateModePulses` (mixin) | methods move into `QsimProgram` | module deleted |
+| `FloquetTrain` (mixin) | `FloquetProgram` (done in 10C) | `floquet_train.py` |
+| `DarkModeEncoding` (mixin) | `DarkModeProgram` (done in 10C) | `dark_mode_encoding.py` |
+| `ManipulateModePulses` (mixin) | methods move into `QsimProgram` (done in 10B) | module deleted |
 | `QsimBaseExperiment` + `DarkBaseExperiment` | `QsimExperiment` | `qsim_base.py` |
 | `QsimWignerBaseExperiment` | `WignerExperiment` | `qsim_base_wigner.py` |
 

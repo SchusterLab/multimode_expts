@@ -34,15 +34,17 @@ dataset's ``pi_frac`` fractional pulses make a pi swap. A pi/2 is therefore
 ``_large_dark_fraction_to_n_frac`` raises rather than round, because rounding
 here is a silently wrong beamsplitter angle.
 
-Requirements on the host program: the Floquet train mixin (this module plays
-everything through ``_play_m1s_frac_train``), ``m1s_pi_fracs``, and
-``cfg.expt`` with ``swap_stors`` and ``dark_swap_order``.
+``DarkModeProgram`` is ``FloquetProgram`` plus these methods: it plays
+everything through the Floquet train (``_play_m1s_frac_train``), and needs
+``cfg.expt`` with ``swap_stors`` and ``dark_swap_order``. It was the
+``DarkModeEncoding`` mixin until step 10C (``docs/qsim/program_tree_plan.md``).
 """
 from experiments.qsim.floquet_phase_frame import detuning_phase_deg
+from experiments.qsim.floquet_train import FloquetProgram
 
 
-class DarkModeEncoding:
-    """Mixin: see the module docstring."""
+class DarkModeProgram(FloquetProgram):
+    """The Floquet program with dark-mode load and read: see the module docstring."""
 
     def _get_dark_swap_params(self):
         ecfg = self.cfg.expt

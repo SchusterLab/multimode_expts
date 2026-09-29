@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """Dark-mode T1: one photon into the dark mode, wait, read it back.
 
-Split out of ``floquet_dark_mode_readout.py`` unchanged. ``DarkBaseProgram``
-still lives there; it moves to the shared Floquet sequence layer later
-(spec section 7.2).
+Split out of ``floquet_dark_mode_readout.py`` unchanged. On ``DarkModeProgram``
+since step 10C.
 """
 import matplotlib.pyplot as plt
 import numpy as np
 
 import fitting.fitting as fitter
 from experiments.qsim.qsim_base import QsimBaseExperiment
-from experiments.qsim.dark_base import DarkBaseProgram
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 
-class DarkT1Program(DarkBaseProgram):
+class DarkT1Program(DarkModeProgram):
 
     def core_pulses(self):
         ecfg = self.cfg.expt

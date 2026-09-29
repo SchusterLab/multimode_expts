@@ -93,3 +93,30 @@ def test_mbr_base_is_not_built_on_the_dark_mode_chain():
     assert DarkBaseProgram not in MBRRamseyProgram.__mro__
     assert SidebandScrambleProgram not in MBRRamseyProgram.__mro__
     assert DarkBaseExperiment not in MBRJobExperiment.__mro__
+
+
+def test_the_floquet_chain_is_single_inheritance():
+    """Step 10C: the two mixins became classes in one chain.
+
+    QsimBaseProgram -> FloquetProgram -> DarkModeProgram, and each live leaf
+    sits on the lowest class whose methods it plays. A second parent here
+    would bring back the mixin tangle the chain replaced.
+    """
+    from experiments.qsim.dark_mode_encoding import DarkModeProgram
+    from experiments.qsim.dark_mode_t1 import DarkT1Program
+    from experiments.qsim.floquet_displacement_kerr import FloquetDisplacementKerrProgram
+    from experiments.qsim.floquet_train import FloquetProgram
+    from experiments.qsim.mbr_ramsey import MBRRamseyProgram
+    from experiments.qsim.mbr_spectroscopy_program import SidebandScrambleDarkProgramNewNew
+    from experiments.qsim.sideband_stark_shift_cal import (
+        SidebandStarkAmplificationModifiedProgram,
+    )
+
+    assert FloquetProgram.__bases__ == (QsimBaseProgram,)
+    assert DarkModeProgram.__bases__ == (FloquetProgram,)
+    for leaf in (MBRRamseyProgram, FloquetDisplacementKerrProgram,
+                 SidebandStarkAmplificationModifiedProgram):
+        assert leaf.__bases__ == (FloquetProgram,), leaf.__name__
+    for leaf in (DarkT1Program, SidebandScrambleDarkProgramNewNew):
+        assert leaf.__bases__ == (DarkModeProgram,), leaf.__name__
+    assert DarkModeProgram not in MBRRamseyProgram.__mro__

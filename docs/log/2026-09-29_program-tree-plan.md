@@ -124,3 +124,21 @@ body, so it no longer imports; with it `deprecated/mbr_sff_campaign.py` and
 `dormant/mbr_sff.py` (SFF, to be deleted, step 7 decision 3). Following their headers and
 `tests/test_deprecated_mbr.py`: a note in both module headers and the two SFF tests skipped, not
 fixed.
+
+## Step 10C: one chain (later the same day)
+
+- `FloquetTrain` (mixin) is now `FloquetProgram(QsimBaseProgram)`, and `DarkModeEncoding` is
+  `DarkModeProgram(FloquetProgram)`; same modules. The method resolution order of every
+  program is as before, so nothing plays differently.
+- Re-parented: `MBRRamseyProgram`, `FloquetDisplacementKerrProgram`,
+  `SidebandStarkAmplificationModifiedProgram`, `..._newold` and
+  `StorageSwapPhaseAccumulationProgram` on `FloquetProgram` (they use no dark-mode method);
+  `DarkT1Program` and `SidebandScrambleDarkProgramNewNew` on `DarkModeProgram`. NewNew drops
+  `SidebandScrambleProgram` as a parent (it used nothing from it).
+- `DarkBaseProgram` is an empty subclass of `DarkModeProgram`. No live Program uses it; it stays
+  until 10F for the deprecated modules (`dark_scramble_legacy`, `encoding_spectroscopy`,
+  `legacy_mbr`) and the old address in `floquet_dark_mode_readout`.
+- New test: `test_the_floquet_chain_is_single_inheritance` (`tests/test_pulse_layer_layout.py`).
+- Checked: every golden unchanged (program, MBR ASM, notebook, acquire). Full suite: 1492
+  passed, 2 skipped, the 3 matrix-pencil failures. All deprecated modules import, except
+  `mbr_sff` and `mbr_sff_campaign` (broken since 10B).

@@ -12,8 +12,9 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   steps 10A-10G; approved by guan 2026-09-29). Decision (guan, 2026-09-29): do it on `guan`
   first, so the other users restart their kernels only once. Done: 10A (the nets: program
   golden, acquire golden, displacement-Kerr notebook in the notebook golden) and 10B (one
-  template in `QsimBaseProgram`; the class names change in 10F). Next: 10C (`FloquetTrain` and
-  `DarkModeEncoding` as classes in one chain).
+  template in `QsimBaseProgram`; the class names change in 10F) and 10C (the chain
+  `QsimBaseProgram` -> `FloquetProgram` -> `DarkModeProgram`; `DarkBaseProgram` is an empty
+  subclass kept until 10F for the deprecated modules). Next: 10D (the `readout` key).
 - **Until 10E:** do not set `multiparity_readout` on a job that runs through
   `QsimBaseExperiment`. Since 10B every template program plays the second readout, but that
   driver counts only one (plan 7.3), so it reads the wrong lane. `DarkBaseExperiment` counts it.

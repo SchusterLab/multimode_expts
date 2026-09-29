@@ -11,12 +11,10 @@ import numpy as np
 from slab import AttrDict
 
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
-from experiments.qsim.dark_base import (
-    DarkBaseExperiment,
-    DarkBaseProgram,
-)
+from experiments.qsim.dark_base import DarkBaseExperiment
+from experiments.qsim.floquet_train import FloquetProgram
 
-class FloquetDisplacementKerrProgram(DarkBaseProgram):
+class FloquetDisplacementKerrProgram(FloquetProgram):
     """
     D(alpha) -> closed Floquet pairs -> D(alpha) -> vacuum readout using `slow_pi_ge`.
     Now displacement pulse entirely relies on displace_man, which receives complex

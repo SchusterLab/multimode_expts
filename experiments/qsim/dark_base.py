@@ -16,11 +16,10 @@ Experiment that owns acquisition with the Program that owns the pulses.
     config raises on the singular key its body reads.
 
 ``DarkBaseProgram`` / ``DarkBaseRProgram``
-    ``DarkBaseProgram`` is ``QsimBaseProgram`` (the template: reset,
-    prepulse, the ``core_pulses`` hook each measurement overrides, postpulse,
-    readout) with two mixins next door: ``floquet_train`` (the drive) and
-    ``dark_mode_encoding`` (load and read). Since step 10B it has no methods
-    of its own. The R variant is the RAverager counterpart for hardware depth
+    ``DarkBaseProgram`` is the old name of ``DarkModeProgram``
+    (``dark_mode_encoding``), kept until step 10F; no live Program uses it.
+    The template (reset, prepulse, the ``core_pulses`` hook each measurement
+    overrides, postpulse, readout) is ``QsimBaseProgram``'s. The R variant is the RAverager counterpart for hardware depth
     sweeps; it shares ``body`` and takes its pulse methods by explicit
     assignment, and the asymmetry in *which* it takes is deliberate: it keeps
     MM_base's ``man_reset`` (see ``DarkBaseRProgram``).
@@ -38,8 +37,7 @@ from slab import AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram
-from experiments.qsim.dark_mode_encoding import DarkModeEncoding
-from experiments.qsim.floquet_train import FloquetTrain
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
     QsimBaseProgram,
@@ -256,13 +254,15 @@ class DarkBaseExperiment(QsimBaseExperiment):
         return out
         
 
-class DarkBaseProgram(DarkModeEncoding, FloquetTrain, QsimBaseProgram):
-    """``QsimBaseProgram`` with the Floquet train and the dark-mode encoding.
+class DarkBaseProgram(DarkModeProgram):
+    """The old name of ``DarkModeProgram``; no live Program uses it.
 
     Its template (``initialize``, ``body``) and the manipulate-mode pulses
-    moved into ``QsimBaseProgram`` in step 10B; the two copies of the template
-    were merged there (``docs/qsim/program_tree_plan.md``, 7.1). Step 10C
-    replaces this class by the Floquet and dark-mode classes of that chain.
+    moved into ``QsimBaseProgram`` in step 10B, and its two mixins became the
+    classes ``FloquetProgram`` and ``DarkModeProgram`` in step 10C
+    (``docs/qsim/program_tree_plan.md``). It stays until the renames of step
+    10F, for the deprecated modules and the old address in
+    ``floquet_dark_mode_readout``.
     """
 
 

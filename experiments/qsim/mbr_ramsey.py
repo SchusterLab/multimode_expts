@@ -13,7 +13,7 @@ The bases, and what each gives:
   (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``) and the
   qsim ``man_reset``, on top of ``MMAveragerProgram`` (reset, pulse creator,
   readout);
-- ``FloquetTrain``: the Floquet playback and its phase bookkeeping.
+- ``FloquetProgram``: the Floquet playback and its phase bookkeeping.
 
 Until step 8A1 this class was built on the dark-mode chain
 (``SidebandScrambleProgram``, ``DarkBaseProgram``). It used none of the
@@ -31,17 +31,16 @@ from slab import AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.floquet_train import FloquetTrain
+from experiments.qsim.floquet_train import FloquetProgram
 from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
-    QsimBaseProgram,
     readout_lane_count,
 )
 from experiments.qsim.utils import ensure_list_in_cfg
 from fitting.fit_display_classes import GeneralFitting
 
 
-class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
+class MBRRamseyProgram(FloquetProgram):
     """Many-body Ramsey sequence: encode, evolve, decode, analyze.
 
     The shared base of the MBR job programs (docs/qsim/mbr_redesign.md,
