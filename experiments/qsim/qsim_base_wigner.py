@@ -18,7 +18,7 @@ from experiments.qsim.utils import (
 )
 from slab.datamanagement import AttrDict
 
-class WignerExperiment(QsimExperiment):
+class QsimWignerExperiment(QsimExperiment):
     """
     Named QsimWignerBaseExperiment until step 10F.
 

@@ -107,7 +107,7 @@ QSIM_BASE = f"{QSIM}.qsim_base:QsimExperiment"
 # The dark_base__* cases ran on DarkBaseExperiment until step 10F renamed it
 # QsimExperiment; they keep their keys (and their DarkT1 program).
 DARK_BASE = f"{QSIM}.qsim_base:QsimExperiment"
-WIGNER = f"{QSIM}.qsim_base_wigner:WignerExperiment"
+WIGNER = f"{QSIM}.qsim_base_wigner:QsimWignerExperiment"
 T1 = f"{QSIM}.sideband_scramble:StorageT1Program"
 DARK_T1 = f"{QSIM}.dark_mode_t1:DarkT1Program"
 KERR_WAIT = f"{QSIM}.kerr:KerrWaitProgram"
@@ -144,7 +144,7 @@ CASES = [
          ("floquet_cycle", "ramsey_phase")),
     Case("mbr_job__pre_selection", f"{QSIM}.mbr_time_trace:MBRTimeTraceExperiment", "",
          _mbr(pre_selection_reset=True), ("floquet_cycle", "ramsey_phase")),
-    # WignerExperiment: an alpha axis inside the sweep.
+    # QsimWignerExperiment: an alpha axis inside the sweep.
     Case("wigner__default", WIGNER, KERR_WAIT, _wigner(), ("wait_us_time", "wigner_alpha")),
     Case("wigner__pulse_correction", WIGNER, KERR_WAIT, _wigner(pulse_correction=True),
          ("wait_us_time", "wigner_alpha", "phase_second_pulse")),

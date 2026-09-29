@@ -27,6 +27,9 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   `multiparity_readout` and `slow_pi_ge_readout`, even when false, and
   `post_select_pre_pulse=True`. The notebooks of jonginn and connie still set them; they move at
   the merge (plan, 10F).
+- **Flat `experiments` namespace** (guan, a separate session): it keeps the last class of a name
+  without a warning. 16 older clashes outside qsim, one in qsim (`SidebandScrambleDarkProgram`,
+  live vs deprecated; waits for jonginn). Details in `docs/log/2026-09-29_program-tree-plan.md`.
 - **Analysis theme:** `tests/test_matrix_pencil_regression.py` fails 3 cases on `guan`
   (tolerance 1e-12; details in `docs/log/2026-09-29_program-tree-plan.md`).
 - **Device:** a first run on the device on 2026-09-28 (guan, local mode) had no errors, but the
@@ -72,7 +75,7 @@ How to check:
   `QsimProgram` (`qsim_base`: the template, the readout modes, `readouts_per_shot`) ->
   `FloquetProgram` (`floquet_train`) -> `DarkModeProgram` (`dark_mode_encoding`), plus
   `QsimRProgram` (RAverager) in `qsim_base`. One sweep driver, `QsimExperiment` (`qsim_base`),
-  with `WignerExperiment` (`qsim_base_wigner`) and `MBRJobExperiment` on it.
+  with `QsimWignerExperiment` (`qsim_base_wigner`) and `MBRJobExperiment` on it.
 - **MBR, clean** (about 3.5 kloc; rules and patterns in `docs/qsim/mbr_redesign.md`):
   - job classes, each with its own Program: `mbr_stark_cal`, `mbr_time_trace`,
     `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on `FloquetProgram`,

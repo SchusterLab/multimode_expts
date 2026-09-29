@@ -256,3 +256,12 @@ Checked with the acquire golden, part by part:
   multiphoton_calibration, 10 in floquet_calibration). Full suite: 1559 passed, 2 skipped, the
   3 matrix-pencil failures (one more test, `test_notebook_imports`, found the shared analysis
   notebook's import).
+
+Later the same day (guan): `WignerExperiment` renamed `QsimWignerExperiment`. The flattened
+`experiments` namespace keeps the last class of a name without a warning, and the generic name
+sat next to the non-qsim `WignerTomography1ModeExperiment` and `WignerAnalysis`. A scan of the
+flat namespace found no clash for the new names, 16 older clashes outside qsim, and one in
+qsim: `SidebandScrambleDarkProgram` (live in `t2_cavity_fluxexcursion`; deprecated in
+`dark_scramble_legacy`, reached through `floquet_dark_mode_readout`). `meas.<Name>` gives the
+live one only because of the import order. A broader check of the namespace is for a later
+session (guan).

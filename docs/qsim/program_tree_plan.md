@@ -128,7 +128,7 @@ slab Experiment
     ├ analysis-only      FloquetChevron, FloquetGainChevron, FloquetPhaseCal, SidebandStark*,
     │                    DarkT1, KerrCavityRamsey, ...: analyze/display only
     ├ MBRJobExperiment   inner axis fixed to ramsey_phase; default_program
-    ├ WignerExperiment   sets readout='wigner'; adds the wigner_alpha axis and, with
+    ├ QsimWignerExperiment   sets readout='wigner'; adds the wigner_alpha axis and, with
     │                    pulse_correction, a phase_second_pulse axis [180, 0]; Wigner analysis
     └ loop wrappers      FloquetCalibrationAmplification (outer axis floquet_cycle, derived
                          from n_scramble_cycles), FloquetDisplacementKerr (adds floquet_cycle_us)
@@ -204,7 +204,7 @@ Stem and infrastructure:
 | `DarkModeEncoding` (mixin) | `DarkModeProgram` (done in 10C) | `dark_mode_encoding.py` |
 | `ManipulateModePulses` (mixin) | methods move into `QsimProgram` (done in 10B) | module deleted |
 | `QsimBaseExperiment` + `DarkBaseExperiment` | `QsimExperiment` | `qsim_base.py` |
-| `QsimWignerBaseExperiment` | `WignerExperiment` | `qsim_base_wigner.py` |
+| `QsimWignerBaseExperiment` | `QsimWignerExperiment` | `qsim_base_wigner.py` |
 
 Leaves whose names do not say what they do:
 
@@ -252,7 +252,7 @@ Leaves with names that say what they do keep them (`FloquetChevronProgram`, `Dar
   outputs). The renames: `tools/rename_program_tree.py --write <paths>`. The readout flags by
   hand (their value decides: `=False` lines go; `parity_readout=True` -> `readout='parity'`;
   `multiparity_readout=True` -> `readout='multiparity'`; `perform_wigner=True` goes in a
-  `WignerExperiment` config, else `readout='wigner'`; `slow_pi_ge_readout=True` ->
+  `QsimWignerExperiment` config, else `readout='wigner'`; `slow_pi_ge_readout=True` ->
   `readout='slow_pi_ge'`). Tell them before; ask them to restart their kernels after.
 - Before the merge: no queued jobs with old class names (the worker loads classes at run time).
 

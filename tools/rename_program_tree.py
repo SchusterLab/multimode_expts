@@ -29,7 +29,8 @@ RENAMES = {
     "DarkBaseRProgram": "QsimRProgram",
     "QsimBaseExperiment": "QsimExperiment",
     "DarkBaseExperiment": "QsimExperiment",    # it was the same driver with an old name
-    "QsimWignerBaseExperiment": "WignerExperiment",
+    "QsimWignerBaseExperiment": "QsimWignerExperiment",
+    "WignerExperiment": "QsimWignerExperiment",    # its name for part of 2026-09-29
     "SidebandScrambleDarkProgramNewNew": "DarkModeScrambleProgram",
     "SidebandStarkAmplificationModifiedProgram": "StorageSwapStarkPhaseProgram",
 }
