@@ -215,3 +215,24 @@ Found:
 Next: fitter C with real amplitudes (an option of the variable projection); on synthetic data,
 does it reach the bound; on the real August sets, does the in-band residual stay at the noise
 (if it rises, the phase frame is not right and realness cannot be used).
+
+## Later the same evening: the window length
+
+guan: the window is chosen by eye where the oscillation falls below the noise; 400 us is well
+past T2. Does "x3.5" mean a 3.5 times longer window? No: "time x3.5" in the grid is 3.5 times
+the shots per point on the same window (noise per sample / sqrt(3.5)). The window itself,
+august_disorder/0 model, 10 rows, total shots fixed (a shorter window has more shots per point),
+resolvable of 35 (small gaps of 8):
+
+| window (us) | 218 | 326 | 435 (now) | 653 | 871 |
+|---|---|---|---|---|---|
+| T2 200, real | 27 (4) | 31 (6) | 33 (7) | 33 (7) | 33 (7) |
+| T2 200, complex | 14 (0) | 22 (1) | 24 (2) | 25 (3) | 25 (3) |
+| T2 100, real | 21 (2) | 25 (3) | 25 (3) | 25 (3) | 23 (2) |
+
+So the present window is about right; a longer one gains nothing with real amplitudes, and at
+fixed total shots it begins to lose. A level's amplitude (about 0.3) meets the noise per sample
+(0.074) at about 280 us for T2 200 us, and the window past that still adds (326 -> 435 us: 31 ->
+33): the samples under the noise still carry information together. Rule of thumb: 2-3 T2, about
+1.5 times the "gone by eye" point. More shots per point is what helps as T2 falls (T2 100, real:
+25 -> 31 at x3.5).
