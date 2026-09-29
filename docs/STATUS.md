@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-09-28** (pole finding: design calculator, on pippin). This file is overwritten at
+**Last updated: 2026-09-28** (pole finding: exploration plan, on pippin). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
 `docs/log/` (newest first: `2026-09-28_pole-finding-diagnostics.md`, `2026-09-28_pole-finding-phase1.md`, `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
 if you need the history.
@@ -27,11 +27,13 @@ if you need the history.
   the largest gain is free: fit **real amplitudes** (a diagonal row's <b|P|b>), 24 -> 33 of 35
   resolvable on august_disorder/0 at T2 200 us, 19 -> 25 at 100 us. A complete basis and
   whole-number weights add little at equal time; offset calibration matters only with complex
-  amplitudes; T2 dominates; the present window (about 2 T2) is right. Real amplitudes hold on the
-  August data (the residual rises as on synthetic data), but C with a real polish finds no more
-  levels: B merges the close pairs and C cannot add poles. **Next: a fitter that searches the
-  pole count with real amplitudes** (split a pole, refit, keep if chi^2 drops), to reach the real
-  bound (on synthetic August data 23-33 resolvable vs 24-30 found). Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  amplitudes; T2 dominates; the present window (about 2 T2) is right. Fitter F (pursuit with
+  real, non-negative amplitudes) finds 1-2 more levels than C on synthetic August data; row
+  alignment by rank does no better than C, and even with the true offsets the pencil resolves
+  only 22-33 of 35. **Next: the exploration plan `docs/qsim/pole_finding_explore.md`**: T0 (a gap
+  score and a fixed synthetic set) first, then in parallel T1 Hamiltonian fit, T2 the complete
+  basis' weight structure, T3 a convex sparse fit, T4 convert the September complete-basis
+  disorder data (9 x 35 occupations), T5 speed. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
@@ -130,6 +132,7 @@ old versions of ported helpers; older retired code.
 | `docs/STATUS.md` | this file: current |
 | `docs/log/` | dated session records; never edited after their day |
 | `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft; phase 1 done, 2026-09-28) |
+| `docs/qsim/pole_finding_explore.md` | pole finding: the plan of parallel exploration tasks (2026-09-29) |
 | `docs/qsim/mbr_redesign.md` | current spec for the MBR classes (steps 1-7 done; step 8 in its own plan) |
 | `docs/qsim/mbr_step7_plan.md` | step 7 plan and record (done); its section 7 questions are open |
 | `docs/qsim/mbr_step8_plan.md` | step 8 plan and record (done) |

@@ -283,3 +283,31 @@ draw 3, 11 of C's 12 unmatched poles are 1-2.5 match tolerances from a level (0.
 by a few rows is only fixed to about 0.4 kHz absolute (its CR error); the bound, like the level
 statistics, is about the gaps. The score should be too: next, score the gaps (and P(r < 0.25))
 rather than absolute positions.
+
+## Next day: row alignment by rank, and the exploration plan
+
+guan: we are hill climbing locally; have the big ideas been tried? The eye reads a wiggly
+vertical feature across rows as one level: fix row 0 as the gauge, and choose all row shifts to
+optimize a loss; for a complete basis the loss is well defined (the joint pencil should need
+exactly the 35 levels). Does C do this? Not as such: C fits the offsets together with the
+pencil's poles, locally from 0.
+
+Tried (scratch script): loss = the energy of the stacked Hankel matrix beyond 35 singular values,
+offsets by L-BFGS from 0; synthetic August point, T2 200 us, noise 0.075, 2 draws x offsets 0.5
+and 1 kHz, 35 and 10 rows. The minimum is at the true offsets (within 0.3 kHz) and wide (1.3-5
+kHz), but shallow (the loss moves by 1-5%: past 35 singular values it is mostly noise). Offset
+error: alignment 0.16-0.68 kHz, C 0.06-0.59 (35 rows); 0.66-0.95 vs 0.15-0.95 (10 rows, one draw
+lost). Levels resolved by B on raw / aligned / truly aligned rows, and C: 35 rows 12-31 / 16-33 /
+22-33, C 19-33; 10 rows 2-24 / 2-10 / 11-18, C 10-25. **C already aligns as well as knowing the
+offsets; even with the true offsets the pencil resolves 22-33 of 35: the offsets are not the
+limit.** 35 rows against 10, true offsets: 22-33 against 11-18.
+
+Data: jonginn's job list has complete-basis disorder data: September 10-14, N=3, 9
+realizations x 35 occupations, K about 3.6 kHz, g 29.2 kHz; not converted.
+
+guan on the ideas: a Hamiltonian fit is worth trying, though its levels may beg the question for
+the statistics; the full weight structure of a complete basis and a convex sparse fit too;
+off-diagonal data shelved (measuring time; no Stark calibration for off-diagonal entries).
+Plan for parallel sessions: `docs/qsim/pole_finding_explore.md` (T0 gap score and a fixed
+synthetic set first; then T1 Hamiltonian fit, T2 weight structure, T3 sparse fit, T4 the
+September data, T5 speed).
