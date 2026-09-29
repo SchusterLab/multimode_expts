@@ -6,6 +6,7 @@ at 1 us, frequencies in FFT bins, rows normalized to A(0) = 1.
 """
 from math import comb
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -18,6 +19,7 @@ from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_
 from fitting.qsim.poles.offsets import calibration_sigma, model_offset_sigma
 from fitting.qsim.poles.rank import RankRule
 from fitting.qsim.poles.pole_fit import PoleFit
+from fitting.qsim.poles.pole_plots import display_pole_fit
 from fitting.qsim.poles.real_benchmarks import RealSpectrum, barycenter_merge, multiplet_weights
 from fitting.qsim.poles.registry import data_set, load_registry, manifest_path
 from fitting.qsim.poles.statistics import small_gap_ratio_fraction
@@ -274,3 +276,48 @@ def test_per_row_clustered_joins_one_pole_per_row():
     np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.1)
     clusters = per_row_clustered.cluster_row_poles(np.array([0., 0.1, 0.15, 1.]), np.array([0, 1, 1, 0]), 0.2)
     assert [list(c) for c in clusters] == [[0, 1], [2], [3]]
+
+
+# --- Row offsets in the fit, and the display --------------------------------
+
+def offset_rows(noise):
+    """8 rows on the 4 levels, each level in every row, offsets of sigma 0.1 bin."""
+    weights = np.random.default_rng(1).dirichlet(np.ones(4), size=8)
+    offsets_bins = np.random.default_rng(2).normal(0, 0.1, size=8)
+    A = returns(FREQUENCIES_BINS, DECAYS_PER_US, weights, noise=noise)
+    return A * np.exp(-2j * np.pi * BIN_MHz * np.outer(offsets_bins, TIME_US)), offsets_bins
+
+
+def assert_offsets_recovered(noise):
+    A, injected_bins = offset_rows(noise)
+    fit = joint_refined.fit(A, TIME_US, joint_refined.JointRefinedSettings(offset_prior_MHz=0.2 * BIN_MHz))
+    np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.02)
+    found_bins = fit.row_offsets_MHz / BIN_MHz
+    # up to the one shift the data cannot tell from a shift of all poles
+    np.testing.assert_allclose(found_bins - found_bins.mean(), injected_bins - injected_bins.mean(), atol=0.02)
+
+
+def test_joint_refined_returns_the_row_offsets_it_removed():
+    assert_offsets_recovered(noise=0.01)
+
+
+@pytest.mark.xfail(strict=True, reason="known limit: at high SNR B keeps each offset-smeared level as "
+                   "several poles (rank 12 for 4 levels), and the refinement cannot merge them; the split "
+                   "absorbs the offsets (docs/log/2026-09-28_pole-finding-diagnostics.md)")
+def test_joint_refined_returns_the_row_offsets_at_high_snr():
+    assert_offsets_recovered(noise=0.001)
+
+
+def test_fitted_returns_include_the_row_offsets():
+    fit = PoleFit(np.array([0.01]), np.array([0.]), np.array([[1.], [1.]]), 1, row_offsets_MHz=np.array([0., 0.002]))
+    a = fit.returns(TIME_US)
+    np.testing.assert_allclose(a[1] / a[0], np.exp(-2j * np.pi * 0.002 * TIME_US))
+
+
+def test_display_pole_fit_draws_any_fitter():
+    A = returns(FREQUENCIES_BINS, DECAYS_PER_US, WEIGHTS)
+    levels = BIN_MHz * FREQUENCIES_BINS
+    for fit in (joint_pencil.fit(A, TIME_US), joint_refined.fit(A, TIME_US)):
+        fig = display_pole_fit(fit, A, TIME_US, levels_MHz=levels, row_weights=WEIGHTS, row_labels=["x", "y", "z"])
+        assert len(fig.axes) == 6
+        plt.close(fig)

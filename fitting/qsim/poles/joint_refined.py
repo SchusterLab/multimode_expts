@@ -48,7 +48,8 @@ def fit(A, time_us, settings=JointRefinedSettings(), row_groups=None):
     corrected = remove_offsets(a, time_us, offsets[groups])
     amplitudes = variable_projection(corrected, time_us, frequencies, decays)[1]
     order = np.argsort(frequencies)
-    return PoleFit(frequencies[order], decays[order], amplitudes[:, order], len(frequencies), errors[order])
+    return PoleFit(frequencies[order], decays[order], amplitudes[:, order], len(frequencies), errors[order],
+                   offsets[groups])
 
 
 def remove_offsets(a, time_us, offsets_MHz):

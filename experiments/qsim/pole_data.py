@@ -47,4 +47,4 @@ def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
     levels, multiplicities, row_weights = distinct_levels(
         model.energies_MHz, model.basis_eigenstate_weights[rows], 1e-3 / (len(time_us) * (time_us[1] - time_us[0])))
     return RealSpectrum(label, data_set.label, data_set.basis == "complete", time_us,
-                        np.asarray(data.reconstruction.A), levels, multiplicities, row_weights)
+                        np.asarray(data.reconstruction.A), levels, multiplicities, row_weights, tuple(occupations))

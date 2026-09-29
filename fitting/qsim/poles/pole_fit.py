@@ -17,17 +17,30 @@ class PoleFit:
 
     ``amplitudes[b, lambda]`` is normalized to ``A_b(0)``: for a diagonal row it
     is ``<b|P_lambda|b>``. ``rank`` is the number of poles the rank rule chose.
+    ``row_offsets_MHz[b]`` is the frequency offset a fitter found for row b (fitter C;
+    None for the others): row b sees each pole at ``E_lambda + delta_b``.
     """
     frequencies_MHz: np.ndarray
     decays_per_us: np.ndarray
     amplitudes: np.ndarray
     rank: int
     frequency_errors_MHz: np.ndarray | None = None
+    row_offsets_MHz: np.ndarray | None = None
 
     @property
     def weights(self):
         """-> w_lambda = Re sum_b c_{b,lambda}, the pole weights (spec 3)."""
         return np.real(np.sum(self.amplitudes, axis=0))
+
+    def returns(self, time_us):
+        """-> the fitted rows a_b(t) = exp(-2 pi i delta_b t) sum_lambda c_{b,lambda}
+        exp((-gamma_lambda - 2 pi i E_lambda) t), normalized as the fit was (a_b = A_b / A_b(0))."""
+        time_us = np.asarray(time_us, dtype=float)
+        V = np.exp(np.outer(-self.decays_per_us - 2j * np.pi * self.frequencies_MHz, time_us))
+        a = self.amplitudes @ V
+        if self.row_offsets_MHz is None:
+            return a
+        return a * np.exp(-2j * np.pi * np.outer(self.row_offsets_MHz, time_us))
 
 
 def sample_time(time_us):

@@ -1,8 +1,8 @@
 # Where things stand
 
-**Last updated: 2026-09-28** (pole finding phase 1, on pippin). This file is overwritten at
+**Last updated: 2026-09-28** (pole finding: a figure for any fitter, on pippin). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
-`docs/log/` (newest first: `2026-09-28_pole-finding-phase1.md`, `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
+`docs/log/` (newest first: `2026-09-28_pole-finding-diagnostics.md`, `2026-09-28_pole-finding-phase1.md`, `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
 if you need the history.
 
 ## What is next
@@ -15,11 +15,21 @@ if you need the history.
   synthetic data (26 of 35 resolved at every sigma, A and B 7-9 at 1 kHz) and is best on real
   august_N3 (multiplet error 0.16; finds the level A and B miss); on august_disorder it gives
   P(r < 0.25) 0.09 vs the model's 0.18 (B's 0.15 was inflated by offset-made false poles).
-  Next: C's analytic Jacobian (it is slow), return its offsets, its few-rows limit (strict
-  xfail), then C on benchmark 2 and the new registry entries (guan converts jonginn's logs);
-  D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait for
-  that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
+  None of A-D is good enough on the real data, and the scores do not say why (guan): so first
+  find the cause of each miss. Done: `display_pole_fit` (`fitting/qsim/poles/pole_plots.py`,
+  `MBRSpectrumExperiment.display_poles`), one figure for any fitter's `PoleFit` with the residual
+  FFT per row; C returns its row offsets (`PoleFit.returns`); notebook
+  `analysis_notebooks/pole_finding/diagnose.py`. Found: C fails at high SNR too (new strict
+  xfail), and its offsets on august_N3 follow the first mode's occupation (a model error?).
+  **Next: step 2, one table per data set with one row per model level** (in the rows? resolvable
+  at all, Cramér-Rao? held by the data, refinement started at the model? model a little off?
+  found?), first on august_N3; then choose fitter, calibration, model or acquisition work.
+  Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
+  logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
+  for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
   current Matrix Pencil's three known defects stay as strict xfails. Record:
+  `docs/log/2026-09-28_pole-finding-diagnostics.md` (plan and reasons),
   `docs/log/2026-09-28_pole-finding-phase1.md`.
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default

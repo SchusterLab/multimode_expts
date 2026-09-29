@@ -57,7 +57,9 @@ Every fitter is a pure function with the same interface:
     fit(A, time_us, settings, row_groups=None) -> PoleFit
 
 `PoleFit` (frozen dataclass): `frequencies_MHz`, `decays_per_us`, `amplitudes` (row x pole,
-normalized to `A_b(0)` for diagonal rows), `rank`, and optionally `frequency_errors_MHz`.
+normalized to `A_b(0)` for diagonal rows), `rank`, and optionally `frequency_errors_MHz` and
+the frequency offset of each row (fitter C). `PoleFit.returns(time_us)` gives the fitted rows,
+with the offsets, so a residual or a figure never needs to know which fitter ran.
 `row_groups` labels the rows that share a calibration (same final occupation).
 Each fitter has its own pydantic settings class. Its fields are the fitter's free parameters,
 and each field's docstring says which trade-off it controls.
@@ -93,6 +95,7 @@ resolution was before MPM.
    Each offset has a Gaussian prior of mean 0 and width `sigma_cal` of its group (section 6):
    the Stark calibration says the offset is 0 within its error.
 7. Frequency errors from the Jacobian at the solution (`frequency_errors`).
+8. The offsets go back in the `PoleFit`, one per row (its group's).
 
 No offset is fixed to 0. The data alone cannot tell a shift of all poles by `+c` from a shift
 of all offsets by `-c`; the prior breaks this, and puts the absolute frame at the calibration's
@@ -280,7 +283,16 @@ complete or partial, disorder parameters, source log reference. guan converts jo
 to manifests (with `tools/migrate_mbr_jobs.py`) and to these entries. The benchmark reads
 only the registry.
 
-### 8.3 Outputs
+### 8.3 The figure of one fit
+
+`display_pole_fit` (`fitting/qsim/poles/pole_plots.py`; on a spectrum,
+`MBRSpectrumExperiment.display_poles`) takes the `PoleFit` of any fitter: the per-row FFT of
+the data and of the residual, with the found poles (at each row's own offset) and the model
+levels where the row has weight; the row sums; the residual of each row. A level that a fitter
+misses but the data hold is a peak in the residual FFT of its rows. Notebook:
+`analysis_notebooks/pole_finding/diagnose.py`.
+
+### 8.4 Outputs
 
 `<data root>/<experiment>/derived_data/pole_finding/<run>/`: the HTML report, one HDF5 of
 results with provenance (commit, settings, registry entries, seeds), and cached fits keyed by

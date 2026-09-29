@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from fitting.qsim.poles.matching import alias_distance, level_tolerances, match_poles
-from fitting.qsim.poles.pole_fit import normalize_to_initial_return, poles_from
+from fitting.qsim.poles.pole_fit import normalize_to_initial_return
 from fitting.qsim.poles.statistics import small_gap_ratio_fraction
 
 #: The rebuilt theory differs from the recorded one by up to 0.3 kHz (docs/STATUS.md).
@@ -30,6 +30,8 @@ class RealSpectrum:
     levels_MHz: np.ndarray
     multiplicities: np.ndarray
     row_weights: np.ndarray
+    #: The rows' occupations, for labels (optional).
+    occupations: tuple | None = None
 
     @property
     def dt_us(self):
@@ -41,11 +43,9 @@ class RealSpectrum:
 
 
 def fit_residual(fit, spectrum):
-    """-> |a - sum_lambda c z^n| / |a|, a = A / A(0), over all rows."""
+    """-> |a - a_fit| / |a|, a = A / A(0), over all rows (a_fit with the fit's row offsets)."""
     a = normalize_to_initial_return(spectrum.A)
-    z = poles_from(fit.frequencies_MHz, fit.decays_per_us, spectrum.dt_us)
-    model = fit.amplitudes @ z[:, None] ** np.arange(len(spectrum.time_us))
-    return float(np.linalg.norm(a - model) / np.linalg.norm(a))
+    return float(np.linalg.norm(a - fit.returns(spectrum.time_us)) / np.linalg.norm(a))
 
 
 def barycenter_merge(frequencies_MHz, weights, resolution_MHz):

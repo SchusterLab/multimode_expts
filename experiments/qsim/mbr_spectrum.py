@@ -48,6 +48,7 @@ from fitting.qsim import matrix_pencil as matrix_pencil_analysis
 from fitting.qsim import mbr_phase
 from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
 from fitting.qsim.mbr_spectrum import local_spectrum
+from fitting.qsim.poles.pole_plots import display_pole_fit
 from fitting.qsim.mbr_reconstruction import (
     postprocess_reconstruction,
     subsample_spectroscopy_shots,
@@ -932,6 +933,21 @@ class MBRSpectrumExperiment(AssembledExperiment):
         frame = data.get("phase_frame", "as_acquired")
         fig.suptitle(f"{result.occupation}; rowwise poles={len(result.frequencies_MHz)}; estimated signal rank={result.diagnostic.estimated_signal_rank}; relative residual={result.relative_residual:.3f}; frame={frame}")
         return fig
+
+    def display_poles(self, fit, data=None, title=""):
+        """Any pole fitter's result on this spectrum (:func:`fitting.qsim.poles.pole_plots.display_pole_fit`).
+
+        ``fit`` is a :class:`fitting.qsim.poles.pole_fit.PoleFit` of ``data.reconstruction.A`` on
+        ``data.spectrum.time_us``, from any fitter in ``fitting.qsim.poles``. The model levels are
+        this analysis's eigenenergies, each marked in the rows where it has weight.
+        """
+        data = self.data if data is None else data
+        reconstruction, spectrum = data.reconstruction, data.spectrum
+        labels = [str(initial) if tuple(initial) == tuple(final) else f"{tuple(final)} <- {tuple(initial)}"
+                  for initial, final in zip(reconstruction.occupations, reconstruction.final_occupations)]
+        return display_pole_fit(fit, reconstruction.A, spectrum.time_us, levels_MHz=spectrum.energies_MHz,
+                                row_weights=spectrum.eigenstate_weights, row_labels=labels,
+                                fft_window=spectrum.fft_window, zero_padding=spectrum.zero_padding, title=title)
 
     @staticmethod
     def display_result(reconstruction, spectrum, mode_labels,
