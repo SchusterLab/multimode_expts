@@ -5,7 +5,10 @@ on the August sets), while the level statistics need only the gaps; so the score
 2-4 (absolute positions within 0.3-0.57 kHz) counts near misses as false poles
 (docs/log/2026-09-28_pole-finding-diagnostics.md, fitter F). Here:
 
-1. The found poles are shifted by the one common shift the data cannot fix (``common_shift``).
+1. The found poles are shifted by the one common shift the data cannot fix: E -> E + s with
+   every row offset delta_b -> delta_b - s gives the same rows. Where the true offsets are known
+   (synthetic data) the shift is ``gauge_shift``; else it is searched (``common_shift``), which
+   can lock onto a wrong alignment when many levels are missed.
 2. They are matched to the levels in order (``ordered_match``): one-to-one, monotone, a pole
    within half the level's nearest gap.
 3. Each adjacent gap is found if both its ends are matched to adjacent poles (no pole between);
@@ -138,16 +141,24 @@ def ordered_match(found_MHz, levels_MHz, tolerances_MHz):
     return level_pole
 
 
-def score_gaps(found_MHz, levels_MHz, sampling_MHz, gap_bounds_MHz=None, max_shift_MHz=2e-3):
+def gauge_shift(found_offsets_MHz, true_offsets_MHz):
+    """-> s = mean(found offsets) - mean(true offsets): row b sees a level at E + delta_b, so the
+    found levels + s are on the true levels' gauge (rows weighed equally). None offsets: 0."""
+    found = 0. if found_offsets_MHz is None else float(np.mean(found_offsets_MHz))
+    return found - float(np.mean(true_offsets_MHz))
+
+
+def score_gaps(found_MHz, levels_MHz, sampling_MHz, gap_bounds_MHz=None, shift_MHz=None, max_shift_MHz=2e-3):
     """-> the GapScore of found frequencies against the distinct levels (any order).
 
-    ``gap_bounds_MHz``: {name: bound per gap of the sorted levels}; ``max_shift_MHz``: the
-    largest common shift searched (about 2-4 offset priors).
+    ``gap_bounds_MHz``: {name: bound per gap of the sorted levels}; ``shift_MHz``: the common
+    shift (``gauge_shift``), None to search it within ``max_shift_MHz`` (about 2-4 offset priors).
     """
     levels_MHz = np.sort(np.asarray(levels_MHz, dtype=float))
     found_MHz = np.sort(unwrap_to(np.asarray(found_MHz, dtype=float), levels_MHz, sampling_MHz))
     tolerances = half_nearest_gap(levels_MHz)
-    shift = common_shift(found_MHz, levels_MHz, tolerances, max_shift_MHz, np.min(tolerances) / 4)
+    shift = shift_MHz if shift_MHz is not None else common_shift(found_MHz, levels_MHz, tolerances, max_shift_MHz,
+                                                                  np.min(tolerances) / 4)
     found_MHz = found_MHz + shift
     level_pole = ordered_match(found_MHz, levels_MHz, tolerances)
     true_gaps = np.diff(levels_MHz)

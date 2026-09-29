@@ -21,6 +21,7 @@ Each case carries its Cramér-Rao gap bounds for free complex and for real ampli
 import json
 from dataclasses import dataclass
 from itertools import product
+from pathlib import Path
 from typing import Annotated, Literal
 
 import h5py
@@ -39,6 +40,11 @@ GRID = dict(dt_us=1.4509, samples=300)
 NOISE_PER_SAMPLE = 0.075
 DIRECTION_SEED = 100
 BOUNDS = ("complex", "real")
+
+
+def set_folder(root):
+    """-> where the set and its fit caches live under the data root."""
+    return Path(root) / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "fixed_set"
 
 
 class Condition(BaseModel):

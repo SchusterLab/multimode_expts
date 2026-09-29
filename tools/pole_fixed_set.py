@@ -3,7 +3,7 @@
     pixi run python tools/pole_fixed_set.py build
     pixi run python tools/pole_fixed_set.py fit C        # then F: it starts from C's cached fits
 
-Files under ``<data root>/260818_qsim_spectroscopy/derived_data/pole_finding/fixed_set/``:
+Files in ``fixed_set.set_folder`` (``<data root>/260818_qsim_spectroscopy/derived_data/pole_finding/fixed_set/``):
 ``set.h5`` (``fitting.qsim.poles.fixed_set``) and ``fits_<fitter>.h5``. ``fit`` skips cases
 already in the cache, so an interrupted run resumes; each fit is written as soon as it is done.
 Fits run serially (parallel fitter workers crash on pippin; ``benchmarks`` module docstring).
@@ -14,9 +14,9 @@ import time
 
 from experiments.job_paths import data_root
 from fitting.qsim.poles import joint_refined, pursuit
-from fitting.qsim.poles.fixed_set import conditions, load_fits, load_set, make_case, save_fit, save_set
+from fitting.qsim.poles.fixed_set import conditions, load_fits, load_set, make_case, save_fit, save_set, set_folder
 
-FOLDER = data_root() / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "fixed_set"
+FOLDER = set_folder(data_root())
 SETTINGS = {"C": joint_refined.JointRefinedSettings(), "F": pursuit.PursuitSettings()}
 
 

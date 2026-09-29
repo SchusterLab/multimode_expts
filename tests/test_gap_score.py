@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from fitting.qsim.poles.fixed_set import Condition, conditions, load_fits, load_set, make_case, save_fit, save_set
-from fitting.qsim.poles.gap_score import ordered_match, pooled_small_gap_fraction, score_gaps
+from fitting.qsim.poles.gap_score import gauge_shift, ordered_match, pooled_small_gap_fraction, score_gaps
 from fitting.qsim.poles.pole_fit import PoleFit
 
 LEVELS = np.array([0., 1., 1.2, 3., 4.5, 5., 7.])       # small gaps: 1-1.2 and 4.5-5 (mean 7/6)
@@ -22,6 +22,16 @@ def test_exact_poles_find_every_gap():
 def test_common_shift_is_removed():
     score = score_gaps(LEVELS + 0.07, LEVELS, SAMPLING, max_shift_MHz=0.2)
     assert score.shift_MHz == pytest.approx(-0.07, abs=0.03) and score.gap_found.all()
+
+
+def test_gauge_shift_puts_found_levels_on_the_true_gauge():
+    """Rows see E + delta_b; a fit with offsets delta - s has levels E + s."""
+    true_offsets = np.array([0.01, -0.03, 0.05])
+    shift = gauge_shift(true_offsets - 0.02, true_offsets)
+    score = score_gaps(LEVELS + 0.02, LEVELS, SAMPLING, shift_MHz=shift)
+    assert shift == pytest.approx(-0.02) and score.gap_found.all()
+    np.testing.assert_allclose(score.found_MHz, LEVELS, atol=1e-12)
+    assert gauge_shift(None, true_offsets) == pytest.approx(-0.01)
 
 
 def test_merged_pair_loses_its_gap_and_one_neighbour_gap():
