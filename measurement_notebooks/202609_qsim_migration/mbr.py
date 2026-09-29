@@ -127,6 +127,46 @@ def runner_for(JobClass):
 print("mode order:", campaign.mode_labels)
 
 # %% [markdown]
+# ## 0. One-occupation check
+#
+# One Fock state through the whole chain, before the long runs below: its
+# phase calibration (one StarkCal job), then its time trace (one TimeTrace
+# job) with that calibration played on the pulse. A few minutes. Look at
+# both plots before starting section 1.
+
+# %%
+check_occupation = [1, 0, 1, 1, 0]
+print("mode order:", campaign.mode_labels, "occupation:", check_occupation)
+
+check_calibration = MBRCalibrationSetExperiment(
+    [check_occupation],
+    cycle_pairs=np.arange(0, 65, dtype=int),  # physical cycles: 0, 2, ..., 128
+    swap_stors=campaign.modes,
+    sync_cycles=campaign.sync_cycles,
+    reps=RUN.pick(1000, smoke=100),
+)
+check_calibration.acquire(runner_for(MBRStarkCalExperiment), batch_size=1, log=True, show=False)
+check_calibration.analyze()
+check_calibration.display()
+plt.show()
+print("manifest:", check_calibration.save())
+
+# %%
+check_trace = MBRSpectrumExperiment(
+    [check_occupation],
+    np.arange(0, RUN.pick(300, smoke=60), 2),
+    campaign.modes,
+    calibration=check_calibration,
+    sync_cycles=campaign.sync_cycles,
+    reps=RUN.pick(500, smoke=100),
+)
+check_trace.acquire(runner_for(MBRTimeTraceExperiment), batch_size=1, log=True, show=False)
+check_trace.analyze()
+check_trace.display_occupations(occupations=check_trace.occupations)
+plt.show()
+print("job ids:", check_calibration.job_ids, check_trace.job_ids)
+
+# %% [markdown]
 # ## 1. Phase calibration
 #
 # Either load a saved calibration set, or acquire a new one. Either way the
