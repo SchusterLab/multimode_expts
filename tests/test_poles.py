@@ -321,3 +321,11 @@ def test_display_pole_fit_draws_any_fitter():
         fig = display_pole_fit(fit, A, TIME_US, levels_MHz=levels, row_weights=WEIGHTS, row_labels=["x", "y", "z"])
         assert len(fig.axes) == 6
         plt.close(fig)
+
+
+def test_joint_refined_with_real_amplitudes_fits_real_weights():
+    A, _ = offset_rows(noise=0.01)
+    fit = joint_refined.fit(A, TIME_US, joint_refined.JointRefinedSettings(offset_prior_MHz=0.2 * BIN_MHz, amplitudes="real"))
+    assert np.isrealobj(fit.amplitudes)
+    np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.02)
+    np.testing.assert_allclose(fit.amplitudes, np.random.default_rng(1).dirichlet(np.ones(4), size=8), atol=0.03)

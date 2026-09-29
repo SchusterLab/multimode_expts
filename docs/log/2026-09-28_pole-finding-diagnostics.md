@@ -236,3 +236,24 @@ fixed total shots it begins to lose. A level's amplitude (about 0.3) meets the n
 33): the samples under the noise still carry information together. Rule of thumb: 2-3 T2, about
 1.5 times the "gone by eye" point. More shots per point is what helps as T2 falls (T2 100, real:
 25 -> 31 at x3.5).
+
+## Later the same evening: real amplitudes in C
+
+`JointRefinedSettings.amplitudes = "real"`: after C's complex rounds, one more refinement with
+real amplitudes (`variable_projection(..., real=True)`: [Re V; Im V] c = [Re a; Im a]). Started
+from B's split poles directly, the real refinement found wrong offsets (0.12 bin off on the
+8-row test; complex C 0.004); as a polish from the complex solution it recovers them.
+
+Synthetic August point (10 rows, noise 0.075, T2 200 us, offsets 0.5 kHz, 4 draws), levels
+found of 35: C complex 24 / 30 / 26 / 26, C real 26 / 30 / 25 / 26. **No gain.** The bound
+says 18 / 29 / 21 / 26 resolvable with complex amplitudes and 23 / 33 / 29 / 33 with real; complex
+C already finds 85-97% of the complex-resolvable levels. The real polish cannot add poles: B
+merges the close pairs, and C only refines what B gives. To reach the real bound a fitter must
+search the pole count with realness (split a pole, refit, keep the split if chi^2 drops enough).
+
+Is realness true of the data? The refinement started at the model levels, complex against real
+amplitudes, in-band residual / noise: synthetic (truly real) 0.61-0.70 / 0.84-1.02; august_disorder/0
+0.71 / 1.02; august_N3 1.20 / 1.48. The real data rise as the synthetic do; the complex fits'
+amplitude phases (|c|-weighted) are 18-30 deg on synthetic (true 0) and 10-26 deg on the real
+sets: fitted noise, no sign of a phase-frame error. **So realness holds on the August data, as
+far as this test sees.**
