@@ -146,3 +146,25 @@ Two follow-up checks (same notebook, same 16 s):
   heavier; on 7-1 neither is better than random.
 
 So on the real data B is at least as good as A and cleaner; B is the lead fitter.
+
+## Later the same day: B tuned (task 1 of 3)
+
+guan: wrap up the small remaining tasks today (tune B, sigma estimates, benchmarks 3 and 4);
+freezing B and switching `MBRDisorderEnsembleExperiment` waits for the new registry entries,
+because it changes results other users rely on and has to go through `main`.
+
+`analysis_notebooks/pole_finding/tune_b.py` (66 s): both rank rules x L = 0.5, 0.67, 0.8 N, on
+synthetic data at the August point (g 8.615 kHz, K/g -1.22, delta/g 5.80, 300 samples at
+1.4509 us, 10 rows, decay 0.01 per us, 20 draws x 2 seeds), then on the real August sets.
+
+- MDL beats the threshold rule at every SNR (at SNR 100: 24.8 of 35 resolved, 3.3 false poles
+  with MDL and L = 2N/3; threshold, N/2: 16.6); L matters little (N/2 slightly worse at high
+  SNR). On the real sets MDL with L = 2N/3 has the smallest multiplet error on august_N3 (0.28;
+  threshold 0.8-1.1) and the P(r < 0.25) closest to the model's on august_disorder (0.15 vs
+  0.18). **The defaults stay: MDL, L = 2N/3.**
+- B's rank on the real August data (about 32) matches the synthetic rank near SNR 100, not
+  near the SNR 13 that B's residual suggests (0.075 per sample): most of that residual is
+  probably not white noise but structure the sum-of-exponentials model does not capture.
+- At SNR 100 B still loses small gaps on synthetic August data (P(r < 0.25) 0.12 vs 0.22; at
+  300, 0.16): the real agreement (0.15 vs 0.18) may be partly luck, with merged pairs and
+  false poles cancelling.
