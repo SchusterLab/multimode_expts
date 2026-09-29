@@ -11,7 +11,7 @@ from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMRAveragerProgram
 from experiments.qsim.utils import ensure_list_in_cfg
-from experiments.qsim.qsim_base import QsimBaseProgram, readout_mode
+from experiments.qsim.qsim_base import QsimBaseProgram
 from experiments.qsim.dark_base import (
     DarkBaseExperiment,
     DarkBaseRProgram,
@@ -118,12 +118,7 @@ class ManStorMultiparityChevronRExperiment(DarkBaseExperiment):
                 "length point"
             )
 
-        read_num = 1
-        if self.cfg.expt.get("active_reset", False):
-            params = MMRAveragerProgram.get_active_reset_params(self.cfg)
-            read_num += MMRAveragerProgram.active_reset_read_num(**params)
-        if readout_mode(self.cfg.expt) == "multiparity":
-            read_num += 1
+        read_num = self.ProgramClass.readouts_per_shot(self.cfg)
         self.cfg.read_num = read_num
 
         avgi_lines = []

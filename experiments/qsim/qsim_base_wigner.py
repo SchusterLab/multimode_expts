@@ -55,154 +55,68 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
     """
 
     def acquire(self, progress=False, debug=False):
-        ensure_list_in_cfg(self.cfg)
-
+        """The one driver's sweep, with the displacements inside (see ``sweep_axes``)."""
         self.cfg.expt.pulse_correction = self.cfg.expt.get('pulse_correction', False)
         self.cfg.expt.parity_fast = self.cfg.expt.get('parity_fast', False)
         self.cfg.expt.active_reset = self.cfg.expt.get('active_reset', False)
-
         self.cfg.expt.readout = "wigner"
 
-        read_num = 1
-        if self.cfg.expt.get('parity_check', False):
-            read_num += 1
-        if self.cfg.expt.active_reset:
-            params = MMAveragerProgram.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        data = super().acquire(progress=progress, debug=debug)
+        # general fitting's bin_ss_data takes the first dimension from cfg.expt.expts
+        self.cfg.expt['expts'] = len(data["alpha"])
+        return data
 
-        # Perform the tomography at different displacements
+    def sweep_axes(self):
+        """-> the swept_params axes, then the displacement, then the parity phase.
+
+        A 1D sweep gets a one-point inner axis ``'dummy'``, so the data always
+        has the shape (outer, inner, alpha). With ``pulse_correction`` each
+        displacement is acquired twice, with ``phase_second_pulse`` 180 then 0.
+        """
+        axes = super().sweep_axes()
+        assert len(axes) in {1, 2}, "can only handle 1D and 2D sweeps for now"
+        self.sweep_dim = len(axes)
+        if len(axes) == 1:
+            axes.append(('dummy', [None]))
 
         # extract displacement list from file path
         if 'alpha_list' in self.cfg.expt:
-            alpha_2d = self.cfg.expt.alpha_list  # 2d list 
-            # convert list to array 
-            alpha_2d = np.array(alpha_2d)
+            alpha_2d = np.array(self.cfg.expt.alpha_list)  # 2d list
             alpha_list = alpha_2d[:, 0] + 1j * alpha_2d[:, 1]
         else:
             alpha_list = np.load(self.cfg.expt["displacement_path"])  # complex ndarray
+        self.alpha_list = alpha_list
 
+        axes.append(('wigner_alpha', alpha_list))
+        axes.append(('phase_second_pulse', [180, 0] if self.cfg.expt.pulse_correction else [180]))
+        return axes
 
-        assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
-        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+    def shape_data(self, axes, points):
+        """(outer, inner, alpha[, 2]) arrays, the shots with a last axis of their own."""
+        outer_params, inner_params = axes[0][1], axes[1][1]
+        self.outer_params, self.inner_params = outer_params, inner_params
 
-        outer_param = self.cfg.expt.swept_params[0]
-        outer_params = self.cfg.expt[outer_param+'s']
-        if sweep_dim == 2:
-            inner_param = self.cfg.expt.swept_params[1]
-            inner_params = self.cfg.expt[inner_param+'s']
-        else:
-            inner_param = 'dummy'
-            inner_params = [None]  # Dummy value for single parameter sweep
-        self.outer_param, self.inner_param = outer_param, inner_param
+        avgi, avgq = np.array(points['avgi']), np.array(points['avgq'])
+        data = dict(
+            avgi=avgi, avgq=avgq,
+            amps=np.abs(avgi + 1j * avgq),
+            phases=np.angle(avgi + 1j * avgq),
+            idata=np.array(points['idata']), qdata=np.array(points['qdata']),
+            alpha=self.alpha_list,
+        )
+        # forcing this shape regardless of if len(inner_params)==1
+        dims = [len(outer_params), len(inner_params), len(self.alpha_list)]
+        if self.cfg.expt.pulse_correction:
+            dims.append(2)
+        for key in 'avgi avgq amps phases idata qdata'.split():
+            shape = dims + [-1] if key in ('idata', 'qdata') else dims
+            data[key] = np.reshape(data[key], tuple(shape))
 
-        data = {
-            'avgi': [], 'avgq': [],
-            'amps': [], 'phases': [],
-            'idata': [], 'qdata': [],
-            'alpha':alpha_list,
-        }
-        if sweep_dim == 2:
+        if self.sweep_dim == 2:
             data['xpts'] = inner_params
             data['ypts'] = outer_params
         else:
             data['xpts'] = outer_params
-        self.outer_params, self.inner_params = outer_params, inner_params
-
-        pre_selection = ('active_reset' in self.cfg.expt and self.cfg.expt.active_reset
-                         and self.cfg.expt.get('pre_selection_reset', False))
-        if pre_selection:
-            threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
-
-        for self.cfg.expt[outer_param] in tqdm(outer_params, disable=not progress):
-            for self.cfg.expt[inner_param] in inner_params:
-                for alpha in tqdm(alpha_list, disable=not progress):
-                    self.cfg.expt.phase_second_pulse = 180 # reset the phase of the second pulse
-                    self.cfg.expt.wigner_alpha = alpha
-
-                    wigner = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
-                    self.prog = wigner
-
-                    avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc],
-                                                    threshold=None,
-                                                    load_pulses=True,
-                                                    progress=False,
-                                                    debug=debug,
-                                                    readouts_per_experiment=read_num)
-
-                    idata, qdata = wigner.collect_shots()
-                    data['idata'].append(idata)
-                    data['qdata'].append(qdata)
-
-                    if pre_selection:
-                        avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
-                            idata.flatten(), qdata.flatten(), read_num,
-                            threshold=threshold, pre_selection=True)
-                    else:
-                        avgi_val = avgi[0][-1]
-                        avgq_val = avgq[0][-1]
-                    data['avgi'].append(avgi_val)
-                    data['avgq'].append(avgq_val)
-                    data['amps'].append(np.abs(avgi_val+1j*avgq_val)) # Calculating the magnitude
-                    data['phases'].append(np.angle(avgi_val+1j*avgq_val)) # Calculating the phase
-
-
-                    if self.cfg.expt.pulse_correction:
-                        self.cfg.expt.phase_second_pulse = 0
-                        wigner = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
-                        avgi, avgq = wigner.acquire(self.im[self.cfg.aliases.soc],
-                                                    threshold=None,
-                                                    load_pulses=True,
-                                                    progress=False,
-                                                    readouts_per_experiment=read_num,
-                                                    #  debug=debug
-                                                    )
-                        idata, qdata = wigner.collect_shots()
-                        data['idata'].append(idata)
-                        data['qdata'].append(qdata)
-
-                        if pre_selection:
-                            avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
-                                idata.flatten(), qdata.flatten(), read_num,
-                                threshold=threshold, pre_selection=True)
-                        else:
-                            avgi_val = avgi[0][-1]
-                            avgq_val = avgq[0][-1]
-                        data['avgi'].append(avgi_val)
-                        data['avgq'].append(avgq_val)
-                        data['amps'].append(np.abs(avgi_val+1j*avgq_val)) # Calculating the magnitude
-                        data['phases'].append(np.angle(avgi_val+1j*avgq_val)) # Calculating the phase
-
-
-        for key in 'avgi avgq amps phases idata qdata'.split():
-            data[key] = np.array(data[key])
-            dims = [len(outer_params), len(inner_params), len(alpha_list)] # forcing this shape regardless of if len(inner_params)==1
-            if self.cfg.expt.pulse_correction:
-                dims.append(2)
-            if key in ['idata', 'qdata']:
-                dims.append(-1)
-            data[key] = np.reshape(data[key], tuple(dims))
-
-        if self.cfg.expt.get('parity_check', False):#must be modified if the active reset is also used; the slicing will not work when active_reset is True; 
-                                                    #if active_reset is ON, it should be [number_of_measurements_in_the_active_reset::read_num]
-            _parity_start_idx= 0  
-            if self.cfg.expt.get('active_reset', False):
-                params = MMAveragerProgram.get_active_reset_params(self.cfg)
-                _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
-            
-            data['parity_idata'] = data['idata'][..., _parity_start_idx::read_num]
-            data['parity_qdata'] = data['qdata'][..., _parity_start_idx::read_num]
-
-        if self.cfg.expt.normalize:
-            from experiments.single_qubit.normalize import normalize_calib
-            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-
-            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
-            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
-            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-
-        self.cfg.expt['expts'] = len(data["alpha"]) # this is necessary because of general fitting bin_ss_data which expects the first dimension to come from cfg.expt.expts
-
-        self.data=data
         return data
 
 

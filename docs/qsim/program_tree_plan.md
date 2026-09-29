@@ -1,7 +1,6 @@
 # qsim Program and Experiment tree: plan (steps 10A-10G)
 
-Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A-10D done 2026-09-29; 8.3 is
-reviewed at 10E. It continues
+Status: approved by guan 2026-09-29 (decisions 0.7-0.11); 10A-10E done 2026-09-29. It continues
 `mbr_step9_plan.md`; it uses `mbr_redesign.md` for the rules and patterns.
 
 ## 0. Decisions (guan, 2026-09-29)
@@ -22,6 +21,9 @@ reviewed at 10E. It continues
 9. `MM_base` changes only if the change is tiny, local, and has no effect on consumers. It gets
    a full rewrite with the v2 migration, which is out of scope. So 7.2: `MM_base` is not changed.
 10. 8.3 is reviewed when 10E starts.
+11. 8.3: `FloquetCalibrationAmplificationExperiment` stays a thin loop wrapper around the one
+    driver (option a). It is not expected to be used much; wrapping it is cheaper than
+    rediscovering it later, and no more work goes into it (guan, 2026-09-29).
 
 ## 1. Scope
 
@@ -302,5 +304,5 @@ dump pulses, as the DarkBase and MBR programs already do.
 
 1. Closed (decision 0.7).
 2. Closed (decisions 0.8, 0.9).
-3. To review at 10E (decision 0.10). Does `FloquetCalibrationAmplificationExperiment` become a plain 3-axis sweep in 10E, or does
+3. Closed (decision 0.11). Does `FloquetCalibrationAmplificationExperiment` become a plain 3-axis sweep in 10E, or does
    it stay a loop wrapper? (Same data either way; the first is less code.)

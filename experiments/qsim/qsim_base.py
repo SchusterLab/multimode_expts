@@ -1,6 +1,7 @@
 import json
 import os
 from copy import deepcopy
+from itertools import product
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -117,6 +118,74 @@ def readout_lane_count(cfg):
     else:
         final = 2 if cfg.expt.get('multiparity_readout', False) else 1
     return _herald_readouts(cfg) + final
+
+
+def classify_two_parity_readouts(expt, point_idx=0, threshold=None, e_is_high_I=True):
+    rn = expt.cfg.read_num
+    qTest = expt.cfg.expt.qubits[0]
+
+    if threshold is None:
+        threshold = expt.cfg.device.readout.threshold[qTest]
+
+    idata = np.asarray(expt.data['idata'][point_idx])
+    qdata = np.asarray(expt.data['qdata'][point_idx])
+
+    i_first  = idata[rn-2::rn]
+    q_first  = qdata[rn-2::rn]
+    i_second = idata[rn-1::rn]
+    q_second = qdata[rn-1::rn]
+
+    if e_is_high_I:
+        first_e = i_first > threshold
+        second_e = i_second > threshold
+    else:
+        first_e = i_first < threshold
+        second_e = i_second < threshold
+
+    b0 = first_e.astype(int)
+    b1 = second_e.astype(int)
+
+    # cond_sec_phase = -90 convention:
+    # (g,g)->0, (e,g)->1, (g,e)->2, (e,e)->3
+    n_mod4 = b0 + 2*b1
+
+    out = {
+        'i_first': i_first,
+        'q_first': q_first,
+        'i_second': i_second,
+        'q_second': q_second,
+
+        'first_e': first_e,
+        'second_e': second_e,
+
+        # parity expectation values:
+        # +1 means bit=0, -1 means bit=1.
+        # first parity = (-1)^n
+        # second parity = +1 for n=0,1 mod 4 and -1 for n=2,3 mod 4.
+        'parity_first': 1 - 2*b0,
+        'parity_second': 1 - 2*b1,
+
+        'n_mod4': n_mod4,
+
+        'p_first_e': np.mean(first_e),
+        'p_second_e': np.mean(second_e),
+
+        'p_gg': np.mean((~first_e) & (~second_e)),
+        'p_eg': np.mean(( first_e) & (~second_e)),
+        'p_ge': np.mean((~first_e) & ( second_e)),
+        'p_ee': np.mean(( first_e) & ( second_e)),
+    }
+
+    out['p_mod0'] = np.mean(n_mod4 == 0)
+    out['p_mod1'] = np.mean(n_mod4 == 1)
+    out['p_mod2'] = np.mean(n_mod4 == 2)
+    out['p_mod3'] = np.mean(n_mod4 == 3)
+
+    out['mean_parity_first'] = np.mean(out['parity_first'])
+    out['mean_parity_second'] = np.mean(out['parity_second'])
+    out['mean_n_mod4'] = np.mean(n_mod4)
+
+    return out
 
 
 class QsimBaseProgram(MMAveragerProgram):
@@ -836,6 +905,9 @@ class QsimBaseExperiment(Experiment):
     Currently handles 1D and 2D sweeps and plots only.
     For 2D, order is [outer (y), inner (x)].
     """
+    # The Program a subclass runs when the caller names none.
+    default_program = None
+
     def __init__(self, soccfg=None, path='', prefix=None,
                  config_file=None, expt_params=None,
                  program=None, progress=None, **kwargs):
@@ -843,13 +915,14 @@ class QsimBaseExperiment(Experiment):
         program can be:
         - A class object (the class you imported, not an instance)
         - A tuple of (module_path, class_name) strings
-        - None (defaults to QsimBaseProgram)
+        - None (the class's ``default_program``, else QsimBaseProgram)
         """
         if not prefix:
             prefix = self.__class__.__name__
         super().__init__(soccfg=soccfg, path=path, prefix=prefix, config_file=config_file, progress=progress, **kwargs)
         self.cfg.expt = AttrDict(expt_params)
 
+        program = program or self.default_program
         # Store program class info as strings (pickle-safe)
         if program is None:
             # Default to QsimBaseProgram
@@ -878,87 +951,71 @@ class QsimBaseExperiment(Experiment):
         return self._ProgramClass
 
 
+    def sweep_axes(self):
+        """-> ``[(cfg.expt key, values), ...]``, outermost first: the points acquire visits.
+
+        The default: each key in ``cfg.expt.swept_params`` (outer first), with its
+        values in ``cfg.expt[key + 's']``. Subclasses add axes (Wigner) or fix them.
+        """
+        return [(key, self.cfg.expt[key + 's']) for key in self.cfg.expt.swept_params]
+
     def acquire(self, progress=False, debug=False):
+        """Build, compile and acquire one Program per sweep point; keep the raw shots.
+
+        The one sweep driver of the qsim Experiments (step 10E,
+        ``docs/qsim/program_tree_plan.md``). The Program says how many readouts
+        a shot has (``readouts_per_shot``), so the lanes cannot drift from the
+        pulses. The science lane is the last one; with active reset and
+        ``pre_selection_reset``, a point's average keeps only the shots whose
+        herald found the qubit in g.
+        """
         ensure_list_in_cfg(self.cfg)
+        read_num = self.ProgramClass.readouts_per_shot(self.cfg)
+        self.cfg.read_num = read_num
 
-        read_num = 1
-        if self.cfg.expt.get('parity_check', False):
-            read_num += 1
-        if self.cfg.expt.get('active_reset', False):
-            params = MMAveragerProgram.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+        axes = self.sweep_axes()
+        self.outer_param = axes[0][0]
+        self.inner_param = axes[1][0] if len(axes) > 1 else 'dummy'
 
-        assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
-        sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
+        pre_select = (self.cfg.expt.get('active_reset', False)
+                      and self.cfg.expt.get('pre_selection_reset', False))
+        threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
 
-        outer_param = self.cfg.expt.swept_params[0]
-        outer_params = self.cfg.expt[outer_param+'s']
-        if sweep_dim == 2:
-            inner_param = self.cfg.expt.swept_params[1]
-            inner_params = self.cfg.expt[inner_param+'s']
-        else:
-            inner_param = 'dummy'
-            inner_params = [None]  # Dummy value for single parameter sweep
-        self.outer_param, self.inner_param = outer_param, inner_param
-
-        data = {
-            'avgi': [], 'avgq': [],
-            'amps': [], 'phases': [],
-            'idata': [], 'qdata': [],
-        }
-        if sweep_dim == 2:
-            data['xpts'] = inner_params
-            data['ypts'] = outer_params
-        else:
-            data['xpts'] = outer_params
-
-        for self.cfg.expt[outer_param] in tqdm(outer_params, disable=not progress):
-            for self.cfg.expt[inner_param] in inner_params:
+        points = dict(avgi=[], avgq=[], idata=[], qdata=[])
+        for outer in tqdm(axes[0][1], disable=not progress):
+            for inner in product(*(values for _, values in axes[1:])):
+                for (key, _), value in zip(axes, (outer,) + inner):
+                    self.cfg.expt[key] = value
                 self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
-
                 avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
-                                                threshold=None,
-                                                load_pulses=True,
-                                                progress=False,
-                                                debug=debug,
-                                                readouts_per_experiment=read_num)
-
+                                               threshold=None,
+                                               load_pulses=True,
+                                               progress=False,
+                                               debug=debug,
+                                               readouts_per_experiment=read_num)
                 idata, qdata = self.prog.collect_shots()
-                data['idata'].append(idata)
-                data['qdata'].append(qdata)
-
-                if self.cfg.expt.active_reset and self.cfg.expt.get('pre_selection_reset', False):
-                    avgi_val, avgq_val = GeneralFitting.filter_shots_per_point(
-                        idata, qdata, read_num,
-                        threshold=self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]],
-                        pre_selection=True)
+                if pre_select:
+                    avgi, avgq = GeneralFitting.filter_shots_per_point(
+                        idata, qdata, read_num, threshold=threshold, pre_selection=True)
                 else:
-                    avgi_val = avgi[0][-1]
-                    avgq_val = avgq[0][-1]
+                    avgi, avgq = avgi[0][-1], avgq[0][-1]
+                points['avgi'].append(avgi)
+                points['avgq'].append(avgq)
+                points['idata'].append(idata)
+                points['qdata'].append(qdata)
 
-                avgi, avgq = avgi_val, avgq_val
-                data['avgi'].append(avgi)
-                data['avgq'].append(avgq)
-                data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
-                data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
-
-        for key in 'avgi avgq amps phases'.split():
-            data[key] = np.array(data[key])
-            if sweep_dim == 2:
-                data[key] = np.reshape(data[key], (len(outer_params), len(inner_params)))
+        data = self.shape_data(axes, points)
 
         if self.cfg.expt.get('parity_check', False):
-            idata_all = np.array(data['idata'])
-            qdata_all = np.array(data['qdata'])
-            _parity_start_idx= 0  
+            # The parity herald is the first lane after the active-reset lanes.
+            start = 0
             if self.cfg.expt.get('active_reset', False):
                 params = MMAveragerProgram.get_active_reset_params(self.cfg)
-                _parity_start_idx += MMAveragerProgram.active_reset_read_num(**params)
-            
-            data['parity_idata'] = idata_all[..., _parity_start_idx::read_num]
-            data['parity_qdata'] = qdata_all[..., _parity_start_idx::read_num]
+                start += MMAveragerProgram.active_reset_read_num(**params)
+            data['parity_idata'] = np.asarray(data['idata'])[..., start::read_num]
+            data['parity_qdata'] = np.asarray(data['qdata'])[..., start::read_num]
 
-        if self.cfg.expt.normalize:
+        if self.cfg.expt.get('normalize', False):
             from experiments.single_qubit.normalize import normalize_calib
             g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
 
@@ -966,8 +1023,81 @@ class QsimBaseExperiment(Experiment):
             data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
             data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
 
-        self.data=data
+        self.data = data
         return data
+
+    def shape_data(self, axes, points):
+        """-> the data dict from the per-point lists, in the 1D/2D layout.
+
+        1D: ``xpts`` is the axis. 2D: ``ypts`` is the outer axis, ``xpts`` the
+        inner one, and the averages have shape (outer, inner). ``idata`` and
+        ``qdata`` stay lists of per-point shot arrays.
+        """
+        assert len(axes) in {1, 2}, "the default layout handles 1D and 2D sweeps"
+        shape = [len(values) for _, values in axes]
+        avgi = np.reshape(np.array(points['avgi']), shape)
+        avgq = np.reshape(np.array(points['avgq']), shape)
+        data = dict(
+            avgi=avgi, avgq=avgq,
+            amps=np.abs(avgi + 1j * avgq),
+            phases=np.angle(avgi + 1j * avgq),
+            idata=points['idata'], qdata=points['qdata'],
+        )
+        if len(axes) == 2:
+            data['xpts'] = axes[1][1]
+            data['ypts'] = axes[0][1]
+        else:
+            data['xpts'] = axes[0][1]
+        return data
+
+    def analyze_multiparity(self):
+        """Classify the two parity readouts of every point (``readout='multiparity'``)."""
+        keys = [
+            'mean_parity_first', 'mean_parity_second',
+            'p_first_e', 'p_second_e',
+            'p_mod0', 'p_mod1', 'p_mod2', 'p_mod3',
+            'p_gg', 'p_eg', 'p_ge', 'p_ee',
+            'mean_n_mod4',
+        ]
+
+        xpts = np.asarray(self.data['xpts']).reshape(-1)
+        ypts = np.asarray(self.data.get('ypts', [])).reshape(-1)
+        is_2d = len(ypts) > 0
+
+        if is_2d:
+            data_shape = (len(ypts), len(xpts))
+            point_count = len(ypts) * len(xpts)
+        else:
+            data_shape = (len(xpts),)
+            point_count = len(xpts)
+
+        if len(self.data['idata']) != point_count:
+            raise ValueError(
+                'multiparity point count does not match the sweep axes: '
+                f"{len(self.data['idata'])} shots rows for shape {data_shape}"
+            )
+
+        out = {'xpts': xpts}
+        if is_2d:
+            out['ypts'] = ypts
+        for key in keys:
+            out[key] = []
+
+        for j in range(point_count):
+            r = classify_two_parity_readouts(self, point_idx=j)
+
+            for key in keys:
+                out[key].append(r[key])
+
+        for key in keys:
+            out[key] = np.asarray(out[key]).reshape(data_shape)
+
+        # Same quantity as p1 + 2*p2 + 3*p3.
+        # Kept as a convenient explicit name.
+        out['nmod4_mean'] = out['mean_n_mod4']
+
+        self.data['multiparity'] = out
+        return out
 
 
     # def analyze(self, data=None, fit=True, fitparams = None, **kwargs):

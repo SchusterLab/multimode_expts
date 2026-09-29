@@ -194,3 +194,40 @@ dropped: not needed. Pydantic for the expt configs was considered and deferred t
 v2 rewrite (the drivers and some Programs change `cfg.expt` in place, `MM_base_initialize`
 copies it to the top level, one dict serves many consumers, and old HDF5 configs must load);
 the MBR job configs would be a good first user. Full suite: 1557 passed.
+
+## Step 10E: one sweep driver (later the same day)
+
+Decision (guan): plan 8.3 option (a), `FloquetCalibrationAmplificationExperiment` stays a thin
+loop wrapper; no more work on it.
+
+What changed:
+- `QsimBaseExperiment.acquire` is the one driver: a loop over N axes from `sweep_axes()`
+  (default: `swept_params`, outer first), the readout count from
+  `ProgramClass.readouts_per_shot(cfg)`, recorded in `cfg.read_num`, and the data from
+  `shape_data()` (default: the 1D/2D layout as before). `default_program` moved from
+  `MBRJobExperiment` into it. `analyze_multiparity` moved into it, and
+  `classify_two_parity_readouts` into `qsim_base` (re-exported from `dark_base`, its old
+  address, as is `readout_lane_count`, which `deprecated/legacy_mbr` imports from there).
+- Gone: the loops of `DarkBaseExperiment` (now an empty subclass, kept for its recorded name
+  until 10F), `MBRJobExperiment`, and `SidebandAmpRabiExperiment` (now `default_program` +
+  `sweep_axes`, so callers need no `swept_params`).
+- `QsimWignerBaseExperiment`: `sweep_axes` adds `dummy` (1D), `wigner_alpha`, and
+  `phase_second_pulse` ([180, 0] with `pulse_correction`, else [180]); `shape_data` gives the
+  (outer, inner, alpha[, 2]) layout as before.
+- `ManStorMultiparityChevronRExperiment` (own RAverager loop, unused) takes its count from its
+  Program, so it counts `parity_check` now.
+
+Checked with the acquire golden, part by part:
+- Data identical for DarkBase, MBR, all four Wigner cases, the displacement-Kerr and the
+  amplification wrappers, and the QsimBase cases without multiparity.
+- The two planned fixes (plan 7.3): `qsim_base__multiparity` asks for 2 readouts and its data
+  is now identical to `dark_base__multiparity`; the AmpRabi parity lane is lane 2 (after the two
+  active-reset lanes), not lane 0.
+- Every driver records `cfg.read_num` (before: DarkBase and MBR only).
+- Other small differences, not in the golden: a 1D sweep no longer writes `dummy: None` into
+  `cfg.expt` (`inner_param` is still `'dummy'`, which `fitting.fitting` reads for Wigner);
+  `SidebandAmpRabiExperiment` now applies `pre_selection_reset` when it is set, as the other
+  drivers do.
+- Full suite: 1557 passed, 2 skipped, the 3 matrix-pencil failures. (One run in between failed
+  to collect the MBR test modules: `deprecated/legacy_mbr` imports `readout_lane_count` from
+  `dark_base`; the re-export fixed it.)

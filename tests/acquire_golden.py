@@ -20,8 +20,11 @@ Per case, the pinned record holds: the readout count the driver passed to
 each Program (``readouts_per_experiment``), the swept values each Program saw,
 and the keys, shapes and values of the data.
 
-This is a characterization pin: it records what the drivers do now, including
-the lane errors listed in the plan (7.3). Regenerate with
+This is a characterization pin: it records what the drivers do. Pinned in 10A
+with the lane errors of the plan (7.3); step 10E merged the drivers into one
+and fixed them (the multiparity count of ``QsimBaseExperiment``, the parity
+lane of ``SidebandAmpRabiExperiment``), and every driver now records
+``cfg.read_num``. Nothing else changed. Regenerate with
 ``pixi run python -m tests.acquire_golden`` and read the diff before committing
 it -- that diff is the review.
 """
@@ -118,7 +121,7 @@ CASES = [
          _t1(**ACTIVE_RESET, pre_selection_reset=True), ("wait",)),
     Case("qsim_base__active_reset_parity_check", QSIM_BASE, T1,
          _t1(**ACTIVE_RESET, parity_check=True), ("wait",)),
-    # QsimBaseExperiment does not count this readout (plan 7.3).
+    # QsimBaseExperiment did not count this readout until step 10E (plan 7.3).
     Case("qsim_base__multiparity", QSIM_BASE, DARK_T1, _dark_t1(readout="multiparity"),
          ("wait_length",)),
     # DarkBaseExperiment.

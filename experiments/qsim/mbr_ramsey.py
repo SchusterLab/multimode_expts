@@ -28,17 +28,9 @@ from copy import deepcopy
 import numpy as np
 from slab import AttrDict
 
-from tqdm import tqdm_notebook as tqdm
-
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.floquet_train import FloquetProgram
-from experiments.qsim.qsim_base import (
-    QsimBaseExperiment,
-    readout_lane_count,
-    readout_mode,
-)
-from experiments.qsim.utils import ensure_list_in_cfg
-from fitting.fit_display_classes import GeneralFitting
+from experiments.qsim.qsim_base import QsimBaseExperiment, readout_mode
 
 
 class MBRRamseyProgram(FloquetProgram):
@@ -384,66 +376,7 @@ class MBRJobExperiment(QsimBaseExperiment):
     ``avgi``/``avgq``/``amps``/``phases`` of shape (outer, inner), and the
     raw ``idata``/``qdata`` per point, with ``cfg.read_num`` readouts per shot.
 
-    Subclasses set ``default_program``.
+    Subclasses set ``default_program``. The sweep itself is the one driver's,
+    ``QsimBaseExperiment.acquire`` (step 10E); until then this class had its
+    own copy of the loop.
     """
-
-    default_program = None
-
-    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
-                 expt_params=None, program=None, progress=None, **kwargs):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
-                         config_file=config_file, expt_params=expt_params,
-                         program=program or self.default_program,
-                         progress=progress, **kwargs)
-
-    def acquire(self, progress=False, debug=False):
-        ensure_list_in_cfg(self.cfg)
-        ecfg = self.cfg.expt
-        read_num = readout_lane_count(self.cfg)
-        self.cfg.read_num = read_num
-
-        self.outer_param, self.inner_param = ecfg.swept_params
-        outer_values = ecfg[self.outer_param + "s"]
-        inner_values = ecfg[self.inner_param + "s"]
-
-        # With pre-selection, a point's average keeps only the shots whose
-        # herald readout found the qubit in g.
-        pre_select = ecfg.get("active_reset", False) and ecfg.get("pre_selection_reset", False)
-
-        avgi_points, avgq_points, idata, qdata = [], [], [], []
-        for outer in tqdm(outer_values, disable=not progress):
-            ecfg[self.outer_param] = outer
-            for inner in inner_values:
-                ecfg[self.inner_param] = inner
-                self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
-                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
-                                               threshold=None,
-                                               load_pulses=True,
-                                               progress=False,
-                                               debug=debug,
-                                               readouts_per_experiment=read_num)
-                point_i, point_q = self.prog.collect_shots()
-                idata.append(point_i)
-                qdata.append(point_q)
-                if pre_select:
-                    avgi, avgq = GeneralFitting.filter_shots_per_point(
-                        point_i, point_q, read_num,
-                        threshold=self.cfg.device.readout.threshold[ecfg.qubits[0]],
-                        pre_selection=True)
-                else:
-                    # The science readout is the last of the shot.
-                    avgi, avgq = avgi[0][-1], avgq[0][-1]
-                avgi_points.append(avgi)
-                avgq_points.append(avgq)
-
-        shape = (len(outer_values), len(inner_values))
-        avgi = np.reshape(np.array(avgi_points), shape)
-        avgq = np.reshape(np.array(avgq_points), shape)
-        self.data = dict(
-            avgi=avgi, avgq=avgq,
-            amps=np.abs(avgi + 1j * avgq),
-            phases=np.angle(avgi + 1j * avgq),
-            idata=idata, qdata=qdata,
-            xpts=inner_values, ypts=outer_values,
-        )
-        return self.data
