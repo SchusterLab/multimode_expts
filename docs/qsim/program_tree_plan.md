@@ -1,7 +1,7 @@
 # qsim Program and Experiment tree: plan (steps 10A-10G)
 
-Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A done 2026-09-29; 8.3 is reviewed at
-10E. It continues
+Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A and 10B done 2026-09-29; 8.3 is
+reviewed at 10E. It continues
 `mbr_step9_plan.md`; it uses `mbr_redesign.md` for the rules and patterns.
 
 ## 0. Decisions (guan, 2026-09-29)

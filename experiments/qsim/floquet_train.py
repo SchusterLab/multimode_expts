@@ -31,8 +31,7 @@ constant -- which is why it refuses ``palindrome_scramble``.
 
 Requirements on the host program: ``m1s_kwargs``, ``m1s_waveform_mode``,
 ``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``, ``swap_ds``, and the qick
-program methods; ``storage_phase_matrix`` too, for
-``_advance_storage_phase_offsets`` (dark-mode programs only).
+program methods.
 """
 from copy import deepcopy
 
@@ -207,22 +206,6 @@ class FloquetTrain:
                         pulsed_stor=stor,
                     )
         self.sync_all()
-
-    def _advance_storage_phase_offsets(
-            self, phase_offsets, swap_stors, pulsed_stor):
-        """Advance later ds_storage swap phases after one ds_storage swap.
-
-        Unlike the legacy Floquet matrix, this matrix may have a calibrated
-        diagonal: ``matrix[i, i]`` is the active-access phase of mode i.
-        """
-        if self.storage_phase_matrix is None:
-            return
-
-        advance_matrix_offsets(
-            offsets=phase_offsets,
-            matrix=self.storage_phase_matrix,
-            pulsed_column=swap_stors.index(pulsed_stor),
-        )
 
     def _play_scramble_with_phase_offsets(
         self,

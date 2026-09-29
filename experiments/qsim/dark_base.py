@@ -16,17 +16,14 @@ Experiment that owns acquisition with the Program that owns the pulses.
     config raises on the singular key its body reads.
 
 ``DarkBaseProgram`` / ``DarkBaseRProgram``
-    ``initialize`` (Floquet swap dataset, phase matrices, Floquet pulse
-    registration) and ``body``, the template: reset, prepulse, the
-    ``core_pulses`` hook each measurement overrides, postpulse, readout. The
-    R variant is the RAverager counterpart for hardware depth sweeps; it
-    shares ``body`` and takes its pulse methods by explicit assignment, and
-    the asymmetry in *which* it takes is deliberate -- see
-    ``manipulate_mode_pulses``.
-
-The pulse content these programs play lives in three mixins next door:
-``floquet_train`` (the drive), ``dark_mode_encoding`` (load and read) and
-``manipulate_mode_pulses`` (qubit and manipulate-mode sequences).
+    ``DarkBaseProgram`` is ``QsimBaseProgram`` (the template: reset,
+    prepulse, the ``core_pulses`` hook each measurement overrides, postpulse,
+    readout) with two mixins next door: ``floquet_train`` (the drive) and
+    ``dark_mode_encoding`` (load and read). Since step 10B it has no methods
+    of its own. The R variant is the RAverager counterpart for hardware depth
+    sweeps; it shares ``body`` and takes its pulse methods by explicit
+    assignment, and the asymmetry in *which* it takes is deliberate: it keeps
+    MM_base's ``man_reset`` (see ``DarkBaseRProgram``).
 
 Provenance note
 ---------------
@@ -43,7 +40,6 @@ from tqdm import tqdm_notebook as tqdm
 from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram
 from experiments.qsim.dark_mode_encoding import DarkModeEncoding
 from experiments.qsim.floquet_train import FloquetTrain
-from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
 from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
     QsimBaseProgram,
@@ -260,276 +256,14 @@ class DarkBaseExperiment(QsimBaseExperiment):
         return out
         
 
-class DarkBaseProgram(DarkModeEncoding, FloquetTrain, ManipulateModePulses,
-                      QsimBaseProgram):
-    
-    def initialize(self):
-        """
-        MM_base_init to pull basic info 
-        Retrieves ch, freq, length, gain from csv for M1-Sx π/2 pulses
-        """
-        self.MM_base_initialize() # should take care of all the MM base (channel names, pulse names, readout )
-        #TODO: this should use a config key to determine whether
-        # to use floquet or gate (pi or pi/2) datasets
-        self.swap_ds = self.cfg.device.storage._ds_floquet
-        self.retrieve_swap_parameters()
+class DarkBaseProgram(DarkModeEncoding, FloquetTrain, QsimBaseProgram):
+    """``QsimBaseProgram`` with the Floquet train and the dark-mode encoding.
 
-        # Optional in-memory matrix for the ds_storage swaps. Rows are
-        # affected modes and columns are the modes whose swap pulse is played.
-        self.storage_phase_matrix = self.cfg.expt.get(
-            "storage_phase_matrix", None)
-        if self.storage_phase_matrix is not None:
-            self.storage_phase_matrix = np.asarray(
-                self.storage_phase_matrix, dtype=float)
-
-        man_mode_no = self.cfg.expt.get('man_mode_no', 1)
-        self.man_mode_idx = man_mode_no - 1  # using first manipulate channel index needs to be fixed at some point
-
-        self._initialize_floquet_pulses()
-
-        if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
-            self.displace_man(setup=True, play=False)
-
-        self.sync_all(200)
-
-    def body(self):
-        cfg=AttrDict(self.cfg)
-        slow_pi_ge_readout = bool(
-            cfg.expt.get("slow_pi_ge_readout", False)
-        )
-
-        if slow_pi_ge_readout and (
-                cfg.expt.get("parity_readout", False)
-                or cfg.expt.get("multiparity_readout", False)):
-            raise ValueError(
-                "slow_pi_ge_readout cannot be combined with parity readout"
-            )
-
-        # initializations as necessary
-        self.reset_and_sync()
-
-        if self.cfg.expt.get('active_reset', False):
-            params = MMAveragerProgram.get_active_reset_params(self.cfg)
-            self.active_reset(**params)
-            if self.cfg.expt.get('pre_relax_delay', 0) > 0:
-                self.sync_all(self.us2cycles(self.cfg.expt.pre_relax_delay))
-
-        init_stor = self.cfg.expt.init_stor
-        ro_stor = self.cfg.expt.ro_stor
-        if self.cfg.expt.get("parity_check", False):
-            self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
-            qTest = self.cfg.expt.qubits[0]
-            self.sync_all()
-            self.measure(
-                pulse_ch=self.res_chs[qTest],
-                adcs=[self.adc_chs[qTest]],
-                adc_trig_offset=self.cfg.device.readout.trig_offset[qTest],
-                wait=True
-            )
-            if np.abs(self.cfg.expt.get("phase_second_pulse", 180))  <  90:
-                self.sync_all(self.us2cycles(2.0))
-                reset_pulse_creator = self.get_prepulse_creator([['qubit', 'ge', 'pi', 0]])
-                cfg = AttrDict(self.cfg)
-                self.custom_pulse(cfg, reset_pulse_creator.pulse, prefix = 'pre_parity_check_reset_')
-            self.sync_all(self.us2cycles(2.0))
-            self.reset_and_sync()
-
-        # prepulse: ge -> ef -> f0g1
-        # TODO: make this overridable from cfg
-        if cfg.expt.prepulse:
-
-            if type(init_stor) is int:
-                init_stor = [init_stor]
-            if type(init_stor) is not list:
-                raise ValueError("init_stor must be int or list of int")
-
-            if cfg.expt.init_fock:
-
-                prepulse_cfg = []
-                for each_init_stor in init_stor:
-                    prepulse_cfg += [
-                        ['qubit', 'ge', 'pi', 0,],
-                        ['qubit', 'ef', 'pi', 0,], # qubit in f
-                        ['man', 'M1', 'pi', 0,], # f0-g1 --> man in 1
-                    ]
-                    if each_init_stor > 0:
-                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
-
-                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
-                self.sync_all()
-                self.custom_pulse(cfg, pulse_creator.pulse, prefix='pre_')
-                self.sync_all()
-
-            elif cfg.expt.get("init_man_fock_state", None) is not None:
-                print("running")
-                _init_state = cfg.expt.init_man_fock_state
-                _man_no = getattr(cfg.expt, 'man_mode_no', 1) #currently not used
-                prepulse_cfg = []
-                for each_init_stor in init_stor:
-                    prepulse_cfg += self.prep_man_fock_state(_man_no,
-                                                             _init_state,
-                                                             broadband=False) #Check
-                    if each_init_stor > 0:
-                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
-                pulse_creator = self.get_prepulse_creator(prepulse_cfg)
-                if not self.cfg.expt.get("do_crude_comp", False):
-                    self.sync_all()
-                    self.custom_pulse(cfg, pulse_creator.pulse, prefix = 'pre_')
-                    self.sync_all()
-                else:
-                    pulse_data = np.array(pulse_creator.pulse, dtype=object).copy()
-
-                    # Compensate f_n -> g_{n+1} sideband matrix element.
-                    # If you are using repeated bare 'f0-g1', set scale by occurrence.
-                    fg_count = 0
-                    scale_by_occurrence = self.cfg.expt.get("fg_scale_by_occurrence", True)
-                    fg_area_comp = self.cfg.expt.get("fg_area_comp", "gain")  # "gain" or "length"
-
-                    for k, p in enumerate(prepulse_cfg):
-                        if len(p) < 2:
-                            continue
-
-                        is_multiphoton = (p[0] == "multiphoton")
-                        transition = p[1]
-
-                        is_fg_sideband = (
-                            is_multiphoton
-                            and isinstance(transition, str)
-                            and transition.startswith("f")
-                            and "-g" in transition
-                        )
-
-                        if not is_fg_sideband:
-                            continue
-
-                        if scale_by_occurrence:
-                            # Works even if the logical string repeats bare 'f0-g1':
-                            # first f-g pulse -> n=0, second -> n=1, third -> n=2.
-                            n = fg_count
-                        else:
-                            # Works if the string is f0-g1, f1-g2, f2-g3.
-                            n = int(transition.split("-")[0][1:])
-                        factor = np.sqrt(n + 1)
-
-                        old_gain = pulse_data[1, k]
-                        old_length = pulse_data[2, k]
-
-                        if fg_area_comp == "gain":
-                            pulse_data[1, k] = int(round(old_gain / factor))
-
-                        elif fg_area_comp == "length":
-                            pulse_data[2, k] = old_length / factor
-
-                        else:
-                            raise ValueError("fg_area_comp must be either 'gain' or 'length'.")
-
-                        if self.cfg.expt.get("debug", False):
-                            print(
-                                f"f-g compensation pulse {k}: {transition}, "
-                                f"n={n}, factor=sqrt({n+1})={factor:.3f}, "
-                                f"gain={old_gain}->{pulse_data[1, k]}, "
-                                f"length={old_length}->{pulse_data[2, k]}"
-                            )
-
-                        fg_count += 1
-
-                    if self.cfg.expt.get("debug", False):
-                        print("final compensated prep pulse table:")
-                        for k, row in enumerate(pulse_data.T):
-                            label = prepulse_cfg[k] if k < len(prepulse_cfg) else None
-                            print(f"{k:02d}", label, "->", row)
-                    self.sync_all()
-                    self.custom_pulse(cfg, pulse_data, prefix='pre_')
-                    self.sync_all()
-            else:  # init in coherent state
-
-                assert 'init_alpha' in cfg.expt and cfg.expt.init_alpha
-
-                for each_init_stor in init_stor:
-                    self.displace_man(
-                        alpha=cfg.expt.init_alpha,
-                        setup=False,
-                        play=True,
-                    )
-
-                    if each_init_stor > 0:
-                        prepulse_cfg = [['storage', f'M1-S{each_init_stor}', 'pi', 0]]
-
-                        pulse_creator = self.get_prepulse_creator(prepulse_cfg)
-                        self.sync_all()
-                        self.custom_pulse(cfg, pulse_creator.pulse, prefix=f'pre_{each_init_stor}_')
-                        self.sync_all()
-
-        # core pulses: override the method to define your own expeirment
-        self.core_pulses()
-
-        # postpulse
-        if cfg.expt.postpulse:
-
-            # Move ro_stor to man
-            postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
-            
-            skip_default_m1_to_qubit_readout = (
-                self.cfg.expt.get("parity_readout", False)
-                or self.cfg.expt.get("multiparity_readout", False)
-                or slow_pi_ge_readout
-            )
-
-            if not self.cfg.expt.perform_wigner and not skip_default_m1_to_qubit_readout:
-                # Move man to qubit for population measurement
-                postpulse_cfg.append(['man', 'M1', 'pi', 0,])
-                if self.cfg.expt.get('map_to_qubit_ge', False):
-                    postpulse_cfg.append(['qubit', 'ef', 'pi', 0,])
-
-            pulse_creator = self.get_prepulse_creator(postpulse_cfg)
-            self.sync_all()
-            self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
-            self.sync_all()
-
-            if not self.cfg.expt.perform_wigner and (self.cfg.expt.get("parity_readout", False) or self.cfg.expt.get("multiparity_readout", False)):
-                
-                if not self.cfg.expt.get("multiparity_readout", False):
-                    if self.cfg.expt.get("debug", False):
-                        print("Performing parity readout with parity pulse")
-                    self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.get("phase_second_pulse", 180), fast=self.cfg.expt.parity_fast)
-                if self.cfg.expt.get("multiparity_readout", False):
-                    if self.cfg.expt.get("debug", False):
-                        print("Performing multiparity readout with parity pulse")
-                    self.multi_parity_readout(fast = self.cfg.expt.get("parity_fast", False))
-                self.sync_all()
-                
-            if self.cfg.expt.perform_wigner:
-                # Population is still in man, perform displacement + parity measurement
-
-                # Displacement
-                self.displace_man(
-                    alpha=cfg.expt.wigner_alpha,
-                    setup=False,
-                    play=True,
-                    )
-                
-                # Parity pulse on qubit
-                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
-
-        if slow_pi_ge_readout:
-            qTest = self.cfg.expt.qubits[0]
-            slow_pi_ge = cfg.device.qubit.pulses.slow_pi_ge
-            slow_pi_ge_pulse = [
-                [cfg.device.qubit.f_ge[qTest]],
-                [slow_pi_ge.gain[qTest]],
-                [slow_pi_ge.length[qTest]],
-                [0.0],
-                [self.qubit_chs[qTest]],
-                [slow_pi_ge.type[qTest]],
-                [slow_pi_ge.sigma[qTest]],
-            ]
-            self.custom_pulse(
-                cfg,
-                slow_pi_ge_pulse,
-                prefix="slow_pi_ge_readout_",
-            )
-
-        self.measure_wrapper()
+    Its template (``initialize``, ``body``) and the manipulate-mode pulses
+    moved into ``QsimBaseProgram`` in step 10B; the two copies of the template
+    were merged there (``docs/qsim/program_tree_plan.md``, 7.1). Step 10C
+    replaces this class by the Floquet and dark-mode classes of that chain.
+    """
 
 
 class DarkBaseRProgram(MMRAveragerProgram):
@@ -545,12 +279,12 @@ class DarkBaseRProgram(MMRAveragerProgram):
 
     retrieve_swap_parameters = QsimBaseProgram.retrieve_swap_parameters #borrowing methods
     _initialize_floquet_pulses = QsimBaseProgram._initialize_floquet_pulses
-    # Two of ManipulateModePulses' three methods, by assignment rather than
-    # inheritance: mixing the class in would also shadow MM_base's
+    # Two of the three manipulate-mode methods, by assignment rather than
+    # inheritance: inheriting from QsimBaseProgram would also shadow MM_base's
     # ``man_reset``, which is the one ``active_reset`` plays here.
-    prep_man_fock_state = ManipulateModePulses.prep_man_fock_state
-    multi_parity_readout = ManipulateModePulses.multi_parity_readout
-    body = DarkBaseProgram.body #borrowing methods
+    prep_man_fock_state = QsimBaseProgram.prep_man_fock_state
+    multi_parity_readout = QsimBaseProgram.multi_parity_readout
+    body = QsimBaseProgram.body #borrowing methods
 
     def __init__(self, soccfg, cfg):
         self.cfg = AttrDict(cfg)
@@ -562,12 +296,6 @@ class DarkBaseRProgram(MMRAveragerProgram):
 
         self.swap_ds = self.cfg.device.storage._ds_floquet
         self.retrieve_swap_parameters()
-
-        self.storage_phase_matrix = self.cfg.expt.get(
-            "storage_phase_matrix", None)
-        if self.storage_phase_matrix is not None:
-            self.storage_phase_matrix = np.asarray(
-                self.storage_phase_matrix, dtype=float)
 
         man_mode_no = self.cfg.expt.get("man_mode_no", 1)
         self.man_mode_idx = man_mode_no - 1

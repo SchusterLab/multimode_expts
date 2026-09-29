@@ -85,3 +85,42 @@ Found in 10A:
 - A wrong lead, checked: `SlowPiGeLengthRabiProgram` reads `cfg.length_to_sweep` and the driver
   sets `cfg.expt.length_to_sweep`, but `MM_base_initialize` copies `cfg.expt` to the top level
   (`MM_base.py:84`), so it works.
+
+## Step 10B: one template (later the same day)
+
+What changed:
+- `QsimBaseProgram` has DarkBase's `initialize` and `body` (without `storage_phase_matrix` and
+  a stray `print("running")`), and the three manipulate-mode methods (`man_reset`,
+  `prep_man_fock_state`, `multi_parity_readout`). `experiments/qsim/manipulate_mode_pulses.py`
+  is deleted.
+- `DarkBaseProgram` has no methods of its own (DarkModeEncoding + FloquetTrain +
+  QsimBaseProgram). `DarkBaseRProgram` takes its borrowed methods from `QsimBaseProgram` and
+  still plays MM_base's `man_reset` (the asymmetry `tests/test_pulse_layer_layout.py` pins).
+- `MBRRamseyProgram` inherits `man_reset` from `QsimBaseProgram` (it set it explicitly).
+- `FloquetTrain._advance_storage_phase_offsets` is removed (no live caller).
+- The class names stay until 10F.
+
+Checked:
+- Program golden: exactly the 6 predicted `qsim_template__*` cases changed, and each is now
+  byte-identical to its `dark_template__*` case (plan 7.1). The 4 cases that raised on QsimBase
+  now compile. All leaf cases, the MBR ASM golden, the three notebook goldens and the acquire
+  golden are unchanged.
+- Full suite: 1491 passed, 2 skipped (below), 3 failed (the matrix-pencil tolerance failures
+  of 10A, not related).
+
+Effects for users of the ~25 QsimBase template leaves (none changes a config that worked
+before):
+- `multiparity_readout`, `slow_pi_ge_readout`, `init_man_fock_state` above 1, `do_crude_comp`,
+  and `init_alpha` without Wigner now work as on the DarkBase programs. Before, the first two
+  were ignored and the others raised.
+- `init_man_fock_state=None` now goes to the coherent-state branch (before: an error).
+- The active reset plays the qsim `man_reset`, which repeats the dump pulses
+  `dump_reset_iter_num` times. All live configs set 1, which gives the same pulses.
+- Until 10E, `multiparity_readout` through `QsimBaseExperiment` reads the wrong lane (that
+  driver counts one readout, the program now plays two). Noted in the status file.
+
+Deprecated code: `deprecated/mbr_sff.py` borrowed `_advance_storage_phase_offsets` in a class
+body, so it no longer imports; with it `deprecated/mbr_sff_campaign.py` and
+`dormant/mbr_sff.py` (SFF, to be deleted, step 7 decision 3). Following their headers and
+`tests/test_deprecated_mbr.py`: a note in both module headers and the two SFF tests skipped, not
+fixed.

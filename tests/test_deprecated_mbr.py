@@ -12,6 +12,10 @@ import pytest
 from experiments.qsim.mbr_campaign import mbr_defaults, mock_station, pinned_config_set
 
 DEPRECATED_SKIP = "moved to deprecated/, see docs/qsim/mbr_step7_plan.md"
+# Step 10B removed DarkBaseProgram._advance_storage_phase_offsets (no live
+# caller); mbr_sff borrows it in a class body, so the module no longer imports.
+SFF_BROKEN_10B = ("deprecated/mbr_sff.py no longer imports since step 10B "
+                  "(docs/qsim/program_tree_plan.md); not fixed, see its header")
 
 
 # --------------------------------------------------------------------------
@@ -59,6 +63,7 @@ def _acquire_sff(station, plan):
     return out
 
 
+@pytest.mark.skip(reason=SFF_BROKEN_10B)
 def test_sff_acquires_with_positive_detunings():
     """Both SFF job kinds build, compile and acquire.
 
@@ -76,6 +81,7 @@ def test_sff_acquires_with_positive_detunings():
     assert kinds.count("disorder") == 2, "expected two disorder jobs"
 
 
+@pytest.mark.skip(reason=SFF_BROKEN_10B)
 def test_sff_rejects_negative_detunings():
     """Documents a real limitation, deliberately not fixed here.
 

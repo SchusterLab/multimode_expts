@@ -125,15 +125,12 @@ TEMPLATE_OPTIONS = {
                               fg_area_comp="length"),
 }
 
-# Options that one template rejects now. QsimBaseProgram uses MM_base's
-# prep_man_fock_state (0, 1 and superpositions only), and sets up the
-# displacement only for perform_wigner.
-TEMPLATE_RAISES = {
-    ("qsim_template", "init_man_fock_state_2"),
-    ("qsim_template", "init_alpha"),
-    ("qsim_template", "crude_comp_gain"),
-    ("qsim_template", "crude_comp_length"),
-}
+# Options that one template rejects. Until step 10B, QsimBaseProgram raised
+# for init_man_fock_state_2, init_alpha, crude_comp_gain and crude_comp_length
+# (MM_base's prep_man_fock_state knows 0, 1 and superpositions only, and the
+# displacement was set up only for perform_wigner). The merged template plays
+# them as DarkBaseProgram did.
+TEMPLATE_RAISES = set()
 
 TEMPLATES = {
     "qsim_template": f"{QSIM}.qsim_base:QsimBaseProgram",

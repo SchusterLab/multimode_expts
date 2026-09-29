@@ -7,6 +7,12 @@ decision 3 (SFF is to be deleted and written again later). The negative-phase-st
 Not maintained; may break when live code changes. If it breaks, add a note here
 and do not fix it.
 
+Broken since step 10B (2026-09-29, `docs/qsim/program_tree_plan.md`): the module
+no longer imports. `DisorderSFFSequenceMixin` borrows
+`DarkBaseProgram._advance_storage_phase_offsets` in its class body, and step 10B
+removed that method (no live caller) together with `storage_phase_matrix` in
+`DarkBaseProgram.initialize`.
+
 The SFF, ``|Tr U|^2 / D^2``, is the standard diagnostic for whether a
 many-body spectrum shows level repulsion: its dip-ramp-plateau shape separates
 chaotic from integrable dynamics, and it is what the level-statistics analysis

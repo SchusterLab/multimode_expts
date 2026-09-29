@@ -13,7 +13,7 @@ import pytest
 
 from experiments.MM_base import MM_base
 from experiments.qsim.dark_base import DarkBaseProgram, DarkBaseRProgram
-from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
+from experiments.qsim.qsim_base import QsimBaseProgram
 
 
 @pytest.mark.parametrize("name", ["DarkBaseExperiment", "DarkBaseProgram",
@@ -36,9 +36,17 @@ def test_the_old_god_module_address_still_resolves(name):
     assert moved is getattr(owner, name)
 
 
-def test_averager_base_plays_the_dark_man_reset():
-    """``DarkBaseProgram`` overrides MM_base's reset, as it always has."""
-    assert DarkBaseProgram.man_reset is ManipulateModePulses.man_reset
+def test_averager_bases_play_the_qsim_man_reset():
+    """``QsimBaseProgram`` overrides MM_base's reset; ``DarkBaseProgram`` inherits it.
+
+    Until step 10B only the DarkBase (and MBR) programs had the override, from
+    the ``ManipulateModePulses`` mixin; the ~25 QsimBase leaves played
+    MM_base's. The two differ only by ``dump_reset_iter_num`` (default 1: the
+    same pulses; the program golden checks it under active reset).
+    """
+    assert "man_reset" in vars(QsimBaseProgram)
+    assert QsimBaseProgram.man_reset is not MM_base.man_reset
+    assert DarkBaseProgram.man_reset is QsimBaseProgram.man_reset
 
 
 def test_raverager_base_keeps_mm_base_man_reset():
@@ -51,29 +59,30 @@ def test_raverager_base_keeps_mm_base_man_reset():
     failure anywhere else in the suite.
     """
     assert DarkBaseRProgram.man_reset is MM_base.man_reset
-    assert DarkBaseRProgram.man_reset is not ManipulateModePulses.man_reset
+    assert DarkBaseRProgram.man_reset is not QsimBaseProgram.man_reset
 
 
 @pytest.mark.parametrize("method", ["prep_man_fock_state",
                                     "multi_parity_readout"])
 def test_both_bases_share_the_other_two(method):
+    assert method in vars(QsimBaseProgram)
     assert (getattr(DarkBaseProgram, method)
-            is getattr(ManipulateModePulses, method))
+            is getattr(QsimBaseProgram, method))
     assert (getattr(DarkBaseRProgram, method)
-            is getattr(ManipulateModePulses, method))
+            is getattr(QsimBaseProgram, method))
 
 
 def test_mbr_base_plays_the_dark_man_reset():
     """The MBR jobs left the dark-mode chain in step 8A1 but kept its reset.
 
-    Through ``DarkBaseProgram`` they always played ``ManipulateModePulses``'s
-    ``man_reset``. The ASM golden does not catch a change here: with its
+    Through ``DarkBaseProgram`` they always played the qsim ``man_reset``
+    (``ManipulateModePulses`` until step 10B, ``QsimBaseProgram`` since). The ASM golden does not catch a change here: with its
     pinned configs, MM_base's ``man_reset`` compiles to the same program
     (checked by mutation, 2026-09-25). So this test is the only net.
     """
     from experiments.qsim.mbr_ramsey import MBRRamseyProgram
 
-    assert MBRRamseyProgram.man_reset is ManipulateModePulses.man_reset
+    assert MBRRamseyProgram.man_reset is QsimBaseProgram.man_reset
 
 
 def test_mbr_base_is_not_built_on_the_dark_mode_chain():

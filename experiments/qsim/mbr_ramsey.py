@@ -10,10 +10,10 @@ what they sweep.
 The bases, and what each gives:
 
 - ``QsimBaseProgram``: the M1-Sx swap parameters and Floquet waveforms
-  (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``), on top of
-  ``MMAveragerProgram`` (reset, pulse creator, readout);
-- ``FloquetTrain``: the Floquet playback and its phase bookkeeping;
-- ``man_reset`` from ``ManipulateModePulses``, set explicitly (see there).
+  (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``) and the
+  qsim ``man_reset``, on top of ``MMAveragerProgram`` (reset, pulse creator,
+  readout);
+- ``FloquetTrain``: the Floquet playback and its phase bookkeeping.
 
 Until step 8A1 this class was built on the dark-mode chain
 (``SidebandScrambleProgram``, ``DarkBaseProgram``). It used none of the
@@ -32,7 +32,6 @@ from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.floquet_train import FloquetTrain
-from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
 from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
     QsimBaseProgram,
@@ -69,11 +68,6 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
     jobs taken in ``'decoder'`` mode still load and analyze; the analysis
     reads the mode from the saved config.
     """
-
-    # The active reset plays this man reset, not MM_base's. The MBR jobs
-    # always did, through DarkBaseProgram; the other two ManipulateModePulses
-    # methods are dark-mode readout and are not needed here.
-    man_reset = ManipulateModePulses.man_reset
 
     @staticmethod
     def _storage_swap_pulse_name(storage_mode,
