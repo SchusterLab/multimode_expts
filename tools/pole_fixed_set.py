@@ -2,6 +2,7 @@
 
     pixi run python tools/pole_fixed_set.py build
     pixi run python tools/pole_fixed_set.py fit C        # then F: it starts from C's cached fits
+    pixi run python tools/pole_fixed_set.py fit F --draws 0 --rows 10     # a subset
 
 Files in ``fixed_set.set_folder`` (``<data root>/260818_qsim_spectroscopy/derived_data/pole_finding/fixed_set/``):
 ``set.h5`` (``fitting.qsim.poles.fixed_set``) and ``fits_<fitter>.h5``. ``fit`` skips cases
@@ -29,13 +30,17 @@ def build():
     print(save_set(FOLDER / "set.h5", cases, plan="docs/qsim/pole_finding_explore.md T0"))
 
 
-def fit(fitter):
+def fit(fitter, draws=None, rows=None):
+    """Fit the cases not yet cached; ``draws`` / ``rows`` (10 or 35): only those, 10-row cases first."""
     cases = load_set(FOLDER / "set.h5")
     path = FOLDER / f"fits_{fitter}.h5"
     done = load_fits(path, cases)
     starts = load_fits(FOLDER / "fits_C.h5", cases) if fitter == "F" else {}
     settings = SETTINGS[fitter]
-    for i, case in enumerate(cases):
+    chosen = [case for case in cases if (draws is None or case.condition.draw in draws)
+              and (rows is None or (case.condition.partial_rows or 35) in rows)]
+    chosen.sort(key=lambda case: case.condition.partial_rows is None)
+    for i, case in enumerate(chosen):
         key = case.condition.key
         if key in done:
             continue
@@ -46,15 +51,17 @@ def fit(fitter):
             result = pursuit.fit(case.A, case.time_us, settings, start=starts[key][0] if key in starts else None)
         seconds = time.perf_counter() - start
         save_fit(path, case, result, seconds, settings)
-        print(f"{i + 1}/{len(cases)} {key}: {len(result.frequencies_MHz)} poles, {seconds:.0f} s", flush=True)
+        print(f"{i + 1}/{len(chosen)} {key}: {len(result.frequencies_MHz)} poles, {seconds:.0f} s", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("action", choices=["build", "fit"])
     parser.add_argument("fitter", nargs="?", choices=list(SETTINGS))
+    parser.add_argument("--draws", type=int, nargs="+", help="only these draws")
+    parser.add_argument("--rows", type=int, nargs="+", choices=[10, 35], help="only these row counts")
     args = parser.parse_args()
-    build() if args.action == "build" else fit(args.fitter)
+    build() if args.action == "build" else fit(args.fitter, args.draws, args.rows)
 
 
 if __name__ == "__main__":
