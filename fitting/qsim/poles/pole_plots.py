@@ -100,3 +100,35 @@ def display_row_sums(ax, energy_MHz, data_fft, fitted_fft, residual_fft, fit, le
     ax.axhline(0, color="0.7", lw=0.8)
     ax.set(xlabel="energy E/h (MHz)", ylabel="sum over rows of |FFT|; weights (scaled)", title="sum over rows")
     ax.legend(fontsize=8, ncols=2)
+
+
+#: One color per cause of ``fitting.qsim.poles.diagnosis``.
+CAUSE_COLORS = {"found": "#1baf7a", "search": "#eb6834", "unresolvable": "#9e9e9e",
+                "not in data": "#8a5cd6", "not in rows": "#d8d8d8"}
+
+
+def display_causes(table, fitters, title=""):
+    """-> figure of a ``diagnose_levels`` table: per level (x), each fitter's cause (top); the gap
+    over its Cramer-Rao error, clusters in grey (middle); the oracle's shift from the model,
+    +- the Cramer-Rao error (bottom)."""
+    fig, axes = plt.subplots(3, 1, figsize=(13, 7), sharex=True, height_ratios=(1.2, 1, 1), constrained_layout=True)
+    x = table.level_kHz.to_numpy()
+    for k, name in enumerate(fitters):
+        colors = [CAUSE_COLORS[c] for c in table[f"cause_{name}"]]
+        axes[0].scatter(x, np.full(len(x), k), c=colors, s=90, marker="s", edgecolors="none")
+    axes[0].set_yticks(range(len(fitters)), [f"fitter {name}" for name in fitters])
+    axes[0].set_ylim(-0.7, len(fitters) - 0.3)
+    for cause_name, color in CAUSE_COLORS.items():
+        axes[0].scatter([], [], c=color, marker="s", label=cause_name)
+    axes[0].legend(fontsize=8, ncols=len(CAUSE_COLORS), loc="upper center", bbox_to_anchor=(0.5, 1.35))
+    clustered = table.cluster.to_numpy() > 1
+    axes[1].semilogy(x[~clustered], table.gap_snr[~clustered], "o", color="black", label="resolvable")
+    axes[1].semilogy(x[clustered], np.maximum(table.gap_snr[clustered], 1e-2), "o", color="0.65", label="in a cluster")
+    axes[1].axhline(4, color="0.4", lw=0.8, ls="--")
+    axes[1].set(ylabel="gap / its CR error")
+    axes[1].legend(fontsize=8)
+    axes[2].errorbar(x, table.oracle_shift_kHz, yerr=table.crb_kHz, fmt="o", color="tab:blue", ms=4)
+    axes[2].axhline(0, color="0.7", lw=0.8)
+    axes[2].set(xlabel="model level (kHz)", ylabel="oracle - model (kHz)")
+    fig.suptitle(title)
+    return fig

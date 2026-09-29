@@ -236,6 +236,39 @@ couplings and Kerr); matched fraction, frequency residuals, weight residuals (ag
 against the model's own. **Validation only**: do not tune on it, because the model's own
 errors (Kerr, detunings) would enter the choice of fitter.
 
+### 5.5 Per-level diagnosis (`diagnose_levels`, `fitting/qsim/poles/diagnosis.py`)
+
+Benchmarks 3 and 4 count what a fitter finds; this says why a level is missed. One row per
+model level, the checks in order; a missed level's cause is its first failed check (`cause`),
+or "search" if it passed all three: then the fitter, not the data, lost it.
+
+1. **In the rows:** its summed model weight in the measured rows is at least 0.1.
+2. **Resolvable** (`fitting/qsim/poles/resolution.py`): each adjacent gap is compared with its
+   Cramér-Rao error (`cramer_rao_bounds`), and levels joined by gaps under 4 errors form a
+   cluster (`clusters`); a level is resolvable if it is alone. The Fisher matrix
+   (`fisher_matrix`) is over the frequencies, decays and row offsets (with C's prior), the
+   amplitudes eliminated by variable projection, at the model's levels and amplitudes, the
+   oracle's median decay (step 3; the data's, not an assumed T2), and each row's own noise. Each bound uses only the levels within
+   3 bins (`local_covariance`): far levels are nearly orthogonal, and the full matrix of a dense
+   spectrum is beyond double precision; a local matrix beyond it (condition above 1e12) counts
+   as no bound. No unbiased method does better.
+3. **Held by the data:** C's refinement started at the model levels (`oracle_fit`); start poles
+   are merged only as far as the pole matrix needs for its condition (`oracle_starts`). A level
+   with its own oracle pole is held if it keeps at least half its model weight, stays within
+   half its nearest separation of its model place, and dropping it, the other poles fixed, costs
+   chi^2 of at least 25 (`drop_one_chi2`; an upper bound on its significance).
+4. **Found:** a fitter's poles matched (`match_poles`, tolerance as benchmark 4) to the oracle
+   positions of the held levels and the model positions of the others. All frequencies are
+   compared where the rows see them (`seen_frequencies`): with row offsets, a level held by a
+   few rows moves with their offsets, by about 1 kHz on august_disorder.
+
+The noise of each row is measured out of band (`row_noise`): the rms of the Hann-windowed
+spectrum (`hann_spectrum`) farther than 4 bins from every level. `residual_excess` is the
+in-band residual power over that noise power: 1 if the residual in band is only noise; more is
+structure the fit did not take. `cause_counts` sums the causes per fitter, `display_causes`
+draws the table (`fitting/qsim/poles/pole_plots.py`). Notebook:
+`analysis_notebooks/pole_finding/level_causes.py`.
+
 ## 6. The row-to-row offset `sigma`
 
 Not known directly. Three estimates:
