@@ -201,7 +201,7 @@ class ActiveResetVerificationProgram(QsimBaseProgram):
                 'waveform': self.m1s_wf_name[stor],
         } for stor in range(7)]
 
-        if self.cfg.expt.perform_wigner:
+        if readout_mode(self.cfg.expt) == "wigner":
             self.displace_man(setup=True, play=False)
 
         self.sync_all(200)

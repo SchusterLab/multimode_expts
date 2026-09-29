@@ -142,3 +142,55 @@ fixed.
 - Checked: every golden unchanged (program, MBR ASM, notebook, acquire). Full suite: 1492
   passed, 2 skipped, the 3 matrix-pencil failures. All deprecated modules import, except
   `mbr_sff` and `mbr_sff_campaign` (broken since 10B).
+
+## Step 10D: the `readout` key (later the same day)
+
+What changed:
+- `qsim_base.py`: `READOUT_MODES`, `RETIRED_READOUT_FLAGS`, `readout_mode(expt)` (strict: for
+  new configs), `saved_readout_mode(expt)` (for saved configs, also from before the key),
+  `QsimBaseProgram.readouts_per_shot(cfg)`. `QsimBaseProgram.__init__` and
+  `DarkBaseRProgram.__init__` check the config before compiling. The template's `initialize` and
+  `body` read the mode; the rule "slow pi with parity raises" is gone (one key cannot say both).
+- The drivers no longer set `perform_wigner=False` (QsimBase, DarkBase, MultiparityChevronR);
+  the Wigner driver sets `readout='wigner'` and no longer writes or counts
+  `post_select_pre_pulse` (its analyses still count it for saved jobs that have it).
+- `FloquetDisplacementKerrProgram` sets `readout='slow_pi_ge'`; `mbr_defaults` drops the three
+  flags; `MBRRamseyProgram` refuses any readout but `'m1'`; two leaves read the mode.
+- Consumers on `guan` moved to the key: `202609_qsim_migration/` (floquet_calibration,
+  floquet_displacement_kerr, multiphoton_calibration) and `guan/` (cooling, dark_mode,
+  mbramsey, qsim_wigner, single_qubit_autocalibrate_v2 and its local `.ipynb` pair). The
+  post_select_pre_pulse lines in `guan/multiphoton_calibration_v2 guan.py` stay: they feed
+  non-qsim experiments.
+- New `tests/test_readout_key.py` (57 tests).
+
+Decided on the way (by the rules of the plan, to review):
+- `post_select_pre_pulse` is refused only when true (plan, rule 4.1): it is an `MM_base` key,
+  and a non-qsim Wigner tomography in `guan/multiphoton_calibration_v2 guan.py` sets it to true.
+- The consumer migration of the readout flags moved from 10F into 10D: the Program refuses the
+  old flags, so the notebook goldens would fail otherwise.
+
+Found:
+- An old config with both `perform_wigner` and `multiparity_readout`: the old count was 2
+  readouts, but the template played only the Wigner readout. `readout_lane_count` keeps the old
+  count for configs without the key (what the driver asked for); `saved_readout_mode` gives
+  what was played.
+- `SidebandAmpRabiExperiment` no longer needs `perform_wigner` in the config: the template
+  reads the mode with a default now.
+
+Checked: every golden unchanged (program, with its table moved to the key; MBR ASM; the three
+notebooks after their migration; acquire, minus the removed `wigner__post_select_pre_pulse`
+case). Full suite: 1548 passed, 2 skipped, the 3 matrix-pencil failures.
+
+Revised before the commit (guan): the first version had a default mode `'m1'` whose meaning
+depended on `postpulse` (f0-g1 with it, plain qubit readout without), and required `postpulse`
+for parity and Wigner. guan's design instead: the readout mode is only the last step before
+the measurement, `'qubit'` is the default, and `postpulse` keeps its meaning as the decoding
+pulses (the `ro_stor` swap, and f0-g1 for `'qubit'`). So `'m1'` is renamed `'qubit'`, and the
+parity and Wigner steps moved out of the postpulse block: they now play with or without
+`postpulse`, as the slow pi always did. All existing goldens unchanged; four new program-golden
+cases (`*_template__parity_without_postpulse`, `*_template__wigner_without_postpulse`) pin the
+new case, which before played no readout pulse. Retiring `postpulse` was considered and
+dropped: not needed. Pydantic for the expt configs was considered and deferred to the MM_base
+v2 rewrite (the drivers and some Programs change `cfg.expt` in place, `MM_base_initialize`
+copies it to the top level, one dict serves many consumers, and old HDF5 configs must load);
+the MBR job configs would be a good first user. Full suite: 1557 passed.

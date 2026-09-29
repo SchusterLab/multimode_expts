@@ -42,6 +42,7 @@ from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
     QsimBaseProgram,
     readout_lane_count,
+    readout_mode,
 )
 from experiments.qsim.utils import ensure_list_in_cfg
 from fitting.fit_display_classes import GeneralFitting
@@ -123,9 +124,6 @@ class DarkBaseExperiment(QsimBaseExperiment):
         self.cfg.read_num = read_num
         assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
         sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
-
-        if 'perform_wigner' not in self.cfg.expt:
-            self.cfg.expt.perform_wigner = False
 
         outer_param = self.cfg.expt.swept_params[0]
         outer_params = self.cfg.expt[outer_param+'s']
@@ -287,9 +285,12 @@ class DarkBaseRProgram(MMRAveragerProgram):
     body = QsimBaseProgram.body #borrowing methods
 
     def __init__(self, soccfg, cfg):
+        readout_mode(cfg.expt)  # as QsimBaseProgram: refuse what it cannot play
         self.cfg = AttrDict(cfg)
         self.cfg.update(self.cfg.expt)
         super().__init__(soccfg, self.cfg)
+
+    readouts_per_shot = QsimBaseProgram.readouts_per_shot
 
     def initialize(self):
         self.MM_base_initialize()

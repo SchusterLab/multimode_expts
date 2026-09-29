@@ -228,7 +228,6 @@ def mbr_defaults(swap_stors, **overrides) -> AttrDict:
         pre_relax_delay=100, relax_delay=200,
         reset_dump_mode=2, dump_reset_iter_num=1, use_qubit_man_reset=False,
         prepulse=False, postpulse=False, init_fock=False,
-        perform_wigner=False, parity_readout=False, multiparity_readout=False,
         load_man_dark=False, swap_man_dark=False, swap_man_large_dark=False,
         update_phases=True,
         floquet_cycle=0,

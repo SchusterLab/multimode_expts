@@ -1,6 +1,6 @@
 # qsim Program and Experiment tree: plan (steps 10A-10G)
 
-Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A-10C done 2026-09-29; 8.3 is
+Status: approved by guan 2026-09-29 (decisions 0.7-0.10); 10A-10D done 2026-09-29; 8.3 is
 reviewed at 10E. It continues
 `mbr_step9_plan.md`; it uses `mbr_redesign.md` for the rules and patterns.
 
@@ -142,24 +142,35 @@ record the axes in order. Whether the Wigner data keeps its present shape
 
 ## 4. The `readout` key
 
-One key, `cfg.expt.readout`, chooses the final readout. `postpulse` keeps its meaning (the
-`ro_stor` -> M1 swap). `parity_check` (a herald before the sequence) stays a separate boolean.
+One key, `cfg.expt.readout`, chooses the last step before the measurement. The sequence is:
+prepulse (encode), `core_pulses`, postpulse (decode), readout step, measurement. `postpulse`
+keeps its meaning: the decoding pulses. It swaps `ro_stor` into M1, and for the `'qubit'`
+readout it also maps M1 to the qubit (f0-g1, then ef pi if `map_to_qubit_ge`); the other modes
+read M1, so the photon stays there. The readout step plays with or without `postpulse`.
+`parity_check` (a herald before the sequence) stays a separate boolean. (Decided by guan,
+2026-09-29, after a first version with an `'m1'` mode whose meaning depended on `postpulse`.)
 
-| `readout` | Plays after the postpulse swap | Final readouts | Needs `postpulse` | Replaces |
-|---|---|---|---|---|
-| `'m1'` (default) | M1 f0g1 pi to the qubit (+ ef pi if `map_to_qubit_ge`); with `postpulse=False`, nothing | 1 | no | no flag |
-| `'parity'` | parity pulse | 1 | yes | `parity_readout` |
-| `'multiparity'` | two parity readouts | 2 | yes | `multiparity_readout` |
-| `'wigner'` | displacement by `wigner_alpha`, parity pulse | 1 | yes | `perform_wigner` |
-| `'slow_pi_ge'` | slow ge pi | 1 | no | `slow_pi_ge_readout` |
+| `readout` | Readout step | Final readouts | Replaces |
+|---|---|---|---|
+| `'qubit'` (default) | none: the qubit is measured | 1 | no flag |
+| `'parity'` | parity pulse | 1 | `parity_readout` |
+| `'multiparity'` | two parity readouts | 2 | `multiparity_readout` |
+| `'wigner'` | displacement by `wigner_alpha`, parity pulse | 1 | `perform_wigner` |
+| `'slow_pi_ge'` | slow ge pi (number selective: M1 in vacuum or not) | 1 | `slow_pi_ge_readout` |
+
+The MBR sequence fits the same picture (qubit pi/2 and encoding swaps, Floquet, decoding swaps
+and pi/2, `'qubit'` readout), but `MBRRamseyProgram` keeps its own body: making it a template
+leaf needs generic pre/post pulse lists in the template, a later step.
 
 Rules:
 1. `readout` is the only input for new jobs. The Program raises an error if it finds
-   `perform_wigner`, `parity_readout`, `multiparity_readout`, `slow_pi_ge_readout` or
-   `post_select_pre_pulse` in `cfg.expt` (as `MBRRamseyProgram` does for `decoder_phase_matrix`).
-   No translation layer on input.
-2. A mode that needs `postpulse` raises an error if `postpulse=False`. Today these configs play
-   no readout pulse, and nothing reports it.
+   `perform_wigner`, `parity_readout`, `multiparity_readout` or `slow_pi_ge_readout` in
+   `cfg.expt`, with any value (as `MBRRamseyProgram` does for `decoder_phase_matrix`). No
+   translation layer on input. `post_select_pre_pulse` is refused only when true: it is an
+   `MM_base` key that the dual-rail and single-qubit experiments play, and shared default dicts
+   carry it as false (found in 10D).
+2. The readout step plays with or without `postpulse`, as the slow pi always did. Before 10D,
+   parity and Wigner with `postpulse=False` played no readout pulse, and nothing reported it.
 3. `QsimProgram.readouts_per_shot(cfg)` (classmethod) = herald readouts (active reset, parity
    check) + the final readouts of the mode. The Experiment uses it and does not count by itself.
 4. `MM_base.lane_layout(cfg)` is the lane layout of the dual-rail and single-qubit
@@ -167,11 +178,13 @@ Rules:
    know `parity_check` or multiparity, and `MM_base` is not changed (0.9), so
    `readouts_per_shot` does not use it. Its active-reset count is the same function
    (`active_reset_read_num`).
-5. The old booleans are read in one place only: the reader of saved configs. It gives the mode
-   from `readout`, or from the booleans for jobs saved before this change, with today's order
-   (`perform_wigner` wins over the parity flags; `multiparity_readout` wins over
-   `parity_readout`). `readout_lane_count` becomes this reader; `mbr_spectrum` and the shot
-   subsampler use it for old jobs.
+5. The old booleans are read in one place only: the readers of saved configs in `qsim_base`.
+   `saved_readout_mode` gives the mode that was played: from `readout`, or from the booleans for
+   jobs saved before this change, with the old order (`perform_wigner` wins over the parity
+   flags; `multiparity_readout` wins over `parity_readout`). `readout_lane_count` gives the
+   count the driver asked for: for an old config, the old formula (one more for
+   `multiparity_readout`, whatever else is set; with `perform_wigner` too, the program played
+   fewer). `mbr_spectrum` and the shot subsampler use it for old jobs.
 6. `MBRRamseyProgram` has its own body and its own qubit readout: it rejects any `readout`
    other than the default.
 7. New HDF5 files record `readout`.
@@ -209,7 +222,7 @@ Leaves with names that say what they do keep them (`FloquetChevronProgram`, `Dar
 | 10A | Nets first, on the code as it is now (details below) | the nets themselves |
 | 10B | `QsimProgram`: merge the two templates and `initialize`; `ManipulateModePulses` methods in; all template leaves and the DarkBase leaves on it | program golden: no change, except the configs in 7.1 as decided |
 | 10C | `FloquetProgram` and `DarkModeProgram` as classes in the chain; MBR, DisplacementKerr, StarkModified, DarkT1, NewNew re-parented; NewNew drops `SidebandScrambleProgram` | MBR golden, program golden: no change |
-| 10D | the `readout` key; `readouts_per_shot`; old flags raise; the saved-config reader | program golden with the test table moved to `readout`: no change |
+| 10D | the `readout` key; `readouts_per_shot`; old flags raise; the saved-config reader; the consumers on `guan` move to the key (the Program refuses the old flags, so this cannot wait for 10F) | program golden with the test table moved to `readout`: no change |
 | 10E | `QsimExperiment` (N axes, Program-owned count); DarkBase, MBRJob, Wigner, SidebandAmpRabi, the loop wrappers | acquire net: same data, except the bug fixes in 7.3 |
 | 10F | renames (section 5); consumers migrated (below); notebook dry runs | notebook golden; dry runs as in `docs/status/measurement.md` |
 | 10G | device check in local mode: the calibration notebooks, then the MBR notebooks; then the merge | device |
@@ -229,7 +242,8 @@ Leaves with names that say what they do keep them (`FloquetChevronProgram`, `Dar
   lane).
 
 10F, the consumers:
-- `202609_qsim_migration/` and `guan/`: on `guan`, in 10F.
+- `202609_qsim_migration/` and `guan/`: on `guan`. The readout flags moved in 10D; the renames
+  move in 10F.
 - `jonginn/`, `connie/`: their latest versions are on `main`. Migrate them on the merge
   result, in one commit, from the rename table and the `readout` table; code cells only (no
   outputs). Tell them before; ask them to restart their kernels after.
@@ -277,7 +291,8 @@ dump pulses, as the DarkBase and MBR programs already do.
 ### 7.3 Bug fixes the driver merge makes (10E)
 
 - `QsimBaseExperiment` + `multiparity_readout`: wrong lane now; right after.
-- `post_select_pre_pulse` in Wigner: rejected (rule 4.1); no live Program plays it.
+- `post_select_pre_pulse` in Wigner: refused since 10D (rule 4.1); no live Program plays it.
+  Its acquire-golden case was removed in 10D; `tests/test_readout_key.py` checks the refusal.
 - `SidebandAmpRabiExperiment` parity lane with active reset: right after.
 - `ManStorMultiparityChevronRExperiment` + `parity_check`: right after.
 - `SidebandAmpRabiExperiment` does not default `perform_wigner`, which the template reads, so

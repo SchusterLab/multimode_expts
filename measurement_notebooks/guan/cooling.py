@@ -191,7 +191,6 @@ cool_spec_defaults = AttrDict(dict(
 
     normalize=False,
     preloaded_pulses=False,
-    perform_wigner=False,
     prepulse=True,
     postpulse=True,
     pre_sweep_pulse=None, # pre sweep pulse

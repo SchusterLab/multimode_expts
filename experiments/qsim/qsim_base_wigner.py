@@ -36,8 +36,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         active_reset: bool (uses get_active_reset_params for ef_reset, man_reset, storage_reset, etc.)
         swept_params: list of parameters to sweep, e.g. ['detune', 'gain']
 
-        wigner parameters:
-        perform_wigner: bool
+        wigner parameters (acquire sets readout='wigner'; do not set it):
         parity_fast: bool
         pulse_correction: bool — if True, perform two acquisitions per alpha with phase_second_pulse=180 then 0 (non-inline)
         
@@ -60,15 +59,12 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
 
         self.cfg.expt.pulse_correction = self.cfg.expt.get('pulse_correction', False)
         self.cfg.expt.parity_fast = self.cfg.expt.get('parity_fast', False)
-        self.cfg.expt.post_select_pre_pulse = self.cfg.expt.get('post_select_pre_pulse', False)
         self.cfg.expt.active_reset = self.cfg.expt.get('active_reset', False)
 
-        self.cfg.expt.perform_wigner = True
+        self.cfg.expt.readout = "wigner"
 
         read_num = 1
         if self.cfg.expt.get('parity_check', False):
-            read_num += 1
-        if self.cfg.expt.post_select_pre_pulse:
             read_num += 1
         if self.cfg.expt.active_reset:
             params = MMAveragerProgram.get_active_reset_params(self.cfg)
@@ -237,7 +233,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         read_num = 1
         if self.cfg.expt.get('parity_check', False):
             read_num += 1
-        if self.cfg.expt.post_select_pre_pulse:
+        if self.cfg.expt.get('post_select_pre_pulse', False):  # jobs saved before step 10D
             read_num += 1
         if self.cfg.expt.active_reset:
             params = MMAveragerProgram.get_active_reset_params(self.cfg)
@@ -405,7 +401,7 @@ class QsimWignerBaseExperiment(QsimBaseExperiment):
         read_num = 1
         if self.cfg.expt.get('parity_check', False):
             read_num += 1
-        if self.cfg.expt.post_select_pre_pulse:
+        if self.cfg.expt.get('post_select_pre_pulse', False):  # jobs saved before step 10D
             read_num += 1
         if self.cfg.expt.active_reset:
             params = MMAveragerProgram.get_active_reset_params(self.cfg)

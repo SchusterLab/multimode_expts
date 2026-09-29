@@ -14,7 +14,15 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   golden, acquire golden, displacement-Kerr notebook in the notebook golden) and 10B (one
   template in `QsimBaseProgram`; the class names change in 10F) and 10C (the chain
   `QsimBaseProgram` -> `FloquetProgram` -> `DarkModeProgram`; `DarkBaseProgram` is an empty
-  subclass kept until 10F for the deprecated modules). Next: 10D (the `readout` key).
+  subclass kept until 10F for the deprecated modules) and 10D (the `readout` key; the old
+  readout booleans raise; the notebooks on `guan` moved to the key). Next: 10E (one sweep
+  driver).
+- **The `readout` key** (since 10D): `readout='qubit'` (default), `'parity'`, `'multiparity'`,
+  `'wigner'`, `'slow_pi_ge'`; `postpulse` keeps its meaning (decoding, incl. f0-g1 for
+  `'qubit'`). A qsim Program refuses `perform_wigner`, `parity_readout`,
+  `multiparity_readout` and `slow_pi_ge_readout`, even when false, and
+  `post_select_pre_pulse=True`. The notebooks of jonginn and connie still set them; they move at
+  the merge (plan, 10F).
 - **Until 10E:** do not set `multiparity_readout` on a job that runs through
   `QsimBaseExperiment`. Since 10B every template program plays the second readout, but that
   driver counts only one (plan 7.3), so it reads the wrong lane. `DarkBaseExperiment` counts it.

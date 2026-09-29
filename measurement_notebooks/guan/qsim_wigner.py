@@ -823,7 +823,6 @@ kerr_wait_wigner_defaults = AttrDict(dict(
     init_fock=False,
     displacement_path= return_dict_path, # optimal displacement path
     # displacement_path= return_dict['path'], # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 
@@ -1003,7 +1002,6 @@ qsim_wigner_defaults = AttrDict(dict(
 
     init_fock=False,
     displacement_path=return_dict_path, # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 
@@ -1160,7 +1158,6 @@ qsim_wigner_defaults = AttrDict(dict(
 
     init_fock=False,
     displacement_path=return_dict_path, # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 

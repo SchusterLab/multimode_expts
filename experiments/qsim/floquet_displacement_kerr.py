@@ -30,7 +30,7 @@ class FloquetDisplacementKerrProgram(FloquetProgram):
         ecfg.postpulse = False #Enforcing postpulse to be off
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
-        ecfg.slow_pi_ge_readout = True
+        ecfg.readout = "slow_pi_ge"
         gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha
         if isinstance(gain_to_alpha, (list, tuple, np.ndarray)):
             gain_to_alpha = gain_to_alpha[ecfg.man_mode_no - 1]

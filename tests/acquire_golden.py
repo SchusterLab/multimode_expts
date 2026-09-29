@@ -119,7 +119,7 @@ CASES = [
     Case("qsim_base__active_reset_parity_check", QSIM_BASE, T1,
          _t1(**ACTIVE_RESET, parity_check=True), ("wait",)),
     # QsimBaseExperiment does not count this readout (plan 7.3).
-    Case("qsim_base__multiparity", QSIM_BASE, DARK_T1, _dark_t1(multiparity_readout=True),
+    Case("qsim_base__multiparity", QSIM_BASE, DARK_T1, _dark_t1(readout="multiparity"),
          ("wait_length",)),
     # DarkBaseExperiment.
     Case("dark_base__1d", DARK_BASE, DARK_T1, _dark_t1(), ("wait_length",)),
@@ -130,10 +130,10 @@ CASES = [
          ("wait_length",)),
     Case("dark_base__pre_selection", DARK_BASE, DARK_T1,
          _dark_t1(**ACTIVE_RESET, pre_selection_reset=True), ("wait_length",)),
-    Case("dark_base__multiparity", DARK_BASE, DARK_T1, _dark_t1(multiparity_readout=True),
+    Case("dark_base__multiparity", DARK_BASE, DARK_T1, _dark_t1(readout="multiparity"),
          ("wait_length",)),
     Case("dark_base__active_reset_multiparity", DARK_BASE, DARK_T1,
-         _dark_t1(**ACTIVE_RESET, multiparity_readout=True), ("wait_length",)),
+         _dark_t1(**ACTIVE_RESET, readout="multiparity"), ("wait_length",)),
     # MBRJobExperiment (through a job class).
     Case("mbr_job__time_trace", f"{QSIM}.mbr_time_trace:MBRTimeTraceExperiment", "", _mbr(),
          ("floquet_cycle", "ramsey_phase")),
@@ -145,25 +145,23 @@ CASES = [
          ("wait_us_time", "wigner_alpha", "phase_second_pulse")),
     Case("wigner__parity_check", WIGNER, KERR_WAIT, _wigner(parity_check=True),
          ("wait_us_time", "wigner_alpha")),
-    # Counts a readout that no qsim Program plays (plan 7.3).
-    Case("wigner__post_select_pre_pulse", WIGNER, KERR_WAIT, _wigner(post_select_pre_pulse=True),
-         ("wait_us_time", "wigner_alpha")),
+    # wigner__post_select_pre_pulse was here until step 10D: the driver
+    # counted a readout that no qsim Program plays; the Program refuses it now.
     Case("wigner__pre_selection", WIGNER, KERR_WAIT,
          _wigner(**ACTIVE_RESET, pre_selection_reset=True), ("wait_us_time", "wigner_alpha")),
     # Hand-written 2D loop. Its Program sets its own Floquet length, which the
     # pinned set's envelopes reject (see program_asm_golden), so core_pulses is
-    # stubbed: only the driver is under test here. Unlike the other drivers it
-    # does not default perform_wigner, which the template reads: the config
-    # must set it.
+    # stubbed: only the driver is under test here. Until step 10D it raised
+    # unless the config set perform_wigner (the template read it).
     Case("sideband_amp_rabi__2d", f"{QSIM}.sideband_amp_rabi:SidebandAmpRabiExperiment",
          f"{QSIM}.sideband_amp_rabi:SidebandAmpRabiProgram",
-         dict(BASE, perform_wigner=False, init_stor=2, length=0.5,
+         dict(BASE, init_stor=2, length=0.5,
               detunes=[-0.1, 0.1], gains=[1000, 2000, 3000]),
          ("detune", "gain"), stub_core=True),
     Case("sideband_amp_rabi__active_reset_parity_check",
          f"{QSIM}.sideband_amp_rabi:SidebandAmpRabiExperiment",
          f"{QSIM}.sideband_amp_rabi:SidebandAmpRabiProgram",
-         dict(BASE, **ACTIVE_RESET, perform_wigner=False, parity_check=True,
+         dict(BASE, **ACTIVE_RESET, parity_check=True,
               init_stor=2, length=0.5,
               detunes=[-0.1, 0.1], gains=[1000, 2000]),
          ("detune", "gain"), stub_core=True),
@@ -178,7 +176,7 @@ CASES = [
          f"{QSIM}.floquet_displacement_kerr:FloquetDisplacementKerrExperiment",
          f"{QSIM}.floquet_displacement_kerr:FloquetDisplacementKerrProgram",
          dict(BASE, **ACTIVE_RESET, swap_stors=SWAP_STORS, zero_floquet_gain=False,
-              perform_wigner=False, ramsey_freq=0.2, displace_gains=[2000, 4000],
+              ramsey_freq=0.2, displace_gains=[2000, 4000],
               n_cycle_pairs=[0, 3], swept_params=["displace_gain", "n_cycle_pair"]),
          ("displace_gain", "n_cycle_pair")),
 ]

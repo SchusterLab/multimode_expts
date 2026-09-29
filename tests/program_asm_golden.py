@@ -31,8 +31,8 @@ flat-top pulses; both pinned sets have arb envelopes (``preload_flattop``,
 
 A key names what is played, not the class that plays it, so a case keeps its
 key when its class is renamed or re-parented: the golden then compares the
-old class with the new one. The table is data, so step 10D can move the
-readout booleans to the ``readout`` key without touching the goldens.
+old class with the new one. The table is data: step 10D moved the readout
+booleans to the ``readout`` key, and no golden changed.
 
 This is a characterization pin: it records what the Programs play now, not
 that it is right. Regenerate with ``pixi run python -m tests.program_asm_golden``
@@ -74,7 +74,7 @@ BASE = dict(
     relax_delay=200,
     active_reset=False, man_reset=False, storage_reset=False,
     prepulse=True, postpulse=True, init_fock=True, init_stor=1, ro_stor=1,
-    perform_wigner=False, parity_fast=False, phase_second_pulse=180,
+    parity_fast=False, phase_second_pulse=180,
     man_mode_no=1,
     **ACTIVE_RESET_DEFAULTS,
     **FLOQUET_DEFAULTS,
@@ -112,10 +112,12 @@ TEMPLATE_OPTIONS = {
     "parity_check_phase_0": dict(parity_check=True, phase_second_pulse=0),
     "active_reset": dict(active_reset=True, man_reset=True, storage_reset=[1, 2],
                          pre_relax_delay=100),
-    "parity_readout": dict(parity_readout=True),
-    "multiparity_readout": dict(multiparity_readout=True),
-    "wigner": dict(perform_wigner=True, wigner_alpha=0.5 + 0.25j),
-    "slow_pi_ge_readout": dict(slow_pi_ge_readout=True),
+    "parity_readout": dict(readout="parity"),
+    "multiparity_readout": dict(readout="multiparity"),
+    "wigner": dict(readout="wigner", wigner_alpha=0.5 + 0.25j),
+    "slow_pi_ge_readout": dict(readout="slow_pi_ge"),
+    "parity_without_postpulse": dict(readout="parity", postpulse=False),
+    "wigner_without_postpulse": dict(readout="wigner", postpulse=False, wigner_alpha=0.5 + 0.25j),
     "init_man_fock_state_1": dict(init_fock=False, init_man_fock_state="1"),
     "init_man_fock_state_plus": dict(init_fock=False, init_man_fock_state="+"),
     "init_man_fock_state_2": dict(init_fock=False, init_man_fock_state="2"),
@@ -197,7 +199,7 @@ LEAF_CASES = [Case(*row) for row in [
      dict(f0g1_mod_freq=2000.0, f0g1_mod_gain=1000, f0g1_mod_length=1.0)),
     ("kerr_wait", f"{QSIM}.kerr:KerrWaitProgram", dict(wait_us_time=1.0)),
     ("kerr_wait_wigner", f"{QSIM}.kerr:KerrWaitProgram",
-     dict(wait_us_time=1.0, perform_wigner=True, wigner_alpha=0.5 + 0.25j)),
+     dict(wait_us_time=1.0, readout="wigner", wigner_alpha=0.5 + 0.25j)),
     ("kerr_eng_base", f"{QSIM}.kerr:KerrEngBaseProgram",
      dict(kerr_gain=1000, kerr_detune=0.1, kerr_length=1.0,
           qubit_drive_pulse=[False, 0.0, 0, 0.0, 0.0])),
@@ -230,7 +232,7 @@ LEAF_CASES = [Case(*row) for row in [
     # no core_pulses of its own, so its leaf stands for it).
     ("multiparity_chevron_r", f"{QSIM}.dark_mode_multiparity_chevron:ManStorMultiparityChevronRProgram",
      dict(start=870.0, step=0.1, expts=3, swap_stor=2, storage_pulse_name="M1-S2",
-          custom_scramble_length=0.5, multiparity_readout=True)),
+          custom_scramble_length=0.5, readout="multiparity")),
 ]]
 
 CASES = list(_template_cases()) + LEAF_CASES

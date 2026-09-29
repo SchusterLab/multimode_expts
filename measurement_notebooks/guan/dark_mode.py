@@ -777,9 +777,8 @@ for init_alpha in init_alphas:
             floquet_cycles=floquet_cycles,
             swept_params=['floquet_cycle'],
     
-            parity_readout = True,
+            readout = "parity",
             parity_fast = False,
-            perform_wigner = False,
         )
         scramble_expts.append(scramble)
 
@@ -820,9 +819,8 @@ scramble = dark_scramble_runner.execute(
             floquet_cycles=floquet_cycles,
             swept_params=['floquet_cycle'],
     
-            parity_readout = True,
+            readout = "parity",
             parity_fast = False,
-            perform_wigner = False,
         )
 
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}

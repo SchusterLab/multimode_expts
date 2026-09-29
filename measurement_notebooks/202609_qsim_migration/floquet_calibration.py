@@ -647,7 +647,6 @@ dm_sideband_scramble_defaults = AttrDict(dict(
     init_fock=True,
 
     normalize=False,
-    post_select_pre_pulse=False,
     active_reset=False,
     man_reset=False,
     storage_reset=False,

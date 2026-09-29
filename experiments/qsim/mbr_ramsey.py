@@ -35,6 +35,7 @@ from experiments.qsim.floquet_train import FloquetProgram
 from experiments.qsim.qsim_base import (
     QsimBaseExperiment,
     readout_lane_count,
+    readout_mode,
 )
 from experiments.qsim.utils import ensure_list_in_cfg
 from fitting.fit_display_classes import GeneralFitting
@@ -287,10 +288,11 @@ class MBRRamseyProgram(FloquetProgram):
         if ecfg.get("palindrome_scramble", False) and int(ecfg.floquet_cycle) % 2:
             raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
         
-        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark", "perform_wigner",
-                     "init_alpha", "parity_readout", "multiparity_readout"):
+        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark", "init_alpha"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
+        if readout_mode(ecfg) != "qubit":
+            raise ValueError(f"readout={ecfg.readout!r}: the MBR jobs read the qubit Ramsey (the default, 'qubit')")
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
         analyzer_phase = float(ecfg.get("spectroscopy_analyzer_phase", 0.0))

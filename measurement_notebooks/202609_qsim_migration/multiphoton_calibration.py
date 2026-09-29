@@ -480,7 +480,6 @@ broadband_validation_defaults = AttrDict(dict(
     pre_relax_delay=0,
     relax_delay=2500,
     normalize=False,
-    perform_wigner=False,
     dedupe_waveforms=True,
     prepulse=False,
     postpulse=False,

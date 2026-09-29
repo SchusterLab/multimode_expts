@@ -21,8 +21,80 @@ from fitting.fit_utils import guess_freq
 from experiments.MM_base import MMAveragerProgram
 
 
+# The last step before the measurement, chosen by cfg.expt.readout
+# (docs/qsim/program_tree_plan.md, section 4): mode -> final readouts per shot.
+# It plays with or without postpulse. The postpulse decodes: it swaps ro_stor
+# into M1, and for 'qubit' it also maps M1 to the qubit (f0-g1, then ef if
+# map_to_qubit_ge); the other modes read M1, so the photon stays there.
+READOUT_MODES = {
+    "qubit": 1,
+    "parity": 1,
+    "multiparity": 2,       # two parity readouts
+    "wigner": 1,            # displace by wigner_alpha, then parity
+    "slow_pi_ge": 1,        # number-selective qubit pi: M1 in vacuum or not
+}
+
+# The booleans that cfg.expt.readout replaced in step 10D. New configs may not
+# set them, not even to False: one key, one way to say it.
+RETIRED_READOUT_FLAGS = ("perform_wigner", "parity_readout",
+                         "multiparity_readout", "slow_pi_ge_readout")
+
+
+def readout_mode(expt):
+    """-> the final readout of a new expt config; raises if it cannot be played.
+
+    ``post_select_pre_pulse`` is an MM_base key that other experiments play;
+    no qsim program does, so it is refused when set (False is allowed, for
+    shared default dicts).
+    """
+    retired = [key for key in RETIRED_READOUT_FLAGS if key in expt]
+    if retired:
+        raise ValueError(
+            f"{retired} were replaced by cfg.expt.readout, one of "
+            f"{sorted(READOUT_MODES)} (default 'qubit'); see "
+            "docs/qsim/program_tree_plan.md, section 4")
+    if expt.get("post_select_pre_pulse", False):
+        raise ValueError("post_select_pre_pulse=True: no qsim program plays that readout")
+    mode = expt.get("readout", "qubit")
+    if mode not in READOUT_MODES:
+        raise ValueError(f"readout={mode!r}; expected one of {sorted(READOUT_MODES)}")
+    return mode
+
+
+def saved_readout_mode(expt):
+    """-> the final readout of a saved expt config, also one saved before step 10D.
+
+    Old jobs record the retired booleans instead of ``readout``. They are read
+    in the order the template played them: ``perform_wigner`` won over the
+    parity flags, and ``multiparity_readout`` over ``parity_readout``. Read
+    saved configs only here, never in a Program.
+    """
+    if "readout" in expt:
+        return expt["readout"]
+    if expt.get("perform_wigner", False):
+        return "wigner"
+    if expt.get("multiparity_readout", False):
+        return "multiparity"
+    if expt.get("parity_readout", False):
+        return "parity"
+    if expt.get("slow_pi_ge_readout", False):
+        return "slow_pi_ge"
+    return "qubit"
+
+
+def _herald_readouts(cfg):
+    """-> the readouts a shot plays before its final readout."""
+    count = 0
+    if cfg.expt.get('parity_check', False):
+        count += 1
+    if cfg.expt.get('active_reset', False):
+        params = MMAveragerProgram.get_active_reset_params(cfg)
+        count += MMAveragerProgram.active_reset_read_num(**params)
+    return count
+
+
 def readout_lane_count(cfg):
-    """-> how many readouts one shot of ``cfg`` produces.
+    """-> how many readouts one shot of ``cfg`` produces, for a saved ``cfg`` too.
 
     A shot is one science measurement plus whatever heralds precede it, so
     the raw single-shot arrays are interleaved with this period and the
@@ -32,17 +104,19 @@ def readout_lane_count(cfg):
     liability: ``acquire`` writes this into ``cfg.read_num`` at acquisition
     time, and the shot subsampler has to recover the same number from jobs
     saved before that field existed. If the two ever disagree, subsampling
-    reads the wrong lane and silently returns other readouts' shots.
+    reads the wrong lane and silently returns other readouts' shots. For a new
+    config it equals ``QsimBaseProgram.readouts_per_shot``.
+
+    A config saved before step 10D (no ``readout`` key) gets the count of that
+    time: one more for ``multiparity_readout``, whatever else is set. That is
+    what the driver asked for, even where the program played fewer (with
+    ``perform_wigner`` too, it played only the Wigner readout).
     """
-    read_num = 1
-    if cfg.expt.get('parity_check', False):
-        read_num += 1
-    if cfg.expt.get('active_reset', False):
-        params = MMAveragerProgram.get_active_reset_params(cfg)
-        read_num += MMAveragerProgram.active_reset_read_num(**params)
-    if cfg.expt.get('multiparity_readout', False):
-        read_num += 1
-    return read_num
+    if "readout" in cfg.expt:
+        final = READOUT_MODES[cfg.expt.readout]
+    else:
+        final = 2 if cfg.expt.get('multiparity_readout', False) else 1
+    return _herald_readouts(cfg) + final
 
 
 class QsimBaseProgram(MMAveragerProgram):
@@ -55,7 +129,13 @@ class QsimBaseProgram(MMAveragerProgram):
     _pre_selection_filtering = True
 
     def __init__(self, soccfg: QickConfig, cfg: AttrDict):
+        readout_mode(cfg.expt)  # refuse a config it cannot play, before compiling
         super().__init__(soccfg, cfg)
+
+    @classmethod
+    def readouts_per_shot(cls, cfg):
+        """-> how many readouts one shot of a new ``cfg`` plays: heralds, then the final readout."""
+        return _herald_readouts(cfg) + READOUT_MODES[readout_mode(cfg.expt)]
 
 
     def retrieve_swap_parameters(self):
@@ -195,7 +275,7 @@ class QsimBaseProgram(MMAveragerProgram):
 
         self._initialize_floquet_pulses()
 
-        if self.cfg.expt.perform_wigner or ('init_alpha' in self.cfg.expt):
+        if readout_mode(self.cfg.expt) == "wigner" or ('init_alpha' in self.cfg.expt):
             self.displace_man(setup=True, play=False)
 
         self.sync_all(200)
@@ -213,16 +293,7 @@ class QsimBaseProgram(MMAveragerProgram):
 
     def body(self):
         cfg=AttrDict(self.cfg)
-        slow_pi_ge_readout = bool(
-            cfg.expt.get("slow_pi_ge_readout", False)
-        )
-
-        if slow_pi_ge_readout and (
-                cfg.expt.get("parity_readout", False)
-                or cfg.expt.get("multiparity_readout", False)):
-            raise ValueError(
-                "slow_pi_ge_readout cannot be combined with parity readout"
-            )
+        readout = readout_mode(cfg.expt)
 
         # initializations as necessary
         self.reset_and_sync()
@@ -381,19 +452,14 @@ class QsimBaseProgram(MMAveragerProgram):
         # core pulses: override the method to define your own expeirment
         self.core_pulses()
 
-        # postpulse
+        # postpulse: decode, i.e. swap ro_stor into M1, and for the qubit
+        # readout map M1 to the qubit. The other readouts read M1.
         if cfg.expt.postpulse:
 
             # Move ro_stor to man
             postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
-            
-            skip_default_m1_to_qubit_readout = (
-                self.cfg.expt.get("parity_readout", False)
-                or self.cfg.expt.get("multiparity_readout", False)
-                or slow_pi_ge_readout
-            )
 
-            if not self.cfg.expt.perform_wigner and not skip_default_m1_to_qubit_readout:
+            if readout == "qubit":
                 # Move man to qubit for population measurement
                 postpulse_cfg.append(['man', 'M1', 'pi', 0,])
                 if self.cfg.expt.get('map_to_qubit_ge', False):
@@ -404,32 +470,33 @@ class QsimBaseProgram(MMAveragerProgram):
             self.custom_pulse(cfg, pulse_creator.pulse, prefix='post_')
             self.sync_all()
 
-            if not self.cfg.expt.perform_wigner and (self.cfg.expt.get("parity_readout", False) or self.cfg.expt.get("multiparity_readout", False)):
-                
-                if not self.cfg.expt.get("multiparity_readout", False):
-                    if self.cfg.expt.get("debug", False):
-                        print("Performing parity readout with parity pulse")
-                    self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.get("phase_second_pulse", 180), fast=self.cfg.expt.parity_fast)
-                if self.cfg.expt.get("multiparity_readout", False):
-                    if self.cfg.expt.get("debug", False):
-                        print("Performing multiparity readout with parity pulse")
-                    self.multi_parity_readout(fast = self.cfg.expt.get("parity_fast", False))
-                self.sync_all()
-                
-            if self.cfg.expt.perform_wigner:
-                # Population is still in man, perform displacement + parity measurement
+        # readout: the last step before the measurement, with or without postpulse
+        if readout in ("parity", "multiparity"):
 
-                # Displacement
-                self.displace_man(
-                    alpha=cfg.expt.wigner_alpha,
-                    setup=False,
-                    play=True,
-                    )
-                
-                # Parity pulse on qubit
-                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+            if readout == "parity":
+                if self.cfg.expt.get("debug", False):
+                    print("Performing parity readout with parity pulse")
+                self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.get("phase_second_pulse", 180), fast=self.cfg.expt.parity_fast)
+            if readout == "multiparity":
+                if self.cfg.expt.get("debug", False):
+                    print("Performing multiparity readout with parity pulse")
+                self.multi_parity_readout(fast = self.cfg.expt.get("parity_fast", False))
+            self.sync_all()
 
-        if slow_pi_ge_readout:
+        if readout == "wigner":
+            # Population is still in man, perform displacement + parity measurement
+
+            # Displacement
+            self.displace_man(
+                alpha=cfg.expt.wigner_alpha,
+                setup=False,
+                play=True,
+                )
+
+            # Parity pulse on qubit
+            self.play_parity_pulse(self.man_mode_idx, second_phase=self.cfg.expt.phase_second_pulse, fast=self.cfg.expt.parity_fast)
+
+        if readout == "slow_pi_ge":
             qTest = self.cfg.expt.qubits[0]
             slow_pi_ge = cfg.device.qubit.pulses.slow_pi_ge
             slow_pi_ge_pulse = [
@@ -823,9 +890,6 @@ class QsimBaseExperiment(Experiment):
 
         assert len(self.cfg.expt.swept_params) in {1,2}, "can only handle 1D and 2D sweeps for now"
         sweep_dim = 2 if len(self.cfg.expt.swept_params) == 2 else 1
-
-        if 'perform_wigner' not in self.cfg.expt:
-            self.cfg.expt.perform_wigner = False
 
         outer_param = self.cfg.expt.swept_params[0]
         outer_params = self.cfg.expt[outer_param+'s']
