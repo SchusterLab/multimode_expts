@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-09-28** (pole finding: why each level is missed, on pippin). This file is overwritten at
+**Last updated: 2026-09-28** (pole finding: design calculator, on pippin). This file is overwritten at
 the end of each work session; git keeps the old versions. What happened, and why, is in
 `docs/log/` (newest first: `2026-09-28_pole-finding-diagnostics.md`, `2026-09-28_pole-finding-phase1.md`, `2026-09-28_pole-finding-design.md`, `2026-09-27_matrix-pencil.md`). Read this file first; read the log only
 if you need the history.
@@ -23,8 +23,13 @@ if you need the history.
   us): august_N3 is fitter-limited, and C finds all 10 levels; august_disorder/0 has 24 of 35
   levels resolvable (31 if the row offsets were known), of which C finds 19, B 18, A 15; 7-1/0
   is one unresolvable chain. The model is off by 1-2 kHz in places (assumed 0.3). **Next:
-  step 3, choose the work**: fitter search misses on the August sets, the offset calibration
-  (about 7 levels), and a model check (refit detunings, couplings, Kerr to the held levels). Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  step 3**: the design calculator (Cramér-Rao, spec 5.6; `fitting/qsim/poles/design.py`) says
+  the largest gain is free: fit **real amplitudes** (a diagonal row's <b|P|b>), 24 -> 33 of 35
+  resolvable on august_disorder/0 at T2 200 us, 19 -> 25 at 100 us. A complete basis and
+  whole-number weights add little at equal time; offset calibration matters only with complex
+  amplitudes; T2 dominates. **Next: fitter C with real amplitudes**; on synthetic data, does it
+  reach the bound; on the August data, does the residual stay at the noise (is the phase frame
+  right). Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The

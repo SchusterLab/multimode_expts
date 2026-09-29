@@ -269,6 +269,22 @@ structure the fit did not take. `cause_counts` sums the causes per fitter, `disp
 draws the table (`fitting/qsim/poles/pole_plots.py`). Notebook:
 `analysis_notebooks/pole_finding/level_causes.py`.
 
+### 5.6 Design calculator (`design_summary`, `fitting/qsim/poles/design.py`)
+
+Before a fitter or a measurement is built: the Cramér-Rao bound of 5.5 at a model, with the
+amplitudes as explicit parameters (`fisher_matrix` of `design.py`), for a `Design`:
+
+- amplitudes free complex (what the fitters assume; equal to `cramer_rao_bounds`), real
+  (`<b|P_lambda|b>` of a diagonal row, in the right phase frame), or real with the sum over
+  rows fixed to the multiplicity (a complete basis; `sum_constraints`, on the null space);
+- row offsets free with a prior, or a shift per photon per mode (free) plus a random part;
+- the decay; the rows (the measured ones, or every occupation of the sector:
+  `RealSpectrum.model_row_weights`); the noise per sample, scaled with the shots per row.
+
+It gives the resolvable levels (5.5), the median gap error, and the small gaps (under half
+the mean gap, which P(r < r0) counts) resolved (`gap_errors`). The condition test is on the
+unit-free matrix (`scaled_condition`). Notebook: `analysis_notebooks/pole_finding/design.py`.
+
 ## 6. The row-to-row offset `sigma`
 
 Not known directly. Three estimates:

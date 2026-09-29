@@ -32,11 +32,19 @@ def fisher_matrix(time_us, levels_MHz, amplitudes, decay_per_us, noise, offset_p
     return F
 
 
+def scaled_condition(F):
+    """-> the condition number of D^-1/2 F D^-1/2, D = diag(F): independent of the units of
+    the parameters (MHz, per us, amplitudes)."""
+    d = np.sqrt(np.diag(F))
+    return np.linalg.cond(F / np.outer(d, d))
+
+
 def local_covariance(time_us, levels_MHz, amplitudes, decay_per_us, noise, offset_prior_MHz, subset):
     """-> F^-1 of the levels in ``subset`` alone (all rows and offsets), or None when F is
-    beyond double precision (condition above ``MAX_CONDITION``): the levels cannot be told apart."""
+    beyond double precision (``scaled_condition`` above ``MAX_CONDITION``): the levels cannot
+    be told apart."""
     F = fisher_matrix(time_us, levels_MHz[subset], amplitudes[:, subset], decay_per_us, noise, offset_prior_MHz)
-    return None if np.linalg.cond(F) > MAX_CONDITION else np.linalg.inv(F)
+    return None if scaled_condition(F) > MAX_CONDITION else np.linalg.inv(F)
 
 
 def cramer_rao_bounds(time_us, levels_MHz, amplitudes, decay_per_us, noise, offset_prior_MHz, window_MHz):

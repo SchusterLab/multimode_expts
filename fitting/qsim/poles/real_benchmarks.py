@@ -32,6 +32,10 @@ class RealSpectrum:
     row_weights: np.ndarray
     #: The rows' occupations, for labels (optional).
     occupations: tuple | None = None
+    #: The model's weights for every occupation of the sector (occupation x level), and those
+    #: occupations: what a complete basis would measure (optional; ``fitting.qsim.poles.design``).
+    model_row_weights: np.ndarray | None = None
+    model_occupations: tuple | None = None
 
     @property
     def dt_us(self):

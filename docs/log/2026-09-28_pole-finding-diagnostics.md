@@ -156,3 +156,62 @@ against those rows' offsets (24 resolvable with free offsets, 31 with known ones
 So the revised reading for august_disorder/0: the fitters, not the data, lose most levels
 (C 5 of 24, B 6, A 9), and a better offset calibration would add about 7 resolvable levels.
 This replaces "the data are the limit; a better fitter gains at most about 4" above.
+
+## Later the same evening: step 3, the design calculator
+
+guan: commit step 2 (`5730b26`); close levels mostly sit in different rows, and the offsets may
+depend on the occupation (a Stark calibration worse for some occupations, or a systematic
+error); resolve as many levels as possible, as T2 = 200 us is on the high side and falls with
+Kerr; does a complete basis with whole-number weights help? Agreed: first a Cramér-Rao design
+calculator, no new fitter (spec 5.6, `fitting/qsim/poles/design.py`,
+`analysis_notebooks/pole_finding/design.py`, 1 min). Also: `RealSpectrum` carries the model's
+weights for every occupation; the condition test is now on the unit-free matrix
+(`resolution.scaled_condition`; the unit-dependent test before could flag or pass by units).
+
+First, two checks on the fits:
+
+- Offsets per photon: a linear fit in the photon numbers takes 35-40% of C's and the oracle's
+  offset variance on august_N3 (+0.43-0.48 kHz per photon in the first mode, both fits); the
+  rest scatters by 0.5-0.65 kHz, the size of the calibration floor. 10 rows (august_disorder)
+  are too few to test it.
+- T2 at the august_disorder/0 model, offsets free (prior 0.5 kHz): median gap error 0.35 /
+  0.82 / 1.73 / 4.2 kHz at T2 200 / 100 / 67 / 50 us; resolvable 24 / 17 / - / 2 of 35.
+
+The design grid, august_disorder/0 model, noise 0.075 per sample, levels resolvable of 35 and
+(small gaps resolved of 8); "time x3.5" is 3.5 times the measuring time of now:
+
+| design (offsets free, prior 0.5 kHz) | T2 100 us | T2 200 us |
+|---|---|---|
+| 10 measured, x1, complex (now) | 19 (0) | 24 (2) |
+| 10 measured, x1, real | 25 (3) | 33 (7) |
+| 10 measured, x3.5, complex | 20 (0) | 33 (7) |
+| 10 measured, x3.5, real | 31 (6) | 33 (7) |
+| 35 complete, x1, complex | 20 (0) | 29 (5) |
+| 35 complete, x1, real | 27 (4) | 33 (7) |
+| 35 complete, x1, real + sums | 29 (5) | 33 (7) |
+| 35 complete, x3.5, real + sums | 31 (6) | 35 (8) |
+
+With offsets known to 0.1 kHz: now 24 (2) / 29 (5); real 29 (5) / 33 (7).
+
+Found:
+
+- **Real amplitudes are the largest gain, and they cost no measuring time:** 24 -> 33 of 35
+  (small gaps 2 -> 7 of 8) at T2 200 us, 19 -> 25 at 100 us, on the data we have. Every fitter
+  now fits free complex amplitudes; for a diagonal row c = <b|P|b> is real (and not negative)
+  once the phase frame is right. With real amplitudes the offset calibration hardly matters at
+  T2 200 us (33 at every prior). This holds only if the data are in that frame: the offsets
+  are a linear phase roll per row, a constant phase is removed by the normalization, anything
+  else (a phase drift not linear in t) breaks it. To check on the data.
+- **A complete basis at the same total time adds little** (complex 24 -> 29 at T2 200, 19 -> 20
+  at 100; real 25 -> 27 at 100), and the whole-number sums little more on top of real
+  amplitudes (27 -> 29 at T2 100, same at 200). Their main use stays the weight check of
+  benchmark 3 (counting merges).
+- **A per-photon offset pattern does not help unless it is calibrated elsewhere:** with its
+  shifts free it is a weaker assumption than free offsets of the total spread (10 rows, T2 100:
+  11 vs 17).
+- **Offset calibration** matters with complex amplitudes (24 -> 29 at 0.25 kHz), hardly with real.
+- **T2** dominates everything else (above).
+
+Next: fitter C with real amplitudes (an option of the variable projection); on synthetic data,
+does it reach the bound; on the real August sets, does the in-band residual stay at the noise
+(if it rises, the phase frame is not right and realness cannot be used).

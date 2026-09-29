@@ -44,7 +44,8 @@ def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
     model = fixed_n_hamiltonian(data_set.photon_number, mode_count, data.detunings, data.hardware.couplings_MHz, kerr_MHz)
     time_us = np.asarray(data.spectrum.time_us, dtype=float)
     rows = [model.fock_index[o] for o in occupations]
-    levels, multiplicities, row_weights = distinct_levels(
-        model.energies_MHz, model.basis_eigenstate_weights[rows], 1e-3 / (len(time_us) * (time_us[1] - time_us[0])))
+    levels, multiplicities, all_weights = distinct_levels(
+        model.energies_MHz, model.basis_eigenstate_weights, 1e-3 / (len(time_us) * (time_us[1] - time_us[0])))
     return RealSpectrum(label, data_set.label, data_set.basis == "complete", time_us,
-                        np.asarray(data.reconstruction.A), levels, multiplicities, row_weights, tuple(occupations))
+                        np.asarray(data.reconstruction.A), levels, multiplicities, all_weights[rows], tuple(occupations),
+                        all_weights, tuple(tuple(o) for o in model.fock_basis))

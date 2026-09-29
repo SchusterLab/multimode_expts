@@ -4,6 +4,7 @@ import numpy as np
 from fitting.qsim.poles import joint_pencil
 from fitting.qsim.poles.diagnosis import (DiagnosisSettings, cause_counts, diagnose_levels, oracle_starts,
                                           residual_excess, row_noise, seen_frequencies)
+from fitting.qsim.poles.design import Design, gap_errors
 from fitting.qsim.poles.resolution import clusters, cramer_rao_bounds
 from fitting.qsim.poles.pole_fit import PoleFit
 from fitting.qsim.poles.real_benchmarks import RealSpectrum
@@ -94,3 +95,34 @@ def test_seen_frequencies_move_with_the_rows_that_hold_the_pole():
     fit = PoleFit(np.array([0.1, 0.2]), np.zeros(2), np.array([[1., 0.], [0., 1.]]), 2,
                   row_offsets_MHz=np.array([0.001, -0.002]))
     np.testing.assert_allclose(seen_frequencies(fit), [0.101, 0.198])
+
+
+# --- The design calculator ---------------------------------------------------
+
+def design_case():
+    occupations = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
+    return TIME_US, LEVELS_MHz, WEIGHTS, occupations, np.array([0.01, 0.02, 0.015])
+
+
+def test_design_with_complex_amplitudes_is_the_resolution_bound():
+    t, levels, weights, occupations, noise = design_case()
+    free = Design(amplitudes="complex", offset_prior_MHz=0.1 * BIN_MHz, decay_per_us=0.01, window_bins=100)
+    _, expected = cramer_rao_bounds(t, levels, weights, 0.01, noise, 0.1 * BIN_MHz, np.inf)
+    np.testing.assert_allclose(gap_errors(t, levels, weights, occupations, noise, BIN_MHz, free), expected, rtol=1e-6)
+
+
+def test_what_is_known_of_the_amplitudes_only_lowers_the_bound():
+    t, levels, weights, occupations, noise = design_case()
+    errors = [gap_errors(t, levels, weights, occupations, noise, BIN_MHz, Design(amplitudes=kind, decay_per_us=0.01))
+              for kind in ("complex", "real", "real_sums")]
+    assert np.all(errors[1] <= errors[0] * (1 + 1e-9)) and np.all(errors[2] <= errors[1] * (1 + 1e-9))
+    assert np.all(errors[1] < errors[0])
+
+
+def test_per_photon_offsets_cost_no_more_than_free_ones_of_the_total_spread():
+    """A pattern plus a random part of 0.1 bin is tighter than free offsets of the pattern's size."""
+    t, levels, weights, occupations, noise = design_case()
+    pattern = Design(offsets="per_photon", offset_prior_MHz=0.01 * BIN_MHz, decay_per_us=0.01)
+    loose = Design(offsets="free", offset_prior_MHz=BIN_MHz, decay_per_us=0.01)
+    assert np.all(gap_errors(t, levels, weights, occupations, noise, BIN_MHz, pattern)
+                  <= gap_errors(t, levels, weights, occupations, noise, BIN_MHz, loose))
