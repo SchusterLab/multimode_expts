@@ -79,12 +79,24 @@ DEFAULT_MAIN_WORKER_LOCK = "C:/python/multimode_expts/job_server/worker.lock"
 SKIPPED_TAGS = {"suite-skip", "hardware-skip"}
 
 
-def load_notebook(path, skip):
-    """-> (notebook, number of cells dropped) with tagged cells removed."""
+def load_notebook(path, skip, stop_before=None):
+    """-> (notebook, number of cells dropped) with tagged cells removed.
+
+    ``stop_before``: also drop everything from the first markdown cell that
+    contains this text (e.g. ``"## 1. Phase calibration"``).
+    """
     import jupytext
 
     nb = jupytext.read(path)
-    kept = [c for c in nb.cells if not skip & set(c.metadata.get("tags", []))]
+    cells = nb.cells
+    if stop_before:
+        for index, cell in enumerate(cells):
+            if cell.cell_type == "markdown" and stop_before in cell.source:
+                cells = cells[:index]
+                break
+        else:
+            raise ValueError(f"{path.name}: no markdown cell contains {stop_before!r}")
+    kept = [c for c in cells if not skip & set(c.metadata.get("tags", []))]
     dropped = len(nb.cells) - len(kept)
     nb.cells = kept
     return nb, dropped
@@ -109,13 +121,13 @@ def expected_failures(nb):
     return xfail, xpass
 
 
-def run_notebook(path, out_dir, skip, cell_timeout):
+def run_notebook(path, out_dir, skip, cell_timeout, stop_before=None):
     """Execute one notebook; -> (ok, seconds, error summary or None, xfail, xpass)."""
     import nbformat
     from nbclient import NotebookClient
     from nbclient.exceptions import CellExecutionError
 
-    nb, dropped = load_notebook(path, skip)
+    nb, dropped = load_notebook(path, skip, stop_before)
     code_cells = [c for c in nb.cells if c.cell_type == "code"]
     print(f"\n=== {path.relative_to(REPO_ROOT)}: {len(code_cells)} code cells"
           f" ({dropped} tagged cells skipped)")
@@ -186,6 +198,9 @@ def main(argv=None):
                         help="comma-separated notebook names, e.g. mbr,mbr_disorder")
     parser.add_argument("--keep-going", action="store_true",
                         help="run the remaining notebooks after one fails")
+    parser.add_argument("--stop-before", default=None,
+                        help="run each notebook only up to the first markdown cell "
+                             "containing this text, e.g. '## 1. Phase calibration'")
     parser.add_argument("--cell-timeout", type=int, default=1800)
     parser.add_argument("--out", type=Path, default=None,
                         help="default: .suite_runs/<timestamp>_<suite>_<mode>/")
@@ -228,7 +243,7 @@ def main(argv=None):
     try:
         for path in notebooks:
             ok, seconds, error, xfail, xpass = run_notebook(
-                path, out_dir, SKIPPED_TAGS, args.cell_timeout
+                path, out_dir, SKIPPED_TAGS, args.cell_timeout, args.stop_before
             )
             results.append((path.stem, ok, seconds, error, xfail, xpass))
             if not ok and not args.keep_going:
