@@ -64,12 +64,13 @@ class Poles:
     chi2: float
 
 
-def fit(A, time_us, settings=PursuitSettings(), row_groups=None):
-    """-> the PoleFit of rows ``A``; ``row_groups`` labels rows sharing one offset (default: each row)."""
+def fit(A, time_us, settings=PursuitSettings(), row_groups=None, start=None):
+    """-> the PoleFit of rows ``A``; ``row_groups`` labels rows sharing one offset (default: each row).
+    ``start``: C's PoleFit of the same rows, if already done (a cache); else C runs with ``settings.start``."""
     dt_us = sample_time(time_us)
     a = normalize_to_initial_return(check_shape(A, time_us))
     groups = np.unique(np.arange(len(a)) if row_groups is None else np.asarray(row_groups), return_inverse=True)[1]
-    start = joint_refined.fit(A, time_us, settings.start, row_groups)
+    start = start or joint_refined.fit(A, time_us, settings.start, row_groups)
     noise = row_noise(a, dt_us, start.frequencies_MHz, settings.band_margin_bins)
     group_offsets = np.bincount(groups, weights=start.row_offsets_MHz) / np.bincount(groups)
     data = (a, np.asarray(time_us, dtype=float), groups, noise)
