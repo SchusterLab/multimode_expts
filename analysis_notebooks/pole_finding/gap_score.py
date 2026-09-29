@@ -33,7 +33,7 @@ from fitting.qsim.poles.gap_score import gauge_shift, pooled_small_gap_fraction,
 pd.set_option("display.width", 250, "display.max_columns", 40)
 FOLDER = set_folder(data_root())
 cases = load_set(FOLDER / "set.h5")
-fits = {name: load_fits(FOLDER / f"fits_{name}.h5") for name in ("C", "F")}
+fits = {name: load_fits(FOLDER / f"fits_{name}.h5", cases) for name in ("C", "F")}
 print({name: len(cached) for name, cached in fits.items()}, "of", len(cases), "cases fitted")
 
 # %%

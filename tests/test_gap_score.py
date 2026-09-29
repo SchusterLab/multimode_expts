@@ -1,4 +1,6 @@
 """The gap score and the fixed synthetic set (plan docs/qsim/pole_finding_explore.md, T0)."""
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -84,9 +86,18 @@ def test_set_and_fits_round_trip(tmp_path):
     np.testing.assert_array_equal(loaded.gap_bounds_MHz["real"], case.gap_bounds_MHz["real"])
 
     fit = PoleFit(case.levels_MHz, np.full(35, 0.005), np.ones((10, 35)), 35, row_offsets_MHz=case.offsets_MHz)
-    save_fit(tmp_path / "fits.h5", condition.key, fit, 1.5, condition)
-    stored, seconds = load_fits(tmp_path / "fits.h5")[condition.key]
+    save_fit(tmp_path / "fits.h5", case, fit, 1.5, condition)
+    stored, seconds = load_fits(tmp_path / "fits.h5", [loaded])[condition.key]
     assert seconds == 1.5 and stored.frequency_errors_MHz is None
     np.testing.assert_array_equal(stored.row_offsets_MHz, case.offsets_MHz)
     assert score_gaps(stored.frequencies_MHz, loaded.levels_MHz, loaded.sampling_MHz).gap_found.all()
-    assert load_fits(tmp_path / "missing.h5") == {}
+    assert load_fits(tmp_path / "missing.h5", [case]) == {}
+    rebuilt = replace(case, A=case.A + 1e-9)                   # same key, other rows: not this fit
+    assert load_fits(tmp_path / "fits.h5", [rebuilt]) == {}
+
+
+def test_september_point_is_the_recorded_campaign():
+    hardware = Condition(point="september", decay_per_us=0.005, offset_sigma_MHz=0.5e-3, partial_rows=10,
+                         draw=0).hardware
+    assert 1e3 * hardware.coupling_MHz == pytest.approx(29.2174, abs=1e-4)
+    assert hardware.dt_us == pytest.approx(0.4278274, abs=1e-7) and hardware.samples == 468

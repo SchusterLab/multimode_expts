@@ -1,16 +1,19 @@
 """The fixed synthetic set of the gap score (plan ``docs/qsim/pole_finding_explore.md``, T0).
 
 Saved once, so that every exploration task scores on the same data; the fits of slow fitters
-(C 30-120 s, F minutes) are cached next to it, one HDF5 file per fitter. The set:
+(C 0.5-11 min, F more) are cached next to it, one HDF5 file per fitter, each fit with the digest
+of the rows it fitted (``StoredCase.digest``), so that a rebuilt case is never scored with an
+old fit. The set:
 
-- two model points: the August disorder point (g 8.615 kHz, K / g -1.22, delta / g 5.80) and
-  the September complete-basis regime (g 29.2 kHz, K -3.76 kHz, disorder 50 kHz: K / g -0.129,
-  delta / g 1.71);
-- both sampled as in August (dt 1.4509 us, 300 samples, a 435 us window, about 2 T2, the right
-  length by the design calculator): the September time grid is not known offline yet (its jobs
-  carry no timing; T4). With the August g the September point is 3.4 times denser in kHz than
-  the data, and 5-9 of 34 gaps are resolvable at all; with its own g its span (about 390 kHz)
-  still fits the 690 kHz sampling band;
+- the August disorder point on the August grid: g 8.615 kHz, K / g -1.22, delta / g 5.80;
+  dt 1.4509 us, 300 samples (a 435 us window);
+- the September complete-basis campaign (2026-09-10..14) on its own grid: g 29.217 kHz
+  (= 430.08 MHz / (4 x 40 x 92)), K -3.763 kHz (K / g -0.1288), onsite energies of norm
+  100 kHz (the config's "disorder strength 50 kHz" is another convention; the model's delta is
+  the norm of the onsite vector: delta / g 3.4226); dt 2 Floquet cycles of 0.213914 us
+  (0.427827 us), 468 samples (a 200 us window). The timing is recovered from the job database
+  export and the Floquet config CFG-FL-20260909-00043, the same for all 700 jobs of the campaign
+  (docs/log/2026-09-29_pole-finding-t0.md);
 - T2 100 and 200 us, row offsets of 0.5 and 1 kHz, 10 rows (chosen as the campaigns chose them)
   and 35 rows (complete basis), 5 draws each (disorder direction ``100 + draw``, noise seed
   ``draw``); the noise per sample 0.075 of A_b(0) in every row (the August data's).
@@ -18,6 +21,7 @@ Saved once, so that every exploration task scores on the same data; the fits of 
 Each case carries its Cramér-Rao gap bounds for free complex and for real amplitudes
 (``design.gap_errors``, offsets free with the true prior). Pure numerics and HDF5.
 """
+import hashlib
 import json
 from dataclasses import dataclass
 from itertools import product
@@ -34,9 +38,12 @@ from fitting.qsim.poles.pole_fit import PoleFit
 from fitting.qsim.poles.synthetic import Hardware, ModelPoint, Nonideal, synthetic_returns
 from fitting.qsim.mbr_disorder import disorder_direction
 
-#: (g in MHz, K / g, delta / g) of the model points.
-POINTS = {"august": (8.615e-3, -1.22, 5.80), "september": (29.2e-3, -0.129, 1.71)}
-GRID = dict(dt_us=1.4509, samples=300)
+_SEPTEMBER_CYCLE_US = 92 / 430.08            # 92 tProc ticks
+_SEPTEMBER_G_MHz = 1 / (4 * 40 * _SEPTEMBER_CYCLE_US)
+#: (g in MHz, K / g, delta / g) of the model points, and their time grids.
+POINTS = {"august": (8.615e-3, -1.22, 5.80),
+          "september": (_SEPTEMBER_G_MHz, -3.7627375618815075e-3 / _SEPTEMBER_G_MHz, 0.1 / _SEPTEMBER_G_MHz)}
+GRIDS = {"august": dict(dt_us=1.4509, samples=300), "september": dict(dt_us=2 * _SEPTEMBER_CYCLE_US, samples=468)}
 NOISE_PER_SAMPLE = 0.075
 DIRECTION_SEED = 100
 BOUNDS = ("complex", "real")
@@ -66,7 +73,7 @@ class Condition(BaseModel):
 
     @property
     def hardware(self):
-        return Hardware(coupling_MHz=POINTS[self.point][0], **GRID, partial_rows=self.partial_rows)
+        return Hardware(coupling_MHz=POINTS[self.point][0], **GRIDS[self.point], partial_rows=self.partial_rows)
 
     @property
     def nonideal(self):
@@ -92,6 +99,11 @@ class StoredCase:
     occupations: np.ndarray
     offsets_MHz: np.ndarray
     gap_bounds_MHz: dict
+
+    @property
+    def digest(self):
+        """-> a short hash of the rows A: a fit is of this case only if it carries the same."""
+        return hashlib.sha1(np.ascontiguousarray(self.A).tobytes()).hexdigest()[:16]
 
     @property
     def bin_MHz(self):
@@ -155,26 +167,30 @@ def load_set(path):
 _FIT_FIELDS = ("frequencies_MHz", "decays_per_us", "amplitudes", "frequency_errors_MHz", "row_offsets_MHz")
 
 
-def save_fit(path, key, fit, seconds, settings):
-    """Add (or replace) one case's PoleFit in a fitter's cache file."""
+def save_fit(path, case, fit, seconds, settings):
+    """Add (or replace) the PoleFit of a StoredCase in a fitter's cache file."""
+    key = case.condition.key
     with h5py.File(path, "a") as file:
         if key in file:
             del file[key]
         group = file.create_group(key)
-        group.attrs.update(rank=fit.rank, seconds=seconds, settings=settings.model_dump_json(), code_version=code_version())
+        group.attrs.update(rank=fit.rank, seconds=seconds, settings=settings.model_dump_json(), code_version=code_version(),
+                           case_digest=case.digest)
         for name in _FIT_FIELDS:
             if getattr(fit, name) is not None:
                 group[name] = getattr(fit, name)
 
 
-def load_fits(path):
-    """-> {case key: (PoleFit, seconds)} of a fitter's cache file; empty if there is none."""
+def load_fits(path, cases):
+    """-> {case key: (PoleFit, seconds)} of a fitter's cache file: only the fits made on the rows
+    of these StoredCases (same digest). Empty if there is no file."""
     try:
         file = h5py.File(path, "r")
     except FileNotFoundError:
         return {}
+    digests = {case.condition.key: case.digest for case in cases}
     with file:
         return {key: (PoleFit(rank=int(group.attrs["rank"]),
                               **{name: group[name][()] if name in group else None for name in _FIT_FIELDS}),
                       float(group.attrs["seconds"]))
-                for key, group in file.items()}
+                for key, group in file.items() if group.attrs.get("case_digest") == digests.get(key, "")}

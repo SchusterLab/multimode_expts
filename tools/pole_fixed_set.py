@@ -5,7 +5,7 @@
 
 Files in ``fixed_set.set_folder`` (``<data root>/260818_qsim_spectroscopy/derived_data/pole_finding/fixed_set/``):
 ``set.h5`` (``fitting.qsim.poles.fixed_set``) and ``fits_<fitter>.h5``. ``fit`` skips cases
-already in the cache, so an interrupted run resumes; each fit is written as soon as it is done.
+already in the cache (fitted on the same rows), so an interrupted run resumes; each fit is written as soon as it is done.
 Fits run serially (parallel fitter workers crash on pippin; ``benchmarks`` module docstring).
 Plan: docs/qsim/pole_finding_explore.md, T0.
 """
@@ -32,8 +32,8 @@ def build():
 def fit(fitter):
     cases = load_set(FOLDER / "set.h5")
     path = FOLDER / f"fits_{fitter}.h5"
-    done = load_fits(path)
-    starts = load_fits(FOLDER / "fits_C.h5") if fitter == "F" else {}
+    done = load_fits(path, cases)
+    starts = load_fits(FOLDER / "fits_C.h5", cases) if fitter == "F" else {}
     settings = SETTINGS[fitter]
     for i, case in enumerate(cases):
         key = case.condition.key
@@ -45,7 +45,7 @@ def fit(fitter):
         else:
             result = pursuit.fit(case.A, case.time_us, settings, start=starts[key][0] if key in starts else None)
         seconds = time.perf_counter() - start
-        save_fit(path, key, result, seconds, settings)
+        save_fit(path, case, result, seconds, settings)
         print(f"{i + 1}/{len(cases)} {key}: {len(result.frequencies_MHz)} poles, {seconds:.0f} s", flush=True)
 
 
