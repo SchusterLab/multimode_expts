@@ -1,7 +1,7 @@
 import json
 import os
 
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.MM_base import MMAveragerProgram
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 
@@ -9,7 +9,7 @@ from experiments.MM_dual_rail_base import MM_dual_rail_base
 cooling
 """
 
-class CoolingSpectroscopyProgram(QsimBaseProgram):
+class CoolingSpectroscopyProgram(QsimProgram):
     # DRIVE_CHANNEL = 3 # man drive
     # DRIVE_CHANNEL = 6 # stor drive
     FLUX_CHANNEL_LOW = 1 # flux low drive
@@ -72,7 +72,7 @@ class CoolingSpectroscopyProgram(QsimBaseProgram):
         self.sync_all(self.us2cycles(0.01))
 
 
-class _CoolingBase(QsimBaseProgram):
+class _CoolingBase(QsimProgram):
     """
     Shared building blocks for the cooling probe sequence and its f0g1
     calibration. Both run with cfg.expt.prepulse = cfg.expt.postpulse = False:
@@ -194,7 +194,7 @@ class CoolingF0g1CalProgram(_CoolingBase):
         readout
 
     Sweep f0g1_mod_freq and f0g1_mod_gain (software loops via
-    QsimBaseExperiment) to find the carrier/gain that maximize the f0g1
+    QsimExperiment) to find the carrier/gain that maximize the f0g1
     transfer back to the qubit. f0g1_mod_length is held fixed at the value the
     probe sequence will use.
 
@@ -216,9 +216,9 @@ class CoolingF0g1CalProgram(_CoolingBase):
 
 
 # -----------------------------------------------------------------------------
-# Example: run CoolingProbeProgram via QsimBaseExperiment (software loops).
+# Example: run CoolingProbeProgram via QsimExperiment (software loops).
 #
-# QsimBaseExperiment.acquire() requires a non-empty swept_params, so even a
+# QsimExperiment.acquire() requires a non-empty swept_params, so even a
 # "single shot" is expressed as a 1-point sweep. Sweep whatever you want to
 # characterize by listing it in swept_params and providing the plural list
 # (e.g. swept_params=['probe_length'] + probe_lengths=[...]). 2D sweeps:
@@ -252,7 +252,7 @@ class CoolingF0g1CalProgram(_CoolingBase):
 #       probe_lengths = [1.0],
 #   )
 #
-#   expt = QsimBaseExperiment(
+#   expt = QsimExperiment(
 #       soccfg=soc, path=expt_path, config_file=config_path,
 #       prefix="CoolingProbe", expt_params=expt_params,
 #       program=CoolingProbeProgram, progress=True)
@@ -284,7 +284,7 @@ class CoolingF0g1CalProgram(_CoolingBase):
 #       f0g1_mod_gains = list(range(8000, 16001, 250)),
 #   )
 #
-#   cal = QsimBaseExperiment(
+#   cal = QsimExperiment(
 #       soccfg=soc, path=expt_path, config_file=config_path,
 #       prefix="CoolingF0g1Cal", expt_params=cal_params,
 #       program=CoolingF0g1CalProgram, progress=True)

@@ -7,10 +7,10 @@ and conversion from gain to current remain in the notebook.
 
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
 
 
-class FluxDriveF0g1SpectroscopyProgram(QsimBaseProgram):
+class FluxDriveF0g1SpectroscopyProgram(QsimProgram):
     """
     Probe the f0/g1 transition with optional flux modulation.
 

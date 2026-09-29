@@ -2,10 +2,10 @@
 
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseProgram, readout_mode
+from experiments.qsim.qsim_base import QsimProgram, readout_mode
 
 
-class FluxExcursionTransitionDebuggingProgram(QsimBaseProgram):
+class FluxExcursionTransitionDebuggingProgram(QsimProgram):
     """
     Probe flux-excursion response with configurable preparation and mapping.
 

@@ -2770,7 +2770,7 @@ cool_spec_defaults = AttrDict(dict(
 
 cool_spec_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
+    ExptClass=meas.QsimExperiment,
     ExptProgram=meas.qsim.cooling.CoolingSpectroscopyProgram,
     default_expt_cfg=cool_spec_defaults,
     # preprocessor=kerr_ramsey_preproc,

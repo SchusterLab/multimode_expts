@@ -231,3 +231,28 @@ Checked with the acquire golden, part by part:
 - Full suite: 1557 passed, 2 skipped, the 3 matrix-pencil failures. (One run in between failed
   to collect the MBR test modules: `deprecated/legacy_mbr` imports `readout_lane_count` from
   `dark_base`; the re-export fixed it.)
+
+## Step 10F: the renames (later the same day)
+
+- The names of plan section 5: `QsimProgram` (was `QsimBaseProgram`), `QsimRProgram`
+  (`DarkBaseRProgram`, moved into `qsim_base`), `QsimExperiment` (`QsimBaseExperiment` and
+  `DarkBaseExperiment`), `WignerExperiment` (`QsimWignerBaseExperiment`),
+  `DarkModeScrambleProgram` (`SidebandScrambleDarkProgramNewNew`), `StorageSwapStarkPhaseProgram`
+  (`SidebandStarkAmplificationModifiedProgram`); `DarkBaseProgram` -> `DarkModeProgram` (it was
+  that class with an old name). `experiments/qsim/dark_base.py` is deleted. Module names stay.
+  Not renamed, waiting for jonginn: `SidebandScrambleDarkProgram` (t2_cavity_fluxexcursion) and
+  `SidebandStarkAmplificationModifiedProgram_old`.
+- New `tools/rename_program_tree.py`: renames identifiers only (tokenizer; comments and
+  docstrings keep history notes), rewrites imports from the deleted `dark_base`, and does
+  `.ipynb` code cells by whole words. Used on `experiments/` (deprecated modules included: the
+  MBR tests use several as references), `tests/`, `job_server/`, the `202609_qsim_migration`
+  and `guan/` notebooks, and the shared `analysis_notebooks/qsim analysis.ipynb` (8 lines).
+  Then by hand: the class paths in strings (golden tables, the `_MOVED_TO` table of
+  `floquet_dark_mode_readout`, one test) and the comments that describe the current code.
+- `tests/data/job_provenance.json` keeps the old names: it is history, and nothing turns a
+  recorded name back into a class (old files load by path).
+- Checked: program, MBR ASM and acquire goldens unchanged (their text has no class names). The
+  notebook goldens changed only in the header lines that name a class (2 lines in
+  multiphoton_calibration, 10 in floquet_calibration). Full suite: 1559 passed, 2 skipped, the
+  3 matrix-pencil failures (one more test, `test_notebook_imports`, found the shared analysis
+  notebook's import).

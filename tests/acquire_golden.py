@@ -103,15 +103,17 @@ def _mbr(**overrides):
     return cfg
 
 
-QSIM_BASE = f"{QSIM}.qsim_base:QsimBaseExperiment"
-DARK_BASE = f"{QSIM}.dark_base:DarkBaseExperiment"
-WIGNER = f"{QSIM}.qsim_base_wigner:QsimWignerBaseExperiment"
+QSIM_BASE = f"{QSIM}.qsim_base:QsimExperiment"
+# The dark_base__* cases ran on DarkBaseExperiment until step 10F renamed it
+# QsimExperiment; they keep their keys (and their DarkT1 program).
+DARK_BASE = f"{QSIM}.qsim_base:QsimExperiment"
+WIGNER = f"{QSIM}.qsim_base_wigner:WignerExperiment"
 T1 = f"{QSIM}.sideband_scramble:StorageT1Program"
 DARK_T1 = f"{QSIM}.dark_mode_t1:DarkT1Program"
 KERR_WAIT = f"{QSIM}.kerr:KerrWaitProgram"
 
 CASES = [
-    # QsimBaseExperiment: 1D and 2D, each herald option.
+    # QsimExperiment: 1D and 2D, each herald option.
     Case("qsim_base__1d", QSIM_BASE, T1, _t1(), ("wait",)),
     Case("qsim_base__2d", QSIM_BASE, T1,
          _t1(init_stors=[1, 2], swept_params=["init_stor", "wait"]), ("init_stor", "wait")),
@@ -124,7 +126,7 @@ CASES = [
     # QsimBaseExperiment did not count this readout until step 10E (plan 7.3).
     Case("qsim_base__multiparity", QSIM_BASE, DARK_T1, _dark_t1(readout="multiparity"),
          ("wait_length",)),
-    # DarkBaseExperiment.
+    # On the DarkT1 program (DarkBaseExperiment until step 10F).
     Case("dark_base__1d", DARK_BASE, DARK_T1, _dark_t1(), ("wait_length",)),
     Case("dark_base__2d", DARK_BASE, DARK_T1,
          _dark_t1(init_stors=[1, 2], swept_params=["init_stor", "wait_length"]),
@@ -142,7 +144,7 @@ CASES = [
          ("floquet_cycle", "ramsey_phase")),
     Case("mbr_job__pre_selection", f"{QSIM}.mbr_time_trace:MBRTimeTraceExperiment", "",
          _mbr(pre_selection_reset=True), ("floquet_cycle", "ramsey_phase")),
-    # QsimWignerBaseExperiment: an alpha axis inside the sweep.
+    # WignerExperiment: an alpha axis inside the sweep.
     Case("wigner__default", WIGNER, KERR_WAIT, _wigner(), ("wait_us_time", "wigner_alpha")),
     Case("wigner__pulse_correction", WIGNER, KERR_WAIT, _wigner(pulse_correction=True),
          ("wait_us_time", "wigner_alpha", "phase_second_pulse")),

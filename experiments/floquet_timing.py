@@ -57,7 +57,7 @@ ARCHIVE_ENV = "MULTIMODE_CONFIG_ARCHIVE"
 DEFAULT_ARCHIVE = REPO_ROOT / "configs" / "versions"
 
 # Above this the swap uses the high-frequency flux channel. Mirrors
-# QsimBaseProgram.retrieve_swap_parameters.
+# QsimProgram.retrieve_swap_parameters.
 FLUX_HIGH_THRESHOLD_MHZ = 1800
 
 

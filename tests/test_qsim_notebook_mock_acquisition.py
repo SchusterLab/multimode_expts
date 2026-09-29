@@ -322,8 +322,8 @@ def test_bare_scramble_sweep_builds(mock_station, defaults):
 
     runner = CharacterizationRunner(
         station=station,
-        ExptClass=meas.QsimBaseExperiment,
-        ExptProgram=meas.SidebandScrambleDarkProgramNewNew,
+        ExptClass=meas.QsimExperiment,
+        ExptProgram=meas.DarkModeScrambleProgram,
         default_expt_cfg=cfg,
         preprocessor=sideband_scramble_preproc,
         postprocessor=None,

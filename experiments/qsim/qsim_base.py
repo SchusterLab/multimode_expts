@@ -19,7 +19,7 @@ from experiments.qsim.utils import (
     post_select_raverager_data,
 )
 from fitting.fit_utils import guess_freq
-from experiments.MM_base import MMAveragerProgram
+from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram
 
 
 # The last step before the measurement, chosen by cfg.expt.readout
@@ -106,7 +106,7 @@ def readout_lane_count(cfg):
     time, and the shot subsampler has to recover the same number from jobs
     saved before that field existed. If the two ever disagree, subsampling
     reads the wrong lane and silently returns other readouts' shots. For a new
-    config it equals ``QsimBaseProgram.readouts_per_shot``.
+    config it equals ``QsimProgram.readouts_per_shot``.
 
     A config saved before step 10D (no ``readout`` key) gets the count of that
     time: one more for ``multiparity_readout``, whatever else is set. That is
@@ -188,8 +188,11 @@ def classify_two_parity_readouts(expt, point_idx=0, threshold=None, e_is_high_I=
     return out
 
 
-class QsimBaseProgram(MMAveragerProgram):
+class QsimProgram(MMAveragerProgram):
     """
+    The qsim template (QsimBaseProgram until step 10F; DarkBaseProgram's copy
+    of it merged in at step 10B).
+
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
     Then (optionally) swap into init_stor
     Then do whatever in the core_pulses() that you override
@@ -879,8 +882,53 @@ class QsimBaseProgram(MMAveragerProgram):
         self.sync_all(self.us2cycles(2))
 
 
-class QsimBaseExperiment(Experiment):
+class QsimRProgram(MMRAveragerProgram):
+    """RAverager counterpart of ``QsimProgram``, for hardware depth sweeps.
+
+    ``DarkBaseRProgram`` in ``dark_base`` until step 10F. The pulse-building methods below do not depend on the AveragerProgram
+    software loop, so both program types use the same implementations.
+    Concrete RAverager programs only need to define ``core_pulses`` and
+    ``update``.
     """
+
+    _pre_selection_filtering = True
+
+    retrieve_swap_parameters = QsimProgram.retrieve_swap_parameters #borrowing methods
+    _initialize_floquet_pulses = QsimProgram._initialize_floquet_pulses
+    # Two of the three manipulate-mode methods, by assignment rather than
+    # inheritance: inheriting from QsimProgram would also shadow MM_base's
+    # ``man_reset``, which is the one ``active_reset`` plays here.
+    prep_man_fock_state = QsimProgram.prep_man_fock_state
+    multi_parity_readout = QsimProgram.multi_parity_readout
+    body = QsimProgram.body #borrowing methods
+
+    def __init__(self, soccfg, cfg):
+        readout_mode(cfg.expt)  # as QsimProgram: refuse what it cannot play
+        self.cfg = AttrDict(cfg)
+        self.cfg.update(self.cfg.expt)
+        super().__init__(soccfg, self.cfg)
+
+    readouts_per_shot = QsimProgram.readouts_per_shot
+
+    def initialize(self):
+        self.MM_base_initialize()
+
+        self.swap_ds = self.cfg.device.storage._ds_floquet
+        self.retrieve_swap_parameters()
+
+        man_mode_no = self.cfg.expt.get("man_mode_no", 1)
+        self.man_mode_idx = man_mode_no - 1
+
+        self._initialize_floquet_pulses()
+
+        self.sync_all(200)
+
+
+class QsimExperiment(Experiment):
+    """
+    The one qsim sweep driver (QsimBaseExperiment until step 10F; also
+    DarkBaseExperiment, which was the same driver with another name).
+
     Sweep 1 or 2 parameters in cfg.expt
     Experimental Config:
     expt = dict(
@@ -915,7 +963,7 @@ class QsimBaseExperiment(Experiment):
         program can be:
         - A class object (the class you imported, not an instance)
         - A tuple of (module_path, class_name) strings
-        - None (the class's ``default_program``, else QsimBaseProgram)
+        - None (the class's ``default_program``, else QsimProgram)
         """
         if not prefix:
             prefix = self.__class__.__name__
@@ -925,9 +973,9 @@ class QsimBaseExperiment(Experiment):
         program = program or self.default_program
         # Store program class info as strings (pickle-safe)
         if program is None:
-            # Default to QsimBaseProgram
-            self.program_module = QsimBaseProgram.__module__
-            self.program_class = QsimBaseProgram.__name__
+            # Default to QsimProgram
+            self.program_module = QsimProgram.__module__
+            self.program_class = QsimProgram.__name__
         elif isinstance(program, tuple) and len(program) == 2:
             # Program passed as (module, class_name) tuple
             self.program_module, self.program_class = program

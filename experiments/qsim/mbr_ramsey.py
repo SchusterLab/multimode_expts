@@ -9,7 +9,7 @@ what they sweep.
 
 The bases, and what each gives:
 
-- ``QsimBaseProgram``: the M1-Sx swap parameters and Floquet waveforms
+- ``QsimProgram``: the M1-Sx swap parameters and Floquet waveforms
   (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``) and the
   qsim ``man_reset``, on top of ``MMAveragerProgram`` (reset, pulse creator,
   readout);
@@ -30,7 +30,7 @@ from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.floquet_train import FloquetProgram
-from experiments.qsim.qsim_base import QsimBaseExperiment, readout_mode
+from experiments.qsim.qsim_base import QsimExperiment, readout_mode
 
 
 class MBRRamseyProgram(FloquetProgram):
@@ -366,7 +366,7 @@ class MBRRamseyProgram(FloquetProgram):
         self.measure_wrapper()
 
 
-class MBRJobExperiment(QsimBaseExperiment):
+class MBRJobExperiment(QsimExperiment):
     """Base of the MBR job experiments: one job, a 2D sweep, raw shots kept.
 
     ``cfg.expt.swept_params`` is ``[outer, "ramsey_phase"]``: the job's own
@@ -377,6 +377,6 @@ class MBRJobExperiment(QsimBaseExperiment):
     raw ``idata``/``qdata`` per point, with ``cfg.read_num`` readouts per shot.
 
     Subclasses set ``default_program``. The sweep itself is the one driver's,
-    ``QsimBaseExperiment.acquire`` (step 10E); until then this class had its
+    ``QsimExperiment.acquire`` (step 10E); until then this class had its
     own copy of the loop.
     """

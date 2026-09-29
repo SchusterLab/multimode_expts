@@ -18,7 +18,7 @@ from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.qsim_base import (
     READOUT_MODES,
     RETIRED_READOUT_FLAGS,
-    QsimBaseProgram,
+    QsimProgram,
     readout_lane_count,
     readout_mode,
     saved_readout_mode,
@@ -41,7 +41,7 @@ def _build(station, target, **overrides):
         return golden.build(station, target, overrides)
 
 
-TEMPLATE = "experiments.qsim.qsim_base:QsimBaseProgram"
+TEMPLATE = "experiments.qsim.qsim_base:QsimProgram"
 
 
 @pytest.mark.parametrize("flag", RETIRED_READOUT_FLAGS)
@@ -69,10 +69,10 @@ def test_every_mode_plays_with_or_without_postpulse(station, mode, postpulse):
 
 
 def test_the_r_program_refuses_the_same():
-    from experiments.qsim.dark_base import DarkBaseRProgram
+    from experiments.qsim.qsim_base import QsimRProgram
     cfg = AttrDict({"expt": {"perform_wigner": False}})
     with pytest.raises(ValueError, match="replaced by cfg.expt.readout"):
-        DarkBaseRProgram(soccfg=None, cfg=cfg)
+        QsimRProgram(soccfg=None, cfg=cfg)
 
 
 @pytest.mark.parametrize("mode", ["qubit", "parity"])
@@ -123,7 +123,7 @@ def test_readouts_per_shot(mode, parity_check, active_reset):
     heralds = int(parity_check) + (_active_reset_lanes() if active_reset else 0)
     expected = heralds + (2 if mode == "multiparity" else 1)
     cfg = _cfg(**expt)
-    assert QsimBaseProgram.readouts_per_shot(cfg) == expected
+    assert QsimProgram.readouts_per_shot(cfg) == expected
     # For a new config, the saved-config reader counts the same.
     assert readout_lane_count(cfg) == expected
 

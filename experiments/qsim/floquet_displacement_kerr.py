@@ -11,7 +11,7 @@ import numpy as np
 from slab import AttrDict
 
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
-from experiments.qsim.dark_base import DarkBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 from experiments.qsim.floquet_train import FloquetProgram
 
 class FloquetDisplacementKerrProgram(FloquetProgram):
@@ -52,7 +52,7 @@ class FloquetDisplacementKerrProgram(FloquetProgram):
         self.sync_all()
 
 
-class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
+class FloquetDisplacementKerrExperiment(QsimExperiment):
     """Fit Floquet Kerr with the existing cavity-Ramsey gain-sweep analysis."""
 
     def acquire(self, progress=False, debug=False):

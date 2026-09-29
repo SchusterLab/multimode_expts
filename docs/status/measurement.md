@@ -15,9 +15,12 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   template in `QsimBaseProgram`; the class names change in 10F) and 10C (the chain
   `QsimBaseProgram` -> `FloquetProgram` -> `DarkModeProgram`; `DarkBaseProgram` is an empty
   subclass kept until 10F for the deprecated modules) and 10D (the `readout` key; the old
-  readout booleans raise; the notebooks on `guan` moved to the key) and 10E (one sweep driver:
-  `QsimBaseExperiment.acquire`, readout count from the Program). Next: 10F (the renames and
-  the consumers).
+  readout booleans raise; the notebooks on `guan` moved to the key), 10E (one sweep driver)
+  and 10F (the renames of plan section 5, on `guan`: code, tests, the `202609_qsim_migration`
+  and `guan/` notebooks, the shared `analysis_notebooks/qsim analysis.ipynb`). Next: 10G, the
+  device check in local mode (calibration notebooks, then MBR), then the merge. At the merge,
+  jonginn's and connie's notebooks move with `tools/rename_program_tree.py` and the readout
+  table (plan section 4); two jonginn names wait for jonginn (plan section 5).
 - **The `readout` key** (since 10D): `readout='qubit'` (default), `'parity'`, `'multiparity'`,
   `'wigner'`, `'slow_pi_ge'`; `postpulse` keeps its meaning (decoding, incl. f0-g1 for
   `'qubit'`). A qsim Program refuses `perform_wigner`, `parity_readout`,
@@ -64,21 +67,25 @@ How to check:
 
 ## Code map
 
-### `experiments/qsim/` (39 live modules, about 13 kloc)
+### `experiments/qsim/` (38 live modules)
+- **The stem** (steps 10B-10F, `docs/qsim/program_tree_plan.md`): one chain of Programs,
+  `QsimProgram` (`qsim_base`: the template, the readout modes, `readouts_per_shot`) ->
+  `FloquetProgram` (`floquet_train`) -> `DarkModeProgram` (`dark_mode_encoding`), plus
+  `QsimRProgram` (RAverager) in `qsim_base`. One sweep driver, `QsimExperiment` (`qsim_base`),
+  with `WignerExperiment` (`qsim_base_wigner`) and `MBRJobExperiment` on it.
 - **MBR, clean** (about 3.5 kloc; rules and patterns in `docs/qsim/mbr_redesign.md`):
   - job classes, each with its own Program: `mbr_stark_cal`, `mbr_time_trace`,
-    `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on
-    `FloquetTrain` + `QsimBaseProgram`, and `MBRJobExperiment`; no dark-mode base since 8A);
-  - the Floquet playback: `floquet_train` (shared with the dark-mode programs);
+    `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on `FloquetProgram`,
+    and `MBRJobExperiment`);
   - assembled classes: `mbr_calibration_set`, `mbr_spectrum`, `mbr_orthogonality`,
     `mbr_ham_tomo`, `mbr_disorder_ensemble`;
   - infra: `experiments/assembled_data.py` (manifest + assembled HDF5), `mbr_saved`,
     `mbr_campaign` (the campaign base, mock stations, pinned config sets, `smoke()`).
 - **Calibration support** (step 9): `multiphoton_swap` (N-photon swap sequences),
   `bare_readout_check`; `floquet_gain_chevron` fits the 2D chevron.
-- **Not MBR, split out of the god module but not cleaned** (about 9 kloc): `dark_base`,
-  `qsim_base`, `qsim_base_wigner`, `sideband_*`, `kerr`, `dark_mode_*`, `cooling`,
-  `cavity_ramsey_flux_excursion`, ...
+- **Not MBR: leaves on the stem, their insides not cleaned**: `sideband_*`, `kerr`,
+  `dark_mode_*`, `cooling`, `cavity_ramsey_flux_excursion`, ... Eight of them no notebook or
+  test uses (plan 2.4); their retirement waits for the other users.
 - `floquet_dark_mode_readout.py` (about 100 lines): only the `_MOVED_TO` re-exports that non-MBR
   notebooks still use.
 

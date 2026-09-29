@@ -135,8 +135,9 @@ TEMPLATE_OPTIONS = {
 TEMPLATE_RAISES = set()
 
 TEMPLATES = {
-    "qsim_template": f"{QSIM}.qsim_base:QsimBaseProgram",
-    "dark_template": f"{QSIM}.dark_base:DarkBaseProgram",
+    "qsim_template": f"{QSIM}.qsim_base:QsimProgram",
+    # DarkBaseProgram until step 10F: the template on the dark-mode chain.
+    "dark_template": f"{QSIM}.dark_mode_encoding:DarkModeProgram",
 }
 
 
@@ -216,10 +217,10 @@ LEAF_CASES = [Case(*row) for row in [
     # On the DarkBase template.
     ("dark_t1_wait", f"{QSIM}.dark_mode_t1:DarkT1Program",
      dict(swap_stors=SWAP_STORS, wait_length=1.0)),
-    ("dark_scramble", f"{QSIM}.mbr_spectroscopy_program:SidebandScrambleDarkProgramNewNew",
+    ("dark_scramble", f"{QSIM}.mbr_spectroscopy_program:DarkModeScrambleProgram",
      dict(FLOQUET, ro_stor=2, swap_man_dark=False, dark_swap_order=[4, 5],
           second_rel_phase=180, map_to_qubit_ge=True, init_stor=0)),
-    ("storage_swap_stark_phase", f"{QSIM}.sideband_stark_shift_cal:SidebandStarkAmplificationModifiedProgram",
+    ("storage_swap_stark_phase", f"{QSIM}.sideband_stark_shift_cal:StorageSwapStarkPhaseProgram",
      dict(stor_A=1, stor_B=2, n_pulse=3, advance_phase=5.0)),
     ("stark_amplification_newold", f"{QSIM}.sideband_stark_shift_cal:SidebandStarkAmplificationModifiedProgram_newold",
      dict(stor_A=1, stor_B=2, n_pulse=3, advance_phase=5.0)),
@@ -228,7 +229,7 @@ LEAF_CASES = [Case(*row) for row in [
     ("floquet_displacement_kerr", f"{QSIM}.floquet_displacement_kerr:FloquetDisplacementKerrProgram",
      dict(swap_stors=SWAP_STORS, displace_gain=1000, n_cycle_pair=2, ramsey_freq=0.5,
           zero_floquet_gain=False)),
-    # RAverager: the template body on a hardware sweep (DarkBaseRProgram has
+    # RAverager: the template body on a hardware sweep (QsimRProgram has
     # no core_pulses of its own, so its leaf stands for it).
     ("multiparity_chevron_r", f"{QSIM}.dark_mode_multiparity_chevron:ManStorMultiparityChevronRProgram",
      dict(start=870.0, step=0.1, expts=3, swap_stor=2, storage_pulse_name="M1-S2",

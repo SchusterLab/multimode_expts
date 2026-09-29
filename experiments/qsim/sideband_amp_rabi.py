@@ -5,12 +5,12 @@ from qick import QickConfig
 
 import fitting.fitting as fitter
 from experiments.dataset import StorageManSwapDataset
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.utils import post_select_raverager_data
 from fitting.fit_utils import guess_freq
 
 
-class SidebandAmpRabiProgram(QsimBaseProgram):
+class SidebandAmpRabiProgram(QsimProgram):
     """
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
     Then do a rabi on the sideband
@@ -28,7 +28,7 @@ class SidebandAmpRabiProgram(QsimBaseProgram):
         self.sync_all(self.us2cycles(0.1))
 
 
-class SidebandAmpRabiExperiment(QsimBaseExperiment):
+class SidebandAmpRabiExperiment(QsimExperiment):
     """
     Sweep amplitude vs detuning
     Experimental Config:

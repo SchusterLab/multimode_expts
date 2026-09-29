@@ -3,7 +3,7 @@ import os
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
-from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 from experiments.MM_base import MMAveragerProgram
 from slab import AttrDict, Experiment
 from fitting.wigner import WignerAnalysis
@@ -18,8 +18,10 @@ from experiments.qsim.utils import (
 )
 from slab.datamanagement import AttrDict
 
-class QsimWignerBaseExperiment(QsimBaseExperiment):
+class WignerExperiment(QsimExperiment):
     """
+    Named QsimWignerBaseExperiment until step 10F.
+
     Sweep 1 or 2 parameters in cfg.expt
     Experimental Config:
     expt = dict(

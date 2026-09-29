@@ -3,10 +3,10 @@
 import numpy as np
 
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 
 
-class FloquetGainChevronProgram(QsimBaseProgram):
+class FloquetGainChevronProgram(QsimProgram):
     """
     Apply repeated Floquet swap pulses to expt.init_stor.
 
@@ -29,7 +29,7 @@ class FloquetGainChevronProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class FloquetGainChevronExperiment(QsimBaseExperiment):
+class FloquetGainChevronExperiment(QsimExperiment):
     """Floquet swap gain chevron.
 
     A 2D sweep (``swept_params = ['detune', 'gain']``) is fitted with

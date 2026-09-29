@@ -29,7 +29,7 @@ per-cycle step in Python, then advances the ledger by ``cycles * step`` at
 the end, which is only equal to the unrolled result because the step is
 constant -- which is why it refuses ``palindrome_scramble``.
 
-``FloquetProgram`` is ``QsimBaseProgram`` plus these methods. The base gives
+``FloquetProgram`` is ``QsimProgram`` plus these methods. The base gives
 what they need: the swap parameters and pulse arguments (``m1s_kwargs``,
 ``m1s_waveform_mode``, ``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``) and
 ``swap_ds``. It was the ``FloquetTrain`` mixin until step 10C
@@ -48,10 +48,10 @@ from experiments.qsim.floquet_register_bank import (
     _play_preloaded_floquet_register_bank_entry,
     _prepare_preloaded_floquet_register_bank,
 )
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
 
 
-class FloquetProgram(QsimBaseProgram):
+class FloquetProgram(QsimProgram):
     """The qsim template with the Floquet playback: see the module docstring."""
 
     def calculate_floquet_cycle_us(self, swap_stors=None):

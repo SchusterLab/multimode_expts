@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 from experiments.qsim.dark_mode_encoding import DarkModeProgram
 
 class DarkT1Program(DarkModeProgram):
@@ -41,7 +41,7 @@ class DarkT1Program(DarkModeProgram):
 
         self.sync_all()
 
-class DarkT1Experiment(QsimBaseExperiment):
+class DarkT1Experiment(QsimExperiment):
     def analyze(self, data=None, **kwargs):
         if data is None:
             data=self.data

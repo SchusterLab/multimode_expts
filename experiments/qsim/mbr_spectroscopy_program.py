@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""SidebandScrambleDarkProgramNewNew: load a dark mode, scramble, read it back.
+"""DarkModeScrambleProgram: load a dark mode, scramble, read it back.
+
+Named ``SidebandScrambleDarkProgramNewNew`` until step 10F.
 
 Load a chosen collective mode, play the scramble, read the mode back. The
 dark-mode load/read and the phase-tracked scramble both come from
@@ -14,7 +16,7 @@ The MBR programs used to subclass it; they now live in ``mbr_ramsey.py``.
 from experiments.qsim.dark_mode_encoding import DarkModeProgram
 
 
-class SidebandScrambleDarkProgramNewNew(DarkModeProgram):
+class DarkModeScrambleProgram(DarkModeProgram):
     # Dark load, scramble, and readout share one mutable phase_offsets list.
 
     def _prepare_selected_dark_mode(

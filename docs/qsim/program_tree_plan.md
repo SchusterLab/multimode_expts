@@ -1,6 +1,7 @@
 # qsim Program and Experiment tree: plan (steps 10A-10G)
 
-Status: approved by guan 2026-09-29 (decisions 0.7-0.11); 10A-10E done 2026-09-29. It continues
+Status: approved by guan 2026-09-29 (decisions 0.7-0.11); 10A-10F done on `guan` 2026-09-29
+(the consumers of other users move at the merge). It continues
 `mbr_step9_plan.md`; it uses `mbr_redesign.md` for the rules and patterns.
 
 ## 0. Decisions (guan, 2026-09-29)
@@ -191,7 +192,7 @@ Rules:
    other than the default.
 7. New HDF5 files record `readout`.
 
-## 5. Names (proposed; to confirm)
+## 5. Names (approved, decision 0.7; done in 10F)
 
 Stem and infrastructure:
 
@@ -248,7 +249,11 @@ Leaves with names that say what they do keep them (`FloquetChevronProgram`, `Dar
   move in 10F.
 - `jonginn/`, `connie/`: their latest versions are on `main`. Migrate them on the merge
   result, in one commit, from the rename table and the `readout` table; code cells only (no
-  outputs). Tell them before; ask them to restart their kernels after.
+  outputs). The renames: `tools/rename_program_tree.py --write <paths>`. The readout flags by
+  hand (their value decides: `=False` lines go; `parity_readout=True` -> `readout='parity'`;
+  `multiparity_readout=True` -> `readout='multiparity'`; `perform_wigner=True` goes in a
+  `WignerExperiment` config, else `readout='wigner'`; `slow_pi_ge_readout=True` ->
+  `readout='slow_pi_ge'`). Tell them before; ask them to restart their kernels after.
 - Before the merge: no queued jobs with old class names (the worker loads classes at run time).
 
 ## 7. Differences to decide
