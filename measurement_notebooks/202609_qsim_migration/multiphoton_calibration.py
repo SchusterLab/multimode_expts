@@ -537,7 +537,7 @@ station.update_all_station_snapshots()
 #
 # Choose one storage mode and one photon number. A missing @N row is copied from the legacy N=1 row. For an existing row, list only the fields to reset; leave the tuple empty to preserve it.
 
-# %%
+# %% tags=["hardware-skip"]
 import importlib
 
 from experiments.single_qubit import error_amplification
@@ -598,7 +598,7 @@ print('pi length:', station.ds_storage.get_pi(multiphoton_swap_pulse_name), 'us'
 #
 # so only an exact return to \( |g,N\rangle \) is marked bright. Lower M1 occupations remain dark instead of being mistaken for a successful return.
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_sequences = swap_pulse_sequences(station, multiphoton_swap_photon_number)
 print('preparation:', *multiphoton_swap_sequences['prep_descriptions'], sep='\n  ')
 print('endpoint decoder:', *multiphoton_swap_sequences['endpoint_decoder_descriptions'], sep='\n  ')
@@ -615,7 +615,7 @@ multiphoton_swap_endpoint_decoder = multiphoton_swap_sequences['endpoint_decoder
 #
 # This is the same SidebandGeneralExperiment and SweepRunner flow used by the ordinary M1-storage calibration. The length sweep includes a true zero-pulse reference.
 
-# %%
+# %% tags=["hardware-skip"]
 chevron_frequency_span_MHz = 0.40
 chevron_frequency_points = RUN.pick(25, smoke=7)
 chevron_length_points = RUN.pick(41, smoke=21)
@@ -660,7 +660,7 @@ multiphoton_swap_chevron_runner = SweepRunner(
 )
 
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_chevron = multiphoton_swap_chevron_runner.execute(
     sweep_start=chevron_center_MHz - chevron_frequency_span_MHz / 2,
     sweep_stop=chevron_center_MHz + chevron_frequency_span_MHz / 2,
@@ -673,7 +673,7 @@ multiphoton_swap_chevron = multiphoton_swap_chevron_runner.execute(
 print('jobs:', multiphoton_swap_chevron_runner.last_job_ids)
 
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_chevron.analyze(station=station)
 multiphoton_swap_chevron_analysis = multiphoton_swap_chevron.chevron_analysis
 multiphoton_swap_chevron_analysis.display_results(title=multiphoton_swap_chevron.fname)
@@ -687,7 +687,7 @@ print('Inspect the plot before running the accept cell.')
 #
 # Edit the two assignments if the fit selected the wrong branch. This is the first cell that changes the in-memory row.
 
-# %%
+# %% tags=["hardware-skip"]
 selected_frequency_MHz = chevron_frequency_candidate_MHz
 selected_pi_us = chevron_pi_candidate_us
 
@@ -711,7 +711,7 @@ print('accepted Chevron values for', multiphoton_swap_pulse_name)
 # cells 42, 45, 48 and 51 -- are the same `runner.execute` with different
 # settings; `show_return_error` scores each (`qsim_cal.return_error`).
 
-# %%
+# %% tags=["hardware-skip"]
 storage_wait_cycles = int(station.soccfg.us2cycles(multiphoton_swap_storage_wait_us))
 
 multiphoton_swap_error_amp_defaults = AttrDict(dict(
@@ -793,7 +793,7 @@ multiphoton_swap_error_amp_runner = CharacterizationRunner(
 # %% [markdown]
 # ### 4-1. Coarse frequency
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_frequency_center_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
@@ -815,11 +815,11 @@ multiphoton_swap_coarse_frequency = multiphoton_swap_error_amp_runner.execute(
     display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_frequency_candidate_MHz = show_return_error(
     multiphoton_swap_coarse_frequency, xlabel='frequency (MHz)', title='coarse frequency')
 
-# %%
+# %% tags=["hardware-skip"]
 selected_frequency_MHz = coarse_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
 station.ds_storage.update_precision(
@@ -834,7 +834,7 @@ print('accepted coarse frequency:', selected_frequency_MHz)
 #
 # Set an even half-span and step. The last point is capped at 30000 because the flat-top program also uses a half-gain register.
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_gain_center = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
 
 multiphoton_swap_coarse_gain = multiphoton_swap_error_amp_runner.execute(
@@ -852,11 +852,11 @@ multiphoton_swap_coarse_gain = multiphoton_swap_error_amp_runner.execute(
     display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_gain_candidate = show_return_error(
     multiphoton_swap_coarse_gain, xlabel='gain', title='coarse gain', as_int=True)
 
-# %%
+# %% tags=["hardware-skip"]
 selected_gain = int(np.clip(coarse_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
 print('accepted coarse gain:', selected_gain)
@@ -941,7 +941,7 @@ print('accepted fine frequency:', selected_frequency_MHz)
 #
 # The odd check compares zero and one swap: the endpoint marker should change from bright to dark. The even check compares zero and two swaps: the endpoint marker should return to the same IQ point. Together they distinguish coherent transfer from simple photon loss.
 
-# %%
+# %% tags=["hardware-skip"]
 validation_frequency_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
@@ -974,7 +974,7 @@ multiphoton_swap_odd_validation = odd_validation_runner.execute(
     postprocess=False, show=False, log=True
 )
 
-# %%
+# %% tags=["hardware-skip"]
 def show_iq_endpoints(expt, labels, title):
     """IQ of a two-point validation; -> (z, |z[1] - z[0]|)."""
     z = np.asarray(expt.data['avgi']).reshape(-1) + 1j * np.asarray(expt.data['avgq']).reshape(-1)
@@ -996,7 +996,7 @@ odd_z, odd_separation = show_iq_endpoints(
 )
 print('zero-to-one-swap IQ separation:', odd_separation)
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
     start=validation_frequency_MHz,
@@ -1011,7 +1011,7 @@ multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     log=True,
 )
 
-# %%
+# %% tags=["hardware-skip"]
 even_z, even_error = show_iq_endpoints(
     multiphoton_swap_even_validation,
     labels=('zero swaps', 'two swaps'),
@@ -1024,7 +1024,7 @@ print('zero-to-two-swap IQ error:', even_error)
 #
 # Run this only after inspecting both validation plots. The production flag stays False until it is changed explicitly in measurement_config_default_dict. After enabling it, rerun the exact-path phase calibration.
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_snapshot_id = station.snapshot_man1_storage_swap(update_main=False)
 print('saved non-main ds_storage snapshot:', multiphoton_swap_snapshot_id)
 print('production flag:', measurement_config_default_dict['use_multiphoton_swap'])

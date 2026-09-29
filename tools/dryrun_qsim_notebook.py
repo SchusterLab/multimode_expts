@@ -22,7 +22,9 @@ What mock data cannot do, and what this script does about it:
 - The tomography math needs a well-conditioned M_0; mock data gives zeros,
   so ``mbr_tomography.py`` stops at ``analyze_shared_step``. Expected.
 
-Cells tagged ``suite-skip`` are skipped, as in the suite. Mock job files go
+Cells tagged ``suite-skip`` are skipped, as in the suite. Cells tagged
+``hardware-skip`` (known not to work on the device) are run: they still have
+to compile. Mock job files go
 to the mock station's data path (``C:/experiments/mock_data``). The mock
 station never logs to the vault.
 """

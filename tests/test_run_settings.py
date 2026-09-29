@@ -104,15 +104,18 @@ b = 2
 
 # %% tags=["raises-exception"]
 c = 3
+
+# %% tags=["hardware-skip"]
+d = 4
 '''
 
 
-def test_driver_drops_suite_skip_cells(tmp_path):
+def test_driver_drops_suite_skip_and_hardware_skip_cells(tmp_path):
     path = tmp_path / "nb.py"
     path.write_text(NOTEBOOK)
     nb, dropped = load_notebook(path, SKIPPED_TAGS)
     assert [c.source for c in nb.cells] == ["a = 1", "c = 3"]
-    assert dropped == 1
+    assert dropped == 2
 
 
 def test_every_suite_notebook_parses_and_keeps_its_station_cell():
@@ -127,7 +130,8 @@ def test_every_suite_notebook_parses_and_keeps_its_station_cell():
         raw = jupytext.read(path)
         for cell in raw.cells:
             for tag in cell.metadata.get("tags", []):
-                assert tag in {"suite-skip", "raises-exception"}, (path.name, tag)
+                assert tag in {"suite-skip", "hardware-skip", "raises-exception"}, (
+                    path.name, tag)
 
 
 def test_expected_failures_split_raised_from_clean():

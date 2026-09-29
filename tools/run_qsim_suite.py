@@ -23,6 +23,10 @@ Cell tags (jupytext: ``# %% tags=["suite-skip"]``):
 
 - ``suite-skip``: never run by the suite. Alternatives to another cell ("run
   this instead"), and cells that need a person's judgement first.
+- ``hardware-skip``: known not to work on the device, so not run by the
+  suite; the mock dry run (``tools/dryrun_qsim_notebook.py``) and the
+  notebook ASM pin still run it. The list is
+  ``docs/job_list_and_nb_labeling/Notebook_Program_Labeling.md``.
 - ``raises-exception`` (nbclient's own tag) marks a known failure: the cell
   may raise and the run continues. The summary counts these as xfail, and a
   tagged cell that ran clean as xpass, so a fixed bug shows up.
@@ -58,7 +62,8 @@ SUITES = {
             "mbr",
             "mbr_tomography",
             "mbr_disorder",
-            "floquet_displacement_kerr",
+            # floquet_displacement_kerr: not expected to work on the device
+            # (Notebook_Program_Labeling.md), so not in the suite.
         )
     ],
     "analysis": [
@@ -71,7 +76,7 @@ MAIN_WORKER_LOCK_VAR = "MULTIMODE_MAIN_WORKER_LOCK"
 DEFAULT_MAIN_WORKER_LOCK = "C:/python/multimode_expts/job_server/worker.lock"
 
 
-SKIPPED_TAGS = {"suite-skip"}
+SKIPPED_TAGS = {"suite-skip", "hardware-skip"}
 
 
 def load_notebook(path, skip):
