@@ -15,6 +15,7 @@ from fitting.qsim.poles import fft_peaks, joint_pencil, per_row_reconciled
 from fitting.qsim.poles.bench_io import load_scores, save_results
 from fitting.qsim.poles.benchmarks import FITTERS, run_ideal_bench, run_nonideal_bench
 from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_levels
+from fitting.qsim.poles.offsets import calibration_sigma, model_offset_sigma
 from fitting.qsim.poles.rank import RankRule
 from fitting.qsim.poles.registry import load_registry, manifest_path
 from fitting.qsim.poles.statistics import small_gap_ratio_fraction
@@ -194,3 +195,22 @@ def test_parallel_fits_agree_with_serial_fits():
         assert a.fitter == b.fitter
         np.testing.assert_allclose(a.found_MHz, b.found_MHz, atol=1e-9)
         np.testing.assert_array_equal(a.level_resolved, b.level_resolved)
+
+
+# --- Row offsets (spec 6) -------------------------------------------------
+
+def test_calibration_sigma_is_the_phase_slope_error_as_a_frequency():
+    # 0.36 deg per 1 us cycle is 1e-3 of a turn per us: 1 kHz.
+    np.testing.assert_allclose(calibration_sigma([0.36, -0.72], cycle_us=1.), [1e-3, 2e-3])
+
+
+def test_model_offsets_recover_injected_row_offsets():
+    point = sample_phase_diagram([-1.22], [5.8], 1)[0]
+    hardware = Hardware(coupling_MHz=8.615e-3, dt_us=1.4509, samples=300, partial_rows=10)
+    case = synthetic_returns(point, hardware, Nonideal(snr=100, decay_per_us=0.01, offset_sigma_MHz=1e-3, seed=3))
+    injected = np.random.default_rng(3).normal(0, 1e-3, size=10)  # add_nonidealities' first draw
+    clean = synthetic_returns(point, hardware)
+    model = clean.A  # the model's returns on the same rows, no decay, no offsets
+    sigma, offsets = model_offset_sigma(case.A, model, case.time_us)
+    np.testing.assert_allclose(offsets, injected, atol=5e-5)
+    assert sigma == pytest.approx(np.std(injected), rel=0.05)

@@ -168,3 +168,32 @@ synthetic data at the August point (g 8.615 kHz, K/g -1.22, delta/g 5.80, 300 sa
 - At SNR 100 B still loses small gaps on synthetic August data (P(r < 0.25) 0.12 vs 0.22; at
   300, 0.16): the real agreement (0.15 vs 0.18) may be partly luck, with merged pairs and
   false poles cancelling.
+
+## Later the same day: the offset sigma (task 2 of 3)
+
+`fitting/qsim/poles/offsets.py` (`calibration_sigma`, `model_offset_sigma`; tests recover
+injected offsets to 0.05 kHz) and `analysis_notebooks/pole_finding/sigma.py` (36 s):
+
+| | floor (Stark slope errors) | upper bound (per-row offset vs model) |
+|---|---|---|
+| August | median 0.50 kHz, max 0.79 (0.22-0.34 bin) | N3 0.59 kHz (0.26 bin); disorder 1.06 kHz (0.46 bin) |
+| 7-1 | median 0.89 kHz, max 2.1 (0.07-0.18 bin) | 2.2 kHz; 71 of 184 rows match no offset in +-5 kHz (large model misfit) |
+
+Floor and upper bound are close on the August sets, so sigma is about 0.5-1 kHz there:
+0.2-0.5 of the August bin.
+
+What it costs B (synthetic, August conditions, SNR 100, 20 draws x 2 seeds):
+
+| sigma | resolved (of 35) | false poles | P(r < 0.25) found / true |
+|---|---|---|---|
+| 0 | 24.8 | 3.3 | 0.12 / 0.22 |
+| 0.5 kHz | 16.7 | 8.8 | 0.15 / 0.22 |
+| 1.06 kHz | 7.3 | 20.0 | 0.19 / 0.22 |
+
+The last row is the pattern of the real august_disorder fits (about 32 poles, about 11
+matched, about 20 false, P(r < 0.25) 0.15 vs 0.18). **So the real agreement of P(r < 0.25) is
+most likely made by the row offsets**: their false poles add small gaps and cancel the
+merging. It is not evidence that the statistic is measured right. Consequences: fitter C (one
+offset per row group, with the calibration prior; spec 4.2) is needed; and the 1-2 kHz
+splitting of august_N3's degenerate multiplets may be row offsets rather than an asymmetric
+device (a hypothesis for C to test).

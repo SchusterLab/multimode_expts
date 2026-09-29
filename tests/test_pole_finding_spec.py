@@ -20,7 +20,6 @@ LATER_PHASES = {
     "refine_with_group_offsets", "frequency_errors",          # fitter C, phase 3
     "row_poles", "cluster_row_poles",                         # fitter D, phase 3
     "run_self_consistency_bench", "run_model_bench",          # benchmarks 3, 4, phase 2
-    "calibration_sigma", "model_offset_sigma",                # sigma estimates, phase 2
 }
 
 
