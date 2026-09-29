@@ -77,6 +77,43 @@ Found:
   though its window is only 200 us: its levels are 3.4 times farther apart in kHz (g 29.2 vs
   8.6 kHz) at a similar ratio of disorder to g.
 
-## F on a subset
+## F on a subset (guan: a subset first)
 
-(to follow in this entry: draw 0, 10 rows first)
+Draw 0, 10 rows, the 8 conditions; F starts from C's cached fit. Gaps found of the resolvable
+(real bound), false poles, median |gap error| / bound; F's time is its own part only (C's
+comes on top).
+
+| point | T2 (us) | offset (kHz) | resolvable | C found | F found | C / F false | C / F median z | F time (s) |
+|---|---|---|---|---|---|---|---|---|
+| August | 100 | 0.5 | 22 | 8 | 8 | 4 / 4 | 1.4 / 0.4 | 158 |
+| August | 100 | 1 | 20 | 6 | 8 | 5 / 4 | 0.7 / 0.6 | 242 |
+| August | 200 | 0.5 | 27 | 16 | 24 | 2 / 0 | 1.3 / 0.5 | 106 |
+| August | 200 | 1 | 25 | 14 | 16 | 4 / 3 | 0.8 / 0.5 | 91 |
+| September | 100 | 0.5 | 30 | 21 | 24 | 1 / 1 | 3.0 / 1.6 | 49 |
+| September | 100 | 1 | 30 | 21 | 24 | 1 / 1 | 2.7 / 1.4 | 46 |
+| September | 200 | 0.5 | 30 | 24 | 28 | 1 / 1 | 1.9 / 0.7 | 39 |
+| September | 200 | 1 | 30 | 26 | 28 | 1 / 1 | 2.0 / 0.8 | 17 |
+
+Found:
+
+- **F is better than C in every case, never worse:** 0-8 more gaps found (mean +3.5), false
+  poles equal or fewer, and the gap errors 2-3 times smaller (at the bound or under it; the
+  real-amplitude fit uses what the bound assumes).
+- **Where the data are hardest F does not help:** August T2 100 us finds 8 of 20-22 resolvable
+  gaps for both; F adds only 2 poles to C's 20. A search that starts from C's poles and adds one
+  pole at a time does not recover a spectrum of which C merged 15 levels. This is the case for
+  the global ideas (T1 Hamiltonian fit, T3 sparse fit).
+- One draw only; the full set for F waits (several hours serially; guan chose the subset).
+
+The run was cut once by a blue screen of pippin (15:38, bugcheck 0x3B, c000001d: an illegal
+instruction in kernel mode; dump C:\Windows\MEMORY.DMP). The fit caches survived (each fit is
+written when done); the crash zeroed the qick metadata files that pixi was writing in this
+worktree's environment (every `pixi run` then panicked); fixed by deleting
+`qick-0.2.291.dist-info` and the environment fingerprint, then `pixi install`.
+
+## Next
+
+- T0 is done by its plan's test (C and F scored on the set; F on one draw). The rest of F on the
+  set when pippin is free for hours (`tools/pole_fixed_set.py fit F`, resumes).
+- T1 (Hamiltonian fit) and T3 (sparse fit) are the ones the hard case asks for; T5 (speed)
+  makes the full F run and the others' benchmarks cheaper.

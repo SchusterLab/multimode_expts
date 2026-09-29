@@ -31,10 +31,17 @@ are in `docs/STATUS.md`.
   amplitudes; T2 dominates; the present window (about 2 T2) is right. Fitter F (pursuit with
   real, non-negative amplitudes) finds 1-2 more levels than C on synthetic August data; row
   alignment by rank does no better than C, and even with the true offsets the pencil resolves
-  only 22-33 of 35. **Next: the exploration plan `docs/qsim/pole_finding_explore.md`**: T0 (a gap
-  score and a fixed synthetic set) first, then in parallel T1 Hamiltonian fit, T2 the complete
-  basis' weight structure, T3 a convex sparse fit, T4 convert the September complete-basis
-  disorder data (9 x 35 occupations), T5 speed. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  only 22-33 of 35. **The exploration plan `docs/qsim/pole_finding_explore.md`: T0 is done**
+  (`gap_score.py`, `fixed_set.py`, `tools/pole_fixed_set.py`, notebook `gap_score.py`; log
+  `docs/log/2026-09-29_pole-finding-t0.md`): 80 synthetic cases (August point; September point
+  on its recorded grid, timing recovered: dt 0.4278 us, 468 samples, g 29.217 kHz) with
+  Cramér-Rao gap bounds, C fitted on all, F on draw 0 / 10 rows. C misses levels (August T2 100
+  us, 10 rows: 6-7 of 26 resolvable gaps) and biases P(r < 0.25) low (August 0.01-0.10 vs
+  0.184); what it finds is near the bound. F beats C everywhere (mean +3.5 gaps, errors 2-3x
+  smaller) but not in the hardest case. **Next:** in parallel T1 Hamiltonian fit, T2 the
+  complete basis' weight structure, T3 a convex sparse fit, T4 convert the September
+  complete-basis disorder data (9 x 35 occupations; the timing route is in the T0 log), T5
+  speed; the rest of F on the set when pippin is free for hours. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
