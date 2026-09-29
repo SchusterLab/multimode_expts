@@ -7,10 +7,13 @@ the start of every session.
 
 ## Start here: current state and paper trail
 
-- **Read `docs/STATUS.md` first.** It says where things stand now, what is next, and
-  which docs are current. Read `docs/log/` only when you need the history.
-- At the end of a work session that changes the state, **overwrite** `docs/STATUS.md`
-  (update its date) and **add** one `docs/log/YYYY-MM-DD_<topic>.md`: what was done,
+- **Read `docs/STATUS.md` first.** It lists the themes, their branches and worktrees, and
+  the cross-theme items. Then read the status file of your theme under `docs/status/`: where
+  things stand, what is next, which docs are current. Read `docs/log/` only when you need the
+  history.
+- At the end of a work session that changes the state, **overwrite** the status file of your
+  theme (update its date; change `docs/STATUS.md` only for cross-theme items) and **add** one
+  `docs/log/YYYY-MM-DD_<topic>.md`: what was done,
   decisions and who made them, what was found. Do not edit a log entry after its day;
   write a new one. A newer entry wins over an older one.
 - Design specs (`docs/qsim/*.md` etc.) start with a `Status:` line. When one is
