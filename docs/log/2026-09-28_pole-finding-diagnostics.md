@@ -257,3 +257,29 @@ amplitudes, in-band residual / noise: synthetic (truly real) 0.61-0.70 / 0.84-1.
 amplitude phases (|c|-weighted) are 18-30 deg on synthetic (true 0) and 10-26 deg on the real
 sets: fitted noise, no sign of a phase-frame error. **So realness holds on the August data, as
 far as this test sees.**
+
+## Next day (early): fitter F, first run
+
+guan: nothing here is fixed; an exploration, change what the new facts say. So a new fitter,
+not C plus a step: F (`pursuit.py`, spec 4.7): C's start, then poles added where one more
+real, non-negative pole lowers chi^2 most (one FFT per row) and kept if chi^2 drops by at least
+`add_chi2`, dropped if they cost less than `drop_chi2`; chi^2 in absolute units from the noise
+measured out of band (`row_noise`, moved to `noise.py`).
+
+Synthetic August point (the 4 draws of the real-amplitude test), mean per draw, 35 levels:
+
+| fitter | poles | found | false poles |
+|---|---|---|---|
+| C | 30.0 | 26.5 | 5.0 |
+| F, thresholds 9 | 36.8 | 28.3 | 10.0 |
+| F, thresholds 25 | 32.8 | 28.3 | 6.0 |
+| F, thresholds 64 | 30.5 | 27.3 | 5.3 |
+
+F (25) finds 1.8 more levels than C for about one more false pole (draw 0: 24 -> 29; draw 3:
+26 -> 26). 2-7 min per fit (C's start is most of it). Short of the real bound (23 / 33 / 29 / 33
+resolvable), but the comparison is not like with like: most "false" poles are near misses. On
+draw 3, 11 of C's 12 unmatched poles are 1-2.5 match tolerances from a level (0.3-1.4 kHz).
+"Found" asks for the absolute position within 0.3-0.57 kHz, while with free offsets a level held
+by a few rows is only fixed to about 0.4 kHz absolute (its CR error); the bound, like the level
+statistics, is about the gaps. The score should be too: next, score the gaps (and P(r < 0.25))
+rather than absolute positions.
