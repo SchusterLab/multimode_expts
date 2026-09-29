@@ -24,7 +24,9 @@ Rules:
 
 ## Cross-theme items
 
-- **Hardware:** the measurement suite has not run on the device since the redesign.
+- **Hardware:** first device run since the redesign on 2026-09-28 (guan, local mode): no errors,
+  data not meaningful; the calibration steps need a manual check. A refactor of the qsim
+  Program/Experiment tree comes before the merge to `main` (`docs/status/measurement.md`).
 - **Physics audit** (details in `docs/status/qsim_numerics.md`): the numerical baselines are
   `xfail(strict=False)`.
 

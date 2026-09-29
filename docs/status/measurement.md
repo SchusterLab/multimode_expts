@@ -8,8 +8,18 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
-- **Validate and merge `guan` to `main`.** The measurement suite has not run on the device
-  since the redesign (`--suite measurement --hardware`).
+- **The Program and Experiment tree refactor, before the merge** (`docs/qsim/program_tree_plan.md`,
+  steps 10A-10G; approved by guan 2026-09-29). Decision (guan, 2026-09-29): do it on `guan`
+  first, so the other users restart their kernels only once. 10A (the nets) is done: the
+  program golden, the acquire golden, and the displacement-Kerr notebook in the notebook
+  golden. Next: 10B (merge the two templates into `QsimProgram`); the expected golden diff is
+  in the plan, 7.1.
+- **Analysis theme:** `tests/test_matrix_pencil_regression.py` fails 3 cases on `guan`
+  (tolerance 1e-12; details in `docs/log/2026-09-29_program-tree-plan.md`).
+- **Device:** a first run on the device on 2026-09-28 (guan, local mode) had no errors, but the
+  data was not meaningful: the calibration steps need a manual check. After 10A-10F, run the
+  calibration notebooks and then the MBR notebooks on the device (10G); then merge `guan` to
+  `main`.
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
@@ -36,11 +46,11 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 | meas `dormant/` | moved-out or old code; loads, not maintained | none |
 
 How to check:
-- `pixi run pytest` (about 1300 tests);
+- `pixi run pytest` (about 1500 tests);
 - `pixi run python tools/dryrun_qsim_notebook.py <measurement notebook> [--keep-going]` (mock
   station; `--keep-going` lists every failing cell);
-- the measurement suite (`--suite measurement --hardware`) needs the real device; the redesign
-  has not run it.
+- the measurement suite (`--suite measurement --hardware`) needs the real device; first run
+  2026-09-28 (see "What is next").
 
 ## Code map
 
@@ -80,6 +90,7 @@ old versions of ported helpers; older retired code.
 
 | Doc | Status |
 |---|---|
+| `docs/qsim/program_tree_plan.md` | plan for steps 10A-10G (qsim Program/Experiment tree, `readout` key); approved, 10A next |
 | `docs/qsim/mbr_redesign.md` | current spec for the MBR classes (steps 1-7 done; step 8 in its own plan) |
 | `docs/qsim/mbr_step7_plan.md` | step 7 plan and record (done); its section 7 questions are open |
 | `docs/qsim/mbr_step8_plan.md` | step 8 plan and record (done) |
