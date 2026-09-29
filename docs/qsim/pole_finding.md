@@ -1,6 +1,6 @@
 # Pole finding for MBR spectra: method and benchmark
 
-Status: draft, 2026-09-28; phases 1 and 2 implemented (`fitting/qsim/poles/`); no fitter chosen: under realistic row offsets (section 6) B needs C, and D is a candidate. Replaces nothing yet. When a fitter is chosen, this file
+Status: draft, 2026-09-28; phases 1 and 2 implemented (`fitting/qsim/poles/`); C and D sketched; C is the lead candidate (removes the row-offset loss, section 6); not yet chosen. Replaces nothing yet. When a fitter is chosen, this file
 becomes the spec of `fitting/qsim/poles/`, and `fitting/qsim/matrix_pencil.py` (fitter A) is
 retired. History and reasons: `docs/log/2026-09-27_matrix-pencil.md`.
 

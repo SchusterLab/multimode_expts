@@ -247,3 +247,41 @@ padding" and "B is the lead fitter" above**: without offsets B equals A at 50-10
 with realistic offsets B needs its offset correction (fitter C), and a per-row fitter without
 A's defects (fitter D) is a real candidate again. Next session: C and D against A under
 sigma = 0.5-1 kHz.
+
+## Later the same day: fitters C and D, sketched
+
+guan: sketch C and D now. `fitting/qsim/poles/joint_refined.py` (C: B, then nonlinear least
+squares over E, gamma and one offset per row group with a Gaussian prior of width
+sigma_cal = 0.5 kHz, amplitudes by variable projection; two pencil-then-refine rounds, the
+second on offset-corrected rows) and `per_row_clustered.py` (D: pencil and MDL rank per row,
+row poles clustered within 0.5 bin, one per row per cluster).
+
+Synthetic August conditions (SNR 100, 3 draws only), levels resolved of 35 / false poles:
+
+| sigma | A | B | C | D |
+|---|---|---|---|---|
+| 0 | 23.7 / 5.7 | 25.7 / 2.3 | 26.3 / 2.7 | 20.3 / 12.0 |
+| 0.5 kHz | 20.7 / 9.0 | 12.0 / 12.0 | 26.3 / 3.7 | 14.7 / 16.3 |
+| 1.06 kHz | 8.7 / 19.7 | 6.3 / 21.3 | 25.7 / 3.7 | 6.0 / 28.7 |
+
+C removes the offset loss (for offsets of the form it assumes: one constant per row). D as
+sketched is worse than A (false poles). Known limit of C (strict xfail test): with few rows
+the pencil splits each level into one pole per offset row, and the split absorbs the offsets.
+
+Real August sets (21 min, almost all C):
+
+- august_N3: matched 9 of 10 (A 8, B 6), multiplet error 0.16 (A 0.42, B 0.28), no pole far
+  from a level; C finds the weight-1 level at 5.7 kHz (0.81) that A and B miss. The 6-fold
+  multiplets stay split by about 1.2 kHz and the 10-fold by about 1 kHz after the offsets are
+  fitted: **the splitting is partly real** (an asymmetric device), not only row offsets.
+- august_disorder: matched 12 (A 12, B 11; random 4.7); P(r < 0.25) **0.09** (B 0.15, model
+  0.18). With the offsets fitted, the false poles that inflated B's value are gone; what is
+  left is the merging loss (C on synthetic data: about 0.13 vs 0.21). So B's 0.15 was
+  inflated, and about 0.09 is the honest value on this data set.
+- C's residual (0.58-0.69) is not comparable: `fit_residual` models the rows without C's
+  offsets. To fix: return the offsets with the fit.
+
+**C is now the lead candidate.** To do: an analytic Jacobian (C takes 7-33 s per fit on
+synthetic data, minutes on august_N3); return the offsets (residual, benchmark 3); the
+few-rows limit; then C on the full benchmark 2 and the new registry entries. D needs
+rework or can be dropped.

@@ -8,20 +8,18 @@ if you need the history.
 ## What is next
 
 - **Pole finding** (guan; on pippin, `C:\python\multimode_expts_guan`): phases 1 and 2 of
-  `docs/qsim/pole_finding.md` are done (`fitting/qsim/poles/`; notebooks in
-  `analysis_notebooks/pole_finding/`: `report.py` via `pixi run pole-report`, `first_look.py`,
-  `tune_b.py`, `sigma.py`, `real_benchmarks.py`). Without row offsets B (joint pencil, MDL,
-  L = 2N/3) equals A at 50-100x the speed; with realistic offsets (sigma 0.5 kHz) A resolves more
-  (22.9 vs 16.7 of 35 on synthetic August data), so no fitter is chosen yet. The limit is the data: the 7-1 window loses the small gaps
-  for every fitter, and on the August sets the row offsets (sigma 0.5-1 kHz) turn merged pairs
-  into false poles, so P(r < 0.25) looks right for the wrong reason; benchmark 3 flags both
-  disorder sets (d 0.30-0.38). Next: fitters C (B plus one offset per row group, spec 4.2) and D
-  (per-row pencil plus clustering, spec 4.3) against A under sigma = 0.5-1 kHz, on synthetic
-  August data and august_N3. Freezing a fitter and switching
-  `MBRDisorderEnsembleExperiment` wait for C and for the new registry entries (guan converts
-  jonginn's logs, spec 8.2). Benchmarks run serially (`benchmarks.WORKERS = 1`): parallel
-  fitter-A workers crash on pippin (0x80000003; not settled). The current Matrix Pencil's three
-  known defects stay as strict xfails (`tests/test_matrix_pencil_synthetic.py`). Record:
+  `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
+  notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
+  the small gaps for every fitter, and on the August sets row offsets (sigma 0.5-1 kHz) break
+  A and B. **C** (B plus one offset per row, calibration prior) removes the offset loss on
+  synthetic data (26 of 35 resolved at every sigma, A and B 7-9 at 1 kHz) and is best on real
+  august_N3 (multiplet error 0.16; finds the level A and B miss); on august_disorder it gives
+  P(r < 0.25) 0.09 vs the model's 0.18 (B's 0.15 was inflated by offset-made false poles).
+  Next: C's analytic Jacobian (it is slow), return its offsets, its few-rows limit (strict
+  xfail), then C on benchmark 2 and the new registry entries (guan converts jonginn's logs);
+  D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait for
+  that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
+  current Matrix Pencil's three known defects stay as strict xfails. Record:
   `docs/log/2026-09-28_pole-finding-phase1.md`.
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
