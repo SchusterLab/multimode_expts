@@ -27,9 +27,11 @@ if you need the history.
   the largest gain is free: fit **real amplitudes** (a diagonal row's <b|P|b>), 24 -> 33 of 35
   resolvable on august_disorder/0 at T2 200 us, 19 -> 25 at 100 us. A complete basis and
   whole-number weights add little at equal time; offset calibration matters only with complex
-  amplitudes; T2 dominates. **Next: fitter C with real amplitudes**; on synthetic data, does it
-  reach the bound; on the August data, does the residual stay at the noise (is the phase frame
-  right). Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  amplitudes; T2 dominates; the present window (about 2 T2) is right. Real amplitudes hold on the
+  August data (the residual rises as on synthetic data), but C with a real polish finds no more
+  levels: B merges the close pairs and C cannot add poles. **Next: a fitter that searches the
+  pole count with real amplitudes** (split a pole, refit, keep if chi^2 drops), to reach the real
+  bound (on synthetic August data 23-33 resolvable vs 24-30 found). Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
