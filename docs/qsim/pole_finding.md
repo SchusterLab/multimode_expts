@@ -71,6 +71,7 @@ and each field's docstring says which trade-off it controls.
 | C | joint pencil + refinement | B, then nonlinear least squares with one frequency offset per row group | B's, plus the offset prior |
 | D | per-row pencil + clustering | rank per row from a singular-value rule; poles clustered once across rows | rank rule, merge tolerance |
 | E | FFT peaks | peaks of the windowed FFT of the summed trace | window, peak threshold |
+| F | pursuit | C's start, then poles added and dropped by chi^2, amplitudes real and >= 0 | add / drop thresholds, offset prior |
 
 A and E are the references: A is what the results so far are based on, and E is what the
 resolution was before MPM.
@@ -124,6 +125,21 @@ A thin wrapper around `fitting.qsim.matrix_pencil.analyze_matrix_pencil`, output
 
 1. The windowed FFT of `sum_b A_b(t) / A_b(0)` (`windowed_fft`, shared with the spectrum).
 2. Peaks above a threshold (`find_peaks`); amplitudes as B.5.
+
+### 4.7 Fitter F: pursuit with real, non-negative amplitudes (`pursuit.py`)
+
+Built on what 5.5 and 5.6 found: the amplitudes of a diagonal row are real and not negative
+(`<b|P_lambda|b>`), the noise per row is known (measured out of band, `row_noise`), so chi^2
+has absolute units; the pencil merges close pairs, so its rank is only a start.
+
+1. Start from C (complex): poles and row offsets.
+2. Refine frequencies, decays and offsets (C's prior), the amplitudes by non-negative least
+   squares per row (`refine`, `amplitudes`).
+3. Drop, one at a time, every pole whose removal (the rest fixed) costs under `drop_chi2`
+   (`prune`, `chi2_without`).
+4. Candidate: the frequency where one more real, non-negative pole lowers chi^2 most, from the
+   rows' residuals, by one zero-padded FFT per row (`best_candidate`). It stays if the refined
+   chi^2 drops by at least `add_chi2`; then 3 again. Stop when no candidate pays.
 
 ### 4.6 Rank rule (shared by B, C, D)
 

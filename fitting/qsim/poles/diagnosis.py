@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fitting.qsim.poles.joint_refined import refine_with_group_offsets, remove_offsets, variable_projection
 from fitting.qsim.poles.matching import alias_distance, level_tolerances, match_poles
+from fitting.qsim.poles.noise import hann_spectrum, in_band, row_noise
 from fitting.qsim.poles.pole_fit import PoleFit, normalize_to_initial_return
 from fitting.qsim.poles.real_benchmarks import MODEL_ERROR_MHz
 from fitting.qsim.poles.resolution import clusters, cramer_rao_bounds
@@ -52,27 +53,6 @@ class DiagnosisSettings(BaseModel):
     decay_per_us: Annotated[float, Field(ge=0.)] = 0.01
     #: Frequencies farther than this many bins from every level are out of band (Hann window).
     band_margin_bins: Annotated[float, Field(gt=0.)] = 4.
-
-
-def hann_spectrum(a, dt_us):
-    """-> (E, X_b(E)) with X = sum_n w_n a_n e^{+2 pi i E t_n} / sqrt(sum w^2), w Hann:
-    white noise of variance s^2 per sample has E|X|^2 = s^2 in every bin."""
-    window = np.hanning(a.shape[1])
-    X = np.fft.ifft(a * window, axis=1) * a.shape[1] / np.sqrt(np.sum(window ** 2))
-    return np.fft.fftfreq(a.shape[1], d=dt_us), X
-
-
-def in_band(frequencies_MHz, levels_MHz, bin_MHz, margin_bins, dt_us):
-    """-> True where a frequency is within ``margin_bins`` of a level (alias-wrapped)."""
-    distance = np.abs(alias_distance(frequencies_MHz, levels_MHz, 1 / dt_us))
-    return distance.min(axis=1) <= margin_bins * bin_MHz
-
-
-def row_noise(a, dt_us, levels_MHz, margin_bins):
-    """-> s_b, each row's noise per sample: the rms of X_b(E) out of band."""
-    frequencies, X = hann_spectrum(a, dt_us)
-    band = in_band(frequencies, levels_MHz, 1 / (a.shape[1] * dt_us), margin_bins, dt_us)
-    return np.sqrt(np.mean(np.abs(X[:, ~band]) ** 2, axis=1))
 
 
 def residual_excess(fit, spectrum, settings=DiagnosisSettings()):

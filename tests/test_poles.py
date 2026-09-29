@@ -12,7 +12,8 @@ import pytest
 
 from experiments.job_paths import JobPathError, data_root
 from fitting.qsim.mbr_disorder import disorder_direction
-from fitting.qsim.poles import fft_peaks, joint_pencil, joint_refined, per_row_clustered, per_row_reconciled
+from fitting.qsim.poles import fft_peaks, joint_pencil, joint_refined, per_row_clustered, per_row_reconciled, pursuit
+from fitting.qsim.poles.pursuit import Poles, PursuitSettings, best_candidate
 from fitting.qsim.poles.bench_io import load_scores, save_results
 from fitting.qsim.poles.benchmarks import FITTERS, run_ideal_bench, run_nonideal_bench
 from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_levels
@@ -329,3 +330,25 @@ def test_joint_refined_with_real_amplitudes_fits_real_weights():
     assert np.isrealobj(fit.amplitudes)
     np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.02)
     np.testing.assert_allclose(fit.amplitudes, np.random.default_rng(1).dirichlet(np.ones(4), size=8), atol=0.03)
+
+
+# --- Fitter F ---------------------------------------------------------------
+
+def test_pursuit_finds_the_levels_and_offsets_with_real_amplitudes():
+    A, injected_bins = offset_rows(noise=0.01)
+    prior = 0.2 * BIN_MHz
+    fit = pursuit.fit(A, TIME_US, pursuit.PursuitSettings(offset_prior_MHz=prior,
+                                                          start=joint_refined.JointRefinedSettings(offset_prior_MHz=prior)))
+    np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.02)
+    assert np.isrealobj(fit.amplitudes) and np.all(fit.amplitudes >= 0)
+    found_bins = fit.row_offsets_MHz / BIN_MHz
+    np.testing.assert_allclose(found_bins - found_bins.mean(), injected_bins - injected_bins.mean(), atol=0.02)
+
+
+def test_pursuit_candidate_is_the_missing_pole():
+    """With one level left out, the best candidate is that level."""
+    A = returns(FREQUENCIES_BINS, DECAYS_PER_US, WEIGHTS, noise=0.001)
+    keep = [0, 1, 3]
+    poles = Poles(BIN_MHz * FREQUENCIES_BINS[keep], DECAYS_PER_US[keep], np.zeros(3), 0.)
+    data = (A / A[:, :1], TIME_US, np.arange(3), np.full(3, 0.001))
+    assert abs(best_candidate(data, poles, PursuitSettings()) / BIN_MHz - FREQUENCIES_BINS[2]) < 0.1

@@ -14,7 +14,7 @@ import fitting.qsim.poles
 
 SPEC = Path(__file__).parents[1] / "docs" / "qsim" / "pole_finding.md"
 
-NOT_FUNCTIONS = {"row_groups", "sigma_cal", "delta_g", "decays_per_us", "phase_error"}
+NOT_FUNCTIONS = {"row_groups", "sigma_cal", "delta_g", "decays_per_us", "phase_error", "add_chi2", "drop_chi2"}
 EXTERNAL = {"find_peaks"}  # scipy.signal
 LATER_PHASES = set()
 
