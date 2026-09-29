@@ -16,10 +16,7 @@ SPEC = Path(__file__).parents[1] / "docs" / "qsim" / "pole_finding.md"
 
 NOT_FUNCTIONS = {"row_groups", "sigma_cal", "delta_g", "decays_per_us", "phase_error"}
 EXTERNAL = {"find_peaks"}  # scipy.signal
-LATER_PHASES = {
-    "refine_with_group_offsets", "frequency_errors",          # fitter C, phase 3
-    "row_poles", "cluster_row_poles",                         # fitter D, phase 3
-}
+LATER_PHASES = set()
 
 
 def spec_function_names():
@@ -41,4 +38,4 @@ def test_every_function_the_spec_names_exists():
 
 def test_later_phase_names_are_still_in_the_spec_and_not_yet_written():
     assert LATER_PHASES <= spec_function_names()
-    assert not LATER_PHASES & defined_names()
+    assert not LATER_PHASES & defined_names()  # empty since fitters C and D exist (2026-09-28)

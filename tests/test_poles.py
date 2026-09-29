@@ -11,7 +11,7 @@ import pytest
 
 from experiments.job_paths import JobPathError, data_root
 from fitting.qsim.mbr_disorder import disorder_direction
-from fitting.qsim.poles import fft_peaks, joint_pencil, per_row_reconciled
+from fitting.qsim.poles import fft_peaks, joint_pencil, joint_refined, per_row_clustered, per_row_reconciled
 from fitting.qsim.poles.bench_io import load_scores, save_results
 from fitting.qsim.poles.benchmarks import FITTERS, run_ideal_bench, run_nonideal_bench
 from fitting.qsim.poles.matching import level_tolerances, match_poles, resolved_levels
@@ -241,3 +241,36 @@ def test_registry_frames_give_branches_per_occupation():
     assert august.analysis.manual_kerr_MHz == pytest.approx(-0.0105)
     assert august.analysis.branches([(2, 1, 0, 0, 0), (0, 0, 0, 0, 3)]) == {(2, 1, 0, 0, 0): 1, (0, 0, 0, 0, 3): 0}
     assert data_set("diagonal_disorder_71").analysis.excluded_occupations == [(0, 3, 0, 0, 0)]
+
+
+# --- Fitters C and D (sketches) -------------------------------------------
+
+def offset_returns(offsets_bins, noise=0.01, seed=0):
+    """The four-pole returns with one frequency offset per row (in bins)."""
+    A = returns(FREQUENCIES_BINS, DECAYS_PER_US, WEIGHTS, noise, seed)
+    return A * np.exp(-2j * np.pi * BIN_MHz * np.outer(offsets_bins, TIME_US))
+
+
+def test_joint_refined_resolves_the_august_point_under_row_offsets():
+    """10 rows, sigma 1 kHz (the upper bound on the August data): B resolves about 6 of 35."""
+    hardware = Hardware(coupling_MHz=8.615e-3, dt_us=1.4509, samples=300, partial_rows=10)
+    points = sample_phase_diagram([-1.22], [5.80], draws=1, hardware=hardware, seed=100)
+    result = run_nonideal_bench(points, [Nonideal(snr=100, decay_per_us=0.01, offset_sigma_MHz=1e-3)], 1, hardware,
+                                {"C": (joint_refined.fit, joint_refined.JointRefinedSettings())})
+    assert result.scores[0].level_resolved.sum() >= 20
+
+
+@pytest.mark.xfail(strict=True, reason="known limit: with few rows B splits each level into one pole per "
+                   "offset row, the split explains the data as well as one pole plus offsets, and the "
+                   "prior keeps the offsets at 0 (docs/log/2026-09-28_pole-finding-phase1.md)")
+def test_joint_refined_merges_a_level_that_the_pencil_split():
+    settings = joint_refined.JointRefinedSettings(offset_prior_MHz=0.2 * BIN_MHz)
+    fit = joint_refined.fit(offset_returns([0.15, -0.1, -0.05]), TIME_US, settings)
+    np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.03)
+
+
+def test_per_row_clustered_joins_one_pole_per_row():
+    fit = per_row_clustered.fit(offset_returns([0.15, -0.1, -0.05]), TIME_US)
+    np.testing.assert_allclose(fit.frequencies_MHz / BIN_MHz, FREQUENCIES_BINS, atol=0.1)
+    clusters = per_row_clustered.cluster_row_poles(np.array([0., 0.1, 0.15, 1.]), np.array([0, 1, 1, 0]), 0.2)
+    assert [list(c) for c in clusters] == [[0, 1], [2], [3]]
