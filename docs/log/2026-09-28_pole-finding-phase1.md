@@ -228,3 +228,22 @@ wrong reason. Next: fitter C (spec 4.2: B plus one offset per row group with the
 prior), tested on synthetic August data with sigma 0.5-1 kHz and then on august_N3 (do its
 split multiplets close?). Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
 for C and for the new registry entries.
+
+## Correction, end of the day: A against B under row offsets
+
+guan asked whether B really loses most levels under realistic offsets. Same synthetic August
+conditions (SNR 100, 20 draws x 2 seeds), A (`ANALYSIS_SETTINGS`) against B:
+
+| sigma | resolved A / B | matched A / B | false poles A / B | P(r < 0.25) A / B (true 0.22) |
+|---|---|---|---|---|
+| 0 | 25.9 / 24.8 | 29.3 / 29.0 | 5.1 / 3.3 | 0.14 / 0.12 |
+| 0.5 kHz (floor) | 22.9 / 16.7 | 27.8 / 24.3 | 6.7 / 8.8 | 0.17 / 0.15 |
+| 1.06 kHz (upper bound) | 8.5 / 7.3 | 17.2 / 15.7 | 17.9 / 20.0 | 0.22 / 0.19 |
+
+At the floor A holds up clearly better: a row's offset shifts only that row's poles, and A's
+clustering across rows absorbs it, while B's shared-pole model splits a smeared level. At the
+upper bound both collapse alike (the data smear dominates). **This corrects "A adds only
+padding" and "B is the lead fitter" above**: without offsets B equals A at 50-100x the speed;
+with realistic offsets B needs its offset correction (fitter C), and a per-row fitter without
+A's defects (fitter D) is a real candidate again. Next session: C and D against A under
+sigma = 0.5-1 kHz.

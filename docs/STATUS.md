@@ -10,12 +10,14 @@ if you need the history.
 - **Pole finding** (guan; on pippin, `C:\python\multimode_expts_guan`): phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done (`fitting/qsim/poles/`; notebooks in
   `analysis_notebooks/pole_finding/`: `report.py` via `pixi run pole-report`, `first_look.py`,
-  `tune_b.py`, `sigma.py`, `real_benchmarks.py`). B (joint pencil, MDL, L = 2N/3) is the lead
-  fitter; A adds only padding poles. The limit is the data: the 7-1 window loses the small gaps
+  `tune_b.py`, `sigma.py`, `real_benchmarks.py`). Without row offsets B (joint pencil, MDL,
+  L = 2N/3) equals A at 50-100x the speed; with realistic offsets (sigma 0.5 kHz) A resolves more
+  (22.9 vs 16.7 of 35 on synthetic August data), so no fitter is chosen yet. The limit is the data: the 7-1 window loses the small gaps
   for every fitter, and on the August sets the row offsets (sigma 0.5-1 kHz) turn merged pairs
   into false poles, so P(r < 0.25) looks right for the wrong reason; benchmark 3 flags both
-  disorder sets (d 0.30-0.38). Next: fitter C (B plus one offset per row group, spec 4.2), on
-  synthetic August data and august_N3. Freezing a fitter and switching
+  disorder sets (d 0.30-0.38). Next: fitters C (B plus one offset per row group, spec 4.2) and D
+  (per-row pencil plus clustering, spec 4.3) against A under sigma = 0.5-1 kHz, on synthetic
+  August data and august_N3. Freezing a fitter and switching
   `MBRDisorderEnsembleExperiment` wait for C and for the new registry entries (guan converts
   jonginn's logs, spec 8.2). Benchmarks run serially (`benchmarks.WORKERS = 1`): parallel
   fitter-A workers crash on pippin (0x80000003; not settled). The current Matrix Pencil's three
