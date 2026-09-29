@@ -285,3 +285,11 @@ Real August sets (21 min, almost all C):
 synthetic data, minutes on august_N3); return the offsets (residual, benchmark 3); the
 few-rows limit; then C on the full benchmark 2 and the new registry entries. D needs
 rework or can be dropped.
+
+Plots of the C and D comparison: `analysis_notebooks/pole_finding/offsets_cd.py` (14 min),
+HTML at `C:\experiments\260818_qsim_spectroscopy\derived_data\pole_finding\260928_193122_offsets_cd\`.
+With 5 draws the synthetic result holds (resolved of 35 at sigma 0 / 0.5 / 1.06 kHz: A 25.8 /
+20.6 / 7.8, B 25.6 / 14.4 / 6.2, C 27.0 / 26.8 / 26.2, D 23.0 / 15.8 / 5.8). Even C's
+P(r < 0.25) stays at about 0.10-0.11 vs the true 0.18 at every sigma: the offsets fixed, the
+window-and-noise merging loss remains. A's P(r < 0.25) crosses the true value inside the
+measured sigma band only because its false poles grow.
