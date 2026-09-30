@@ -38,10 +38,16 @@ are in `docs/STATUS.md`.
   Cramér-Rao gap bounds, C fitted on all, F on draw 0 / 10 rows. C misses levels (August T2 100
   us, 10 rows: 6-7 of 26 resolvable gaps) and biases P(r < 0.25) low (August 0.01-0.10 vs
   0.184); what it finds is near the bound. F beats C everywhere (mean +3.5 gaps, errors 2-3x
-  smaller) but not in the hardest case. **Next:** in parallel T1 Hamiltonian fit, T2 the
-  complete basis' weight structure, T3 a convex sparse fit, T4 convert the September
-  complete-basis disorder data (9 x 35 occupations; the timing route is in the T0 log), T5
-  speed; the rest of F on the set when pippin is free for hours. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  smaller) but not in the hardest case. **T1 (Hamiltonian fit, `hamiltonian_fit.py`) and T3
+  (convex sparse fit, `sparse_fit.py`, cvxpy) are done** (logs `..._t1.md`, `..._t3.md`,
+  `..._t1t3.md`): T3 started from T1's offsets (T1T3, about 10 s per 10-row case, no C) equals
+  T3 with the true offsets on the subset (draw 0, 10 rows): all resolvable gaps on September,
+  17-26 of 20-27 on August, 0 false poles. The August P(r < 0.25) stays low because most small
+  gaps there are not resolvable at all (a data limit). Real data: the recorded Kerr is 15-20 %
+  too large (T1), and the model leaves 1.8-4x the noise. **Next:** T1T3 on august_disorder and
+  august_N3, then on all 80 cases; T3's merge threshold at 35 rows; P(r < 0.25) from partly
+  resolved spectra; T2 (weight structure) and T4 (September data; timing route in the T0 log)
+  still open. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
