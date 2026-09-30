@@ -115,7 +115,6 @@ floquet_kerr_defaults = AttrDict(dict(
     update_phases=True,
     zero_floquet_gain=False,
     man_mode_no=1,
-    perform_wigner=False,
     do_g_and_e=False,
     ramsey_freq=floquet_kerr_ramsey_freq,
     displace_gains=floquet_kerr_displace_gains,

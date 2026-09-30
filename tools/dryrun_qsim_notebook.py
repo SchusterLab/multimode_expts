@@ -25,7 +25,8 @@ What mock data cannot do, and what this script does about it:
 Cells tagged ``suite-skip`` are skipped, as in the suite. Cells tagged
 ``hardware-skip`` (known not to work on the device) are run: they still have
 to compile. Mock job files go
-to the mock station's data path (``C:/experiments/mock_data``). The mock
+to the mock station's data path (``C:/experiments/mock_data`` on the prod PC,
+``<repo>/.tmp/mock_data`` elsewhere). The mock
 station never logs to the vault.
 """
 import argparse

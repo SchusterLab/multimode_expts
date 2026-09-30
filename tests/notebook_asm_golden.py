@@ -35,7 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_DIR = Path(__file__).parent / "data" / "notebook_asm_golden"
 NOTEBOOK_DIR = REPO_ROOT / "measurement_notebooks" / "202609_qsim_migration"
 
-NOTEBOOKS = ("multiphoton_calibration", "floquet_calibration")
+NOTEBOOKS = ("multiphoton_calibration", "floquet_calibration", "floquet_displacement_kerr")
 CONFIG_SET = "preload_current"
 
 

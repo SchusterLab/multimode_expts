@@ -218,7 +218,7 @@ class CharacterizationRunner:
             default_expt_cfg: AttrDict template for expt.cfg.expt
             preprocessor: Function to generate expt.cfg.expt from defaults + kwargs
             postprocessor: Function to extract results and update station.hardware_cfg
-            ExptProgram: for QsimBaseExperiment, this is the program class to use
+            ExptProgram: for QsimExperiment, this is the program class to use
             job_client: JobClient instance for submitting to job queue (required for run())
             use_queue: If True, execute() uses run() (job queue). If False, uses run_local().
             show: Default for whether to render the experiment's plot inline (per-call

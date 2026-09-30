@@ -71,7 +71,7 @@ class JobSubmission(BaseModel):
     station_config: str  # JSON-serialized station config (required)
     user: str  # Username of submitter
     priority: int = 0  # Higher priority = runs sooner (default 0)
-    program_class: Optional[str] = None  # e.g., "FloquetChevronProgram" (for QsimBaseExperiment)
+    program_class: Optional[str] = None  # e.g., "FloquetChevronProgram" (for QsimExperiment)
     program_module: Optional[str] = None  # e.g., "experiments.qsim.floquet_chevron"
 
     class Config:

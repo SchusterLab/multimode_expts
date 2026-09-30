@@ -176,9 +176,9 @@ def test_program_is_not_driven_directly():
 def _acquire_one(station, tmp_path):
     """-> one acquired time-trace job, saved under `tmp_path`.
 
-    The mock station's own output root is a prod path
-    (`C:/experiments/mock_data`), so point the file somewhere the test can
-    read and save it again.
+    The mock station's own output root is shared (`C:/experiments/mock_data`
+    on the prod PC, `<repo>/.tmp/mock_data` elsewhere), so point the file
+    somewhere the test can read and save it again.
     """
     products = smoke(station, SWAP_STORS, OCCUPATIONS[:1], reps=10)
     expt = products["time_trace"].children[0]

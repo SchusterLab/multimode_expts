@@ -7,6 +7,12 @@ decision 3 (SFF is to be deleted and written again later). The negative-phase-st
 Not maintained; may break when live code changes. If it breaks, add a note here
 and do not fix it.
 
+Broken since step 10B (2026-09-29, `docs/qsim/program_tree_plan.md`): the module
+no longer imports. `DisorderSFFSequenceMixin` borrows
+`DarkBaseProgram._advance_storage_phase_offsets` in its class body, and step 10B
+removed that method (no live caller) together with `storage_phase_matrix` in
+`DarkBaseProgram.initialize`.
+
 The SFF, ``|Tr U|^2 / D^2``, is the standard diagnostic for whether a
 many-body spectrum shows level repulsion: its dip-ramp-plateau shape separates
 chaotic from integrable dynamics, and it is what the level-statistics analysis
@@ -87,9 +93,10 @@ from slab import AttrDict
 from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMRAveragerProgram
-from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 from experiments.qsim.utils import ensure_list_in_cfg, flatten_exp_lists
-from experiments.qsim.dark_base import DarkBaseProgram, DarkBaseRProgram
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
+from experiments.qsim.qsim_base import QsimRProgram
 from experiments.qsim.deprecated.mbr_nphoton_program import (
     NPhotonHamiltonianSpectroscopyProgram,
 )
@@ -530,10 +537,10 @@ class DisorderSFFSequenceMixin:
     _validate_storage_swap_rows = staticmethod(NPhotonHamiltonianSpectroscopyProgram._validate_storage_swap_rows)
     _get_inverse_pulses = staticmethod(NPhotonHamiltonianSpectroscopyProgram._get_inverse_pulses)
     _add_wait_after_storage_pulses = (NPhotonHamiltonianSpectroscopyProgram._add_wait_after_storage_pulses)
-    _mod360 = DarkBaseProgram._mod360
-    _advance_phase_offsets = DarkBaseProgram._advance_phase_offsets
-    _advance_storage_phase_offsets = DarkBaseProgram._advance_storage_phase_offsets
-    calculate_floquet_cycle_us = DarkBaseProgram.calculate_floquet_cycle_us
+    _mod360 = DarkModeProgram._mod360
+    _advance_phase_offsets = DarkModeProgram._advance_phase_offsets
+    _advance_storage_phase_offsets = DarkModeProgram._advance_storage_phase_offsets
+    calculate_floquet_cycle_us = DarkModeProgram.calculate_floquet_cycle_us
 
     def _configure_sff_experiment(self):
         ecfg = self.cfg.expt
@@ -864,7 +871,7 @@ class DisorderSFFSequenceMixin:
 class DisorderSFFDepthSweepProgram(
         DisorderSFFSequenceMixin,
         HardwareFloquetDepthSweepMixin,
-        DarkBaseRProgram):
+        QsimRProgram):
     """
     NOT PERUSED AND MAYBE DELETED IN A NEAR FUTURE
     
@@ -904,7 +911,7 @@ class DisorderSFFDepthSweepProgram(
         self._advance_sff_depth()
 
 
-class DisorderSFFExperiment(QsimBaseExperiment):
+class DisorderSFFExperiment(QsimExperiment):
     """Direct disorder-ensemble spectral-form-factor acquisition.
 
     The production job has two deliberately separate parts:

@@ -6,6 +6,9 @@ decision 3 (SFF is to be deleted).
 Not maintained; may break when live code changes. If it breaks, add a note here
 and do not fix it.
 
+Broken since step 10B (2026-09-29): it imports `deprecated/mbr_sff.py`, which no
+longer imports (see the note there). So `dormant/mbr_sff.py` no longer loads.
+
 Hoisted out of `measurement_notebooks/jonginn/qsim_experiments.ipynb` cells
 359-369 by the stage-2 notebook decomposition. Primary caller:
 `measurement_notebooks/202609_qsim_migration/mbr_sff.py`.

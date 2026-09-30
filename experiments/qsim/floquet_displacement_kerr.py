@@ -11,12 +11,10 @@ import numpy as np
 from slab import AttrDict
 
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
-from experiments.qsim.dark_base import (
-    DarkBaseExperiment,
-    DarkBaseProgram,
-)
+from experiments.qsim.qsim_base import QsimExperiment
+from experiments.qsim.floquet_train import FloquetProgram
 
-class FloquetDisplacementKerrProgram(DarkBaseProgram):
+class FloquetDisplacementKerrProgram(FloquetProgram):
     """
     D(alpha) -> closed Floquet pairs -> D(alpha) -> vacuum readout using `slow_pi_ge`.
     Now displacement pulse entirely relies on displace_man, which receives complex
@@ -32,7 +30,7 @@ class FloquetDisplacementKerrProgram(DarkBaseProgram):
         ecfg.postpulse = False #Enforcing postpulse to be off
         ecfg.init_stor = 0
         ecfg.ro_stor = 0
-        ecfg.slow_pi_ge_readout = True
+        ecfg.readout = "slow_pi_ge"
         gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha
         if isinstance(gain_to_alpha, (list, tuple, np.ndarray)):
             gain_to_alpha = gain_to_alpha[ecfg.man_mode_no - 1]
@@ -54,7 +52,7 @@ class FloquetDisplacementKerrProgram(DarkBaseProgram):
         self.sync_all()
 
 
-class FloquetDisplacementKerrExperiment(DarkBaseExperiment):
+class FloquetDisplacementKerrExperiment(QsimExperiment):
     """Fit Floquet Kerr with the existing cavity-Ramsey gain-sweep analysis."""
 
     def acquire(self, progress=False, debug=False):

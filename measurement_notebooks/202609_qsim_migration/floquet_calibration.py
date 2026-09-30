@@ -521,7 +521,7 @@ def sideband_stark_error_amp_postproc(station, expt):
 sideband_stark_error_amp_runner = CharacterizationRunner(
     station=station,
     ExptClass=meas.SidebandStarkAmplificationExperiment,
-    # ExptProgram=meas.qsim.floquet_dark_mode_readout.SidebandStarkAmplificationModifiedProgram,
+    # ExptProgram=meas.qsim.floquet_dark_mode_readout.StorageSwapStarkPhaseProgram,
     ExptProgram=meas.SidebandStarkAmplificationProgram, #meas.SidebandStarkAmplificationProgram,
     default_expt_cfg=sideband_stark_error_amp_defaults,
     preprocessor=sideband_stark_error_amp_preproc,
@@ -647,7 +647,6 @@ dm_sideband_scramble_defaults = AttrDict(dict(
     init_fock=True,
 
     normalize=False,
-    post_select_pre_pulse=False,
     active_reset=False,
     man_reset=False,
     storage_reset=False,
@@ -669,8 +668,8 @@ def sideband_scramble_preproc(station, default_expt_cfg, **kwargs):
 
 dmscramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
-    ExptProgram=meas.SidebandScrambleDarkProgramNewNew,
+    ExptClass=meas.QsimExperiment,
+    ExptProgram=meas.DarkModeScrambleProgram,
     default_expt_cfg=dm_sideband_scramble_defaults,
     preprocessor=sideband_scramble_preproc,
     postprocessor=None,

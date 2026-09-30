@@ -42,7 +42,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 import socket
-import tempfile
 
 import numpy as np
 import yaml
@@ -56,7 +55,6 @@ from slab.instruments import InstrumentManager
 from slab.instruments.voltsource import YokogawaGS200
 
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
-from experiments.local_env import load_env
 from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
 
 from job_server.database import get_database
@@ -80,6 +78,9 @@ def is_production_pc() -> bool:
 # proxy — accurate unit conversions and real channel shape, unlike a hand-rolled
 # stub. See docs/reference/mock_mode_architecture.md.
 SOCCFG_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "configs" / "soccfg_snapshot.json"
+
+# Mock-mode output root off the prod PC. .tmp/ is git-ignored.
+MOCK_DATA_ROOT = Path(__file__).resolve().parent.parent / ".tmp" / "mock_data"
 
 
 def read_soccfg_snapshot() -> QickConfig:
@@ -420,19 +421,15 @@ class MultimodeStation:
     def _initialize_output_paths_mock(self):
         """Create output directories for mock mode.
 
-        $MULTIMODE_MOCK_DATA_ROOT if set (the repo-root .env works too), else
-        C:/experiments/mock_data on the prod PC and the system temp directory
-        anywhere else. The Windows path used to apply everywhere, which on a
-        Mac became a relative ``C:`` folder inside the checkout.
+        C:/experiments/mock_data on the prod PC, so mock data from the worker
+        does not grow inside its checkout. Elsewhere MOCK_DATA_ROOT, under the
+        repo root, not the working directory: the Windows path is relative off
+        Windows and used to make a stray ``C:`` folder.
         """
-        load_env()
-        raw = os.environ.get("MULTIMODE_MOCK_DATA_ROOT")
-        if raw:
-            self.output_root = Path(raw)
-        elif is_production_pc():
+        if is_production_pc():
             self.output_root = Path("C:/experiments/mock_data")
         else:
-            self.output_root = Path(tempfile.gettempdir()) / "multimode_mock_data"
+            self.output_root = MOCK_DATA_ROOT
 
         # Create directories (real directories for data file testing)
         self.experiment_path = self.output_root / self.experiment_name

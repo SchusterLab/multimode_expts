@@ -57,7 +57,7 @@ ARCHIVE_ENV = "MULTIMODE_CONFIG_ARCHIVE"
 DEFAULT_ARCHIVE = REPO_ROOT / "configs" / "versions"
 
 # Above this the swap uses the high-frequency flux channel. Mirrors
-# QsimBaseProgram.retrieve_swap_parameters.
+# QsimProgram.retrieve_swap_parameters.
 FLUX_HIGH_THRESHOLD_MHZ = 1800
 
 
@@ -76,7 +76,7 @@ def floquet_cycle_us(swap_stors,
     """-> scheduled duration of one Floquet cycle, in microseconds.
 
     One definition, called from two places that cannot share a ``self``: the
-    live program (``DarkBaseProgram.calculate_floquet_cycle_us``) and the
+    live program (``FloquetProgram.calculate_floquet_cycle_us``) and the
     offline resolver below, which has a ``QickConfig`` and a versioned CSV but
     no program. They were line-by-line copies of this arithmetic, which is a
     bad thing to duplicate: the cycle time divides into every coupling rate,

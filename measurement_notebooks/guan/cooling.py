@@ -191,7 +191,6 @@ cool_spec_defaults = AttrDict(dict(
 
     normalize=False,
     preloaded_pulses=False,
-    perform_wigner=False,
     prepulse=True,
     postpulse=True,
     pre_sweep_pulse=None, # pre sweep pulse
@@ -200,7 +199,7 @@ cool_spec_defaults = AttrDict(dict(
 
 cool_spec_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
+    ExptClass=meas.QsimExperiment,
     ExptProgram=meas.qsim.cooling.CoolingSpectroscopyProgram,
     default_expt_cfg=cool_spec_defaults,
     # preprocessor=kerr_ramsey_preproc,
@@ -320,10 +319,10 @@ axs[4].set_xlabel('freq (MHz)')
 fig.tight_layout()
 
 # %%
-from experiments import QsimBaseExperiment
+from experiments import QsimExperiment
 
 # %%
-cs = QsimBaseExperiment.from_h5file(station.data_path / 'JOB-20260427-00508_QsimBaseExperiment.h5')
+cs = QsimExperiment.from_h5file(station.data_path / 'JOB-20260427-00508_QsimBaseExperiment.h5')
 
 # %%
 cs.display()

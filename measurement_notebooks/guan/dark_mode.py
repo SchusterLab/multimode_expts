@@ -270,7 +270,7 @@ def sideband_scramble_preproc(station, default_expt_cfg, **kwargs):
 # %%
 scramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
+    ExptClass=meas.QsimExperiment,
     ExptProgram=meas.SidebandScrambleProgram,
     default_expt_cfg=sideband_scramble_defaults,
     preprocessor=sideband_scramble_preproc,
@@ -335,7 +335,7 @@ for update_phases in [True]: # [False, True]:
             postpulse=True,
         )
     
-        sbs = meas.QsimBaseExperiment(
+        sbs = meas.QsimExperiment(
             soccfg=soc,
             path=expt_path,
             prefix=f"SidebandScramble_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -386,7 +386,7 @@ expt_params = dict(
 )
 
 
-fce = QsimBaseExperiment(
+fce = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"FloquetCalibration_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -427,7 +427,7 @@ for storA, storB in [(2,6),(2,7),(3,2),(3,6),(3,7),(6,2),(6,3),(6,7),(7,2),(7,3)
     )
     
     
-    fce = QsimBaseExperiment(
+    fce = QsimExperiment(
         soccfg=soc,
         path=expt_path,
         prefix=f"FloquetCalibration_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -465,7 +465,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-fce = QsimBaseExperiment(
+fce = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"FloquetCalibration_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -500,7 +500,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-fce = QsimBaseExperiment(
+fce = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"FloquetCalibration_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -535,7 +535,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-fce = QsimBaseExperiment(
+fce = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"FloquetCalibration_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -580,7 +580,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-sbs = QsimBaseExperiment(
+sbs = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"SidebandScramble_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -619,7 +619,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-sbs = QsimBaseExperiment(
+sbs = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"SidebandScramble_S{expt_params['init_stor']}_to_S{expt_params['ro_stor']}",
@@ -743,8 +743,8 @@ def dark_scramble_preproc(station, default_expt_cfg, **kwargs):
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"} jupyter={"outputs_hidden": true}
 dark_scramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment,
-    ExptProgram=meas.qsim.floquet_dark_mode_readout.SidebandScrambleDarkProgramNewNew,
+    ExptClass=meas.qsim.floquet_dark_mode_readout.QsimExperiment,
+    ExptProgram=meas.qsim.floquet_dark_mode_readout.DarkModeScrambleProgram,
     default_expt_cfg=dark_scramble_defaults,   # + the keys above
     postprocessor=None,
     job_client=client,
@@ -777,9 +777,8 @@ for init_alpha in init_alphas:
             floquet_cycles=floquet_cycles,
             swept_params=['floquet_cycle'],
     
-            parity_readout = True,
+            readout = "parity",
             parity_fast = False,
-            perform_wigner = False,
         )
         scramble_expts.append(scramble)
 
@@ -791,8 +790,8 @@ station.use_real_instruments()
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 dark_scramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.qsim.floquet_dark_mode_readout.DarkBaseExperiment,
-    ExptProgram=meas.qsim.floquet_dark_mode_readout.SidebandScrambleDarkProgramNewNew,
+    ExptClass=meas.qsim.floquet_dark_mode_readout.QsimExperiment,
+    ExptProgram=meas.qsim.floquet_dark_mode_readout.DarkModeScrambleProgram,
     default_expt_cfg=dark_scramble_defaults,   # + the keys above
     postprocessor=None,
     job_client=client,
@@ -820,9 +819,8 @@ scramble = dark_scramble_runner.execute(
             floquet_cycles=floquet_cycles,
             swept_params=['floquet_cycle'],
     
-            parity_readout = True,
+            readout = "parity",
             parity_fast = False,
-            perform_wigner = False,
         )
 
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
@@ -995,7 +993,7 @@ for init_stor in [1]: #range(1,8):
 
 # %%
 from experiments.qsim.sideband_stark import SidebandStarkProgram
-from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 
 # %%
 for init_stor in [2]: #range(1,8):
@@ -1029,7 +1027,7 @@ for init_stor in [2]: #range(1,8):
         echoes = [False, 0], # [on/off, number of echoes]
     )
     
-    qbe = QsimBaseExperiment(
+    qbe = QsimExperiment(
         soccfg=soc,
         path=expt_path,
         prefix=f"SidebandStark_S{expt_params['init_stor']}",
@@ -1078,7 +1076,7 @@ expt_params = dict(
     echoes = [False, 0], # [on/off, number of echoes]
 )
 
-qbe = QsimBaseExperiment(
+qbe = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"StorageT1_S{expt_params['init_stor']}",

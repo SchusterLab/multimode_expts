@@ -29,10 +29,11 @@ per-cycle step in Python, then advances the ledger by ``cycles * step`` at
 the end, which is only equal to the unrolled result because the step is
 constant -- which is why it refuses ``palindrome_scramble``.
 
-Requirements on the host program: ``m1s_kwargs``, ``m1s_waveform_mode``,
-``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``, ``swap_ds``, and the qick
-program methods; ``storage_phase_matrix`` too, for
-``_advance_storage_phase_offsets`` (dark-mode programs only).
+``FloquetProgram`` is ``QsimProgram`` plus these methods. The base gives
+what they need: the swap parameters and pulse arguments (``m1s_kwargs``,
+``m1s_waveform_mode``, ``m1s_ch``, ``m1s_length``, ``m1s_is_low_freq``) and
+``swap_ds``. It was the ``FloquetTrain`` mixin until step 10C
+(``docs/qsim/program_tree_plan.md``).
 """
 from copy import deepcopy
 
@@ -47,10 +48,11 @@ from experiments.qsim.floquet_register_bank import (
     _play_preloaded_floquet_register_bank_entry,
     _prepare_preloaded_floquet_register_bank,
 )
+from experiments.qsim.qsim_base import QsimProgram
 
 
-class FloquetTrain:
-    """Mixin: see the module docstring."""
+class FloquetProgram(QsimProgram):
+    """The qsim template with the Floquet playback: see the module docstring."""
 
     def calculate_floquet_cycle_us(self, swap_stors=None):
         """Scheduled cycle duration, including QICK v1 sync_all quantization.
@@ -207,22 +209,6 @@ class FloquetTrain:
                         pulsed_stor=stor,
                     )
         self.sync_all()
-
-    def _advance_storage_phase_offsets(
-            self, phase_offsets, swap_stors, pulsed_stor):
-        """Advance later ds_storage swap phases after one ds_storage swap.
-
-        Unlike the legacy Floquet matrix, this matrix may have a calibrated
-        diagonal: ``matrix[i, i]`` is the active-access phase of mode i.
-        """
-        if self.storage_phase_matrix is None:
-            return
-
-        advance_matrix_offsets(
-            offsets=phase_offsets,
-            matrix=self.storage_phase_matrix,
-            pulsed_column=swap_stors.index(pulsed_stor),
-        )
 
     def _play_scramble_with_phase_offsets(
         self,

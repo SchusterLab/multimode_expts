@@ -9,11 +9,11 @@ what they sweep.
 
 The bases, and what each gives:
 
-- ``QsimBaseProgram``: the M1-Sx swap parameters and Floquet waveforms
-  (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``), on top of
-  ``MMAveragerProgram`` (reset, pulse creator, readout);
-- ``FloquetTrain``: the Floquet playback and its phase bookkeeping;
-- ``man_reset`` from ``ManipulateModePulses``, set explicitly (see there).
+- ``QsimProgram``: the M1-Sx swap parameters and Floquet waveforms
+  (``retrieve_swap_parameters``, ``_initialize_floquet_pulses``) and the
+  qsim ``man_reset``, on top of ``MMAveragerProgram`` (reset, pulse creator,
+  readout);
+- ``FloquetProgram``: the Floquet playback and its phase bookkeeping.
 
 Until step 8A1 this class was built on the dark-mode chain
 (``SidebandScrambleProgram``, ``DarkBaseProgram``). It used none of the
@@ -28,21 +28,12 @@ from copy import deepcopy
 import numpy as np
 from slab import AttrDict
 
-from tqdm import tqdm_notebook as tqdm
-
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.floquet_train import FloquetTrain
-from experiments.qsim.manipulate_mode_pulses import ManipulateModePulses
-from experiments.qsim.qsim_base import (
-    QsimBaseExperiment,
-    QsimBaseProgram,
-    readout_lane_count,
-)
-from experiments.qsim.utils import ensure_list_in_cfg
-from fitting.fit_display_classes import GeneralFitting
+from experiments.qsim.floquet_train import FloquetProgram
+from experiments.qsim.qsim_base import QsimExperiment, readout_mode
 
 
-class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
+class MBRRamseyProgram(FloquetProgram):
     """Many-body Ramsey sequence: encode, evolve, decode, analyze.
 
     The shared base of the MBR job programs (docs/qsim/mbr_redesign.md,
@@ -69,11 +60,6 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
     jobs taken in ``'decoder'`` mode still load and analyze; the analysis
     reads the mode from the saved config.
     """
-
-    # The active reset plays this man reset, not MM_base's. The MBR jobs
-    # always did, through DarkBaseProgram; the other two ManipulateModePulses
-    # methods are dark-mode readout and are not needed here.
-    man_reset = ManipulateModePulses.man_reset
 
     @staticmethod
     def _storage_swap_pulse_name(storage_mode,
@@ -294,10 +280,11 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
         if ecfg.get("palindrome_scramble", False) and int(ecfg.floquet_cycle) % 2:
             raise ValueError("palindrome spectroscopy uses an even number of nominal cycles; one symmetric sample is a forward/reverse pair")
         
-        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark", "perform_wigner",
-                     "init_alpha", "parity_readout", "multiparity_readout"):
+        for flag in ("load_man_dark", "swap_man_dark", "swap_man_large_dark", "init_alpha"):
             if ecfg.get(flag, False):
                 raise ValueError(f"{flag}=True is incompatible with vacuum-referenced Hamiltonian spectroscopy")
+        if readout_mode(ecfg) != "qubit":
+            raise ValueError(f"readout={ecfg.readout!r}: the MBR jobs read the qubit Ramsey (the default, 'qubit')")
 
         prep_phase = float(ecfg.get("spectroscopy_prep_phase", 0.0))
         analyzer_phase = float(ecfg.get("spectroscopy_analyzer_phase", 0.0))
@@ -379,7 +366,7 @@ class MBRRamseyProgram(FloquetTrain, QsimBaseProgram):
         self.measure_wrapper()
 
 
-class MBRJobExperiment(QsimBaseExperiment):
+class MBRJobExperiment(QsimExperiment):
     """Base of the MBR job experiments: one job, a 2D sweep, raw shots kept.
 
     ``cfg.expt.swept_params`` is ``[outer, "ramsey_phase"]``: the job's own
@@ -389,66 +376,7 @@ class MBRJobExperiment(QsimBaseExperiment):
     ``avgi``/``avgq``/``amps``/``phases`` of shape (outer, inner), and the
     raw ``idata``/``qdata`` per point, with ``cfg.read_num`` readouts per shot.
 
-    Subclasses set ``default_program``.
+    Subclasses set ``default_program``. The sweep itself is the one driver's,
+    ``QsimExperiment.acquire`` (step 10E); until then this class had its
+    own copy of the loop.
     """
-
-    default_program = None
-
-    def __init__(self, soccfg=None, path='', prefix=None, config_file=None,
-                 expt_params=None, program=None, progress=None, **kwargs):
-        super().__init__(soccfg=soccfg, path=path, prefix=prefix,
-                         config_file=config_file, expt_params=expt_params,
-                         program=program or self.default_program,
-                         progress=progress, **kwargs)
-
-    def acquire(self, progress=False, debug=False):
-        ensure_list_in_cfg(self.cfg)
-        ecfg = self.cfg.expt
-        read_num = readout_lane_count(self.cfg)
-        self.cfg.read_num = read_num
-
-        self.outer_param, self.inner_param = ecfg.swept_params
-        outer_values = ecfg[self.outer_param + "s"]
-        inner_values = ecfg[self.inner_param + "s"]
-
-        # With pre-selection, a point's average keeps only the shots whose
-        # herald readout found the qubit in g.
-        pre_select = ecfg.get("active_reset", False) and ecfg.get("pre_selection_reset", False)
-
-        avgi_points, avgq_points, idata, qdata = [], [], [], []
-        for outer in tqdm(outer_values, disable=not progress):
-            ecfg[self.outer_param] = outer
-            for inner in inner_values:
-                ecfg[self.inner_param] = inner
-                self.prog = self.ProgramClass(soccfg=self.soccfg, cfg=self.cfg)
-                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
-                                               threshold=None,
-                                               load_pulses=True,
-                                               progress=False,
-                                               debug=debug,
-                                               readouts_per_experiment=read_num)
-                point_i, point_q = self.prog.collect_shots()
-                idata.append(point_i)
-                qdata.append(point_q)
-                if pre_select:
-                    avgi, avgq = GeneralFitting.filter_shots_per_point(
-                        point_i, point_q, read_num,
-                        threshold=self.cfg.device.readout.threshold[ecfg.qubits[0]],
-                        pre_selection=True)
-                else:
-                    # The science readout is the last of the shot.
-                    avgi, avgq = avgi[0][-1], avgq[0][-1]
-                avgi_points.append(avgi)
-                avgq_points.append(avgq)
-
-        shape = (len(outer_values), len(inner_values))
-        avgi = np.reshape(np.array(avgi_points), shape)
-        avgq = np.reshape(np.array(avgq_points), shape)
-        self.data = dict(
-            avgi=avgi, avgq=avgq,
-            amps=np.abs(avgi + 1j * avgq),
-            phases=np.angle(avgi + 1j * avgq),
-            idata=idata, qdata=qdata,
-            xpts=inner_values, ypts=outer_values,
-        )
-        return self.data

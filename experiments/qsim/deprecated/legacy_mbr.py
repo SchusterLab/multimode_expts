@@ -19,7 +19,7 @@ import numpy as np
 from scipy.linalg import eig as generalized_eig
 from slab import AttrDict
 
-from experiments.qsim.dark_base import readout_lane_count
+from experiments.qsim.qsim_base import readout_lane_count
 from experiments.qsim.deprecated.encoding_spectroscopy import (
     EncodingHamiltonianSpectroscopyExperiment,
 )

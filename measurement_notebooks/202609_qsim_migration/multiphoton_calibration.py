@@ -109,7 +109,7 @@ station.ds_storage.df
 
 # %%
 from experiments.qsim.floquet_dark_mode_readout import (
-    DarkBaseExperiment,
+    QsimExperiment,
     BroadbandGeValidationProgram,
 )
 
@@ -480,7 +480,6 @@ broadband_validation_defaults = AttrDict(dict(
     pre_relax_delay=0,
     relax_delay=2500,
     normalize=False,
-    perform_wigner=False,
     dedupe_waveforms=True,
     prepulse=False,
     postpulse=False,
@@ -490,7 +489,7 @@ broadband_validation_defaults = AttrDict(dict(
 
 broadband_validation_runner = CharacterizationRunner(
     station=station,
-    ExptClass=DarkBaseExperiment,
+    ExptClass=QsimExperiment,
     ExptProgram=BroadbandGeValidationProgram,
     default_expt_cfg=broadband_validation_defaults,
     job_client=client,

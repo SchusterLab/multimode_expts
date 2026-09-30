@@ -36,14 +36,10 @@ from fitting.fit_display import *
 
 from experiments.qsim.kerr import *
 
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
-from experiments.qsim.dark_base import (
-    DarkBaseExperiment,
-    DarkBaseProgram,
-    DarkBaseRProgram,
-    classify_two_parity_readouts,
-)
+from experiments.qsim.qsim_base import QsimExperiment, QsimRProgram, classify_two_parity_readouts
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.floquet_phase_frame import (
     advance_floquet_offsets,
     advance_matrix_offsets,
@@ -63,7 +59,7 @@ from itertools import product
 from collections import defaultdict
 from numpy.lib.stride_tricks import sliding_window_view
 
-class EncodingHamiltonianSpectroscopyExperiment(DarkBaseExperiment):
+class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
     """Per-job and aggregate analysis for encoding-calibrated spectroscopy."""
 
     @classmethod

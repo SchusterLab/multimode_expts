@@ -9,6 +9,7 @@ env that has the repo on disk + numpy.
 """
 
 import inspect
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -323,3 +324,40 @@ def test_mock_station_never_writes_config_snapshots(monkeypatch, method, version
     inst = s.MultimodeStation.__new__(s.MultimodeStation)
     inst._is_mock = True
     assert getattr(inst, method)(update_main=True) == version_id
+
+
+# ---------- mock output root ----------
+
+def _mock_output_paths(monkeypatch, *, prod):
+    """-> a bare station after `_initialize_output_paths_mock()`."""
+    import experiments.station as s
+    monkeypatch.setattr(s, "is_production_pc", lambda: prod)
+    station = s.MultimodeStation.__new__(s.MultimodeStation)
+    station.experiment_name = "260101_mock"
+    station._initialize_output_paths_mock()
+    return station
+
+
+def test_mock_root_off_prod_is_repo_tmp(tmp_path, monkeypatch):
+    import experiments.station as s
+    monkeypatch.setattr(s, "MOCK_DATA_ROOT", tmp_path / "mock_data")
+    # Run from another folder: the root must not depend on the working
+    # directory, as the old relative "C:/..." path did off Windows.
+    monkeypatch.chdir(tmp_path)
+    station = _mock_output_paths(monkeypatch, prod=False)
+    assert station.data_path == tmp_path / "mock_data" / "260101_mock" / "data"
+    assert station.data_path.is_dir()
+    assert not (tmp_path / "C:").exists()
+
+
+def test_mock_root_default_is_git_ignored_repo_tmp():
+    import experiments.station as s
+    repo = Path(s.__file__).resolve().parent.parent
+    assert s.MOCK_DATA_ROOT == repo / ".tmp" / "mock_data"
+    assert s.MOCK_DATA_ROOT.is_absolute()
+
+
+def test_mock_root_on_prod_is_experiments_mock_data(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # off Windows, C:/... is created in here
+    station = _mock_output_paths(monkeypatch, prod=True)
+    assert station.output_root == Path("C:/experiments/mock_data")

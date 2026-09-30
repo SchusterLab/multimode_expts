@@ -50,7 +50,7 @@ import numpy as np
 import yaml
 
 from experiments.job_paths import data_root
-from experiments.qsim.floquet_dark_mode_readout import DarkBaseExperiment
+from experiments.qsim.floquet_dark_mode_readout import QsimExperiment
 
 
 def load_file_catalog(path, root=None):
@@ -123,7 +123,7 @@ def reconstruct_complex_return(spectroscopy_fnames, kerr_override_MHz=-10e-3):
             saved_phi = None
 
             for fname in phi_files:
-                expt = DarkBaseExperiment.from_h5file(fname)
+                expt = QsimExperiment.from_h5file(fname)
                 expt_cfg = expt.cfg.expt
 
                 saved_kerr_MHz = float(np.asarray(

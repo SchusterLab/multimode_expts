@@ -823,7 +823,6 @@ kerr_wait_wigner_defaults = AttrDict(dict(
     init_fock=False,
     displacement_path= return_dict_path, # optimal displacement path
     # displacement_path= return_dict['path'], # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 
@@ -857,7 +856,7 @@ def kerr_wait_wigner_preproc(station, default_expt_cfg, **kwargs):
 
 # wigner_runner = SweepRunner(
 #     station=station,
-#     ExptClass=meas.QsimWignerBaseExperiment,
+#     ExptClass=meas.QsimWignerExperiment,
 #     ExptProgram=meas.KerrWaitProgram,
 #     default_expt_cfg=kerr_wait_wigner_defaults,
 #     sweep_param='wait_us_time',
@@ -868,7 +867,7 @@ def kerr_wait_wigner_preproc(station, default_expt_cfg, **kwargs):
 
 wigner_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimWignerBaseExperiment,
+    ExptClass=meas.QsimWignerExperiment,
     ExptProgram=meas.KerrWaitProgram,
     default_expt_cfg=kerr_wait_wigner_defaults,
     preprocessor=kerr_wait_wigner_preproc,
@@ -899,7 +898,7 @@ wigner = wigner_runner.execute(
 )
 
 # %%
-# test_wigner = meas.QsimWignerBaseExperiment(config_file=station.hardware_config_file, expt_params=kerr_wait_wigner_defaults)
+# test_wigner = meas.QsimWignerExperiment(config_file=station.hardware_config_file, expt_params=kerr_wait_wigner_defaults)
 # test_wigner.data = wigner.data
 # test_wigner.outer_params = wigner.outer_params
 # test_wigner.inner_params = wigner.inner_params
@@ -1003,7 +1002,6 @@ qsim_wigner_defaults = AttrDict(dict(
 
     init_fock=False,
     displacement_path=return_dict_path, # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 
@@ -1040,7 +1038,7 @@ def qsim_wigner_preproc(station, default_expt_cfg, **kwargs):
 
 # wigner_runner = SweepRunner(
 #     station=station,
-#     ExptClass=meas.QsimWignerBaseExperiment,
+#     ExptClass=meas.QsimWignerExperiment,
 #     ExptProgram=meas.KerrWaitProgram,
 #     default_expt_cfg=qsim_wigner_defaults,
 #     sweep_param='wait_us_time',
@@ -1053,7 +1051,7 @@ def qsim_wigner_preproc(station, default_expt_cfg, **kwargs):
 # %%
 wigner_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimWignerBaseExperiment,
+    ExptClass=meas.QsimWignerExperiment,
     # ExptProgram=meas.KerrWaitProgram,
     ExptProgram=meas.SidebandScrambleProgram,
     default_expt_cfg=qsim_wigner_defaults,
@@ -1098,7 +1096,7 @@ for ro_stor in [0,1,7]:
 # %%
 wigner_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimWignerBaseExperiment,
+    ExptClass=meas.QsimWignerExperiment,
     # ExptProgram=meas.KerrWaitProgram,
     ExptProgram=meas.SidebandScrambleProgram,
     default_expt_cfg=qsim_wigner_defaults,
@@ -1160,7 +1158,6 @@ qsim_wigner_defaults = AttrDict(dict(
 
     init_fock=False,
     displacement_path=return_dict_path, # optimal displacement path
-    perform_wigner=True,
     parity_fast=False,
     pulse_correction=True,
 
@@ -1197,7 +1194,7 @@ def qsim_wigner_preproc(station, default_expt_cfg, **kwargs):
 
 # wigner_runner = SweepRunner(
 #     station=station,
-#     ExptClass=meas.QsimWignerBaseExperiment,
+#     ExptClass=meas.QsimWignerExperiment,
 #     ExptProgram=meas.KerrWaitProgram,
 #     default_expt_cfg=qsim_wigner_defaults,
 #     sweep_param='wait_us_time',
@@ -1210,7 +1207,7 @@ def qsim_wigner_preproc(station, default_expt_cfg, **kwargs):
 # %% editable=true slideshow={"slide_type": ""}
 wigner_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimWignerBaseExperiment,
+    ExptClass=meas.QsimWignerExperiment,
     ExptProgram=meas.CoolingSpectroscopyProgram,
     default_expt_cfg=qsim_wigner_defaults,
     preprocessor=qsim_wigner_preproc,

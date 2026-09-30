@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-09-29** (split out of `docs/STATUS.md`, on pippin). Theme: measurement code
+**Last updated: 2026-09-29** (10G and the merge to `main`, on pippin). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -8,8 +8,41 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
-- **Validate and merge `guan` to `main`.** The measurement suite has not run on the device
-  since the redesign (`--suite measurement --hardware`).
+- **The Program and Experiment tree refactor (steps 10A-10G) is done and on `main`**
+  (`docs/qsim/program_tree_plan.md`; record in `docs/log/2026-09-29_10g-device-check-and-merge.md`).
+  10G on the device: every changed Program type ran with no errors (calibration notebooks, MBR
+  StarkCal, TimeTrace, OrthoColumn). The Stark-phase sign changed from 09-28, but with the same
+  config the Program ASM and the analysis are unchanged: the device drifted.
+  After the merge, on `main`: the calibration notebooks and MBR section 0 ran locally with no
+  errors and the same values; a worker started from SSH (18:44) ran MBR section 0 through the
+  queue as `JOB-20260929-00087` (StarkCal) and `-00088` (TimeTrace), both completed. That
+  worker is stopped: start the worker from the RDP desktop (Ctrl-C cancels a job there).
+- **Users:** ask jonginn, connie and seb to restart their kernels once (class names and the
+  `readout` key changed). Their notebooks on `main` are migrated (`2858086`), and
+  `jonginn/qsim_experiments.ipynb` in its working copy (not committed; jonginn's uncommitted
+  edits are in the same file).
+- **jonginn:** `jonginn/qsim_experiments.ipynb` and `data_postprocess.ipynb` came back at the
+  merge (jonginn's Sep 15 work is not in the new tree). They still call `analyze(stage=...)`,
+  which raises; the tests mark them `KEPT_UNMIGRATED`. Move the Sep 15 cells to the new tree,
+  or migrate the notebooks, then retire them again. Two names in plan section 5 still wait
+  for jonginn.
+- **Not done at the merge:** push `main` and `guan` to origin; merge `main` into
+  `qsim-analysis` (its worktree had a job running).
+- **The `readout` key** (since 10D): `readout='qubit'` (default), `'parity'`, `'multiparity'`,
+  `'wigner'`, `'slow_pi_ge'`; `postpulse` keeps its meaning (decoding, incl. f0-g1 for
+  `'qubit'`). A qsim Program refuses `perform_wigner`, `parity_readout`,
+  `multiparity_readout` and `slow_pi_ge_readout`, even when false, and
+  `post_select_pre_pulse=True`. `tools/migrate_readout_flags.py` moves a notebook to the key.
+- **Device physics:** the calibration steps need the manual check (data not meaningful on
+  09-28 and 09-29: MBR orthogonality diagonal 0.04-0.15, off-diagonal power up to 2.7x). The
+  full MBR smoke run is long: section 1 alone is 35 jobs of ~2 min.
+- **Flat `experiments` namespace** (guan, a separate session): it keeps the last class of a name
+  without a warning. 16 older clashes outside qsim, one in qsim (`SidebandScrambleDarkProgram`,
+  live vs deprecated; waits for jonginn). Details in `docs/log/2026-09-29_program-tree-plan.md`.
+- **Analysis theme:** `tests/test_matrix_pencil_regression.py` fails 3 cases
+  (tolerance 1e-12; details in `docs/log/2026-09-29_program-tree-plan.md`).
+- **Test setup:** a new worktree needs `configs\versions` (a junction to main's folder), or
+  about 34 tests fail on the config archive.
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.
@@ -36,29 +69,33 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 | meas `dormant/` | moved-out or old code; loads, not maintained | none |
 
 How to check:
-- `pixi run pytest` (about 1300 tests);
+- `pixi run pytest` (about 1500 tests);
 - `pixi run python tools/dryrun_qsim_notebook.py <measurement notebook> [--keep-going]` (mock
   station; `--keep-going` lists every failing cell);
-- the measurement suite (`--suite measurement --hardware`) needs the real device; the redesign
-  has not run it.
+- the measurement suite (`--suite measurement --hardware`) needs the real device; first run
+  2026-09-28 (see "What is next").
 
 ## Code map
 
-### `experiments/qsim/` (39 live modules, about 13 kloc)
+### `experiments/qsim/` (38 live modules)
+- **The stem** (steps 10B-10F, `docs/qsim/program_tree_plan.md`): one chain of Programs,
+  `QsimProgram` (`qsim_base`: the template, the readout modes, `readouts_per_shot`) ->
+  `FloquetProgram` (`floquet_train`) -> `DarkModeProgram` (`dark_mode_encoding`), plus
+  `QsimRProgram` (RAverager) in `qsim_base`. One sweep driver, `QsimExperiment` (`qsim_base`),
+  with `QsimWignerExperiment` (`qsim_base_wigner`) and `MBRJobExperiment` on it.
 - **MBR, clean** (about 3.5 kloc; rules and patterns in `docs/qsim/mbr_redesign.md`):
   - job classes, each with its own Program: `mbr_stark_cal`, `mbr_time_trace`,
-    `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on
-    `FloquetTrain` + `QsimBaseProgram`, and `MBRJobExperiment`; no dark-mode base since 8A);
-  - the Floquet playback: `floquet_train` (shared with the dark-mode programs);
+    `mbr_ortho_column`, on the shared `mbr_ramsey` (`MBRRamseyProgram` on `FloquetProgram`,
+    and `MBRJobExperiment`);
   - assembled classes: `mbr_calibration_set`, `mbr_spectrum`, `mbr_orthogonality`,
     `mbr_ham_tomo`, `mbr_disorder_ensemble`;
   - infra: `experiments/assembled_data.py` (manifest + assembled HDF5), `mbr_saved`,
     `mbr_campaign` (the campaign base, mock stations, pinned config sets, `smoke()`).
 - **Calibration support** (step 9): `multiphoton_swap` (N-photon swap sequences),
   `bare_readout_check`; `floquet_gain_chevron` fits the 2D chevron.
-- **Not MBR, split out of the god module but not cleaned** (about 9 kloc): `dark_base`,
-  `qsim_base`, `qsim_base_wigner`, `sideband_*`, `kerr`, `dark_mode_*`, `cooling`,
-  `cavity_ramsey_flux_excursion`, ...
+- **Not MBR: leaves on the stem, their insides not cleaned**: `sideband_*`, `kerr`,
+  `dark_mode_*`, `cooling`, `cavity_ramsey_flux_excursion`, ... Eight of them no notebook or
+  test uses (plan 2.4); their retirement waits for the other users.
 - `floquet_dark_mode_readout.py` (about 100 lines): only the `_MOVED_TO` re-exports that non-MBR
   notebooks still use.
 
@@ -80,6 +117,7 @@ old versions of ported helpers; older retired code.
 
 | Doc | Status |
 |---|---|
+| `docs/qsim/program_tree_plan.md` | plan for steps 10A-10G (qsim Program/Experiment tree, `readout` key); approved, 10A next |
 | `docs/qsim/mbr_redesign.md` | current spec for the MBR classes (steps 1-7 done; step 8 in its own plan) |
 | `docs/qsim/mbr_step7_plan.md` | step 7 plan and record (done); its section 7 questions are open |
 | `docs/qsim/mbr_step8_plan.md` | step 8 plan and record (done) |

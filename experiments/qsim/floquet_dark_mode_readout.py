@@ -27,14 +27,10 @@ from fitting.fit_display import *
 
 from experiments.qsim.kerr import *
 
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
-from experiments.qsim.dark_base import (
-    DarkBaseExperiment,
-    DarkBaseProgram,
-    DarkBaseRProgram,
-    classify_two_parity_readouts,
-)
+from experiments.qsim.qsim_base import QsimExperiment, QsimRProgram, classify_two_parity_readouts
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.floquet_phase_frame import (
     advance_floquet_offsets,
     advance_matrix_offsets,
@@ -72,7 +68,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 # defining module exports, so the second write is idempotent.
 _MOVED_TO = {
     "BroadbandGeValidationProgram": "experiments.qsim.dark_mode_broadband_ge_validation",
-    "SidebandScrambleDarkProgramNewNew": "experiments.qsim.mbr_spectroscopy_program",
+    "DarkModeScrambleProgram": "experiments.qsim.mbr_spectroscopy_program",
     "SinglePhotonFloquetSpectroscopyProgram":
         "experiments.qsim.deprecated.single_photon_spectroscopy",
     "KerrWaitProgramDark": "experiments.qsim.deprecated.dark_scramble_legacy",
@@ -86,7 +82,7 @@ _MOVED_TO = {
     "FloquetDisplacementKerrProgram": "experiments.qsim.floquet_displacement_kerr",
     "ManStorMultiparityChevronRExperiment": "experiments.qsim.dark_mode_multiparity_chevron",
     "ManStorMultiparityChevronRProgram": "experiments.qsim.dark_mode_multiparity_chevron",
-    "SidebandStarkAmplificationModifiedProgram": "experiments.qsim.sideband_stark_shift_cal",
+    "StorageSwapStarkPhaseProgram": "experiments.qsim.sideband_stark_shift_cal",
     "SidebandStarkAmplificationModifiedProgram_newold": "experiments.qsim.sideband_stark_shift_cal",
     "SidebandStarkAmplificationModifiedProgram_old": "experiments.qsim.sideband_stark_shift_cal",
     "StorageSwapPhaseAccumulationProgram": "experiments.qsim.storage_swap_phase_cal",

@@ -2,10 +2,10 @@
 
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
 
 
-class SlowPiGeLengthRabiProgram(QsimBaseProgram):
+class SlowPiGeLengthRabiProgram(QsimProgram):
     """Apply the slow qubit ge pulse with length_to_sweep as its duration."""
 
     def __init__(self, soccfg, cfg):
@@ -43,7 +43,7 @@ class SlowPiGeLengthRabiProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class SlowPiGeRamseyProgram(QsimBaseProgram):
+class SlowPiGeRamseyProgram(QsimProgram):
     """
     Apply two slow ge half-pi pulses separated by expt.wait_time.
 

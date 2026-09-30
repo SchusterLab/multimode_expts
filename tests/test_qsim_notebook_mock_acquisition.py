@@ -322,8 +322,8 @@ def test_bare_scramble_sweep_builds(mock_station, defaults):
 
     runner = CharacterizationRunner(
         station=station,
-        ExptClass=meas.QsimBaseExperiment,
-        ExptProgram=meas.SidebandScrambleDarkProgramNewNew,
+        ExptClass=meas.QsimExperiment,
+        ExptProgram=meas.DarkModeScrambleProgram,
         default_expt_cfg=cfg,
         preprocessor=sideband_scramble_preproc,
         postprocessor=None,
@@ -411,7 +411,7 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
             scramble_sync_cycles=floquet_defaults["scramble_sync_cycles"],
             floquet_hardware_loop=floquet_defaults["floquet_hardware_loop"],
             update_phases=True, zero_floquet_gain=False, man_mode_no=1,
-            perform_wigner=False, do_g_and_e=False, ramsey_freq=0.2,
+            do_g_and_e=False, ramsey_freq=0.2,
             displace_gains=np.arange(2000, 4001, 1000),
             n_cycle_pairs=np.arange(0, 4, dtype=int),
             swept_params=["displace_gain", "n_cycle_pair"],

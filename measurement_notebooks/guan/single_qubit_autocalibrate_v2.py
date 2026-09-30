@@ -2762,7 +2762,6 @@ cool_spec_defaults = AttrDict(dict(
 
     normalize=False,
     preloaded_pulses=False,
-    perform_wigner=False,
     prepulse=True,
     postpulse=True,
     pre_sweep_pulse=None, # pre sweep pulse
@@ -2771,7 +2770,7 @@ cool_spec_defaults = AttrDict(dict(
 
 cool_spec_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
+    ExptClass=meas.QsimExperiment,
     ExptProgram=meas.qsim.cooling.CoolingSpectroscopyProgram,
     default_expt_cfg=cool_spec_defaults,
     # preprocessor=kerr_ramsey_preproc,

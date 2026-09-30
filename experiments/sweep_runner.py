@@ -127,7 +127,7 @@ class SweepRunner:
             sweep_param: Parameter to sweep (e.g., 'freq', 'gain')
             preprocessor: Optional function(station, default_cfg, **kwargs) -> expt_cfg
             postprocessor: Optional function(station, mother_expt) called after sweep
-            ExptProgram: For QsimBaseExperiment, this is the program class to use
+            ExptProgram: For QsimExperiment, this is the program class to use
             live_plot: If True, show live analysis plot after each sweep point
             job_client: JobClient instance for submitting to job queue (required for run())
             use_queue: If True, execute() uses run() (job queue). If False, uses run_local().

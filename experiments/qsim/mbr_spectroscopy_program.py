@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
-"""SidebandScrambleDarkProgramNewNew: load a dark mode, scramble, read it back.
+"""DarkModeScrambleProgram: load a dark mode, scramble, read it back.
 
-Load a chosen collective mode, play the scramble, read the mode back. It
-inherits the scramble from ``SidebandScrambleProgram`` and the dark-mode
-load/read from ``DarkBaseProgram``, in that MRO order, so
-``super().core_pulses()`` is the scramble and the encoding methods come from
-the dark base.
+Named ``SidebandScrambleDarkProgramNewNew`` until step 10F.
 
-The MBR programs used to subclass it; they now live in ``mbr_ramsey.py`` and
-inherit its two parents directly.
+Load a chosen collective mode, play the scramble, read the mode back. The
+dark-mode load/read and the phase-tracked scramble both come from
+``DarkModeProgram`` (the scramble from its ``FloquetProgram`` base). Until step
+10C it also had ``SidebandScrambleProgram`` as a parent, but it used nothing
+from it: its own ``core_pulses`` replaces that one's.
+
+The MBR programs used to subclass it; they now live in ``mbr_ramsey.py``.
 """
 
 
-from experiments.qsim.dark_base import DarkBaseProgram
-from experiments.qsim.sideband_scramble import SidebandScrambleProgram
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 
 
-class SidebandScrambleDarkProgramNewNew(SidebandScrambleProgram, DarkBaseProgram):
-    # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
+class DarkModeScrambleProgram(DarkModeProgram):
     # Dark load, scramble, and readout share one mutable phase_offsets list.
 
     def _prepare_selected_dark_mode(
