@@ -25,9 +25,13 @@
 - After the merge, from the main checkout: `multiphoton_calibration` (128 s),
   `floquet_calibration` (271 s) and `mbr` section 0 (164 s) locally, no errors; the values
   agree with the `guan` run (ge fidelity 94.5 %, broadband gain 24596 +/- 10, M1-S4
-  878.254 MHz / 9047). Worker restarted at 18:44 in a Git Bash window, as the server runs.
+  878.254 MHz / 9047). Worker restarted at 18:44, from the agent's SSH session.
   Then `mbr` section 0 through the queue: `JOB-20260929-00087` (MBRStarkCal) and `-00088`
   (MBRTimeTrace), both completed. They show user `jonginn` (the notebook's station user).
+
+- That worker ran in session 0 (no desktop), so it had no console for Ctrl-C (the way to
+  cancel the running job). Stopped at ~18:55 with the queue empty; guan starts it over RDP.
+  Rule: start the worker from the RDP desktop, never from an SSH or agent session.
 
 ## What was found
 

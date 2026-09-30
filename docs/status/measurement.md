@@ -14,8 +14,9 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   StarkCal, TimeTrace, OrthoColumn). The Stark-phase sign changed from 09-28, but with the same
   config the Program ASM and the analysis are unchanged: the device drifted.
   After the merge, on `main`: the calibration notebooks and MBR section 0 ran locally with no
-  errors and the same values; the worker was restarted (18:44), and MBR section 0 through the
-  queue ran as `JOB-20260929-00087` (StarkCal) and `-00088` (TimeTrace), both completed.
+  errors and the same values; a worker started from SSH (18:44) ran MBR section 0 through the
+  queue as `JOB-20260929-00087` (StarkCal) and `-00088` (TimeTrace), both completed. That
+  worker is stopped: start the worker from the RDP desktop (Ctrl-C cancels a job there).
 - **Users:** ask jonginn, connie and seb to restart their kernels once (class names and the
   `readout` key changed). Their notebooks on `main` are migrated (`2858086`), and
   `jonginn/qsim_experiments.ipynb` in its working copy (not committed; jonginn's uncommitted
