@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-09-29** (split out of `docs/STATUS.md`, on pippin). Theme: measurement code
+**Last updated: 2026-09-29** (10G and the merge to `main`, on pippin). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -8,51 +8,40 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
-- **The Program and Experiment tree refactor, before the merge** (`docs/qsim/program_tree_plan.md`,
-  steps 10A-10G; approved by guan 2026-09-29). Decision (guan, 2026-09-29): do it on `guan`
-  first, so the other users restart their kernels only once. Done: 10A (the nets: program
-  golden, acquire golden, displacement-Kerr notebook in the notebook golden) and 10B (one
-  template in `QsimBaseProgram`; the class names change in 10F) and 10C (the chain
-  `QsimBaseProgram` -> `FloquetProgram` -> `DarkModeProgram`; `DarkBaseProgram` is an empty
-  subclass kept until 10F for the deprecated modules) and 10D (the `readout` key; the old
-  readout booleans raise; the notebooks on `guan` moved to the key), 10E (one sweep driver)
-  and 10F (the renames of plan section 5, on `guan`: code, tests, the `202609_qsim_migration`
-  and `guan/` notebooks, the shared `analysis_notebooks/qsim analysis.ipynb`). Next: 10G, the
-  device check in local mode (calibration notebooks, then MBR), then the merge. At the merge,
-  jonginn's and connie's notebooks move with `tools/rename_program_tree.py` and the readout
-  table (plan section 4); two jonginn names wait for jonginn (plan section 5).
+- **The Program and Experiment tree refactor (steps 10A-10G) is done and on `main`**
+  (`docs/qsim/program_tree_plan.md`; record in `docs/log/2026-09-29_10g-device-check-and-merge.md`).
+  10G on the device: every changed Program type ran with no errors (calibration notebooks, MBR
+  StarkCal, TimeTrace, OrthoColumn). The Stark-phase sign changed from 09-28, but with the same
+  config the Program ASM and the analysis are unchanged: the device drifted.
+  After the merge, on `main`: the calibration notebooks and MBR section 0 ran locally with no
+  errors and the same values; the worker was restarted (18:44), and MBR section 0 through the
+  queue ran as `JOB-20260929-00087` (StarkCal) and `-00088` (TimeTrace), both completed.
+- **Users:** ask jonginn, connie and seb to restart their kernels once (class names and the
+  `readout` key changed). Their notebooks on `main` are migrated (`2858086`), and
+  `jonginn/qsim_experiments.ipynb` in its working copy (not committed; jonginn's uncommitted
+  edits are in the same file).
+- **jonginn:** `jonginn/qsim_experiments.ipynb` and `data_postprocess.ipynb` came back at the
+  merge (jonginn's Sep 15 work is not in the new tree). They still call `analyze(stage=...)`,
+  which raises; the tests mark them `KEPT_UNMIGRATED`. Move the Sep 15 cells to the new tree,
+  or migrate the notebooks, then retire them again. Two names in plan section 5 still wait
+  for jonginn.
+- **Not done at the merge:** push `main` and `guan` to origin; merge `main` into
+  `qsim-analysis` (its worktree had a job running).
 - **The `readout` key** (since 10D): `readout='qubit'` (default), `'parity'`, `'multiparity'`,
   `'wigner'`, `'slow_pi_ge'`; `postpulse` keeps its meaning (decoding, incl. f0-g1 for
   `'qubit'`). A qsim Program refuses `perform_wigner`, `parity_readout`,
   `multiparity_readout` and `slow_pi_ge_readout`, even when false, and
-  `post_select_pre_pulse=True`. The notebooks of jonginn and connie still set them; they move at
-  the merge (plan, 10F).
-- **10G checklist** (the device check of steps 10B-10F; start a new session for it):
-  1. Stop the worker. `tools/run_qsim_suite.py --hardware` takes the main checkout's worker lock
-     and refuses while a worker runs. From this worktree the notebooks run locally
-     (`use_queue=False`), on this branch's code.
-  2. `pixi run python tools/run_qsim_suite.py --hardware` (smoke profile) for the calibration
-     notebooks; `--only <notebook>` for one; `--keep-going` to see every failing cell. Then the
-     MBR notebooks (`--only mbr`, ...).
-  3. What should differ from the 2026-09-28 run: nothing in the pulses of a config that worked
-     then (the goldens show it). Visible changes: the HDF5 files are named after the new classes
-     (`JOB-..._QsimExperiment.h5`), `cfg.expt` records `readout` and every driver records
-     `cfg.read_num`.
-  4. The calibration steps still need the manual inspection found on 2026-09-28 (data not
-     meaningful). That is physics, not this refactor.
-  5. If it passes: merge `guan` into `main` (normal merge; conflicts listed in
-     `docs/log/2026-09-29_program-tree-plan.md`), migrate jonginn's and connie's notebooks on the
-     merge result (plan, section 6, 10F), drain the queue of jobs with old class names, restart
-     the worker, and ask the users to restart their kernels once.
+  `post_select_pre_pulse=True`. `tools/migrate_readout_flags.py` moves a notebook to the key.
+- **Device physics:** the calibration steps need the manual check (data not meaningful on
+  09-28 and 09-29: MBR orthogonality diagonal 0.04-0.15, off-diagonal power up to 2.7x). The
+  full MBR smoke run is long: section 1 alone is 35 jobs of ~2 min.
 - **Flat `experiments` namespace** (guan, a separate session): it keeps the last class of a name
   without a warning. 16 older clashes outside qsim, one in qsim (`SidebandScrambleDarkProgram`,
   live vs deprecated; waits for jonginn). Details in `docs/log/2026-09-29_program-tree-plan.md`.
-- **Analysis theme:** `tests/test_matrix_pencil_regression.py` fails 3 cases on `guan`
+- **Analysis theme:** `tests/test_matrix_pencil_regression.py` fails 3 cases
   (tolerance 1e-12; details in `docs/log/2026-09-29_program-tree-plan.md`).
-- **Device:** a first run on the device on 2026-09-28 (guan, local mode) had no errors, but the
-  data was not meaningful: the calibration steps need a manual check. After 10A-10F, run the
-  calibration notebooks and then the MBR notebooks on the device (10G); then merge `guan` to
-  `main`.
+- **Test setup:** a new worktree needs `configs\versions` (a junction to main's folder), or
+  about 34 tests fail on the config archive.
 - **`main`:** `ErrorAmplificationExperiment.analyze` fits frequency and gain scans with
   `periodic=True` (biased near scan edges; `docs/qsim/mbr_step9_plan.md` 0.4). Fix the default
   on `main` for every user, then cherry-pick; then the Floquet error-amp postproc can drop it.

@@ -1,9 +1,9 @@
 # Where things stand
 
-**Last updated: 2026-09-29** (status split by theme, on pippin). This file holds only what is
+**Last updated: 2026-09-29** (guan merged into main, on pippin). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`
-(newest: `2026-09-29_worktree-split.md`). Read the log only if you need the history.
+(newest: `2026-09-29_10g-device-check-and-merge.md`). Read the log only if you need the history.
 
 ## Themes, branches, worktrees (guan, 2026-09-29)
 
@@ -24,9 +24,11 @@ Rules:
 
 ## Cross-theme items
 
-- **Hardware:** first device run since the redesign on 2026-09-28 (guan, local mode): no errors,
-  data not meaningful; the calibration steps need a manual check. A refactor of the qsim
-  Program/Experiment tree comes before the merge to `main` (`docs/status/measurement.md`).
+- **`main` has the qsim redesign** (merge of `guan`, 2026-09-29, after the 10G device check;
+  `docs/status/measurement.md`). Users restart their kernels once. `main` is not merged into
+  `qsim-analysis` yet, and neither branch is pushed.
+- **Hardware:** the code runs on the device, but the data is not meaningful yet; the
+  calibration steps need a manual check.
 - **Physics audit** (details in `docs/status/qsim_numerics.md`): the numerical baselines are
   `xfail(strict=False)`.
 
