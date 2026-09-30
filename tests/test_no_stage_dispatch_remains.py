@@ -43,6 +43,18 @@ def _notebooks():
 
 NOTEBOOKS = _notebooks()
 
+# Kept at the guan -> main merge with jonginn's newer work, not migrated yet
+# (tests/test_jonginn_notebook_migration.py, KEPT_UNMIGRATED).
+KEPT_UNMIGRATED = {
+    REPO_ROOT / "measurement_notebooks" / "jonginn" / name
+    for name in ("qsim_experiments.ipynb", "data_postprocess.ipynb")
+}
+
+
+def _param(path):
+    marks = [pytest.mark.xfail(reason="kept unmigrated at the merge", strict=False)]         if path in KEPT_UNMIGRATED else []
+    return pytest.param(path, marks=marks, id=str(path.relative_to(REPO_ROOT)))
+
 
 def _code(path):
     if path.suffix == ".ipynb":
@@ -58,9 +70,7 @@ def test_the_sweep_found_the_notebooks():
     assert len(NOTEBOOKS) > 20, f"only found {len(NOTEBOOKS)} notebooks"
 
 
-@pytest.mark.parametrize(
-    "path", NOTEBOOKS,
-    ids=[str(p.relative_to(REPO_ROOT)) for p in NOTEBOOKS])
+@pytest.mark.parametrize("path", [_param(p) for p in NOTEBOOKS])
 def test_no_notebook_calls_the_retired_stage_dispatch(path):
     """The four stages are four classes; `stage=` names none of them.
 
