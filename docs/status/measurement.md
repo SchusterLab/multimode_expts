@@ -27,6 +27,23 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   `multiparity_readout` and `slow_pi_ge_readout`, even when false, and
   `post_select_pre_pulse=True`. The notebooks of jonginn and connie still set them; they move at
   the merge (plan, 10F).
+- **10G checklist** (the device check of steps 10B-10F; start a new session for it):
+  1. Stop the worker. `tools/run_qsim_suite.py --hardware` takes the main checkout's worker lock
+     and refuses while a worker runs. From this worktree the notebooks run locally
+     (`use_queue=False`), on this branch's code.
+  2. `pixi run python tools/run_qsim_suite.py --hardware` (smoke profile) for the calibration
+     notebooks; `--only <notebook>` for one; `--keep-going` to see every failing cell. Then the
+     MBR notebooks (`--only mbr`, ...).
+  3. What should differ from the 2026-09-28 run: nothing in the pulses of a config that worked
+     then (the goldens show it). Visible changes: the HDF5 files are named after the new classes
+     (`JOB-..._QsimExperiment.h5`), `cfg.expt` records `readout` and every driver records
+     `cfg.read_num`.
+  4. The calibration steps still need the manual inspection found on 2026-09-28 (data not
+     meaningful). That is physics, not this refactor.
+  5. If it passes: merge `guan` into `main` (normal merge; conflicts listed in
+     `docs/log/2026-09-29_program-tree-plan.md`), migrate jonginn's and connie's notebooks on the
+     merge result (plan, section 6, 10F), drain the queue of jobs with old class names, restart
+     the worker, and ask the users to restart their kernels once.
 - **Flat `experiments` namespace** (guan, a separate session): it keeps the last class of a name
   without a warning. 16 older clashes outside qsim, one in qsim (`SidebandScrambleDarkProgram`,
   live vs deprecated; waits for jonginn). Details in `docs/log/2026-09-29_program-tree-plan.md`.
