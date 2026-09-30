@@ -48,4 +48,8 @@ def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
         model.energies_MHz, model.basis_eigenstate_weights, 1e-3 / (len(time_us) * (time_us[1] - time_us[0])))
     return RealSpectrum(label, data_set.label, data_set.basis == "complete", time_us,
                         np.asarray(data.reconstruction.A), levels, multiplicities, all_weights[rows], tuple(occupations),
-                        all_weights, tuple(tuple(o) for o in model.fock_basis))
+                        all_weights, tuple(tuple(o) for o in model.fock_basis),
+                        dict(photon_number=data_set.photon_number, mode_count=mode_count,
+                             detunings_MHz=tuple(float(d) for d in data.detunings),
+                             couplings_MHz=tuple(float(g) for g in data.hardware.couplings_MHz),
+                             kerr_MHz=float(kerr_MHz)))

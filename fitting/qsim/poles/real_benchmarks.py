@@ -36,6 +36,9 @@ class RealSpectrum:
     #: occupations: what a complete basis would measure (optional; ``fitting.qsim.poles.design``).
     model_row_weights: np.ndarray | None = None
     model_occupations: tuple | None = None
+    #: The model's parameters as recorded (``fixed_n_hamiltonian``'s arguments): photon_number,
+    #: mode_count, detunings_MHz, couplings_MHz, kerr_MHz (optional; the Hamiltonian fit's start).
+    model_parameters: dict | None = None
 
     @property
     def dt_us(self):
