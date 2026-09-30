@@ -1,0 +1,396 @@
+"""The reference MBR analysis pipeline, as a callable.
+
+This is the *current* behaviour of the many-body Ramsey spectrum workflow,
+captured so it can be pinned. It is the executable form of
+``analysis_notebooks/guan/MBR_analysis.py``: pick job IDs, load their HDF5,
+run ``MBRSpectrumExperiment.analyze()``.
+
+Not a test module (no ``test_`` prefix, so pytest does not collect it). It is
+imported by ``test_mbr_analysis_golden.py`` and by the baseline generator.
+
+The HDF5 loader now lives in the library
+----------------------------------------
+This module used to carry its own ``_SavedJob``/``_SavedProgram`` pair and its
+own HDF5 reader, marked as scaffolding to be deleted once a real loader
+landed. It has: :mod:`experiments.saved_jobs`. The functions below are thin
+wrappers over it, kept because the fixtures and the golden test call them by
+these names.
+
+That the wrappers are thin is the point. These tests pin the analysis numbers
+against a stored baseline, so running them through the same loader the
+notebooks use is what makes the baseline evidence that the loader is right.
+"""
+
+import json
+from pathlib import Path
+
+import numpy as np
+
+from experiments.job_paths import job_records, resolve_job_paths
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.saved_jobs import load_aggregate as _load_aggregate
+from experiments.saved_jobs import load_h5
+
+DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
+
+
+def dataset(name, kind):
+    """Job IDs for one named dataset, from the recorded literal list.
+
+    Deliberately not a numeric range. Job IDs are one global counter on a queue
+    shared by every user -- they interleave by design, each job pinning its own
+    config -- so a range is not an identifier for a dataset. The notebook
+    subtracts the other user's jobs with a positional stride in one place and a
+    program-class filter in another; three of its four July ranges pull in jobs
+    belonging to someone else. (``july_N3`` and every August set are
+    unaffected.)
+
+    The lists were resolved from the job database once, by owner, program
+    class, completed status and config-triple agreement. That resolver was a
+    throwaway; only its output is kept. This file is the interim home -- the
+    list belongs in the aggregate HDF5 manifest (spec 3.3) once aggregates can
+    save themselves.
+    """
+    return json.loads(DATASETS.read_text())["datasets"][name][kind]
+
+
+# Eight quadrature acquisitions covering four occupations, from the August
+# campaign. In the notebook this is `data_four_realization`: a fragment used
+# for quick plotting, NOT the August N=3 sector. It does not complete the
+# fixed-N basis. The golden baseline pins it.
+CHARACTERIZATION_JOB_IDS = dataset("august_quickplot", "spectroscopy")
+
+# Analysis parameters the reference notebook uses. Kept here rather than in the
+# test so the baseline generator and the test cannot disagree about them.
+CHARACTERIZATION_ANALYSIS = dict(
+    cycle_branches={(3, 0, 0, 0, 0): 1, (2, 0, 0, 1, 0): 1},
+    fft_window="raw",
+    zero_padding=1,
+    spectrum_method="fft",
+)
+
+# Floquet timing as compiled at acquisition. Reconstructed exactly from
+# CFG-FL-20260814-00076 + CFG-HW-20260814-00074 + configs/soccfg_snapshot.json
+# (spec section 2.2); the historical pickle holds the same value because it
+# computed it from the same configs. Hard-coded here only until the resolver
+# replaces it, since threading the resolver in is itself a behaviour change and
+# the baseline must be captured before any of those.
+CHARACTERIZATION_TIMING = dict(
+    floquet_cycle_us=0.7254464285714286,
+    m1s_pi_fracs=[40] * 7,
+)
+
+# --------------------------------------------------------------------------
+# The complete-basis dataset: August N=3
+# --------------------------------------------------------------------------
+#
+# 70 calibration plus 70 spectroscopy jobs completing the 35-state N=3 basis,
+# so level statistics, the SFF and the complete-basis branch of analyze_spectrum
+# all run on it -- none of which the eight-file quick-plot set can reach.
+#
+# Chosen over the July N=3 sector, which also completes the basis, because it
+# is the same campaign and the *same* Floquet and M1 configuration as the
+# quick-plot set (CFG-FL-20260814-00076, CFG-M1-20260814-00121). One timing
+# resolution therefore covers every fixture here. Its ranges are also clean:
+# no other user's jobs fall inside them, unlike three of the four July ranges.
+#
+# Settings below are the notebook's `saved_*` values for this sector.
+
+COMPLETE_BASIS_CALIBRATION_IDS = dataset("august_N3", "calibration")
+COMPLETE_BASIS_SPECTROSCOPY_IDS = dataset("august_N3", "spectroscopy")
+
+COMPLETE_BASIS_CYCLE_BRANCHES = {
+    (2, 1, 0, 0, 0): 1,
+    (2, 0, 1, 0, 0): 1,
+    (1, 1, 0, 1, 0): 1,
+    (1, 1, 0, 0, 1): 1,
+    (1, 0, 1, 1, 0): 1,
+    (1, 0, 1, 0, 1): 1,
+}
+
+# Branches worth pinning separately. The notebook runs the first and the third;
+# the second exists so the Matrix-Pencil path gets complete-basis coverage too.
+# Together they exercise both phase frames and both spectrum methods, which is
+# everything the previous two-dataset arrangement covered plus the complete
+# basis.
+COMPLETE_BASIS_BRANCHES = {
+    "as_acquired_fft": dict(phase_frame="as_acquired", spectrum_method="fft"),
+    "as_acquired_matrix_pencil": dict(phase_frame="as_acquired",
+                                      spectrum_method="matrix_pencil"),
+    "manual_kerr_fft": dict(phase_frame="manual_kerr",
+                            manual_kerr_MHz=-10.5e-3,
+                            cycle_branches=COMPLETE_BASIS_CYCLE_BRANCHES,
+                            spectrum_method="fft"),
+}
+
+COMPLETE_BASIS_ANALYSIS = dict(fft_window="raw", zero_padding=1)
+
+PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
+
+
+def load_aggregate(job_ids=None, timing=None, owner=MBRSpectrumExperiment):
+    """Build the aggregate Experiment for ``job_ids`` from HDF5 alone.
+
+    Touches no station, no database, no vault note and no pickle, per the
+    isolation rule in spec section 13.3.
+
+    ``timing`` is pinned to :data:`CHARACTERIZATION_TIMING` by default rather
+    than resolved from provenance, so this fixture keeps testing the analysis
+    against a fixed cycle time even if the resolver changes.
+    :func:`load_aggregate_resolved` is the one that exercises the resolver.
+    """
+    ids = list(CHARACTERIZATION_JOB_IDS if job_ids is None else job_ids)
+    return _load_aggregate(ids, owner=owner,
+                           timing=timing or CHARACTERIZATION_TIMING)
+
+
+def converted_quickplot(out_root):
+    """-> MBRSpectrumExperiment for the quick-plot set, through the migration script.
+
+    The eight old jobs go to four ``MBRTimeTraceExperiment`` files in
+    ``out_root``; the spectrum is re-assembled from the manifest the script
+    writes. Timing is pinned to :data:`CHARACTERIZATION_TIMING`, as for the
+    old aggregate.
+    """
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        CHARACTERIZATION_JOB_IDS, out_root=out_root, load_shots=False,
+        timing=CHARACTERIZATION_TIMING)
+    return Spectrum.from_manifest(converted.manifest_path)
+
+
+def run_reference_analysis(spectrum, **overrides):
+    """-> (spectrum, analysis_result) for the characterization workflow."""
+    params = dict(CHARACTERIZATION_ANALYSIS)
+    params.update(overrides)
+    return spectrum, spectrum.analyze(**params)
+
+
+# --------------------------------------------------------------------------
+# Loading by resolved provenance, rather than a hard-coded timing constant
+# --------------------------------------------------------------------------
+
+
+def job_provenance():
+    """-> {job_id: record} from the exported sidecar (spec section 3.2).
+
+    Delegates to :func:`experiments.job_paths.job_records`; kept as a name
+    because the golden test reads the version IDs out of it directly.
+    """
+    return job_records()
+
+
+def load_aggregate_resolved(job_ids, owner=MBRSpectrumExperiment):
+    """Build an aggregate whose Floquet timing comes from the versioned configs.
+
+    Unlike :func:`load_aggregate` this passes no ``timing``, so the loader
+    resolves each job's Floquet config from the provenance sidecar and
+    recomputes the timing from the archive (spec section 2.2). That is what
+    makes datasets other than the August characterization set loadable at
+    all -- the July sectors were taken under a different configuration.
+    """
+    return _load_aggregate(list(job_ids), owner=owner)
+
+
+def converted_complete_basis(out_root):
+    """-> MBRSpectrumExperiment for August N=3, through the migration script.
+
+    The 70 calibration jobs become an ``MBRCalibrationSetExperiment`` and the
+    70 spectroscopy jobs 35 ``MBRTimeTraceExperiment`` files, all in
+    ``out_root``; the spectrum is re-assembled from its manifest, which also
+    loads the calibration set.
+    """
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        COMPLETE_BASIS_SPECTROSCOPY_IDS, out_root=out_root, load_shots=False,
+        calibration_job_ids=COMPLETE_BASIS_CALIBRATION_IDS)
+    spectrum = Spectrum.from_manifest(converted.manifest_path)
+    occupations = spectrum.occupations
+    if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
+        raise RuntimeError(
+            f"spectrum is not the complete 35-state N=3 sector: "
+            f"{len(occupations)} occupations")
+    return spectrum
+
+
+def run_complete_basis_analysis(spectrum, branch="as_acquired_fft", **overrides):
+    """-> (spectrum, analysis_result) for one branch of the August N=3 sector."""
+    params = dict(COMPLETE_BASIS_ANALYSIS, **COMPLETE_BASIS_BRANCHES[branch])
+    params.update(overrides)
+    return spectrum, spectrum.analyze(**params)
+
+
+# --------------------------------------------------------------------------
+# The phase calibration on its own: September N=3
+# --------------------------------------------------------------------------
+#
+# The complete-basis fixture already runs a calibration, but only as an input
+# to the spectrum, so the calibration's own output is pinned only through what
+# the spectrum happens to consume. This set pins it directly. It is the future
+# MBRStarkCalExperiment, and it sits on the critical path of every spectrum.
+#
+# 70 jobs, one per occupation and analyzer phase (0 and 90 deg), covering the
+# whole 35-state N=3 sector under one config triple. Chosen over reusing the
+# August calibration because it is the newer acquisition path: preload_flattop
+# swaps and 65 cycle pairs, where August has gauss swaps and 17. There is no
+# spectroscopy set under the same configuration (the jobs after it are
+# propagator runs), so this fixture pins the calibration alone.
+
+STARK_CAL_IDS = dataset("september_N3", "calibration")
+
+
+def migration_tool():
+    """-> the ``tools/migrate_mbr_jobs.py`` module (tools/ is not a package)."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "tools" / "migrate_mbr_jobs.py"
+    spec = importlib.util.spec_from_file_location("migrate_mbr_jobs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_stark_cal_analysis(out_root):
+    """-> (calibration_set, correction) for September N=3.
+
+    The 70 old jobs go through the migration script into ``out_root`` (35
+    ``MBRStarkCalExperiment`` files and one ``MBRCalibrationSetExperiment``
+    manifest), and the set is re-assembled from that manifest, so this runs
+    the whole path old data takes to the new classes. Timing is resolved
+    from the provenance sidecar during conversion, which also exercises the
+    resolver on a third configuration.
+    """
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+
+    converted = migration_tool().migrate_stark_cal(
+        STARK_CAL_IDS, out_root=out_root, load_shots=False)
+    calibration = MBRCalibrationSetExperiment.from_manifest(converted.manifest_path)
+    calibration.analyze()
+    return calibration, calibration.phase_correction()
+
+
+# --------------------------------------------------------------------------
+# Orthogonality and propagator sets
+# --------------------------------------------------------------------------
+#
+# Given by the user on 2026-09-24 (see ``notes`` in mbr_datasets.json).
+# September N=3: 35 zero-cycle orthogonality jobs, one per initial occupation,
+# modes M1, S2..S5. August N=1: 5 propagator jobs at q = 0 and 20; the lab log
+# does not confirm that it is the set in the logged plots, so it gates code,
+# not physics.
+
+ORTHOGONALITY_IDS = dataset("september_N3_orthogonality", "orthogonality")
+PROPAGATOR_IDS = dataset("august_N1_propagator", "propagator")
+
+
+def converted_orthogonality(out_root):
+    """-> MBROrthogonalityExperiment for September N=3, through the migration script."""
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+
+    converted = migration_tool().migrate_orthogonality(
+        ORTHOGONALITY_IDS, out_root=out_root, load_shots=False)
+    return MBROrthogonalityExperiment.from_manifest(converted.manifest_path)
+
+
+def converted_propagator(out_root):
+    """-> MBRHamTomoExperiment for August N=1 (q = 0, 20), through the migration script."""
+    from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+
+    converted = migration_tool().migrate_propagator(
+        PROPAGATOR_IDS, out_root=out_root, load_shots=False)
+    return MBRHamTomoExperiment.from_manifest(converted.manifest_path)
+
+
+# --------------------------------------------------------------------------
+# Flattening, so a nested analysis result can be compared field by field
+# --------------------------------------------------------------------------
+#
+# A single hash over the whole result would tell us "something changed" and
+# nothing else. Flattening to leaf paths means a failure names the field, which
+# during a code move is the entire diagnostic value.
+
+def _is_scalar(value):
+    return isinstance(value, (bool, int, float, str, np.integer, np.floating, np.bool_))
+
+
+def flatten_result(value, prefix=""):
+    """Nested dict/list/array -> {dotted path: ndarray or scalar}.
+
+    Tuple keys (occupations, e.g. ``(2, 0, 0, 1, 0)``) become part of the path,
+    so per-occupation phase corrections are compared individually.
+    """
+    flat = {}
+
+    def emit(path, item):
+        if isinstance(item, dict):
+            for key, sub in item.items():
+                emit(f"{path}.{key}" if path else str(key), sub)
+        elif isinstance(item, np.ndarray):
+            flat[path] = item
+        elif isinstance(item, (list, tuple, set)):
+            # Homogeneous numeric sequences are arrays in all but name; keep
+            # them as one entry rather than exploding into hundreds of paths.
+            # Ragged or object sequences (matrix-pencil candidate lists, say)
+            # raise here rather than producing an object array, so recurse.
+            try:
+                as_array = np.array(sorted(item) if isinstance(item, set) else item)
+            except (ValueError, TypeError):
+                as_array = None
+            if as_array is not None and as_array.dtype != object:
+                flat[path] = as_array
+            else:
+                for i, sub in enumerate(item):
+                    emit(f"{path}[{i}]", sub)
+        elif item is None:
+            flat[path] = np.array("None", dtype=object)
+        elif _is_scalar(item):
+            flat[path] = item
+        else:
+            # Anything else (an Experiment, a fit object) is not part of the
+            # numerical contract; record its type so an unexpected appearance
+            # is visible without pinning its internals.
+            flat[path] = np.array(f"<{type(item).__name__}>", dtype=object)
+
+    emit(prefix, value)
+    return flat
+
+
+# --------------------------------------------------------------------------
+# Diagonal disorder: the 7-1 campaign (MBR redesign step 7)
+# --------------------------------------------------------------------------
+
+
+def disorder_dataset(name):
+    """-> (calibration job IDs, {realization: job IDs}) of one disorder dataset."""
+    entry = json.loads(DATASETS.read_text())["datasets"][name]
+    return (list(entry.get("calibration", [])),
+            {int(r): list(ids) for r, ids in entry["realizations"].items()})
+
+
+def converted_diagonal_disorder(out_root, realizations=(0, 1)):
+    """-> MBRDisorderEnsembleExperiment for 7-1 realizations, through the migration script.
+
+    The 7-1 calibration becomes a calibration set, each realization's 20 old
+    jobs 10 ``MBRTimeTraceExperiment`` files and one ``MBRSpectrumExperiment``,
+    all in ``out_root``; the ensemble is re-assembled from its manifest.
+    """
+    from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
+
+    calibration, by_realization = disorder_dataset("diagonal_disorder_71")
+    ensemble = migration_tool().migrate_disorder(
+        {r: by_realization[r] for r in realizations}, out_root=out_root,
+        load_shots=False, calibration_job_ids=calibration)
+    return MBRDisorderEnsembleExperiment.from_manifest(ensemble.manifest_path)
+
+
+#: The 7-1 preview cells' analysis (data_postprocess.ipynb cell 246).
+DISORDER_PREVIEW_ANALYSIS = dict(
+    phase_frame="as_acquired",
+    theory_kerr_MHz="recorded",
+    excluded_occupations=[(0, 3, 0, 0, 0)],
+    mpm_track_frequency_tolerance_bins=0.50,
+    mpm_merge_frequency_tolerance_bins=0.50,
+    mpm_dedup_frequency_tolerance_bins=0.50,
+)

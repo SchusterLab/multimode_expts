@@ -52,7 +52,7 @@ def bm(tmp_path):
 def test_commit_advances_and_records(bm):
     ids = bm.commit("user1_coupler0.1", note="baseline")
     assert ids["hardware_config"] == "CFG-HW-00001"
-    assert bm.show("user1_coupler0.1")["hardware_config"] == "CFG-HW-00001"
+    assert bm.show("user1_coupler0.1")["IDs"]["hardware_config"] == "CFG-HW-00001"
 
 
 def test_dirty_detection_tracks_inram_edits(bm):
@@ -77,14 +77,14 @@ def test_history_is_append_only(bm):
 def test_branch_records_lineage(bm):
     bm.commit("parent")
     bm.branch("paper_v1", from_name="parent")
-    assert bm.show("paper_v1")["hardware_config"] == "CFG-HW-00001"
+    assert bm.show("paper_v1")["IDs"]["hardware_config"] == "CFG-HW-00001"
     assert bm.log("paper_v1")[0]["from"] == "parent"
 
 
 def test_branch_defaults_to_loaded_state(bm):
     bm.commit("parent")
     bm.branch("child")  # no from_name -> currently-loaded ids
-    assert bm.show("child")["hardware_config"] == bm.show("parent")["hardware_config"]
+    assert bm.show("child")["IDs"]["hardware_config"] == bm.show("parent")["IDs"]["hardware_config"]
     assert bm.log("child")[0]["from"] == "parent"
 
 

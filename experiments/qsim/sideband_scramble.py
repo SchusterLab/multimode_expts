@@ -6,10 +6,10 @@ from lmfit.models import Model
 from matplotlib import pyplot as plt
 
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 
 
-class StorageT1Program(QsimBaseProgram):
+class StorageT1Program(QsimProgram):
     """
     T1: just a wait
 
@@ -22,7 +22,7 @@ class StorageT1Program(QsimBaseProgram):
         self.sync_all(self.us2cycles(self.cfg.expt.wait))
 
 
-class FloquetCalibrationProgram(QsimBaseProgram):
+class FloquetCalibrationProgram(QsimProgram):
     """
     Vary the phases to find out the optimal virtual Z correction because of AC Zeeman shift
     Will always do a series of M1-A and M1-B swaps as specified in the exp config
@@ -56,7 +56,7 @@ class FloquetCalibrationProgram(QsimBaseProgram):
             self.sync_all()
 
 
-class SidebandScrambleProgram(QsimBaseProgram):
+class SidebandScrambleProgram(QsimProgram):
     """
     Scramble photons via fractional beam splitters
 
@@ -111,7 +111,7 @@ class SidebandScrambleProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class FloquetCalibrationAmplificationExperiment(QsimBaseExperiment):
+class FloquetCalibrationAmplificationExperiment(QsimExperiment):
     """
     expt params:
         init_stor

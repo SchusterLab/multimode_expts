@@ -24,7 +24,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK = REPO_ROOT / "measurement_notebooks" / "guan" / "single_qubit_autocalibrate_v2.py"
 KERR = REPO_ROOT / "experiments" / "qsim" / "kerr.py"
-QSIM_NB = REPO_ROOT / "measurement_notebooks" / "guan" / "qsim_experiments.py"
+# The qsim f0g1 gain reader lived in `qsim_experiments.py` until that file was
+# split by project on 2026-09-12; it went with the Kerr cells. Rather than
+# chase a filename, the guard below scans every guan measurement notebook, so
+# a future split cannot quietly retire it.
+GUAN_NOTEBOOKS = sorted(
+    (REPO_ROOT / "measurement_notebooks" / "guan").glob("*.py"))
 
 # Markers bounding the *refactored* f0g1 calibration cells in the notebook.
 MANIP_START = "# # Manipulate"
@@ -66,9 +71,23 @@ def test_production_f0g1_readers_use_multiphoton():
     assert "_ds_storage.get_freq('M1')" not in kerr
     assert "multiphoton['pi']['fn-gn+1']['frequency']" in kerr
 
-    qsim = QSIM_NB.read_text(encoding="utf-8")
-    assert "ds_storage.get_gain('M1')" not in qsim
-    assert "multiphoton['pi']['fn-gn+1']['gain']" in qsim
+    assert GUAN_NOTEBOOKS, "no guan measurement notebooks found"
+    sources = {path.name: path.read_text(encoding="utf-8")
+               for path in GUAN_NOTEBOOKS}
+
+    # The canonical reader still exists somewhere.
+    assert any("multiphoton['pi']['fn-gn+1']['gain']" in text
+               for text in sources.values()), (
+        "no guan notebook reads the f0g1 gain from multiphoton fn-gn+1")
+
+    # And the dead store is not read back anywhere that was migrated. The
+    # autocalibrate notebook keeps an explicitly un-migrated tail, so only
+    # the part above its marker is held to this.
+    for name, text in sources.items():
+        if MANIP_END in text:
+            text = text[:text.index(MANIP_END)]
+        assert "ds_storage.get_gain('M1')" not in text, (
+            f"{name} reads the f0g1 gain from the dead ds_storage M1 row")
 
 
 # --------------------------------------------------------------------------- #

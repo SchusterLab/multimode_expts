@@ -1,0 +1,52 @@
+# The real data sets of the pole-finding benchmarks (docs/qsim/pole_finding.md 8.2).
+# Format: fitting.qsim.poles.registry.DataSet; loaded by experiments.qsim.pole_data.
+# Manifests are relative to data_root(). Each entry's analysis is the frame its analysis
+# notebook uses (analysis_notebooks/202609_qsim_migration/mbr.py, mbr_disorder.py).
+# guan adds jonginn's further campaigns here as they are converted (tools/migrate_mbr_jobs.py).
+
+- label: diagonal_disorder_71
+  manifest: 260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml
+  basis: partial
+  photon_number: 3
+  disorder: {strength_kHz: 50.0, master_seed: 20260816, realizations: 19}
+  source: tests/data/mbr_datasets.json diagonal_disorder_71; r19 left out (11 of 20 jobs)
+  analysis:
+    phase_frame: as_acquired
+    excluded_occupations: [[0, 3, 0, 0, 0]]
+    model_kerr: recorded
+
+- label: august_disorder
+  manifest: 260526_qsim_darkmode/assembled_data/260924_195547_MBRDisorderEnsembleExperiment.yaml
+  basis: partial
+  photon_number: 3
+  disorder: {strength_kHz: 50.0, realizations: 4}
+  source: tests/data/mbr_datasets.json august_disorder r0..r3
+  analysis: &august_branches
+    phase_frame: manual_kerr
+    manual_kerr_MHz: recorded
+    cycle_branches:
+      - [[2, 1, 0, 0, 0], 1]
+      - [[2, 0, 1, 0, 0], 1]
+      - [[1, 1, 0, 1, 0], 1]
+      - [[1, 1, 0, 0, 1], 1]
+      - [[1, 0, 1, 1, 0], 1]
+      - [[1, 0, 1, 0, 1], 1]
+
+- label: july_N3
+  manifest: 260526_qsim_darkmode/assembled_data/260924_163508_MBRSpectrumExperiment.yaml
+  basis: complete
+  photon_number: 3
+  source: tests/data/mbr_datasets.json july_N3; aliased (40 samples at 8.2 us, Nyquist 61 kHz)
+  analysis:
+    phase_frame: manual_kerr
+    manual_kerr_MHz: -0.019756
+    legacy: true
+
+- label: august_N3
+  manifest: 260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml
+  basis: complete
+  photon_number: 3
+  source: tests/data/mbr_datasets.json august_N3
+  analysis:
+    <<: *august_branches
+    manual_kerr_MHz: -0.0105

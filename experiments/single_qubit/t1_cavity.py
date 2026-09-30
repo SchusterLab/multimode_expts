@@ -297,8 +297,8 @@ class T1CavityExperiment(Experiment):
         kappa = data['kappa_in_freq']
         kappa_err = data['kappa_err_in_freq']
 
-        text = f"$T_1$ = {T1:.3f} $\pm$ {T1_err:.3f} us\n"
-        text += f"$\kappa$ = {kappa*1e3:.3f} $\pm$ {kappa_err*1e3:.3f}KHz *2$\pi$\n"
+        text = f"$T_1$ = {T1:.3f} $\\pm$ {T1_err:.3f} us\n"
+        text += f"$\\kappa$ = {kappa*1e3:.3f} $\\pm$ {kappa_err*1e3:.3f}KHz *2$\\pi$\n"
 
 
         plt.figure(figsize=(10,10))
@@ -307,7 +307,7 @@ class T1CavityExperiment(Experiment):
         if fit:
             p = data['fit_avgi']
             pCov = data['fit_err_avgi']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
 
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgi"]), label=captionStr)
             plt.legend()
@@ -321,7 +321,7 @@ class T1CavityExperiment(Experiment):
         if fit:
             p = data['fit_avgq']
             pCov = data['fit_err_avgq']
-            captionStr = f'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
+            captionStr = rf'$T_1$ fit [us]: {p[3]:.3} $\pm$ {np.sqrt(pCov[3][3]):.3}'
             plt.plot(data["xpts"][:-1], fitter.expfunc(data["xpts"][:-1], *data["fit_avgq"]), label=captionStr)
             plt.legend()
             print(f'Fit T1 avgq [us]: {data["fit_avgq"][3]}')

@@ -1,8 +1,8 @@
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 
 
-class FloquetChevronProgram(QsimBaseProgram):
+class FloquetChevronProgram(QsimProgram):
     """
     Do a chevron experiment with n floquet pulses
     """
@@ -21,7 +21,7 @@ class FloquetChevronProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class FloquetChevronExperiment(QsimBaseExperiment):
+class FloquetChevronExperiment(QsimExperiment):
     def analyze(self, data=None, fit=True, fit_func="sin"):
         if data is None:
             data = self.data

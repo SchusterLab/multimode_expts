@@ -1,22 +1,16 @@
 import os
 
 import matplotlib.pyplot as plt
-import numpy as np
 from qick import QickConfig
-from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
 from experiments.dataset import StorageManSwapDataset
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
-from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.utils import (
-    ensure_list_in_cfg,
-    post_select_raverager_data,
-)
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
+from experiments.qsim.utils import post_select_raverager_data
 from fitting.fit_utils import guess_freq
 
 
-class SidebandAmpRabiProgram(QsimBaseProgram):
+class SidebandAmpRabiProgram(QsimProgram):
     """
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
     Then do a rabi on the sideband
@@ -34,7 +28,7 @@ class SidebandAmpRabiProgram(QsimBaseProgram):
         self.sync_all(self.us2cycles(0.1))
 
 
-class SidebandAmpRabiExperiment(QsimBaseExperiment):
+class SidebandAmpRabiExperiment(QsimExperiment):
     """
     Sweep amplitude vs detuning
     Experimental Config:
@@ -47,64 +41,13 @@ class SidebandAmpRabiExperiment(QsimBaseExperiment):
         ro_stor: storage to readout the photon from (1-7)
     )
     """
-    def acquire(self, progress=False, debug=False):
-        ensure_list_in_cfg(self.cfg)
+    default_program = SidebandAmpRabiProgram
 
-        read_num = 1
-        if self.cfg.expt.get('parity_check', False):
-            read_num += 1
-        if self.cfg.expt.get('active_reset', False):
-            params = MMAveragerProgram.get_active_reset_params(self.cfg)
-            read_num += MMAveragerProgram.active_reset_read_num(**params)
+    def sweep_axes(self):
+        """Detune outer, gain inner, whatever ``swept_params`` says.
 
-        data = {
-            'xpts': self.cfg.expt.gains,
-            'ypts': self.cfg.expt.detunes,
-            'avgi': [],
-            'avgq': [],
-            'amps': [],
-            'phases': [],
-            'idata': [],
-            'qdata': [],
-        }
-
-        for self.cfg.expt.detune in tqdm(self.cfg.expt.detunes, disable=not progress):
-            for self.cfg.expt.gain in self.cfg.expt.gains:
-                self.prog = SidebandAmpRabiProgram(soccfg=self.soccfg, cfg=self.cfg)
-
-                avgi, avgq = self.prog.acquire(self.im[self.cfg.aliases.soc],
-                                                threshold=None,
-                                                load_pulses=True,
-                                                progress=False,
-                                                debug=debug,
-                                                readouts_per_experiment=read_num)
-                avgi, avgq = avgi[0][-1], avgq[0][-1]
-                data['avgi'].append(avgi)
-                data['avgq'].append(avgq)
-                data['amps'].append(np.abs(avgi+1j*avgq)) # Calculating the magnitude
-                data['phases'].append(np.angle(avgi+1j*avgq)) # Calculating the phase
-
-                idata, qdata = self.prog.collect_shots()
-                data['idata'].append(idata)
-                data['qdata'].append(qdata)
-        for key in 'avgi avgq amps phases'.split():
-            data[key] = np.array(data[key]).reshape((len(self.cfg.expt.detunes), len(self.cfg.expt.gains)))
-
-        if self.cfg.expt.get('parity_check', False):
-            idata_all = np.array(data['idata'])
-            qdata_all = np.array(data['qdata'])
-            data['parity_idata'] = idata_all[:, 0::read_num]
-            data['parity_qdata'] = qdata_all[:, 0::read_num]
-
-        if self.cfg.expt.normalize:
-            from experiments.single_qubit.normalize import normalize_calib
-            g_data, e_data, f_data = normalize_calib(self.soccfg, self.path, self.config_file)
-
-            data['g_data'] = [g_data['avgi'], g_data['avgq'], g_data['amps'], g_data['phases']]
-            data['e_data'] = [e_data['avgi'], e_data['avgq'], e_data['amps'], e_data['phases']]
-            data['f_data'] = [f_data['avgi'], f_data['avgq'], f_data['amps'], f_data['phases']]
-
-        self.data=data
-        return data
-
-
+        Until step 10E this class had its own 2D loop; it counted the readouts
+        itself and took the parity lane at 0, before the active-reset lanes.
+        """
+        self.cfg.expt.swept_params = ['detune', 'gain']
+        return super().sweep_axes()

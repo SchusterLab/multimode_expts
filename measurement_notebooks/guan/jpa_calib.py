@@ -113,7 +113,7 @@ def do_jpa_current_sweep( config_thisrun,
     relax_delay=2500
 ):
     """Run the single shot experiment with configurable parameters."""
-    from multimode_expts.sequential_experiment_classes import histogram_sweep_class
+    from experiments.sequential_experiment_classes import histogram_sweep_class
     experiment_class = histogram_sweep_class
     sweep_experiment_name = 'histogram_jpa_current_sweep'
     class_for_exp = experiment_class(soccfg=soc, path=expt_path, prefix=sweep_experiment_name, config_file=config_path, exp_param_file=exp_param_file)
@@ -158,7 +158,9 @@ do_jpa_current_sweep(config_thisrun, expt_path,
                                          relax_delay=5)
 
 # %%
-from slab.instruments import YokogawaGS200
+# slab/instruments/__init__.py does not re-export the volt sources,
+# so import from the defining module.
+from slab.instruments.voltsource import YokogawaGS200
 dcflux = YokogawaGS200(address="192.168.137.149")
 dcflux.set_output(True)
 dcflux.set_mode('current')
@@ -201,7 +203,7 @@ def do_jpa_current_gain_sweep( config_thisrun,
     relax_delay=2500
 ):
     """Run the single shot experiment with configurable parameters."""
-    from multimode_expts.sequential_experiment_classes import histogram_sweep_class
+    from experiments.sequential_experiment_classes import histogram_sweep_class
     experiment_class = histogram_sweep_class
     sweep_experiment_name = 'histogram_jpa_gain_current_sweep'
     class_for_exp = experiment_class(soccfg=soc, path=expt_path, prefix=sweep_experiment_name, config_file=config_path, exp_param_file=exp_param_file)

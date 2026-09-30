@@ -1,0 +1,555 @@
+device:
+  qubit:
+    T1:
+    - 462.2047818490185
+    f_ge:
+    - 3566.089101467898
+    f_ef:
+    - 3422.630777390371
+    ramp_sigma:
+    - 0.005
+    ramp_sigma_num:
+    - 3.0
+    pulses:
+      pi_ge:
+        gain:
+        - 9363
+        sigma:
+        - 0.035
+        length:
+        - 0.0
+        type:
+        - gauss
+      hpi_ge:
+        gain:
+        - 4630
+        length:
+        - 0.0
+        sigma:
+        - 0.035
+        type:
+        - gauss
+      pi_ef:
+        gain:
+        - 7531
+        length:
+        - 0.0
+        sigma:
+        - 0.035
+        type:
+        - gauss
+      hpi_ef:
+        gain:
+        - 3760
+        sigma:
+        - 0.035
+        type:
+        - gauss
+      slow_pi_ge:
+        gain:
+        - 15
+        sigma:
+        - 0.1
+        length:
+        - 5
+        type:
+        - flat_top
+      very_slow_pi_ge:
+        gain:
+        - 85
+        sigma:
+        - 0.025
+        length:
+        - 3.236415421075048
+        type:
+        - flat_top
+      very_slow_hpi_ge:
+        gain:
+        - 102
+        sigma:
+        - 1.0
+        length:
+        - 0.0
+        type:
+        - gauss
+      pi_ge_broadband:
+        frequency:
+        - 3565.1258016289203
+        gain:
+        - 18726
+        sigma:
+        - 0.0175
+        length:
+        - 0.0
+        type:
+        - gauss
+    T1_ef:
+    - 144.4942636280997
+  readout:
+    trig_offset:
+    - 450
+    frequency:
+    - 749.5582
+    gain:
+    - 579
+    phase:
+    - 29.588053997163996
+    threshold:
+    - -29.127417406318585
+    threshold_list:
+    - - -29.127417406318585
+    man1_drive_list:
+    - 0.0
+    man2_drive_list:
+    - 0.0
+    readout_length:
+    - 1.2
+    relax_delay:
+    - 2500
+    confusion_matrix_with_reset:
+    - 0.9964530022802125
+    - 0.0035469977197875036
+    - 0.013768302080657598
+    - 0.9862316979193424
+    confusion_matrix_without_reset:
+    - 0.8765999999999997
+    - 0.12340000000000029
+    - 0.15400000000000008
+    - 0.8459999999999999
+    Ie:
+    - 2.5517209161321595
+    Ig:
+    - -61.93207443400459
+    confusion_matrix_with_active_reset:
+    - 0.9076576576576578
+    - 0.09234234234234218
+    - 0.0895713371721049
+    - 0.9104286628278951
+  manipulate:
+    f_ge:
+    - 4983.7967133968195
+    - 5157.8527963217475
+    displace_sigma:
+    - 0.05
+    - 0.05
+    revival_time:
+    - 1.490691572491171
+    revival_stark_shift:
+    - 4.453160114927124
+    - -2.6792227141937364
+    gain_to_alpha:
+    - 0.0008864669925664553
+    - 0.00020045
+    freq_to_alpha:
+    - 0.495062203431879
+    - 0.0
+    alpha_scale:
+    - 0.889775662668059
+    - 1.0
+    chi_ge:
+    - -0.335019
+    chi_ef:
+    - 1.2311804927283654
+    ramp_sigma: 0.005
+    revival_time_fast:
+    - 1.7378951097046815
+    - 1.7378951097046815
+    kerr:
+    - -0.005708
+  storage:
+    idling_phase:
+    - - -52.6696123
+      - -22.7088024
+      - 4.32404839
+      - 1.74059096
+      - 3.07928552
+      - 131.15854816947694
+      - -90.34878087129891
+    - - -0.8543699
+      - -116.043431
+      - 3.45837055
+      - 0.608331428
+      - -2.036
+      - 9.45
+      - 95.59156092221656
+    - - 1.04040701
+      - -3.74923237
+      - -117.783814
+      - 0.356992259
+      - -2.45519509
+      - 0.647967825
+      - 12.8401564
+    - - 1.66740192
+      - -4.21812224
+      - 3.29786448
+      - -154.122273
+      - -1.60291285
+      - -1.18402153
+      - 5.044314
+    - - 4.82521854
+      - 0.209877344
+      - 5.59148305
+      - 7.67963852
+      - -91.167355
+      - 1.30630108
+      - 5.65421906
+    - - 3.70780701
+      - 0.0768208841
+      - 4.16044796
+      - 2.61829414
+      - 3.48690085
+      - -37.3968965
+      - 4.05643677
+    - - 3.84028579
+      - -0.418792628
+      - 4.0522379
+      - 3.24634888
+      - 2.06016015
+      - 3.24251258
+      - -22.4708301
+    idling_freq:
+    - -2.5937677197135596
+    - -2.85371864950844
+    - -2.446015004544113
+    - -1.8393250164457633
+    - -3.231025833205897
+    - -3.2053137013077597
+    - -2.935087792327744
+    ramp_sigma: 0.005
+  active_reset:
+    qubit_ge:
+    - 4000
+    - 0.1422665780546079
+    - 0.005
+    qubit_ef:
+    - 3000
+    - 0.15377089082752435
+    - 0.005
+    relax_delay:
+    - 50.0
+    M_lossy:
+    - - 2312.9
+      - 5000.0
+      - 10.0
+      - 2.0
+      - 2.0
+    - - 2094.05
+      - 8000.0
+      - 15.0
+      - 2.0
+      - 2.0
+  multiphoton_config:
+    file: multiphoton_config.yml
+  multiphoton:
+    pi:
+      gn-en:
+        frequency:
+        - 3566.089101467898
+        - 3566.355383803604
+        - 3566.0530051804076
+        - 3566.089101467898
+        gain:
+        - 9363
+        - 9379
+        - 9323
+        - 9363
+        length:
+        - 0
+        - 0
+        - 0
+        - 0
+        sigma:
+        - 0.035
+        - 0.035
+        - 0.035
+        - 0.035
+        type:
+        - gauss
+        - gauss
+        - gauss
+        - gauss
+      en-fn:
+        frequency:
+        - 3422.630777390371
+        - 3422.2749012248155
+        - 3422.0190667001943
+        - 3422.630777390371
+        gain:
+        - 7531
+        - 7498
+        - 7502
+        - 7531
+        length:
+        - 0
+        - 0
+        - 0
+        - 0
+        sigma:
+        - 0.035
+        - 0.035
+        - 0.035
+        - 0.035
+        type:
+        - gauss
+        - gauss
+        - gauss
+        - gauss
+      fn-gn+1:
+        frequency:
+        - 2001.6409228541636
+        - 2001.063344468694
+        - 2000.4840180891504
+        - 2001.6409228541636
+        gain:
+        - 8000
+        - 8000
+        - 8000
+        - 8000
+        length:
+        - 0.5850045121893807
+        - 0.4049974354742758
+        - 0.32792638244346856
+        - 0.5850045121893807
+        sigma:
+        - 0.005
+        - 0.005
+        - 0.005
+        - 0.005
+        type:
+        - flat_top
+        - flat_top
+        - flat_top
+        - flat_top
+    hpi:
+      gn-en:
+        frequency:
+        - 3568.6060477030296
+        - 3569.7710426426165
+        - 3567.7644237298246
+        - 3565.49698806312
+        gain:
+        - 8284
+        - 1689
+        - 1689
+        - 1697
+        length:
+        - 0
+        - 0
+        - 0
+        - 0
+        sigma:
+        - 0.02
+        - 0.035
+        - 0.035
+        - 0.035
+        type:
+        - gauss
+        - gauss
+        - gauss
+        - gauss
+      en-fn:
+        frequency:
+        - 0
+        - 0
+        - 0
+        - 0
+        gain:
+        - 2018
+        - 0
+        - 0
+        - 0
+        length:
+        - 0
+        - 0
+        - 0
+        - 0
+        sigma:
+        - 0.035
+        - 0.035
+        - 0.035
+        - 0.035
+        type:
+        - gauss
+        - gauss
+        - gauss
+        - gauss
+  optimal_control:
+    fock:
+      '1':
+        frequency:
+        - 3564.0164729237304
+        - 4986.28405355616
+        gain:
+        - 13980
+        - 9366
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_1.npz
+      '2':
+        frequency:
+        - 3569.7141623787825
+        - 4979.505867743005
+        gain:
+        - 2141
+        - 2421
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_2.npz
+      0+2:
+        frequency:
+        - 3569.7028312412162
+        - 5013.871083295973
+        gain:
+        - 10
+        - 10
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2.npz
+      0+2i:
+        frequency:
+        - 3569.7141623787825
+        - 4979.505867743005
+        gain:
+        - 867
+        - 2452
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+2i.npz
+      0+4:
+        frequency:
+        - 3569.7141623787825
+        - 4979.505867743005
+        gain:
+        - 1204
+        - 2701
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_0+4.npz
+      encode:
+        frequency:
+        - 3569.7028312412162
+        - 5013.871083295973
+        gain:
+        - 10
+        - 10
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_encode.npz
+      decode:
+        frequency:
+        - 3569.7028312412162
+        - 5013.871083295973
+        gain:
+        - 10
+        - 10
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_fock_decode.npz
+    GKP:
+      Z:
+        frequency:
+        - 3569.7028312412162
+        - 5013.871083295973
+        gain:
+        - 10
+        - 10
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\pulse_GKP_Z.npz
+    test:
+      '1':
+        frequency:
+        - 3569.7141623787825
+        - 4979.505867743005
+        gain:
+        - 2995
+        - 4002
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\test.npz
+      '2':
+        frequency:
+        - 3569.7028312412162
+        - 5013.871083295973
+        gain:
+        - 850
+        - 2413
+        phase:
+        - 0.0
+        - 0.0
+        filename: G:\Shared drives\SLab\Multimode\optimal_control\test_pi.npz
+hw:
+  soc:
+    dacs:
+      qubit:
+        ch:
+        - 2
+        type:
+        - full
+        nyquist:
+        - 1
+      readout:
+        ch:
+        - 5
+        type:
+        - full
+        nyquist:
+        - 1
+      manipulate_in:
+        ch:
+        - 3
+        type:
+        - full
+        nyquist:
+        - 2
+      storage_in:
+        ch:
+        - 6
+        type:
+        - full
+        nyquist:
+        - 2
+      flux_low:
+        ch:
+        - 1
+        type:
+        - full
+        nyquist:
+        - 1
+      flux_high:
+        ch:
+        - 1
+        type:
+        - full
+        nyquist:
+        - 1
+      sideband:
+        ch:
+        - 0
+        type:
+        - full
+        nyquist:
+        - 1
+    adcs:
+      readout:
+        ch:
+        - 0
+      cavity_out:
+        ch:
+        - 1
+  yoko_coupler:
+    current: 0.00025
+aliases:
+  soc: Qick101
+data_management:
+  output_root: C:/experiments
+  vault_root: G:\Shared drives\SLab\Multimode

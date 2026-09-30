@@ -358,7 +358,7 @@ class ErrorAmplificationExperiment(Experiment):
         self.data=data
         return data
 
-    def analyze(self, data=None, fit=True, state_fin='g', **kwargs):
+    def analyze(self, data=None, fit=True, state_fin='g', periodic=True, **kwargs):
         """
         use the fitting process implemented by MIT https://arxiv.org/abs/2406.08295
         for avgi, avgq, amp and phase take the product of the raws and
@@ -385,7 +385,10 @@ class ErrorAmplificationExperiment(Experiment):
         data['prod_avgi'] = prod_avgi  # normalize the product
 
         if fit:
-            p_avgi, pCov_avgi = fitter.fitgaussian(data['x_pts'], data['prod_avgi'])
+            # periodic=True rolls the peak to the centre first: right for a phase
+            # scan, biased near the scan edges for frequency and gain.
+            p_avgi, pCov_avgi = fitter.fitgaussian(data['x_pts'], data['prod_avgi'],
+                                                   periodic=periodic)
             data['prod_avgi_fit'] = fitter.gaussianfunc(data['x_pts'], *p_avgi)
             # add the fit parameters to the data dictionary
             data['fit_avgi'] = p_avgi

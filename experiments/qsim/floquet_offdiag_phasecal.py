@@ -1,10 +1,10 @@
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.utils import (
     fit_cos2d,
 )
 
-class FloquetPhaseCalProgram(QsimBaseProgram):
+class FloquetPhaseCalProgram(QsimProgram):
     """
     pi/2 from M1 to stor_row to make a dual rail + state,
     temporarily store the M1 half in stor_idle via pi,
@@ -45,7 +45,7 @@ class FloquetPhaseCalProgram(QsimBaseProgram):
         self.sync_all()
 
 
-class FloquetPhaseCalExperiment(QsimBaseExperiment):
+class FloquetPhaseCalExperiment(QsimExperiment):
 
     def analyze(self, data=None, fit=True, fitparams = None, **kwargs):
         if data is None:

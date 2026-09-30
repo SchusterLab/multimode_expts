@@ -65,7 +65,7 @@ class Job(Base):
     experiment_config = Column(Text, nullable=False)  # JSON
     station_config = Column(Text, nullable=True)  # JSON-serialized station configs (hardware_cfg, etc.)
 
-    # Optional program class for QsimBaseExperiment and similar
+    # Optional program class for QsimExperiment and similar
     program_class = Column(String(200), nullable=True)
     program_module = Column(String(300), nullable=True)
 

@@ -7,7 +7,7 @@ from lmfit import Model
 from scipy.ndimage import gaussian_filter1d
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.MM_base import MMAveragerProgram
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 
@@ -21,7 +21,7 @@ We need to know the following effects of such a tone:
 - Cavity Ramsey: extract the effective Kerr under this drive
 """
 
-class KerrEngBaseProgram(QsimBaseProgram):
+class KerrEngBaseProgram(QsimProgram):
     def initialize(self):
         super().initialize()
         cfg = self.cfg
@@ -61,7 +61,7 @@ class KerrStarkProgram(KerrEngBaseProgram):
     def body(self):
         pass
 
-class KerrWaitProgram(QsimBaseProgram):
+class KerrWaitProgram(QsimProgram):
     def core_pulses(self):
         # print("Adding man-dump pulse")
         # self.man_reset(man_idx=1, dump_mode_idx=2, chi_dressed=True)
@@ -395,7 +395,7 @@ class KerrCavityRamseyProgram(KerrEngBaseProgram):
         self.measure_wrapper()
 
 
-class KerrCavityRamseyExperiment(QsimBaseExperiment):
+class KerrCavityRamseyExperiment(QsimExperiment):
 
     def analyze(self, data=None, debug=False, **kwargs):
 

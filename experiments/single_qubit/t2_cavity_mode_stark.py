@@ -15,7 +15,7 @@ length; firmware-side mathi on the flat-top length register changes the DAC
 pulse duration but not the scheduled time of subsequent pulses, so an MMR
 firmware sweep of the pulse length does not produce the expected Ramsey
 evolution. The same software-sweep pattern is used by
-KerrCavityRamseyExcursionProgram and length_rabi_f0g1_general.
+CavityFluxExcursionRamseyProgram and length_rabi_f0g1_general.
 
 User-set drive parameters (fixed across the sweep):
   - drive_freq  [MHz]
