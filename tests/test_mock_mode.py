@@ -347,7 +347,7 @@ def test_mock_root_off_prod_is_repo_tmp(tmp_path, monkeypatch):
     station = _mock_output_paths(monkeypatch, prod=False)
     assert station.data_path == tmp_path / "mock_data" / "260101_mock" / "data"
     assert station.data_path.is_dir()
-    assert not (tmp_path / "C:").exists()
+    assert [p.name for p in tmp_path.iterdir()] == ["mock_data"]
 
 
 def test_mock_root_default_is_git_ignored_repo_tmp():

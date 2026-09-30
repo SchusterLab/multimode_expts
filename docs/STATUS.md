@@ -3,7 +3,7 @@
 **Last updated: 2026-09-29** (guan merged into main, on pippin). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`
-(newest: `2026-09-29_10g-device-check-and-merge.md`). Read the log only if you need the history.
+(newest: `2026-09-29_branch-sync-after-merge.md`). Read the log only if you need the history.
 
 ## Themes, branches, worktrees (guan, 2026-09-29)
 
@@ -25,8 +25,14 @@ Rules:
 ## Cross-theme items
 
 - **`main` has the qsim redesign** (merge of `guan`, 2026-09-29, after the 10G device check;
-  `docs/status/measurement.md`). Users restart their kernels once. `main` is not merged into
-  `qsim-analysis` yet, and neither branch is pushed.
+  `docs/status/measurement.md`). Users restart their kernels once. `main` is merged into
+  `qsim-analysis`; both theme branches are on GitHub.
+- **Known test failures (5), on purpose for now:**
+  - `test_matrix_pencil_regression` (3): left as is while `qsim-analysis` compares fitting
+    methods.
+  - `test_no_stage_dispatch_remains` (2): jonginn's `data_recollecting.ipynb` and
+    `qsim_experiments_highkerr_untracked.ipynb` hold code that is not in the new framework yet.
+    Move that code into the framework first; do not add the notebooks to the exceptions.
 - **Hardware:** the code runs on the device, but the data is not meaningful yet; the
   calibration steps need a manual check.
 - **Physics audit** (details in `docs/status/qsim_numerics.md`): the numerical baselines are
