@@ -30,6 +30,8 @@ node_modules/
 .fileid.db
 .suite_runs/
 .DS_Store
+# pycma logger output, written to the cwd of the notebook
+outcmaes/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
