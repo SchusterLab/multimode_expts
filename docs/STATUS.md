@@ -11,6 +11,7 @@ file under `docs/status/`; read the one for your work. What happened, and why, i
 |---|---|---|---|
 | Measurement code (`experiments/`, `measurement_notebooks/`, calibration) | `docs/status/measurement.md` | `guan` | `C:\python\multimode_expts_guan` |
 | Analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools) | `docs/status/qsim_numerics.md` | `qsim-analysis` | `C:\python\multimode_expts_qsim-analysis` |
+| Transduction (`experiments/transduction/`, `measurement_notebooks/QEC/transduction_sandbox.ipynb`) | `docs/status/transduction.md` | `main` | `C:\python\multimode_expts` |
 
 Rules:
 - Put each change on the branch of its theme. A change to a module that both themes use goes on
