@@ -2,14 +2,37 @@
 # Format: fitting.qsim.poles.registry.DataSet; loaded by experiments.qsim.pole_data.
 # Manifests are relative to data_root(). Each entry's analysis is the frame its analysis
 # notebook uses (analysis_notebooks/202609_qsim_migration/mbr.py, mbr_disorder.py).
-# guan adds jonginn's further campaigns here as they are converted (tools/migrate_mbr_jobs.py).
+# guan adds jonginn's further campaigns here as they are converted (tools/migrate_mbr_jobs.py,
+# driven by tools/convert_mbr_catalog.py from configs/datasets/mbr_datasets.yaml).
+
+- label: sep10_full_K3p6_g29p2
+  manifest: 260818_qsim_spectroscopy/assembled_data/261002_145524_MBRDisorderEnsembleExperiment.yaml
+  basis: complete
+  photon_number: 3
+  disorder: {strength_kHz: 50.0, realizations: 9}
+  source: >-
+    configs/datasets/mbr_datasets.yaml sep10_full_K3p6_g29p2; the first complete-basis disorder
+    ensemble (35 occupations per realization). RMS-normalized direction (jonginn, issue 7). The
+    recorded self-Kerr exists only for r=0 (d73_* keys), so the model Kerr is the analysis one.
+  analysis:
+    phase_frame: as_acquired
+
+- label: august25_N3
+  manifest: 260818_qsim_spectroscopy/assembled_data/261002_145543_MBRSpectrumExperiment.yaml
+  basis: complete
+  photon_number: 3
+  source: >-
+    configs/datasets/mbr_datasets.yaml august25_N3; quality concern (jonginn excluded it: swap
+    gains looked too high). Kept as a second complete N=3 basis at K ~ 45 kHz.
+  analysis:
+    phase_frame: as_acquired
 
 - label: diagonal_disorder_71
   manifest: 260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml
   basis: partial
   photon_number: 3
   disorder: {strength_kHz: 50.0, master_seed: 20260816, realizations: 19}
-  source: tests/data/mbr_datasets.json diagonal_disorder_71; r19 left out (11 of 20 jobs)
+  source: configs/datasets/mbr_datasets.yaml diagonal_disorder_71; r19 left out (11 of 20 jobs)
   analysis:
     phase_frame: as_acquired
     excluded_occupations: [[0, 3, 0, 0, 0]]
@@ -20,7 +43,7 @@
   basis: partial
   photon_number: 3
   disorder: {strength_kHz: 50.0, realizations: 4}
-  source: tests/data/mbr_datasets.json august_disorder r0..r3
+  source: configs/datasets/mbr_datasets.yaml august_disorder r0..r3
   analysis: &august_branches
     phase_frame: manual_kerr
     manual_kerr_MHz: recorded
@@ -36,7 +59,7 @@
   manifest: 260526_qsim_darkmode/assembled_data/260924_163508_MBRSpectrumExperiment.yaml
   basis: complete
   photon_number: 3
-  source: tests/data/mbr_datasets.json july_N3; aliased (40 samples at 8.2 us, Nyquist 61 kHz)
+  source: configs/datasets/mbr_datasets.yaml july_N3; aliased (40 samples at 8.2 us, Nyquist 61 kHz)
   analysis:
     phase_frame: manual_kerr
     manual_kerr_MHz: -0.019756
@@ -46,7 +69,7 @@
   manifest: 260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml
   basis: complete
   photon_number: 3
-  source: tests/data/mbr_datasets.json august_N3
+  source: configs/datasets/mbr_datasets.yaml august_N3
   analysis:
     <<: *august_branches
     manual_kerr_MHz: -0.0105

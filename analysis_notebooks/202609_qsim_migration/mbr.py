@@ -62,7 +62,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # runs a series of independent diagnostics on the result.
 
 # %%
-# Dataset choice: the complete July N=3 sector (tests/data/mbr_datasets.json
+# Dataset choice: the complete July N=3 sector (configs/datasets/mbr_datasets.yaml
 # `july_N3`), converted to the new layout.
 july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
 
@@ -197,13 +197,13 @@ plt.show()
 # ## 3a. With the phase calibration applied
 
 # %%
-# Complete N=3 spectroscopy with its calibration set (tests/data/
-# mbr_datasets.json `august_N3`), converted to the new layout.
+# Complete N=3 spectroscopy with its calibration set (configs/datasets/
+# mbr_datasets.yaml `august_N3`), converted to the new layout.
 saved_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
 # The four-realization quick-plot set (`august_quickplot`).
 saved_four_realization_manifest = data_root() / "260814_qsim_encspec" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
 
-# The four disorder realizations (`august_disorder_r0`..`r3`: ten
+# The four disorder realizations (`august_disorder` (former `august_disorder_r0`..`r3`): ten
 # theory-selected occupations each), converted to one
 # MBRDisorderEnsembleExperiment whose parts link the August N=3 calibration
 # set (MBR redesign step 7c). A later realization joins by converting it into

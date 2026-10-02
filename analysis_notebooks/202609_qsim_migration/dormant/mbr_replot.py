@@ -56,7 +56,7 @@ replot_config = replot.ReplotConfig(
 )
 
 # Dataset choice: one saved spectrum per photon number (July 2026 sets,
-# tests/data/mbr_datasets.json), with its calibration set linked.
+# configs/datasets/mbr_datasets.yaml), with its calibration set linked.
 replot_manifests = {
     1: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163501_MBRSpectrumExperiment.yaml",
     2: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163502_MBRSpectrumExperiment.yaml",

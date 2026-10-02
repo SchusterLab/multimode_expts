@@ -54,7 +54,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # %% [markdown]
 # # 1. The 7-1 diagonal-disorder campaign
 #
-# Realizations 0-18 of `diagonal_disorder_71` (tests/data/mbr_datasets.json);
+# Realizations 0-18 of `diagonal_disorder_71` (configs/datasets/mbr_datasets.yaml);
 # r=19 has 11 of 20 jobs and was not converted.
 
 # %%

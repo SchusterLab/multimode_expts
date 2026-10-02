@@ -21,37 +21,39 @@ against a stored baseline, so running them through the same loader the
 notebooks use is what makes the baseline evidence that the loader is right.
 """
 
-import json
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 from experiments.job_paths import job_records, resolve_job_paths
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.saved_jobs import load_aggregate as _load_aggregate
 from experiments.saved_jobs import load_h5
 
-DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
+DATASETS = Path(__file__).parents[1] / "configs" / "datasets" / "mbr_datasets.yaml"
+
+
+def catalog():
+    """-> {name: entry} of the MBR data set catalog (its header documents the fields)."""
+    return yaml.safe_load(DATASETS.read_text(encoding="utf-8"))["datasets"]
 
 
 def dataset(name, kind):
     """Job IDs for one named dataset, from the recorded literal list.
 
+    ``kind`` is ``"calibration"`` for the data set's Stark-calibration jobs,
+    anything else for its data jobs (a ``stark_cal`` data set has only the
+    latter, and returns them for both).
+
     Deliberately not a numeric range. Job IDs are one global counter on a queue
     shared by every user -- they interleave by design, each job pinning its own
-    config -- so a range is not an identifier for a dataset. The notebook
-    subtracts the other user's jobs with a positional stride in one place and a
-    program-class filter in another; three of its four July ranges pull in jobs
-    belonging to someone else. (``july_N3`` and every August set are
-    unaffected.)
-
-    The lists were resolved from the job database once, by owner, program
-    class, completed status and config-triple agreement. That resolver was a
-    throwaway; only its output is kept. This file is the interim home -- the
-    list belongs in the aggregate HDF5 manifest (spec 3.3) once aggregates can
-    save themselves.
+    config -- so a range is not an identifier for a dataset.
     """
-    return json.loads(DATASETS.read_text())["datasets"][name][kind]
+    entry = catalog()[name]
+    if kind == "calibration" and "calibration_job_ids" in entry:
+        return list(entry["calibration_job_ids"])
+    return list(entry["job_ids"])
 
 
 # Eight quadrature acquisitions covering four occupations, from the August
@@ -364,8 +366,8 @@ def flatten_result(value, prefix=""):
 
 def disorder_dataset(name):
     """-> (calibration job IDs, {realization: job IDs}) of one disorder dataset."""
-    entry = json.loads(DATASETS.read_text())["datasets"][name]
-    return (list(entry.get("calibration", [])),
+    entry = catalog()[name]
+    return (list(entry.get("calibration_job_ids", [])),
             {int(r): list(ids) for r, ids in entry["realizations"].items()})
 
 

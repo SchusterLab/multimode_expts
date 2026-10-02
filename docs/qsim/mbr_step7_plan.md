@@ -63,7 +63,7 @@ made them no longer exists.
     exist. That is wrong.
   - 7-1: `mbr_disorder_preview` (`diag_preview_job_ids`), realizations on `JOB-20260829/30`,
     calibration `JOB-20260828-00289..358`.
-  - August: `tests/data/mbr_datasets.json`.
+  - August: `configs/datasets/mbr_datasets.yaml`.
   - Pairwise: no list.
 - **The saved off-diagonal batch** `JOB-20260823-00005..08` (analysis `mbr.py`) was recorded
   with `EncodingPropagatorProgram`. It is off-diagonal, so it goes with pairwise and D72.
@@ -165,7 +165,7 @@ class is an empty subclass of it), so that live code does not import `deprecated
 - No new kind. The August and 7-1 realizations use kind `spectrum` (one Spectrum per
   realization), then one ensemble `save()`.
 - The realization metadata keys go into `derived_params`.
-- Move the 7-1 lists (from `mbr_disorder_preview`) into `tests/data/mbr_datasets.json`.
+- Move the 7-1 lists (from `mbr_disorder_preview`) into `configs/datasets/mbr_datasets.yaml`.
 - Also move the D72 lists (from `build_dataset_manifest`) there, marked
   `"converted": false` with the reason (section 0.2). This keeps the raw data easy to find.
 - `migrate_spectrum` keeps refusing off-diagonal pair jobs.
@@ -258,7 +258,7 @@ Many helper functions are notebook cells copied as whole blocks, with no data fl
       converted: it has 11 of 20 jobs. The 7-1 jobs' provenance was exported to
       `tests/data/job_provenance.json` (read-only, 461 records added, none changed).
   - Dataset lists: `diagonal_disorder_71` and the six D72 lists (`d72_*`,
-    `"converted": false`, with their archived timing) are in `tests/data/mbr_datasets.json`.
+    `"converted": false`, with their archived timing) are in `configs/datasets/mbr_datasets.yaml`.
   - Checks:
     - The ensemble on converted 7-1 data gives the same poles, theory levels and pooled gap
       ratios as the old preview cells on the raw files (baseline, XPASS).

@@ -109,6 +109,9 @@ spectrum = MBRSpectrumExperiment.from_manifest(path)   # re-assemble from raw jo
   of one dataset. If no list exists for a dataset, ask the user; they build it from the
   lab's OneNote logs. Do not guess the grouping. Output: the converted job files, plus
   the assembled output, written by the new class's own `save()`.
+  Since 2026-10-02 the lists live in `configs/datasets/mbr_datasets.yaml` (one entry per
+  data set, with the manifest once converted); `tools/convert_mbr_catalog.py` drives the
+  script from it, one block per data set where the old files need special handling.
   Example: one old Spectrum = 70 files (35 occupations × φ=0/90) → 35 + 1 + 1:
   35 TimeTrace files in `converted_data\`, and one manifest YAML + one assembled HDF5
   in `assembled_data\`.
@@ -202,7 +205,7 @@ still need. Exception: their runner calls move in step 1.
   matrix, columns in the jobs' decoder order), migration kind `orthogonality`. Converted old
   propagator jobs that left their correction to analysis carry it as
   `analysis_phase_per_cycle_deg`; the assembled `matrix` applies it, `raw_matrix` does not.
-  Fixture: `september_N3_orthogonality` in `tests/data/mbr_datasets.json` (35 jobs, given by
+  Fixture: `september_N3_orthogonality` in `configs/datasets/mbr_datasets.yaml` (35 jobs, given by
   the user). Gate: `tests/test_mbr_orthogonality.py`; the new matrix equals the old
   `reconstruct_orthogonality` (xfail baseline, XPASS).
 - Step 5 done (2026-09-24). `experiments/qsim/mbr_ham_tomo.py` (`MBRHamTomoExperiment`,
@@ -255,7 +258,7 @@ still need. Exception: their runner calls move in step 1.
 
 **Superseded, 2026-09-24:** step 7 is done (7a-7e); see `docs/qsim/mbr_step7_plan.md`,
 sections 0 and 8. One statement below was wrong: the D72 dataset lists did exist (in
-`mbr_disorder_h5.build_dataset_manifest`); they are now in `tests/data/mbr_datasets.json`
+`mbr_disorder_h5.build_dataset_manifest`); they are now in `configs/datasets/mbr_datasets.yaml`
 as `d72_*`, marked not converted. Only the pairwise datasets have no list.
 
 Step 7 starts with a written plan the user approves (see its entry in section 7). Facts
