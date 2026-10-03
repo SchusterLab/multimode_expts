@@ -11,7 +11,7 @@ the branch rules are in `docs/STATUS.md`.
 - **The survey of every pole-finding method on the Sep 10 ensemble is running unattended**
   (tmux `nb`, window `survey`; `analysis_notebooks/pole_finding/survey_sep10.py`; record
   `docs/log/2026-10-02_sep10-pole-survey.md`). Output:
-  `C:\experiments°818_qsim_spectroscopy\derived_data\pole_finding\sep10_survey\` (`survey.log`
+  `C:\experiments\260818_qsim_spectroscopy\derived_data\pole_finding\sep10_survey\` (`survey.log`
   and CSVs). **Next:** read the results, write the tables into a log entry, and decide: the
   offset prior for this set (T1 finds row offsets of 4.7 kHz rms, up to 11.7 kHz, on r=0, against
   a 0.5 kHz prior), the T3 merge threshold at 35 rows, and the Matrix Pencil settings. Then T2's
