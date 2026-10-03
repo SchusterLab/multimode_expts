@@ -21,11 +21,19 @@ def load_spectra(data_set, root):
     analysis = data_set.analysis or Analysis()
     if "DisorderEnsemble" in path.name:
         ensemble = MBRDisorderEnsembleExperiment.from_manifest(path)
-        parts = [(f"{data_set.label}/{record['realization']}", part, 1e-3 * float(record["self_kerr_kHz"]))
+        # The recorded self-Kerr is optional (the Sep 10 set has it for r=0 only); the model
+        # Kerr is then the analysis one (``Analysis.model_kerr``).
+        parts = [(f"{data_set.label}/{record['realization']}", part, recorded_kerr_MHz_of(record))
                  for record, part in zip(ensemble.realizations, ensemble.children)]
     else:
         parts = [(data_set.label, MBRSpectrumExperiment.from_manifest(path), None)]
     return [spectrum(label, data_set, part, analysis, recorded_kerr_MHz) for label, part, recorded_kerr_MHz in parts]
+
+
+def recorded_kerr_MHz_of(record):
+    """-> the realization record's self-Kerr in MHz, or None if it was not recorded."""
+    kerr_kHz = record.get("self_kerr_kHz")
+    return None if kerr_kHz is None else 1e-3 * float(kerr_kHz)
 
 
 def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
@@ -38,6 +46,8 @@ def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
     data = part.analyze(phase_frame=analysis.phase_frame, manual_kerr_MHz=manual_kerr_MHz,
                         cycle_branches=analysis.branches(part.occupations), legacy=analysis.legacy or None,
                         spectrum_method="fft")
+    if analysis.model_kerr == "recorded" and recorded_kerr_MHz is None:
+        raise ValueError(f"{label}: model_kerr is 'recorded' but the realization has no self_kerr_kHz")
     kerr_MHz = recorded_kerr_MHz if analysis.model_kerr == "recorded" else data.spectrum.physical_kerr_MHz
     occupations = [tuple(o) for o in data.reconstruction.occupations]
     mode_count = len(occupations[0])
