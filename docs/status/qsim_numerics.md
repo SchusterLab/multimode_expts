@@ -119,3 +119,4 @@ How to check:
 |---|---|
 | `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft; phase 1 done, 2026-09-28) |
 | `docs/qsim/pole_finding_explore.md` | pole finding: the plan of parallel exploration tasks (2026-09-29) |
+| `docs/qsim/pole_finding_recap.md` | pole finding: recap of every method, what it was tested on, performance; figures (2026-10-03) |
