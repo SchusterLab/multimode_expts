@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-02, evening** (the pole-finding survey on the Sep 10 ensemble started, on pippin).
+**Last updated: 2026-10-05** (the three views and the lab vault as the reading interface, on pippin).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
 `qsim-analysis`, worktree `C:\python\multimode_expts_qsim-analysis`. This file is overwritten at
 the end of each work session on this theme; git keeps the old versions. Cross-theme items and
@@ -8,6 +8,14 @@ the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
+  `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
+  `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
+  them first). A fitter is judged by three views (`fitting/qsim/poles/views.py`): poles on the
+  per-row FFT, the stick diagram, the r histogram. On Sep 10 the model is near Poisson (<r> 0.415);
+  A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). **Next:** the feasibility map over
+  the phase diagram (r-histogram shape and form factor at our T2, window and shots; how many
+  realizations tell the model from Poisson), and the per-photon offset correction.
 - **The survey of every pole-finding method on the Sep 10 ensemble is running unattended**
   (tmux `nb`, window `survey`; `analysis_notebooks/pole_finding/survey_sep10.py`; record
   `docs/log/2026-10-02_sep10-pole-survey.md`). Output:

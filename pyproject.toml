@@ -84,4 +84,4 @@ quote-style = "preserve" # don't enforce single or double quotes
 
 
 [tool.pytest.ini_options]
-markers = ["slow: needs the full 140-file N=3 sector; skip with -m \"not slow\""]
+markers = ["slow: over about 5 s (the full 140-file N=3 sector, or a slow fit); skip with -m \"not slow\""]

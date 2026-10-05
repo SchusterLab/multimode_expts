@@ -44,7 +44,7 @@ def test_jacobian_matches_finite_differences(amplitudes):
     np.testing.assert_allclose(J, numeric, atol=1e-3 * np.abs(numeric).max())
 
 
-@pytest.mark.parametrize("amplitudes", ["model", "free"])
+@pytest.mark.parametrize("amplitudes", ["model", pytest.param("free", marks=pytest.mark.slow)])
 def test_recovers_perturbed_parameters(amplitudes):
     """From a start off by the real model error (1 kHz, 5 %), the fit returns the truth within
     4 of its errors, and its levels within a small fraction of a bin."""
