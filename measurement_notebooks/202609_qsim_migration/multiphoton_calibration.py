@@ -1097,20 +1097,7 @@ singleshot_defaults = AttrDict(dict(
 )) # Shouldn't be modifying this on the fly!
 # You can use kwargs in the run function to override these values
 
-def singleshot_postproc(station, expt):
-    expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
-    print(expt.data['fids'])
-    readout = station.hardware_cfg.device.readout
-    readout.phase = [readout.phase[0] + expt.data['angle']]
-    readout.threshold = expt.data['thresholds']
-    readout.threshold_list = [expt.data['thresholds']]
-    readout.Ie = [np.median(expt.data['Ie_rot'])]
-    readout.Ig = [np.median(expt.data['Ig_rot'])]
-    if expt.cfg.expt.active_reset:
-        readout.confusion_matrix_with_active_reset = expt.data['confusion_matrix']
-    else:
-        readout.confusion_matrix_without_reset = expt.data['confusion_matrix']
-    print('Updated readout!')
+from experiments.readout_calibration import apply_singleshot_calibration as singleshot_postproc
 
 # %%
 # Execute

@@ -34,16 +34,23 @@ def goe_pdf(ratio):
     return (27 / 4) * (ratio + ratio ** 2) / (1 + ratio + ratio ** 2) ** 2.5
 
 
-def disorder_direction(seed, leaf_count):
+def disorder_direction(seed, leaf_count, normalization="norm"):
     """-> a random zero-mean unit vector over the storage modes (7-1 realizations).
 
     ``np.random.default_rng(seed).normal``, minus its mean, divided by its
-    norm. The onsite energy of realization r is ``strength * direction`` and
+    norm (historical default), or RMS with ``normalization='rms'``. The
+    onsite energy of realization r is ``strength * direction`` and
     its pulse detunings are ``-strength * direction``.
     """
+    if normalization not in ("norm", "rms"):
+        raise ValueError("normalization must be 'norm' or 'rms'")
+    if int(leaf_count) < 2:
+        raise ValueError("zero-mean disorder needs at least two storage modes")
     direction = np.random.default_rng(seed).normal(size=int(leaf_count))
     direction -= np.mean(direction)
     direction /= np.linalg.norm(direction)
+    if normalization == "rms":
+        direction *= np.sqrt(int(leaf_count))
     return direction
 
 

@@ -70,7 +70,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
 
     def __init__(self, occupations, cycles, swap_stors, calibration=None,
                  cycle_branches=0, detunings=None, sync_cycles=10, reps=300,
-                 notes=""):
+                 notes="", realization_record=None):
         """``cycle_branches`` picks the 180 deg/cycle branch of the correction
         played on the pulse at acquisition; ``analyze(cycle_branches=...)`` is
         the separate branch applied in analysis."""
@@ -84,8 +84,41 @@ class MBRSpectrumExperiment(AssembledExperiment):
                           else [float(d) for d in detunings])
         self.sync_cycles = int(sync_cycles)
         self.reps = int(reps)
+        self.realization_record = (None if realization_record is None
+                                   else dict(realization_record))
 
     # -- acquisition ------------------------------------------------------
+
+    def acquire(self, runner, batch_size=10, before_batch=None, **execute_kwargs):
+        """Acquire traces, optionally recalibrating before each completed batch.
+
+        ``before_batch(spectrum, start)`` runs before submitting any jobs in
+        that batch. It may return extra job overrides (for readout calibration
+        provenance). All jobs in a batch finish before the next callback, so
+        subsequent jobs receive the updated station configuration. A callback
+        failure stops acquisition. ``batch_size=1`` recalibrates per occupation.
+        """
+        if before_batch is None:
+            return super().acquire(runner, batch_size=batch_size, **execute_kwargs)
+        if runner.ExptClass is not self.child_class:
+            raise TypeError(f"runner needs {self.child_class.__name__}")
+        if isinstance(batch_size, (bool, np.bool_)) or not isinstance(
+                batch_size, (int, np.integer)) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
+        overrides = self.job_overrides()
+        self.children, self.job_ids, self.data = [], [], {}
+        for start in range(0, len(overrides), batch_size):
+            provenance = before_batch(self, start) or {}
+            group = [dict(job, **provenance)
+                     for job in overrides[start:start + batch_size]]
+            runner.last_job_ids = []
+            try:
+                children = runner.execute(overrides=group, batch_size=batch_size,
+                                          **execute_kwargs)
+                self.children.extend(children)
+            finally:
+                self.job_ids.extend(runner.last_job_ids)
+        return self.children
 
     def job_overrides(self):
         """-> one diagonal TimeTrace override dict per occupation.
@@ -103,12 +136,16 @@ class MBRSpectrumExperiment(AssembledExperiment):
                                  "can record its manifest path")
             phases = self.calibration.phase_correction(self.cycle_branches).phase_by_occupation
             manifest = self.calibration.manifest_path
-        return [self.child_class.job_config(
+        overrides = [self.child_class.job_config(
                     occupation, occupation, self.cycles, self.swap_stors,
                     phase_per_cycle_deg=phases[occupation],
                     calibration_manifest=manifest, detunings=self.detunings,
                     sync_cycles=self.sync_cycles, reps=self.reps)
                 for occupation in self.occupations]
+        if self.realization_record is not None:
+            for job in overrides:
+                job['disorder_realization_record'] = dict(self.realization_record)
+        return overrides
 
     @classmethod
     def from_children(cls, children, job_ids=(), notes="", calibration=None):
@@ -135,7 +172,8 @@ class MBRSpectrumExperiment(AssembledExperiment):
                        calibration=calibration,
                        detunings=ecfg.get("detunings", None),
                        sync_cycles=int(ecfg.get("scramble_sync_cycles", 10)),
-                       reps=int(ecfg.reps), notes=notes)
+                       reps=int(ecfg.reps), notes=notes,
+                       realization_record=ecfg.get('disorder_realization_record'))
         spectrum.children = children
         spectrum.job_ids = list(job_ids)
         spectrum._check_children()
@@ -184,6 +222,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
                 zero_padding=1,
                 shots_per_point=None,
                 shot_seed=None,
+                readout_refit=False,
                 **matrix_pencil_options):
         """Reconstruct, phase-correct, and transform the sector to a spectrum.
 
@@ -203,6 +242,9 @@ class MBRSpectrumExperiment(AssembledExperiment):
           ``mpm_merge_frequency_tolerance_bins='calibration'`` merges rows by
           the phase-calibration errors (:meth:`_calibration_frequency_errors_MHz`).
         - ``shots_per_point`` subsamples the raw shots, with ``shot_seed``.
+        - ``readout_refit=True`` optionally fits saved IQ clouds on analysis-only
+          copies. It cannot repair stale active-reset thresholds. Fit failures
+          raise; raw files and acquisition settings remain unchanged.
 
         The calibration set, if any, is ``self.calibration``.
         """
@@ -215,6 +257,16 @@ class MBRSpectrumExperiment(AssembledExperiment):
         matrix_pencil_analysis.settings_from_options(matrix_pencil_options)
 
         analysis_children = self.children
+        readout_fits = []
+        if readout_refit:
+            if shots_per_point is not None:
+                raise ValueError("readout_refit cannot be combined with shot subsampling")
+            from experiments.qsim.readout_refit import refit_readout
+            analysis_children = []
+            for child in self.children:
+                corrected, fit = refit_readout(child)
+                analysis_children.append(corrected)
+                readout_fits.append(fit)
         shot_subsampling = None
         if shots_per_point is not None:
             readout_lanes = [int(child.cfg.get("read_num", 0)) or readout_lane_count(child.cfg)
@@ -278,6 +330,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
             analyzer_phase_application_sign=postprocessed.analyzer_phase_application_sign,
             legacy_analyzer_migration=postprocessed.legacy_analyzer_migration,
             spectrum_method=spectrum_method,
+            readout_refit=readout_fits,
         ))
         if spectrum_method == "matrix_pencil":
             settings = matrix_pencil_analysis.settings_from_options(
@@ -333,7 +386,9 @@ class MBRSpectrumExperiment(AssembledExperiment):
     def manifest_parameters(self):
         return dict(occupations=[list(o) for o in self.occupations],
                     cycles=self.cycles,
-                    swap_stors=self.swap_stors)
+                    swap_stors=self.swap_stors,
+                    realization_record=self.realization_record,
+                    readout_refit=self.data.get("readout_refit", []))
 
     def assembled_arrays(self):
         data = self.data
