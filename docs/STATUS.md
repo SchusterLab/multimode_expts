@@ -30,8 +30,8 @@ Rules:
   (issue 6, question 1); jonginn's human vault with plots stays. 20 of 25 data sets are converted
   to the new layout on pippin (`tools/convert_mbr_catalog.py`); the 5 off-diagonal D72 sets are not
   (step 7 plan, decision 2). Record: `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md`.
-  When `job_id_sorting_out` is merged, delete `docs/spectroscopy job id compilation/Only JOB IDs
-  for Agents.md` again (that branch still edits it).
+  The two markdown lists are also deleted on `job_id_sorting_out` (2026-10-05), and the human
+  vault there points at the YAML, so the next merge of that branch brings no conflict.
 - **`main` has the qsim redesign** (merge of `guan`, 2026-09-29, after the 10G device check;
   `docs/status/measurement.md`). Users restart their kernels once. `main` is merged into
   `qsim-analysis`; both theme branches are on GitHub.
