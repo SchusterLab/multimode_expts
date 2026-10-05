@@ -1,8 +1,6 @@
 # What is left in jonginn's old notebooks
 
-> **Status: tentative.** Written 2026-09-30 from an agent survey of `origin/main`
-> at `c3bfeda`. Not yet read in full by guan or checked with jonginn. Cell
-> indices are for the committed notebooks at that commit.
+> **Status: superseded** by `docs/qsim/notebook_migration_completion.md` (2026-10-05). The inventory below preserves the Sept 30 survey; Jonginn subsequently answered issue 7.
 
 ## Scope
 
