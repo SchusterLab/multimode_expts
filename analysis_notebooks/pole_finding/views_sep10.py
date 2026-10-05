@@ -213,7 +213,11 @@ Levels found per fitter, against what is resolvable (Cramér-Rao) and what the d
 
 ![](figures/sep10_found_per_fitter.png)
 """
-(VAULT / f"{PREFIX}_views.md").write_text(page, encoding="utf-8")
+target = VAULT / f"{PREFIX}_views.md"
+if target.exists() and any(tag in target.read_text(encoding="utf-8") for tag in ("[!guan]", "[!claude]")):
+    target = VAULT / f"{PREFIX}_views_rebuilt.md"           # never overwrite a page with comments on it
+    print("the page has comments; the rebuilt page goes to", target.name)
+target.write_text(page, encoding="utf-8")
 
 # the recap of every method, copied with its figures (the repo copy is the record)
 recap = (repo_figures.parents[1] / "pole_finding_recap.md").read_text(encoding="utf-8")

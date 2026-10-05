@@ -43,3 +43,30 @@ text and number tables in the terminal.
   `C:\experiments\260818_qsim_spectroscopy\derived_data\pole_finding\fixed_set\set.h5`. Its
   August Kerr is K/g -1.22 (K -10.5 kHz, the recorded manual Kerr); the catalog label of set 2
   says 5.7 kHz, and T1 fits -8.6 to -9.3 kHz. Open with jonginn (`K_source`).
+
+## Later the same day: guan's two vault comments, and the first feasibility map
+
+guan: the different K values in the catalog are the undriven Kerr or a one-row fit; the dressed
+Kerr during the drives differs. Plan: spectroscopy of the most Kerr-sensitive N=2 state as the
+Kerr input for all other spectroscopy.
+
+- **Comment on the stick diagram (big + small pole pairs):** where T1T3 puts one pole on a model
+  level (167 of 315), its weight is 1 (median 0.999, middle half 0.89-1.07). 106 levels have two
+  or more poles within one bin: summed weight near 1 in 46 (a split), near 2 in 32, other 28. The
+  two poles of a split mostly hold different rows (amplitude overlap median 0.56), median 2.8 kHz
+  apart: a frame effect of the remaining offset errors. An integer-weight penalty is a good rule
+  for a complete basis, but it must refit the offsets with it (plan in the vault reply).
+- **Comment on the form factor:** late-time (t > 60 us) form factor over the model with decay:
+  as measured 0.30; per-row offsets of C 0.69; of T1 1.11; the per-photon pattern fitted on the
+  other 8 realizations 0.85 (the fair test: 5 numbers, no realization corrects itself).
+- **Feasibility map** (`analysis_notebooks/pole_finding/feasibility_map.py`, 28 min; page
+  `2026-10-05_feasibility_map.md` in the vault): model <r> over K/g 0 to -4 and delta/g 0.5 to
+  10 at the Sep 10 hardware, and what a bound-limited fitter keeps (Cramér-Rao, gaps under 4
+  errors merged, 8 draws). The model reaches <r> 0.50-0.52 at most (K/g <= -2, delta/g 3.4-6);
+  never GOE. For delta/g <= 2 the resolution gives 0.51-0.63 everywhere (false repulsion); for
+  delta/g 6-10 it keeps the model within about 0.02-0.06. The plain form factor with our decay
+  hardly separates the points after 40 us. Dropped: a "realizations to tell <r> from Poisson"
+  figure (it compared the biased value with Poisson). Next: check the stand-in against T1T3 on
+  synthetic ensembles at 3 points; a whole-shape test between two points with 30 draws; the
+  reachable K and delta at g 29 kHz (question to guan in the vault page).
+- `views_sep10.py` no longer overwrites a vault page that has comments on it.

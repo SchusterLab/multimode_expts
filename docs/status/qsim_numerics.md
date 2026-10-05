@@ -13,9 +13,13 @@ the branch rules are in `docs/STATUS.md`.
   `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
   them first). A fitter is judged by three views (`fitting/qsim/poles/views.py`): poles on the
   per-row FFT, the stick diagram, the r histogram. On Sep 10 the model is near Poisson (<r> 0.415);
-  A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). **Next:** the feasibility map over
-  the phase diagram (r-histogram shape and form factor at our T2, window and shots; how many
-  realizations tell the model from Poisson), and the per-photon offset correction.
+  A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). First feasibility map
+  (`feasibility_map.py`; vault page `2026-10-05_feasibility_map.md`): at the Sep 10 hardware the
+  resolution keeps the model's r shape only at large disorder (delta/g 6-10); the model's most
+  chaotic cells reach <r> 0.50-0.52. Removing the row offsets (per-photon pattern) lifts the
+  late form factor from 0.30 to 0.85 of the model. **Next:** check the bound stand-in against T1T3
+  on synthetic ensembles at 3 points; a whole-shape test between two points; reachable K and
+  delta (guan); the integer-weight penalty with per-photon offsets.
 - **Jonginn's newer notebook work is migrated/retired** using his issue 7 decisions
   (`docs/log/2026-10-05_jonginn-notebook-migration.md`). The Sep10 full-basis ensemble
   now has a catalog-backed section in `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`,
