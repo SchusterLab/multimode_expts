@@ -32,7 +32,7 @@
 # Moved to `dormant/` in MBR redesign step 8C (`docs/qsim/mbr_step8_plan.md`, decision 3):
 # the N=3 FFT/Matrix-Pencil diagnostics (`dormant/mbr_n3_diagnostics.py`), the report
 # replots (`dormant/mbr_replot.py`), and the July N=2 reprocessing with hand-entered
-# energy shifts (`dormant/mbr_n2_decoder_mode.py`; its files were taken in the removed
+# energy shifts (decoder-mode notebook retired Oct 5; its files were taken in the removed
 # 'decoder' phase-correction mode).
 #
 # Split out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells 167-187,
