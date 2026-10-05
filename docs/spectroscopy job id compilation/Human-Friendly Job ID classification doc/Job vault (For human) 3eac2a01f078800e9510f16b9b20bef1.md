@@ -1,5 +1,17 @@
 # Job vault (For human)
 
+> **Where the job IDs live now (2026-10-05).** The one master list is
+> `configs/datasets/mbr_datasets.yaml` on the `qsim-analysis` branch: one entry per data set with
+> the literal job IDs, the folder, the Floquet config, rough g/K labels, and the converted manifest
+> under `assembled_data/`. The code reads only that file (`tools/convert_mbr_catalog.py`,
+> `tests/mbr_reference.py`). This document keeps the plots and the human-readable description;
+> the `h5_job_ids(DATE, START, END)` ranges below are a reading aid, not an identifier (other
+> users' jobs interleave in a range). Differences applied in the YAML, from the issue 6 answers:
+> `JOB-20260911-00001..28` (stale) and `JOB-20260830-00135` (no phase-90 partner) are dropped,
+> the Sep 10-14 set is a *diagonal* complete-basis ensemble (`sep10_full_K3p6_g29p2`, 9
+> realizations), and sections 14-16 are kept with `quality: concern`. The companion
+> "Only JOB IDs for Agents" file and `docs/job_list_and_nb_labeling/Job_list.md` are retired.
+
 Pasting the python codes, where the syntax is
 
 - h5_project : Folder of the data
