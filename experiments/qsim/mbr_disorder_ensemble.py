@@ -27,7 +27,7 @@ then combines them::
 to the part's theory levels, and takes adjacent-gap ratios of both; then it
 pools them over realizations (:mod:`fitting.qsim.mbr_disorder`). When every
 part covers the complete basis it also gives Tr U(t) and the spectral form
-factor; no dataset converted so far is complete (the plan, section 3.2).
+factor; the Sep 10-14 ensemble covers the complete basis.
 """
 from dataclasses import dataclass, field
 from math import comb
@@ -148,7 +148,8 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
     def analyze(self, phase_frame="as_acquired", manual_kerr_MHz=None,
                 cycle_branches=0, legacy=None, theory_kerr_MHz=None,
                 match_tolerance_bins=1.5, edge_fraction=0.10,
-                excluded_occupations=(), on_error="raise", **matrix_pencil_options):
+                excluded_occupations=(), on_error="raise", readout_refit=False,
+                **matrix_pencil_options):
         """Matrix Pencil levels per realization, matched to theory; pooled gap ratios.
 
         - ``phase_frame``, ``manual_kerr_MHz``, ``cycle_branches``, ``legacy``
@@ -189,7 +190,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
             try:
                 records.append(self._analyze_part(
                     label, part, options, phase_frame, manual_kerr_MHz,
-                    cycle_branches, legacy, kerr, match_tolerance_bins))
+                    cycle_branches, legacy, kerr, match_tolerance_bins, readout_refit))
             except Exception as error:  # noqa: BLE001 -- recorded, per on_error
                 if on_error == "raise":
                     raise
@@ -226,6 +227,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
                       if measured_ratios else None),
             ratio_failures=ratio_failures,
             analysis_settings=dict(phase_frame=phase_frame, manual_kerr_MHz=manual_kerr_MHz,
+                                   readout_refit=readout_refit,
                                    theory_kerr_MHz=theory_kerr_MHz,
                                    match_tolerance_bins=match_tolerance_bins,
                                    excluded_occupations=sorted(excluded),
@@ -244,7 +246,8 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
 
     @staticmethod
     def _analyze_part(label, part, options, phase_frame, manual_kerr_MHz,
-                      cycle_branches, legacy, theory_kerr_MHz, match_tolerance_bins):
+                      cycle_branches, legacy, theory_kerr_MHz, match_tolerance_bins,
+                      readout_refit=False):
         """-> one realization's record: poles, theory levels, the match."""
         photon_number = sum(part.occupations[0])
         mode_count = len(part.occupations[0])
@@ -253,7 +256,8 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
         part_options.setdefault("mpm_requested_max_modes", hamiltonian_dimension)
         data = part.analyze(phase_frame=phase_frame, manual_kerr_MHz=manual_kerr_MHz,
                             cycle_branches=cycle_branches, legacy=legacy,
-                            spectrum_method="matrix_pencil", **part_options)
+                            spectrum_method="matrix_pencil", readout_refit=readout_refit,
+                            **part_options)
         # The source wrapped the poles into the principal interval, then
         # commented the modulo out; they are used as fitted.
         poles_MHz = np.sort(np.asarray(data.matrix_pencil.modes.frequencies_MHz,
@@ -408,7 +412,10 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
 
     def manifest_parameters(self):
         return dict(realizations=self.realizations,
-                    analysis_settings=self.data.get("analysis_settings", {}))
+                    analysis_settings=self.data.get("analysis_settings", {}),
+                    readout_refit={str(record['realization']): part.data.get('readout_refit', [])
+                                   for record, part in zip(self.realizations,
+                                       getattr(self, '_analyzed_parts', self.children))})
 
     def assembled_arrays(self):
         data = self.data
@@ -498,18 +505,23 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
 
 @dataclass
 class DiagDisorderConfig:
-    """Cell 323's `diag_disorder_*` knobs, with its values."""
+    """Full-basis RMS campaign; historical 7-1 is an explicit compatibility mode."""
 
     N: int = 3
     realization_count: int = 20
     strength_kHz: float = 50.0
     master_seed: int = 20260816
+    # New campaigns measure every state; custom subsets are explicit and never
+    # selected from predicted visibility. 'theory' only reproduces old 7-1 plans.
+    state_selection: str = "full"
+    occupations: Optional[list] = None
     selected_states: int = 10
+    normalization: str = "rms"
     max_cycle: int = 200
     min_time_points: int = 100
     nyquist_margin: float = 1.35
     reps: int = 1200
-    batch_size: int = 2
+    batch_size: int = 1
     edge_fraction: float = 0.10
     gap_ratio_bins: int = 15
     match_tolerance_bins: float = 1.5
@@ -539,6 +551,12 @@ def plan_diagonal_disorder(calibration, swap_stors, config=None, best_self_kerr_
     ``estimated_hours``.
     """
     config = config or DiagDisorderConfig()
+    if config.state_selection not in ("full", "custom", "theory"):
+        raise ValueError("state_selection must be 'full', 'custom' or 'theory'")
+    if config.realization_count < 1:
+        raise ValueError("realization_count must be positive")
+    if config.occupations is not None and config.state_selection != "custom":
+        raise ValueError("occupations requires state_selection='custom'")
     if "phase_mod180" not in calibration.data:
         calibration.analyze()
     hardware = calibration.data.hardware
@@ -556,17 +574,34 @@ def plan_diagonal_disorder(calibration, swap_stors, config=None, best_self_kerr_
     realizations, theory = [], {}
     for realization in range(config.realization_count):
         seed = config.master_seed + realization
-        direction = mbr_disorder.disorder_direction(seed, len(swap_stors))
+        direction = mbr_disorder.disorder_direction(
+            seed, len(swap_stors), normalization=config.normalization)
         # The analyzer Hamiltonian uses onsite = -detunings.
         onsite_MHz = 1e-3 * config.strength_kHz * direction
         hamiltonian = fixed_n_hamiltonian(config.N, mode_count, -onsite_MHz,
                                           hardware.couplings_MHz, self_kerr_MHz)
-        rows, floor, coverage = mbr_disorder.select_diagonal_rows(
-            hamiltonian.basis_eigenstate_weights, config.selected_states)
+        basis = [tuple(o) for o in hamiltonian.fock_basis]
+        if config.state_selection == "theory":
+            rows, floor, coverage = mbr_disorder.select_diagonal_rows(
+                hamiltonian.basis_eigenstate_weights, config.selected_states)
+        else:
+            if config.state_selection == "full":
+                rows = list(range(len(basis)))
+            else:
+                requested = config.occupations or []
+                if not requested or any(tuple(o) not in basis for o in requested):
+                    raise ValueError("custom occupations must belong to the fixed-N basis")
+                rows = [basis.index(tuple(o)) for o in requested]
+                if len(set(rows)) != len(rows):
+                    raise ValueError("custom occupations must be unique")
+            coverage = np.max(hamiltonian.basis_eigenstate_weights[rows], axis=0)
+            floor = float(np.min(coverage))
         realizations.append(dict(
             realization=realization,
             seed=int(seed),
             strength_kHz=float(config.strength_kHz),
+            normalization=config.normalization,
+            state_selection=config.state_selection,
             direction=direction.tolist(),
             onsite_MHz=onsite_MHz.tolist(),
             selected_occupations=[list(hamiltonian.fock_basis[row]) for row in rows],
@@ -579,7 +614,7 @@ def plan_diagonal_disorder(calibration, swap_stors, config=None, best_self_kerr_
     grid = mbr_disorder.cycle_grid(max_abs_energy_MHz, hardware.floquet_cycle_us,
                                    config.max_cycle, config.min_time_points,
                                    config.nyquist_margin)
-    total_jobs = config.realization_count * config.selected_states
+    total_jobs = sum(len(record["selected_occupations"]) for record in realizations)
     # The old estimate: 3.76 s per cycle point per (occupation, analyzer
     # phase) job at 1200 reps. A new job holds both analyzer phases.
     estimated_hours = (2 * total_jobs * len(grid.cycles) * 3.76
@@ -591,7 +626,8 @@ def plan_diagonal_disorder(calibration, swap_stors, config=None, best_self_kerr_
           f"Nyquist={1e3 * grid.nyquist_MHz:.3f} kHz, "
           f"FFT resolution={1e3 * grid.fft_resolution_MHz:.3f} kHz")
     print(f"signed M1 self-Kerr={self_kerr_kHz:.3f} kHz ({kerr_source})")
-    print(f"estimated single-worker time={estimated_hours:.1f} h")
+    print(f"estimated spectroscopy time={estimated_hours:.1f} h "
+          "(single-shot recalibrations add time)")
     for record in realizations:
         print(f"r={record['realization']} seed={record['seed']} | "
               f"leaf onsite={np.round(1e3 * np.asarray(record['onsite_MHz']), 3)} kHz")
@@ -623,7 +659,8 @@ def realization_spectrum(plan, record, calibration, campaign, config=None):
         calibration=calibration, cycle_branches=dict(config.branch_overrides),
         detunings=(-np.asarray(record["onsite_MHz"])).tolist(),
         sync_cycles=campaign.sync_cycles, reps=config.reps,
-        notes=f"7-1 diagonal disorder r={record['realization']} seed={record['seed']}")
+        realization_record=record,
+        notes=f"diagonal disorder r={record['realization']} seed={record['seed']}")
 
 
 def analyze_diagonal_disorder(ensemble, plan, config=None, on_error="raise"):

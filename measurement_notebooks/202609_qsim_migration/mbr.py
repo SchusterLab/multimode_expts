@@ -280,6 +280,9 @@ orthogonality_occupations = [
     # [2, 0, 0, 1, 0],
 ]
 orthogonality_occupations.sort(reverse=True)
+# Full fixed-N matrix for normal runs; the smoke check uses the short list above.
+if not RUN.smoke:
+    orthogonality_occupations = fixed_n_occupations(3, len(campaign.mode_labels))
 
 orthogonality = MBROrthogonalityExperiment(
     orthogonality_occupations,

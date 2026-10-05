@@ -243,7 +243,8 @@ def test_plan_matches_the_old_selection_code(diagonal_disorder):
         DiagDisorderConfig, plan_diagonal_disorder)
 
     record = diagonal_disorder.realizations[0]
-    config = DiagDisorderConfig(realization_count=2, self_kerr_kHz=record["self_kerr_kHz"])
+    config = DiagDisorderConfig(realization_count=2, self_kerr_kHz=record["self_kerr_kHz"],
+                                state_selection="theory", normalization="norm")
     calibration = diagonal_disorder.calibration
     plan = plan_diagonal_disorder(calibration, SWAP_STORS, config)
     hardware = calibration.data.hardware
@@ -272,7 +273,7 @@ def test_realization_spectrum_plays_the_detunings(diagonal_disorder):
     record = plan.realizations[0]
     spectrum = realization_spectrum(plan, record, calibration, campaign, config)
     overrides = spectrum.job_overrides()
-    assert len(overrides) == config.selected_states
+    assert len(overrides) == 35
     for override in overrides:
         np.testing.assert_allclose(override["detunings"], -np.asarray(record["onsite_MHz"]))
         assert override["calibration_manifest"] == str(calibration.manifest_path)

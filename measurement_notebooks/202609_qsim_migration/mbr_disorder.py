@@ -16,19 +16,13 @@
 # %% [markdown]
 # # Disorder campaign acquisition
 #
-# The 7-1 diagonal-disorder campaign of `measurement_notebooks/jonginn/
-# qsim_experiments.ipynb` (cells 323-334). The reports are
+# New campaigns measure the complete fixed-N basis with RMS-normalized,
+# zero-mean storage detunings (Jonginn, issue 7). A custom occupation list is
+# available for deliberate subsets; theory visibility does not select the states.
+# Interleave single-shot calibration: active reset relies on current thresholds,
+# and offline IQ refitting cannot rescue measurements made with stale thresholds.
+# Planning and acquisition live in the qsim modules; reports are in
 # `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`.
-#
-# **MBR redesign step 7c (2026-09-24).** On the new classes: the phase
-# calibration is an `MBRCalibrationSetExperiment`, each realization one
-# `MBRSpectrumExperiment` (diagonal `MBRTimeTraceExperiment` jobs with the
-# realization's detunings), and the campaign one
-# `MBRDisorderEnsembleExperiment` built from the saved realizations. The
-# planning is in `experiments/qsim/mbr_disorder_ensemble.py` (since step 9);
-# the old-class version is in `experiments/qsim/deprecated/`. The pairwise preview and 7-2
-# (D72) are in `dormant/mbr_disorder_offdiag.py`
-# (`docs/qsim/mbr_step7_plan.md`, decision 2).
 #
 # Each realization is saved as soon as it is acquired, so an interrupted
 # campaign keeps what it finished; the ensemble can be built again from the
@@ -49,6 +43,7 @@ from job_server import JobClient
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
+from experiments.qsim.readout_calibration import singleshot_runner, recalibrate_before_batch
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
@@ -144,13 +139,15 @@ diag_config = DiagDisorderConfig(
     N=3,
     realization_count=RUN.pick(20, smoke=1),
     strength_kHz=50.0,
-    master_seed=20260816,
-    selected_states=RUN.pick(10, smoke=3),
+    master_seed=20260912,
+    normalization="rms",
+    state_selection="full",
+    # For a deliberate subset: state_selection="custom", occupations=[...].
     max_cycle=200,
     min_time_points=100,
     nyquist_margin=1.35,
     reps=RUN.pick(1200, smoke=100),
-    batch_size=2,
+    batch_size=1,  # occupations between single-shot recalibrations
     edge_fraction=0.10,
     gap_ratio_bins=15,
     match_tolerance_bins=1.5,
@@ -164,7 +161,7 @@ diag_config = DiagDisorderConfig(
 )
 
 # %% [markdown]
-# #### 7-1b. Build the theory-selected plan and check time — no jobs
+# #### 7-1b. Build the full-basis plan and check time — no jobs
 
 # %%
 # A fitted M1 self-Kerr (for example `fit_self_kerr` on `mbr_spectrum`'s class in the
@@ -179,11 +176,19 @@ diag_plan = plan_diagonal_disorder(calibration, campaign.modes, config=diag_conf
 #
 # One Spectrum per realization, saved when it is done. Rerunning the cell
 # skips the realizations already in `diag_parts`.
+# Recalibrate readout before each occupation by default. Increase the interval
+# only after checking readout stability; each group finishes before recalibration.
 
 # %%
 diag_parts = {}
 
 # %%
+readout_every_occupations = diag_config.batch_size
+ss_runner = singleshot_runner(
+    station, client, use_queue=RUN.use_queue,
+    reps=RUN.pick(5000, smoke=1000),
+    avoid_yoko=measurement_config_default_dict['avoid_yoko'])
+readout_hook = recalibrate_before_batch(ss_runner, log=True, show=False)
 diag_runner = runner_for(MBRTimeTraceExperiment)
 for record in diag_plan.realizations:
     realization = record["realization"]
@@ -192,11 +197,12 @@ for record in diag_plan.realizations:
         continue
     spectrum = realization_spectrum(diag_plan, record, calibration, campaign, diag_config)
     try:
-        spectrum.acquire(diag_runner, batch_size=diag_config.batch_size, log=True, show=False)
+        spectrum.acquire(diag_runner, batch_size=readout_every_occupations,
+                         before_batch=readout_hook, log=True, show=False)
     except BaseException:
         # An interrupted submission still has to name the jobs it sent.
         print(f"r={realization} submitted before interruption:",
-              list(map(str, getattr(diag_runner, "last_job_ids", []))))
+              list(map(str, spectrum.job_ids)))
         raise
     spectrum.analyze()
     print(f"r={realization}: {spectrum.save()}")
@@ -213,7 +219,7 @@ done = [record for record in diag_plan.realizations if record["realization"] in 
 diag_ensemble = MBRDisorderEnsembleExperiment.from_parts(
     [diag_parts[record["realization"]] for record in done],
     realizations=done, calibration=calibration,
-    notes="7-1 diagonal disorder campaign")
+    notes="full-basis RMS diagonal disorder campaign")
 
 # %%
 diag_data = analyze_diagonal_disorder(diag_ensemble, diag_plan, diag_config)

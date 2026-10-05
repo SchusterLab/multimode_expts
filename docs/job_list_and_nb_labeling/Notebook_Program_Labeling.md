@@ -1,3 +1,5 @@
+Status: historical user labels; disorder planning superseded by the full-basis RMS flow (2026-10-05, issue 7). Class names below predate the final Program tree renames.
+
 # Notebook Program Labeling
 
 # 1. `floquet_calibration.py`
