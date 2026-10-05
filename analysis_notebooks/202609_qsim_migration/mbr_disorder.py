@@ -47,6 +47,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import yaml
 
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
@@ -133,3 +135,41 @@ plt.show()
 # %%
 ensemble.display_levels(realization=14, match_tolerance_bins=0.5)
 plt.show()
+
+
+# %% [markdown]
+# # 2. Sep 10-14: all 35 states, nine realizations
+#
+# The catalog replaces the legacy hardcoded job lists and cycle arithmetic.
+# Timing comes from each saved configuration (`floquet_cycle_us`). No occupation
+# is excluded. RMS describes this dataset; old 7-1 data above used norm.
+# The legacy Sep10 Matrix Pencil settings were exploratory, not global defaults.
+# Use the pole-finding survey for fitter comparisons.
+
+# %%
+catalog_path = Path("configs/datasets/mbr_datasets.yaml")
+# Jupyter may start in this notebook's folder.
+if not catalog_path.exists():
+    catalog_path = Path("../../configs/datasets/mbr_datasets.yaml")
+catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+sep10_entry = catalog["datasets"]["sep10_full_K3p6_g29p2"]
+sep10 = MBRDisorderEnsembleExperiment.from_manifest(data_root() / sep10_entry["manifest"])
+print("Sep10 realizations:", [record["realization"] for record in sep10.realizations])
+
+# %%
+# Optional diagnostic only; requires final-read IQ shots in the saved HDF5s.
+# It assumes the saved contrast sign is valid and cannot repair active-reset errors.
+REFIT_SEP10_READOUT = False
+# Only r=0 has an explicit realization Kerr record. Use the saved-config analysis
+# Kerr for every part, matching this dataset's pole-finding registry entry.
+sep10.analyze(phase_frame="as_acquired",
+              readout_refit=REFIT_SEP10_READOUT, on_error="raise")
+sep10.display()
+sep10.display_levels(realization=0)
+plt.show()
+
+# %%
+sep10.part(0).display(spectrum_method="fft")
+plt.show()
+# Save only on request: a new derived HDF5 + manifest with analysis provenance.
+# sep10.save()

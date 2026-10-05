@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-09-29** (10G and the merge to `main`, on pippin). Theme: measurement code
+**Last updated: 2026-10-05** (Jonginn notebook migration completed locally; not deployed). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -17,17 +17,19 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   errors and the same values; a worker started from SSH (18:44) ran MBR section 0 through the
   queue as `JOB-20260929-00087` (StarkCal) and `-00088` (TimeTrace), both completed. That
   worker is stopped: start the worker from the RDP desktop (Ctrl-C cancels a job there).
-- **Users:** ask jonginn, connie and seb to restart their kernels once (class names and the
-  `readout` key changed). Their notebooks on `main` are migrated (`2858086`), and
-  `jonginn/qsim_experiments.ipynb` in its working copy (not committed; jonginn's uncommitted
-  edits are in the same file).
-- **jonginn:** `jonginn/qsim_experiments.ipynb` and `data_postprocess.ipynb` came back at the
-  merge (jonginn's Sep 15 work is not in the new tree). They still call `analyze(stage=...)`,
-  which raises; the tests mark them `KEPT_UNMIGRATED`. Move the Sep 15 cells to the new tree,
-  or migrate the notebooks, then retire them again. Two names in plan section 5 still wait
-  for jonginn.
-- **Not done at the merge:** push `main` and `guan` to origin; merge `main` into
-  `qsim-analysis` (its worktree had a job running).
+- **Jonginn notebook migration is complete locally** (Guan requested completion using
+  Jonginn's issue 7 answers). Full fixed-N basis and RMS disorder are the new campaign
+  defaults, with explicit custom subsets. Single-shot recalibration runs before each
+  occupation by default, updates active-reset settings, and records calibration provenance
+  in subsequent job HDF5 metadata. The five legacy notebooks, obsolete migration tool,
+  decoder-mode N=2 analysis notebook and notebook-test exceptions are retired.
+  Optional offline IQ refitting is preserved in modules; it cannot repair stale active reset.
+  Decisions and destinations: `docs/qsim/notebook_migration_completion.md`.
+  **Next:** review and merge `guan` into `main`, then check one interleaved single-shot/MBR
+  pair on hardware. No prod files or config versions were changed in this session.
+- **September branch sync is done:** main/guan were pushed and main merged into
+  qsim-analysis on Sep 29 (`docs/log/2026-09-29_branch-sync-after-merge.md`). New local
+  migration changes still need publication/deployment.
 - **The `readout` key** (since 10D): `readout='qubit'` (default), `'parity'`, `'multiparity'`,
   `'wigner'`, `'slow_pi_ge'`; `postpulse` keeps its meaning (decoding, incl. f0-g1 for
   `'qubit'`). A qsim Program refuses `perform_wigner`, `parity_readout`,
@@ -62,7 +64,7 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 |---|---|---|
 | meas `mbr.py` | new MBR classes | mock dry run passes (2026-09-27) |
 | meas `mbr_tomography.py` | new MBR classes | mock dry run passes up to `analyze_shared_step` (mock data gives a singular M_0; expected) |
-| meas `mbr_disorder.py` | new classes, diagonal disorder (7-1) only | mock dry run passes (Matrix Pencil cells skipped on mock data) |
+| meas `mbr_disorder.py` | full basis / custom subsets, RMS, interleaved readout calibration | 2026-10-05: local planning, ordering, static and mock-acquisition checks pass; hardware pair pending |
 | meas `multiphoton_calibration.py` | autocalibrate pattern (step 9C) | dry run `--keep-going`: 9 mock/pinned-config failures, fewer than before |
 | meas `floquet_calibration.py` | preloaded flat-top only, autocalibrate pattern (step 9D) | dry run `--keep-going`: 1 mock failure (chevron postproc, NaN), as before |
 | meas `floquet_displacement_kerr.py` | not touched | dry run: cell 6 fails on mock data (pre-existing) |

@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-05** (the three views and the lab vault as the reading interface, on pippin).
+**Last updated: 2026-10-05** (the three views and the lab vault as the reading interface, on pippin; Jonginn notebook migration completed locally).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
 `qsim-analysis`, worktree `C:\python\multimode_expts_qsim-analysis`. This file is overwritten at
 the end of each work session on this theme; git keeps the old versions. Cross-theme items and
@@ -16,6 +16,17 @@ the branch rules are in `docs/STATUS.md`.
   A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). **Next:** the feasibility map over
   the phase diagram (r-histogram shape and form factor at our T2, window and shots; how many
   realizations tell the model from Poisson), and the per-photon offset correction.
+- **Jonginn's newer notebook work is migrated/retired** using his issue 7 decisions
+  (`docs/log/2026-10-05_jonginn-notebook-migration.md`). The Sep10 full-basis ensemble
+  now has a catalog-backed section in `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`,
+  beside the historical 7-1 reproduction. It shows spectra, level matches and the form factor.
+  Optional `readout_refit=True` preserves the legacy IQ diagnostic in reusable modules and
+  saves its fit provenance; it cannot repair active reset. Sep10's experimental Matrix Pencil
+  settings were not promoted to global defaults. Five old Jonginn notebooks and the notebook
+  test exceptions are removed. Shared code is on local `guan` and merged into `qsim-analysis`.
+  **Next:** run the updated notebook with pippin data mounted, and publish/merge the branches
+  for prod. Final focused checks: 209 passed. Saved-data checks here require the unavailable
+  data tree; hardware was not accessed.
 - **The survey of every pole-finding method on the Sep 10 ensemble is running unattended**
   (tmux `nb`, window `survey`; `analysis_notebooks/pole_finding/survey_sep10.py`; record
   `docs/log/2026-10-02_sep10-pole-survey.md`). Output:
@@ -33,17 +44,17 @@ the branch rules are in `docs/STATUS.md`.
   complete N=3 basis, quality concern), two N=1 sets, four orthogonality sets, two small
   disordered sets (quality concern), the September calibration set and the N=1 propagator.
   Both complete-basis sets are in `analysis_notebooks/pole_finding/registry.yaml`.
-  **Next:** point `analysis_notebooks/202609_qsim_migration/mbr_disorder.py` at the Sep 10
-  ensemble beside the 7-1 one and look at the form factor; run the pole benchmarks (T1T3, C, F)
+  **Next:** execute the new Sep10 section in
+  `analysis_notebooks/202609_qsim_migration/mbr_disorder.py` and inspect the form factor;
+  run the pole benchmarks (T1T3, C, F)
   on the two new registry entries; decide the Matrix Pencil defaults for a 35-row complete basis
   (the default settings match 25-28 of 35 theory poles per realization, MAE 1.6-3.3 kHz).
   To convert a further data set: add its entry to the catalog, `pixi run python
   tools/convert_mbr_catalog.py --check <name>`, then without `--check`, then paste the printed
   manifest lines into `tools/build_mbr_dataset_catalog.py` (`CONVERTED_*`) and rebuild the YAML.
   jonginn still owes the `K_source` column and the two step 7 questions.
-  Full suite after the round (2026-10-02, pippin): 1569 passed, 5 failed; the 5 are the known
-  on-purpose failures listed in `docs/STATUS.md` (3 Matrix Pencil regression cases, 2 stage-dispatch
-  notebooks), nothing new.
+  Full suite after the round (2026-10-02, pippin): 1569 passed, 5 failed; at that date these were 3 Matrix Pencil regression cases and 2 stage-dispatch
+  notebook failures. The notebook failures were removed by the Oct 5 retirement.
 - **Pole finding**: phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
   notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
@@ -102,7 +113,7 @@ the branch rules are in `docs/STATUS.md`.
 | Notebook | State | Last check |
 |---|---|---|
 | ana `mbr.py` | N=3, self-Kerr, Aug 15-17 reproduction; canonical-flow cells (step 9B) | analysis suite passes, smoke profile (2026-09-27; xfail cell 18 is the known disorder-theory difference) |
-| ana `mbr_disorder.py` | `MBRDisorderEnsembleExperiment` | analysis suite passes |
+| ana `mbr_disorder.py` | historical 7-1 + complete-basis Sep10 ensemble, optional IQ refit | Oct 5 static checks pass; new Sep10 section needs mounted-data execution |
 | ana `dormant/` | moved-out or old code; loads, not maintained | none |
 
 How to check:
