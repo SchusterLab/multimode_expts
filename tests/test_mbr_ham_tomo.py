@@ -5,7 +5,7 @@ on converted fixture data (the August N=1 propagator set, through
 ``tools/migrate_mbr_jobs.py``), ``from_manifest``, ``analyze``, ``display``
 and ``save`` finish, and the outputs have the expected shape and dtype. The
 tomography itself is pinned on synthetic data in
-``test_propagator_dynamics.py``; the matrices are compared, non-blocking,
+``test_propagator_dynamics.py``; the matrices are compared
 with the old ``reconstruct_propagator`` on the same raw files.
 
 Run:  pixi run python -m pytest tests/test_mbr_ham_tomo.py -v
@@ -95,7 +95,6 @@ def test_two_saves_in_one_second_do_not_collide(august, tmp_path):
     assert first.exists() and second.exists()
 
 
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 def test_matrices_match_the_old_reconstruction(august):
     old = LegacyPropagator.reconstruct_propagator(
         [load_job(job_id) for job_id in PROPAGATOR_IDS])

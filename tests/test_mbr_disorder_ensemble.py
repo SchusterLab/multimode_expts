@@ -4,9 +4,8 @@
 docs/qsim/mbr_step7_plan.md, sections 3 and 5. Code organization, not physics:
 the numerics are checked on small cases with known answers, the ensemble on
 mock-acquired parts and on converted 7-1 data (``from_manifest``,
-``analyze``, ``display``, ``save``; shapes and dtypes). The old-vs-new
-comparison on the same raw files is the baseline, non-blocking until the
-physics audit.
+``analyze``, ``display``, ``save``; shapes and dtypes). The levels the old
+7-1 preview cells gave, saved in ``tests/data``, are the baseline.
 
 Run:  pixi run python -m pytest tests/test_mbr_disorder_ensemble.py -v
 """
@@ -218,7 +217,6 @@ def test_migration_refuses_off_diagonal_pair_jobs(tmp_path):
 OLD_PREVIEW = Path(__file__).parent / "data" / "disorder_preview_71_r01.npz"
 
 
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 def test_baseline_old_preview_analysis_matches(diagonal_disorder):
     """The 7-1 preview cells gave the same levels as the ensemble."""
     old = np.load(OLD_PREVIEW)
@@ -234,29 +232,6 @@ def test_baseline_old_preview_analysis_matches(diagonal_disorder):
 # --------------------------------------------------------------------------
 # 7-1 planning helpers
 # --------------------------------------------------------------------------
-
-
-def test_plan_matches_the_old_selection_code(diagonal_disorder):
-    """The planner picks what the old cell-325 code picks on the same inputs."""
-    from experiments.qsim.deprecated.mbr_disorder_campaign import _diag_disorder_select_rows
-    from experiments.qsim.mbr_disorder_ensemble import (
-        DiagDisorderConfig, plan_diagonal_disorder)
-
-    record = diagonal_disorder.realizations[0]
-    config = DiagDisorderConfig(realization_count=2, self_kerr_kHz=record["self_kerr_kHz"])
-    calibration = diagonal_disorder.calibration
-    plan = plan_diagonal_disorder(calibration, SWAP_STORS, config)
-    hardware = calibration.data.hardware
-    for new in plan.realizations:
-        probe = AttrDict(dict(occupations=[[3, 0, 0, 0, 0]], cycles=np.array([0, 1]),
-                              A=np.ones((1, 2), dtype=complex)))
-        theory = analyze_spectrum(probe, 3, -np.asarray(new["onsite_MHz"]),
-                                  hardware.couplings_MHz, hardware.floquet_cycle_us,
-                                  1e-3 * record["self_kerr_kHz"])
-        rows, _, _ = _diag_disorder_select_rows(theory.basis_eigenstate_weights, 10)
-        assert sorted(tuple(theory.fock_basis[r]) for r in rows) == sorted(
-            map(tuple, new["selected_occupations"]))
-    np.testing.assert_allclose(plan.realizations[0]["onsite_MHz"], record["onsite_MHz"])
 
 
 def test_realization_spectrum_plays_the_detunings(diagonal_disorder):
@@ -281,13 +256,8 @@ def test_realization_spectrum_plays_the_detunings(diagonal_disorder):
 def test_station_floquet_hardware_runs_on_a_mock_station():
     """The live-station timing moved to experiments.floquet_timing (step 7e)."""
     from experiments.floquet_timing import station_floquet_hardware
-    from experiments.qsim.deprecated.encoding_spectroscopy import (
-        EncodingHamiltonianSpectroscopyExperiment,
-    )
 
     st = mock_station(**pinned_config_set("preload_current"))
     timing = station_floquet_hardware(st, SWAP_STORS, 10)
     assert timing.floquet_cycle_us > 0 and timing.physical_kerr_MHz <= 0
     assert np.asarray(timing.couplings_MHz).shape == (len(SWAP_STORS),)
-    old = EncodingHamiltonianSpectroscopyExperiment.hardware_parameters(st, SWAP_STORS, 10)
-    assert old.floquet_cycle_us == timing.floquet_cycle_us

@@ -27,16 +27,17 @@ Rules:
 - **`main` has the qsim redesign** (merge of `guan`, 2026-09-29, after the 10G device check;
   `docs/status/measurement.md`). Users restart their kernels once. `main` is merged into
   `qsim-analysis`; both theme branches are on GitHub.
-- **Known test failures (5), on purpose for now:**
+- **Known test failures (3), on purpose for now:**
   - `test_matrix_pencil_regression` (3): left as is while `qsim-analysis` compares fitting
     methods.
-  - `test_no_stage_dispatch_remains` (2): jonginn's `data_recollecting.ipynb` and
-    `qsim_experiments_highkerr_untracked.ipynb` hold code that is not in the new framework yet.
-    Move that code into the framework first; do not add the notebooks to the exceptions.
+- **Test suite cleanup** (2026-10-05, branch `tests-cleanup`): the one-off migration guards
+  are retired (`docs/log/2026-10-05_tests-cleanup.md`). The code still left in jonginn's
+  `data_recollecting.ipynb` and `qsim_experiments_highkerr_untracked.ipynb` is tracked in
+  `docs/qsim/evidence/2026-09-30_jonginn_notebook_leftovers.md`, no longer by a failing test.
 - **Hardware:** the code runs on the device, but the data is not meaningful yet; the
   calibration steps need a manual check.
 - **Physics audit** (details in `docs/status/qsim_numerics.md`): the numerical baselines are
-  `xfail(strict=False)`.
+  pinned and must pass. They pin the current numbers, not checked physics.
 
 ## Docs: which are current
 

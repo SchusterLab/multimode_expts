@@ -247,7 +247,6 @@ def analysis(quickplot):
     return expt, result, flatten_result(result)
 
 
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 @pytest.mark.parametrize("method", sorted(BASELINES))
 def test_baseline_matches(quickplot, method):
     """Every pinned field of the analysis result is unchanged, per method."""
@@ -334,7 +333,6 @@ def complete_basis(tmp_path_factory):
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 @pytest.mark.parametrize("branch", sorted(COMPLETE_BASIS_BRANCHES))
 def test_complete_basis_baseline_matches(complete_basis, branch):
     """Spectrum, level statistics and SFF are unchanged on the N=3 sector."""
@@ -469,7 +467,6 @@ def _stark_cal_flat(calibration, correction):
     return flat
 
 
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 def test_stark_cal_baseline_matches(stark_cal):
     """Every field of the calibration and its correction is unchanged."""
     calibration, correction = stark_cal

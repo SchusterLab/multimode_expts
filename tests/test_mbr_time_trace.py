@@ -3,12 +3,12 @@
 
 docs/qsim/mbr_redesign.md, section 7, step 3. Code organization, not physics:
 these check that the code loads and runs and that outputs have the expected
-shape and dtype. The numbers are pinned separately, and non-blocking, by the
+shape and dtype. The numbers are pinned separately by the
 quick-plot and complete-basis baselines in ``test_mbr_analysis_golden.py``.
 
 - Job class: the Program builds, compiles and acquires in mock mode on both
   pinned config sets, diagonal through ``Spectrum.acquire(runner)`` and one
-  off-diagonal job directly. Its pulses are the old diagonal program's.
+  off-diagonal job directly. The ASM goldens (``time_trace``) pin its pulses.
 - Assembled class: on converted fixture data (the August quick-plot set,
   through ``tools/migrate_mbr_jobs.py``), ``from_manifest``, ``analyze``,
   ``display`` and ``save`` finish, and the calibration link survives a save.
@@ -21,7 +21,6 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 import pytest
-from slab import AttrDict
 
 from experiments.characterization_runner import CharacterizationRunner
 from experiments.qsim.mbr_campaign import (
@@ -30,11 +29,9 @@ from experiments.qsim.mbr_campaign import (
     pinned_config_set,
     pinned_sets,
 )
-from experiments.qsim.deprecated.mbr_nphoton_program import NPhotonHamiltonianSpectroscopyProgram
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment, MBRTimeTraceProgram
-from tests.asm_golden import render
 from tests.mbr_reference import (
     CHARACTERIZATION_ANALYSIS,
     STARK_CAL_IDS,
@@ -91,28 +88,6 @@ def test_an_off_diagonal_job_acquires(station):
     assert child.initial_occupation == tuple(initial)
     assert child.final_occupation == tuple(final)
     assert child.analyze()["complex_return"].shape == (len(CYCLES),)
-
-
-def test_time_trace_pulses_are_the_old_diagonal_program(station):
-    """At one point of the sweep, the new program compiles to the old one's ASM."""
-    _, st = station
-    base = AttrDict(deepcopy(st.hardware_cfg))
-    base.device.storage._ds_storage = st.ds_storage
-    base.device.storage._ds_floquet = st.ds_floquet
-    expt = AttrDict(mbr_defaults(SWAP_STORS, reps=10))
-    expt.update(MBRTimeTraceExperiment.job_config(
-        OCCUPATIONS[0], OCCUPATIONS[0], CYCLES, SWAP_STORS, phase_per_cycle_deg=7.))
-    expt.floquet_cycle = 4
-
-    new_cfg = deepcopy(base)
-    new_cfg.expt = AttrDict(dict(deepcopy(expt), ramsey_phase=[180., 90.]))
-    old_cfg = deepcopy(base)
-    old_cfg.expt = AttrDict(dict(deepcopy(expt), spectroscopy_prep_phase=180.,
-                                 spectroscopy_analyzer_phase=90.))
-    new = MBRTimeTraceProgram(soccfg=st.soccfg, cfg=new_cfg)
-    old = NPhotonHamiltonianSpectroscopyProgram(soccfg=st.soccfg, cfg=old_cfg)
-    assert render(new) == render(old)
-    assert len(render(new).splitlines()) > 100, "compiled to almost nothing"
 
 
 def test_job_overrides_record_the_calibration(tmp_path):
