@@ -92,6 +92,46 @@ DM = "260526_qsim_darkmode/assembled_data/"
 SP = "260818_qsim_spectroscopy/assembled_data/"
 
 
+# (name, catalog section prefix)
+SECTION_72 = [("sep07_pairs_K52p3_g29p2", "5. "), ("sep05_pairs_K3p6_g30", "6. "),
+              ("sep01_pairs_K44_g15", "7. "), ("sep02_pairs_K20_g15", "8. "),
+              ("sep02to04_pairs_K3p6_g15", "9. ")]
+FORMER_NAMES = {"sep07_pairs_K52p3_g29p2": "d72_Sep07_K52p3_g29p2",
+                "sep05_pairs_K3p6_g30": "d72_Sep05_K3p6_g30",
+                "sep01_pairs_K44_g15": "d72_Sep01_K44_g15",
+                "sep02_pairs_K20_g15": "d72_Sep02_K20_g15",
+                "sep02to04_pairs_K3p6_g15": "d72_Sep02-04_K3p6_g15"}
+# Sep05 shares its calibration jobs with september_N3, already converted.
+SECTION_72_CALIBRATION = {"sep05_pairs_K3p6_g30":
+                          "260818_qsim_spectroscopy/assembled_data/"
+                          "261002_145528_MBRCalibrationSetExperiment.yaml"}
+SECTION_72_NOTES = {
+    "sep07_pairs_K52p3_g29p2": "6 realizations x 15 pairs, each pair in 2 time chunks (cycles "
+                               "0-398, 400-466): 80 diagonal pairs, 10 off-diagonal.",
+    "sep05_pairs_K3p6_g30": "2 realizations x 15 pairs: 23 diagonal, 7 off-diagonal. "
+                            "Calibration: september_N3.",
+    "sep01_pairs_K44_g15": "5 realizations x 10 pairs: 30 diagonal, 20 off-diagonal. The files "
+                           "have no spectroscopy_final_occupations; the decoder is in each "
+                           "sweep row (cycle_decoder_analyzers), and the off-diagonal rows "
+                           "start at |A| ~ 0.02, as an init != final trace must.",
+    "sep02_pairs_K20_g15": "5 realizations x 10 pairs: 33 diagonal, 17 off-diagonal.",
+    "sep02to04_pairs_K3p6_g15": "19 realizations x 15 pairs: 161 diagonal, 124 off-diagonal.",
+}
+SECTION_72_COMMON = (
+    "Old notebook section 7-2 ('D72') campaign: one EncodingPropagatorProgram job per "
+    "(initial, decoder) pair, theory-selected pairs (d72_selected_pairs), d72_* keys. "
+    "Formerly labeled 'off-diagonal' as a whole; about 2/3 of the pairs are diagonal "
+    "(checked 2026-10-06 in every file: config and cycle-0 return agree). The diagonal "
+    "pairs form the ensemble (manifest); the off-diagonal ones are converted as "
+    "TimeTraces in one MBRTimeTraceSetExperiment per realization (offdiag_manifests), not "
+    "analyzed (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played no Stark "
+    "correction (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side "
+    "correction is kept in each converted file's converted_from.source_notes. Timing from "
+    "the versioned configs; the archived 0.4135 us of the g15 sets was the pre-0d7ea14 "
+    "cycle formula. The catalog index is authoritative: the files repeat d72_realization "
+    "numbers across sessions. RMS normalization (jonginn, issue 7).")
+
+
 def build(sections, old):
     entries = {}
 
@@ -170,22 +210,21 @@ def build(sections, old):
               "realization under three key spellings (d73_*, then flat realization/seed) and "
               "number r1-r8 as 0-7; the catalog index is authoritative. RMS normalization "
               "(jonginn, issue 7).")
-    for name, prefix in [("d72_Sep07_K52p3_g29p2", "5. "), ("d72_Sep05_K3p6_g30", "6. "),
-                         ("d72_Sep01_K44_g15", "7. "), ("d72_Sep02_K20_g15", "8. "),
-                         ("d72_Sep02-04_K3p6_g15", "9. ")]:
-        add(name, sec(prefix), "offdiag_pairs",
-            notes="D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not "
-                  "converted: no valid Stark-shift phase calibration for init != final traces "
-                  "(docs/qsim/mbr_step7_plan.md, decision 2). RMS normalization (jonginn, "
-                  "issue 7).",
-            archived_timing=old[name].get("archived_timing"))
+    # Old notebook section 7-2 ("D72") campaigns. Renamed 2026-10-06: each holds both
+    # kinds of pair, so the old label "off-diagonal" was wrong (scan of every file;
+    # docs/log/2026-10-06_issue5-d72-and-loaders.md).
+    for name, prefix in SECTION_72:
+        add(name, sec(prefix), "disorder_pairs",
+            calibration_manifest=SECTION_72_CALIBRATION.get(name),
+            notes=(f"{SECTION_72_NOTES[name]} Former name {FORMER_NAMES[name]}. "
+                   f"{SECTION_72_COMMON}"))
     six = sec("6. ")
     entries["september_N3"] = dict(
         label="6. g = 30 kHz, K = 3.6 kHz / calibration set", kind="stark_cal",
         folder=six["folder"], floquet_config=six["config"], g_kHz=30.0, K_kHz=3.6,
         K_source="?", quality="ok", converted=False, manifest=None, calibration_manifest=None,
         notes="N=3 Stark calibration, 35 occupations x 2 phases, preload_flattop swaps. Also "
-              "the calibration of d72_Sep05_K3p6_g30.",
+              "the calibration of sep05_pairs_K3p6_g30.",
         job_ids=old["september_N3"]["calibration"],
         config_triple=old["september_N3"]["config_triple"])
     assert entries["september_N3"]["job_ids"] == six["calibration_job_ids"]
@@ -257,10 +296,77 @@ CONVERTED_2026_10_02 = {
 }
 
 
+# The round of 2026-10-06 (the section 7-2 pair sets): name -> (ensemble manifest,
+# calibration manifest, {realization: off-diagonal MBRTimeTraceSetExperiment manifest}).
+CONVERTED_2026_10_06 = {
+    "sep05_pairs_K3p6_g30": (
+        SP_ + "261006_145820_MBRDisorderEnsembleExperiment.yaml",
+        SP_ + "261002_145528_MBRCalibrationSetExperiment.yaml",
+        {
+        0: SP_ + "261006_145818_MBRTimeTraceSetExperiment.yaml",
+        1: SP_ + "261006_145820_MBRTimeTraceSetExperiment.yaml"}),
+    "sep01_pairs_K44_g15": (
+        SP_ + "261006_145828_MBRDisorderEnsembleExperiment.yaml",
+        SP_ + "261006_145823_MBRCalibrationSetExperiment.yaml",
+        {
+        0: SP_ + "261006_145824_MBRTimeTraceSetExperiment.yaml",
+        1: SP_ + "261006_145825_MBRTimeTraceSetExperiment.yaml",
+        2: SP_ + "261006_145826_MBRTimeTraceSetExperiment.yaml",
+        3: SP_ + "261006_145826_MBRTimeTraceSetExperiment_2.yaml",
+        4: SP_ + "261006_145827_MBRTimeTraceSetExperiment.yaml"}),
+    "sep02_pairs_K20_g15": (
+        SP_ + "261006_145836_MBRDisorderEnsembleExperiment.yaml",
+        SP_ + "261006_145831_MBRCalibrationSetExperiment.yaml",
+        {
+        0: SP_ + "261006_145831_MBRTimeTraceSetExperiment.yaml",
+        1: SP_ + "261006_145832_MBRTimeTraceSetExperiment.yaml",
+        2: SP_ + "261006_145833_MBRTimeTraceSetExperiment.yaml",
+        3: SP_ + "261006_145834_MBRTimeTraceSetExperiment.yaml",
+        4: SP_ + "261006_145835_MBRTimeTraceSetExperiment.yaml"}),
+    "sep07_pairs_K52p3_g29p2": (
+        SP_ + "261006_145858_MBRDisorderEnsembleExperiment.yaml",
+        SP_ + "261006_145840_MBRCalibrationSetExperiment.yaml",
+        {
+        0: SP_ + "261006_145842_MBRTimeTraceSetExperiment.yaml",
+        1: SP_ + "261006_145845_MBRTimeTraceSetExperiment.yaml",
+        2: SP_ + "261006_145847_MBRTimeTraceSetExperiment.yaml",
+        3: SP_ + "261006_145849_MBRTimeTraceSetExperiment.yaml",
+        4: SP_ + "261006_145851_MBRTimeTraceSetExperiment.yaml",
+        5: SP_ + "261006_145854_MBRTimeTraceSetExperiment.yaml"}),
+    "sep02to04_pairs_K3p6_g15": (
+        SP_ + "261006_145933_MBRDisorderEnsembleExperiment.yaml",
+        SP_ + "261006_145900_MBRCalibrationSetExperiment.yaml",
+        {
+        0: SP_ + "261006_145901_MBRTimeTraceSetExperiment.yaml",
+        1: SP_ + "261006_145903_MBRTimeTraceSetExperiment.yaml",
+        2: SP_ + "261006_145904_MBRTimeTraceSetExperiment.yaml",
+        3: SP_ + "261006_145906_MBRTimeTraceSetExperiment.yaml",
+        4: SP_ + "261006_145907_MBRTimeTraceSetExperiment.yaml",
+        5: SP_ + "261006_145909_MBRTimeTraceSetExperiment.yaml",
+        6: SP_ + "261006_145910_MBRTimeTraceSetExperiment.yaml",
+        7: SP_ + "261006_145911_MBRTimeTraceSetExperiment.yaml",
+        8: SP_ + "261006_145913_MBRTimeTraceSetExperiment.yaml",
+        9: SP_ + "261006_145915_MBRTimeTraceSetExperiment.yaml",
+        10: SP_ + "261006_145916_MBRTimeTraceSetExperiment.yaml",
+        11: SP_ + "261006_145917_MBRTimeTraceSetExperiment.yaml",
+        12: SP_ + "261006_145919_MBRTimeTraceSetExperiment.yaml",
+        13: SP_ + "261006_145921_MBRTimeTraceSetExperiment.yaml",
+        14: SP_ + "261006_145922_MBRTimeTraceSetExperiment.yaml",
+        15: SP_ + "261006_145923_MBRTimeTraceSetExperiment.yaml",
+        16: SP_ + "261006_145925_MBRTimeTraceSetExperiment.yaml",
+        17: SP_ + "261006_145926_MBRTimeTraceSetExperiment.yaml",
+        18: SP_ + "261006_145928_MBRTimeTraceSetExperiment.yaml"}),
+}
+
+
 def apply_conversions(entries, converted=CONVERTED_2026_10_02):
     for name, (manifest, calibration_manifest) in converted.items():
         entries[name].update(converted=True, manifest=manifest,
                              calibration_manifest=calibration_manifest)
+    for name, (manifest, calibration_manifest, offdiag) in CONVERTED_2026_10_06.items():
+        entries[name].update(converted=True, manifest=manifest,
+                             calibration_manifest=calibration_manifest,
+                             offdiag_manifests=offdiag)
 
 
 def check_against_json(entries, old):
@@ -276,11 +382,10 @@ def check_against_json(entries, old):
                 == old["diagonal_disorder_71"]["realizations"][str(r)]), r
     assert (entries["diagonal_disorder_71"]["calibration_job_ids"]
             == old["diagonal_disorder_71"]["calibration"])
-    for n in ("d72_Sep07_K52p3_g29p2", "d72_Sep05_K3p6_g30", "d72_Sep01_K44_g15",
-              "d72_Sep02_K20_g15", "d72_Sep02-04_K3p6_g15"):
+    for n, former in FORMER_NAMES.items():
         assert ({str(k): v for k, v in entries[n]["realizations"].items()}
-                == old[n]["realizations"]), n
-        assert entries[n]["calibration_job_ids"] == old[n]["calibration"], n
+                == old[former]["realizations"]), n
+        assert entries[n]["calibration_job_ids"] == old[former]["calibration"], n
     assert (entries["sep10_full_K3p6_g29p2"]["calibration_job_ids"]
             == old["d72_Sep10_K3p6_g29p2"]["calibration"])
 
@@ -308,8 +413,9 @@ HEADER = """\
 #
 # Fields per data set
 #   label              jonginn's catalog heading, verbatim (section / subsection)
-#   kind               spectrum | disorder | stark_cal | orthogonality | propagator | offdiag_pairs
-#                      (the first five are tools/migrate_mbr_jobs.py kinds; offdiag_pairs is not converted)
+#   kind               spectrum | disorder | stark_cal | orthogonality | propagator | disorder_pairs
+#                      (tools/convert_mbr_catalog.py has one block per kind; disorder_pairs are the old
+#                      notebook section 7-2 pair jobs, diagonal and off-diagonal mixed)
 #   folder             experiment folder under the data root (C:\\experiments on pippin)
 #   floquet_config     the Floquet config version the catalog names (g is computed from its timing)
 #   g_kHz, K_kHz       rough labels from the catalog heading. g follows from the swap timing
@@ -323,15 +429,16 @@ HEADER = """\
 #   calibration_job_ids  old Stark-calibration jobs (phase 0/90 pairs) of this data set
 #   job_ids            the data jobs (spectrum: phase pairs per occupation; orthogonality: one per column)
 #   realizations       disorder only: {{index: [job IDs]}}; the index here is authoritative
-#   archived_timing    offdiag_pairs only: Floquet timing the files omit (from the archive notes)
+#   offdiag_manifests  disorder_pairs only: {{realization: MBRTimeTraceSetExperiment manifest}} of the
+#                      off-diagonal pairs; the diagonal pairs are in manifest
 #   config_triple      config version IDs the JSON resolver recorded (hardware, floquet, man1), where known
 
 datasets:
 """
 
 ORDER = ["label", "kind", "folder", "floquet_config", "g_kHz", "K_kHz", "K_source", "quality",
-         "converted", "manifest", "calibration_manifest", "notes", "config_triple",
-         "archived_timing", "calibration_job_ids", "job_ids", "realizations"]
+         "converted", "manifest", "calibration_manifest", "offdiag_manifests", "notes",
+         "config_triple", "calibration_job_ids", "job_ids", "realizations"]
 
 
 def flow(lst, indent):

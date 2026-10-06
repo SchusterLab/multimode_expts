@@ -16,8 +16,9 @@
 #
 # Fields per data set
 #   label              jonginn's catalog heading, verbatim (section / subsection)
-#   kind               spectrum | disorder | stark_cal | orthogonality | propagator | offdiag_pairs
-#                      (the first five are tools/migrate_mbr_jobs.py kinds; offdiag_pairs is not converted)
+#   kind               spectrum | disorder | stark_cal | orthogonality | propagator | disorder_pairs
+#                      (tools/convert_mbr_catalog.py has one block per kind; disorder_pairs are the old
+#                      notebook section 7-2 pair jobs, diagonal and off-diagonal mixed)
 #   folder             experiment folder under the data root (C:\experiments on pippin)
 #   floquet_config     the Floquet config version the catalog names (g is computed from its timing)
 #   g_kHz, K_kHz       rough labels from the catalog heading. g follows from the swap timing
@@ -31,7 +32,8 @@
 #   calibration_job_ids  old Stark-calibration jobs (phase 0/90 pairs) of this data set
 #   job_ids            the data jobs (spectrum: phase pairs per occupation; orthogonality: one per column)
 #   realizations       disorder only: {index: [job IDs]}; the index here is authoritative
-#   archived_timing    offdiag_pairs only: Floquet timing the files omit (from the archive notes)
+#   offdiag_manifests  disorder_pairs only: {realization: MBRTimeTraceSetExperiment manifest} of the
+#                      off-diagonal pairs; the diagonal pairs are in manifest
 #   config_triple      config version IDs the JSON resolver recorded (hardware, floquet, man1), where known
 
 datasets:
@@ -648,21 +650,33 @@ datasets:
         JOB-20260914-00078, JOB-20260914-00080, JOB-20260914-00081, JOB-20260914-00083, JOB-20260914-00084
       ]
 
-  d72_Sep07_K52p3_g29p2:
+  sep07_pairs_K52p3_g29p2:
     label: "5. g = 29.2 kHz, K = 52.3 kHz"
-    kind: "offdiag_pairs"
+    kind: "disorder_pairs"
     folder: "260818_qsim_spectroscopy"
     floquet_config: "CFG-FL-20260906-00041"
     g_kHz: 29.2
     K_kHz: 52.3
     K_source: "?"
     quality: "ok"
-    converted: false
+    converted: true
+    manifest: "260818_qsim_spectroscopy/assembled_data/261006_145858_MBRDisorderEnsembleExperiment.yaml"
+    calibration_manifest: "260818_qsim_spectroscopy/assembled_data/261006_145840_MBRCalibrationSetExperiment.yaml"
+    offdiag_manifests: {"0": "260818_qsim_spectroscopy/assembled_data/261006_145842_MBRTimeTraceSetExperiment.yaml", "1": "260818_qsim_spectroscopy/assembled_data/261006_145845_MBRTimeTraceSetExperiment.yaml", "2": "260818_qsim_spectroscopy/assembled_data/261006_145847_MBRTimeTraceSetExperiment.yaml", "3": "260818_qsim_spectroscopy/assembled_data/261006_145849_MBRTimeTraceSetExperiment.yaml", "4": "260818_qsim_spectroscopy/assembled_data/261006_145851_MBRTimeTraceSetExperiment.yaml", "5": "260818_qsim_spectroscopy/assembled_data/261006_145854_MBRTimeTraceSetExperiment.yaml"}
     notes: >-
-      D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not converted: no valid
-      Stark-shift phase calibration for init != final traces (docs/qsim/mbr_step7_plan.md, decision
-      2). RMS normalization (jonginn, issue 7).
-    archived_timing: {"floquet_cycle_us": 0.2139136904761905, "couplings_MHz": [0.02921739130434782, 0.02921739130434782, 0.02921739130434782, 0.02921739130434782], "decoder_cycle_us": 0.2139136904761905, "source": "Sep07 archived run instructions (92 ticks / 430.08 MHz), pi_frac 40; H5 omits these fields"}
+      6 realizations x 15 pairs, each pair in 2 time chunks (cycles 0-398, 400-466): 80 diagonal
+      pairs, 10 off-diagonal. Former name d72_Sep07_K52p3_g29p2. Old notebook section 7-2 ('D72')
+      campaign: one EncodingPropagatorProgram job per (initial, decoder) pair, theory-selected pairs
+      (d72_selected_pairs), d72_* keys. Formerly labeled 'off-diagonal' as a whole; about 2/3 of the
+      pairs are diagonal (checked 2026-10-06 in every file: config and cycle-0 return agree). The
+      diagonal pairs form the ensemble (manifest); the off-diagonal ones are converted as TimeTraces
+      in one MBRTimeTraceSetExperiment per realization (offdiag_manifests), not analyzed
+      (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played no Stark correction
+      (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side correction is kept in
+      each converted file's converted_from.source_notes. Timing from the versioned configs; the
+      archived 0.4135 us of the g15 sets was the pre-0d7ea14 cycle formula. The catalog index is
+      authoritative: the files repeat d72_realization numbers across sessions. RMS normalization
+      (jonginn, issue 7).
     calibration_job_ids: [  # 70
       JOB-20260907-00199, JOB-20260907-00200, JOB-20260907-00201, JOB-20260907-00202, JOB-20260907-00203,
       JOB-20260907-00204, JOB-20260907-00205, JOB-20260907-00206, JOB-20260907-00207, JOB-20260907-00208,
@@ -729,21 +743,33 @@ datasets:
         JOB-20260908-00076, JOB-20260908-00077, JOB-20260908-00078, JOB-20260908-00079, JOB-20260908-00080
       ]
 
-  d72_Sep05_K3p6_g30:
+  sep05_pairs_K3p6_g30:
     label: "6. g = 30 kHz, K = 3.6 kHz"
-    kind: "offdiag_pairs"
+    kind: "disorder_pairs"
     folder: "260818_qsim_spectroscopy"
     floquet_config: "CFG-FL-20260905-00045"
     g_kHz: 30.0
     K_kHz: 3.6
     K_source: "?"
     quality: "ok"
-    converted: false
+    converted: true
+    manifest: "260818_qsim_spectroscopy/assembled_data/261006_145820_MBRDisorderEnsembleExperiment.yaml"
+    calibration_manifest: "260818_qsim_spectroscopy/assembled_data/261002_145528_MBRCalibrationSetExperiment.yaml"
+    offdiag_manifests: {"0": "260818_qsim_spectroscopy/assembled_data/261006_145818_MBRTimeTraceSetExperiment.yaml", "1": "260818_qsim_spectroscopy/assembled_data/261006_145820_MBRTimeTraceSetExperiment.yaml"}
     notes: >-
-      D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not converted: no valid
-      Stark-shift phase calibration for init != final traces (docs/qsim/mbr_step7_plan.md, decision
-      2). RMS normalization (jonginn, issue 7).
-    archived_timing: {"floquet_cycle_us": 0.2139136904761905, "couplings_MHz": [0.02921739130434782, 0.02921739130434782, 0.02921739130434782, 0.02921739130434782], "decoder_cycle_us": 0.21963713369963367, "source": "Sep05 archived compiled timing and decoder-frame audit; H5 omits these fields"}
+      2 realizations x 15 pairs: 23 diagonal, 7 off-diagonal. Calibration: september_N3. Former name
+      d72_Sep05_K3p6_g30. Old notebook section 7-2 ('D72') campaign: one EncodingPropagatorProgram
+      job per (initial, decoder) pair, theory-selected pairs (d72_selected_pairs), d72_* keys.
+      Formerly labeled 'off-diagonal' as a whole; about 2/3 of the pairs are diagonal (checked
+      2026-10-06 in every file: config and cycle-0 return agree). The diagonal pairs form the
+      ensemble (manifest); the off-diagonal ones are converted as TimeTraces in one
+      MBRTimeTraceSetExperiment per realization (offdiag_manifests), not analyzed
+      (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played no Stark correction
+      (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side correction is kept in
+      each converted file's converted_from.source_notes. Timing from the versioned configs; the
+      archived 0.4135 us of the g15 sets was the pre-0d7ea14 cycle formula. The catalog index is
+      authoritative: the files repeat d72_realization numbers across sessions. RMS normalization
+      (jonginn, issue 7).
     calibration_job_ids: [  # 70
       JOB-20260905-00075, JOB-20260905-00076, JOB-20260905-00077, JOB-20260905-00078, JOB-20260905-00079,
       JOB-20260905-00080, JOB-20260905-00081, JOB-20260905-00082, JOB-20260905-00083, JOB-20260905-00084,
@@ -772,21 +798,35 @@ datasets:
         JOB-20260905-00170, JOB-20260905-00171, JOB-20260905-00172, JOB-20260905-00173, JOB-20260905-00174
       ]
 
-  d72_Sep01_K44_g15:
+  sep01_pairs_K44_g15:
     label: "7. g = 15 kHz, K = 44 kHz"
-    kind: "offdiag_pairs"
+    kind: "disorder_pairs"
     folder: "260818_qsim_spectroscopy"
     floquet_config: "CFG-FL-20260831-00092"
     g_kHz: 15.0
     K_kHz: 44.0
     K_source: "?"
     quality: "ok"
-    converted: false
+    converted: true
+    manifest: "260818_qsim_spectroscopy/assembled_data/261006_145828_MBRDisorderEnsembleExperiment.yaml"
+    calibration_manifest: "260818_qsim_spectroscopy/assembled_data/261006_145823_MBRCalibrationSetExperiment.yaml"
+    offdiag_manifests: {"0": "260818_qsim_spectroscopy/assembled_data/261006_145824_MBRTimeTraceSetExperiment.yaml", "1": "260818_qsim_spectroscopy/assembled_data/261006_145825_MBRTimeTraceSetExperiment.yaml", "2": "260818_qsim_spectroscopy/assembled_data/261006_145826_MBRTimeTraceSetExperiment.yaml", "3": "260818_qsim_spectroscopy/assembled_data/261006_145826_MBRTimeTraceSetExperiment_2.yaml", "4": "260818_qsim_spectroscopy/assembled_data/261006_145827_MBRTimeTraceSetExperiment.yaml"}
     notes: >-
-      D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not converted: no valid
-      Stark-shift phase calibration for init != final traces (docs/qsim/mbr_step7_plan.md, decision
-      2). RMS normalization (jonginn, issue 7).
-    archived_timing: {"floquet_cycle_us": 0.41351877289377287, "couplings_MHz": [0.015114186851211072, 0.015114186851211072, 0.015114186851211072, 0.015114186851211072], "decoder_cycle_us": 0.41351877289377287, "source": "Archived acquisition-time hardware metadata from the existing g15 analysis export; not H5"}
+      5 realizations x 10 pairs: 30 diagonal, 20 off-diagonal. The files have no
+      spectroscopy_final_occupations; the decoder is in each sweep row (cycle_decoder_analyzers),
+      and the off-diagonal rows start at |A| ~ 0.02, as an init != final trace must. Former name
+      d72_Sep01_K44_g15. Old notebook section 7-2 ('D72') campaign: one EncodingPropagatorProgram
+      job per (initial, decoder) pair, theory-selected pairs (d72_selected_pairs), d72_* keys.
+      Formerly labeled 'off-diagonal' as a whole; about 2/3 of the pairs are diagonal (checked
+      2026-10-06 in every file: config and cycle-0 return agree). The diagonal pairs form the
+      ensemble (manifest); the off-diagonal ones are converted as TimeTraces in one
+      MBRTimeTraceSetExperiment per realization (offdiag_manifests), not analyzed
+      (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played no Stark correction
+      (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side correction is kept in
+      each converted file's converted_from.source_notes. Timing from the versioned configs; the
+      archived 0.4135 us of the g15 sets was the pre-0d7ea14 cycle formula. The catalog index is
+      authoritative: the files repeat d72_realization numbers across sessions. RMS normalization
+      (jonginn, issue 7).
     calibration_job_ids: [  # 70
       JOB-20260831-00479, JOB-20260831-00480, JOB-20260831-00481, JOB-20260831-00482, JOB-20260831-00483,
       JOB-20260831-00484, JOB-20260831-00485, JOB-20260831-00486, JOB-20260831-00487, JOB-20260831-00488,
@@ -825,21 +865,32 @@ datasets:
         JOB-20260901-00048, JOB-20260901-00049, JOB-20260901-00050, JOB-20260901-00051, JOB-20260901-00052
       ]
 
-  d72_Sep02_K20_g15:
+  sep02_pairs_K20_g15:
     label: "8. g = 15 kHz, K = 20 kHz"
-    kind: "offdiag_pairs"
+    kind: "disorder_pairs"
     folder: "260818_qsim_spectroscopy"
     floquet_config: "CFG-FL-20260901-00034"
     g_kHz: 15.0
     K_kHz: 20.0
     K_source: "?"
     quality: "ok"
-    converted: false
+    converted: true
+    manifest: "260818_qsim_spectroscopy/assembled_data/261006_145836_MBRDisorderEnsembleExperiment.yaml"
+    calibration_manifest: "260818_qsim_spectroscopy/assembled_data/261006_145831_MBRCalibrationSetExperiment.yaml"
+    offdiag_manifests: {"0": "260818_qsim_spectroscopy/assembled_data/261006_145831_MBRTimeTraceSetExperiment.yaml", "1": "260818_qsim_spectroscopy/assembled_data/261006_145832_MBRTimeTraceSetExperiment.yaml", "2": "260818_qsim_spectroscopy/assembled_data/261006_145833_MBRTimeTraceSetExperiment.yaml", "3": "260818_qsim_spectroscopy/assembled_data/261006_145834_MBRTimeTraceSetExperiment.yaml", "4": "260818_qsim_spectroscopy/assembled_data/261006_145835_MBRTimeTraceSetExperiment.yaml"}
     notes: >-
-      D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not converted: no valid
-      Stark-shift phase calibration for init != final traces (docs/qsim/mbr_step7_plan.md, decision
-      2). RMS normalization (jonginn, issue 7).
-    archived_timing: {"floquet_cycle_us": 0.41351877289377287, "couplings_MHz": [0.015114186851211072, 0.015114186851211072, 0.015114186851211072, 0.015114186851211072], "decoder_cycle_us": 0.41351877289377287, "source": "Archived acquisition-time hardware metadata from the existing g15 analysis export; not H5"}
+      5 realizations x 10 pairs: 33 diagonal, 17 off-diagonal. Former name d72_Sep02_K20_g15. Old
+      notebook section 7-2 ('D72') campaign: one EncodingPropagatorProgram job per (initial,
+      decoder) pair, theory-selected pairs (d72_selected_pairs), d72_* keys. Formerly labeled 'off-
+      diagonal' as a whole; about 2/3 of the pairs are diagonal (checked 2026-10-06 in every file:
+      config and cycle-0 return agree). The diagonal pairs form the ensemble (manifest); the off-
+      diagonal ones are converted as TimeTraces in one MBRTimeTraceSetExperiment per realization
+      (offdiag_manifests), not analyzed (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played
+      no Stark correction (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side
+      correction is kept in each converted file's converted_from.source_notes. Timing from the
+      versioned configs; the archived 0.4135 us of the g15 sets was the pre-0d7ea14 cycle formula.
+      The catalog index is authoritative: the files repeat d72_realization numbers across sessions.
+      RMS normalization (jonginn, issue 7).
     calibration_job_ids: [  # 70
       JOB-20260902-00001, JOB-20260902-00002, JOB-20260902-00003, JOB-20260902-00004, JOB-20260902-00005,
       JOB-20260902-00006, JOB-20260902-00007, JOB-20260902-00008, JOB-20260902-00009, JOB-20260902-00010,
@@ -878,21 +929,32 @@ datasets:
         JOB-20260902-00127, JOB-20260902-00129, JOB-20260902-00130, JOB-20260902-00132, JOB-20260902-00133
       ]
 
-  d72_Sep02-04_K3p6_g15:
+  sep02to04_pairs_K3p6_g15:
     label: "9. g = 15 kHz, K = 3.6 kHz"
-    kind: "offdiag_pairs"
+    kind: "disorder_pairs"
     folder: "260818_qsim_spectroscopy"
     floquet_config: "CFG-FL-20260902-00121"
     g_kHz: 15.0
     K_kHz: 3.6
     K_source: "?"
     quality: "ok"
-    converted: false
+    converted: true
+    manifest: "260818_qsim_spectroscopy/assembled_data/261006_145933_MBRDisorderEnsembleExperiment.yaml"
+    calibration_manifest: "260818_qsim_spectroscopy/assembled_data/261006_145900_MBRCalibrationSetExperiment.yaml"
+    offdiag_manifests: {"0": "260818_qsim_spectroscopy/assembled_data/261006_145901_MBRTimeTraceSetExperiment.yaml", "1": "260818_qsim_spectroscopy/assembled_data/261006_145903_MBRTimeTraceSetExperiment.yaml", "2": "260818_qsim_spectroscopy/assembled_data/261006_145904_MBRTimeTraceSetExperiment.yaml", "3": "260818_qsim_spectroscopy/assembled_data/261006_145906_MBRTimeTraceSetExperiment.yaml", "4": "260818_qsim_spectroscopy/assembled_data/261006_145907_MBRTimeTraceSetExperiment.yaml", "5": "260818_qsim_spectroscopy/assembled_data/261006_145909_MBRTimeTraceSetExperiment.yaml", "6": "260818_qsim_spectroscopy/assembled_data/261006_145910_MBRTimeTraceSetExperiment.yaml", "7": "260818_qsim_spectroscopy/assembled_data/261006_145911_MBRTimeTraceSetExperiment.yaml", "8": "260818_qsim_spectroscopy/assembled_data/261006_145913_MBRTimeTraceSetExperiment.yaml", "9": "260818_qsim_spectroscopy/assembled_data/261006_145915_MBRTimeTraceSetExperiment.yaml", "10": "260818_qsim_spectroscopy/assembled_data/261006_145916_MBRTimeTraceSetExperiment.yaml", "11": "260818_qsim_spectroscopy/assembled_data/261006_145917_MBRTimeTraceSetExperiment.yaml", "12": "260818_qsim_spectroscopy/assembled_data/261006_145919_MBRTimeTraceSetExperiment.yaml", "13": "260818_qsim_spectroscopy/assembled_data/261006_145921_MBRTimeTraceSetExperiment.yaml", "14": "260818_qsim_spectroscopy/assembled_data/261006_145922_MBRTimeTraceSetExperiment.yaml", "15": "260818_qsim_spectroscopy/assembled_data/261006_145923_MBRTimeTraceSetExperiment.yaml", "16": "260818_qsim_spectroscopy/assembled_data/261006_145925_MBRTimeTraceSetExperiment.yaml", "17": "260818_qsim_spectroscopy/assembled_data/261006_145926_MBRTimeTraceSetExperiment.yaml", "18": "260818_qsim_spectroscopy/assembled_data/261006_145928_MBRTimeTraceSetExperiment.yaml"}
     notes: >-
-      D72 (notebook section 7-2): off-diagonal pair jobs (offdiag_cycles). Not converted: no valid
-      Stark-shift phase calibration for init != final traces (docs/qsim/mbr_step7_plan.md, decision
-      2). RMS normalization (jonginn, issue 7).
-    archived_timing: {"floquet_cycle_us": 0.41351877289377287, "couplings_MHz": [0.015114186851211072, 0.015114186851211072, 0.015114186851211072, 0.015114186851211072], "decoder_cycle_us": 0.41351877289377287, "source": "Archived acquisition-time hardware metadata from the existing g15 analysis export; not H5"}
+      19 realizations x 15 pairs: 161 diagonal, 124 off-diagonal. Former name d72_Sep02-04_K3p6_g15.
+      Old notebook section 7-2 ('D72') campaign: one EncodingPropagatorProgram job per (initial,
+      decoder) pair, theory-selected pairs (d72_selected_pairs), d72_* keys. Formerly labeled 'off-
+      diagonal' as a whole; about 2/3 of the pairs are diagonal (checked 2026-10-06 in every file:
+      config and cycle-0 return agree). The diagonal pairs form the ensemble (manifest); the off-
+      diagonal ones are converted as TimeTraces in one MBRTimeTraceSetExperiment per realization
+      (offdiag_manifests), not analyzed (docs/qsim/mbr_step7_plan.md, decision 2). The pulse played
+      no Stark correction (final_analyzer_phase_per_cycle_deg = 0); the section 7-2 analysis-side
+      correction is kept in each converted file's converted_from.source_notes. Timing from the
+      versioned configs; the archived 0.4135 us of the g15 sets was the pre-0d7ea14 cycle formula.
+      The catalog index is authoritative: the files repeat d72_realization numbers across sessions.
+      RMS normalization (jonginn, issue 7).
     calibration_job_ids: [  # 70
       JOB-20260902-00768, JOB-20260902-00769, JOB-20260902-00770, JOB-20260902-00771, JOB-20260902-00772,
       JOB-20260902-00773, JOB-20260902-00774, JOB-20260902-00775, JOB-20260902-00776, JOB-20260902-00777,
@@ -1019,7 +1081,7 @@ datasets:
     manifest: "260818_qsim_spectroscopy/assembled_data/261002_145528_MBRCalibrationSetExperiment.yaml"
     notes: >-
       N=3 Stark calibration, 35 occupations x 2 phases, preload_flattop swaps. Also the calibration
-      of d72_Sep05_K3p6_g30.
+      of sep05_pairs_K3p6_g30.
     config_triple: {"calibration": ["CFG-HW-20260905-00005", "CFG-FL-20260905-00045", "CFG-M1-20260905-00001"]}
     job_ids: [  # 70
       JOB-20260905-00075, JOB-20260905-00076, JOB-20260905-00077, JOB-20260905-00078, JOB-20260905-00079,

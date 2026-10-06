@@ -14,13 +14,14 @@ catalog (the catalog is hand-commented YAML, so the script does not rewrite it).
     pixi run python tools/convert_mbr_catalog.py sep10_full_K3p6_g29p2 august25_N3
 
 Per-data-set behaviour that differs from the plain kinds lives in the blocks
-below; the only one so far is the disorder record (see ``disorder_record``).
+below: the disorder record (see ``disorder_record``) and the old section 7-2
+pair jobs (``convert_disorder_pairs``).
 
 Disorder record
 ---------------
 The old jobs recorded their disorder realization under several key spellings:
-``disorder_*`` (Aug 16-19), ``diagonal_disorder_*`` (Aug 27-30), ``d73_*``
-(Sep 10) and flat ``realization`` / ``seed`` / ``disorder_strength_kHz`` /
+``disorder_*`` (Aug 16-19), ``diagonal_disorder_*`` (Aug 27-30), ``d72_*``
+(Sep 01-08, the section 7-2 pair jobs), ``d73_*`` (Sep 10) and flat ``realization`` / ``seed`` / ``disorder_strength_kHz`` /
 ``target_onsite_MHz`` (Sep 11-14). The Sep 11-14 files also number their
 realizations differently from the catalog (r1-r8 are recorded as 0-7, and the
 r0 remeasurement as a seedless "manual" realization). The record written to the
@@ -43,7 +44,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import migrate_mbr_jobs as mig  # noqa: E402
-from experiments.job_paths import job_records, resolve_job_paths  # noqa: E402
+from experiments.job_paths import data_root, job_records, resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment  # noqa: E402
 
 CATALOG = REPO_ROOT / "configs" / "datasets" / "mbr_datasets.yaml"
@@ -66,6 +67,9 @@ RECORD_KEYS = {
     "d73_": dict(realization="d73_realization", seed="d73_seed",
                  strength_kHz="d73_disorder_strength_kHz", onsite_MHz="d73_target_onsite_MHz",
                  self_kerr_kHz="d73_self_kerr_kHz", basis_dimension="d73_basis_dimension"),
+    "d72_": dict(realization="d72_realization", seed="d72_seed",
+                 strength_kHz="d72_disorder_strength_kHz", onsite_MHz="d72_target_onsite_MHz",
+                 self_kerr_kHz="d72_self_kerr_kHz", selected_pairs="d72_selected_pairs"),
     "": dict(realization="realization", seed="seed", strength_kHz="disorder_strength_kHz",
              onsite_MHz="target_onsite_MHz", realization_source="realization_source"),
 }
@@ -99,8 +103,8 @@ def disorder_record(spectrum, index):
     record = dict(realization=int(index),
                   strength_kHz=float(first["strength_kHz"]),
                   onsite_MHz=onsite[0].tolist())
-    for key in ("direction", "selected_occupations", "recorded_theory_energies_MHz",
-                "self_kerr_kHz", "basis_dimension"):
+    for key in ("direction", "selected_occupations", "selected_pairs",
+                "recorded_theory_energies_MHz", "self_kerr_kHz", "basis_dimension"):
         if key in first:
             record[key] = first[key]
     if "direction" not in record:
@@ -139,6 +143,56 @@ def convert_disorder(name, entry, load_shots):
     return ensemble, calibration
 
 
+def convert_disorder_pairs(name, entry, load_shots):
+    """Old section 7-2 pair jobs: diagonal pairs -> ensemble, the rest -> trace sets.
+
+    Each realization's pairs become TimeTraces (``mig.migrate_pairs``). The
+    diagonal ones form that realization's Spectrum, and the Spectra one
+    ``MBRDisorderEnsembleExperiment`` (the result). The off-diagonal ones of
+    each realization form one ``MBRTimeTraceSetExperiment`` with the same
+    realization record; their manifests are printed as ``offdiag_manifests``.
+    """
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+    from experiments.qsim.mbr_time_trace_set import MBRTimeTraceSetExperiment
+
+    notes = f"{name} ({entry['label']})"
+    if entry.get("calibration_manifest"):
+        calibration = MBRCalibrationSetExperiment.from_manifest(
+            data_root() / entry["calibration_manifest"])
+    else:
+        calibration = mig.migrate_stark_cal(entry["calibration_job_ids"],
+                                            load_shots=load_shots, notes=notes)
+    parts, records, offdiag = [], [], {}
+    for index, job_ids in sorted(entry["realizations"].items(), key=lambda kv: int(kv[0])):
+        traces = mig.migrate_pairs(job_ids, load_shots=load_shots, notes=notes)
+        diagonal = [(trace, source) for (i, f), (trace, source) in traces.items() if i == f]
+        others = [(trace, source) for (i, f), (trace, source) in traces.items() if i != f]
+        spectrum = MBRSpectrumExperiment.from_children(
+            [t for t, _ in diagonal], job_ids=[s for _, s in diagonal],
+            notes=f"{notes} r={index} diagonal pairs", calibration=calibration)
+        spectrum.analyze()
+        spectrum.save()
+        record = disorder_record(spectrum, index)
+        parts.append(spectrum)
+        records.append(record)
+        if others:
+            traces_set = MBRTimeTraceSetExperiment.from_children(
+                [t for t, _ in others], job_ids=[s for _, s in others],
+                notes=f"{notes} r={index} off-diagonal pairs", calibration=calibration,
+                realization_record=record)
+            traces_set.analyze()
+            offdiag[int(index)] = traces_set.save(directory=Path(spectrum.manifest_path).parent)
+        print(f"  r={index}: {len(diagonal)} diagonal, {len(others)} off-diagonal traces, "
+              f"record {record['source_keys']} file_realization={record['file_realization']}")
+    ensemble = MBRDisorderEnsembleExperiment.from_parts(
+        parts, realizations=records, calibration=calibration, notes=notes)
+    ensemble.analyze(on_error="skip")
+    ensemble.save(directory=Path(parts[0].manifest_path).parent)
+    ensemble.offdiag_manifests = offdiag
+    return ensemble, calibration
+
+
 def convert_spectrum(name, entry, load_shots):
     notes = f"{name} ({entry['label']})"
     spectrum = mig.migrate_spectrum(entry["job_ids"], load_shots=load_shots, notes=notes,
@@ -154,6 +208,7 @@ def convert_plain(kind):
 
 
 CONVERTERS = {"disorder": convert_disorder, "spectrum": convert_spectrum,
+              "disorder_pairs": convert_disorder_pairs,
               "stark_cal": convert_plain("stark_cal"),
               "orthogonality": convert_plain("orthogonality"),
               "propagator": convert_plain("propagator")}
@@ -233,6 +288,8 @@ def main(argv=None):
         print(f"    manifest: {relative_manifest(result.manifest_path)!r}")
         if calibration is not None and calibration.manifest_path:
             print(f"    calibration_manifest: {relative_manifest(calibration.manifest_path)!r}")
+        for index, path in getattr(result, "offdiag_manifests", {}).items():
+            print(f"    offdiag_manifests[{index}]: {relative_manifest(path)!r}")
     if failures:
         print(f"\nFAILED: {sorted(failures)}")
         sys.exit(1)

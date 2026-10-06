@@ -10,14 +10,17 @@ physics audit.
 
 Run:  pixi run python -m pytest tests/test_mbr_disorder_ensemble.py -v
 """
+import json
 from math import comb
 from pathlib import Path
 
+import h5py
 import matplotlib
 import numpy as np
 import pytest
 
 from experiments.characterization_runner import CharacterizationRunner
+from experiments.job_paths import resolve_job_paths
 from experiments.qsim.mbr_campaign import mbr_defaults, mock_station, pinned_config_set
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
@@ -202,13 +205,40 @@ def test_analyze_display_save(diagonal_disorder, tmp_path):
                                   data.realizations[0].poles_MHz)
 
 
-def test_migration_refuses_off_diagonal_pair_jobs(tmp_path):
-    _, by_realization = disorder_dataset("d72_Sep05_K3p6_g30")
-    # The Sep05 files carry no Floquet timing; the archive notes give pi_frac 40.
-    timing = dict(floquet_cycle_us=92 / 430.08, m1s_pi_fracs=[40] * 4)
+def test_section_72_pair_jobs_convert_to_time_traces(tmp_path):
+    """Old section 7-2 pair jobs go through migrate_pairs, never migrate_spectrum.
+
+    Sep05 r=0: the first job is a diagonal pair, the next two off-diagonal.
+    Each converted trace equals Q_0 - i Q_90 computed straight from its raw
+    file, and only the diagonal one starts near full contrast.
+    """
+    tool = migration_tool()
+    _, by_realization = disorder_dataset("sep05_pairs_K3p6_g30")
+    jobs = by_realization[0][:3]
     with pytest.raises(NotImplementedError, match="off-diagonal"):
-        migration_tool().migrate_spectrum(by_realization[0][:2], out_root=tmp_path,
-                                          load_shots=False, timing=timing)
+        tool.migrate_spectrum(jobs[:2], out_root=tmp_path, load_shots=False)
+
+    traces = tool.migrate_pairs(jobs, out_root=tmp_path, load_shots=False)
+    assert len(traces) == 3
+    paths = resolve_job_paths(jobs)
+    for (initial, final), (trace, source) in traces.items():
+        with h5py.File(paths[source], "r") as handle:
+            cfg = json.loads(handle.attrs["config"])
+            rows, avgi = handle["ypts"][()], handle["avgi"][()]
+        assert tuple(cfg["expt"]["spectroscopy_occupations"]) == initial
+        ig, ie = cfg["device"]["readout"]["Ig"][0], cfg["device"]["readout"]["Ie"][0]
+        pe = (avgi - ig) / (ie - ig)
+        quadrature = {(int(row[0]), float(row[-1])): pe[k, 0] - pe[k, 1]
+                      for k, row in enumerate(rows)}
+        cycles = trace.data["cycles"]
+        expected = [quadrature[(c, 0.)] - 1j * quadrature[(c, 90.)] for c in cycles]
+        np.testing.assert_array_equal(trace.data["complex_return"], expected)
+        assert trace.final_occupation == final
+        assert "offdiag_decoder_phase_correction_deg" not in trace.cfg.expt
+        if initial == final:
+            assert abs(trace.data["complex_return"][0]) > 0.3
+        else:
+            assert abs(trace.data["complex_return"][0]) < 0.1
 
 
 # The deprecated 7-1 preview cells (experiments/qsim/deprecated/mbr_disorder_preview.py)

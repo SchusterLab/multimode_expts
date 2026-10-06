@@ -40,8 +40,15 @@ Kinds
     (or of an already converted set, ``calibration_manifest``),
     then one ``MBRDisorderEnsembleExperiment`` over them. The realization
     records come from the jobs' ``disorder_*`` (August) or
-    ``diagonal_disorder_*`` (7-1) keys. Old off-diagonal pair jobs are not
-    converted (docs/qsim/mbr_step7_plan.md, decision 2).
+    ``diagonal_disorder_*`` (7-1) keys.
+``pairs`` (function :func:`migrate_pairs`, driven per realization by
+    ``tools/convert_mbr_catalog.py``)
+    Old notebook section 7-2 ("D72") pair jobs, ``EncodingPropagatorProgram``
+    sweeping (cycle, decoder, analyzer phase) for one (initial, decoder) pair,
+    possibly in time chunks -> one ``MBRTimeTraceExperiment`` file per pair.
+    About 2/3 of these pairs are diagonal (decoder == initial); those form a
+    Spectrum like any diagonal trace. The off-diagonal ones are kept as
+    converted traces only (docs/qsim/mbr_step7_plan.md, decision 2).
 ``orthogonality``
     Old ``EncodingOrthogonalityProgram`` jobs, one per initial occupation,
     each sweeping every decoder at analyzer phase 0 and 90 (``q = 0``) -> one
@@ -247,18 +254,23 @@ def merge_phase_jobs(phi0_jobs, phi90_jobs, cycle_key, swept_cycle):
     return cfg, data
 
 
-def write_converted(job_class, program_name, jobs, cfg, data, path):
+def write_converted(job_class, program_name, jobs, cfg, data, path, source_notes=None):
     """Analyze, write and reload one converted job file. -> the loaded job.
 
     The job's own ``analyze`` runs once, so the file holds what a new job
-    would: the raw sweep plus ``complex_return``.
+    would: the raw sweep plus ``complex_return``. ``source_notes`` go into
+    ``converted_from``: what the old jobs held that the new layout has no
+    field for.
     """
     cfg.expt.QickProgramName = program_name
+    converted_from = dict(job_ids=[job.job_id for job in jobs],
+                          files=[str(job.fname) for job in jobs],
+                          tool=TOOL, code_version=assembled_data.code_version())
+    if source_notes:
+        converted_from["source_notes"] = source_notes
     attrs = dict(
         job_class=job_class.__name__,
-        converted_from=dict(job_ids=[job.job_id for job in jobs],
-                            files=[str(job.fname) for job in jobs],
-                            tool=TOOL, code_version=assembled_data.code_version()),
+        converted_from=converted_from,
         derived_params=_derived_params(jobs[0], job_class.__name__),
     )
     versions = _config_versions(jobs[0])
@@ -592,6 +604,131 @@ def migrate_propagator(job_ids, out_root=None, load_shots=True, notes="", timing
     tomo.analyze()
     tomo.save(directory=out_root / assembled_data.ASSEMBLED_DIR)
     return tomo
+
+
+# --------------------------------------------------------------------------
+# pairs: old section 7-2 pair jobs -> one TimeTrace per (initial, decoder) pair
+# --------------------------------------------------------------------------
+
+# Keys of the old pair jobs that the TimeTrace layout replaces. The pair's
+# decoder is in each sweep row; the analysis-side correction goes to
+# ``converted_from.source_notes`` (it was never played on the pulse).
+OLD_PAIR_KEYS = (
+    "cycle_decoder_analyzers", "cycle_decoder_analyzer", "floquet_cycle",
+    "spectroscopy_prep_phases", "spectroscopy_prep_phase", ANALYZER_KEY,
+    "offdiag_cycles", "offdiag_chunk_index", "offdiag_pair_index",
+    "offdiag_decoder_occupation", "offdiag_decoder_phase_correction_deg",
+)
+
+
+def pair_rows(job):
+    """-> (decoder, [(cycle, analyzer phase) per saved row]) of one old pair job."""
+    ypts = np.asarray(job.data["ypts"])
+    decoders = {tuple(int(n) for n in row[1:-1]) for row in ypts.tolist()}
+    if len(decoders) != 1:
+        raise ValueError(f"{job.job_id}: {len(decoders)} decoders in one pair job")
+    if not np.array_equal(ypts, np.asarray(job.cfg.expt.cycle_decoder_analyzers, dtype=float)):
+        raise ValueError(f"{job.job_id}: saved rows do not match its config")
+    decoder = decoders.pop()
+    recorded = job.cfg.expt.get("offdiag_decoder_occupation")
+    if recorded is not None and tuple(int(n) for n in recorded) != decoder:
+        raise ValueError(f"{job.job_id}: offdiag_decoder_occupation {recorded} is not the "
+                         f"swept decoder {decoder}")
+    return decoder, [(int(row[0]), float(row[-1])) for row in ypts.tolist()]
+
+
+def merge_pair_jobs(chunk_jobs):
+    """-> (cfg, data, source_notes) of one TimeTrace from the time chunks of one old pair.
+
+    An old pair job sweeps rows (cycle, decoder, analyzer phase) outer and the
+    preparation phase 0/180 inner, so old point ``p = 2 * row + prep``. The
+    new trace sweeps the cycles (outer) and :data:`RAMSEY_PHASES` (inner).
+    """
+    chunk_jobs = sorted(chunk_jobs, key=lambda job: int(job.cfg.expt.get("offdiag_chunk_index", 0)))
+    reference = json.dumps(_strip(chunk_jobs[0].cfg, OLD_PAIR_KEYS), cls=NpEncoder, sort_keys=True)
+    rows_by_job, decoder = [], None
+    for job in chunk_jobs:
+        if json.dumps(_strip(job.cfg, OLD_PAIR_KEYS), cls=NpEncoder, sort_keys=True) != reference:
+            raise ValueError(f"{chunk_jobs[0].job_id} and {job.job_id} differ in more than "
+                             f"the cycles")
+        if not np.allclose(job.data["xpts"], [0., 180.]):
+            raise ValueError(f"{job.job_id}: preparation phases {job.data['xpts']}")
+        job_decoder, rows = pair_rows(job)
+        if decoder is not None and job_decoder != decoder:
+            raise ValueError(f"{job.job_id}: decoder differs between chunks")
+        decoder = job_decoder
+        rows_by_job.append({row: i for i, row in enumerate(rows)})
+
+    cycles = sorted({cycle for rows in rows_by_job for cycle, _ in rows})
+    owner = {}
+    for index, rows in enumerate(rows_by_job):
+        for cycle in {cycle for cycle, _ in rows}:
+            if cycle in owner:
+                raise ValueError(f"cycle {cycle} appears in two chunks")
+            if (cycle, 0.) not in rows or (cycle, 90.) not in rows:
+                raise ValueError(f"{chunk_jobs[index].job_id}: cycle {cycle} lacks an analyzer phase")
+            owner[cycle] = index
+    shots = all(key in job.data for job in chunk_jobs for key in SHOT_KEYS)
+
+    data = dict(xpts=np.asarray(RAMSEY_PHASES), ypts=np.asarray(cycles))
+    picks = []  # (job index, old point) per new point; new order: cycle, analyzer, prep
+    for cycle in cycles:
+        rows = rows_by_job[owner[cycle]]
+        picks += [(owner[cycle], 2 * rows[(cycle, phi)] + prep)
+                  for phi in (0., 90.) for prep in (0, 1)]
+    for key in POINT_KEYS:
+        flat = [np.asarray(job.data[key]).reshape(-1) for job in chunk_jobs]
+        data[key] = np.asarray([flat[j][p] for j, p in picks]).reshape(len(cycles), 4)
+    if shots:
+        for key in SHOT_KEYS:
+            arrays = [np.asarray(job.data[key]) for job in chunk_jobs]
+            data[key] = np.asarray([arrays[j][p] for j, p in picks])
+
+    first = chunk_jobs[0].cfg.expt
+    source_notes = dict(
+        old_program="EncodingPropagatorProgram (notebook section 7-2 pair job)",
+        pair_index=first.get("offdiag_pair_index"),
+        chunk_job_ids=[job.job_id for job in chunk_jobs],
+        analysis_phase_per_cycle_deg=first.get("offdiag_decoder_phase_correction_deg"),
+        analysis_phase_note=("the decoder's diagonal Stark correction, which the section 7-2 "
+                             "analysis applied after acquisition; on the pulse the analyzer "
+                             "correction was final_analyzer_phase_per_cycle_deg"),
+    )
+    cfg = AttrDict(_strip(chunk_jobs[0].cfg, OLD_PAIR_KEYS))
+    ecfg = cfg.expt
+    ecfg.spectroscopy_final_occupations = list(decoder)
+    ecfg.floquet_cycles = [int(n) for n in cycles]
+    ecfg.ramsey_phases = deepcopy(RAMSEY_PHASES)
+    ecfg.swept_params = ["floquet_cycle", "ramsey_phase"]
+    return cfg, data, source_notes
+
+
+def migrate_pairs(job_ids, out_root=None, load_shots=True, notes="", timing=None):
+    """Convert the old pair jobs of one realization. -> {(initial, final): TimeTrace}.
+
+    The jobs of one (initial, decoder) pair are its time chunks; each pair
+    becomes one ``MBRTimeTraceExperiment`` file. The caller groups the traces
+    (diagonal ones into a Spectrum, the rest into an MBRTimeTraceSetExperiment).
+    """
+    paths, jobs = _load_old_jobs(job_ids, timing, load_shots)
+    out_root = Path(out_root) if out_root else assembled_data.experiment_root(paths[job_ids[0]])
+    converted_dir = out_root / assembled_data.CONVERTED_DIR
+    grouped = {}
+    for job in jobs:
+        if "cycle_decoder_analyzers" not in job.cfg.expt:
+            raise ValueError(f"{job.job_id} is not a section 7-2 pair job")
+        initial = tuple(int(n) for n in job.cfg.expt.spectroscopy_occupations)
+        decoder, _ = pair_rows(job)
+        grouped.setdefault((initial, decoder), []).append(job)
+    traces = {}
+    for pair, chunk_jobs in grouped.items():
+        cfg, data, source_notes = merge_pair_jobs(chunk_jobs)
+        path = converted_dir / (f"converted_{chunk_jobs[0].job_id}_x{len(chunk_jobs)}_"
+                                f"{MBRTimeTraceExperiment.__name__}.h5")
+        traces[pair] = (write_converted(MBRTimeTraceExperiment, "MBRTimeTraceProgram",
+                                        chunk_jobs, cfg, data, path, source_notes),
+                        "+".join(job.job_id for job in chunk_jobs))
+    return traces
 
 
 MIGRATIONS = {"stark_cal": migrate_stark_cal, "spectrum": migrate_spectrum,
