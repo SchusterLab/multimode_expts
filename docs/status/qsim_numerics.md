@@ -59,6 +59,17 @@ the branch rules are in `docs/STATUS.md`.
   jonginn still owes the `K_source` column and the two step 7 questions.
   Full suite after the round (2026-10-02, pippin): 1569 passed, 5 failed; at that date these were 3 Matrix Pencil regression cases and 2 stage-dispatch
   notebook failures. The notebook failures were removed by the Oct 5 retirement.
+- **Jonginn's decay investigation:** `measurement_notebooks/jonginn/decay_investigation.ipynb`
+  now contains its JOB catalog, read-only HDF5 reconstruction, fitting, and plots. Per the
+  user's request, the four companion modules and their module-dependent test file were
+  removed. Code decreased from 1,408 to 753 lines; the fit core is 55 lines. It fits measured
+  return power with a coherent-Hamiltonian curve times an exponential/Gaussian power
+  envelope; only the selected envelope runs. Existing fit thresholds and tau are preserved:
+  972 exponential traces and 98 sampled Gaussian traces match the previous cached results.
+  Standard and interleaved real HDF5 traces also reproduce their prior arrays and fits;
+  every plot renders. Original data/configs are only read; notebook execution writes no
+  manifest, cache, export, or result file. Human review of the physical model remains open.
+  (The cited record `docs/log/2026-09-30_decay-notebook-readability.md` was never committed.)
 - **Pole finding**: phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
   notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
