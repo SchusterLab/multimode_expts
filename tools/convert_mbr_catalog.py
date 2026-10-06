@@ -44,7 +44,8 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import migrate_mbr_jobs as mig  # noqa: E402
-from experiments.job_paths import data_root, job_records, resolve_job_paths  # noqa: E402
+from experiments.job_paths import data_root, resolve_job_paths  # noqa: E402
+from legacy_saved_jobs import job_records  # noqa: E402
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment  # noqa: E402
 
 CATALOG = REPO_ROOT / "configs" / "datasets" / "mbr_datasets.yaml"

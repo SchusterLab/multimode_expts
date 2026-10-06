@@ -521,7 +521,7 @@ def sideband_stark_error_amp_postproc(station, expt):
 sideband_stark_error_amp_runner = CharacterizationRunner(
     station=station,
     ExptClass=meas.SidebandStarkAmplificationExperiment,
-    # ExptProgram=meas.qsim.floquet_dark_mode_readout.StorageSwapStarkPhaseProgram,
+    # ExptProgram=meas.qsim.sideband_stark_shift_cal.StorageSwapStarkPhaseProgram,
     ExptProgram=meas.SidebandStarkAmplificationProgram, #meas.SidebandStarkAmplificationProgram,
     default_expt_cfg=sideband_stark_error_amp_defaults,
     preprocessor=sideband_stark_error_amp_preproc,

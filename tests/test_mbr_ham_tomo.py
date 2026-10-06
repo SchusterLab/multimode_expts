@@ -20,7 +20,7 @@ from experiments import assembled_data
 from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment as LegacyPropagator
 from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
 from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.saved_jobs import load_job
+from experiments.qsim.deprecated.saved_jobs import load_job
 from tests.mbr_reference import PROPAGATOR_IDS, converted_propagator
 
 matplotlib.use("Agg")

@@ -216,7 +216,6 @@ class MBRSpectrumExperiment(AssembledExperiment):
                 phase_frame="as_acquired",
                 cycle_branches=0,
                 manual_kerr_MHz=None,
-                legacy=None,
                 spectrum_method="fft",
                 fft_window="raw",
                 zero_padding=1,
@@ -230,8 +229,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
           measured in; ``'uncorrected'``, ``'zero_kerr'`` and ``'manual_kerr'``
           rebuild it (see
           :func:`fitting.qsim.mbr_reconstruction.postprocess_reconstruction`).
-          ``manual_kerr_MHz`` sets the Kerr rate, and ``legacy`` handles jobs
-          saved before the analyzer sign was recorded.
+          ``manual_kerr_MHz`` sets the Kerr rate.
         - ``cycle_branches`` picks the 180 deg/cycle branch per occupation:
           int, list, or ``{occupation: branch}``.
         - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'`` (``'mpm'``);
@@ -301,8 +299,7 @@ class MBRSpectrumExperiment(AssembledExperiment):
             saved.hardware,
             phase_frame,
             manual_kerr_MHz,
-            cycle_branches,
-            legacy)
+            cycle_branches)
         spectrum = mbr_spectrum_analysis.analyze_spectrum(
             postprocessed.reconstruction,
             photon_number,
@@ -527,18 +524,17 @@ class MBRSpectrumExperiment(AssembledExperiment):
 
         return plt.gcf(), peak_list_raw, peak_list_smoothed
 
-    def fit_self_kerr(self, cycle_branches, legacy=None, **scan_options):
+    def fit_self_kerr(self, cycle_branches, **scan_options):
         """Scan the signed M1 self-Kerr for the best experiment--theory peak overlap.
 
         See :func:`self_kerr_scan` for the score and ``scan_options``. Starts
         from this spectrum's last analysis and its own calibration set.
-        ``legacy`` goes to ``analyze`` (July 2026 jobs need ``legacy=True``).
         Leaves ``self.data`` at the best Kerr. -> (best_self_kerr_kHz,
         scores, data). The procedure is being revised (guan, 2026-09-26).
         """
         def analyze_at(kerr_MHz):
             return self.analyze(cycle_branches=cycle_branches, phase_frame="manual_kerr",
-                                manual_kerr_MHz=kerr_MHz, legacy=legacy, spectrum_method="fft")
+                                manual_kerr_MHz=kerr_MHz, spectrum_method="fft")
 
         if not self.data:
             raise ValueError("run analyze() first")

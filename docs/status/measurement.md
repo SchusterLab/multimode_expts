@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-10-05** (Jonginn notebook migration completed locally; not deployed). Theme: measurement code
+**Last updated: 2026-10-06** (issue 5: loaders, shim and renames; branches merged into `guan`; not deployed). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -8,6 +8,16 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **Issue 5 changes on `guan`, not on `main` yet** (`docs/log/2026-10-06_issue5-d72-and-loaders.md`).
+  For acquisition code: `floquet_dark_mode_readout.py` (the compatibility shim) is deleted;
+  import from the owning modules. Renamed modules: `dark_mode_scramble.py` (was
+  `mbr_spectroscopy_program.py`), `broadband_ge_validation.py`, `man_stor_multiparity_chevron.py`.
+  `MBRJobExperiment.from_h5file(..., load_shots=False)` exists; saved MBR jobs need their
+  `derived_params` attribute (every job since 2026-09-17 has it). `measurement_notebooks/guan/mbramsey.py`
+  is deleted. `guan` now also holds all of `qsim-analysis` and `job_id_sorting_out`.
+  **Next:** when the device is idle and the `main` checkout is clean (it has other sessions'
+  uncommitted edits, including `job_server/worker.py`), merge `guan` into `main`; users restart
+  kernels once.
 - **The Program and Experiment tree refactor (steps 10A-10G) is done and on `main`**
   (`docs/qsim/program_tree_plan.md`; record in `docs/log/2026-09-29_10g-device-check-and-merge.md`).
   10G on the device: every changed Program type ran with no errors (calibration notebooks, MBR
@@ -98,8 +108,8 @@ How to check:
 - **Not MBR: leaves on the stem, their insides not cleaned**: `sideband_*`, `kerr`,
   `dark_mode_*`, `cooling`, `cavity_ramsey_flux_excursion`, ... Eight of them no notebook or
   test uses (plan 2.4); their retirement waits for the other users.
-- `floquet_dark_mode_readout.py` (about 100 lines): only the `_MOVED_TO` re-exports that non-MBR
-  notebooks still use.
+- `floquet_dark_mode_readout.py`: deleted 2026-10-06 (issue 5); its users import from the
+  owning modules.
 
 ### `experiments/qsim/notebook_helpers/` (about 0.2 kloc; about 20 kloc before step 7)
 Only `defaults` and `run_mode`: scaffolding for testing this refactor (step 9, decision 0.1).

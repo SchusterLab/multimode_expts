@@ -56,14 +56,13 @@
       - [[1, 0, 1, 0, 1], 1]
 
 - label: july_N3
-  manifest: 260526_qsim_darkmode/assembled_data/260924_163508_MBRSpectrumExperiment.yaml
+  manifest: 260526_qsim_darkmode/assembled_data/261006_151633_MBRSpectrumExperiment.yaml
   basis: complete
   photon_number: 3
   source: configs/datasets/mbr_datasets.yaml july_N3; aliased (40 samples at 8.2 us, Nyquist 61 kHz)
   analysis:
     phase_frame: manual_kerr
     manual_kerr_MHz: -0.019756
-    legacy: true
 
 - label: august_N3
   manifest: 260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml

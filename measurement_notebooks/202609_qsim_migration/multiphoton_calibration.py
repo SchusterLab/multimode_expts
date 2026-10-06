@@ -108,10 +108,8 @@ station.ds_storage.df
 # ## Resetting Config files
 
 # %%
-from experiments.qsim.floquet_dark_mode_readout import (
-    QsimExperiment,
-    BroadbandGeValidationProgram,
-)
+from experiments.qsim.broadband_ge_validation import BroadbandGeValidationProgram
+from experiments.qsim.qsim_base import QsimExperiment
 
 
 broadband_gain_limit = 30000

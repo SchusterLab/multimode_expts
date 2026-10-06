@@ -38,7 +38,7 @@ from experiments.qsim.notebook_helpers.defaults import (
     MEASUREMENT_CONFIG_DEFAULTS,
 )
 from experiments.qsim.notebook_helpers.run_mode import RunSettings
-from experiments.saved_jobs import load_h5
+from experiments.qsim.deprecated.saved_jobs import load_h5
 from job_server import JobClient
 
 CONFIG_DICT = {
@@ -391,7 +391,7 @@ def test_displacement_kerr_builds_without_the_uncalibrated_mode(
     calibrated modes. See `test_storage_mode_6_has_no_calibrated_pi_length`.
     """
     from experiments import CharacterizationRunner
-    from experiments.qsim import floquet_dark_mode_readout as fdm
+    from experiments.qsim import floquet_displacement_kerr as fdm
 
     active_reset_defaults, floquet_defaults, _ = defaults
     station, client = mock_station

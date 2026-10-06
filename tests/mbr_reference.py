@@ -12,7 +12,7 @@ The HDF5 loader now lives in the library
 ----------------------------------------
 This module used to carry its own ``_SavedJob``/``_SavedProgram`` pair and its
 own HDF5 reader, marked as scaffolding to be deleted once a real loader
-landed. It has: :mod:`experiments.saved_jobs`. The functions below are thin
+landed. It has: :mod:`experiments.qsim.deprecated.saved_jobs`. The functions below are thin
 wrappers over it, kept because the fixtures and the golden test call them by
 these names.
 
@@ -26,10 +26,11 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from experiments.job_paths import job_records, resolve_job_paths
+from experiments.job_paths import resolve_job_paths
+from experiments.qsim.deprecated.saved_jobs import job_records
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.saved_jobs import load_aggregate as _load_aggregate
-from experiments.saved_jobs import load_h5
+from experiments.qsim.deprecated.saved_jobs import load_aggregate as _load_aggregate
+from experiments.qsim.deprecated.saved_jobs import load_h5
 
 DATASETS = Path(__file__).parents[1] / "configs" / "datasets" / "mbr_datasets.yaml"
 

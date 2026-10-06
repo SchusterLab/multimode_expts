@@ -48,8 +48,8 @@ datasets:
     K_source: "?"
     quality: "ok"
     converted: true
-    manifest: "260526_qsim_darkmode/assembled_data/260924_163501_MBRSpectrumExperiment.yaml"
-    calibration_manifest: "260526_qsim_darkmode/assembled_data/260924_163500_MBRCalibrationSetExperiment.yaml"
+    manifest: "260526_qsim_darkmode/assembled_data/261006_151625_MBRSpectrumExperiment.yaml"
+    calibration_manifest: "260526_qsim_darkmode/assembled_data/261006_151624_MBRCalibrationSetExperiment.yaml"
     notes: >-
       N=1, 5 occupations. The catalog heading says 'Disordered'; the jobs carry no disorder keys.
     config_triple: {"calibration": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00002"], "spectroscopy": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00002"]}
@@ -72,8 +72,8 @@ datasets:
     K_source: "?"
     quality: "ok"
     converted: true
-    manifest: "260526_qsim_darkmode/assembled_data/260924_163502_MBRSpectrumExperiment.yaml"
-    calibration_manifest: "260526_qsim_darkmode/assembled_data/260924_163502_MBRCalibrationSetExperiment.yaml"
+    manifest: "260526_qsim_darkmode/assembled_data/261006_151627_MBRSpectrumExperiment.yaml"
+    calibration_manifest: "260526_qsim_darkmode/assembled_data/261006_151626_MBRCalibrationSetExperiment.yaml"
     notes: >-
       N=2, 14 of 15 occupations; see july_N2_supplement.
     config_triple: {"calibration": ["CFG-HW-20260717-00173", "CFG-FL-20260717-00029", "CFG-M1-20260717-00011"], "spectroscopy": ["CFG-HW-20260717-00173", "CFG-FL-20260717-00029", "CFG-M1-20260717-00011"]}
@@ -104,8 +104,8 @@ datasets:
     K_source: "?"
     quality: "ok"
     converted: true
-    manifest: "260526_qsim_darkmode/assembled_data/260924_163503_MBRSpectrumExperiment.yaml"
-    calibration_manifest: "260526_qsim_darkmode/assembled_data/260924_163502_MBRCalibrationSetExperiment_2.yaml"
+    manifest: "260526_qsim_darkmode/assembled_data/261006_151627_MBRSpectrumExperiment_2.yaml"
+    calibration_manifest: "260526_qsim_darkmode/assembled_data/261006_151627_MBRCalibrationSetExperiment.yaml"
     notes: >-
       The missing N=2 occupation of july_N2.
     config_triple: {"calibration": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00002"], "spectroscopy": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00002"]}
@@ -126,10 +126,12 @@ datasets:
     K_source: "?"
     quality: "ok"
     converted: true
-    manifest: "260526_qsim_darkmode/assembled_data/260924_163508_MBRSpectrumExperiment.yaml"
-    calibration_manifest: "260526_qsim_darkmode/assembled_data/260924_163506_MBRCalibrationSetExperiment.yaml"
+    manifest: "260526_qsim_darkmode/assembled_data/261006_151633_MBRSpectrumExperiment.yaml"
+    calibration_manifest: "260526_qsim_darkmode/assembled_data/261006_151631_MBRCalibrationSetExperiment.yaml"
     notes: >-
-      N=3 complete basis, 35 occupations. Legacy analyzer convention (+cycle*correction).
+      N=3 complete basis, 35 occupations. The program added the analyzer correction
+      (+cycle*correction, sign +1, code before daff734); recorded in the converted files since
+      2026-10-06.
     config_triple: {"calibration": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00010"], "spectroscopy": ["CFG-HW-20260717-00173", "CFG-FL-20260722-00001", "CFG-M1-20260722-00010"]}
     calibration_job_ids: [  # 70
       JOB-20260722-00683, JOB-20260722-00684, JOB-20260722-00685, JOB-20260722-00686, JOB-20260722-00687,
@@ -174,8 +176,8 @@ datasets:
     K_source: "?"
     quality: "ok"
     converted: true
-    manifest: "260526_qsim_darkmode/assembled_data/261002_145411_MBRSpectrumExperiment.yaml"
-    calibration_manifest: "260526_qsim_darkmode/assembled_data/261002_145411_MBRCalibrationSetExperiment.yaml"
+    manifest: "260526_qsim_darkmode/assembled_data/261006_151634_MBRSpectrumExperiment.yaml"
+    calibration_manifest: "260526_qsim_darkmode/assembled_data/261006_151634_MBRCalibrationSetExperiment.yaml"
     notes: >-
       N=1, 5 occupations, measured Jul 21-22 before july_N1. Added by jonginn 2026-10-01 (issue 6).
     calibration_job_ids: [  # 10

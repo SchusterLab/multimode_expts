@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
 """Parameters read back from saved MBR jobs: swap modes, detunings, hardware.
 
-Plain functions, shared by the new MBR classes and the old
-``EncodingHamiltonianSpectroscopyExperiment``, which used to own them as
-methods (docs/qsim/mbr_redesign.md, section 2). Moved without changes to the
-arithmetic.
+Plain functions, shared by the MBR classes (docs/qsim/mbr_redesign.md,
+section 2).
 
-The Floquet timing comes from each job's ``prog``: the live compiled program
-during acquisition, or the stand-in that :mod:`experiments.saved_jobs`
-attaches to saved data, which carries timing recovered from the file's
-``derived_params`` attribute or from the versioned config. There is no
-station fallback, deliberately -- see :func:`saved_parameters`.
+The Floquet timing comes from each job's own record of it
+(``QsimExperiment.recorded_derived_params``): the live compiled program
+during acquisition, else the file's ``derived_params`` attribute. Every
+converted and every new job file carries it. There is no other source,
+deliberately -- see :func:`saved_parameters`.
 """
 import numpy as np
 from slab import AttrDict
@@ -44,7 +42,7 @@ def saved_parameters(expts):
     """Swap modes, detunings, mode labels and hardware of sister jobs.
 
     Reads the first job's config, and the Floquet timing from the first job
-    whose ``prog`` has one. Returns an AttrDict with
+    that records one. Returns an AttrDict with
 
         - ``swap_stors``
         - ``detunings``
@@ -60,36 +58,25 @@ def saved_parameters(expts):
     if len(detunings) != len(swap_stors) or not np.all(np.isfinite(detunings)):
         raise ValueError("saved detunings do not match swap_stors")
 
-    program_hardware = []
     for expt in expts:
-        prog = getattr(expt, "prog", None)
-        if prog is not None and hasattr(prog, "calculate_floquet_cycle_us") and hasattr(prog, "m1s_pi_fracs"):
-            floquet_cycle_us = float(prog.calculate_floquet_cycle_us())
-            pi_fracs = np.asarray([prog.m1s_pi_fracs[stor - 1] for stor in swap_stors], dtype=float)
-            couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
-            # `source` says where the timing came from: a live compiled
-            # program during acquisition, or one of the recovered sources
-            # that experiments.saved_jobs resolves offline.
-            program_hardware.append((floquet_cycle_us, couplings_MHz,
-                                     getattr(prog, "source", "saved program")))
+        params = expt.recorded_derived_params()
+        if params:
             break
-
-    if program_hardware:
-        floquet_cycle_us, couplings_MHz, hardware_source = program_hardware[0]
     else:
-        # Deliberately no station fallback. Asking the *current* station
-        # substitutes today's calibration for the historical one, and does
-        # it silently: when the swap dataset moved gauss_sigma 0.04 -> 0.02
-        # us between 2026-08-14 and 08-25, that fallback returned roughly
-        # half the correct cycle time and every energy with it. The cycle
-        # time is not a measurement -- it is computed from immutable
-        # versioned config, so it is recovered exactly or not at all.
+        # Deliberately no fallback. Asking the *current* station substitutes
+        # today's calibration for the historical one, and does it silently:
+        # when the swap dataset moved gauss_sigma 0.04 -> 0.02 us between
+        # 2026-08-14 and 08-25, that fallback returned roughly half the
+        # correct cycle time and every energy with it. Old files without the
+        # attribute are converted once instead (tools/migrate_mbr_jobs.py).
         raise RuntimeError(
-            "no Floquet timing on these children. Load them through "
-            "experiments.saved_jobs (from_job_ids / from_job_files), which "
-            "reads the file's own 'derived_params' attribute or recomputes "
-            "the timing from the versioned config, and takes timing= for "
-            "files that have neither.")
+            "no Floquet timing on these jobs: neither a compiled program nor a "
+            "'derived_params' file attribute. Convert old job files with "
+            "tools/migrate_mbr_jobs.py, which writes it.")
+    floquet_cycle_us = float(params["floquet_cycle_us"])
+    pi_fracs = np.asarray([params["m1s_pi_fracs"][stor - 1] for stor in swap_stors], dtype=float)
+    couplings_MHz = 1. / (4. * pi_fracs * floquet_cycle_us)
+    hardware_source = params.get("source", "derived_params")
     if not np.isfinite(floquet_cycle_us) or floquet_cycle_us <= 0. or not np.all(np.isfinite(couplings_MHz)) or np.min(couplings_MHz) <= 0.:
         raise ValueError("saved Floquet hardware parameters must be finite and positive")
     hardware = AttrDict(dict(floquet_cycle_us=float(floquet_cycle_us), couplings_MHz=np.asarray(couplings_MHz), physical_kerr_MHz=physical_kerr_MHz, source=hardware_source))

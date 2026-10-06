@@ -90,7 +90,7 @@ class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
         Takes paths, or already-loaded child experiments. ``timing`` supplies
         the Floquet cycle time for files that carry neither a
         ``derived_params`` attribute nor a provenance entry; see
-        :mod:`experiments.saved_jobs`.
+        :mod:`experiments.qsim.deprecated.saved_jobs`.
 
         Pickles are no longer accepted. They are ephemeral debugging output,
         not data: unpickling needs the acquisition revision still importable,
@@ -98,7 +98,7 @@ class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
         """
         from pathlib import Path
 
-        from experiments.saved_jobs import job_id_from_path, load_job
+        from experiments.qsim.deprecated.saved_jobs import job_id_from_path, load_job
 
         if isinstance(job_files, (str, Path)):
             job_files = [job_files]
@@ -123,7 +123,7 @@ class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
 
         Resolves each ID to its file via
         :func:`experiments.job_paths.resolve_job_paths` and reads it with
-        :mod:`experiments.saved_jobs`. No job server, no job database, no
+        :mod:`experiments.qsim.deprecated.saved_jobs`. No job server, no job database, no
         pickle and no station: the timing that only the compiled program used
         to carry is recovered from the file's own ``derived_params`` attribute
         or recomputed from the versioned config, and ``timing`` is the manual
@@ -132,7 +132,7 @@ class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
         ``program_class`` filters a mixed job range by the program class
         recorded in the provenance sidecar.
         """
-        from experiments.saved_jobs import load_aggregate
+        from experiments.qsim.deprecated.saved_jobs import load_aggregate
 
         return load_aggregate(job_ids, owner=cls, timing=timing,
                               program_class=program_class)

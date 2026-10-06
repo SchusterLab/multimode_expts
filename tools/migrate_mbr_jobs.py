@@ -83,14 +83,15 @@ import numpy as np
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+for _path in (REPO_ROOT, REPO_ROOT / "tools"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 from slab import AttrDict  # noqa: E402
 from slab.experiment import NpEncoder  # noqa: E402
 
 from experiments import assembled_data  # noqa: E402
-from experiments.job_paths import job_records, resolve_job_paths  # noqa: E402
+from experiments.job_paths import resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment  # noqa: E402
 from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment  # noqa: E402
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment  # noqa: E402
@@ -101,7 +102,7 @@ from experiments.qsim.mbr_stark_cal import (  # noqa: E402
     MBRStarkCalExperiment,
 )
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment  # noqa: E402
-from experiments.saved_jobs import load_experiment, load_job  # noqa: E402
+from legacy_saved_jobs import job_records, load_job  # noqa: E402
 
 TOOL = "tools/migrate_mbr_jobs.py"
 
@@ -280,7 +281,22 @@ def write_converted(job_class, program_name, jobs, cfg, data, path, source_notes
     child.cfg, child.data, child.fname = cfg, AttrDict(data), str(path)
     child.analyze()
     write_job_file(path, cfg, dict(child.data), attrs)
-    return load_experiment(job_class, path)
+    return job_class.from_h5file(path, load_shots=False)
+
+
+# The program played the analyzer correction as ``+ floquet_cycle * correction``
+# from 631a958 (2026-07-21 22:44) and as ``- ...`` from daff734 (2026-07-31 13:04);
+# it records the sign in ``final_analyzer_phase_application_sign`` from f554dd3
+# (2026-08-03). Old files without the key get the sign of the code they ran on.
+ANALYZER_SIGN_FLIP = "2026-07-31 13:04:35"
+
+
+def analyzer_sign_from_code_history(job):
+    """-> +1. or -1., the analyzer correction sign the program applied to ``job``."""
+    created = job_records(required=False).get(job.job_id, {}).get("created_at")
+    if created is None:
+        raise ValueError(f"{job.job_id}: no recorded sign and no creation time in the sidecar")
+    return 1. if created < ANALYZER_SIGN_FLIP else -1.
 
 
 def _load_old_jobs(job_ids, timing, load_shots):
@@ -371,6 +387,9 @@ def migrate_spectrum(job_ids, out_root=None, load_shots=True, notes="", timing=N
             raise ValueError(f"{initial} -> {final}: a spectrum takes diagonal traces")
         cfg, data = merge_phase_jobs(slot[0.], slot[90.], "floquet_cycles", "floquet_cycle")
         trace_jobs = slot[0.] + slot[90.]
+        if "final_analyzer_phase_application_sign" not in cfg.expt:
+            cfg.expt.final_analyzer_phase_application_sign = analyzer_sign_from_code_history(
+                trace_jobs[0])
         path = converted_dir / (f"converted_{trace_jobs[0].job_id}_x{len(trace_jobs)}_"
                                 f"{MBRTimeTraceExperiment.__name__}.h5")
         children.append(write_converted(MBRTimeTraceExperiment, "MBRTimeTraceProgram",

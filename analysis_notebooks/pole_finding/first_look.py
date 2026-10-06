@@ -62,9 +62,9 @@ AUG_BRANCHES = {(2, 1, 0, 0, 0): 1, (2, 0, 1, 0, 0): 1, (1, 1, 0, 1, 0): 1, (1, 
 root = data_root()
 spectra = {}  # label -> (analyzed data, model Kerr in MHz)
 july = MBRSpectrumExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/260924_163508_MBRSpectrumExperiment.yaml")
+    root / "260526_qsim_darkmode/assembled_data/261006_151633_MBRSpectrumExperiment.yaml")
 spectra["july_N3"] = july.analyze(phase_frame="manual_kerr", manual_kerr_MHz=-19.756e-3, cycle_branches={},
-                                  legacy=True, spectrum_method="fft")
+                                  spectrum_method="fft")
 august = MBRSpectrumExperiment.from_manifest(
     root / "260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml")
 spectra["august_N3"] = august.analyze(phase_frame="manual_kerr", manual_kerr_MHz=-10.5e-3,

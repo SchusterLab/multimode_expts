@@ -33,9 +33,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.qsim.dark_mode_encoding import DarkModeProgram
-from experiments.qsim.floquet_dark_mode_readout import (
-    DarkModeScrambleProgram,
-)
+from experiments.qsim.dark_mode_scramble import DarkModeScrambleProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 

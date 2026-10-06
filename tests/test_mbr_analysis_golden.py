@@ -262,18 +262,15 @@ def test_analysis_needs_no_station_or_database(analysis):
     Guards spec section 2.2: if this ever reports the current station, the
     analysis has silently substituted today's timing for August's.
 
-    Checks the shape of the answer rather than one literal. There are three
-    legitimate provenance sources -- a caller-supplied historical value, the
-    file's own `derived_params` attribute, and recomputation from a versioned
-    config -- and this fixture pins the first. What must never appear is a
-    station.
+    Checks the shape of the answer rather than one literal. The one
+    legitimate source is the file's own `derived_params` attribute, written
+    at acquisition ("compiled ...") or at conversion ("converted to ...").
+    What must never appear is a station.
     """
     expt, _, _ = analysis
     source = expt.data.hardware.source
     assert "station" not in source.lower(), source
-    assert (source == "supplied by caller"
-            or source.startswith("versioned config CFG-FL-")
-            or source.startswith("H5 derived_params")), source
+    assert source.startswith(("compiled ", "converted to ")), source
 
 
 def test_floquet_timing_is_the_historical_value(analysis):

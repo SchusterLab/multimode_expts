@@ -1,6 +1,6 @@
 # MBR redesign, step 7 plan: disorder / SFF
 
-Status: approved by guan and done (7a-7e), 2026-09-24. jonginn reads it next (questions in
+Status: approved by guan and done (7a-7e), 2026-09-24. Correction 2026-10-06: the "D72" data sets hold diagonal and off-diagonal pairs mixed; their diagonal pairs are converted like any diagonal trace, the off-diagonal ones only kept as converted traces, so decision 2 holds (docs/log/2026-10-06_issue5-d72-and-loaders.md). jonginn reads it next (questions in
 section 7). It uses
 `mbr_redesign.md` for the rules and patterns. Where this file is silent, that file applies.
 

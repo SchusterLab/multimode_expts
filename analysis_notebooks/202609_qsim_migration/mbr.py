@@ -19,7 +19,7 @@
 # The **saved-data** entry point for the MBR spectroscopy products; acquisition is
 # `measurement_notebooks/202609_qsim_migration/mbr.py`. Every section is the same flow:
 # load a saved manifest, `analyze(...)` with this data set's analysis choices, `display()`.
-# The analysis choices (cycle branches, Kerr frame, `legacy`, FFT window) and the
+# The analysis choices (cycle branches, Kerr frame, FFT window) and the
 # dataset paths are the scientific content of this notebook.
 #
 # 1. **N=3 spectrum** (July 2026), with FFT peak finding three ways beside the
@@ -64,7 +64,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # %%
 # Dataset choice: the complete July N=3 sector (configs/datasets/mbr_datasets.yaml
 # `july_N3`), converted to the new layout.
-july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
+july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "261006_151633_MBRSpectrumExperiment.yaml"
 
 spectroscopy_expt = MBRSpectrumExperiment.from_manifest(july_n3_manifest)
 calibration_expt = spectroscopy_expt.calibration
@@ -80,7 +80,6 @@ encspec_cycle_branches = {
     # (3, 0, 0, 0, 0): 1,
     # (0, 2, 0, 0, 1): -1,
 }
-encspec_legacy = True
 encspec_manual_kerr_MHz = -19.756e-3  # signed; 0. for the zero-Kerr frame
 
 # Undo the old correction and apply the calibration again with the selected
@@ -89,7 +88,6 @@ encspec_reprocessed = spectroscopy_expt.analyze(
     phase_frame='manual_kerr',
     manual_kerr_MHz=encspec_manual_kerr_MHz,
     cycle_branches=encspec_cycle_branches,
-    legacy=encspec_legacy,
     fft_window='raw',
     zero_padding=1,
     spectrum_method='mpm',
@@ -130,12 +128,11 @@ spectroscopy_occupations = [
 ]
 cycle_branches = dict(encspec_cycle_branches)
 
-# `legacy=True`: the July jobs predate the recorded analyzer sign. The old
-# scan could not pass it and raised on these data.
+# The July jobs ran on code that added the analyzer correction (sign +1); the
+# converted files record that sign, so the scan needs no flag.
 best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data = (
     spectroscopy_expt.fit_self_kerr(
         cycle_branches=cycle_branches,
-        legacy=True,
         kerr_grid_kHz=np.arange(-5.0, 0.0 + 1e-9, 0.005),
         energy_limit_MHz=0.08,
         min_man_photons=2,

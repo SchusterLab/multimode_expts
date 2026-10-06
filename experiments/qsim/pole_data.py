@@ -44,7 +44,7 @@ def spectrum(label, data_set, part, analysis, recorded_kerr_MHz):
         part = MBRSpectrumExperiment.from_children(kept, calibration=part.calibration, notes=part.notes)
     manual_kerr_MHz = recorded_kerr_MHz if analysis.manual_kerr_MHz == "recorded" else analysis.manual_kerr_MHz
     data = part.analyze(phase_frame=analysis.phase_frame, manual_kerr_MHz=manual_kerr_MHz,
-                        cycle_branches=analysis.branches(part.occupations), legacy=analysis.legacy or None,
+                        cycle_branches=analysis.branches(part.occupations),
                         spectrum_method="fft")
     if analysis.model_kerr == "recorded" and recorded_kerr_MHz is None:
         raise ValueError(f"{label}: model_kerr is 'recorded' but the realization has no self_kerr_kHz")

@@ -336,8 +336,7 @@ Open items, not yet done:
 
 - `EncodingHamiltonianSpectroscopyExperiment` still owns `from_job_files`, `_quadrature`
   and `_from_expts`; move what the later-phase code needs to a helper before deleting it.
-- `_MOVED_TO` in `floquet_dark_mode_readout.py` still lists the old MBR programs; remove
-  each entry when its program is deleted (step 6).
-- Old off-diagonal pair jobs (`offdiag_cycles`) have no conversion (disorder phase).
-- `measurement_notebooks/guan/mbramsey.py` uses `floquet_dark_mode_readout` without
-  importing it (older than the redesign).
+- Done 2026-10-06 (issue 5; docs/log/2026-10-06_issue5-d72-and-loaders.md):
+  `floquet_dark_mode_readout.py` and `measurement_notebooks/guan/mbramsey.py` are deleted;
+  the old section 7-2 pair jobs (`offdiag_cycles`) convert through
+  `tools/migrate_mbr_jobs.py` `migrate_pairs`.

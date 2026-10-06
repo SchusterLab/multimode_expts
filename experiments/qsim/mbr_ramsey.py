@@ -23,8 +23,10 @@ programs did not change.
 ``MBRJobExperiment`` is the shared base of the job experiments: it owns
 ``acquire``.
 """
+import json
 from copy import deepcopy
 
+import h5py
 import numpy as np
 from slab import AttrDict
 
@@ -380,3 +382,22 @@ class MBRJobExperiment(QsimExperiment):
     ``QsimExperiment.acquire`` (step 10E); until then this class had its
     own copy of the loop.
     """
+
+    SHOT_KEYS = ("idata", "qdata")
+
+    @classmethod
+    def from_h5file(cls, fname, load_shots=True):
+        """slab's ``from_h5file``; ``load_shots=False`` skips ``idata``/``qdata``.
+
+        The shots are about 99% of a job file, and the assembled classes need
+        only the averages, so ``from_manifest`` loads without them.
+        """
+        if load_shots:
+            return super().from_h5file(fname)
+        self = cls.__new__(cls)
+        self.fname = str(fname)
+        with h5py.File(fname, "r") as handle:
+            self.data = {key: handle[key][()] for key in handle if key not in cls.SHOT_KEYS}
+            self.data["attrs"] = dict(handle.attrs)
+        self.cfg = AttrDict(json.loads(self.data["attrs"]["config"]))
+        return self

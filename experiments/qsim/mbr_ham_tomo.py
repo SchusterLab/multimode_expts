@@ -327,8 +327,8 @@ class MBRHamTomoExperiment(AssembledExperiment):
         return [part.manifest_path for part in self.children]
 
     @classmethod
-    def _load_children(cls, manifest, timing=None):
-        return [cls.child_class.from_manifest(path, timing=timing)
+    def _load_children(cls, manifest):
+        return [cls.child_class.from_manifest(path)
                 for path in manifest["raw_files"]]
 
     @classmethod

@@ -146,13 +146,13 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
     # -- analysis ---------------------------------------------------------
 
     def analyze(self, phase_frame="as_acquired", manual_kerr_MHz=None,
-                cycle_branches=0, legacy=None, theory_kerr_MHz=None,
+                cycle_branches=0, theory_kerr_MHz=None,
                 match_tolerance_bins=1.5, edge_fraction=0.10,
                 excluded_occupations=(), on_error="raise", readout_refit=False,
                 **matrix_pencil_options):
         """Matrix Pencil levels per realization, matched to theory; pooled gap ratios.
 
-        - ``phase_frame``, ``manual_kerr_MHz``, ``cycle_branches``, ``legacy``
+        - ``phase_frame``, ``manual_kerr_MHz``, ``cycle_branches``
           go to each part's ``analyze``; ``mpm_*`` options too, over
           :data:`DEFAULT_MATRIX_PENCIL` (``mpm_requested_max_modes`` defaults
           to the sector dimension).
@@ -190,7 +190,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
             try:
                 records.append(self._analyze_part(
                     label, part, options, phase_frame, manual_kerr_MHz,
-                    cycle_branches, legacy, kerr, match_tolerance_bins, readout_refit))
+                    cycle_branches, kerr, match_tolerance_bins, readout_refit))
             except Exception as error:  # noqa: BLE001 -- recorded, per on_error
                 if on_error == "raise":
                     raise
@@ -246,7 +246,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
 
     @staticmethod
     def _analyze_part(label, part, options, phase_frame, manual_kerr_MHz,
-                      cycle_branches, legacy, theory_kerr_MHz, match_tolerance_bins,
+                      cycle_branches, theory_kerr_MHz, match_tolerance_bins,
                       readout_refit=False):
         """-> one realization's record: poles, theory levels, the match."""
         photon_number = sum(part.occupations[0])
@@ -255,7 +255,7 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
         part_options = dict(options)
         part_options.setdefault("mpm_requested_max_modes", hamiltonian_dimension)
         data = part.analyze(phase_frame=phase_frame, manual_kerr_MHz=manual_kerr_MHz,
-                            cycle_branches=cycle_branches, legacy=legacy,
+                            cycle_branches=cycle_branches,
                             spectrum_method="matrix_pencil", readout_refit=readout_refit,
                             **part_options)
         # The source wrapped the poles into the principal interval, then
@@ -472,8 +472,8 @@ class MBRDisorderEnsembleExperiment(AssembledExperiment):
         return [part.manifest_path for part in self.children]
 
     @classmethod
-    def _load_children(cls, manifest, timing=None):
-        return [cls.child_class.from_manifest(path, timing=timing)
+    def _load_children(cls, manifest):
+        return [cls.child_class.from_manifest(path)
                 for path in manifest["raw_files"]]
 
     @classmethod

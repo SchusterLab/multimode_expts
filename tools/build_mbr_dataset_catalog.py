@@ -175,8 +175,9 @@ def build(sections, old):
     add("july_N3", sec("1. g = 15 kHz, K = 19.2 kHz / 3."), "spectrum",
         manifest=DM + "260924_163508_MBRSpectrumExperiment.yaml",
         calibration_manifest=DM + "260924_163506_MBRCalibrationSetExperiment.yaml",
-        notes="N=3 complete basis, 35 occupations. Legacy analyzer convention "
-              "(+cycle*correction).",
+        notes="N=3 complete basis, 35 occupations. The program added the analyzer "
+              "correction (+cycle*correction, sign +1, code before daff734); recorded in the "
+              "converted files since 2026-10-06.",
         config_triple=old["july_N3"]["config_triple"])
     add("july_N1_early", sec("1. g = 15 kHz, K = 19.2 kHz / 4."), "spectrum",
         notes="N=1, 5 occupations, measured Jul 21-22 before july_N1. Added by jonginn "
@@ -296,6 +297,22 @@ CONVERTED_2026_10_02 = {
 }
 
 
+# 2026-10-06: the July sets converted again, now with the analyzer sign their program
+# applied (+1, before daff734; tools/migrate_mbr_jobs.py ANALYZER_SIGN_FLIP), so no
+# reader needs a ``legacy`` flag. name -> (manifest, calibration manifest).
+RECONVERTED_2026_10_06 = {
+    "july_N1": (DM + "261006_151625_MBRSpectrumExperiment.yaml",
+                DM + "261006_151624_MBRCalibrationSetExperiment.yaml"),
+    "july_N2": (DM + "261006_151627_MBRSpectrumExperiment.yaml",
+                DM + "261006_151626_MBRCalibrationSetExperiment.yaml"),
+    "july_N2_supplement": (DM + "261006_151627_MBRSpectrumExperiment_2.yaml",
+                           DM + "261006_151627_MBRCalibrationSetExperiment.yaml"),
+    "july_N3": (DM + "261006_151633_MBRSpectrumExperiment.yaml",
+                DM + "261006_151631_MBRCalibrationSetExperiment.yaml"),
+    "july_N1_early": (DM + "261006_151634_MBRSpectrumExperiment.yaml",
+                      DM + "261006_151634_MBRCalibrationSetExperiment.yaml"),
+}
+
 # The round of 2026-10-06 (the section 7-2 pair sets): name -> (ensemble manifest,
 # calibration manifest, {realization: off-diagonal MBRTimeTraceSetExperiment manifest}).
 CONVERTED_2026_10_06 = {
@@ -361,6 +378,9 @@ CONVERTED_2026_10_06 = {
 
 def apply_conversions(entries, converted=CONVERTED_2026_10_02):
     for name, (manifest, calibration_manifest) in converted.items():
+        entries[name].update(converted=True, manifest=manifest,
+                             calibration_manifest=calibration_manifest)
+    for name, (manifest, calibration_manifest) in RECONVERTED_2026_10_06.items():
         entries[name].update(converted=True, manifest=manifest,
                              calibration_manifest=calibration_manifest)
     for name, (manifest, calibration_manifest, offdiag) in CONVERTED_2026_10_06.items():

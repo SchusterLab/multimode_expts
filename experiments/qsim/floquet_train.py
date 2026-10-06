@@ -258,23 +258,23 @@ class FloquetProgram(QsimProgram):
 
         self.sync_all()
         if ecfg.get("debug", False):
-            print("[DarkScramble] using shared phase_offsets for scramble")
-            print("[DarkScramble] initial phase_offsets:", phase_offsets)
-            print("[DarkScramble] initial disorder_phase_offsets:", disorder_phase_offsets)
-            print("[DarkScramble] detunings MHz:", detunings)
-            print("[DarkScramble] scramble sync cycles:", scramble_sync_cycles)
-            print("[DarkScramble] palindrome scramble:", palindrome_scramble)
-            print("[DarkScramble] hardware loop:", floquet_hardware_loop)
-            print("[DarkScramble] forward sequence:", swap_stors)
+            print("[Floquet] using shared phase_offsets for scramble")
+            print("[Floquet] initial phase_offsets:", phase_offsets)
+            print("[Floquet] initial disorder_phase_offsets:", disorder_phase_offsets)
+            print("[Floquet] detunings MHz:", detunings)
+            print("[Floquet] scramble sync cycles:", scramble_sync_cycles)
+            print("[Floquet] palindrome scramble:", palindrome_scramble)
+            print("[Floquet] hardware loop:", floquet_hardware_loop)
+            print("[Floquet] forward sequence:", swap_stors)
             if palindrome_scramble:
-                print("[DarkScramble] reverse sequence:", list(reversed(swap_stors)))
+                print("[Floquet] reverse sequence:", list(reversed(swap_stors)))
                 if floquet_cycle % 2:
                     print(
-                        "[DarkScramble] odd floquet_cycle leaves one unpaired "
+                        "[Floquet] odd floquet_cycle leaves one unpaired "
                         "forward cycle"
                     )
-            print("[DarkScramble] scramble elapsed us:", scramble_elapsed_us)
-            print("[DarkScramble] pulse args:", all_pulse_args)
+            print("[Floquet] scramble elapsed us:", scramble_elapsed_us)
+            print("[Floquet] pulse args:", all_pulse_args)
 
         if floquet_hardware_loop and floquet_cycle > 0 and swap_stors:
             self._play_floquet_hardware_loop(
@@ -292,8 +292,8 @@ class FloquetProgram(QsimProgram):
             )
 
         if ecfg.get("debug", False):
-            print("[DarkScramble] final phase_offsets:", phase_offsets)
-            print("[DarkScramble] final disorder_phase_offsets:", disorder_phase_offsets)
+            print("[Floquet] final phase_offsets:", phase_offsets)
+            print("[Floquet] final disorder_phase_offsets:", disorder_phase_offsets)
 
         self.sync_all()
 
@@ -374,7 +374,7 @@ class FloquetProgram(QsimProgram):
 
                 if ecfg.get("debug", False) and kk == 0:
                     print(
-                        f"[DarkScramble] cycle={kk}, step={step_idx}, "
+                        f"[Floquet] cycle={kk}, step={step_idx}, "
                         f"stor={stor}, phase_deg={phase_deg:.3f}, "
                         f"stark_phase={phase_offsets[i_stor]:.3f}"
                     )
@@ -544,7 +544,7 @@ class FloquetProgram(QsimProgram):
         for i_stor, stor in enumerate(swap_stors):
             if ecfg.get("debug", False):
                 print(
-                    f"[DarkScramble] hardware step={i_stor}, "
+                    f"[Floquet] hardware step={i_stor}, "
                     f"stor={stor}, "
                     f"first_phase_deg={first_cycle_phases[i_stor]:.3f}, "
                     f"phase_step_deg={phase_step_per_cycle[i_stor]:.3f}"
@@ -658,7 +658,7 @@ class FloquetProgram(QsimProgram):
         if self.cfg.expt.get("debug", False):
             direction = "inverse" if inverse else "forward"
             print(
-                f"[DarkT1] {label}: stor={stor}, {direction}, "
+                f"[Floquet] {label}: stor={stor}, {direction}, "
                 f"n_frac={n_frac}, phase_deg={first_phase_deg:.3f}, "
                 f"phase_step_deg={phase_step_deg:.3f}, "
                 f"phase_offset={phase_offsets[idx]:.3f}, "

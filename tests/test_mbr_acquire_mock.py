@@ -43,7 +43,7 @@ import numpy as np
 import pytest
 
 from experiments.floquet_timing import resolve_floquet_timing
-from experiments.saved_jobs import load_job
+from experiments.qsim.deprecated.saved_jobs import load_job
 from experiments.qsim.mbr_campaign import (
     mbr_defaults,
     mock_station,

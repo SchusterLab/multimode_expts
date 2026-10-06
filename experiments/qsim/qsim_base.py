@@ -1211,8 +1211,9 @@ class QsimExperiment(Experiment):
     # It is worth saving at all because it is the one fact offline analysis
     # cannot otherwise recover from the file: it existed only on the compiled
     # program, which lives in the job pickle, and pickles are ephemeral.
-    # `experiments/saved_jobs.py` reads this attribute and prefers it over
-    # recomputing the timing from the versioned config archive.
+    # Offline analysis reads it back through `recorded_derived_params`. Old
+    # files that predate it reach the analysis only after conversion
+    # (tools/migrate_mbr_jobs.py), which writes it.
     DERIVED_PARAMS_ATTR = "derived_params"
 
     def derived_params(self):
@@ -1247,6 +1248,20 @@ class QsimExperiment(Experiment):
             params["couplings_MHz"] = [1. / (4. * frac * cycle_us)
                                        for frac in pi_fracs]
         return params
+
+    def recorded_derived_params(self):
+        """-> :meth:`derived_params` of this job, live or as saved. None if neither.
+
+        A job that holds its compiled program reports it directly; one loaded
+        with ``from_h5file`` reads the attribute its file carries.
+        """
+        live = self.derived_params()
+        if live:
+            return live
+        raw = getattr(self, "data", {}).get("attrs", {}).get(self.DERIVED_PARAMS_ATTR)
+        if raw is None:
+            return None
+        return json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
 
     def save_derived_params(self):
         """Write :meth:`derived_params` into the data file as an attribute."""

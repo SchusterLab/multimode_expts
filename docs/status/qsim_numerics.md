@@ -1,8 +1,9 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-05** (the three views and the lab vault as the reading interface, on pippin; Jonginn notebook migration completed locally).
+**Last updated: 2026-10-06** (all 25 data sets converted, the "D72" sets regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
-`qsim-analysis`, worktree `C:\python\multimode_expts_qsim-analysis`. This file is overwritten at
+`qsim-analysis`, worktree `C:\python\multimode_expts_qsim-analysis`; on 2026-10-06 `guan` took
+all of it, so continue from `guan` (fast-forward `qsim-analysis` to it first). This file is overwritten at
 the end of each work session on this theme; git keeps the old versions. Cross-theme items and
 the branch rules are in `docs/STATUS.md`.
 
@@ -39,26 +40,28 @@ the branch rules are in `docs/STATUS.md`.
   offset prior for this set (T1 finds row offsets of 4.7 kHz rms, up to 11.7 kHz, on r=0, against
   a 0.5 kHz prior), the T3 merge threshold at 35 rows, and the Matrix Pencil settings. Then T2's
   row-sum bound. `experiments/qsim/pole_data.py` now accepts realizations without a recorded Kerr.
-- **The data sets are in one catalog and converted** (`configs/datasets/mbr_datasets.yaml`;
-  record `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md`). 25 data sets, 20
-  converted on pippin; the 5 off-diagonal D72 sets wait for an init != final calibration (step 7
-  plan, decision 2 and questions 1-2 to jonginn). New since the September round: the Sep 10-14
-  **complete-basis** disorder ensemble `sep10_full_K3p6_g29p2` (9 realizations x 35 occupations,
-  the first data set that gives Tr U(t) and the spectral form factor), `august25_N3` (a second
-  complete N=3 basis, quality concern), two N=1 sets, four orthogonality sets, two small
-  disordered sets (quality concern), the September calibration set and the N=1 propagator.
-  Both complete-basis sets are in `analysis_notebooks/pole_finding/registry.yaml`.
-  **Next:** execute the new Sep10 section in
-  `analysis_notebooks/202609_qsim_migration/mbr_disorder.py` and inspect the form factor;
-  run the pole benchmarks (T1T3, C, F)
-  on the two new registry entries; decide the Matrix Pencil defaults for a 35-row complete basis
-  (the default settings match 25-28 of 35 theory poles per realization, MAE 1.6-3.3 kHz).
-  To convert a further data set: add its entry to the catalog, `pixi run python
-  tools/convert_mbr_catalog.py --check <name>`, then without `--check`, then paste the printed
-  manifest lines into `tools/build_mbr_dataset_catalog.py` (`CONVERTED_*`) and rebuild the YAML.
-  jonginn still owes the `K_source` column and the two step 7 questions.
-  Full suite after the round (2026-10-02, pippin): 1569 passed, 5 failed; at that date these were 3 Matrix Pencil regression cases and 2 stage-dispatch
-  notebook failures. The notebook failures were removed by the Oct 5 retirement.
+- **All 25 data sets are converted** (`configs/datasets/mbr_datasets.yaml`; records
+  `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md` and
+  `docs/log/2026-10-06_issue5-d72-and-loaders.md`). The five old "D72" (notebook section 7-2)
+  sets were not off-diagonal: each realization mixes diagonal pairs (407 files) and
+  off-diagonal pairs (188). Renamed `sepNN_pairs_*`, kind `disorder_pairs`: the diagonal pairs
+  are a partial-basis `MBRDisorderEnsembleExperiment` (`manifest`), the off-diagonal ones one
+  `MBRTimeTraceSetExperiment` per realization (`offdiag_manifests`, not analyzed; step 7
+  decision 2). Their g15 timing is 0.409226 us (the archived 0.4135 was the old formula).
+  The July sets were converted again with their analyzer sign (+1), so `legacy` is gone.
+  **Next:** the 37 new partial-basis realizations match 1-20 of 35 theory poles with default
+  settings: decide whether they are worth a pole benchmark. Execute the Sep10 section in
+  `analysis_notebooks/202609_qsim_migration/mbr_disorder.py` and inspect the form factor; run
+  the pole benchmarks (T1T3, C, F) on the two complete-basis registry entries; decide the
+  Matrix Pencil defaults for a 35-row complete basis. To convert a further data set: add it
+  to `tools/build_mbr_dataset_catalog.py`, `pixi run python tools/convert_mbr_catalog.py
+  --check <name>`, then without `--check`, paste the printed manifest lines into the builder
+  and rebuild the YAML. jonginn still owes the `K_source` column.
+- **Loading (issue 5):** `from_manifest` loads each job file with `from_h5file` (no shots) and
+  the timing from its `derived_params` attribute only. `experiments/saved_jobs.py` and
+  `job_records` are now `tools/legacy_saved_jobs.py`, the raw reader of the frozen converter
+  (`tools/migrate_mbr_jobs.py`, `tools/convert_mbr_catalog.py`); the deprecated classes reach it
+  through the alias `experiments/qsim/deprecated/saved_jobs.py`. The sidecar `tests/data/job_provenance.json` stays as the job-ID -> path index.
 - **Jonginn's decay investigation:** `measurement_notebooks/jonginn/decay_investigation.ipynb`
   now contains its JOB catalog, read-only HDF5 reconstruction, fitting, and plots. Per the
   user's request, the four companion modules and their module-dependent test file were
@@ -143,7 +146,8 @@ How to check:
   `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
   `level_statistics`, `calibration` (step 9C); `poles/` (about 1.1 kloc): the pole-finding
   fitters and benchmarks (`docs/qsim/pole_finding.md`).
-- Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py`. Converted sets:
+- Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py` (frozen; all catalog
+  sets are done). Converted sets:
   `C:\experiments\<exp>\converted_data\` and `assembled_data\`. Dataset ID lists:
   `configs/datasets/mbr_datasets.yaml`.
 

@@ -18,7 +18,7 @@ What changed and why
 --------------------
 `load_encoding_spectroscopy` used to ask a `JobClient` for each job's status
 and then unpickle a whole Experiment. It now goes through
-:mod:`experiments.saved_jobs`, which reads HDF5 only. Two consequences worth
+:mod:`experiments.qsim.deprecated.saved_jobs`, which reads HDF5 only. Two consequences worth
 knowing at the call site:
 
 * Filtering is by the program class **recorded in the provenance sidecar**,
@@ -40,7 +40,7 @@ copies, so they are unaffected.
 import numpy as np
 
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
-from experiments.saved_jobs import load_aggregate
+from experiments.qsim.deprecated.saved_jobs import load_aggregate
 
 CALIBRATION_PROGRAM = "EntireFloquetCyclePhaseCalibrationProgram"
 SPECTROSCOPY_PROGRAM = "NPhotonHamiltonianSpectroscopyProgram"

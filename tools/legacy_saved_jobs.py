@@ -1,3 +1,10 @@
+# Moved 2026-10-06 (GitHub issue 5) from experiments/saved_jobs.py, without changes
+# except its import lines and the sidecar reader job_records (from
+# experiments/job_paths.py). The raw-file reader of the frozen converter
+# (tools/migrate_mbr_jobs.py, tools/convert_mbr_catalog.py); the canonical classes
+# load job files with from_h5file and read the timing from their derived_params
+# attribute. The deprecated classes reach it through
+# experiments/qsim/deprecated/saved_jobs.py. Not maintained.
 """Load saved experiments from HDF5 alone, for offline analysis.
 
 Why this exists
@@ -52,6 +59,7 @@ provenance sidecar; files that do not fall through to the sidecar as before.
 """
 
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import h5py
@@ -59,10 +67,40 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.floquet_timing import TimingResolutionError, resolve_floquet_timing
-from experiments.job_paths import JOB_ID_RE, job_records, resolve_job_paths
+from experiments.job_paths import JOB_ID_RE, JobPathError, provenance_path, resolve_job_paths
 
 # Timing needs both of these: the couplings are 1/(4 * pi_frac * cycle_us), so
 # a cycle time without the pi fracs cannot produce them.
+@lru_cache(maxsize=4)
+def _records(sidecar: Path) -> dict:
+    """job_id -> the full recorded provenance, from the exported sidecar."""
+    with sidecar.open() as handle:
+        return json.load(handle)
+
+
+def job_records(required: bool = True) -> dict:
+    """-> {job_id: record} from the provenance sidecar.
+
+    The records carry what the HDF5 file does not: the config version IDs each
+    job ran against, the program class it was recorded under, and its final
+    status. :mod:`experiments.qsim.deprecated.saved_jobs` reads them to resolve Floquet timing
+    and to filter a mixed job range without opening a single file.
+
+    Args:
+        required: raise when the sidecar is absent. Pass False to get an empty
+            dict instead, for callers that can still proceed without it --
+            a file carrying its own ``derived_params`` needs no sidecar.
+    """
+    if not required:
+        try:
+            path = provenance_path()
+        except JobPathError:
+            return {}
+    else:
+        path = provenance_path()
+    return _records(path)
+
+
 TIMING_KEYS = ("floquet_cycle_us", "m1s_pi_fracs")
 
 # The two large shot arrays are ~99% of a file. Only shot-noise and split-half
