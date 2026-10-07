@@ -114,3 +114,23 @@ Two more record corrections:
   in scope for today, after the conversion, possibly another session.
 - Nothing is on `main` yet; merge `guan` into `main` when the device is idle and the `main`
   checkout is clean, then move `qsim-analysis` to it.
+
+## Later: coherence vs Kerr, and the decay notebook
+
+- guan asked for a rough Kerr vs coherence check (low, medium, high Kerr). Matrix Pencil pole
+  widths gave a flat ~50 us with 2-4x scatter: they mix decoherence with unresolved splitting,
+  so they are not a coherence measure here. The StarkCal closed pairs (model-free) show the
+  expected direction but reach only 13 us. The raw diagonal returns against the coherent
+  theory show it plainly: the revivals at ~40 and ~78 us shrink with Kerr and with photons in
+  M1, and vanish at |K| = 52 kHz.
+- jonginn's `decay_investigation.ipynb` used the same model as the library (checked: same
+  Hamiltonian and signs); its trend is real. It fed the model the rough catalog-heading Kerr,
+  computed the cycle time with its own formula, and dropped 30% of traces as poor fits.
+  Decision (guan): replace it with a short example on the library, and delete it.
+- New `analysis_notebooks/202609_qsim_migration/kerr_coherence.py`: per diagonal trace,
+  `|A| = c |A_theory| exp(-t/T) + floor` (linear in c and floor, scan in T), recorded Kerr,
+  file timing, no trace dropped; section 2 plots the closed pairs and takes a longer run.
+  Median T (us) by n_M1 = 0/1/2/3: |K| 3.8 kHz (g15) 217/184/153/116; 20.5 kHz 127/102/84;
+  45 kHz 62/74/34; 52 kHz (g29) 30/26/15/14. A lower bound (model error also lowers overlap).
+- Next (guan, tomorrow, after recalibration): a closed-pair run to 100-200 us at three Kerr
+  points, n_M1 = 0-3.

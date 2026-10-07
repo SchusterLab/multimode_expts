@@ -62,17 +62,15 @@ the branch rules are in `docs/STATUS.md`.
   `job_records` are now `tools/legacy_saved_jobs.py`, the raw reader of the frozen converter
   (`tools/migrate_mbr_jobs.py`, `tools/convert_mbr_catalog.py`); the deprecated classes reach it
   through the alias `experiments/qsim/deprecated/saved_jobs.py`. The sidecar `tests/data/job_provenance.json` stays as the job-ID -> path index.
-- **Jonginn's decay investigation:** `measurement_notebooks/jonginn/decay_investigation.ipynb`
-  now contains its JOB catalog, read-only HDF5 reconstruction, fitting, and plots. Per the
-  user's request, the four companion modules and their module-dependent test file were
-  removed. Code decreased from 1,408 to 753 lines; the fit core is 55 lines. It fits measured
-  return power with a coherent-Hamiltonian curve times an exponential/Gaussian power
-  envelope; only the selected envelope runs. Existing fit thresholds and tau are preserved:
-  972 exponential traces and 98 sampled Gaussian traces match the previous cached results.
-  Standard and interleaved real HDF5 traces also reproduce their prior arrays and fits;
-  every plot renders. Original data/configs are only read; notebook execution writes no
-  manifest, cache, export, or result file. Human review of the physical model remains open.
-  (The cited record `docs/log/2026-09-30_decay-notebook-readability.md` was never committed.)
+- **Coherence vs Kerr** (2026-10-06): `analysis_notebooks/202609_qsim_migration/kerr_coherence.py`,
+  a short library-only example. It replaces jonginn's `decay_investigation.ipynb` (749 code lines
+  that re-derived the loader, timing and Hamiltonian; deleted, git keeps it). Theory-relative fit
+  `|A| = c |A_theory| exp(-t/T) + floor` per diagonal trace, recorded Kerr, no trace dropped:
+  T falls with Kerr and with photons in M1 (g = 15 kHz, n_M1 = 1: 184, 102, 74 us at
+  |K| = 3.8, 20.5, 45 kHz; g = 29 kHz, |K| = 52 kHz: 14-30 us). A wrong model also lowers the
+  overlap, so T is a lower bound. Matrix Pencil pole widths are not a coherence measure here
+  (they include unresolved splitting). **Next:** a closed-pair (StarkCal) run to 100-200 us at
+  three Kerr points, n_M1 = 0-3, for a model-free T (section 2 of the notebook takes it).
 - **Pole finding**: phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
   notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
