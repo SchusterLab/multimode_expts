@@ -27,8 +27,9 @@ Rules:
 - **Branches (2026-10-06):** `guan` holds all of `qsim-analysis` and `job_id_sorting_out`
   (fast-forward, then a merge). Nothing went to `main`: the device was busy and the `main`
   checkout has other sessions' uncommitted edits (including `job_server/worker.py`). **Next:**
-  merge `guan` into `main` when both are clear, then fast-forward `qsim-analysis` and
-  `job_id_sorting_out` to it. Record: `docs/log/2026-10-06_issue5-d72-and-loaders.md`.
+  merge `guan` into `main` when both are clear, then fast-forward `qsim-analysis` to it.
+  `job_id_sorting_out` and its worktree `C:\python\multimode_expts_jonginn` are deleted
+  (fully merged; guan, 2026-10-06). Record: `docs/log/2026-10-06_issue5-d72-and-loaders.md`.
 - **One data set catalog**: `configs/datasets/mbr_datasets.yaml` holds every MBR spectroscopy
   data set (job IDs, kind, folder, rough g/K labels, converted manifests); jonginn's human vault
   with plots stays. **All 25 are converted** (2026-10-06). The five old "D72" sets were mixed

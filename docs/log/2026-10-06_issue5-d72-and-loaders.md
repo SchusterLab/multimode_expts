@@ -134,3 +134,7 @@ Two more record corrections:
   45 kHz 62/74/34; 52 kHz (g29) 30/26/15/14. A lower bound (model error also lowers overlap).
 - Next (guan, tomorrow, after recalibration): a closed-pair run to 100-200 us at three Kerr
   points, n_M1 = 0-3.
+- Deleted (guan): branch `job_id_sorting_out` (local and GitHub; every commit is in `guan`)
+  and its worktree `C:\python\multimode_expts_jonginn`. The worktree had no uncommitted work;
+  its ignored `job_server/jobs.db` was empty and its `configs/versions/` held local snapshots
+  that no recorded job uses.
