@@ -138,3 +138,9 @@ Two more record corrections:
   and its worktree `C:\python\multimode_expts_jonginn`. The worktree had no uncommitted work;
   its ignored `job_server/jobs.db` was empty and its `configs/versions/` held local snapshots
   that no recorded job uses.
+- One branch (guan): `qsim-analysis` retired, local and GitHub (0 commits not in `guan`), and
+  `origin/mcp` deleted (2025-06, guan's). The `qsim-analysis` worktree is unregistered; its
+  empty folder stays locked by an orphan `tail` (pid 4420, a dead session's watcher from
+  2026-10-02), which the auto-mode policy did not let me stop. The idle `nb:1` (survey)
+  shell was moved to the `guan` folder. seb's and jonginn's branches and `tests-cleanup` (WIP)
+  are left alone (guan).

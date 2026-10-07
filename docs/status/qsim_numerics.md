@@ -2,8 +2,8 @@
 
 **Last updated: 2026-10-06** (all 25 data sets converted, the "D72" sets regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
-`qsim-analysis`, worktree `C:\python\multimode_expts_qsim-analysis`; on 2026-10-06 `guan` took
-all of it, so continue from `guan` (fast-forward `qsim-analysis` to it first). This file is overwritten at
+`guan` (the one branch since 2026-10-06; `qsim-analysis` is retired), worktree
+`C:\python\multimode_expts_guan`. This file is overwritten at
 the end of each work session on this theme; git keeps the old versions. Cross-theme items and
 the branch rules are in `docs/STATUS.md`.
 
