@@ -8,10 +8,10 @@ section 6 and are renamed in the naming pass, not here.
 """
 from copy import deepcopy
 
-from experiments.qsim.qsim_base import QsimBaseProgram
-from experiments.qsim.dark_base import DarkBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
+from experiments.qsim.floquet_train import FloquetProgram
 
-class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
+class SidebandStarkAmplificationModifiedProgram_old(QsimProgram):
     """
     Original phase-accumulation calibration sequence.
 
@@ -79,7 +79,7 @@ class SidebandStarkAmplificationModifiedProgram_old(QsimBaseProgram):
         self.sync_all()
 
 
-class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
+class StorageSwapStarkPhaseProgram(FloquetProgram):
     """
     Measure how a Floquet pulse on B shifts the later ds_storage swap on A.
 
@@ -88,6 +88,8 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
     (+Floquet B, -Floquet B) pairs. The final A half-swap phase is advanced by
     ``2 * n_pulse * advance_phase``, so the fitted ``advance_phase`` is the
     compensation per physical Floquet B pulse.
+
+    Named ``SidebandStarkAmplificationModifiedProgram`` until step 10F.
     """
 
     def _play_storage_half_swap(self, stor, phase_deg):
@@ -147,7 +149,7 @@ class SidebandStarkAmplificationModifiedProgram(DarkBaseProgram):
         self.sync_all()
 
 
-class SidebandStarkAmplificationModifiedProgram_newold(DarkBaseProgram):
+class SidebandStarkAmplificationModifiedProgram_newold(FloquetProgram):
     """
     1. Apply pi/2 swap pulse made of floquet pulses on stor_A
     2. Apply another floquet 2pi pulse on stor_B to calibrate the matrix element for. Do this xN times for error amplification

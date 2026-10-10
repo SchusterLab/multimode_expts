@@ -30,23 +30,21 @@
 # 3. **Floquet dataset setup and single-shot readout calibration.** Cells
 #    61-68 of the source, which the map assigns here.
 #
-# Long procedural cells moved to
-# `experiments/qsim/notebook_helpers/multiphoton_calibration.py`. That module's
-# docstring records which source cells each function came from, including four
-# places where the source had copy-paste duplicate cells differing only in a
-# scan width -- coarse/fine frequency and coarse/fine gain -- which are now one
-# function called twice.
+# Each step is defaults -> pre/post hooks -> runner -> `execute` with kwarg
+# overrides, as in the single-qubit autocalibrate notebooks. The fits are the
+# experiments' own `analyze`; the numerics of the multi-job checks are
+# `fitting/qsim/calibration.py`; the N-photon pulse sequences are
+# `experiments/qsim/multiphoton_swap.py` (MBR redesign step 9C).
 #
-# **What deliberately stayed here:** every accept cell. Deciding whether to
-# take a fitted candidate into `ds_storage` or into the `pi_ge_broadband`
-# config after looking at a plot is the scientific choice, so it is still
-# written out cell by cell. None of the helper functions writes to the station.
+# Every accept cell is written out: deciding whether to take a fitted
+# candidate into `ds_storage` or into the `pi_ge_broadband` config after
+# looking at a plot is the scientific choice.
 #
-# Setup is now `experiments/qsim/notebook_helpers/qsim_session.py` (source
-# cells 2-6).
+# The defaults of source cells 2-6 are in
+# `experiments/qsim/notebook_helpers/defaults.py`.
 #
 # Its neighbours: `floquet_calibration.py`, `mbr.py`, `mbr_disorder.py`,
-# `mbr_tomography.py`, `mbr_sff.py`, `floquet_displacement_kerr.py`.
+# `mbr_tomography.py`, `floquet_displacement_kerr.py`.
 
 # %%
 # %load_ext autoreload
@@ -59,34 +57,25 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-# Imported under the names the relocated cells already use, so their bodies
-# did not have to be edited. Definitions are in qsim_session.py.
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+# Imported under the names the relocated cells already use.
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
-from experiments.qsim.notebook_helpers.multiphoton_calibration import (
-    analyze_swap_chevron,
-    broadband_amprabi_preproc,
-    build_swap_pulse_sequences,
-    even_gain_grid,
-    fit_broadband_frequency,
-    broadband_gain_grid,
-    fit_broadband_gain,
-    plot_broadband_rabi_transfer,
-    plot_broadband_validation,
-    plot_iq_endpoints,
-    score_return_error,
-    singleshot_postproc,
-)
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Set by tools/run_qsim_suite.py. Unset: through the queue in the main
+# checkout, directly on this kernel in a worktree (see run_mode.py).
+RUN = run_settings()
+from experiments.qsim.multiphoton_swap import swap_pulse_sequences
+from fitting.qsim import calibration as qsim_cal
 
 # %%
-# The config versions this campaign ran against. A scientific choice, so it
-# stays written down here rather than defaulting inside open_session.
+# The config versions this campaign ran against.
 config_dict = {
     "hardware_config": "CFG-HW-20260904-00019",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -94,16 +83,14 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
+    log_measurements=not RUN.smoke,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
-db = session.db
-config_manager = session.config_manager
+client = JobClient()
 
 # %%
 station.ds_storage.df
@@ -122,7 +109,7 @@ station.ds_storage.df
 
 # %%
 from experiments.qsim.floquet_dark_mode_readout import (
-    DarkBaseExperiment,
+    QsimExperiment,
     BroadbandGeValidationProgram,
 )
 
@@ -167,14 +154,13 @@ if RESET_GE_BROADBAND:
 station.hardware_cfg.device.qubit.pulses.pi_ge_broadband
 
 # %%
-# Define the amplitude-Rabi runner. `broadband_amprabi_preproc` is now in the
-# helper module.
+# Define defaults, smart config preprocessing
 # =====================================
 broadband_amprabi_defaults = AttrDict(dict(
     start=0,
-    step=200,
-    expts=151,       # gain = 0 ... 30000
-    reps=200,
+    step=RUN.pick(200, smoke=1000),
+    expts=RUN.pick(151, smoke=31),       # gain = 0 ... 30000
+    reps=RUN.pick(200, smoke=100),
     rounds=1,
     sigma_test=broadband_sigma,
     qubit=0,
@@ -197,12 +183,20 @@ broadband_amprabi_defaults = AttrDict(dict(
     relax_delay=2500,
 ))
 
+def broadband_amprabi_preproc(station, default_expt_cfg, **kwargs):
+    expt_cfg = deepcopy(default_expt_cfg)
+    expt_cfg.update(kwargs)
+    expt_cfg.qubits = [int(expt_cfg.qubit)]
+    expt_cfg.prepulse = bool(expt_cfg.pre_sweep_pulse)
+    return expt_cfg
+
 broadband_amprabi_runner = CharacterizationRunner(
     station=station,
     ExptClass=meas.AmplitudeRabiExperiment,
     default_expt_cfg=broadband_amprabi_defaults,
     preprocessor=broadband_amprabi_preproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
@@ -228,26 +222,37 @@ for photon_number in photon_numbers:
         sigma_test=broadband_sigma,
         user_defined_freq=[True, broadband_frequency],
         pre_sweep_pulse=prep_gN,
-        show=False,
+        show=True,
         log=True,
     )
-    broadband_rabi_from_g[photon_number].display()
 
     print(f'Running broadband Rabi from |e,{photon_number}>')
     broadband_rabi_from_e[photon_number] = broadband_amprabi_runner.execute(
         sigma_test=broadband_sigma,
         user_defined_freq=[True, broadband_frequency],
         pre_sweep_pulse=prep_eN,
-        show=False,
+        show=True,
         log=True,
     )
-    broadband_rabi_from_e[photon_number].display()
 
 # %%
 # Put every photon number on its own g/e readout axis.
-gain, g_to_e, e_to_g = plot_broadband_rabi_transfer(
-    broadband_rabi_from_g, broadband_rabi_from_e, photon_numbers
-)
+def iq(expt):
+    return np.asarray(expt.data['avgi']) + 1j * np.asarray(expt.data['avgq'])
+
+gain = np.asarray(broadband_rabi_from_g[0].data['xpts'], dtype=float)
+g_to_e, e_to_g = qsim_cal.rabi_transfer([iq(broadband_rabi_from_g[n]) for n in photon_numbers],
+                                        [iq(broadband_rabi_from_e[n]) for n in photon_numbers])
+plt.figure(figsize=(10, 6))
+for row, photon_number in enumerate(photon_numbers):
+    plt.plot(gain, g_to_e[row], label=f'|g,{photon_number}> to e')
+    plt.plot(gain, e_to_g[row], '--', label=f'|e,{photon_number}> to g')
+plt.axhline(1, color='0.7')
+plt.xlabel('gain')
+plt.ylabel('population-transfer coordinate')
+plt.ylim(-0.1, 1.1)
+plt.legend(ncol=2)
+plt.show()
 
 # %%
 # Choose one gain where all eight curves above are near 1.
@@ -292,12 +297,31 @@ broadband_error_amp_defaults = AttrDict(dict(
     pulse_type=['qubit', 'ge_broadband', 'pi', 0.0],
 ))
 
+def broadband_error_amp_preproc(station, default_expt_cfg, **kwargs):
+    """``center`` and ``half_band`` set the sweep. A gain window slides left to
+    stay under `broadband_gain_limit`, with an integer step."""
+    expt_cfg = deepcopy(default_expt_cfg)
+    center = kwargs.pop('center')
+    half_band = kwargs.pop('half_band')
+    expt_cfg.update(kwargs)
+    points = expt_cfg.expts
+    if expt_cfg.parameter_to_test == 'frequency':
+        expt_cfg.start = center - half_band
+        expt_cfg.step = 2 * half_band / (points - 1)
+    else:
+        expt_cfg.start = max(0, min(center - half_band, broadband_gain_limit - 2 * half_band))
+        expt_cfg.step = (2 * half_band) // (points - 1)
+    print(f'{expt_cfg.parameter_to_test} scan: {expt_cfg.start} ... '
+          f'{expt_cfg.start + expt_cfg.step * (points - 1)} (step {expt_cfg.step})')
+    return expt_cfg
+
 broadband_error_amp_runner = CharacterizationRunner(
     station=station,
     ExptClass=ErrorAmplificationExperiment,
     default_expt_cfg=broadband_error_amp_defaults,
+    preprocessor=broadband_error_amp_preproc,
     job_client=client,
-    use_queue=True,
+    use_queue=RUN.use_queue,
     show=False,
 )
 
@@ -305,8 +329,7 @@ broadband_error_amp_runner = CharacterizationRunner(
 # %% [markdown]
 # ### Coarse
 #
-# Source cells 18 and 19. They are the same bodies as the fine pair below,
-# differing only in scan width, so both pairs now call one function each.
+# Source cells 18 and 19; the fine pair below differs only in scan width.
 
 # %%
 bb_freq_center = float(bb.frequency[0])
@@ -315,8 +338,8 @@ bb_freq_points = 51
 
 bb_freq_error_amp = broadband_error_amp_runner.execute(
     parameter_to_test='frequency',
-    start=bb_freq_center - bb_freq_band,
-    step=2 * bb_freq_band / (bb_freq_points - 1),
+    center=bb_freq_center,
+    half_band=bb_freq_band,
     expts=bb_freq_points,
     reps=50,
     n_pulses=10,
@@ -325,27 +348,25 @@ bb_freq_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
-best_frequency, best_frequency_err = fit_broadband_frequency(
-    bb_freq_error_amp, center=bb_freq_center
-)
+
+# %%
+# periodic=False: a frequency scan does not wrap around (docs/qsim/mbr_step9_plan.md, 0.4).
+bb_freq_error_amp.analyze(periodic=False)
+bb_freq_error_amp.display()
+best_frequency = float(bb_freq_error_amp.data['fit_avgi'][2])
+print(f'current broadband frequency: {bb_freq_center:.6f} MHz')
+print(f"N=0 fitted frequency: {best_frequency:.6f} "
+      f"+/- {bb_freq_error_amp.data['fit_prod_avgi_err'][2]:.6f} MHz")
 # Accept the coarse frequency fit.
 bb.frequency[0] = best_frequency
 
 # %%
 bb_gain_center = int(round(float(bb.gain[0])))
-bb_gain_start, bb_gain_stop, bb_gain_step = broadband_gain_grid(
-    current_gain=bb_gain_center,
-    half_band=3000,
-    gain_limit=broadband_gain_limit,
-    points=26,
-)
-print(f'broadband gain scan: {bb_gain_start} ... {bb_gain_stop} '
-      f'(step {bb_gain_step}, limit {broadband_gain_limit})')
 
 bb_gain_error_amp = broadband_error_amp_runner.execute(
     parameter_to_test='gain',
-    start=bb_gain_start,
-    step=bb_gain_step,
+    center=bb_gain_center,
+    half_band=3000,
     expts=26,
     reps=50,
     n_pulses=10,
@@ -356,27 +377,32 @@ bb_gain_error_amp = broadband_error_amp_runner.execute(
     # after the refit; cell 22 logged immediately.
     log=False,
 )
-best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
-    bb_gain_error_amp,
-    current_gain=bb_gain_center,
-    gain_start=bb_gain_start,
-    gain_stop=bb_gain_stop,
-)
+
+# %%
+bb_gain_error_amp.analyze(periodic=False)
+bb_gain_error_amp.display()
+scan = bb_gain_error_amp.cfg.expt
+fitted_gain = float(bb_gain_error_amp.data['fit_avgi'][2])
+best_gain = int(round(np.clip(fitted_gain, scan.start, scan.start + scan.step * (scan.expts - 1))))
+print(f'current broadband gain: {bb_gain_center}')
+print(f"N=0 fitted gain: {fitted_gain:.1f} +/- {bb_gain_error_amp.data['fit_prod_avgi_err'][2]:.1f}")
+print(f'capped integer gain candidate: {best_gain}')
 # Accept the coarse gain fit.
 bb.gain[0] = best_gain
 
 # %% [markdown]
 # ### Fine
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse scan above, narrower.
 bb_freq_center = float(bb.frequency[0])
 bb_freq_band = 1.0
 bb_freq_points = 51
 
 bb_freq_error_amp = broadband_error_amp_runner.execute(
     parameter_to_test='frequency',
-    start=bb_freq_center - bb_freq_band,
-    step=2 * bb_freq_band / (bb_freq_points - 1),
+    center=bb_freq_center,
+    half_band=bb_freq_band,
     expts=bb_freq_points,
     reps=50,
     n_pulses=10,
@@ -385,27 +411,26 @@ bb_freq_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
-best_frequency, best_frequency_err = fit_broadband_frequency(
-    bb_freq_error_amp, center=bb_freq_center
-)
+
+# %% tags=["suite-skip"]
+# periodic=False: a frequency scan does not wrap around (docs/qsim/mbr_step9_plan.md, 0.4).
+bb_freq_error_amp.analyze(periodic=False)
+bb_freq_error_amp.display()
+best_frequency = float(bb_freq_error_amp.data['fit_avgi'][2])
+print(f'current broadband frequency: {bb_freq_center:.6f} MHz')
+print(f"N=0 fitted frequency: {best_frequency:.6f} "
+      f"+/- {bb_freq_error_amp.data['fit_prod_avgi_err'][2]:.6f} MHz")
 # Accept the fine frequency fit.
 bb.frequency[0] = best_frequency
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. A second pass of the coarse scan above, narrower.
 bb_gain_center = int(round(float(bb.gain[0])))
-bb_gain_start, bb_gain_stop, bb_gain_step = broadband_gain_grid(
-    current_gain=bb_gain_center,
-    half_band=1500,
-    gain_limit=broadband_gain_limit,
-    points=26,
-)
-print(f'broadband gain scan: {bb_gain_start} ... {bb_gain_stop} '
-      f'(step {bb_gain_step}, limit {broadband_gain_limit})')
 
 bb_gain_error_amp = broadband_error_amp_runner.execute(
     parameter_to_test='gain',
-    start=bb_gain_start,
-    step=bb_gain_step,
+    center=bb_gain_center,
+    half_band=1500,
     expts=26,
     reps=50,
     n_pulses=10,
@@ -414,12 +439,16 @@ bb_gain_error_amp = broadband_error_amp_runner.execute(
     show=False,
     log=True,
 )
-best_gain, best_gain_err, fitted_gain = fit_broadband_gain(
-    bb_gain_error_amp,
-    current_gain=bb_gain_center,
-    gain_start=bb_gain_start,
-    gain_stop=bb_gain_stop,
-)
+
+# %% tags=["suite-skip"]
+bb_gain_error_amp.analyze(periodic=False)
+bb_gain_error_amp.display()
+scan = bb_gain_error_amp.cfg.expt
+fitted_gain = float(bb_gain_error_amp.data['fit_avgi'][2])
+best_gain = int(round(np.clip(fitted_gain, scan.start, scan.start + scan.step * (scan.expts - 1))))
+print(f'current broadband gain: {bb_gain_center}')
+print(f"N=0 fitted gain: {fitted_gain:.1f} +/- {bb_gain_error_amp.data['fit_prod_avgi_err'][2]:.1f}")
+print(f'capped integer gain candidate: {best_gain}')
 # Accept the fine gain fit.
 bb.gain[0] = best_gain
 
@@ -451,7 +480,6 @@ broadband_validation_defaults = AttrDict(dict(
     pre_relax_delay=0,
     relax_delay=2500,
     normalize=False,
-    perform_wigner=False,
     dedupe_waveforms=True,
     prepulse=False,
     postpulse=False,
@@ -461,23 +489,37 @@ broadband_validation_defaults = AttrDict(dict(
 
 broadband_validation_runner = CharacterizationRunner(
     station=station,
-    ExptClass=DarkBaseExperiment,
+    ExptClass=QsimExperiment,
     ExptProgram=BroadbandGeValidationProgram,
     default_expt_cfg=broadband_validation_defaults,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 # %%
 # Execute and inspect the configured ['qubit', 'ge_broadband', 'pi', phase]
 broadband_validation = broadband_validation_runner.execute(
-    reps=500,
+    reps=RUN.pick(500, smoke=100),
     show=False,
     log=True,
 )
 
-validation_transfer = plot_broadband_validation(
-    broadband_validation, photon_numbers, broadband_validation_cases
-)
+# %%
+validation_transfer = qsim_cal.validation_transfer(
+    np.asarray(broadband_validation.data['avgi']) + 1j * np.asarray(broadband_validation.data['avgq']),
+    len(photon_numbers))
+plt.figure(figsize=(7, 4))
+plt.plot(photon_numbers, validation_transfer[:, 0], 'o-', label='g to e')
+plt.plot(photon_numbers, validation_transfer[:, 1], 'o--', label='e to g')
+plt.axhline(1, color='0.7')
+plt.xlabel('manipulate photon number')
+plt.ylabel('population-transfer coordinate')
+plt.xticks(photon_numbers)
+plt.ylim(-0.1, 1.1)
+plt.legend()
+plt.show()
+for row, photon_number in enumerate(photon_numbers):
+    print(f'N={photon_number}: g->e={validation_transfer[row, 0]:.4f}, e->g={validation_transfer[row, 1]:.4f}')
 
 # %%
 station.update_all_station_snapshots()
@@ -494,16 +536,12 @@ station.update_all_station_snapshots()
 #
 # Choose one storage mode and one photon number. A missing @N row is copied from the legacy N=1 row. For an existing row, list only the fields to reset; leave the tuple empty to preserve it.
 
-# %%
+# %% tags=["hardware-skip"]
 import importlib
 
 from experiments.single_qubit import error_amplification
 from experiments.single_qubit.sideband_general import SidebandGeneralExperiment
 
-# Source cell 30 also re-imported numpy, pyplot, deepcopy, AttrDict, the two
-# runners, MM_dual_rail_base and ChevronFitting. The preamble now covers the
-# first six, and the last two moved into the helper module with the cells that
-# used them (build_swap_pulse_sequences, analyze_swap_chevron).
 importlib.reload(error_amplification)
 ErrorAmplificationExperiment = error_amplification.ErrorAmplificationExperiment
 
@@ -559,10 +597,10 @@ print('pi length:', station.ds_storage.get_pi(multiphoton_swap_pulse_name), 'us'
 #
 # so only an exact return to \( |g,N\rangle \) is marked bright. Lower M1 occupations remain dark instead of being mistaken for a successful return.
 
-# %%
-multiphoton_swap_sequences = build_swap_pulse_sequences(
-    station, multiphoton_swap_photon_number
-)
+# %% tags=["hardware-skip"]
+multiphoton_swap_sequences = swap_pulse_sequences(station, multiphoton_swap_photon_number)
+print('preparation:', *multiphoton_swap_sequences['prep_descriptions'], sep='\n  ')
+print('endpoint decoder:', *multiphoton_swap_sequences['endpoint_decoder_descriptions'], sep='\n  ')
 multiphoton_swap_prep_descriptions = multiphoton_swap_sequences['prep_descriptions']
 multiphoton_swap_extra_prep = multiphoton_swap_sequences['extra_prep']
 multiphoton_swap_endpoint_decoder_descriptions = multiphoton_swap_sequences[
@@ -576,13 +614,13 @@ multiphoton_swap_endpoint_decoder = multiphoton_swap_sequences['endpoint_decoder
 #
 # This is the same SidebandGeneralExperiment and SweepRunner flow used by the ordinary M1-storage calibration. The length sweep includes a true zero-pulse reference.
 
-# %%
+# %% tags=["hardware-skip"]
 chevron_frequency_span_MHz = 0.40
-chevron_frequency_points = 25
-chevron_length_points = 41
+chevron_frequency_points = RUN.pick(25, smoke=7)
+chevron_length_points = RUN.pick(41, smoke=21)
 chevron_length_stop_us = 2.2 * station.ds_storage.get_pi(multiphoton_swap_pulse_name)
 chevron_gain = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
-chevron_reps = 100
+chevron_reps = RUN.pick(100, smoke=50)
 
 chevron_center_MHz = float(station.ds_storage.get_freq(multiphoton_swap_pulse_name))
 chevron_channel = 'low' if chevron_center_MHz < 1800 else 'high'
@@ -617,10 +655,11 @@ multiphoton_swap_chevron_runner = SweepRunner(
     sweep_param='freq',
     postprocessor=None,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_chevron = multiphoton_swap_chevron_runner.execute(
     sweep_start=chevron_center_MHz - chevron_frequency_span_MHz / 2,
     sweep_stop=chevron_center_MHz + chevron_frequency_span_MHz / 2,
@@ -633,21 +672,21 @@ multiphoton_swap_chevron = multiphoton_swap_chevron_runner.execute(
 print('jobs:', multiphoton_swap_chevron_runner.last_job_ids)
 
 
-# %%
-(
-    multiphoton_swap_chevron_analysis,
-    chevron_frequency_candidate_MHz,
-    chevron_pi_candidate_us,
-) = analyze_swap_chevron(
-    multiphoton_swap_chevron, station, multiphoton_swap_pulse_name
-)
+# %% tags=["hardware-skip"]
+multiphoton_swap_chevron.analyze(station=station)
+multiphoton_swap_chevron_analysis = multiphoton_swap_chevron.chevron_analysis
+multiphoton_swap_chevron_analysis.display_results(title=multiphoton_swap_chevron.fname)
+chevron_frequency_candidate_MHz = float(multiphoton_swap_chevron_analysis.results['best_frequency_contrast'])
+chevron_pi_candidate_us = abs(np.pi / multiphoton_swap_chevron_analysis.results['best_fit_params_period']['omega'])
+print('Chevron candidate:', chevron_frequency_candidate_MHz, 'MHz,', chevron_pi_candidate_us, 'us')
+print('Inspect the plot before running the accept cell.')
 
 # %% [markdown]
 # ### Accept the Chevron result
 #
 # Edit the two assignments if the fit selected the wrong branch. This is the first cell that changes the in-memory row.
 
-# %%
+# %% tags=["hardware-skip"]
 selected_frequency_MHz = chevron_frequency_candidate_MHz
 selected_pi_us = chevron_pi_candidate_us
 
@@ -669,9 +708,9 @@ print('accepted Chevron values for', multiphoton_swap_pulse_name)
 #
 # All four scans below -- coarse/fine frequency and coarse/fine gain, source
 # cells 42, 45, 48 and 51 -- are the same `runner.execute` with different
-# settings, and share the scoring in `score_return_error`.
+# settings; `show_return_error` scores each (`qsim_cal.return_error`).
 
-# %%
+# %% tags=["hardware-skip"]
 storage_wait_cycles = int(station.soccfg.us2cycles(multiphoton_swap_storage_wait_us))
 
 multiphoton_swap_error_amp_defaults = AttrDict(dict(
@@ -697,12 +736,55 @@ multiphoton_swap_error_amp_defaults = AttrDict(dict(
     floquet_sync_delay=storage_wait_cycles,
 ))
 
+def multiphoton_swap_error_amp_preproc(station, default_expt_cfg, **kwargs):
+    """``center`` with ``half_span`` sets the sweep (without them, ``start`` and
+    ``step`` are used as given). A gain sweep uses even start/stop (the
+    flat-top program also uses a half-gain register), capped at
+    `multiphoton_swap_gain_limit`; ``expts`` then follows from ``step``."""
+    expt_cfg = deepcopy(default_expt_cfg)
+    center = kwargs.pop('center', None)
+    half_span = kwargs.pop('half_span', None)
+    expt_cfg.update(kwargs)
+    if center is None:
+        return expt_cfg
+    if expt_cfg.parameter_to_test == 'frequency':
+        expt_cfg.start = center - half_span
+        expt_cfg.step = 2 * half_span / (expt_cfg.expts - 1)
+    else:
+        start = max(0, 2 * round((center - half_span) / 2))
+        stop = min(multiphoton_swap_gain_limit, 2 * round((center + half_span) / 2))
+        expt_cfg.start = start
+        expt_cfg.expts = (stop - start) // expt_cfg.step + 1
+    print(f'{expt_cfg.parameter_to_test} sweep: {expt_cfg.start} ... '
+          f'{expt_cfg.start + expt_cfg.step * (expt_cfg.expts - 1)} (step {expt_cfg.step})')
+    return expt_cfg
+
+
+def show_return_error(expt, xlabel, title, as_int=False):
+    """Plot the even-swap return error of a sweep; -> the best point."""
+    x = np.asarray(expt.data['x_pts'], dtype=float)
+    score = qsim_cal.return_error(np.asarray(expt.data['avgi']) + 1j * np.asarray(expt.data['avgq']))
+    candidate = x[np.argmin(score)]
+    candidate = int(candidate) if as_int else float(candidate)
+    plt.figure(figsize=(6, 3.5))
+    plt.plot(x, score, 'o-')
+    plt.axvline(candidate, color='black', linestyle='--')
+    plt.xlabel(xlabel)
+    plt.ylabel('mean return IQ error')
+    plt.title(f'{title}; inspect before accepting')
+    plt.grid()
+    plt.show()
+    print(f'{title} candidate:', candidate)
+    return candidate
+
+
 multiphoton_swap_error_amp_runner = CharacterizationRunner(
     station=station,
     ExptClass=ErrorAmplificationExperiment,
     default_expt_cfg=multiphoton_swap_error_amp_defaults,
+    preprocessor=multiphoton_swap_error_amp_preproc,
     job_client=client,
-    use_queue=True,
+    use_queue=RUN.use_queue,
     show=False,
 )
 
@@ -710,35 +792,33 @@ multiphoton_swap_error_amp_runner = CharacterizationRunner(
 # %% [markdown]
 # ### 4-1. Coarse frequency
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_frequency_center_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
 coarse_frequency_half_span_MHz = 0.10
-coarse_frequency_points = 31
+coarse_frequency_points = RUN.pick(31, smoke=11)
 
 multiphoton_swap_coarse_frequency = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
-    start=coarse_frequency_center_MHz - coarse_frequency_half_span_MHz,
-    step=2 * coarse_frequency_half_span_MHz / (coarse_frequency_points - 1),
+    center=coarse_frequency_center_MHz,
+    half_span=coarse_frequency_half_span_MHz,
     expts=coarse_frequency_points,
     n_start=0,
     n_step=1,
     n_pulses=6,
     reps=75,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
-)
-multiphoton_swap_coarse_frequency.display(fit=False)
-
-_x, _return_error, coarse_frequency_candidate_MHz = score_return_error(
-    multiphoton_swap_coarse_frequency,
-    xlabel='frequency (MHz)',
-    title='coarse frequency',
+    display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["hardware-skip"]
+coarse_frequency_candidate_MHz = show_return_error(
+    multiphoton_swap_coarse_frequency, xlabel='frequency (MHz)', title='coarse frequency')
+
+# %% tags=["hardware-skip"]
 selected_frequency_MHz = coarse_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
 station.ds_storage.update_precision(
@@ -753,42 +833,29 @@ print('accepted coarse frequency:', selected_frequency_MHz)
 #
 # Set an even half-span and step. The last point is capped at 30000 because the flat-top program also uses a half-gain register.
 
-# %%
+# %% tags=["hardware-skip"]
 coarse_gain_center = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
-coarse_gain_start, coarse_gain_stop, coarse_gain_step, coarse_gain_points = (
-    even_gain_grid(
-        center=coarse_gain_center,
-        half_span=2000,
-        step=200,
-        gain_limit=multiphoton_swap_gain_limit,
-    )
-)
-print('coarse gain sweep:', coarse_gain_start, '...', coarse_gain_stop,
-      'step', coarse_gain_step)
 
 multiphoton_swap_coarse_gain = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='gain',
-    start=coarse_gain_start,
-    step=coarse_gain_step,
-    expts=coarse_gain_points,
+    center=coarse_gain_center,
+    half_span=2000,
+    step=RUN.pick(200, smoke=800),
     n_start=0,
     n_step=1,
     n_pulses=6,
     reps=75,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
-)
-multiphoton_swap_coarse_gain.display(fit=False)
-
-_x, _return_error, coarse_gain_candidate = score_return_error(
-    multiphoton_swap_coarse_gain,
-    xlabel='gain',
-    title='coarse gain',
-    as_int=True,
+    display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["hardware-skip"]
+coarse_gain_candidate = show_return_error(
+    multiphoton_swap_coarse_gain, xlabel='gain', title='coarse gain', as_int=True)
+
+# %% tags=["hardware-skip"]
 selected_gain = int(np.clip(coarse_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
 print('accepted coarse gain:', selected_gain)
@@ -797,40 +864,31 @@ print('accepted coarse gain:', selected_gain)
 # %% [markdown]
 # ### 4-3. Fine gain
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 fine_gain_center = station.ds_storage.get_gain(multiphoton_swap_pulse_name)
-fine_gain_start, fine_gain_stop, fine_gain_step, fine_gain_points = even_gain_grid(
-    center=fine_gain_center,
-    half_span=600,
-    step=40,
-    gain_limit=multiphoton_swap_gain_limit,
-)
-print('fine gain sweep:', fine_gain_start, '...', fine_gain_stop,
-      'step', fine_gain_step)
 
 multiphoton_swap_fine_gain = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='gain',
-    start=fine_gain_start,
-    step=fine_gain_step,
-    expts=fine_gain_points,
+    center=fine_gain_center,
+    half_span=600,
+    step=40,
     n_start=0,
     n_step=1,
     n_pulses=10,
     reps=100,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
-)
-multiphoton_swap_fine_gain.display(fit=False)
-
-_x, _return_error, fine_gain_candidate = score_return_error(
-    multiphoton_swap_fine_gain,
-    xlabel='gain',
-    title='fine gain',
-    as_int=True,
+    display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["suite-skip"]
+fine_gain_candidate = show_return_error(
+    multiphoton_swap_fine_gain, xlabel='gain', title='fine gain', as_int=True)
+
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_gain = int(np.clip(fine_gain_candidate, 0, multiphoton_swap_gain_limit))
 station.ds_storage.update_gain(multiphoton_swap_pulse_name, selected_gain)
 print('accepted fine gain:', selected_gain)
@@ -839,7 +897,8 @@ print('accepted fine gain:', selected_gain)
 # %% [markdown]
 # ### 4-4. Fine frequency
 
-# %%
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 fine_frequency_center_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
@@ -848,26 +907,25 @@ fine_frequency_points = 31
 
 multiphoton_swap_fine_frequency = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
-    start=fine_frequency_center_MHz - fine_frequency_half_span_MHz,
-    step=2 * fine_frequency_half_span_MHz / (fine_frequency_points - 1),
+    center=fine_frequency_center_MHz,
+    half_span=fine_frequency_half_span_MHz,
     expts=fine_frequency_points,
     n_start=0,
     n_step=1,
     n_pulses=10,
     reps=100,
     postprocess=False,
-    show=False,
+    show=True,
     log=True,
-)
-multiphoton_swap_fine_frequency.display(fit=False)
-
-_x, _return_error, fine_frequency_candidate_MHz = score_return_error(
-    multiphoton_swap_fine_frequency,
-    xlabel='frequency (MHz)',
-    title='fine frequency',
+    display_kwargs=dict(fit=False),
 )
 
-# %%
+# %% tags=["suite-skip"]
+fine_frequency_candidate_MHz = show_return_error(
+    multiphoton_swap_fine_frequency, xlabel='frequency (MHz)', title='fine frequency')
+
+# %% tags=["suite-skip"]
+# Suite: skipped. The fine pass repeats the coarse scan and its accept step above.
 selected_frequency_MHz = fine_frequency_candidate_MHz
 station.ds_storage.update_freq(multiphoton_swap_pulse_name, selected_frequency_MHz)
 station.ds_storage.update_precision(
@@ -882,7 +940,7 @@ print('accepted fine frequency:', selected_frequency_MHz)
 #
 # The odd check compares zero and one swap: the endpoint marker should change from bright to dark. The even check compares zero and two swaps: the endpoint marker should return to the same IQ point. Together they distinguish coherent transfer from simple photon loss.
 
-# %%
+# %% tags=["hardware-skip"]
 validation_frequency_MHz = float(
     station.ds_storage.get_freq(multiphoton_swap_pulse_name)
 )
@@ -894,7 +952,7 @@ odd_validation_defaults.update(dict(
     start=0.0,
     step=validation_pi_us,
     expts=2,
-    reps=300,
+    reps=RUN.pick(300, smoke=100),
     flux_drive=[
         'low' if validation_frequency_MHz < 1800 else 'high',
         validation_frequency_MHz,
@@ -908,20 +966,36 @@ odd_validation_runner = CharacterizationRunner(
     ExptClass=SidebandGeneralExperiment,
     default_expt_cfg=odd_validation_defaults,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 multiphoton_swap_odd_validation = odd_validation_runner.execute(
     postprocess=False, show=False, log=True
 )
 
-odd_z, odd_separation = plot_iq_endpoints(
+# %% tags=["hardware-skip"]
+def show_iq_endpoints(expt, labels, title):
+    """IQ of a two-point validation; -> (z, |z[1] - z[0]|)."""
+    z = np.asarray(expt.data['avgi']).reshape(-1) + 1j * np.asarray(expt.data['avgq']).reshape(-1)
+    plt.figure(figsize=(5, 4))
+    plt.plot(z.real, z.imag, 'o-')
+    for label, value in zip(labels, z):
+        plt.annotate(label, (value.real, value.imag))
+    plt.xlabel('I')
+    plt.ylabel('Q')
+    plt.title(title)
+    plt.grid()
+    plt.show()
+    return z, abs(z[1] - z[0])
+
+odd_z, odd_separation = show_iq_endpoints(
     multiphoton_swap_odd_validation,
     labels=('zero swaps', 'one swap'),
     title=f'{multiphoton_swap_pulse_name}: odd-swap validation',
 )
 print('zero-to-one-swap IQ separation:', odd_separation)
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     parameter_to_test='frequency',
     start=validation_frequency_MHz,
@@ -930,13 +1004,14 @@ multiphoton_swap_even_validation = multiphoton_swap_error_amp_runner.execute(
     n_start=0,
     n_step=1,
     n_pulses=1,
-    reps=300,
+    reps=RUN.pick(300, smoke=100),
     postprocess=False,
     show=False,
     log=True,
 )
 
-even_z, even_error = plot_iq_endpoints(
+# %% tags=["hardware-skip"]
+even_z, even_error = show_iq_endpoints(
     multiphoton_swap_even_validation,
     labels=('zero swaps', 'two swaps'),
     title=f'{multiphoton_swap_pulse_name}: even-return validation',
@@ -948,7 +1023,7 @@ print('zero-to-two-swap IQ error:', even_error)
 #
 # Run this only after inspecting both validation plots. The production flag stays False until it is changed explicitly in measurement_config_default_dict. After enabling it, rerun the exact-path phase calibration.
 
-# %%
+# %% tags=["hardware-skip"]
 multiphoton_swap_snapshot_id = station.snapshot_man1_storage_swap(update_main=False)
 print('saved non-main ds_storage snapshot:', multiphoton_swap_snapshot_id)
 print('production flag:', measurement_config_default_dict['use_multiphoton_swap'])
@@ -962,8 +1037,9 @@ print('production flag:', measurement_config_default_dict['use_multiphoton_swap'
 
 # %%
 # True reinitializes frequency/gain from ds_storage; False keeps the calibrated dataset.
+# The Floquet pulse is the preloaded flat-top (docs/qsim/mbr_step9_plan.md, 0.3); the
+# synthesized flat-top and Gaussian initializations are in the dormant floquet notebook.
 RESET_FLOQUET_DATASET = True
-WAVEFORM_TO_USE = 'preload_flattop'  # 'gauss' keeps the original Gaussian initialization.
 
 # Requested envelope lengths below are quantized to DAC clocks; the next cell includes sync timing too.
 preload_flat_length_us = 0.037
@@ -971,37 +1047,21 @@ preload_ramp_sigma_us = 0.002
 preload_pi_frac = 40
 
 if RESET_FLOQUET_DATASET:
-    if WAVEFORM_TO_USE == 'gauss':
-        station.ds_floquet.import_from_swap_dataset(
-            station.ds_storage, gain_div=1, pi_div=40)
-        for i in range(7):
-            station.ds_floquet.update_gauss_n_sigma(f"M1-S{i+1}", 4)
-            station.ds_floquet.update_waveform(f"M1-S{i+1}", 'gauss')
-            station.ds_floquet.update_gauss_sigma(f"M1-S{i+1}", 0.02)
-    elif WAVEFORM_TO_USE == 'preload_flattop':
-        station.ds_floquet.import_from_swap_dataset(
-            station.ds_storage, gain_div=1, pi_div=preload_pi_frac)
-        for i in range(7):
-            station.ds_floquet.update_waveform(f"M1-S{i+1}", 'preload_flattop')
-            station.ds_floquet.update_len(f"M1-S{i+1}", preload_flat_length_us)
-            station.ds_floquet.update_ramp_sigma(f"M1-S{i+1}", preload_ramp_sigma_us)
-    else:
-        raise ValueError("WAVEFORM_TO_USE must be 'gauss' or 'preload_flattop'")
-
-# Keep copied experiment defaults consistent; None uses the saved dataset when not resetting.
-floquet_default_dict["floquet_waveform"] = WAVEFORM_TO_USE if RESET_FLOQUET_DATASET else None
+    station.ds_floquet.import_from_swap_dataset(
+        station.ds_storage, gain_div=1, pi_div=preload_pi_frac)
+    for i in range(7):
+        station.ds_floquet.update_waveform(f"M1-S{i+1}", 'preload_flattop')
+        station.ds_floquet.update_len(f"M1-S{i+1}", preload_flat_length_us)
+        station.ds_floquet.update_ramp_sigma(f"M1-S{i+1}", preload_ramp_sigma_us)
 # station.snapshot_floquet_storage_swap(update_main=False)
 
 # %%
-import importlib
-from experiments.qsim import floquet_dark_mode_readout
-importlib.reload(floquet_dark_mode_readout)
+from experiments.floquet_timing import station_floquet_hardware
 
 TROTTER_MODES_IN_USE = [1, 2, 3, 4]  # Use the same modes as the intended scramble.
 # Same DAC-envelope and integer tProc sync timing as the spectroscopy program.
-floquet_timing = floquet_dark_mode_readout.EncodingHamiltonianSpectroscopyExperiment.hardware_parameters(
+floquet_timing = station_floquet_hardware(
     station, TROTTER_MODES_IN_USE, floquet_default_dict['scramble_sync_cycles'],
-    floquet_waveform=floquet_default_dict.get('floquet_waveform'),
 )
 floquet_cycle_us = floquet_timing.floquet_cycle_us
 effective_g_kHz = (1000 * floquet_timing.couplings_MHz).tolist()
@@ -1009,10 +1069,6 @@ print(f"Modes: {TROTTER_MODES_IN_USE}; scheduled Floquet cycle: {floquet_cycle_u
 print("Clock-quantized effective g (kHz):", effective_g_kHz)
 
 # %%
-# Keep the legacy manual adjustment, but do not break the common preload envelope.
-if station.ds_floquet.get_waveform('M1-S6') != 'preload_flattop':
-    station.ds_floquet.update_len('M1-S6', 0.01)
-
 station.ds_floquet.df
 
 
@@ -1020,11 +1076,10 @@ station.ds_floquet.df
 # # Single shot
 
 # %%
-# Defaults and post-measurement readout update. `singleshot_postproc` is now
-# in the helper module.
+# Defaults and post-measurement readout update.
 # =====================================
 singleshot_defaults = AttrDict(dict(
-    reps=5000,
+    reps=RUN.pick(5000, smoke=1000),
     relax_delay=500,
     check_f=False,
     active_reset=False,
@@ -1042,6 +1097,21 @@ singleshot_defaults = AttrDict(dict(
 )) # Shouldn't be modifying this on the fly!
 # You can use kwargs in the run function to override these values
 
+def singleshot_postproc(station, expt):
+    expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
+    print(expt.data['fids'])
+    readout = station.hardware_cfg.device.readout
+    readout.phase = [readout.phase[0] + expt.data['angle']]
+    readout.threshold = expt.data['thresholds']
+    readout.threshold_list = [expt.data['thresholds']]
+    readout.Ie = [np.median(expt.data['Ie_rot'])]
+    readout.Ig = [np.median(expt.data['Ig_rot'])]
+    if expt.cfg.expt.active_reset:
+        readout.confusion_matrix_with_active_reset = expt.data['confusion_matrix']
+    else:
+        readout.confusion_matrix_without_reset = expt.data['confusion_matrix']
+    print('Updated readout!')
+
 # %%
 # Execute
 # =================================
@@ -1051,6 +1121,7 @@ ss_runner = CharacterizationRunner(
     default_expt_cfg = singleshot_defaults,
     postprocessor = singleshot_postproc,
     job_client=client,
+    use_queue=RUN.use_queue,
 )
 
 ss = ss_runner.execute(
@@ -1065,7 +1136,6 @@ ss = ss_runner.execute(
 
 
 )
-ss.display(station)
 
 # %%
 station.update_all_station_snapshots()

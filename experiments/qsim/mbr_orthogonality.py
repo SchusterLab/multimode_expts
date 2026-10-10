@@ -1,81 +1,157 @@
 # -*- coding: utf-8 -*-
-"""Zero-cycle encoder/decoder cross-return matrix ``M[j, i]``.
+"""The matrix M_q[decoder, initial] from ortho columns: MBROrthogonalityExperiment.
 
-Spec sections 7.3/7.4: ``analyze(stage='orthogonality')`` on the god Experiment
-becomes one aggregate Experiment owning its whole triple. The three methods
-below are verbatim slices; ``analyze`` and ``display`` are new and only replace
-the string dispatch with plain calls.
+An assembled class (docs/qsim/mbr_redesign.md, sections 1, 2 and 5): one
+:class:`MBROrthoColumnExperiment` per initial occupation, all at the same
+number of Floquet cycles ``q``. It never goes to the worker itself. At
+``q = 0`` (the default) the matrix is the encoder/decoder overlap: its
+off-diagonal part is the leakage between access paths.
 
-What it measures: how well the encoded states are distinguishable at zero
-Floquet cycles. Rows are decoder occupations, columns are encoder occupations.
-The raw matrix is deliberately not normalized -- ``offdiagonal_normalized_power``
-carries the leakage figure ``|M_ji|^2/(|M_ii||M_jj|)``, and the display shows
-raw and normalized side by side so a small diagonal cannot hide as good
-orthogonality.
+    ortho = MBROrthogonalityExperiment(occupations, swap_stors=[2, 3, 4, 5])
+    ortho.acquire(runner, batch_size=10)   # runner.ExptClass is MBROrthoColumnExperiment
+    ortho.analyze(); ortho.display()
+    ortho.save()                           # manifest YAML + assembled HDF5
 
-Usage -- ``analysis_notebooks/guan/MBR_analysis.py`` is the worked example::
+    ortho = MBROrthogonalityExperiment.from_manifest(path)
 
-    expt = MBROrthogonalityExperiment.from_job_files(paths)
-    expt.analyze()
-    expt.display()
+At ``q > 0`` a ``calibration`` (a saved :class:`MBRCalibrationSetExperiment`)
+supplies each decoder's Stark-shift correction, played on the pulse.
+``MBRHamTomoExperiment`` combines these matrices at q = 0, q, 2q, ...
 
-The base class is still the god Experiment, which holds the loading layer
-(``from_job_files``, ``_quadrature``) until it is extracted. Per spec 7.4 no new
-aggregate base is invented ahead of the duplication that would justify it.
+The matrix arithmetic and the display are carried over from the old
+``MBROrthogonalityExperiment`` (now in ``deprecated/legacy_mbr.py``) without
+changes.
 """
-from copy import deepcopy
-
 import matplotlib.pyplot as plt
 import numpy as np
-
 from slab import AttrDict
-from experiments.qsim.mbr_spectroscopy_program import (
-    NPhotonHamiltonianSpectroscopyProgram,
-)
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-)
+
+from experiments.assembled_data import AssembledExperiment
+from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment
+from experiments.qsim.mbr_saved import saved_parameters
 
 
-class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
-    """Aggregate: the zero-cycle overlap matrix from one column batch."""
+class MBROrthogonalityExperiment(AssembledExperiment):
+    """Ortho columns over the initial occupations, all at one ``q``."""
+
+    child_class = MBROrthoColumnExperiment
+
+    def __init__(self, occupations, swap_stors, cycle=0, calibration=None,
+                 cycle_branches=0, detunings=None, sync_cycles=10, reps=300,
+                 notes=""):
+        """``occupations`` are both the initial and the decoded states, so
+        the matrix is square. ``cycle_branches`` picks the 180 deg/cycle
+        branch of the calibration's correction."""
+        super().__init__(notes=notes)
+        self.occupations = [tuple(int(n) for n in o) for o in occupations]
+        self.swap_stors = [int(stor) for stor in swap_stors]
+        self.cycle = int(cycle)
+        self.calibration = calibration
+        self.cycle_branches = cycle_branches
+        self.detunings = (None if detunings is None
+                          else [float(d) for d in detunings])
+        self.sync_cycles = int(sync_cycles)
+        self.reps = int(reps)
+
+    # -- acquisition ------------------------------------------------------
+
+    def job_overrides(self):
+        """-> one OrthoColumn override dict per initial occupation.
+
+        Each decoder's analyzer correction comes from
+        ``calibration.phase_correction(cycle_branches)``, which needs the
+        calibration set saved, so every job can record where it came from.
+        """
+        if self.calibration is None:
+            phases = {occupation: 0. for occupation in self.occupations}
+            manifest = None
+        else:
+            if self.calibration.manifest_path is None:
+                raise ValueError("save() the calibration set first, so the jobs "
+                                 "can record its manifest path")
+            phases = self.calibration.phase_correction(self.cycle_branches).phase_by_occupation
+            manifest = self.calibration.manifest_path
+        decoder_phases = [phases[occupation] for occupation in self.occupations]
+        return [self.child_class.job_config(
+                    initial, self.occupations, self.swap_stors, cycle=self.cycle,
+                    decoder_phases_deg=decoder_phases, calibration_manifest=manifest,
+                    detunings=self.detunings, sync_cycles=self.sync_cycles,
+                    reps=self.reps)
+                for initial in self.occupations]
 
     @classmethod
-    def reconstruct_orthogonality(cls,
-                                  orthogonality_expts,
-                                  occupations=None):
-        """Reconstruct the zero-cycle encoder-to-decoder cross-return matrix.
+    def from_children(cls, children, job_ids=(), notes="", calibration=None):
+        """Assemble already acquired or loaded OrthoColumn jobs.
 
-        Rows are decoder occupations and columns are encoder occupations. Each
-        encoder job contains outer rows ``(decoder, phi=0/90)`` and inner
-        preparation phases ``theta=0/180``. With the QICK phase convention,
-        ``M[j, i] = Q_0 - i Q_90``. The raw matrix is deliberately not divided
-        by its zero-cycle values because those values are the diagnostic.
+        The occupations are the jobs' decoder list, which must also be the
+        set of their initial occupations. The jobs (and ``job_ids``, if one
+        per job) are put in that order, so job ``i`` is column ``i``.
+        ``calibration`` is the set the jobs were acquired with, if any.
         """
-        first_cfg = orthogonality_expts[0].cfg.expt
-        swap_stors = [int(stor) for stor in first_cfg.swap_stors]
-        decoder_order = [
-            tuple(occupation)
-            for occupation in first_cfg.orthogonality_decoder_occupations
-        ]
-        columns = {}
-        for expt in orthogonality_expts:
-            cfg = expt.cfg.expt
-            encoder = tuple(cfg.spectroscopy_occupations)
-            quadrature = np.asarray(
-                cls._quadrature(expt), dtype=float
-            ).reshape(len(decoder_order), 2)
-            columns[encoder] = quadrature[:, 0] - 1j * quadrature[:, 1]
+        children = list(children)
+        if not children:
+            raise ValueError("an orthogonality matrix needs at least one OrthoColumn job")
+        first = children[0]
+        occupations = first.decoder_occupations
+        swap_stors = [int(stor) for stor in first.cfg.expt.swap_stors]
+        for child in children:
+            if child.decoder_occupations != occupations:
+                raise ValueError(f"{child.initial_occupation}: different decoders")
+            if child.cycle != first.cycle:
+                raise ValueError(f"{child.initial_occupation}: q = {child.cycle}, "
+                                 f"not {first.cycle}")
+            if [int(stor) for stor in child.cfg.expt.swap_stors] != swap_stors:
+                raise ValueError(f"{child.initial_occupation}: different swap modes")
+        initials = [child.initial_occupation for child in children]
+        if len(set(initials)) != len(initials):
+            raise ValueError("each initial occupation must appear once")
+        if set(initials) != set(occupations):
+            raise ValueError("the initial occupations must be the decoded occupations")
 
-        occupation_order = decoder_order if occupations is None else [
-            tuple(occupation) for occupation in occupations
-        ]
+        order = [initials.index(occupation) for occupation in occupations]
+        job_ids = list(job_ids)
+        if len(job_ids) == len(children):
+            job_ids = [job_ids[i] for i in order]
+        ecfg = first.cfg.expt
+        ortho = cls(occupations, swap_stors, cycle=first.cycle, calibration=calibration,
+                    detunings=ecfg.get("detunings", None),
+                    sync_cycles=int(ecfg.get("scramble_sync_cycles", 10)),
+                    reps=int(ecfg.reps), notes=notes)
+        ortho.children = [children[i] for i in order]
+        ortho.job_ids = job_ids
+        ortho._check_children()
+        return ortho
 
-        decoder_indices = [decoder_order.index(occ) for occ in occupation_order]
-        matrix = np.column_stack([
-            columns[occupation][decoder_indices]
-            for occupation in occupation_order
-        ]).astype(complex, copy=False)
+    @classmethod
+    def _from_manifest_kwargs(cls, manifest, path):
+        from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+
+        calibration = manifest.get("calibration_manifest")
+        if not calibration:
+            return {}
+        return dict(calibration=MBRCalibrationSetExperiment.from_manifest(calibration))
+
+    # -- analysis ---------------------------------------------------------
+
+    def analyze(self):
+        """The matrix ``M[j, i]``: rows are decoders, columns initial occupations.
+
+        ``raw_matrix`` is the jobs' returns as acquired. ``matrix`` also
+        applies any correction a converted job left to analysis
+        (``analysis_phase_per_cycle_deg``); for new jobs the two are equal.
+        The raw matrix is deliberately not divided by its diagonal: those
+        values are the diagnostic.
+        """
+        self._check_children()
+        for child in self.children:
+            if "complex_return" not in child.data:
+                child.analyze()
+        raw_matrix = np.column_stack([child.data["complex_return"]
+                                      for child in self.children]).astype(complex)
+        correction = np.column_stack([child.analysis_phase_per_cycle_deg
+                                      for child in self.children])
+        matrix = raw_matrix * np.exp(-1j * np.deg2rad(self.cycle * correction))
+
         amplitude = np.abs(matrix)
         power = amplitude ** 2
         diagonal_amplitude = np.abs(np.diag(matrix))
@@ -86,10 +162,14 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
         np.fill_diagonal(offdiagonal_normalized_power, 0.)
         column_leakage = np.sum(offdiagonal_normalized_power, axis=0)
 
-        return AttrDict(dict(
-            occupations=occupation_order,
-            mode_labels=["M1"] + [f"S{stor}" for stor in swap_stors],
+        saved = saved_parameters(self.children)
+        self.data = AttrDict(dict(
+            occupations=list(self.occupations),
+            mode_labels=saved.mode_labels,
+            cycle=self.cycle,
+            raw_matrix=raw_matrix,
             matrix=matrix,
+            analysis_phase_per_cycle_deg=correction,
             amplitude=amplitude,
             power=power,
             diagonal_amplitude=diagonal_amplitude,
@@ -98,24 +178,22 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
             offdiagonal_normalized_power=offdiagonal_normalized_power,
             column_leakage=column_leakage,
             matrix_orientation="rows=decoder, columns=encoder",
+            hardware=saved.hardware,
         ))
+        return self.data
 
-    def display_orthogonality(self, data=None, figsize=None):
-        """Plot raw cross return and raw/normalized off-diagonal leakage.
+    def display(self, figsize=None):
+        """Raw |M|, raw off-diagonal |M|, and normalized off-diagonal power.
 
         ``figsize`` defaults to a width that grows with the matrix, so a
         larger basis stays legible.
         """
-        data = self.data if data is None else data
-        if "matrix" not in data:
-            raise ValueError(
-                "orthogonality display requires stage='orthogonality' data"
-            )
+        if "matrix" not in self.data:
+            self.analyze()
+        data = self.data
         matrix = np.asarray(data.matrix, dtype=complex)
         labels = [str(tuple(occupation)) for occupation in data.occupations]
         size = len(labels)
-        if matrix.shape != (size, size):
-            raise ValueError("orthogonality matrix and labels have different sizes")
 
         raw_offdiagonal = np.abs(matrix).copy()
         np.fill_diagonal(raw_offdiagonal, 0.)
@@ -127,17 +205,12 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 r"normalized off-diagonal $|M_{j i}|^2/(|M_{ii}||M_{jj}|)$",
             ),
         ]
-        
+
         if figsize is None:
             figsize = (max(16, 1.35 * size + 10), 6)
-        fig, axes = plt.subplots(
-            1, 3, figsize=figsize,
-            constrained_layout=True,
-        )
+        fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
         for axis, (values, title) in zip(axes, panels):
-            image = axis.imshow(
-                values, origin="upper", aspect="equal", cmap="magma", vmin=0.
-            )
+            image = axis.imshow(values, origin="upper", aspect="equal", cmap="magma", vmin=0.)
             axis.set_title(title)
             axis.set_xlabel("encoder occupation i")
             axis.set_ylabel("decoder occupation j")
@@ -151,136 +224,50 @@ class MBROrthogonalityExperiment(EncodingHamiltonianSpectroscopyExperiment):
                     for column in range(size):
                         value = values[row, column]
                         text = "nan" if not np.isfinite(value) else f"{value:.3f}"
-                        axis.text(
-                            column, row, text,
-                            ha="center", va="center", color="cyan", fontsize=8,
-                        )
+                        axis.text(column, row, text,
+                                  ha="center", va="center", color="cyan", fontsize=8)
 
-        finite_offdiagonal = np.asarray(
-            data.offdiagonal_normalized_power, dtype=float).copy()
+        finite_offdiagonal = np.asarray(data.offdiagonal_normalized_power, dtype=float).copy()
         np.fill_diagonal(finite_offdiagonal, np.nan)
-        max_leakage = (
-            float(np.nanmax(finite_offdiagonal))
-            if np.any(np.isfinite(finite_offdiagonal)) else np.nan
-        )
+        max_leakage = (float(np.nanmax(finite_offdiagonal))
+                       if np.any(np.isfinite(finite_offdiagonal)) else np.nan)
         fig.suptitle(
-            "zero-cycle encoder/decoder cross return; "
+            f"q = {self.cycle} encoder/decoder cross return; "
             f"min diagonal |M|={np.min(data.diagonal_amplitude):.3f}; "
             f"max normalized off-diagonal power={max_leakage:.3g}"
         )
         return fig
 
-    @staticmethod
-    def orthogonality_batch(default_expt_cfg,
-                            swap_stors,
-                            occupations,
-                            sync_cycles=10,
-                            reps=300,
-                            correction_mode="final_analyzer"):
-        """
-        Build one zero-cycle job for each encoder occupation.
+    # -- persistence ------------------------------------------------------
 
-        Within that job, measure every decoder occupation at analyzer phases
-        0 and 90 degrees, each with preparation phases 0 and 180 degrees.
-        
-        ``decoder_analyzer_rows`` stores indices. specifically, modulo 2 should
-        give the index for analyzer_phase, where as quotient by 2 gives
-        which occupation index should be ran.
-        """
-        swap_stors = [int(stor) for stor in swap_stors]
-        occupations = [list(occupation) for occupation in occupations]
-        # decoder 0 at 0/90 deg, then decoder 1 at 0/90 deg, and so on.
-        decoder_analyzer_rows = list(range(2 * len(occupations)))
-        defaults = deepcopy(default_expt_cfg)
-        defaults.update(dict(
-            reps=int(reps),
-            storage_reset=swap_stors,
-            swap_stors=swap_stors,
-            detunings=[0.] * len(swap_stors),
-            scramble_sync_cycles=int(sync_cycles),
-            floquet_cycle=0,
-            floquet_hardware_loop=False,
-            update_phases=False,
-            palindrome_scramble=False,
-            spectroscopy_phase_correction_mode=correction_mode,
-            final_analyzer_phase_per_cycle_deg=0.,
-            orthogonality_decoder_occupations=deepcopy(occupations),
-            orthogonality_analyzer_phases=[0., 90.],
-            decoder_analyzer_rows=decoder_analyzer_rows,
-            spectroscopy_prep_phases=[0., 180.],
-            swept_params=[
-                "decoder_analyzer_row",
-                "spectroscopy_prep_phase",
-            ],
-        ))
-        configs = [
-            dict(spectroscopy_occupations=list(occupation))
-            for occupation in occupations
-        ]
-        return AttrDict(dict(
-            default_expt_cfg=defaults,
-            configs=configs,
-            occupations=deepcopy(occupations),
-            points_per_job=4 * len(occupations),
-            total_points=4 * len(occupations) ** 2,
-        ))
+    def calibration_manifest(self):
+        if self.calibration is None:
+            return None
+        return self.calibration.manifest_path
 
-    def analyze(self, data=None, occupations=None):
-        """Reconstruct the cross-return matrix from the loaded columns.
+    def manifest_parameters(self):
+        return dict(occupations=[list(o) for o in self.occupations],
+                    swap_stors=self.swap_stors,
+                    cycle=self.cycle)
 
-        ``occupations`` optionally fixes the row/column order; it defaults to
-        the order recorded in the jobs.
-        """
-        if not hasattr(self, "batch_expts"):
-            return super().analyze(data=data)
-        if data is not None:
-            self.data = data
-        self.data = self.reconstruct_orthogonality(self.batch_expts, occupations)
-        return self.data
+    def assembled_arrays(self):
+        data = self.data
+        return dict(
+            occupations=np.asarray(self.occupations, dtype=int),
+            raw_matrix=data.raw_matrix,
+            matrix=data.matrix,
+            analysis_phase_per_cycle_deg=data.analysis_phase_per_cycle_deg,
+            normalized_power=data.normalized_power,
+            column_leakage=data.column_leakage,
+            couplings_MHz=data.hardware.couplings_MHz,
+        )
 
-    def display(self, data=None, figsize=None):
-        """Raw, raw off-diagonal, and normalized leakage panels."""
-        if not hasattr(self, "batch_expts"):
-            return super().display(data=data)
-        if data is not None:
-            self.data = data
-        return self.display_orthogonality(self.data, figsize=figsize)
-
-
-class EncodingOrthogonalityProgram(
-        NPhotonHamiltonianSpectroscopyProgram):
-    """Measure coherent cross-return amplitudes between encoder paths.
-
-    One job fixes ``spectroscopy_occupations`` (the encoded column). Its outer
-    software sweep packs decoder occupation and analyzer phase into
-    ``decoder_analyzer_row``; the inner sweep is the usual preparation phase
-    ``0/180``. Only zero Floquet cycles are accepted, so this probes the access
-    paths rather than Floquet time evolution.
-    """
-    def initialize(self):
-        ecfg = self.cfg.expt
-        swap_stors = [int(stor) for stor in ecfg.swap_stors]
-        decoder_occupations = [list(occupation) for occupation in ecfg.orthogonality_decoder_occupations]
-        analyzer_phases = ecfg.orthogonality_analyzer_phases
-        decoder_analyzer_row = int(ecfg.decoder_analyzer_row)
-        decoder_index = decoder_analyzer_row // 2
-        analyzer_phase_index = decoder_analyzer_row % 2
-        decoder_occupation = decoder_occupations[decoder_index]
-        ecfg.spectroscopy_analyzer_phase = float(
-            analyzer_phases[analyzer_phase_index])
-        ecfg.spectroscopy_phase_correction_mode = "final_analyzer"
-        ecfg.final_analyzer_phase_per_cycle_deg = 0.
-        ecfg.floquet_cycle = 0
-        ecfg.spectroscopy_final_occupations = decoder_occupation
-
-        super().initialize()
-
-    def _get_inverse_pulses(self, _):
-        """
-        Overrides ``_get_inverse_pulses`` in the parent ``NPhotonHamiltonianSpectroscopyProgram``
-        for a given decoder_occupation
-
-        """
-
-        # Parent body asks for inverse(encoder); use the selected decoder here.
-        return super()._get_inverse_pulses(self.decoder_encoder_pulses)
+    def assembled_attrs(self):
+        data = self.data
+        return dict(
+            cycle=int(self.cycle),
+            matrix_orientation=str(data.matrix_orientation),
+            floquet_cycle_us=float(data.hardware.floquet_cycle_us),
+            hardware_source=str(data.hardware.source),
+            mode_labels=list(data.mode_labels),
+        )

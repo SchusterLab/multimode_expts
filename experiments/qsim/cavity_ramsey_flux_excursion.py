@@ -13,12 +13,12 @@ from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.kerr import KerrCavityRamseyExperiment, KerrEngBaseProgram
-from experiments.qsim.qsim_base import QsimBaseExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 from fitting.fit_display_classes import CavityRamseyGainSweepFitting
 
 
 class CavityRamseyKerrFitExperiment(KerrCavityRamseyExperiment, 
-                                    QsimBaseExperiment):
+                                    QsimExperiment):
     
     
 

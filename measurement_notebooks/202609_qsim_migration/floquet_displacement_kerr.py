@@ -23,15 +23,15 @@
 # The section already had the shape stage 2 asks for -- a defaults dict, a
 # `CharacterizationRunner`, one `execute()`, then `analyze()`/`display()` -- so
 # nothing needed wrapping and it defines no helpers. Only the setup preamble
-# changed: cells 2-6 are now
-# `experiments/qsim/notebook_helpers/qsim_session.py`.
+# changed: the defaults of cells 2-6 are now
+# `experiments/qsim/notebook_helpers/defaults.py`.
 #
 # The library side is `experiments/qsim/floquet_displacement_kerr.py` and
 # `FloquetDisplacementKerrExperiment` in
 # `experiments/qsim/floquet_dark_mode_readout.py`.
 #
 # Its neighbours: `multiphoton_calibration.py`, `floquet_calibration.py`,
-# `mbr.py`, `mbr_disorder.py`, `mbr_tomography.py`, `mbr_sff.py`.
+# `mbr.py`, `mbr_disorder.py`, `mbr_tomography.py`.
 # %%
 # %load_ext autoreload
 # %autoreload 2
@@ -43,20 +43,23 @@ from copy import deepcopy
 
 import experiments as meas
 from slab import AttrDict
-from experiments import CharacterizationRunner, SweepRunner
+from experiments import CharacterizationRunner, SweepRunner, MultimodeStation
 
-# Imported under the names the relocated cells already use, so their bodies
-# did not have to be edited. Definitions are in qsim_session.py.
-from experiments.qsim.notebook_helpers.qsim_session import (
-    open_session,
+from job_server import JobClient
+# Imported under the names the relocated cells already use.
+from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS as active_reset_default_dict,
     FLOQUET_DEFAULTS as floquet_default_dict,
     MEASUREMENT_CONFIG_DEFAULTS as measurement_config_default_dict,
 )
+from experiments.qsim.notebook_helpers.run_mode import run_settings
+
+# Set by tools/run_qsim_suite.py. Unset: through the queue in the main
+# checkout, directly on this kernel in a worktree (see run_mode.py).
+RUN = run_settings()
 
 # %%
-# The config versions this campaign ran against. A scientific choice, so it
-# stays written down here rather than defaulting inside open_session.
+# The config versions this campaign ran against.
 config_dict = {
     "hardware_config": "CFG-HW-20260904-00019",
     "multiphoton_config": "CFG-MP-20260121-00001",
@@ -64,16 +67,14 @@ config_dict = {
     "floquet_storage_swap": "CFG-FL-20260904-00042",
 }
 
-session = open_session(
+station = MultimodeStation(
     user="jonginn",
     experiment_name="260818_qsim_spectroscopy",
     project="EncSpec",
-    config_dict=config_dict,
+    log_measurements=not RUN.smoke,
+    **RUN.station_configs(config_dict),
 )
-station = session.station
-client = session.client
-db = session.db
-config_manager = session.config_manager
+client = JobClient()
 
 # %% [markdown]
 # # Floquet-pulse Kerr from coherent displacement
@@ -89,18 +90,19 @@ importlib.reload(floquet_dark_mode_readout)
 
 DispKerr = floquet_dark_mode_readout.FloquetDisplacementKerrExperiment
 floquet_kerr_modes = [4, 5, 6, 7]
-floquet_kerr_cycle_pairs = np.arange(0, 31, dtype=int)
-floquet_kerr_displace_gains = np.arange(2000, 6001, 1000)
+floquet_kerr_cycle_pairs = np.arange(0, 31, RUN.pick(1, smoke=3), dtype=int)
+floquet_kerr_displace_gains = np.arange(2000, 6001, RUN.pick(1000, smoke=2000))
 floquet_kerr_ramsey_freq = 0.2  # MHz; keep below 1 / (4 * floquet_kerr_cycle_us)
 
 floquet_kerr_defaults = AttrDict(dict(
     expts=1,
     rounds=1,
-    reps=500,
+    reps=RUN.pick(500, smoke=100),
     qubits=[0],
     active_reset=True,
     man_reset=True,
-    storage_reset=floquet_kerr_modes,
+    # Not mode 6: its M1-S6 row in CFG-M1-20260904-00014 has no pi time.
+    storage_reset=[4, 5, 7],
     pre_relax_delay=100,
     relax_delay=200,
     reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
@@ -113,7 +115,6 @@ floquet_kerr_defaults = AttrDict(dict(
     update_phases=True,
     zero_floquet_gain=False,
     man_mode_no=1,
-    perform_wigner=False,
     do_g_and_e=False,
     ramsey_freq=floquet_kerr_ramsey_freq,
     displace_gains=floquet_kerr_displace_gains,
@@ -127,6 +128,7 @@ floquet_kerr_runner = CharacterizationRunner(
     ExptProgram=floquet_dark_mode_readout.FloquetDisplacementKerrProgram,
     default_expt_cfg=floquet_kerr_defaults,
     job_client=client,
+    use_queue=RUN.use_queue,
     show=False,
 )
 

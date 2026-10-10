@@ -176,7 +176,7 @@ from fitting.fit_display_classes import AmplitudeRabiFitting
 
         # self.sync_all(self.us2cycles(20))
         
-class ActiveResetVerificationProgram(QsimBaseProgram):
+class ActiveResetVerificationProgram(QsimProgram):
     def initialize(self):
         """
         MM_base_init to pull basic info 
@@ -201,7 +201,7 @@ class ActiveResetVerificationProgram(QsimBaseProgram):
                 'waveform': self.m1s_wf_name[stor],
         } for stor in range(7)]
 
-        if self.cfg.expt.perform_wigner:
+        if readout_mode(self.cfg.expt) == "wigner":
             self.displace_man(setup=True, play=False)
 
         self.sync_all(200)
@@ -219,7 +219,7 @@ class ActiveResetVerificationProgram(QsimBaseProgram):
         # self.custom_pulse(AttrDict(self.cfg), pulse2.pulse, prefix = 'prep_man_1_f0g1')
         # self.sync_all()
         
-class Qsimf0g1Sepctroscopy(QsimBaseProgram):
+class Qsimf0g1Sepctroscopy(QsimProgram):
     def initialize(self):
         super().initialize()
         # flux line modulation
@@ -265,7 +265,7 @@ class Qsimf0g1Sepctroscopy(QsimBaseProgram):
 ####################################################################################################################################################
 
 import fitting.fitting as fitter
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 
 
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram

@@ -2,10 +2,10 @@
 
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
 
 
-class ManF0g1FluxExcursionRamseyProgram(QsimBaseProgram):
+class ManF0g1FluxExcursionRamseyProgram(QsimProgram):
     """
     Probe f0/g1 relative phase accumulated during a flux excursion.
 

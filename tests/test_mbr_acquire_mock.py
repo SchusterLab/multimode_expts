@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Build, compile and acquire every MBR stage in mock mode.
+"""Build, compile and acquire every MBR job class in mock mode.
 
 Why this exists
 ---------------
@@ -34,16 +34,22 @@ Everything needed is committed: the config sets live in
 ``configs/soccfg_snapshot.json``. Unlike the golden-baseline tests, this one
 needs no measurement data, so it runs anywhere.
 """
+import json
+import shutil
+from pathlib import Path
+
+import h5py
 import numpy as np
 import pytest
 
+from experiments.floquet_timing import resolve_floquet_timing
+from experiments.saved_jobs import load_job
 from experiments.qsim.mbr_campaign import (
-    STAGES,
     mbr_defaults,
     mock_station,
     pinned_config_set,
     pinned_sets,
-    run_stage,
+    smoke,
 )
 
 CONFIG_SETS = sorted(pinned_sets())
@@ -53,14 +59,9 @@ CONFIG_SETS = sorted(pinned_sets())
 OCCUPATIONS = [[0, 0, 0, 0, 3], [1, 0, 0, 0, 2]]
 SWAP_STORS = [1, 2, 3, 4]
 
-# Jobs each stage builds from OCCUPATIONS. Pinned so a stage silently
-# collapsing to zero jobs fails instead of passing vacuously.
-EXPECTED_JOBS = {
-    "calibration": 4,
-    "spectrum": 4,
-    "propagator": 2,
-    "orthogonality": 2,
-}
+# The products smoke() acquires, one job per occupation each. Pinned so a
+# product silently collapsing to zero jobs fails instead of passing vacuously.
+PRODUCTS = ["ortho_column_q0", "ortho_column_q4", "stark_cal", "time_trace"]
 
 
 @pytest.fixture(scope="module", params=CONFIG_SETS)
@@ -69,25 +70,28 @@ def station(request):
     return request.param, mock_station(**pinned_config_set(request.param))
 
 
-@pytest.mark.parametrize("stage", sorted(STAGES))
-def test_stage_acquires(station, stage):
-    """Every stage builds, compiles and acquires at negligible depth."""
-    set_name, st = station
+@pytest.fixture(scope="module")
+def products(station):
+    """Every MBR product, acquired once per config set."""
+    _, st = station
     assert st.is_mock, "refusing to acquire against real instruments"
+    return smoke(st, SWAP_STORS, OCCUPATIONS, reps=10)
 
-    defaults = mbr_defaults(SWAP_STORS, reps=10)
-    acquired = run_stage(st, stage, defaults, SWAP_STORS, OCCUPATIONS, reps=10)
 
-    assert len(acquired) == EXPECTED_JOBS[stage], (
-        f"{stage} on {set_name} built {len(acquired)} jobs, "
-        f"expected {EXPECTED_JOBS[stage]}"
-    )
+@pytest.mark.parametrize("name", PRODUCTS)
+def test_product_acquires(station, products, name):
+    """Every job class builds, compiles and acquires at negligible depth."""
+    set_name, _ = station
+    assert sorted(products) == PRODUCTS
+    acquired = products[name].children
+    assert len(acquired) == len(OCCUPATIONS), (
+        f"{name} on {set_name} built {len(acquired)} jobs, expected {len(OCCUPATIONS)}")
     for expt in acquired:
         for field in ("avgi", "avgq", "amps", "phases"):
-            assert field in expt.data, f"{stage}: {field} missing from acquired data"
+            assert field in expt.data, f"{name}: {field} missing from acquired data"
 
 
-def test_waveform_mode_follows_the_dataset(station):
+def test_waveform_mode_follows_the_dataset(station, products):
     """The envelope comes from the swap dataset, not from a config default.
 
     The regression this pins: ``m1s_wf_name`` naming a preload_flattop mode
@@ -96,11 +100,8 @@ def test_waveform_mode_follows_the_dataset(station):
     top -- most of its samples sit at the plateau, which is false for a
     gaussian.
     """
-    set_name, st = station
-    defaults = mbr_defaults(SWAP_STORS, reps=10)
-    acquired = run_stage(st, "propagator", defaults, SWAP_STORS, OCCUPATIONS,
-                         reps=10)
-    prog = acquired[0].prog
+    set_name, _ = station
+    prog = products["ortho_column_q4"].children[0].prog
 
     expected = {"august_n3": "gauss", "preload_current": "preload_flattop"}[set_name]
     modes = [prog.m1s_waveform_mode[stor - 1] for stor in SWAP_STORS]
@@ -131,115 +132,136 @@ def test_waveform_mode_follows_the_dataset(station):
 def test_program_is_not_driven_directly():
     """Instantiating a Program instead of an Experiment fails, as documented.
 
-    Pins the reason ``run_stage`` goes through ``Experiment.acquire``: the
+    Pins the reason jobs go through ``Experiment.acquire``: the
     plural-to-singular sweep expansion lives there, so a Program built from a
-    stage config alone is missing the key its body reads. Worth a test because
+    job config alone is missing the keys its body reads. Worth a test because
     the failure is an opaque AttributeError that has cost time more than once.
     """
     from copy import deepcopy
 
     from slab import AttrDict
 
-    from experiments.qsim import floquet_dark_mode_readout as fdmr
-    from experiments.qsim.mbr_campaign import build_stage
+    from experiments.qsim.mbr_ortho_column import (
+        MBROrthoColumnExperiment,
+        MBROrthoColumnProgram,
+    )
 
     st = mock_station(**pinned_config_set("preload_current"))
-    defaults = mbr_defaults(SWAP_STORS, reps=10)
-    _, program, batch = build_stage(
-        "propagator", defaults, SWAP_STORS, OCCUPATIONS, reps=10)
-
     cfg = AttrDict(deepcopy(st.hardware_cfg))
-    cfg.expt = AttrDict(deepcopy(batch.default_expt_cfg))
-    cfg.expt.update(batch.configs[0])
-    assert "cycle_decoder_analyzers" in cfg.expt
-    assert "cycle_decoder_analyzer" not in cfg.expt
+    cfg.expt = AttrDict(mbr_defaults(SWAP_STORS, reps=10))
+    cfg.expt.update(MBROrthoColumnExperiment.job_config(
+        OCCUPATIONS[0], OCCUPATIONS, SWAP_STORS, cycle=4))
+    assert "ramsey_phases" in cfg.expt and "decoder_occupations" in cfg.expt
+    assert "ramsey_phase" not in cfg.expt and "decoder_occupation" not in cfg.expt
 
-    with pytest.raises(AttributeError, match="cycle_decoder_analyzer"):
-        program(soccfg=st.soccfg, cfg=cfg)
-
-    assert program is fdmr.EncodingPropagatorProgram
+    with pytest.raises(AttributeError, match="ramsey_phase"):
+        MBROrthoColumnProgram(soccfg=st.soccfg, cfg=cfg)
 
 
 # --------------------------------------------------------------------------
-# Disorder SFF. Ported from main in its own module; see experiments/qsim/mbr_sff.py.
-# Jonginn marked its mixins "NOT PERUSED", and these tests treat it that way:
-# they pin what it does today rather than asserting it is right.
+# The derived-parameter provenance attribute
 # --------------------------------------------------------------------------
-
-SFF_SWAP_STORS = [1, 2, 3]
-# The complete N=1 basis over M1 plus three storage modes, so Tr(U)/D is a sum
-# over a real basis rather than an arbitrary subset.
-SFF_OCCUPATIONS = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-
-
-def _sff_plan(detunings):
-    from experiments.qsim.mbr_sff import DisorderSFFExperiment
-
-    defaults = mbr_defaults(SFF_SWAP_STORS, reps=10)
-    return DisorderSFFExperiment.batch(
-        defaults, SFF_SWAP_STORS, SFF_OCCUPATIONS, [0, 1, 2],
-        phase_by_occupation={tuple(o): 0.0 for o in SFF_OCCUPATIONS},
-        realization_detunings_MHz=detunings,
-        sync_cycles=10,          # the module floors this at 10 for register setup
-        shots_per_replica=1, visibility_reps=10, realizations_per_job=1)
+#
+# The Floquet cycle time and couplings are the one thing saved data cannot
+# otherwise carry: they existed only on the compiled program, which lives in
+# the job pickle, and pickles are ephemeral. Acquisition now records them in
+# the HDF5 `derived_params` attribute -- beside `config`, not inside it,
+# because `cfg.expt` is the input a notebook overrides by hand and this is
+# generated output.
+#
+# These two tests are the pair that matters: the value is written where the
+# reader looks, and it agrees with the independent way of recovering it.
 
 
-def _acquire_sff(station, plan):
+def _acquire_one(station, tmp_path):
+    """-> one acquired time-trace job, saved under `tmp_path`.
+
+    The mock station's own output root is shared (`C:/experiments/mock_data`
+    on the prod PC, `<repo>/.tmp/mock_data` elsewhere), so point the file
+    somewhere the test can read and save it again.
+    """
+    products = smoke(station, SWAP_STORS, OCCUPATIONS[:1], reps=10)
+    expt = products["time_trace"].children[0]
+    expt.fname = str(tmp_path / "JOB-19990101-00001_MBRTimeTraceExperiment.h5")
+    expt.save_data(expt.data)
+    return expt
+
+
+def test_saved_h5_carries_the_derived_timing(station, tmp_path):
+    """Acquisition writes the timing, and analysis reads it back with no sidecar.
+
+    The round trip is the point. `provenance={}` below means the loader has no
+    sidecar entry to fall back on, so the only way it can answer is the
+    attribute the save path just wrote.
+    """
+    _, st = station
+    assert st.is_mock, "refusing to acquire against real instruments"
+
+    expt = _acquire_one(st, tmp_path)
+    expected = expt.derived_params()
+    assert expected["floquet_cycle_us"] > 0.
+    assert len(expected["m1s_pi_fracs"]) == 7
+    assert len(expected["couplings_MHz"]) == 7
+
+    with h5py.File(expt.fname, "r") as handle:
+        assert "derived_params" in handle.attrs, sorted(handle.attrs)
+        # Still beside `config`, never inside it: a derived value in cfg.expt
+        # would be indistinguishable from a hand-set input.
+        assert "config" in handle.attrs
+        recorded = json.loads(handle.attrs["derived_params"])
+        cfg = json.loads(handle.attrs["config"])
+    assert recorded == expected
+    assert "floquet_cycle_us" not in cfg["expt"]
+
+    job = load_job("JOB-19990101-00001", path=expt.fname, provenance={})
+    assert job.prog.calculate_floquet_cycle_us() == expected["floquet_cycle_us"]
+    assert job.prog.m1s_pi_fracs == expected["m1s_pi_fracs"]
+    assert "derived_params" in job.prog.source
+
+
+def test_recorded_timing_agrees_with_the_archive_resolver(station, tmp_path):
+    """The two ways of recovering the timing give the same number.
+
+    One reads what acquisition recorded; the other recomputes it from the
+    versioned swap CSV (`resolve_floquet_timing`, the path used for files
+    written before the attribute existed). If these ever disagree, then files
+    with and without the attribute would analyze differently, and the
+    attribute would have made old and new data incomparable.
+    """
+    set_name, st = station
+    expt = _acquire_one(st, tmp_path)
+    recorded = expt.derived_params()
+
+    # The resolver wants an archive laid out as {root}/floquet_storage_swap/,
+    # while the pinned sets are a flat directory. Build the shape it expects,
+    # still entirely from committed files -- no mount, per this module's note.
+    csv = Path(pinned_config_set(set_name)["floquet_file"])
+    archive = tmp_path / "archive"
+    (archive / "floquet_storage_swap").mkdir(parents=True)
+    shutil.copy2(csv, archive / "floquet_storage_swap" / csv.name)
+
+    resolved = resolve_floquet_timing(expt.cfg, csv.stem, archive=archive)
+
+    assert resolved["floquet_cycle_us"] == pytest.approx(
+        recorded["floquet_cycle_us"], rel=1e-12), set_name
+    assert list(resolved["m1s_pi_fracs"]) == list(recorded["m1s_pi_fracs"])
+
+
+@pytest.mark.parametrize("override", [
+    {"spectroscopy_phase_correction_mode": "decoder"},
+    {"decoder_phase_matrix": np.zeros((5, 4)).tolist()},
+    {"storage_phase_matrix": np.zeros((4, 4)).tolist()},
+])
+def test_removed_phase_corrections_are_refused(products, override):
+    """Step 8A4 removed the per-pulse 'decoder' correction and its matrices.
+
+    A config that still carries one must fail to compile, not compile a
+    program that silently ignores the correction it asks for.
+    """
     from copy import deepcopy
 
-    from slab import AttrDict
-
-    from experiments.qsim.mbr_sff import DisorderSFFExperiment
-
-    out = []
-    for override in plan.configs:
-        expt = DisorderSFFExperiment(
-            soccfg=station.soccfg, path=station.data_path, prefix="mock_sff",
-            config_file=station.hardware_config_file, program=plan.program)
-        expt.cfg = AttrDict(deepcopy(station.hardware_cfg))
-        expt.cfg.expt = AttrDict(deepcopy(plan.default_expt_cfg))
-        expt.cfg.expt.update(override)
-        expt.im = station.im
-        expt.acquire(progress=False)
-        out.append(expt)
-    return out
-
-
-def test_sff_acquires_with_positive_detunings():
-    """Both SFF job kinds build, compile and acquire.
-
-    The RAverager depth-sweep path is separate machinery from the fixed-depth
-    spectroscopy programs above -- its own register allocation and counted
-    Floquet loop -- so it needs its own coverage.
-    """
-    st = mock_station(**pinned_config_set("preload_current"))
-    plan = _sff_plan([[0.05, 0.03, 0.04], [0.02, 0.06, 0.01]])
-    acquired = _acquire_sff(st, plan)
-
-    assert len(acquired) == len(plan.configs) == 3
-    kinds = [e.cfg.expt.sff_job_kind for e in acquired]
-    assert kinds.count("visibility") == 1, "expected one visibility job"
-    assert kinds.count("disorder") == 2, "expected two disorder jobs"
-
-
-def test_sff_rejects_negative_detunings():
-    """Documents a real limitation, deliberately not fixed here.
-
-    ``_setup_phase_updated_by_depth`` guards its ``mathi`` immediate with
-    ``0 <= deg2reg(phase_change) < 2**31``. ``deg2reg`` wraps a negative angle
-    to near ``2**32`` -- ``deg2reg(-0.5)`` is 4289002064 -- so *every* negative
-    phase change per depth trips the guard. The comment directly above it says
-    the opposite: that negative phase changes are represented by their wrapped
-    positive value and repeated ``mathi`` additions still evolve correctly.
-
-    This matters because a disorder ensemble is naturally zero-mean, so about
-    half of every realization's detunings are negative and raise. Whether the
-    bound should be ``2**32`` depends on the tProc ``mathi`` immediate width,
-    which is jonginn's call -- hence a test that pins the behaviour and
-    explains it, rather than a guess at a fix.
-    """
-    st = mock_station(**pinned_config_set("preload_current"))
-    plan = _sff_plan([[-0.05, 0.03, 0.04], [0.02, 0.06, 0.01]])
-
-    with pytest.raises(RuntimeError, match="does not fit mathi"):
-        _acquire_sff(st, plan)
+    expt = products["time_trace"].children[0]
+    cfg = deepcopy(expt.cfg)
+    cfg.expt.update(override)
+    with pytest.raises(ValueError, match="decoder|no longer used"):
+        expt.ProgramClass(soccfg=expt.soccfg, cfg=cfg)

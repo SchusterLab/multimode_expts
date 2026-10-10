@@ -428,9 +428,18 @@ def analyze_level_statistics(data,
 
 
 def analyze_sff(data, row_normalize=True):
-    """
-    Analyzes SFF based. Should be run after running `analyze_spectrum`.
-    This dependency can be lifted in fugure. 
+    """Spectral form factor, measured and from theory.
+
+    On a complete fixed-N basis the diagonal returns sum to the trace of the
+    propagator, Z(t) = sum_n A_n(t) = Tr U(t) = sum_k exp(-2 pi i E_k t). So the
+    SFF |Z(t) / D|^2 comes directly from the data (the spectrum is the FFT of
+    the same returns). ``SFF_theory`` is the same sum over the theory levels.
+    ``row_normalize`` first divides each row by its t = 0 value.
+    ``plateau_reference`` is the late-time value for the theory degeneracies:
+    the number of ordered level pairs (k, l) with E_k = E_l, k = l included,
+    divided by D^2.
+
+    ``data`` is an analyzed spectrum (``reconstruction`` and ``spectrum``).
     """
     if "reconstruction" not in data or "spectrum" not in data:
         raise ValueError("SFF analysis requires analyzed spectroscopy data")

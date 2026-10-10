@@ -32,14 +32,14 @@ stages. Treat a change here as unverified.
 import numpy as np
 from slab import AttrDict
 
-from experiments.qsim.dark_base import DarkBaseProgram
+from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.floquet_dark_mode_readout import (
-    SidebandScrambleDarkProgramNewNew,
+    DarkModeScrambleProgram,
 )
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 
-class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
+class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkModeProgram):
     # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
     # so super().core_pulses() plays the scrambling pulses, while the dark-mode
     # helpers (_read_dark_mode, _accumulate_scramble_phases, man_reset, ...) are
@@ -72,7 +72,7 @@ class SidebandScrambleDarkProgramNew(SidebandScrambleProgram, DarkBaseProgram):
             self._read_large_dark(phase_offsets)
 
 
-class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
+class ManStorScrambleProgram(SidebandScrambleProgram, DarkModeProgram):
     # MRO: this -> SidebandScrambleProgram -> DarkBaseProgram -> QsimBaseProgram
     # so super().core_pulses() plays the scrambling pulses, while the dark-mode
     # helpers (_read_dark_mode, _accumulate_scramble_phases, man_reset, ...) are
@@ -97,7 +97,7 @@ class ManStorScrambleProgram(SidebandScrambleProgram, DarkBaseProgram):
 
 
 
-class SidebandScrambleDarkProgramDebug(SidebandScrambleDarkProgramNewNew):
+class SidebandScrambleDarkProgramDebug(DarkModeScrambleProgram):
     # Debug variant for repeated load/readout checks.
 
     def _prepare_selected_dark_mode(
@@ -162,7 +162,7 @@ class SidebandScrambleDarkProgramDebug(SidebandScrambleDarkProgramNewNew):
 
 
 
-class KerrWaitProgramDark(DarkBaseProgram):
+class KerrWaitProgramDark(DarkModeProgram):
     def core_pulses(self):
         # print("Adding man-dump pulse")
         # self.man_reset(man_idx=1, dump_mode_idx=2, chi_dressed=True)

@@ -9,6 +9,7 @@ env that has the repo on disk + numpy.
 """
 
 import inspect
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -243,16 +244,18 @@ def test_write_snapshot_if_changed_semantics(tmp_path, monkeypatch):
     assert s.write_soccfg_snapshot_if_changed(FakeCfg('{"a": 2}')) is True
 
 
-def test_resolve_mock_soccfg_offprod_uses_snapshot_no_proxy(monkeypatch):
-    """Off-prod-PC, mock soccfg must come from the snapshot without any proxy
-    contact (a proxy attempt off-prod would only hang and time out)."""
+@pytest.mark.parametrize("on_prod", [False, True])
+def test_resolve_mock_soccfg_uses_snapshot_no_proxy(monkeypatch, on_prod):
+    """Mock soccfg must come from the snapshot without any proxy contact, on
+    the prod PC too: the board may run other firmware, and mock must not
+    touch it."""
     import experiments.station as s
     if not s.SOCCFG_SNAPSHOT_PATH.exists():
         pytest.skip("no committed soccfg snapshot in this checkout")
-    monkeypatch.setattr(s, "is_production_pc", lambda: False)
+    monkeypatch.setattr(s, "is_production_pc", lambda: on_prod)
     # Detonate if anything tries to reach the proxy.
     def _boom(*a, **k):
-        raise AssertionError("off-prod path must not construct InstrumentManager")
+        raise AssertionError("mock soccfg must not construct InstrumentManager")
     monkeypatch.setattr(s, "InstrumentManager", _boom)
 
     inst = s.MultimodeStation.__new__(s.MultimodeStation)
@@ -301,3 +304,60 @@ def test_runner_helpers_short_circuit_log_in_mock():
         src = inspect.getsource(getattr(cls, meth))
         assert "is_mock" in src
         assert "mock mode active" in src
+
+
+@pytest.mark.parametrize("method, version_id", [
+    ("snapshot_hardware_config", "CFG-HW-MOCK"),
+    ("snapshot_multiphoton_config", "CFG-MP-MOCK"),
+    ("snapshot_man1_storage_swap", "CFG-M1-MOCK"),
+    ("snapshot_floquet_storage_swap", "CFG-FL-MOCK"),
+])
+def test_mock_station_never_writes_config_snapshots(monkeypatch, method, version_id):
+    """Mock configs hold values fitted from zero data; keep them out of the store."""
+    import experiments.station as s
+
+    def _boom(*a, **k):
+        raise AssertionError("a mock snapshot must not open the version database")
+    monkeypatch.setattr(s, "get_database", _boom)
+    monkeypatch.setattr(s, "ConfigVersionManager", _boom)
+
+    inst = s.MultimodeStation.__new__(s.MultimodeStation)
+    inst._is_mock = True
+    assert getattr(inst, method)(update_main=True) == version_id
+
+
+# ---------- mock output root ----------
+
+def _mock_output_paths(monkeypatch, *, prod):
+    """-> a bare station after `_initialize_output_paths_mock()`."""
+    import experiments.station as s
+    monkeypatch.setattr(s, "is_production_pc", lambda: prod)
+    station = s.MultimodeStation.__new__(s.MultimodeStation)
+    station.experiment_name = "260101_mock"
+    station._initialize_output_paths_mock()
+    return station
+
+
+def test_mock_root_off_prod_is_repo_tmp(tmp_path, monkeypatch):
+    import experiments.station as s
+    monkeypatch.setattr(s, "MOCK_DATA_ROOT", tmp_path / "mock_data")
+    # Run from another folder: the root must not depend on the working
+    # directory, as the old relative "C:/..." path did off Windows.
+    monkeypatch.chdir(tmp_path)
+    station = _mock_output_paths(monkeypatch, prod=False)
+    assert station.data_path == tmp_path / "mock_data" / "260101_mock" / "data"
+    assert station.data_path.is_dir()
+    assert [p.name for p in tmp_path.iterdir()] == ["mock_data"]
+
+
+def test_mock_root_default_is_git_ignored_repo_tmp():
+    import experiments.station as s
+    repo = Path(s.__file__).resolve().parent.parent
+    assert s.MOCK_DATA_ROOT == repo / ".tmp" / "mock_data"
+    assert s.MOCK_DATA_ROOT.is_absolute()
+
+
+def test_mock_root_on_prod_is_experiments_mock_data(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # off Windows, C:/... is created in here
+    station = _mock_output_paths(monkeypatch, prod=True)
+    assert station.output_root == Path("C:/experiments/mock_data")

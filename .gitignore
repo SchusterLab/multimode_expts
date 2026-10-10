@@ -1,30 +1,37 @@
 # User defined stuff here:
-
-# pixi.lock
-analysis_notebooks/bosonic/outcmaes/
-analysis_notebooks/bosonic/*.png
+# Rules for one folder go in a .gitignore in that folder.
 plots/
 .tmp/
 *.pkl
 
 # these are not gitted but backed up to S via a file sync
-configs/versions/ 
+configs/versions/
 job_server/jobs.db*
 # lockfiles
 job_server/worker.lock
 *.ffs_lock
+# server output
+server_err.txt
+server_log.txt
 
-# those of us on jupytext no longer git sync ipynb
-measurement_notebooks/guan/*.ipynb
+# TODO: from 6f10b27 (jonginn). Not anchored, so these match at any depth.
+# Review with jonginn before changing. (tests/ was removed from here in 2026-08.)
+output/
+tmp/
 
 # tooling
 .vscode/
 .idea/
 .claude/
+.obsidian/
 *.code-workspace
 node_modules/
 .jupyter_ystore.db
 .fileid.db
+.suite_runs/
+.DS_Store
+# pycma logger output, written to the cwd of the notebook
+outcmaes/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -55,16 +62,6 @@ share/python-wheels/
 MANIFEST
 .pixi
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -80,29 +77,8 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
+# Logs
 *.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -110,51 +86,6 @@ target/
 # IPython
 profile_default/
 ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
 
 # Environments
 .env
@@ -165,64 +96,13 @@ ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
 
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Ruff stuff:
+# Ruff
 .ruff_cache/
 
 # PyPI configuration file
 .pypirc
-
-
-.DS_Store
-
-
-# jonginn ignore list
-measurement_notebooks/jonginn/floquet_dataset_tutorial.md
-measurement_notebooks/jonginn/floquet_dataset_tutorial.html
-
-measurement_notebooks/jonginn/deprecated_might_be_deleted/
-measurement_notebooks/jonginn/untracked_backups/
-
-measurement_notebooks/jonginn/data_postprocess.ipynb.bak
-
-output/
-tmp/
-# tests/  -- unignored 2026-08-25: 21 test files were already tracked, so this
-#            rule only hid NEW tests. See 6f10b27 ("please revert if this
-#            affect your project"). __pycache__ is covered above.
-
-measurement_notebooks/jonginn/qsim_experiments_highkerr_untracked.ipynb
-docs/.obsidian/app.json
-docs/.obsidian/appearance.json
-docs/.obsidian/core-plugins.json
-docs/.obsidian/workspace.json

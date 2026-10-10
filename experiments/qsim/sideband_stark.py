@@ -6,13 +6,13 @@ from tqdm import tqdm_notebook as tqdm
 
 import fitting.fitting as fitter
 from experiments.dataset import StorageManSwapDataset
-from experiments.qsim.qsim_base import QsimBaseExperiment, QsimBaseProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.utils import (
     fit_cos2d,
 )
 
 
-class SidebandStarkProgram(QsimBaseProgram):
+class SidebandStarkProgram(QsimProgram):
     """
     First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
     Then do a rabi on the sideband
@@ -36,7 +36,7 @@ class SidebandStarkProgram(QsimBaseProgram):
         self.sync_all(self.us2cycles(0.1))
 
 
-class SidebandStarkExperiment(QsimBaseExperiment):
+class SidebandStarkExperiment(QsimExperiment):
     def analyze(self, data=None, fit=True, fitparams = None, **kwargs):
         if data is None:
             data = self.data
@@ -52,7 +52,7 @@ class SidebandStarkExperiment(QsimBaseExperiment):
 
 
 
-class SidebandStarkAmplificationProgram(QsimBaseProgram):
+class SidebandStarkAmplificationProgram(QsimProgram):
     """
     1. Apply pi/2 swap pulse made of floquet pulses on stor_A
     2. Apply another floquet 2pi pulse on stor_B to calibrate the matrix element for. Do this xN times for error amplification
@@ -137,7 +137,7 @@ class SidebandStarkAmplificationProgram(QsimBaseProgram):
                 print("[WARNING] NO GAP between floquet pulses")
         self.sync_all()
 
-class SidebandStarkAmplificationExperiment(QsimBaseExperiment):
+class SidebandStarkAmplificationExperiment(QsimExperiment):
     def analyze(self, data=None, fit=True, state_fin='g'):
         
         if data is None:

@@ -1,114 +1,182 @@
-"""Many-body Ramsey spectrum: reconstruction, spectrum, and every plot of it.
+# -*- coding: utf-8 -*-
+"""A fixed-photon-number sector's spectrum from diagonal MBR time traces.
 
-Spec sections 7.3/7.4: ``analyze(stage='spectrum')`` on the god Experiment
-becomes one aggregate Experiment owning its whole triple. This was the fat
-branch -- 982 lines of methods plus the two dispatch bodies -- and it is the
-path the golden baseline covers, so it moves verbatim and nothing here is
-rewritten.
+An assembled class (docs/qsim/mbr_redesign.md, sections 1, 2 and 5): one
+diagonal :class:`MBRTimeTraceExperiment` per occupation. It never goes to the
+worker itself.
 
-Not to be confused with ``fitting/qsim/mbr_spectrum.py``, imported below as
-``mbr_spectrum_analysis``. That module is the pure numerics (window, pad, FFT,
-Hamiltonian, LDOS weights); this one is the Experiment that loads jobs, feeds
-them in, and plots what comes back. Spec 7.5 puts the two under those names
-deliberately: same subject, opposite sides of the acquire/analyze seam.
+    spectrum = MBRSpectrumExperiment(occupations, cycles=range(0, 400, 2),
+                                     swap_stors=[1, 2, 3, 4], calibration=cal,
+                                     cycle_branches={(3, 0, 0, 0, 0): 1})
+    spectrum.acquire(runner, batch_size=10)   # runner.ExptClass is MBRTimeTraceExperiment
+    spectrum.analyze(); spectrum.display()
+    spectrum.save()                           # manifest YAML + assembled HDF5
 
-The chain, in the order ``analyze`` runs it:
+    spectrum = MBRSpectrumExperiment.from_manifest(path)
 
-1. optional shot subsampling (``subsample_spectroscopy_shots``);
-2. quadratures to a complex return ``A = Q_0 - i Q_90``
-   (``reconstruct_spectroscopy`` handles both current and legacy job layouts);
-3. phase-frame transformation against the calibration
-   (``_postprocess_reconstruction``, which needs
-   ``MBRPhaseCorrectionExperiment``);
-4. spectrum, Hamiltonian and theory (``analyze_spectrum``, inherited alias);
-5. optionally Matrix Pencil instead of the FFT peak fit.
+``calibration`` is a saved :class:`MBRCalibrationSetExperiment`; each job
+records its manifest path. With ``calibration=None`` no Stark-shift
+correction is played.
 
-``analyze`` takes its knobs as named parameters, so they show up in a
-notebook's ``?`` and a misspelling raises. The computation is unchanged and the
-golden baseline pins it; only the plumbing from argument to use was rewritten.
+The analysis chain, in the order ``analyze`` runs it:
 
-Usage -- ``analysis_notebooks/guan/MBR_analysis.py`` is the worked example::
+1. optional shot subsampling (dormant; ``shots_per_point``);
+2. the jobs' complex returns stacked into one reconstruction ``A[row, cycle]``;
+3. phase-frame transformation
+   (:func:`fitting.qsim.mbr_reconstruction.postprocess_reconstruction`);
+4. spectrum, Hamiltonian and theory
+   (:func:`fitting.qsim.mbr_spectrum.analyze_spectrum`);
+5. optionally Matrix Pencil next to the FFT.
 
-    expt = MBRSpectrumExperiment.from_job_files(paths)
-    expt.analyze(calibration=calibration, cycle_branches={(3, 0, 0, 0, 0): 1})
-    expt.display()
-
-Two edits to otherwise verbatim bodies, both re-addressing a name the move
-invalidated:
-
-- ``analyze`` reached the calibration through the god module's
-  ``_stage_owner('calibration')``, a name that does not exist here. It names
-  :class:`MBRPhaseCorrectionExperiment` directly, which is the honest form: a
-  spectrum cannot be phase-corrected without a calibration, so this is a real
-  dependency between two stage Experiments rather than leftover coupling.
-- ``display_result`` hard-coded
-``EncodingHamiltonianSpectroscopyExperiment.display_local_density_of_states``,
-which no longer has that method, so it names this class. Declared in
-``tests/test_mbr_stage_split.py``.
+Steps 3 to 5 and the displays are carried over from the old
+``MBRSpectrumExperiment`` (now in ``deprecated/legacy_mbr.py``) without
+changes to the arithmetic.
 """
-import copy
-import inspect
-from copy import deepcopy
+from copy import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
-
-from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.floquet_dark_mode_readout import (
-    EncodingHamiltonianSpectroscopyExperiment,
-    NPhotonHamiltonianSpectroscopyProgram,
-)
-from experiments.qsim.dark_base import readout_lane_count
-from experiments.qsim.utils import flatten_exp_lists
-from fitting.qsim.mbr_reconstruction import (
-    subsample_spectroscopy_shots,
-)
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from fitting.qsim import level_statistics as level_statistics_analysis
-from fitting.qsim import matrix_pencil as matrix_pencil_analysis
-from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
+from scipy.signal import find_peaks, savgol_filter
 from slab import AttrDict
 
-# Matrix-Pencil knobs keep the historical ``mpm_`` prefix at the call site and
-# lose it on the way through. The 19 defaults the old code spelled out here were
-# each identical to analyze_matrix_pencil's own -- verified, not assumed -- so
-# forwarding only what the caller passed is the same computation with one place
-# for a default to live instead of two that can drift apart.
-_MATRIX_PENCIL_PREFIX = "mpm_"
-_MATRIX_PENCIL_NAMES = frozenset(
-    inspect.signature(matrix_pencil_analysis.analyze_matrix_pencil)
-    .parameters) - {"reconstruction", "spectrum"}
+from experiments.assembled_data import AssembledExperiment
+from experiments.qsim.qsim_base import readout_lane_count
+from experiments.qsim.mbr_saved import saved_parameters
+from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
+from fitting.qsim import level_statistics as level_statistics_analysis
+from fitting.qsim import matrix_pencil as matrix_pencil_analysis
+from fitting.qsim import mbr_phase
+from fitting.qsim import mbr_spectrum as mbr_spectrum_analysis
+from fitting.qsim.mbr_spectrum import local_spectrum
+from fitting.qsim.poles.pole_plots import display_pole_fit
+from fitting.qsim.mbr_reconstruction import (
+    postprocess_reconstruction,
+    subsample_spectroscopy_shots,
+)
 
 
-def _matrix_pencil_options(options):
-    """Strip the ``mpm_`` prefix; reject anything not a real option.
-
-    The old ``kwargs.get("mpm_...")`` chain silently ignored a typo, so a
-    mis-spelled tolerance looked like it worked and quietly did nothing.
-    """
-    stripped = {}
-    for name, value in options.items():
-        bare = name.removeprefix(_MATRIX_PENCIL_PREFIX)
-        if bare not in _MATRIX_PENCIL_NAMES:
-            raise TypeError(
-                f"analyze() got an unexpected keyword argument {name!r}. "
-                "Matrix-Pencil options are "
-                + ", ".join(sorted(_MATRIX_PENCIL_PREFIX + n
-                                   for n in _MATRIX_PENCIL_NAMES)))
-        stripped[bare] = value
-    return stripped
+def _spectrum_method(name):
+    """-> ``'fft'`` or ``'matrix_pencil'``; ``'mpm'`` is short for the second."""
+    name = {"mpm": "matrix_pencil"}.get(str(name).lower(), str(name).lower())
+    if name not in ("fft", "matrix_pencil"):
+        raise ValueError("spectrum_method must be 'fft', 'matrix_pencil' or 'mpm'")
+    return name
 
 
-class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
-    """Aggregate: one fixed-photon-number sector's spectrum from its jobs."""
+class MBRSpectrumExperiment(AssembledExperiment):
+    """Diagonal time traces over the occupations of one photon-number sector."""
+
+    child_class = MBRTimeTraceExperiment
+
+    def __init__(self, occupations, cycles, swap_stors, calibration=None,
+                 cycle_branches=0, detunings=None, sync_cycles=10, reps=300,
+                 notes=""):
+        """``cycle_branches`` picks the 180 deg/cycle branch of the correction
+        played on the pulse at acquisition; ``analyze(cycle_branches=...)`` is
+        the separate branch applied in analysis."""
+        super().__init__(notes=notes)
+        self.occupations = [tuple(int(n) for n in o) for o in occupations]
+        self.cycles = [int(n) for n in cycles]
+        self.swap_stors = [int(stor) for stor in swap_stors]
+        self.calibration = calibration
+        self.cycle_branches = cycle_branches
+        self.detunings = (None if detunings is None
+                          else [float(d) for d in detunings])
+        self.sync_cycles = int(sync_cycles)
+        self.reps = int(reps)
+
+    # -- acquisition ------------------------------------------------------
+
+    def job_overrides(self):
+        """-> one diagonal TimeTrace override dict per occupation.
+
+        The analyzer correction of each occupation comes from
+        ``calibration.phase_correction(cycle_branches)``, which needs the
+        calibration set saved, so every job can record where it came from.
+        """
+        if self.calibration is None:
+            phases = {occupation: 0. for occupation in self.occupations}
+            manifest = None
+        else:
+            if self.calibration.manifest_path is None:
+                raise ValueError("save() the calibration set first, so the jobs "
+                                 "can record its manifest path")
+            phases = self.calibration.phase_correction(self.cycle_branches).phase_by_occupation
+            manifest = self.calibration.manifest_path
+        return [self.child_class.job_config(
+                    occupation, occupation, self.cycles, self.swap_stors,
+                    phase_per_cycle_deg=phases[occupation],
+                    calibration_manifest=manifest, detunings=self.detunings,
+                    sync_cycles=self.sync_cycles, reps=self.reps)
+                for occupation in self.occupations]
+
+    @classmethod
+    def from_children(cls, children, job_ids=(), notes="", calibration=None):
+        """Assemble already acquired or loaded diagonal TimeTrace jobs.
+
+        Occupations, cycles, swap modes and detunings are read from the jobs'
+        cfg.expt, in job order. ``calibration`` is the set used to analyze;
+        it is not read from the jobs.
+        """
+        children = list(children)
+        if not children:
+            raise ValueError("a spectrum needs at least one TimeTrace job")
+        first = children[0]
+        ecfg = first.cfg.expt
+        for child in children:
+            if child.initial_occupation != child.final_occupation:
+                raise ValueError(f"{child!r} is off-diagonal; a spectrum takes diagonal traces")
+            if list(child.cfg.expt.floquet_cycles) != list(ecfg.floquet_cycles):
+                raise ValueError(f"{child.initial_occupation}: different Floquet cycles")
+        occupations = [child.initial_occupation for child in children]
+        if len(set(occupations)) != len(occupations):
+            raise ValueError("each occupation must appear once")
+        spectrum = cls(occupations, ecfg.floquet_cycles, ecfg.swap_stors,
+                       calibration=calibration,
+                       detunings=ecfg.get("detunings", None),
+                       sync_cycles=int(ecfg.get("scramble_sync_cycles", 10)),
+                       reps=int(ecfg.reps), notes=notes)
+        spectrum.children = children
+        spectrum.job_ids = list(job_ids)
+        spectrum._check_children()
+        return spectrum
+
+    @classmethod
+    def _from_manifest_kwargs(cls, manifest, path):
+        from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+
+        calibration = manifest.get("calibration_manifest")
+        if not calibration:
+            return {}
+        return dict(calibration=MBRCalibrationSetExperiment.from_manifest(calibration))
+
+    # -- analysis ---------------------------------------------------------
+
+    def reconstruction(self, children=None):
+        """-> the jobs' returns as one acquired reconstruction.
+
+        AttrDict with ``occupations``, ``final_occupations``, the common
+        ``cycles`` and complex ``A`` / ``A_norm`` of shape
+        ``(n_occupations, n_cycles)``, in the phase frame of acquisition.
+        """
+        children = self.children if children is None else children
+        for child in children:
+            if "complex_return" not in child.data:
+                child.analyze()
+        A = np.asarray([child.data["complex_return"] for child in children], dtype=complex)
+        occupations = [child.initial_occupation for child in children]
+        final_occupations = [child.final_occupation for child in children]
+        return AttrDict(dict(
+            occupations=occupations,
+            final_occupations=final_occupations,
+            cycles=np.asarray(children[0].data["cycles"]),
+            A=A,
+            A_norm=np.asarray([row / row[0] for row in A]),
+        ))
 
     def analyze(self,
-                data=None,
-                occupations=None,
-                calibration=None,
-                cycle_branches: int | list | dict = 0,
-                second_branch=False,
                 phase_frame="as_acquired",
+                cycle_branches=0,
                 manual_kerr_MHz=None,
                 legacy=None,
                 spectrum_method="fft",
@@ -116,80 +184,65 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                 zero_padding=1,
                 shots_per_point=None,
                 shot_seed=None,
-                mpm_calibration_sigma_multiplier=3.0,
-                mpm_merge_frequency_tolerance_floor_kHz=0.1,
                 **matrix_pencil_options):
-        """Reconstruct, phase-correct, and transform one sector to a spectrum.
+        """Reconstruct, phase-correct, and transform the sector to a spectrum.
 
-        Same computation as before; the knobs are now in the signature instead
-        of behind ``kwargs.get``, so they are discoverable from a docstring or a
-        ``?`` in a notebook, and a misspelled one raises instead of being
-        silently ignored.
+        - ``phase_frame``: ``'as_acquired'`` keeps the frame the data was
+          measured in; ``'uncorrected'``, ``'zero_kerr'`` and ``'manual_kerr'``
+          rebuild it (see
+          :func:`fitting.qsim.mbr_reconstruction.postprocess_reconstruction`).
+          ``manual_kerr_MHz`` sets the Kerr rate, and ``legacy`` handles jobs
+          saved before the analyzer sign was recorded.
+        - ``cycle_branches`` picks the 180 deg/cycle branch per occupation:
+          int, list, or ``{occupation: branch}``.
+        - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'`` (``'mpm'``);
+          Matrix Pencil goes to ``data.matrix_pencil`` and the FFT is computed
+          either way. ``mpm_*`` keyword arguments are
+          :class:`fitting.qsim.matrix_pencil.MatrixPencilSettings` fields;
+          ``mpm_requested_max_modes`` defaults to the Fock basis size, and
+          ``mpm_merge_frequency_tolerance_bins='calibration'`` merges rows by
+          the phase-calibration errors (:meth:`_calibration_frequency_errors_MHz`).
+        - ``shots_per_point`` subsamples the raw shots, with ``shot_seed``.
 
-        - ``occupations`` fixes the reconstruction row order. Defaults to the
-          order recorded in the jobs.
-        - ``calibration`` supplies the analyzer phase correction: an analyzed
-          :class:`MBRPhaseCorrectionExperiment`, paths to its jobs, or ``None``
-          to use whatever correction was applied at pulse time.
-        - ``cycle_branches`` picks the 180 deg/cycle branch per occupation --
-          int, list, or ``{occupation: branch}``. ``second_branch=True`` is the
-          shorthand for "add one to every branch" and cannot be combined with a
-          nonzero ``cycle_branches``.
-        - ``phase_frame`` selects the frame the reconstruction is transformed
-          into before the spectrum is taken; ``'as_acquired'`` keeps the frame
-          the data was measured in. ``manual_kerr_MHz`` overrides the Kerr rate
-          used to build the correction, and ``legacy`` handles the pre-marking
-          analyzer convention.
-        - ``spectrum_method`` is ``'fft'`` or ``'matrix_pencil'`` (``'mpm'`` and
-          ``'rowwise_matrix_pencil'`` are accepted spellings). Matrix Pencil is
-          stored in ``data.matrix_pencil``; the FFT is computed either way.
-        - ``shots_per_point`` subsamples the raw shots, with ``shot_seed`` for
-          reproducibility. ``shot_seed`` alone is an error.
-        - ``**matrix_pencil_options`` are forwarded to
-          :func:`fitting.qsim.matrix_pencil.analyze_matrix_pencil`, spelled with
-          the historical ``mpm_`` prefix (``mpm_pencil_length=...``). Unknown
-          names raise, which the old ``kwargs.get`` chain could not do.
+        The calibration set, if any, is ``self.calibration``.
         """
-        matrix_pencil_options = _matrix_pencil_options(matrix_pencil_options)
-        if not hasattr(self, "batch_expts"):
-            return super().analyze(data=data)
-        if data is not None:
-            self.data = data
-        matrix_pencil_options = _matrix_pencil_options(matrix_pencil_options)
-        spectrum_method = str(spectrum_method).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
-        analysis_expts = self.batch_expts
+        self._check_children()
+        spectrum_method = _spectrum_method(spectrum_method)
+        merge_by_calibration = matrix_pencil_options.get("mpm_merge_frequency_tolerance_bins") == "calibration"
+        if merge_by_calibration:
+            del matrix_pencil_options["mpm_merge_frequency_tolerance_bins"]
+        # Checked before the analysis, so a misspelled option fails fast.
+        matrix_pencil_analysis.settings_from_options(matrix_pencil_options)
+
+        analysis_children = self.children
         shot_subsampling = None
         if shots_per_point is not None:
-            analysis_expts, shot_subsampling = self.subsample_spectroscopy_shots(
-                self.batch_expts,
-                shots_per_point,
-                seed=shot_seed,
-            )
+            readout_lanes = [int(child.cfg.get("read_num", 0)) or readout_lane_count(child.cfg)
+                             for child in self.children]
+            sampled, shot_subsampling = subsample_spectroscopy_shots(
+                self.children, shots_per_point, readout_lanes, seed=shot_seed)
+            analysis_children = []
+            for child in sampled:
+                child = copy(child)
+                child.data.pop("complex_return", None)
+                child.analyze()
+                analysis_children.append(child)
         elif shot_seed is not None:
             raise ValueError("shot_seed requires shots_per_point")
-        saved = self._saved_parameters(analysis_expts,
-                                       getattr(self, "_analysis_station", None))
-        acquired_reconstruction = self.reconstruct_spectroscopy(
-            analysis_expts, occupations)
+
+        saved = saved_parameters(analysis_children)
+        acquired_reconstruction = self.reconstruction(analysis_children)
         photon_numbers = {sum(occupation) for occupation in acquired_reconstruction.occupations}
         if len(photon_numbers) != 1:
             raise ValueError("spectroscopy jobs must belong to one fixed-photon-number sector")
         photon_number = photon_numbers.pop()
-        calibration_arg = calibration
-        calibration = MBRPhaseCorrectionExperiment._calibration_data(
-            calibration_arg, getattr(self, "_analysis_station", None))
-        if second_branch:
-            cycle_branches = self._cycle_branches(acquired_reconstruction.final_occupations,
-                                                  cycle_branches)
-            if np.any(cycle_branches):
-                raise ValueError("use either cycle_branches or second_branch, not both")
-            cycle_branches += 1
-        saved_correction = self._saved_correction(analysis_expts)
-        postprocessed = self._postprocess_reconstruction(
+        calibration = None
+        if self.calibration is not None:
+            if "phase_mod180" not in self.calibration.data:
+                self.calibration.analyze()
+            calibration = self.calibration.data
+        saved_correction = mbr_phase.saved_correction(analysis_children)
+        postprocessed = postprocess_reconstruction(
             acquired_reconstruction,
             saved_correction,
             calibration,
@@ -198,7 +251,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             manual_kerr_MHz,
             cycle_branches,
             legacy)
-        spectrum = self.analyze_spectrum(
+        spectrum = mbr_spectrum_analysis.analyze_spectrum(
             postprocessed.reconstruction,
             photon_number,
             saved.detunings,
@@ -227,356 +280,261 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             spectrum_method=spectrum_method,
         ))
         if spectrum_method == "matrix_pencil":
-            merge_tolerance_bins = matrix_pencil_options.get("merge_frequency_tolerance_bins")
-            row_calibration_se_MHz = None
-            if isinstance(merge_tolerance_bins, str):
-                if merge_tolerance_bins.lower() != "calibration":
-                    raise ValueError("mpm_merge_frequency_tolerance_bins must be numeric, None, or 'calibration'")
-                if calibration is None:
-                    raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
-
-                calibration_occupations = [tuple(occupation) for occupation in calibration.occupations]
-                phase_slope_se = np.asarray(calibration.phase_error, dtype=float)
-                if phase_slope_se.shape != (len(calibration_occupations),):
-                    raise ValueError("calibration.phase_error must contain one slope standard error per occupation")
-
-                calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
-                if not np.isfinite(calibration_cycle_us) or calibration_cycle_us <= 0.:
-                    raise ValueError("calibration Floquet cycle must be finite and positive")
-
-                calibration_se_MHz = {
-                    occupation: abs(float(slope_se)) / (360. * calibration_cycle_us)
-                    for occupation, slope_se in zip(calibration_occupations, phase_slope_se)
-                }
-                reconstruction = postprocessed.reconstruction
-                if "final_occupations" in reconstruction:
-                    final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
-                else:
-                    final_occupations = [tuple(occupation) for occupation in reconstruction.occupations]
-                missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
-                if missing_errors:
-                    raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
-                row_calibration_se_MHz = np.asarray([calibration_se_MHz[occupation] for occupation in final_occupations])
-                merge_tolerance_bins = None
-
-            merge_floor_MHz = 1e-3 * mpm_merge_frequency_tolerance_floor_kHz
-            matrix_pencil_options["merge_frequency_tolerance_bins"] = merge_tolerance_bins
-            if row_calibration_se_MHz is not None:
-                matrix_pencil_options["row_frequency_standard_errors_MHz"] = row_calibration_se_MHz
-            matrix_pencil_options.setdefault("merge_frequency_tolerance_sigma", mpm_calibration_sigma_multiplier)
-            matrix_pencil_options.setdefault("merge_frequency_tolerance_floor_MHz", merge_floor_MHz)
-            self.data.matrix_pencil = self.analyze_matrix_pencil(
-                postprocessed.reconstruction,
-                spectrum,
-                **matrix_pencil_options,
-            )
+            settings = matrix_pencil_analysis.settings_from_options(
+                matrix_pencil_options, requested_max_modes=len(spectrum.fock_basis))
+            errors_MHz = None
+            if merge_by_calibration:
+                errors_MHz = self._calibration_frequency_errors_MHz(calibration, postprocessed.reconstruction)
+            result = matrix_pencil_analysis.analyze_matrix_pencil(
+                postprocessed.reconstruction, spectrum.time_us, settings,
+                row_frequency_standard_errors_MHz=errors_MHz)
+            reconstructed_local = local_spectrum(result.fit.fitted_return, spectrum)
+            result.spectra = AttrDict(dict(reconstructed_local=reconstructed_local,
+                                           reconstructed=np.sum(reconstructed_local, axis=0)))
+            self.data.matrix_pencil = result
         if shot_subsampling is not None:
             self.data.shot_subsampling = shot_subsampling
-        if hasattr(calibration_arg, "batch_job_ids"):
-            self.calibration_job_ids = list(calibration_arg.batch_job_ids)
         return self.data
 
-    def display(self, data=None, occupation=None, **kwargs):
+    def display(self, occupation=None, spectrum_method=None, level_statistics=True,
+                ldos_weight_cutoff=1e-3, show_mpm_poles=True,
+                show_mpm_magnitude_weights=False):
         """Spectrum panels, or one occupation's time trace when named.
 
-        Body is the former ``display`` spectrum branch, unchanged.
+        With a complete basis, the level statistics follow the spectrum
+        panels unless ``level_statistics=False``.
         """
-        if not hasattr(self, "batch_expts"):
-            return super().display(data=data, **kwargs)
-        if data is not None:
-            self.data = data
-        spectrum_method = str(kwargs.get("spectrum_method", self.data.get("spectrum_method", "fft"))).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
+        if not self.data:
+            raise ValueError("run analyze() before display()")
+        spectrum_method = _spectrum_method(spectrum_method or self.data.get("spectrum_method", "fft"))
         if occupation is not None:
-            if self.data.get("spectrum_only", False):
-                raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
             if spectrum_method == "matrix_pencil":
-                return self.display_matrix_pencil_occupation(data=self.data,
-                                                             occupation=occupation,
-                                                             show_magnitude_weights=kwargs.get("show_mpm_magnitude_weights", False))
-            return self.display_occupation(self.data.reconstruction, self.data.spectrum, occupation, self.data.get("phase_frame", None), kwargs.get("ldos_weight_cutoff", 1e-3))
+                return self.display_matrix_pencil_occupation(
+                    data=self.data, occupation=occupation,
+                    show_magnitude_weights=show_mpm_magnitude_weights)
+            return self.display_occupation(self.data.reconstruction, self.data.spectrum,
+                                           occupation, self.data.get("phase_frame", None),
+                                           ldos_weight_cutoff)
         if spectrum_method == "matrix_pencil":
-            return self.display_matrix_pencil(data=self.data,
-                                              show_poles=kwargs.get("show_mpm_poles", True))
-        fig = self.display_result(self.data.reconstruction,
-                                  self.data.spectrum,
+            return self.display_matrix_pencil(data=self.data, show_poles=show_mpm_poles)
+        fig = self.display_result(self.data.reconstruction, self.data.spectrum,
                                   self.data.mode_labels)
-        if self.data.spectrum.complete_basis and kwargs.get("level_statistics", True):
-            self.display_level_statistics(
-                data=self.data,
-                peak_prominence=kwargs.get("level_peak_prominence", None),
-                peak_prominence_fraction=kwargs.get("level_peak_prominence_fraction", None),
-                minimum_peak_distance_MHz=kwargs.get("level_minimum_peak_distance_MHz", None),
-                energy_limit_MHz=kwargs.get("level_energy_limit_MHz", None),
-            )
+        if self.data.spectrum.complete_basis and level_statistics:
+            self.display_level_statistics(data=self.data)
         return fig
 
+    # -- persistence ------------------------------------------------------
 
-    @classmethod
-    def subsample_spectroscopy_shots(cls,
-                                     spectroscopy_expts,
-                                     shots_per_point,
-                                     seed=None):
-        """Rebuild saved averages from fewer final-readout shots.
+    def calibration_manifest(self):
+        if self.calibration is None:
+            return None
+        return self.calibration.manifest_path
 
-        Resolves each job's readout-lane count -- from the saved
-        ``cfg.read_num`` where present, otherwise re-derived for jobs saved
-        before that field existed -- and hands the numerics to
-        :func:`fitting.qsim.mbr_reconstruction.subsample_spectroscopy_shots`,
-        whose docstring explains the offset-tolerant re-averaging.
+    def manifest_parameters(self):
+        return dict(occupations=[list(o) for o in self.occupations],
+                    cycles=self.cycles,
+                    swap_stors=self.swap_stors)
 
-        Returns ``(subsampled_expts, metadata)``.
+    def assembled_arrays(self):
+        data = self.data
+        return dict(
+            occupations=np.asarray(self.occupations, dtype=int),
+            cycles=data.acquired_reconstruction.cycles,
+            acquired_A=data.acquired_reconstruction.A,
+            A=data.reconstruction.A,
+            time_us=data.spectrum.time_us,
+            energy_MHz=data.spectrum.energy_MHz,
+            measured_local=data.spectrum.measured_local,
+            measured=data.spectrum.measured,
+            couplings_MHz=data.hardware.couplings_MHz,
+            detunings=data.detunings,
+        )
+
+    def assembled_attrs(self):
+        data = self.data
+        return dict(
+            phase_frame=str(data.phase_frame),
+            spectrum_method=str(data.spectrum_method),
+            photon_number=int(data.photon_number),
+            cycle_branches=[int(b) for b in data.cycle_branches],
+            floquet_cycle_us=float(data.hardware.floquet_cycle_us),
+            physical_kerr_MHz=float(data.spectrum.physical_kerr_MHz),
+            hardware_source=str(data.hardware.source),
+            mode_labels=list(data.mode_labels),
+        )
+
+    @staticmethod
+    def _calibration_frequency_errors_MHz(calibration, reconstruction):
+        """-> each row's frequency standard error from the phase calibration.
+
+        The error of the row's final occupation's phase slope,
+        ``|slope error (deg/cycle)| / (360 * cycle time)``. Matrix Pencil
+        merges rows by these instead of FFT bins
+        (:class:`fitting.qsim.matrix_pencil._MergeTolerance`).
         """
-        expts = list(flatten_exp_lists(spectroscopy_expts))
-        readout_lanes = [int(expt.cfg.get("read_num", 0))
-                         or readout_lane_count(expt.cfg)
-                         for expt in expts]
-        return subsample_spectroscopy_shots(
-            expts, shots_per_point, readout_lanes, seed=seed)
+        if calibration is None:
+            raise ValueError("calibration-derived MPM merging requires the phase calibration experiment")
+        calibration_cycle_us = float(calibration.hardware.floquet_cycle_us)
+        calibration_se_MHz = {
+            tuple(occupation): abs(float(slope_se)) / (360. * calibration_cycle_us)
+            for occupation, slope_se in zip(calibration.occupations, calibration.phase_error)
+        }
+        final_occupations = [tuple(occupation) for occupation in reconstruction.final_occupations]
+        missing_errors = [occupation for occupation in final_occupations if occupation not in calibration_se_MHz]
+        if missing_errors:
+            raise ValueError(f"calibration is missing phase standard errors for {missing_errors}")
+        return np.asarray([calibration_se_MHz[occupation] for occupation in final_occupations])
 
-    @classmethod
-    def _postprocess_reconstruction(cls, 
-                                    reconstruction, 
-                                    saved_correction, 
-                                    calibration, 
-                                    hardware, 
-                                    phase_frame, 
-                                    manual_kerr_MHz, 
-                                    cycle_branches, 
-                                    legacy):
+    def display_peak_finders(self, height=0.05, prominence=0.01):
+        """FFT peak finding three ways: the summed local spectra with the theory
+        levels, raw peaks, and Savitzky-Golay-smoothed peaks (source cell 184).
+
+        Kept to show where FFT peak finding is weak, beside the Matrix-Pencil
+        spectrum. -> (fig, peak indices raw, peak indices smoothed).
         """
-        The postprocessing got a bit complicated as the previous experiment
-        did not designate `application_sign`. The current convention is 
-        `application_sign` = -1, whereas previously it was +1.
-        The designation of +1 to application_sign is done by setting legacy = True.
-        
-        
-        
+        fig, axes = plt.subplots(3, 1, figsize=(10, 8))
+        # height and prominence are arguments.
+        occupations = self.data.reconstruction.occupations
+
+        x_data = np.array(self.data.spectrum.energy_MHz)
+        y_collect_data = [0 for _ in x_data]
+        peak_list_raw = []
+        peak_list_smoothed = []
+
+        nonzero_peaks_raw = np.zeros_like(x_data)
+        nonzero_peaks_smoothed = np.zeros_like(x_data)
+
+        energies = np.sort(np.asarray(self.data.spectrum.energies_MHz))
+        unique_energies, multiplicities = np.unique(np.round(energies, 10), return_counts=True)
+
+        idx_list = list(range(len(occupations)))
+        for idx in idx_list:
+            state_label = self.data.reconstruction.occupations[idx]
+            y_collect_data += self.data.spectrum.measured_local[idx, :]
+
+            y_data = np.array(self.data.spectrum.measured_local[idx, :])
+
+            y_smoothed = savgol_filter(y_data,
+                                       window_length=5,
+                                       polyorder=2)
+
+            peaks_raw_data, __ = find_peaks(y_data,
+                                            height=height,
+                                            prominence=prominence)
+            peaks_smoothed_data, _ = find_peaks(y_smoothed,
+                                                height=height,
+                                                prominence=prominence)
+            for pr in peaks_raw_data:
+                if not (pr in peak_list_raw):
+                    peak_list_raw.append(pr)
+
+            for psd in peaks_smoothed_data:
+                if not (psd in peak_list_smoothed):
+                    peak_list_smoothed.append(psd)
+
+        for idx, _ in enumerate(x_data):
+            if idx in peak_list_raw:
+                nonzero_peaks_raw[idx] = 1
+
+
+        for idx, _ in enumerate(x_data):
+            if idx in peak_list_smoothed:
+                nonzero_peaks_smoothed[idx] = 1
+
+        axes[0].plot(x_data, y_collect_data, label='Accumulated Signal')
+        axes[1].plot(x_data, y_collect_data, label='Accumulated Signal')
+        axes[2].plot(x_data, y_collect_data, label='Accumulated Signal')
+
+        axes[0].vlines(unique_energies, 0., multiplicities, color='tab:orange')
+        axes[0].plot(unique_energies, multiplicities, 'o', color='tab:orange')
+
+        y_collect_np = np.array(y_collect_data)
+
+        axes[1].plot(x_data[peak_list_raw],
+                     y_collect_np[peak_list_raw], 'rx',
+                     markersize=8, label='Raw Peaks')
+
+        axes[2].plot(x_data[peak_list_smoothed],
+                     y_collect_np[peak_list_smoothed], 'bo',
+                     markerfacecolor='none', markersize=10, label='Smoothed Peaks')
+
+
+        axes[1].plot(x_data, nonzero_peaks_raw)
+        axes[2].plot(x_data, nonzero_peaks_smoothed)
+
+        for ax in axes:
+            ax.legend()
+            ax.set_xlim(np.min(x_data),
+                        np.max(x_data))
+
+        plt.tight_layout()
+        plt.show()
+
+        return plt.gcf(), peak_list_raw, peak_list_smoothed
+
+    def fit_self_kerr(self, cycle_branches, legacy=None, **scan_options):
+        """Scan the signed M1 self-Kerr for the best experiment--theory peak overlap.
+
+        See :func:`self_kerr_scan` for the score and ``scan_options``. Starts
+        from this spectrum's last analysis and its own calibration set.
+        ``legacy`` goes to ``analyze`` (July 2026 jobs need ``legacy=True``).
+        Leaves ``self.data`` at the best Kerr. -> (best_self_kerr_kHz,
+        scores, data). The procedure is being revised (guan, 2026-09-26).
         """
-        
-        if manual_kerr_MHz is not None and phase_frame == "as_acquired":
-            phase_frame = "manual_kerr"
-        if phase_frame == "zero_kerr":
-            if manual_kerr_MHz is not None:
-                raise ValueError("zero_kerr does not take manual_kerr_MHz")
-            manual_kerr_MHz = 0.
-        if phase_frame not in ("as_acquired", "uncorrected", "zero_kerr", "manual_kerr"):
-            raise ValueError("phase_frame must be 'as_acquired', 'uncorrected', 'zero_kerr', or 'manual_kerr'")
-        occupations = reconstruction.occupations
-        final_occupations = reconstruction.get("final_occupations", occupations)
-        branches = cls._cycle_branches(final_occupations, cycle_branches)
-        A = reconstruction.A.copy()
-        target_correction = None
-        application_sign = saved_correction.application_sign
-        legacy_migration = False
+        def analyze_at(kerr_MHz):
+            return self.analyze(cycle_branches=cycle_branches, phase_frame="manual_kerr",
+                                manual_kerr_MHz=kerr_MHz, legacy=legacy, spectrum_method="fft")
 
-        if phase_frame == "as_acquired":
-            if legacy is not None:
-                raise ValueError("legacy is only used with uncorrected/zero_kerr/manual_kerr rephasing")
-            for row, branch in enumerate(branches):
-                A[row] *= np.exp(-1j * np.deg2rad(180. * branch) * reconstruction.cycles)
-            physical_kerr_MHz = hardware.physical_kerr_MHz
-        else:
-            if saved_correction.modes != {"final_analyzer"}:
-                raise ValueError("uncorrected/zero_kerr/manual_kerr rephasing requires spectroscopy_phase_correction_mode='final_analyzer'")
-            if application_sign is None:
-                nonzero_correction = any(not np.isclose(phase, 0.) for phase in saved_correction.phase_by_occupation.values())
-                if nonzero_correction and legacy is None:
-                    raise ValueError("saved jobs do not record the analyzer sign; use legacy=True for old +correction jobs or legacy=False for -correction jobs")
-                application_sign = 1. if legacy else -1.
-                legacy_migration = bool(legacy)
-            elif legacy is not None and application_sign != (1. if legacy else -1.):
-                raise ValueError("legacy disagrees with the saved analyzer phase application sign")
-            legacy_migration = application_sign == 1.
+        if not self.data:
+            raise ValueError("run analyze() first")
+        return self_kerr_scan(self, self.data, analyze_at, **scan_options)
 
-            if phase_frame == "uncorrected":
-                if manual_kerr_MHz is not None:
-                    raise ValueError("uncorrected does not take manual_kerr_MHz")
-                for row, occupation in enumerate(final_occupations):
-                    saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
-                    A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + 180. * branches[row]) * reconstruction.cycles)
-                physical_kerr_MHz = hardware.physical_kerr_MHz
-            else:
-                if manual_kerr_MHz is None or not np.isfinite(manual_kerr_MHz):
-                    raise ValueError("phase_frame='manual_kerr' requires a finite signed manual_kerr_MHz")
-                if calibration is None:
-                    raise ValueError("zero_kerr/manual_kerr rephasing requires calibration")
-                calibration_phase = {tuple(occupation): phase for occupation, phase in zip(calibration.occupations, calibration.phase_mod180)}
-                missing = [occupation for occupation in final_occupations if tuple(occupation) not in calibration_phase]
-                if missing:
-                    raise ValueError(f"calibration is missing occupations {missing}")
-                target_correction = cls.build_phase_correction(final_occupations, [calibration_phase[tuple(occupation)] for occupation in final_occupations], branches, float(manual_kerr_MHz), hardware.floquet_cycle_us)
-                for row, occupation in enumerate(final_occupations):
-                    saved_phase = saved_correction.phase_by_occupation[tuple(occupation)]
-                    target_phase = target_correction.phase_by_occupation[tuple(occupation)]
-                    A[row] *= np.exp(-1j * np.deg2rad(application_sign * saved_phase + target_phase) * reconstruction.cycles)
-                physical_kerr_MHz = float(manual_kerr_MHz)
-        normalized_A = np.asarray([row / row[0] if tuple(initial) == tuple(final) else row for row, initial, final in zip(A, occupations, final_occupations)])
-        return AttrDict(dict(reconstruction=AttrDict(dict(occupations=occupations, 
-                                                          final_occupations=final_occupations,
-                                                          cycles=reconstruction.cycles,
-                                                          A=A,
-                                                          A_norm=normalized_A)), 
-                             target_correction=target_correction, 
-                             physical_kerr_MHz=physical_kerr_MHz, 
-                             phase_frame=phase_frame, 
-                             cycle_branches=branches, 
-                             analyzer_phase_application_sign=application_sign, 
-                             legacy_analyzer_migration=legacy_migration))
+    def display_coherent_trace(self, data=None):
+        """:meth:`display_result` with the aggregate panel replaced by the FFT of
+        the coherent normalized trace sum_n A_n(t)/A_n(0)
+        (:func:`fitting.qsim.mbr_spectrum.coherent_trace_spectrum`).
 
-    @classmethod
-    def reconstruct_pair_spectroscopy(cls, spectroscopy_expts,
-                                      occupations=None):
-        """Compatibility entry point for saved off-diagonal spectroscopy jobs."""
-        return cls.reconstruct_spectroscopy(spectroscopy_expts, occupations)
-
-    @classmethod
-    def reconstruct_spectroscopy(cls, 
-                                 spectroscopy_expts, 
-                                 occupations=None):
-        """
-        Combine cycle chunks into ``A = Q_0 - i Q_90`` for each initial/final pair.
-
-        Accepts four-phase jobs, legacy interleaved off-diagonal jobs, and legacy
-        jobs split between analyzer phases 0/90. Saved analysis corrections are
-        applied once; pulse corrections are already present in the measured
-        signal. Further phase-frame transformations belong to ``analyze``.
-
-        All pairs must cover the same non-overlapping cycles. ``occupations``
-        optionally orders the initial states, keeping each one's final states
-        in their saved order. Only diagonal returns are normalized by A(0).
-        """
-        if not spectroscopy_expts:
-            raise ValueError("spectroscopy_expts cannot be empty")
-        grouped = {}
-        for expt in spectroscopy_expts:
-            cfg = expt.cfg.expt
-            occupation = tuple(cfg.spectroscopy_occupations)
-            final_occupation = tuple(cfg.get(
-                "offdiag_decoder_occupation",
-                cfg.get("spectroscopy_final_occupations", occupation)))
-            state = (final_occupation, occupation)
-            # Group jobs by (final_occupation, initial_occupation):
-            # grouped = {
-            #     (final, initial): {
-            #         "complex": [(cycles, A), ...],  # New four-phase / legacy off-diagonal jobs
-            #         0.: [expt, ...],               # Legacy analyzer-0-only jobs
-            #         90.: [expt, ...],              # Legacy analyzer-90-only jobs
-            #     },
-            #     ...
-            # }
-            # Each list entry represents one job; cycle chunks are combined later.
-            # setdefault initializes this state pair's group if it is missing.
-            # chunks references grouped[state], so appending here updates that same group.
-            chunks = grouped.setdefault(state, {"complex": [], 
-                                                0.: [], 
-                                                90.: []})
-            if "spectroscopy_phase_id" in cfg.get("swept_params", []):
-                cycles = np.asarray(expt.data["ypts"])
-                if not np.array_equal(cycles, cfg.floquet_cycles):
-                    raise ValueError(f"{state}: saved cycles do not match its config")
-                chunks["complex"].append((cycles, cls._complex_return(expt)))
-                continue
-            if "offdiag_cycles" in cfg:
-                cycles = np.asarray(cfg.offdiag_cycles, dtype=int)
-                chunks["complex"].append((cycles, cls._complex_return(expt)))
-                continue
-            phi = cfg.spectroscopy_analyzer_phase
-            if phi not in (0., 90.):
-                raise ValueError(f"{occupation} has analyzer phase {phi}; expected 0 or 90")
-            if "floquet_cycles" not in cfg:
-                raise ValueError(f"{occupation}, phi={phi}: this is not a spectroscopy job")
-            if not np.allclose(expt.data["xpts"], [0., 180.]):
-                raise ValueError(f"{occupation}, phi={phi}: saved preparation phases changed")
-            if not np.array_equal(expt.data["ypts"], cfg.floquet_cycles):
-                raise ValueError(f"{occupation}, phi={phi}: saved cycles do not match its config")
-            chunks[phi].append(expt)
-
-        if occupations is None:
-            state_order = list(grouped)
-        else:
-            occupation_order = list(dict.fromkeys(tuple(occupation) for occupation in occupations))
-            if set(occupation_order) != {state[1] for state in grouped}:
-                raise ValueError("spectroscopy occupations do not match the saved configs")
-            state_order = [state for occupation in occupation_order
-                           for state in grouped if state[1] == occupation]
-        if len(state_order) != len(grouped) or set(state_order) != set(grouped):
-            raise ValueError("spectroscopy occupations do not match the saved configs")
-        expected_cycles = None
-        rows = []
-
-        for state in state_order:
-            chunks = grouped[state]
-            # New four-phase and legacy off-diagonal jobs already have complex A.
-            complete = list(chunks["complex"])
-            # Only legacy analyzer-only jobs went into chunks[0.] and chunks[90.].
-            # Jobs already reconstructed in chunks["complex"] are not processed here.
-            # Join each analyzer's cycle chunks, verify matching cycle arrays,
-            # then combine Q0 and Q90 into A. With only complete jobs, both lists
-            # are empty and this block is skipped.
-            if chunks[0.] or chunks[90.]:
-                quadratures = []
-                legacy_cycles = None
-                for phi in [0., 90.]:
-                    expts = chunks[phi]
-                    if not expts:
-                        raise ValueError(f"{state} is missing phi={phi} data")
-                    cycles = np.concatenate([np.asarray(expt.data["ypts"]) for expt in expts])
-                    quadrature = np.concatenate([cls._quadrature(expt) for expt in expts])
-                    order = np.argsort(cycles)
-                    cycles = cycles[order]
-                    if len(np.unique(cycles)) != len(cycles):
-                        raise ValueError(f"{state}, phi={phi}: spectroscopy cycles overlap")
-                    if legacy_cycles is None:
-                        legacy_cycles = cycles
-                    elif not np.array_equal(cycles, legacy_cycles):
-                        raise ValueError(f"{state}, phi={phi}: spectroscopy cycles are incomplete")
-                    quadratures.append(quadrature[order])
-                complete.append((legacy_cycles, quadratures[0] - 1j * quadratures[1]))
-
-            cycles = np.concatenate([chunk[0] for chunk in complete])
-            A = np.concatenate([chunk[1] for chunk in complete])
-            order = np.argsort(cycles)
-            cycles, A = cycles[order], A[order]
-            if len(np.unique(cycles)) != len(cycles):
-                raise ValueError(f"{state}: spectroscopy cycles overlap")
-            if expected_cycles is None:
-                expected_cycles = cycles
-            elif not np.array_equal(cycles, expected_cycles):
-                raise ValueError(f"{state}: spectroscopy cycles are incomplete")
-            rows.append(A)
-        A = np.asarray(rows, dtype = complex)
-        occupation_order = [state[1] for state in state_order]
-        final_occupations = [state[0] for state in state_order]
-        normalized_A = np.asarray([row / row[0] if initial == final else row for row, (final, initial) in zip(A, state_order)])
-        return AttrDict(dict(occupations=occupation_order,
-                             final_occupations=final_occupations,
-                             cycles=expected_cycles, 
-                             A= A,
-                             A_norm= normalized_A))
-
-    def analyze_matrix_pencil_occupation(self,
-                                         occupation,
-                                         data=None,
-                                         matrix_pencil=None,
-                                         least_squares_rcond=None):
-        """Refit one occupation using only the poles found in that row.
-
-        Thin wrapper: supplies ``self.data`` by default, then delegates to
-        :func:`fitting.qsim.matrix_pencil.refit_occupation`. The module is
-        imported under an alias so the historical ``matrix_pencil`` argument
-        name survives the move.
+        -> (result, fig).
         """
         data = self.data if data is None else data
-        return matrix_pencil_analysis.refit_occupation(
-            occupation,
-            data,
-            matrix_pencil=matrix_pencil,
-            least_squares_rcond=least_squares_rcond,
-        )
+        if data.get("spectrum_only", False):
+            raise ValueError("the coherent trace FFT needs reconstruction.A; merged "
+                             "spectrum-only data have discarded the complex time traces")
+        result = mbr_spectrum_analysis.coherent_trace_spectrum(data.reconstruction, data.spectrum)
+        spectrum = copy(data.spectrum)
+        spectrum.measured, spectrum.theory = result.measured, result.theory
+        kind = "complete-basis trace DOS" if data.spectrum.complete_basis else "projected trace spectrum"
+        fig = self.display_result(
+            data.reconstruction, spectrum, data.mode_labels,
+            aggregate_title=kind + "\n" + r"$|\mathcal{F}[\sum_n A_n(t)/A_n(0)]|$",
+            aggregate_labels=("experiment", "theory (same coherent FFT, peak-scaled)"))
+        print(f"{len(data.reconstruction.occupations)} rows, window={result.fft_window}, "
+              f"n_fft={result.n_fft}, complete_basis={data.spectrum.complete_basis}")
+        return result, fig
+
+    # -- carried over from the old MBRSpectrumExperiment -------------------
+
+    def analyze_matrix_pencil_occupation(self, occupation, data=None):
+        """Refit one occupation (row index or tuple) with only the poles its
+        own row found (:func:`fitting.qsim.matrix_pencil.refit_row`), plus
+        its spectrum and pole weights for display."""
+        data = self.data if data is None else data
+        if data.get("matrix_pencil") is None:
+            raise ValueError("Matrix-Pencil analysis is unavailable; analyze with spectrum_method='matrix_pencil'")
+        reconstruction, spectrum = data.reconstruction, data.spectrum
+        occupations = [tuple(value) for value in reconstruction.occupations]
+        row = occupation if isinstance(occupation, (int, np.integer)) else occupations.index(tuple(occupation))
+        result = matrix_pencil_analysis.refit_row(data.matrix_pencil, reconstruction.A[row], row)
+        is_diagonal = occupations[row] == tuple(reconstruction.final_occupations[row])
+        weights = result.normalized_amplitudes if is_diagonal else result.amplitudes
+        result.local_weights = np.real(weights)
+        result.local_magnitude_weights = np.abs(weights)
+        result.energy_MHz = np.asarray(spectrum.energy_MHz)
+        result.measured_spectrum = np.asarray(spectrum.measured_local[row])
+        result.reconstructed_spectrum = (
+            mbr_spectrum_analysis.windowed_fft(result.fitted_return, spectrum.fft_window, spectrum.zero_padding)
+            / spectrum.fft_normalization[row])
+        return result
 
     def analyze_level_statistics(self,
                                  data=None,
@@ -709,13 +667,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
             raise ValueError("occupation display requires analyzed spectroscopy data")
         if data.get("spectrum_only", False):
             raise ValueError("occupation time traces are unavailable for merged spectra with different time grids")
-        if spectrum_method is None:
-            spectrum_method = data.get("spectrum_method", "fft")
-        spectrum_method = str(spectrum_method).lower()
-        if spectrum_method in ("mpm", "rowwise_matrix_pencil"):
-            spectrum_method = "matrix_pencil"
-        if spectrum_method not in ("fft", "matrix_pencil"):
-            raise ValueError("spectrum_method must be 'fft' or 'matrix_pencil'")
+        spectrum_method = _spectrum_method(spectrum_method or data.get("spectrum_method", "fft"))
         if occupations is None:
             selections = range(len(data.reconstruction.occupations))
         elif isinstance(occupations, (int, np.integer)):
@@ -866,14 +818,10 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         Hamiltonian delta-function DOS.
         """
         data = self.data if data is None else data
-        if "reconstruction" not in data or "spectrum" not in data:
-            raise ValueError("Matrix-Pencil display requires analyzed spectroscopy data")
-        if data.get("spectrum_only", False):
-            raise ValueError("Matrix Pencil requires occupation traces on one common time grid")
-        if matrix_pencil is None:
-            matrix_pencil = data.get("matrix_pencil", None)
+        matrix_pencil = matrix_pencil or data.get("matrix_pencil")
         if matrix_pencil is None:
             raise ValueError("Matrix-Pencil analysis is unavailable; analyze with spectrum_method='matrix_pencil'")
+        modes = matrix_pencil.modes
 
         reconstruction = data.reconstruction
         spectrum = data.spectrum
@@ -888,10 +836,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         ]
         energy_MHz = np.asarray(spectrum.energy_MHz)
         measured_local = np.asarray(spectrum.measured_local)
-        reconstructed_local = np.asarray(matrix_pencil.reconstructed_local)
         theory_local = np.asarray(spectrum.theory_local)
-        if measured_local.shape != reconstructed_local.shape or measured_local.shape != theory_local.shape:
-            raise ValueError("measured, Matrix-Pencil, and theory spectra use different grids")
 
         fig, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
         measured_axis = axes[0, 0]
@@ -905,7 +850,7 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
                                       ("measured finite-time FFT", "theory finite-time FFT")):
             image = axis.imshow(local, origin="lower", aspect="auto", interpolation="nearest", extent=extent, cmap="magma", vmin=0., vmax=vmax)
             if show_poles:
-                for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
+                for frequency_MHz in modes.frequencies_MHz:
                     axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.45)
             axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", title=title)
             axis.set_yticks(rows)
@@ -919,9 +864,9 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         fig.colorbar(image, ax=(measured_axis, theory_axis), label="spectral magnitude")
 
         measured_DOS_axis.plot(energy_MHz, spectrum.measured, color="black", linewidth=1.5, label="measured FFT sum")
-        measured_DOS_axis.plot(energy_MHz, matrix_pencil.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
-        measured_DOS_axis.vlines(matrix_pencil.selected_frequencies_MHz, 0., matrix_pencil.pole_DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
-        measured_DOS_axis.plot(matrix_pencil.selected_frequencies_MHz, matrix_pencil.pole_DOS_weights, "o", color="tab:blue", markersize=5)
+        measured_DOS_axis.plot(energy_MHz, matrix_pencil.spectra.reconstructed, color="tab:blue", linestyle="--", linewidth=1.5, label="Matrix-Pencil finite-time reconstruction")
+        measured_DOS_axis.vlines(modes.frequencies_MHz, 0., modes.DOS_weights, color="tab:blue", alpha=0.7, label="Matrix-Pencil linear pole DOS weights")
+        measured_DOS_axis.plot(modes.frequencies_MHz, modes.DOS_weights, "o", color="tab:blue", markersize=5)
         measured_DOS_title = "measured FFT sum and Matrix-Pencil DOS" if spectrum.complete_basis else "measured projected FFT sum and Matrix-Pencil weights"
         measured_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / pole weight", title=measured_DOS_title)
         measured_DOS_axis.legend()
@@ -939,10 +884,10 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         theory_DOS_axis.set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude / DOS weight", title=theory_DOS_title)
         theory_DOS_axis.legend()
         if show_poles:
-            for frequency_MHz in matrix_pencil.selected_frequencies_MHz:
+            for frequency_MHz in modes.frequencies_MHz:
                 measured_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
                 theory_DOS_axis.axvline(frequency_MHz, color="cyan", linewidth=0.7, alpha=0.35)
-        fig.suptitle(f"K={len(matrix_pencil.selected_frequencies_MHz)} shared poles; global relative residual={matrix_pencil.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
+        fig.suptitle(f"K={len(modes.frequencies_MHz)} shared poles; global relative residual={matrix_pencil.fit.relative_residual:.3f}; frequencies modulo fs={matrix_pencil.sampling.sampling_frequency_MHz:.6g} MHz")
         return fig
 
     def display_matrix_pencil_occupation(self,
@@ -989,10 +934,29 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         fig.suptitle(f"{result.occupation}; rowwise poles={len(result.frequencies_MHz)}; estimated signal rank={result.diagnostic.estimated_signal_rank}; relative residual={result.relative_residual:.3f}; frame={frame}")
         return fig
 
+    def display_poles(self, fit, data=None, title=""):
+        """Any pole fitter's result on this spectrum (:func:`fitting.qsim.poles.pole_plots.display_pole_fit`).
+
+        ``fit`` is a :class:`fitting.qsim.poles.pole_fit.PoleFit` of ``data.reconstruction.A`` on
+        ``data.spectrum.time_us``, from any fitter in ``fitting.qsim.poles``. The model levels are
+        this analysis's eigenenergies, each marked in the rows where it has weight.
+        """
+        data = self.data if data is None else data
+        reconstruction, spectrum = data.reconstruction, data.spectrum
+        labels = [str(initial) if tuple(initial) == tuple(final) else f"{tuple(final)} <- {tuple(initial)}"
+                  for initial, final in zip(reconstruction.occupations, reconstruction.final_occupations)]
+        return display_pole_fit(fit, reconstruction.A, spectrum.time_us, levels_MHz=spectrum.energies_MHz,
+                                row_weights=spectrum.eigenstate_weights, row_labels=labels,
+                                fft_window=spectrum.fft_window, zero_padding=spectrum.zero_padding, title=title)
+
     @staticmethod
-    def display_result(reconstruction, 
-                       spectrum, 
-                       mode_labels):
+    def display_result(reconstruction, spectrum, mode_labels,
+                       aggregate_title=None, aggregate_labels=("experiment", "theory")):
+        """Local spectra (experiment, theory), the LDOS, and the aggregate spectrum.
+
+        ``aggregate_title`` defaults to "complete-basis DOS" or "projected
+        spectrum"; ``aggregate_labels`` names the two aggregate curves.
+        """
         rows = np.arange(len(reconstruction.occupations))
         labels = [
             str(initial) if tuple(initial) == tuple(final)
@@ -1020,11 +984,11 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         fig.colorbar(image, ax=axes[0], label="spectral magnitude")
 
         MBRSpectrumExperiment.display_local_density_of_states(spectrum, labels, axes[1, 0])
-        axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label="experiment")
-        axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label="theory")
-        title = "projected spectrum"
-        if spectrum.complete_basis:
-            title = "complete-basis DOS"
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.measured, color="black", label=aggregate_labels[0])
+        axes[1, 1].plot(spectrum.energy_MHz, spectrum.theory, color="tab:orange", label=aggregate_labels[1])
+        title = aggregate_title
+        if title is None:
+            title = "complete-basis DOS" if spectrum.complete_basis else "projected spectrum"
         axes[1, 1].set(xlim=(-spectrum.energy_limit_MHz, spectrum.energy_limit_MHz), xlabel="energy E/h (MHz)", ylabel="spectral magnitude", title=title)
         axes[1, 1].legend()
         resolution_label = f"FFT resolution: {spectrum.fft_resolution_MHz:.6g} MHz"
@@ -1035,93 +999,150 @@ class MBRSpectrumExperiment(EncodingHamiltonianSpectroscopyExperiment):
         fig.suptitle(f"Kerr used in plotted Hamiltonian: {spectrum.physical_kerr_MHz:.6g} MHz; {resolution_label}")
         return fig
 
-    @staticmethod
-    def spectroscopy_batch(default_expt_cfg, 
-                           swap_stors, 
-                           occupations, 
-                           cycle_chunks,
-                           phase_by_occupation, 
-                           detunings=None, 
-                           sync_cycles=10, 
-                           reps=300,
-                           final_occupations=None,
-                           phase_correction_location=None):
-        """
-        Returns dictionary of 
-            - default_expt_cfg
-            - list of config to be overrided in each job
-        The list of config is then used to make and batch jobs in a chunk.
-        The actual batch is done by plugging the output to the BatchRunner.
 
-        Each initial/final pair and cycle chunk is one job, with a 2D sweep
-        of Floquet cycle and four (preparation, analyzer) phase combinations.
-        
-        ``phase_correction_location`` selects "pulse" or "analysis" for every
-        pair. 
-            - If "pulse", it adds the phase correction to the final pi/2 pulse.
-            - If "analysis", it post-processes in the `analyze()` method
-            - If omitted, use the value in ``default_expt_cfg``, falling back to "pulse".
-        An explicit argument overrides that default. 
-        
-        The resolved location is saved in each job's
-        config along with its pulse and analysis correction amounts.
-        
-        Example:
-            spectroscopy_batch = EncSpec.spectroscopy_batch()
-            spectroscopy_runner = BatchRunner(
-                ExptProgram=spectroscopy_batch.program, ...)
-            spectroscopy_expt = spectroscopy_runner.execute(spectroscopy_batch.configs)
-        """
-        if detunings is None:
-            detunings = [0.] * len(swap_stors)
-        else:
-            detunings = list(detunings)
-            
-        if phase_correction_location is None:
-            phase_correction_location = default_expt_cfg.get("phase_correction_location", "pulse")
-        if phase_correction_location not in ("pulse", "analysis"):
-            raise ValueError("phase_correction_location must be 'pulse' or 'analysis'")
-        
-        final_occupations = occupations if final_occupations is None else final_occupations
-        pairs = list(zip(occupations, final_occupations))
-        defaults = deepcopy(default_expt_cfg)
-        batch_overrides = dict(
-            reps=reps, 
-            storage_reset=swap_stors, 
-            swap_stors=swap_stors,
-            detunings=detunings, 
-            scramble_sync_cycles=sync_cycles,
-            update_phases=True, 
-            palindrome_scramble=False, 
-            spectroscopy_phase_correction_mode="final_analyzer",
-            phase_correction_location=phase_correction_location,
-            spectroscopy_phase_combinations=[
-                [0., 0.], [180., 0.], [0., 90.], [180., 90.],
-            ], #Note: The order is [prep_phase, analhzer_phase]
-            spectroscopy_phase_ids=[0, 1, 2, 3],
-            swept_params=["floquet_cycle", "spectroscopy_phase_id"],
+# --------------------------------------------------------------------------
+# The M1 self-Kerr scan (source qsim_experiments.ipynb cell 309), moved
+# unchanged from notebook_helpers/mbr_n3_reprocess.py in MBR redesign step 9.
+# --------------------------------------------------------------------------
+
+def self_kerr_scan(
+        spectroscopy_expt, spectroscopy_data, analyze_at,
+        kerr_grid_kHz=None, energy_limit_MHz=0.08,
+        min_man_photons=2, baseline_quantile=0.20):
+    """Scan the signed M1 self-Kerr for best experiment--theory peak overlap.
+
+    ``analyze_at(kerr_MHz)`` re-analyzes in the manual-Kerr frame at one
+    grid point and returns the data.
+
+    From `qsim_experiments.ipynb` cell 309, not data_postprocess -- the
+    surface map routes that notebook's cells 308-314 to the analysis side,
+    and this is its N=3 analysis. Submits no jobs.
+
+    Scores only traces whose encoder occupation has at least
+    `min_man_photons` M1 photons. Rows are averaged within each
+    M1-photon-number group and the groups are then weighted equally, so a
+    lone trace such as (3, 0, 0, 0, 0) is not drowned out by the larger
+    n_M1 = 2 group.
+
+    Warns on stdout if the best point lands on a grid boundary, which means
+    `kerr_grid_kHz` needs widening.
+
+    Note the mutation: `analyze()` rewrites `spectroscopy_expt.data`, so this
+    re-runs it at the winning grid point before returning, and hands back the
+    restored data rather than leaving the caller holding a stale reference.
+
+    Returns (best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data). Both
+    returns are None/unchanged if no trace qualifies.
+    """
+    if kerr_grid_kHz is None:
+        kerr_grid_kHz = np.arange(-5.0, 0.0 + 1e-9, 0.005)
+    kerr_fit_energy_limit_MHz = energy_limit_MHz
+    kerr_fit_min_man_photons = min_man_photons
+    kerr_fit_baseline_quantile = baseline_quantile
+    best_self_kerr_kHz = None
+    kerr_fit_scores = None
+
+    def normalize_peak_rows(values):
+        values = np.asarray(values, dtype=float)
+        values = np.clip(
+            values - np.quantile(
+                values,
+                kerr_fit_baseline_quantile,
+                axis=1,
+                keepdims=True,
+            ),
+            0.0,
+            None,
         )
-        
-        if phase_correction_location == "analysis":
-            batch_overrides["final_analyzer_phase_per_cycle_deg"] = 0.
-        else:
-            batch_overrides["spectroscopy_analysis_phase_per_cycle_deg"] = 0.
-            
-            
-        for key, value in batch_overrides.items():
-            if key in defaults and not np.array_equal(defaults[key], value):
-                print(f"[spectroscopy_batch] overriding {key}: {defaults[key]!r} -> {value!r}")
-        defaults.update(batch_overrides)
-        configs = [
-            dict(spectroscopy_occupations=occupation,
-                 spectroscopy_final_occupations=final_occupation,
-                 final_analyzer_phase_per_cycle_deg=(
-                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "pulse" else 0.),
-                 spectroscopy_analysis_phase_per_cycle_deg=(
-                     phase_by_occupation[tuple(final_occupation)] if phase_correction_location == "analysis" else 0.),
-                 floquet_cycles=cycles.tolist())
-            for occupation, final_occupation in pairs for cycles in cycle_chunks
-        ]
-        return AttrDict(dict(default_expt_cfg=defaults, 
-                             configs=configs,
-                             program=NPhotonHamiltonianSpectroscopyProgram))
+        return values / np.maximum(
+            np.linalg.norm(values, axis=1, keepdims=True),
+            1e-15,
+        )
+
+    kerr_fit_occupations_array = np.asarray(
+        spectroscopy_data.reconstruction.occupations,
+        dtype=int,
+    )
+    kerr_fit_rows = np.flatnonzero(
+        kerr_fit_occupations_array[:, 0] >= kerr_fit_min_man_photons
+    )
+    kerr_fit_occupations = [
+        tuple(spectroscopy_data.reconstruction.occupations[row])
+        for row in kerr_fit_rows
+    ]
+
+    if len(kerr_fit_rows) == 0:
+        print(
+            f"self-Kerr fit skipped: no trace has "
+            f"n_M1 >= {kerr_fit_min_man_photons}"
+        )
+    else:
+        kerr_fit_scores = []
+        kerr_fit_trace_scores = []
+        kerr_fit_n_M1 = kerr_fit_occupations_array[kerr_fit_rows, 0]
+
+        for kerr_kHz in kerr_grid_kHz:
+            candidate_data = analyze_at(kerr_kHz * 1e-3)
+            use_energy = (
+                np.abs(candidate_data.spectrum.energy_MHz)
+                < kerr_fit_energy_limit_MHz
+            )
+            measured_peaks = normalize_peak_rows(
+                candidate_data.spectrum.measured_local[kerr_fit_rows][
+                    :, use_energy
+                ]
+            )
+            theory_peaks = normalize_peak_rows(
+                candidate_data.spectrum.theory_local[kerr_fit_rows][
+                    :, use_energy
+                ]
+            )
+            trace_scores = np.sum(measured_peaks * theory_peaks, axis=1)
+            photon_group_scores = [
+                np.mean(trace_scores[kerr_fit_n_M1 == n_M1])
+                for n_M1 in np.unique(kerr_fit_n_M1)
+            ]
+            kerr_fit_trace_scores.append(trace_scores)
+            kerr_fit_scores.append(np.mean(photon_group_scores))
+
+        kerr_fit_scores = np.asarray(kerr_fit_scores)
+        kerr_fit_trace_scores = np.asarray(kerr_fit_trace_scores)
+        best_kerr_index = int(np.argmax(kerr_fit_scores))
+        best_self_kerr_kHz = float(kerr_grid_kHz[best_kerr_index])
+
+        # analyze() mutates spectroscopy_expt.data, so restore the best grid point.
+        spectroscopy_data = analyze_at(best_self_kerr_kHz * 1e-3)
+
+        print("fit occupations:", kerr_fit_occupations)
+        print(f"best signed M1 self-Kerr = {best_self_kerr_kHz:.3f} kHz")
+        if best_kerr_index in (0, len(kerr_grid_kHz) - 1):
+            print("best point is on the grid boundary; expand kerr_grid_kHz")
+
+        plt.figure(figsize=(8, 4), constrained_layout=True)
+        for column, fit_occupation in enumerate(kerr_fit_occupations):
+            plt.plot(
+                kerr_grid_kHz,
+                kerr_fit_trace_scores[:, column],
+                alpha=0.45,
+                label=str(fit_occupation),
+            )
+        plt.plot(
+            kerr_grid_kHz,
+            kerr_fit_scores,
+            color="black",
+            linewidth=2.5,
+            label="equal-weight mean by n_M1",
+        )
+        plt.axvline(best_self_kerr_kHz, color="tab:red", linestyle="--")
+        plt.xlabel("signed M1 self-Kerr (kHz)")
+        plt.ylabel("experiment--theory peak overlap")
+        plt.legend(fontsize=8)
+        plt.show()
+
+        for kerr_fit_row in kerr_fit_rows:
+            spectroscopy_expt.display_occupations(
+                occupations=int(kerr_fit_row),
+            )
+        plt.show()
+
+    return best_self_kerr_kHz, kerr_fit_scores, spectroscopy_data

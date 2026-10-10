@@ -8,33 +8,28 @@ run ``MBRSpectrumExperiment.analyze()``.
 Not a test module (no ``test_`` prefix, so pytest does not collect it). It is
 imported by ``test_mbr_analysis_golden.py`` and by the baseline generator.
 
-Scaffolding, and known to be scaffolding
+The HDF5 loader now lives in the library
 ----------------------------------------
-``_SavedJob`` and ``_SavedProgram`` duck-type the pickled experiment object
-that the aggregate path expects to find. They exist only because raw HDF5 does
-not yet carry its own provenance (section 3.1 of the refactor spec): the
-analysis wants a compiled Program to ask for Floquet timing, and a file saved
-today cannot supply one.
+This module used to carry its own ``_SavedJob``/``_SavedProgram`` pair and its
+own HDF5 reader, marked as scaffolding to be deleted once a real loader
+landed. It has: :mod:`experiments.saved_jobs`. The functions below are thin
+wrappers over it, kept because the fixtures and the golden test call them by
+these names.
 
-Both classes die when ``MBRSpectrumExperiment`` and its HDF5 loader land
-(spec phase 2). Do not build on them.
-
-TODO(spec 3.1): drop ``_SavedProgram`` once the timing resolver reads the
-versioned configs directly, and ``_SavedJob`` once aggregates load HDF5
-themselves.
+That the wrappers are thin is the point. These tests pin the analysis numbers
+against a stored baseline, so running them through the same loader the
+notebooks use is what makes the baseline evidence that the loader is right.
 """
 
 import json
 from pathlib import Path
 
-import h5py
 import numpy as np
-from slab import AttrDict
 
-from experiments.floquet_timing import resolve_floquet_timing
-from experiments.job_paths import resolve_job_paths
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
+from experiments.job_paths import job_records, resolve_job_paths
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.saved_jobs import load_aggregate as _load_aggregate
+from experiments.saved_jobs import load_h5
 
 DATASETS = Path(__file__).parent / "data" / "mbr_datasets.json"
 
@@ -68,7 +63,6 @@ CHARACTERIZATION_JOB_IDS = dataset("august_quickplot", "spectroscopy")
 # Analysis parameters the reference notebook uses. Kept here rather than in the
 # test so the baseline generator and the test cannot disagree about them.
 CHARACTERIZATION_ANALYSIS = dict(
-    calibration=None,
     cycle_branches={(3, 0, 0, 0, 0): 1, (2, 0, 0, 1, 0): 1},
     fft_window="raw",
     zero_padding=1,
@@ -134,55 +128,43 @@ COMPLETE_BASIS_ANALYSIS = dict(fft_window="raw", zero_padding=1)
 PROVENANCE = Path(__file__).parent / "data" / "job_provenance.json"
 
 
-def load_h5(path, load_shots=False):
-    """-> (cfg, data). Skips idata/qdata unless asked; they are ~99% of the file."""
-    with h5py.File(path, "r") as handle:
-        cfg = AttrDict(json.loads(handle.attrs["config"]))
-        skip = () if load_shots else ("idata", "qdata")
-        data = AttrDict({k: handle[k][()] for k in handle if k not in skip})
-    return cfg, data
-
-
-class _SavedProgram:
-    """Supplies Floquet timing where the analysis looks for a compiled program."""
-
-    def __init__(self, floquet_cycle_us, m1s_pi_fracs):
-        self._cycle_us = float(floquet_cycle_us)
-        self.m1s_pi_fracs = list(m1s_pi_fracs)
-
-    def calculate_floquet_cycle_us(self):
-        return self._cycle_us
-
-
-class _SavedJob:
-    """Duck-types the pickled experiment for what the analysis path reads."""
-
-    def __init__(self, job_id, cfg, data, path, prog):
-        self.job_id, self.cfg, self.data = job_id, cfg, data
-        self.fname = str(path)
-        self.prog = prog
-
-
-def load_aggregate(job_ids=None, timing=None,
-                   owner=MBRSpectrumExperiment):
+def load_aggregate(job_ids=None, timing=None, owner=MBRSpectrumExperiment):
     """Build the aggregate Experiment for ``job_ids`` from HDF5 alone.
 
     Touches no station, no database, no vault note and no pickle, per the
     isolation rule in spec section 13.3.
+
+    ``timing`` is pinned to :data:`CHARACTERIZATION_TIMING` by default rather
+    than resolved from provenance, so this fixture keeps testing the analysis
+    against a fixed cycle time even if the resolver changes.
+    :func:`load_aggregate_resolved` is the one that exercises the resolver.
     """
     ids = list(CHARACTERIZATION_JOB_IDS if job_ids is None else job_ids)
-    paths = resolve_job_paths(ids)
-    prog = _SavedProgram(**(timing or CHARACTERIZATION_TIMING))
-    jobs = [_SavedJob(j, *load_h5(paths[j]), paths[j], prog) for j in ids]
-    return owner._from_expts(jobs, job_ids=ids)
+    return _load_aggregate(ids, owner=owner,
+                           timing=timing or CHARACTERIZATION_TIMING)
 
 
-def run_reference_analysis(job_ids=None, timing=None, **overrides):
-    """-> (expt, analysis_result) for the characterization workflow."""
-    expt = load_aggregate(job_ids=job_ids, timing=timing)
+def converted_quickplot(out_root):
+    """-> MBRSpectrumExperiment for the quick-plot set, through the migration script.
+
+    The eight old jobs go to four ``MBRTimeTraceExperiment`` files in
+    ``out_root``; the spectrum is re-assembled from the manifest the script
+    writes. Timing is pinned to :data:`CHARACTERIZATION_TIMING`, as for the
+    old aggregate.
+    """
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        CHARACTERIZATION_JOB_IDS, out_root=out_root, load_shots=False,
+        timing=CHARACTERIZATION_TIMING)
+    return Spectrum.from_manifest(converted.manifest_path)
+
+
+def run_reference_analysis(spectrum, **overrides):
+    """-> (spectrum, analysis_result) for the characterization workflow."""
     params = dict(CHARACTERIZATION_ANALYSIS)
     params.update(overrides)
-    return expt, expt.analyze(**params)
+    return spectrum, spectrum.analyze(**params)
 
 
 # --------------------------------------------------------------------------
@@ -193,76 +175,132 @@ def run_reference_analysis(job_ids=None, timing=None, **overrides):
 def job_provenance():
     """-> {job_id: record} from the exported sidecar (spec section 3.2).
 
-    Written once by ``tools/export_job_provenance.py``. Reading it here keeps
-    the analysis path free of any database access.
+    Delegates to :func:`experiments.job_paths.job_records`; kept as a name
+    because the golden test reads the version IDs out of it directly.
     """
-    if not PROVENANCE.is_file():
-        raise FileNotFoundError(
-            f"No provenance sidecar at {PROVENANCE}. Regenerate it with\n"
-            f"  pixi run python tools/export_job_provenance.py --range ... -o {PROVENANCE}"
-        )
-    return json.loads(PROVENANCE.read_text())
+    return job_records()
 
 
 def load_aggregate_resolved(job_ids, owner=MBRSpectrumExperiment):
     """Build an aggregate whose Floquet timing comes from the versioned configs.
 
-    Unlike :func:`load_aggregate` this needs no hard-coded timing: each job's
-    Floquet config version comes from the provenance sidecar and the timing is
-    recomputed from the archive (spec section 2.2). That is what makes datasets
-    other than the August characterization set loadable at all -- the July
-    sectors were taken under a different configuration.
+    Unlike :func:`load_aggregate` this passes no ``timing``, so the loader
+    resolves each job's Floquet config from the provenance sidecar and
+    recomputes the timing from the archive (spec section 2.2). That is what
+    makes datasets other than the August characterization set loadable at
+    all -- the July sectors were taken under a different configuration.
     """
-    ids = list(job_ids)
-    paths = resolve_job_paths(ids)
-    provenance = job_provenance()
-
-    missing = [j for j in ids if j not in provenance]
-    if missing:
-        raise KeyError(f"{len(missing)} jobs absent from the provenance sidecar: {missing[:5]}")
-
-    jobs = []
-    for job_id in ids:
-        cfg, data = load_h5(paths[job_id])
-        timing = resolve_floquet_timing(
-            cfg, provenance[job_id]["floquet_storage_version_id"])
-        jobs.append(_SavedJob(
-            job_id, cfg, data, paths[job_id],
-            _SavedProgram(timing["floquet_cycle_us"], timing["m1s_pi_fracs"]),
-        ))
-    return owner._from_expts(jobs, job_ids=ids)
+    return _load_aggregate(list(job_ids), owner=owner)
 
 
-def load_complete_basis():
-    """-> (calibration_expt, spectroscopy_expt, occupations) for August N=3.
+def converted_complete_basis(out_root):
+    """-> MBRSpectrumExperiment for August N=3, through the migration script.
 
-    Loads from HDF5 plus the provenance sidecar; no job server, no pickles.
-    Cached per process because the two aggregates cover 140 files and every
-    branch reuses them.
+    The 70 calibration jobs become an ``MBRCalibrationSetExperiment`` and the
+    70 spectroscopy jobs 35 ``MBRTimeTraceExperiment`` files, all in
+    ``out_root``; the spectrum is re-assembled from its manifest, which also
+    loads the calibration set.
     """
-    if not hasattr(load_complete_basis, "_cache"):
-        calibration = load_aggregate_resolved(
-            COMPLETE_BASIS_CALIBRATION_IDS, owner=MBRPhaseCorrectionExperiment)
-        calibration.analyze()
-        occupations = [tuple(map(int, o)) for o in calibration.data.occupations]
-        if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
-            raise RuntimeError(
-                f"calibration is not the complete 35-state N=3 sector: "
-                f"{len(occupations)} occupations")
-        spectroscopy = load_aggregate_resolved(COMPLETE_BASIS_SPECTROSCOPY_IDS)
-        load_complete_basis._cache = (calibration, spectroscopy, occupations)
-    return load_complete_basis._cache
+    from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment as Spectrum
+
+    converted = migration_tool().migrate_spectrum(
+        COMPLETE_BASIS_SPECTROSCOPY_IDS, out_root=out_root, load_shots=False,
+        calibration_job_ids=COMPLETE_BASIS_CALIBRATION_IDS)
+    spectrum = Spectrum.from_manifest(converted.manifest_path)
+    occupations = spectrum.occupations
+    if len(occupations) != 35 or any(sum(o) != 3 for o in occupations):
+        raise RuntimeError(
+            f"spectrum is not the complete 35-state N=3 sector: "
+            f"{len(occupations)} occupations")
+    return spectrum
 
 
-def run_complete_basis_analysis(branch="as_acquired_fft", **overrides):
-    """-> (expt, analysis_result) for one branch of the August N=3 sector."""
-    calibration, spectroscopy, occupations = load_complete_basis()
-    params = dict(COMPLETE_BASIS_ANALYSIS,
-                  calibration=calibration,
-                  occupations=occupations,
-                  **COMPLETE_BASIS_BRANCHES[branch])
+def run_complete_basis_analysis(spectrum, branch="as_acquired_fft", **overrides):
+    """-> (spectrum, analysis_result) for one branch of the August N=3 sector."""
+    params = dict(COMPLETE_BASIS_ANALYSIS, **COMPLETE_BASIS_BRANCHES[branch])
     params.update(overrides)
-    return spectroscopy, spectroscopy.analyze(**params)
+    return spectrum, spectrum.analyze(**params)
+
+
+# --------------------------------------------------------------------------
+# The phase calibration on its own: September N=3
+# --------------------------------------------------------------------------
+#
+# The complete-basis fixture already runs a calibration, but only as an input
+# to the spectrum, so the calibration's own output is pinned only through what
+# the spectrum happens to consume. This set pins it directly. It is the future
+# MBRStarkCalExperiment, and it sits on the critical path of every spectrum.
+#
+# 70 jobs, one per occupation and analyzer phase (0 and 90 deg), covering the
+# whole 35-state N=3 sector under one config triple. Chosen over reusing the
+# August calibration because it is the newer acquisition path: preload_flattop
+# swaps and 65 cycle pairs, where August has gauss swaps and 17. There is no
+# spectroscopy set under the same configuration (the jobs after it are
+# propagator runs), so this fixture pins the calibration alone.
+
+STARK_CAL_IDS = dataset("september_N3", "calibration")
+
+
+def migration_tool():
+    """-> the ``tools/migrate_mbr_jobs.py`` module (tools/ is not a package)."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "tools" / "migrate_mbr_jobs.py"
+    spec = importlib.util.spec_from_file_location("migrate_mbr_jobs", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_stark_cal_analysis(out_root):
+    """-> (calibration_set, correction) for September N=3.
+
+    The 70 old jobs go through the migration script into ``out_root`` (35
+    ``MBRStarkCalExperiment`` files and one ``MBRCalibrationSetExperiment``
+    manifest), and the set is re-assembled from that manifest, so this runs
+    the whole path old data takes to the new classes. Timing is resolved
+    from the provenance sidecar during conversion, which also exercises the
+    resolver on a third configuration.
+    """
+    from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
+
+    converted = migration_tool().migrate_stark_cal(
+        STARK_CAL_IDS, out_root=out_root, load_shots=False)
+    calibration = MBRCalibrationSetExperiment.from_manifest(converted.manifest_path)
+    calibration.analyze()
+    return calibration, calibration.phase_correction()
+
+
+# --------------------------------------------------------------------------
+# Orthogonality and propagator sets
+# --------------------------------------------------------------------------
+#
+# Given by the user on 2026-09-24 (see ``notes`` in mbr_datasets.json).
+# September N=3: 35 zero-cycle orthogonality jobs, one per initial occupation,
+# modes M1, S2..S5. August N=1: 5 propagator jobs at q = 0 and 20; the lab log
+# does not confirm that it is the set in the logged plots, so it gates code,
+# not physics.
+
+ORTHOGONALITY_IDS = dataset("september_N3_orthogonality", "orthogonality")
+PROPAGATOR_IDS = dataset("august_N1_propagator", "propagator")
+
+
+def converted_orthogonality(out_root):
+    """-> MBROrthogonalityExperiment for September N=3, through the migration script."""
+    from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
+
+    converted = migration_tool().migrate_orthogonality(
+        ORTHOGONALITY_IDS, out_root=out_root, load_shots=False)
+    return MBROrthogonalityExperiment.from_manifest(converted.manifest_path)
+
+
+def converted_propagator(out_root):
+    """-> MBRHamTomoExperiment for August N=1 (q = 0, 20), through the migration script."""
+    from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment
+
+    converted = migration_tool().migrate_propagator(
+        PROPAGATOR_IDS, out_root=out_root, load_shots=False)
+    return MBRHamTomoExperiment.from_manifest(converted.manifest_path)
 
 
 # --------------------------------------------------------------------------
@@ -317,3 +355,42 @@ def flatten_result(value, prefix=""):
 
     emit(prefix, value)
     return flat
+
+
+# --------------------------------------------------------------------------
+# Diagonal disorder: the 7-1 campaign (MBR redesign step 7)
+# --------------------------------------------------------------------------
+
+
+def disorder_dataset(name):
+    """-> (calibration job IDs, {realization: job IDs}) of one disorder dataset."""
+    entry = json.loads(DATASETS.read_text())["datasets"][name]
+    return (list(entry.get("calibration", [])),
+            {int(r): list(ids) for r, ids in entry["realizations"].items()})
+
+
+def converted_diagonal_disorder(out_root, realizations=(0, 1)):
+    """-> MBRDisorderEnsembleExperiment for 7-1 realizations, through the migration script.
+
+    The 7-1 calibration becomes a calibration set, each realization's 20 old
+    jobs 10 ``MBRTimeTraceExperiment`` files and one ``MBRSpectrumExperiment``,
+    all in ``out_root``; the ensemble is re-assembled from its manifest.
+    """
+    from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
+
+    calibration, by_realization = disorder_dataset("diagonal_disorder_71")
+    ensemble = migration_tool().migrate_disorder(
+        {r: by_realization[r] for r in realizations}, out_root=out_root,
+        load_shots=False, calibration_job_ids=calibration)
+    return MBRDisorderEnsembleExperiment.from_manifest(ensemble.manifest_path)
+
+
+#: The 7-1 preview cells' analysis (data_postprocess.ipynb cell 246).
+DISORDER_PREVIEW_ANALYSIS = dict(
+    phase_frame="as_acquired",
+    theory_kerr_MHz="recorded",
+    excluded_occupations=[(0, 3, 0, 0, 0)],
+    mpm_track_frequency_tolerance_bins=0.50,
+    mpm_merge_frequency_tolerance_bins=0.50,
+    mpm_dedup_frequency_tolerance_bins=0.50,
+)

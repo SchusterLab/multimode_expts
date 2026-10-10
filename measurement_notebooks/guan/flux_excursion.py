@@ -194,7 +194,7 @@ expt_params = dict(
     postpulse = False,
 )
 
-qbe = QsimBaseExperiment(
+qbe = QsimExperiment(
     soccfg=soc,
     path=expt_path,
     prefix=f"KerrQBHeating",
@@ -551,7 +551,7 @@ def kerr_ramsey_preproc(station, default_expt_cfg, **kwargs):
 # %%
 kerr_ramsey_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.QsimBaseExperiment,
+    ExptClass=meas.QsimExperiment,
     ExptProgram=meas.qsim.kerr.KerrCavityRamseyProgram,
     default_expt_cfg=kerr_ramsey_defaults,
     preprocessor=kerr_ramsey_preproc,
@@ -717,7 +717,7 @@ for i, expt_obj in enumerate(expt_objs):
 #         kerr_drive_type='man-qubit', # 'man-coupler', 'qubit
 #     )
 
-#     cavity_ramsey = QsimBaseExperiment(
+#     cavity_ramsey = QsimExperiment(
 #     soccfg=soc,
 #     path=expt_path,
 #     prefix=f"KerrRamseyExperiment",

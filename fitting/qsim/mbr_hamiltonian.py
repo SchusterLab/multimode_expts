@@ -1,44 +1,43 @@
-"""Hamiltonian consturction for theory result reproduction.
+"""The fixed-photon-number Hamiltonian of the many-body Ramsey Floquet map.
+
+Moved out of :func:`fitting.qsim.mbr_spectrum.analyze_spectrum` in MBR
+redesign step 7b (2026-09-24), without changes to the arithmetic, so that
+theory levels can be computed without a measured reconstruction (the disorder
+planning and ensemble analysis need only the levels). ``analyze_spectrum``
+calls it; ``tests/test_mbr_analysis_golden.py`` pins the result through it.
+
+Pure numerics.
 """
-
-
-
 from itertools import product
 
 import numpy as np
 
 from slab import AttrDict
 
-def construct_hamiltonian(photon_number,
-                          mode_count,
-                          detunings,
-                          physical_kerr_MHz,
-                          couplings_MHz):
-    """
-    Here, the Hamiltonian is directly calculated as a matrix in a Fock basis
-    First, product makes the all possible product states within photon_number
-    and then those are conditionally stored in fock_basis if the number = photon number
-    Args:
-        - photon_number: the total number of photons
-        - mode_count: the total number of modes
-        - detunings: detuning list
-        - physical_kerr_MHz: self Kerr value in MHz
-        - coupling_MHz: coupling_list in MHz
 
+def fixed_n_hamiltonian(photon_number, mode_count, detunings, couplings_MHz,
+                        physical_kerr_MHz):
+    """Build and diagonalize H in the Fock basis of ``photon_number`` photons.
 
-    Returns:
-        - H_MHz: Hamiltonian matrix
-        - fock_index: Fock states and their index upon which H_MHz is defined
+    ``mode_count`` counts M1 and the storage modes; ``detunings`` (MHz) and
+    ``couplings_MHz`` are per storage mode. The pulse program adds the
+    detuning to the storage-M1 sideband, so the onsite energy is -detuning.
+
+    Returns AttrDict with ``fock_basis`` (list of occupation lists),
+    ``fock_index`` ({tuple: row}), ``hamiltonian_MHz``, ``energies_MHz``
+    (ascending), ``states`` (columns are eigenstates in the Fock basis) and
+    ``basis_eigenstate_weights`` (|states|**2).
     """
+    detunings = np.asarray(detunings)
+    #Here, the Hamiltonian is directly calculated as a matrix in a Fock basis
+    #First, product makes the all possible product states within photon_number
+    #and then those are conditionally stored in fock_basis if the number = photon number
     fock_basis = [
         list(occupation) for occupation in product(range(photon_number + 1), repeat=mode_count)
         if sum(occupation) == photon_number
     ]
-    
     #Storing index of each fock basis
-    fock_index = {tuple(occupation): index 
-                  for index, occupation 
-                  in enumerate(fock_basis)}
+    fock_index = {tuple(occupation): index for index, occupation in enumerate(fock_basis)}
     #Making Hamiltonian matrix in a fock basis
     H_MHz = np.zeros((len(fock_basis), len(fock_basis)))
     # The pulse program adds detuning to the positive storage-M1 sideband, so the rotating-frame onsite energy is -detuning.
@@ -70,4 +69,17 @@ def construct_hamiltonian(photon_number,
             matrix_element = coupling_MHz * np.sqrt(n_M1 * (occupation[mode_index] + 1))
             H_MHz[row, column] += matrix_element
             H_MHz[column, row] += matrix_element
-    return H_MHz, fock_index
+    #Using np.linalg.eigh, get the eigenvalue of the Hamiltonian Matrix
+    #Returns matrix with the index of (f, k), where k being eigenstate index
+    #And f being fock state index.
+    #So each column is an eigen state in a fock basis
+    energies_MHz, states = np.linalg.eigh(H_MHz)
+
+    return AttrDict(dict(
+        fock_basis=fock_basis,
+        fock_index=fock_index,
+        hamiltonian_MHz=H_MHz,
+        energies_MHz=energies_MHz,
+        states=states,
+        basis_eigenstate_weights=np.abs(states) ** 2,
+    ))

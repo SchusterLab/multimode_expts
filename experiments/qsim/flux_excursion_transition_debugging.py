@@ -2,10 +2,10 @@
 
 from slab import AttrDict
 
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram, readout_mode
 
 
-class FluxExcursionTransitionDebuggingProgram(QsimBaseProgram):
+class FluxExcursionTransitionDebuggingProgram(QsimProgram):
     """
     Probe flux-excursion response with configurable preparation and mapping.
 
@@ -71,7 +71,7 @@ class FluxExcursionTransitionDebuggingProgram(QsimBaseProgram):
                                     phrst = 1
                                     )
                 self.sync_all()
-            if not ecfg.get("perform_wigner", False) and not ecfg.get("skip_man_conv", False):
+            if readout_mode(ecfg) != "wigner" and not ecfg.get("skip_man_conv", False):
                 if ecfg.get("debug", False):
                     print("performing man pi and qubit ef")
                 pulse_cfg2 = [

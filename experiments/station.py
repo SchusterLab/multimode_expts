@@ -79,6 +79,9 @@ def is_production_pc() -> bool:
 # stub. See docs/reference/mock_mode_architecture.md.
 SOCCFG_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "configs" / "soccfg_snapshot.json"
 
+# Mock-mode output root off the prod PC. .tmp/ is git-ignored.
+MOCK_DATA_ROOT = Path(__file__).resolve().parent.parent / ".tmp" / "mock_data"
+
 
 def read_soccfg_snapshot() -> QickConfig:
     """Build a ``QickConfig`` from the committed firmware-shape snapshot.
@@ -418,11 +421,15 @@ class MultimodeStation:
     def _initialize_output_paths_mock(self):
         """Create output directories for mock mode.
 
-        Hardcoded to C:/experiments/mock_data on the prod PC. Off-prod-PC mode
-        will eventually need its own path resolution — flagged in
-        docs/mock_mode_architecture_plan.md.
+        C:/experiments/mock_data on the prod PC, so mock data from the worker
+        does not grow inside its checkout. Elsewhere MOCK_DATA_ROOT, under the
+        repo root, not the working directory: the Windows path is relative off
+        Windows and used to make a stray ``C:`` folder.
         """
-        self.output_root = Path("C:/experiments/mock_data")
+        if is_production_pc():
+            self.output_root = Path("C:/experiments/mock_data")
+        else:
+            self.output_root = MOCK_DATA_ROOT
 
         # Create directories (real directories for data file testing)
         self.experiment_path = self.output_root / self.experiment_name
@@ -453,10 +460,9 @@ class MultimodeStation:
         validators see a complete soccfg), then installs MockQickSoc +
         MockYokogawa stubs. Does not claim real yokos.
 
-        soccfg source: on the prod PC, fetched live from the Pyro proxy (and the
-        committed snapshot refreshed); off it, loaded from the committed JSON
-        snapshot — no FPGA, no proxy, accurate unit conversions and channel
-        shape. See docs/reference/mock_mode_architecture.md.
+        soccfg source: the committed JSON snapshot, on every machine — no FPGA,
+        no proxy, accurate unit conversions and channel shape. See
+        docs/reference/mock_mode_architecture.md.
 
         After this, use_real_instruments() will raise — reconstruct the
         station with mock=False to switch to real mode.
@@ -466,30 +472,15 @@ class MultimodeStation:
         print("[MOCK STATION] Mock hardware initialized (real soccfg + MockQickSoc)")
 
     def _resolve_mock_soccfg(self) -> QickConfig:
-        """soccfg for mock mode: live proxy on the prod PC, committed snapshot off it.
+        """soccfg for mock mode: always the committed snapshot, never the proxy.
 
-        Off-prod-PC we skip the proxy entirely (it would only time out). On the
-        prod PC we prefer the live proxy and opportunistically refresh the
-        snapshot, falling back to the snapshot if the proxy is unreachable
-        (e.g. board powered off).
+        Mock mode must not touch the board, even on the prod PC: the board may
+        be running someone else's firmware (a tProc v2 test, say), and a live
+        fetch would both break the mock run and overwrite the snapshot with
+        that firmware. Only a real station refreshes the snapshot.
         """
-        qick_alias = self.hardware_cfg["aliases"]["soc"]
-        if not is_production_pc():
-            print(f"[MOCK STATION] Off-prod-PC: loading soccfg from {SOCCFG_SNAPSHOT_PATH}")
-            return read_soccfg_snapshot()
-        try:
-            real_im = InstrumentManager(ns_address="192.168.137.26")
-            soccfg = QickConfig(real_im[qick_alias].get_cfg())
-        except Exception as e:
-            print(f"[MOCK STATION] Live proxy unreachable ({e!r}); "
-                  f"falling back to committed soccfg snapshot.")
-            return read_soccfg_snapshot()
-        try:
-            if write_soccfg_snapshot_if_changed(soccfg):
-                print(f"[MOCK STATION] Updated soccfg snapshot: {SOCCFG_SNAPSHOT_PATH}")
-        except Exception as e:
-            print(f"[MOCK STATION] WARNING: could not update soccfg snapshot ({e!r})")
-        return soccfg
+        print(f"[MOCK STATION] Loading soccfg from {SOCCFG_SNAPSHOT_PATH}")
+        return read_soccfg_snapshot()
 
     def _install_mock_instruments(self):
         """Build mock im + yokos and assign to self. Does not touch soc/configs."""
@@ -1100,6 +1091,16 @@ class MultimodeStation:
         self.recursive_compare(old_cfg, self.hardware_cfg)
         self._sanitize_config_fields()
 
+    def _skip_mock_snapshot(self, code: str) -> str:
+        """-> a placeholder version ID; mock configs never reach the version store.
+
+        A mock run's configs hold values fitted from zero data. The placeholder
+        is not in the database, so loading it fails instead of finding junk.
+        """
+        version_id = f"CFG-{code}-MOCK"
+        print(f"[MOCK STATION] mock mode active; skipping config snapshot ({version_id}).")
+        return version_id
+
     def update_all_station_snapshots(self, update_main: bool = False) -> dict:
         """
         Create config snapshots from current station state.
@@ -1137,6 +1138,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("HW")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
         self._sanitize_config_fields()
@@ -1170,6 +1173,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("MP")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
 
@@ -1202,6 +1207,8 @@ class MultimodeStation:
         Returns:
             The version ID of the created snapshot
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("M1")
         db = get_database()
         config_manager = ConfigVersionManager(self.config_dir)
 
@@ -1236,6 +1243,8 @@ class MultimodeStation:
         Raises:
             ValueError: If no floquet dataset is loaded
         """
+        if self._is_mock:
+            return self._skip_mock_snapshot("FL")
         if self.ds_floquet is None:
             raise ValueError("No floquet dataset loaded in station")
 

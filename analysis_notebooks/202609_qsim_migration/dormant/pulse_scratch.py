@@ -67,13 +67,14 @@ RUN_PREFIX = "JOB-20260414"
 # is still the loading layer and the shared numerics, and is still the class
 # every job here was acquired under -- so it stays, and these four sit beside
 # it. See analysis_notebooks/guan/MBR_analysis.py for the worked example.
-from experiments.qsim.floquet_dark_mode_readout import (
+# Moved to deprecated/ in MBR redesign step 7e (docs/qsim/mbr_step7_plan.md).
+from experiments.qsim.deprecated.encoding_spectroscopy import (
     EncodingHamiltonianSpectroscopyExperiment,
 )
-from experiments.qsim.mbr_phase_correction import MBRPhaseCorrectionExperiment
-from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.mbr_propagator import MBRPropagatorExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBROrthogonalityExperiment
+from experiments.qsim.deprecated.legacy_mbr import MBRPropagatorExperiment
 
 # %% [markdown]
 # Helpers this notebook uses, sliced out of the original

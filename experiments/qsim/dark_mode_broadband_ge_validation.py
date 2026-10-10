@@ -2,14 +2,14 @@
 """Validate the broadband ge pi pulse on |g,n> and |e,n>.
 
 Split out of ``floquet_dark_mode_readout.py`` unchanged. This program shares
-nothing with the dark-mode pulse layer beyond ``QsimBaseProgram``.
+nothing with the dark-mode pulse layer beyond ``QsimProgram``.
 """
 from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
-from experiments.qsim.qsim_base import QsimBaseProgram
+from experiments.qsim.qsim_base import QsimProgram
 
-class BroadbandGeValidationProgram(QsimBaseProgram):
+class BroadbandGeValidationProgram(QsimProgram):
     """Measure the configured broadband ge pi on |g,n> and |e,n>.
 
     ``validation_case`` selects one of six direct-readout experiments:

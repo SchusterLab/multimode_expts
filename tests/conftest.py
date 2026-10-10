@@ -56,7 +56,7 @@ class MockStation:
         self._is_mock = True
         self.user = "test_user"
         # Real MultimodeStation always has one (yymmdd_name); the queue path
-        # records it in station_config, so BatchRunner.execute needs it.
+        # records it in station_config, so a queued execute() needs it.
         self.experiment_name = "260914_test"
 
         self.hardware_cfg = AttrDict({

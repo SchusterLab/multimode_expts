@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Man-storage multiparity chevron: hardware frequency sweep per swap length.
 
-Split out of ``floquet_dark_mode_readout.py`` unchanged. ``DarkBaseRProgram``
+Split out of ``floquet_dark_mode_readout.py`` unchanged. ``QsimRProgram``
 comes along because this is its only subclass, so the whole measurement now
 reads in one place; it is not a general base layer.
 """
@@ -11,16 +11,12 @@ from tqdm import tqdm_notebook as tqdm
 
 from experiments.MM_base import MMRAveragerProgram
 from experiments.qsim.utils import ensure_list_in_cfg
-from experiments.qsim.qsim_base import QsimBaseProgram
-from experiments.qsim.dark_base import (
-    DarkBaseExperiment,
-    DarkBaseProgram,
-    DarkBaseRProgram,
-)
+from experiments.qsim.qsim_base import QsimProgram
+from experiments.qsim.qsim_base import QsimExperiment, QsimRProgram
 
 
 
-class ManStorMultiparityChevronRProgram(DarkBaseRProgram):
+class ManStorMultiparityChevronRProgram(QsimRProgram):
     """Hardware frequency sweep for one fixed M1-storage pulse length."""
 
     def initialize(self):
@@ -101,7 +97,7 @@ class ManStorMultiparityChevronRProgram(DarkBaseRProgram):
         )
 
 
-class ManStorMultiparityChevronRExperiment(DarkBaseExperiment):
+class ManStorMultiparityChevronRExperiment(QsimExperiment):
     """Software length sweep with a hardware frequency sweep on every line."""
 
     def acquire(self, progress=False, debug=False):
@@ -119,15 +115,7 @@ class ManStorMultiparityChevronRExperiment(DarkBaseExperiment):
                 "length point"
             )
 
-        if not self.cfg.expt.get("perform_wigner", False):
-            self.cfg.expt.perform_wigner = False
-
-        read_num = 1
-        if self.cfg.expt.get("active_reset", False):
-            params = MMRAveragerProgram.get_active_reset_params(self.cfg)
-            read_num += MMRAveragerProgram.active_reset_read_num(**params)
-        if self.cfg.expt.get("multiparity_readout", False):
-            read_num += 1
+        read_num = self.ProgramClass.readouts_per_shot(self.cfg)
         self.cfg.read_num = read_num
 
         avgi_lines = []
@@ -194,7 +182,7 @@ class ManStorMultiparityChevronRExperiment(DarkBaseExperiment):
             "qdata": [],
         }
 
-        # DarkBaseExperiment.analyze_multiparity expects frequency-major rows.
+        # QsimExperiment.analyze_multiparity expects frequency-major rows.
         for frequency_index in range(frequency_count):
             for length_index in range(len(lengths)):
                 data["idata"].append(

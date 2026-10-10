@@ -14,8 +14,6 @@ GOD = "experiments/qsim/floquet_dark_mode_readout.py"
 # Each moved function, with the commit whose god file still contained it, the
 # module it landed in, and -- when the move renamed it -- its new name.
 MOVED = [
-    ("analyze_matrix_pencil",       "04cea3a", "matrix_pencil"),
-    ("analyze_matrix_pencil_trace", "04cea3a", "matrix_pencil"),
     ("analyze_level_statistics",    "c1867d6", "level_statistics"),
     ("analyze_sff",                 "c1867d6", "level_statistics"),
     ("analyze_spectrum",            "5365e4f", "mbr_spectrum"),
@@ -33,6 +31,11 @@ MOVED = [row if len(row) == 4 else (*row, row[0]) for row in MOVED]
 # tool report REVIEW NEEDED forever -- which is how a tool stops being read.
 # Kept as a record of which functions are no longer their pre-move originals.
 DIVERGED = [
+    ("analyze_matrix_pencil", "matrix_pencil", "04cea3a",
+     "settings became MatrixPencilSettings and the FFT step moved to the "
+     "spectrum (2026-09-27); pinned by tests/test_matrix_pencil_regression.py"),
+    ("analyze_matrix_pencil_trace", "matrix_pencil", "04cea3a",
+     "removed (2026-09-27); a single trace is a one-row analyze_matrix_pencil"),
     ("merge_spectra", "level_statistics", "2da9cdc",
      "now refuses off-diagonal merges instead of rebuilding theory from the "
      "pre-generalization return amplitude"),
