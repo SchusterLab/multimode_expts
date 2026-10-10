@@ -33,8 +33,8 @@
 # removing fitted decay is a model assumption, not a measured correction.
 # Finite-time integration of the measured correlation is saved separately.
 #
-# This notebook follows `202609_qsim_migration/floquet_calibration.py` and
-# Jonginn's `qsim_experiments_highkerr_untracked_refactored.ipynb`.
+# Station and worker setup follow Jonginn's `Autocalibrate.ipynb` and
+# `qsim_experiments_highkerr_untracked_refactored.ipynb`.
 # Analysis reads raw HDF5 files, so it can run again without a station or job DB.
 #
 # To install manually on the measurement PC, copy these three files to the same
@@ -78,32 +78,20 @@ from fitting.qsim.agp import (
 # %% [markdown]
 # ## 1. Session settings
 #
-# `offline` imports analysis only. `mock` compiles and acquires simulated ADC
-# data locally. `queue` uses the measurement worker on production main.
-# Choose the sections to acquire explicitly; an empty set only loads data.
-# Mock ADC data checks software execution and cannot establish readout fidelity.
+# Measurements always go through the job server and worker, as in Autocalibrate.
+# Choose the sections to acquire explicitly; an empty set submits no measurements.
+# Set your username and config versions in the station cell in section 2.
 #
-# Reuse the current calibrated `station` in your kernel when running on the
-# device. If it does not exist, the setup cell loads the main config versions.
-# The source notebook used HW 20260906-00001, MP 20260121-00001,
-# M1 20260906-00019, and FL 20260906-00041. These historical IDs do not establish
-# which versions are currently calibrated at 44 kHz; current station snapshots
-# are persisted with every acquisition.
+# For analysis of saved HDF5 files, leave ACQUIRE empty and set RAW_DATA_DIR
+# or SOURCE_FILES below. Skip the three cells marked "Measurement setup" in
+# section 2, then run the raw-data helpers and the later analysis cells.
 
 # %%
-RUN_MODE = "offline"                 # "offline", "mock", or "queue"
 ACQUIRE = set()                       # e.g. {"readout", "walk", "kerr_pilot"}
 CAMPAIGN_ID = "agp_k44_first_scan"     # keep this unchanged when reloading completed sections
 RAW_DATA_DIR = None                   # folder containing this campaign's raw HDF5
 SOURCE_FILES = []                     # alternatively list specific raw HDF5 files
 OUTPUT_DIR = Path("agp_processed")
-
-STATION_CONFIG = dict(
-    hardware_config=None,
-    multiphoton_config=None,
-    storage_man_file=None,
-    floquet_file=None,
-)
 
 STORAGE_MODES = [1, 2, 3, 4]          # physical storage IDs; occupation order follows this
 TOTAL_PHOTONS = 3
@@ -145,73 +133,84 @@ for name, probe, mode in PROBES:
     print(f"{name}: {np.count_nonzero(weights)} input/readout traces per disorder")
 
 # %% [markdown]
-# ## 2. Station, defaults, and the pulse plan
+# ## 2. Station, worker, and measurement defaults
 #
-# The new Program prepares each occupied storage through the hub, then prepares
-# the hub last. Each added photon uses the existing selective GE, EF, and sideband
+# Edit `user` and `config_dict` together in the next cell. A version ID pins
+# a config, as in Autocalibrate. None selects the config database's registered
+# main version (not the Git branch). Select the versions calibrated at 44 kHz.
+# Rerunning this cell creates a fresh station from these settings; it never
+# reuses a station left in the kernel. The selected configs are saved with jobs.
+# The station reads device configuration; acquisition is submitted to the worker.
+#
+# The Program prepares each occupied storage through man, then prepares
+# man last. Each added photon uses the existing selective GE, EF, and sideband
 # pulses. The broadband GE pulses that shelve the vacuum Ramsey reference are
 # absent. The ordinary MBR Ramsey encoder is unchanged.
 #
 # Initial reset empties every participating storage before preparation.
-# After evolution, a hub readout needs no swap. A storage readout uses the
-# explicitly selected terminal sequence, optionally after dumping only the hub.
+# After evolution, a man readout needs no swap. A storage readout uses the
+# explicitly selected terminal sequence, optionally after dumping only man.
 # A full active reset must never occur between evolution and readout.
 
-# %%
-station = globals().get("station") if RUN_MODE == "queue" else None
-population_runner = None
+# %% tags=["measurement-setup"]
+# Measurement setup: worker client and a fresh station.
+from slab import AttrDict
+from experiments import CharacterizationRunner, MultimodeStation
+from job_server import JobClient
 
-if RUN_MODE not in {"offline", "mock", "queue"}:
-    raise ValueError("Choose offline, mock, or queue.")
-if RUN_MODE == "offline" and ACQUIRE:
-    raise ValueError("Acquisition sections require mock or queue mode.")
+reload(import_module("experiments.qsim.floquet_dark_mode_readout"))
+from experiments.qsim.floquet_dark_mode_readout import FockPopulationProgram
+from experiments.qsim.qsim_base import QsimExperiment
+from experiments.qsim.notebook_helpers.defaults import (
+    ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS,
+)
 
-if RUN_MODE != "offline":
-    from slab import AttrDict
-    from experiments import CharacterizationRunner, MultimodeStation
-    reload(import_module("experiments.qsim.floquet_dark_mode_readout"))
-    from experiments.qsim.floquet_dark_mode_readout import FockPopulationProgram
-    from experiments.qsim.qsim_base import QsimExperiment
-    from experiments.qsim.notebook_helpers.defaults import (
-        ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS,
-    )
+user = "jonginn"
+config_dict = {
+    "hardware_config": None,        # e.g. "CFG-HW-..."; None = registered main
+    "multiphoton_config": None,     # e.g. "CFG-MP-..."; None = registered main
+    "man1_storage_swap": None,      # e.g. "CFG-M1-..."; None = registered main
+    "floquet_storage_swap": None,   # e.g. "CFG-FL-..."; None = registered main
+}
 
-    if RUN_MODE == "mock":
-        from experiments.qsim.mbr_campaign import mock_station
-        station = mock_station(user="jonginn", experiment_name=CAMPAIGN_ID,
-                               project="AGP", log_measurements=False)
-    elif station is None:
-        station = MultimodeStation(
-            user="jonginn", experiment_name=CAMPAIGN_ID,
-            project="AGP", mock=RUN_MODE == "mock", log_measurements=False,
-            **STATION_CONFIG,
-        )
-    if station.is_mock != (RUN_MODE == "mock"):
-        raise ValueError("The station mode differs from RUN_MODE.")
-    if RAW_DATA_DIR is None:
-        RAW_DATA_DIR = Path(station.data_path)
+client = JobClient()
+health = client.health_check()
+print(f"Server status: {health['status']}")
+client.print_queue()
 
-    population_defaults = AttrDict(dict(
-        expts=1, reps=REPS, rounds=1, qubits=[0], f0g1_cavity=1,
-        normalize=False, active_reset=True, man_reset=True,
-        storage_reset=STORAGE_MODES, pre_relax_delay=100, relax_delay=200,
-        prepulse=False, postpulse=False, init_fock=False, init_stor=0,
-        readout="multiparity", parity_fast=False,
-        cond_sec_phase=-90, phase_second_pulse=180,
-        occupations=[3, 0, 0, 0, 0], swap_stors=STORAGE_MODES,
-        use_multiphoton_swap=USE_MULTIPHOTON_PREP_SWAP,
-        storage_pulse_wait_us=0.2, readout_route="hub", ro_stor=0,
-        readout_swap_pulses=[], readout_dump_mode=2,
-        update_phases=True, detunings=[0.0] * len(STORAGE_MODES),
-        floquet_cycles=FLOQUET_CYCLES, swept_params=["floquet_cycle"],
-        agp_campaign=CAMPAIGN_ID, agp_total_photons=TOTAL_PHOTONS,
-        agp_kerr_magnitude_khz=44.0, agp_disorder_pattern=DISORDER_PATTERN.tolist(),
-        agp_mock=RUN_MODE == "mock",
-    ))
-    population_defaults.update(ACTIVE_RESET_DEFAULTS)
-    population_defaults.update(FLOQUET_DEFAULTS)
-    if RUN_MODE == "mock":
-        population_defaults.reps = 16
+station = MultimodeStation(
+    user=user,
+    experiment_name=CAMPAIGN_ID,
+    project="AGP",
+    log_measurements=False,
+    hardware_config=config_dict["hardware_config"],
+    multiphoton_config=config_dict["multiphoton_config"],
+    storage_man_file=config_dict["man1_storage_swap"],
+    floquet_file=config_dict["floquet_storage_swap"],
+)
+RAW_DATA_DIR = Path(station.data_path)
+
+# %% tags=["measurement-setup"]
+# Measurement setup: defaults, preprocessor, and worker runner.
+population_defaults = AttrDict(dict(
+    expts=1, reps=REPS, rounds=1, qubits=[0], f0g1_cavity=1,
+    normalize=False, active_reset=True, man_reset=True,
+    storage_reset=STORAGE_MODES, pre_relax_delay=100, relax_delay=200,
+    prepulse=False, postpulse=False, init_fock=False, init_stor=0,
+    readout="multiparity", parity_fast=False,
+    cond_sec_phase=-90, phase_second_pulse=180,
+    occupations=[3, 0, 0, 0, 0], swap_stors=STORAGE_MODES,
+    use_multiphoton_swap=USE_MULTIPHOTON_PREP_SWAP,
+    storage_pulse_wait_us=0.2, readout_route="hub", ro_stor=0,
+    readout_swap_pulses=[], readout_dump_mode=2,
+    update_phases=True, detunings=[0.0] * len(STORAGE_MODES),
+    floquet_cycles=FLOQUET_CYCLES, swept_params=["floquet_cycle"],
+    agp_campaign=CAMPAIGN_ID, agp_total_photons=TOTAL_PHOTONS,
+    agp_kerr_magnitude_khz=44.0, agp_disorder_pattern=DISORDER_PATTERN.tolist(),
+    agp_mock=False,
+))
+population_defaults.update(ACTIVE_RESET_DEFAULTS)
+population_defaults.update(FLOQUET_DEFAULTS)
 
 
 def population_preprocessor(station, defaults, **overrides):
@@ -221,43 +220,49 @@ def population_preprocessor(station, defaults, **overrides):
     return settings
 
 
-if station is not None:
-    client = None
-    if RUN_MODE == "queue":
-        from job_server import JobClient
-        client = JobClient()
-    population_runner = CharacterizationRunner(
-        station=station, ExptClass=QsimExperiment, ExptProgram=FockPopulationProgram,
-        default_expt_cfg=population_defaults, preprocessor=population_preprocessor,
-        job_client=client, use_queue=RUN_MODE == "queue", show=False,
-    )
+population_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=QsimExperiment,
+    ExptProgram=FockPopulationProgram,
+    default_expt_cfg=population_defaults,
+    preprocessor=population_preprocessor,
+    job_client=client,
+    use_queue=True,
+    show=False,
+)
 
-# %%
-# Compile a short preview against this station's calibration, without acquiring.
+# %% tags=["measurement-setup"]
+# Measurement setup: compile a short preview and choose the time grid.
 # Compilation emits instructions locally; it does not send them to the FPGA.
-if station is not None:
-    from experiments.qsim.utils import ensure_list_in_cfg
+from experiments.qsim.utils import ensure_list_in_cfg
 
-    preview_config = AttrDict(deepcopy(station.hardware_cfg))
-    preview_config.expt = deepcopy(population_defaults)
-    preview_config.expt.floquet_cycle = 2
-    ensure_list_in_cfg(preview_config)
-    preview_program = FockPopulationProgram(station.soccfg, preview_config)
-    print("Preparation gates:")
-    for pulse in preview_program.preparation_pulses:
-        print(pulse)
-    print("Readout gates:", preview_program.readout_pulses)
-    cycle_us = preview_program.calculate_floquet_cycle_us()
-    cycle_step = max(1, round(TARGET_SAMPLE_INTERVAL_US / cycle_us))
-    last_cycle = int(TARGET_DURATION_US / cycle_us)
-    FLOQUET_CYCLES = np.arange(0, last_cycle + 1, cycle_step).tolist()
-    population_defaults.floquet_cycles = FLOQUET_CYCLES
-    population_runner.default_expt_cfg.floquet_cycles = FLOQUET_CYCLES
-    print("Compiled Floquet cycle (us):", cycle_us)
-    print("Recorded time grid (us):", cycle_us * np.array(FLOQUET_CYCLES)[[0, -1]])
-    print("Sample interval (us):", cycle_us * cycle_step)
-    trace_floor_s = REPS * len(FLOQUET_CYCLES) * (200 + TARGET_DURATION_US / 2) / 1e6
-    print(f"Per-trace duration >= {trace_floor_s:.0f} s, excluding preparation/reset/readout overhead.")
+preview_config = AttrDict(deepcopy(station.hardware_cfg))
+preview_config.expt = deepcopy(population_defaults)
+preview_config.expt.floquet_cycle = 2
+ensure_list_in_cfg(preview_config)
+preview_program = FockPopulationProgram(station.soccfg, preview_config)
+print("Preparation gates:")
+for pulse in preview_program.preparation_pulses:
+    print(pulse)
+print("Readout gates:", preview_program.readout_pulses)
+cycle_us = preview_program.calculate_floquet_cycle_us()
+cycle_step = max(1, round(TARGET_SAMPLE_INTERVAL_US / cycle_us))
+last_cycle = int(TARGET_DURATION_US / cycle_us)
+FLOQUET_CYCLES = np.arange(0, last_cycle + 1, cycle_step).tolist()
+population_defaults.floquet_cycles = FLOQUET_CYCLES
+population_runner.default_expt_cfg.floquet_cycles = FLOQUET_CYCLES
+print("Compiled Floquet cycle (us):", cycle_us)
+print("Recorded time grid (us):", cycle_us * np.array(FLOQUET_CYCLES)[[0, -1]])
+print("Sample interval (us):", cycle_us * cycle_step)
+trace_floor_s = REPS * len(FLOQUET_CYCLES) * (200 + TARGET_DURATION_US / 2) / 1e6
+print(f"Per-trace duration >= {trace_floor_s:.0f} s, excluding preparation/reset/readout overhead.")
+
+# %% [markdown]
+# ### Raw-data helpers
+#
+# Run this cell for both acquisition and saved-data analysis. Defining these
+# functions does not connect to hardware or submit a job. `campaign_jobs`
+# reads HDF5 files without a station. `acquire_population` submits to the worker.
 
 # %%
 def readout_settings(mode, route=None):
@@ -280,14 +285,8 @@ def acquire_population(occupation, stage, disorder_khz=0.0, mode=0, **overrides)
         detunings=(0.001 * disorder_khz * DISORDER_PATTERN).tolist(),
     )
     settings.update(overrides)
-    if RUN_MODE == "mock":
-        settings["reps"] = 16
-        settings["floquet_cycles"] = [0, 1, 2]
-        if stage in {"readout", "transfer"}:
-            settings["floquet_cycles"] = [0]
     experiment = population_runner.execute(
-        **settings, postprocess=False, show=False, log=False,
-        go_kwargs=dict(analyze=False, display=False, progress=False, save=True),
+        use_queue=True, **settings, postprocess=False, show=False, log=False,
     )
     filename = str(Path(experiment.fname).resolve())
     SOURCE_FILES.append(filename)
@@ -470,8 +469,9 @@ if "scan" in ACQUIRE:
 # %% [markdown]
 # ## 8. Reconstruct correlations from saved data
 #
-# Rerun this section with `RUN_MODE="offline"` and a raw-data folder or explicit
-# source filenames. Repeated acquisitions of the same input are reported as
+# For saved data, set a raw-data folder or explicit source filenames and leave
+# ACQUIRE empty. Run imports, session settings, raw-data helpers, and the analysis
+# cells; skip the three Measurement setup cells. Repeated inputs are reported as
 # duplicates rather than silently selecting one. Use `SOURCE_FILES` and set
 # `RAW_DATA_DIR=None` to select the intended data after a retry.
 #
@@ -652,7 +652,7 @@ if readout_jobs or correlations:
         source_files=[job["source"] for job in readout_jobs + walk_jobs + transfer_jobs + pilot_jobs + scan_jobs],
     )
     save_analysis_h5(output_path, processed, sources=processed["source_files"],
-                     metadata=dict(run_mode=RUN_MODE, probe_order=[name for name, probe, mode in PROBES]))
+                     metadata=dict(probe_order=[name for name, probe, mode in PROBES]))
     print("Processed data:", output_path)
     reloaded = load_analysis_h5(output_path)
 
