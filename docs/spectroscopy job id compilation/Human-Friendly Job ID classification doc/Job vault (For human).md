@@ -254,6 +254,8 @@ h5_job_ids(20260815, 183, 242)
 
 ![image.png](image%2010.png)
 
+OneNote page: 9/4/2026 - high Kerr
+
 - h5_project = '260818_qsim_spectroscopy'
 - h5_calibration_job_ids = h5_job_ids(20260907, 199, 268)
 - h5_spectroscopy_job_ids_by_r = {
