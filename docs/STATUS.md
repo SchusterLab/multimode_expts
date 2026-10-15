@@ -54,10 +54,14 @@ Rules:
   his issue 7 decisions. The five old notebooks and all `KEPT_UNMIGRATED` exceptions are
   gone; the stage-dispatch sweep passes. Acquisition defaults are full basis + RMS with
   interleaved single-shot calibration. On `guan`, not yet on prod/main. Record: `docs/log/2026-10-05_jonginn-notebook-migration.md`.
+- **Test suite cleanup** (2026-10-05, branch `tests-cleanup`): the one-off migration guards
+  are retired (`docs/log/2026-10-05_tests-cleanup.md`). The code still left in jonginn's
+  `data_recollecting.ipynb` and `qsim_experiments_highkerr_untracked.ipynb` is tracked in
+  `docs/qsim/evidence/2026-09-30_jonginn_notebook_leftovers.md`, no longer by a failing test.
 - **Hardware:** the code runs on the device, but the data is not meaningful yet; the
   calibration steps need a manual check.
 - **Physics audit** (details in `docs/status/qsim_numerics.md`): the numerical baselines are
-  `xfail(strict=False)`.
+  pinned and must pass. They pin the current numbers, not checked physics.
 
 ## Docs: which are current
 
