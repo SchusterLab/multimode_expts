@@ -31,7 +31,7 @@
 # underneath it is what MBR uses.
 #
 # Its neighbours: `floquet_calibration.py`, `flux_excursion.py`,
-# `mbramsey.py`, `cooling.py`.
+# `cooling.py`.
 
 # %% [markdown]
 # # Prepare
@@ -743,8 +743,8 @@ def dark_scramble_preproc(station, default_expt_cfg, **kwargs):
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"} jupyter={"outputs_hidden": true}
 dark_scramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.qsim.floquet_dark_mode_readout.QsimExperiment,
-    ExptProgram=meas.qsim.floquet_dark_mode_readout.DarkModeScrambleProgram,
+    ExptClass=meas.qsim.qsim_base.QsimExperiment,
+    ExptProgram=meas.qsim.dark_mode_scramble.DarkModeScrambleProgram,
     default_expt_cfg=dark_scramble_defaults,   # + the keys above
     postprocessor=None,
     job_client=client,
@@ -790,8 +790,8 @@ station.use_real_instruments()
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 dark_scramble_runner = CharacterizationRunner(
     station=station,
-    ExptClass=meas.qsim.floquet_dark_mode_readout.QsimExperiment,
-    ExptProgram=meas.qsim.floquet_dark_mode_readout.DarkModeScrambleProgram,
+    ExptClass=meas.qsim.qsim_base.QsimExperiment,
+    ExptProgram=meas.qsim.dark_mode_scramble.DarkModeScrambleProgram,
     default_expt_cfg=dark_scramble_defaults,   # + the keys above
     postprocessor=None,
     job_client=client,

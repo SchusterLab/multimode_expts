@@ -1,7 +1,7 @@
 # Pole finding: exploration plan (tasks for parallel sessions)
 
 Status: plan, 2026-09-29 (guan and Claude). Tasks for the next sessions; each can run in its own
-worktree from `guan`. The method spec stays `docs/qsim/pole_finding.md`; what was found and why
+worktree from `qsim-analysis` (the analysis branch since 2026-09-29; `docs/STATUS.md`). The method spec stays `docs/qsim/pole_finding.md`; what was found and why
 is in `docs/log/2026-09-28_pole-finding-diagnostics.md`. When a task ends, its session adds a
 log entry, and the spec takes over what is kept.
 

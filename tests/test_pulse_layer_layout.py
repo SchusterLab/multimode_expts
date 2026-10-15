@@ -16,30 +16,6 @@ from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.qsim_base import QsimProgram, QsimRProgram
 
 
-@pytest.mark.parametrize("name, owner", [
-    ("QsimExperiment", "experiments.qsim.qsim_base"),
-    ("QsimProgram", "experiments.qsim.qsim_base"),
-    ("QsimRProgram", "experiments.qsim.qsim_base"),
-    ("classify_two_parity_readouts", "experiments.qsim.qsim_base"),
-    ("flatten_exp_lists", "experiments.qsim.utils"),
-    ("DarkModeScrambleProgram", "experiments.qsim.mbr_spectroscopy_program"),
-    ("StorageSwapStarkPhaseProgram", "experiments.qsim.sideband_stark_shift_cal"),
-])
-def test_the_old_god_module_address_still_resolves(name, owner):
-    """The acquisition notebooks address these through the god module.
-
-    ``meas.qsim.floquet_dark_mode_readout.<Name>`` is what many submission
-    cells say, so the address has to resolve to the defining module's class.
-    Since step 10F the names are the new ones (DarkBaseExperiment and
-    DarkBaseProgram were renamed, and ``dark_base`` is gone).
-    """
-    import importlib
-
-    from experiments.qsim import floquet_dark_mode_readout as fdmr
-
-    assert getattr(fdmr, name) is getattr(importlib.import_module(owner), name)
-
-
 def test_averager_bases_play_the_qsim_man_reset():
     """``QsimProgram`` overrides MM_base's reset; ``DarkModeProgram`` inherits it.
 
@@ -109,7 +85,7 @@ def test_the_floquet_chain_is_single_inheritance():
     from experiments.qsim.floquet_displacement_kerr import FloquetDisplacementKerrProgram
     from experiments.qsim.floquet_train import FloquetProgram
     from experiments.qsim.mbr_ramsey import MBRRamseyProgram
-    from experiments.qsim.mbr_spectroscopy_program import DarkModeScrambleProgram
+    from experiments.qsim.dark_mode_scramble import DarkModeScrambleProgram
     from experiments.qsim.sideband_stark_shift_cal import (
         StorageSwapStarkPhaseProgram,
     )

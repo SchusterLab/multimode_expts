@@ -212,12 +212,12 @@ LEAF_CASES = [Case(*row) for row in [
     ("cavity_flux_excursion_ramsey",
      f"{QSIM}.cavity_ramsey_flux_excursion:CavityFluxExcursionRamseyProgram",
      dict(KERR_RAMSEY, kerr_freq=300.0)),
-    ("broadband_ge_validation", f"{QSIM}.dark_mode_broadband_ge_validation:BroadbandGeValidationProgram",
+    ("broadband_ge_validation", f"{QSIM}.broadband_ge_validation:BroadbandGeValidationProgram",
      dict(validation_case=2, validation_photon_number=1)),
     # On the DarkBase template.
     ("dark_t1_wait", f"{QSIM}.dark_mode_t1:DarkT1Program",
      dict(swap_stors=SWAP_STORS, wait_length=1.0)),
-    ("dark_scramble", f"{QSIM}.mbr_spectroscopy_program:DarkModeScrambleProgram",
+    ("dark_scramble", f"{QSIM}.dark_mode_scramble:DarkModeScrambleProgram",
      dict(FLOQUET, ro_stor=2, swap_man_dark=False, dark_swap_order=[4, 5],
           second_rel_phase=180, map_to_qubit_ge=True, init_stor=0)),
     ("storage_swap_stark_phase", f"{QSIM}.sideband_stark_shift_cal:StorageSwapStarkPhaseProgram",
@@ -231,7 +231,7 @@ LEAF_CASES = [Case(*row) for row in [
           zero_floquet_gain=False)),
     # RAverager: the template body on a hardware sweep (QsimRProgram has
     # no core_pulses of its own, so its leaf stands for it).
-    ("multiparity_chevron_r", f"{QSIM}.dark_mode_multiparity_chevron:ManStorMultiparityChevronRProgram",
+    ("multiparity_chevron_r", f"{QSIM}.man_stor_multiparity_chevron:ManStorMultiparityChevronRProgram",
      dict(start=870.0, step=0.1, expts=3, swap_stor=2, storage_pulse_name="M1-S2",
           custom_scramble_length=0.5, readout="multiparity")),
 ]]

@@ -26,9 +26,7 @@
 # changed: the defaults of cells 2-6 are now
 # `experiments/qsim/notebook_helpers/defaults.py`.
 #
-# The library side is `experiments/qsim/floquet_displacement_kerr.py` and
-# `FloquetDisplacementKerrExperiment` in
-# `experiments/qsim/floquet_dark_mode_readout.py`.
+# The library side is `experiments/qsim/floquet_displacement_kerr.py`.
 #
 # Its neighbours: `multiphoton_calibration.py`, `floquet_calibration.py`,
 # `mbr.py`, `mbr_disorder.py`, `mbr_tomography.py`.
@@ -84,11 +82,11 @@ client = JobClient()
 # %%
 # Configure the coherent-state Kerr measurement.
 import importlib
-from experiments.qsim import floquet_dark_mode_readout
+from experiments.qsim import floquet_displacement_kerr
 
-importlib.reload(floquet_dark_mode_readout)
+importlib.reload(floquet_displacement_kerr)
 
-DispKerr = floquet_dark_mode_readout.FloquetDisplacementKerrExperiment
+DispKerr = floquet_displacement_kerr.FloquetDisplacementKerrExperiment
 floquet_kerr_modes = [4, 5, 6, 7]
 floquet_kerr_cycle_pairs = np.arange(0, 31, RUN.pick(1, smoke=3), dtype=int)
 floquet_kerr_displace_gains = np.arange(2000, 6001, RUN.pick(1000, smoke=2000))
@@ -125,7 +123,7 @@ floquet_kerr_defaults = AttrDict(dict(
 floquet_kerr_runner = CharacterizationRunner(
     station=station,
     ExptClass=DispKerr,
-    ExptProgram=floquet_dark_mode_readout.FloquetDisplacementKerrProgram,
+    ExptProgram=floquet_displacement_kerr.FloquetDisplacementKerrProgram,
     default_expt_cfg=floquet_kerr_defaults,
     job_client=client,
     use_queue=RUN.use_queue,

@@ -50,7 +50,7 @@ import numpy as np
 import yaml
 
 from experiments.job_paths import data_root
-from experiments.qsim.floquet_dark_mode_readout import QsimExperiment
+from experiments.qsim.qsim_base import QsimExperiment
 
 
 def load_file_catalog(path, root=None):

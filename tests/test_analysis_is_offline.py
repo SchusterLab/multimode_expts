@@ -34,15 +34,17 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# One real load through the notebook helper, on the smallest pinned dataset.
-# Eight files, so it costs a couple of seconds even over SMB.
+# One real load through the canonical path, on the smallest converted data set:
+# the August quick-plot fragment (JOB-20260815-00009..16, 4 traces).
 A_REAL_LOAD = """
-from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.saved_jobs import load_aggregate
+import yaml
+from experiments.job_paths import data_root
+from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
-JOBS = [f"JOB-20260815-{n:05d}" for n in range(9, 17)]
-expt = load_aggregate(JOBS, owner=MBRSpectrumExperiment)
-assert len(expt.batch_job_ids) == 8, expt.batch_job_ids
+catalog = yaml.safe_load(open("configs/datasets/mbr_datasets.yaml", encoding="utf-8"))
+entry = catalog["datasets"]["august_quickplot"]
+expt = MBRSpectrumExperiment.from_manifest(data_root() / entry["manifest"])
+assert len(expt.children) == 4, expt.children
 expt.analyze(cycle_branches={}, fft_window="raw", zero_padding=1,
              spectrum_method="fft")
 """
@@ -178,7 +180,7 @@ def test_unrecoverable_timing_raises_and_says_what_to_supply(tmp_path):
     The cycle time divides into every energy in the result, so a NaN here
     would poison the whole spectrum quietly. The error names the two ways out.
     """
-    from experiments.saved_jobs import SavedJobError, load_job
+    from experiments.qsim.deprecated.saved_jobs import SavedJobError, load_job
 
     path = tmp_path / "JOB-19990101-00001_EncodingHamiltonianSpectroscopyExperiment.h5"
     _write_h5(path, MINIMAL_CFG, [[0.1, 0.2]])
@@ -193,7 +195,7 @@ def test_unrecoverable_timing_raises_and_says_what_to_supply(tmp_path):
 
 def test_supplied_timing_is_used_when_provenance_is_absent(tmp_path):
     """The escape hatch works: the same file loads once timing is given."""
-    from experiments.saved_jobs import load_job
+    from experiments.qsim.deprecated.saved_jobs import load_job
 
     path = tmp_path / "JOB-19990101-00002_EncodingHamiltonianSpectroscopyExperiment.h5"
     _write_h5(path, MINIMAL_CFG, [[0.1, 0.2]])
@@ -212,7 +214,7 @@ def test_derived_params_attribute_is_preferred_over_the_sidecar(tmp_path):
     makes that change a pure addition: files that have the attribute stop
     needing the sidecar, and files that do not keep working as before.
     """
-    from experiments.saved_jobs import load_job
+    from experiments.qsim.deprecated.saved_jobs import load_job
 
     path = tmp_path / "JOB-19990101-00003_EncodingHamiltonianSpectroscopyExperiment.h5"
     _write_h5(path, MINIMAL_CFG, [[0.1, 0.2]])
@@ -228,7 +230,7 @@ def test_derived_params_attribute_is_preferred_over_the_sidecar(tmp_path):
 
 def test_derived_params_couplings_are_cross_checked(tmp_path):
     """A `derived_params` block that disagrees with itself raises."""
-    from experiments.saved_jobs import SavedJobError, load_job
+    from experiments.qsim.deprecated.saved_jobs import SavedJobError, load_job
 
     path = tmp_path / "JOB-19990101-00004_EncodingHamiltonianSpectroscopyExperiment.h5"
     _write_h5(path, MINIMAL_CFG, [[0.1, 0.2]])
@@ -317,7 +319,7 @@ def test_config_versions_attribute_resolves_timing_without_the_sidecar(tmp_path)
     way the loader can find the Floquet version is the file's own attribute,
     and the timing then comes from the versioned archive.
     """
-    from experiments.saved_jobs import load_job
+    from experiments.qsim.deprecated.saved_jobs import load_job
 
     path = tmp_path / "JOB-20260815-00009_EncodingHamiltonianSpectroscopyExperiment.h5"
     # The real August config, so the resolver has a version it can actually
@@ -342,6 +344,6 @@ def load_h5_for_fixture():
     minimal config will not do.
     """
     from experiments.job_paths import resolve_job_path
-    from experiments.saved_jobs import load_h5
+    from experiments.qsim.deprecated.saved_jobs import load_h5
 
     return load_h5(resolve_job_path("JOB-20260815-00009"))

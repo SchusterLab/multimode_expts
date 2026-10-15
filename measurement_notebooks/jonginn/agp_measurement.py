@@ -47,7 +47,7 @@ from slab import AttrDict
 from experiments import CharacterizationRunner, MultimodeStation
 from job_server import JobClient
 
-from experiments.qsim.floquet_dark_mode_readout import FockPopulationProgram
+from experiments.qsim.fock_population import FockPopulationProgram
 from experiments.qsim.qsim_base import QsimExperiment
 from experiments.qsim.notebook_helpers.defaults import (
     ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS,

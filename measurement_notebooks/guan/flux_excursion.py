@@ -27,7 +27,7 @@
 #
 # Historical per the surface map (area 6), kept recoverable.
 #
-# Its neighbours: `floquet_calibration.py`, `dark_mode.py`, `mbramsey.py`,
+# Its neighbours: `floquet_calibration.py`, `dark_mode.py`,
 # `cooling.py`.
 
 # %% [markdown]

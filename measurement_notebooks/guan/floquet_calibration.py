@@ -32,7 +32,7 @@
 #
 # Its neighbours: `dark_mode.py` (scrambling and dark-mode readout),
 # `flux_excursion.py` (Kerr engineering and post-flux-move recalibration),
-# `mbramsey.py` (the live MBR campaign), `cooling.py`.
+# `cooling.py`. The MBR campaign is in `measurement_notebooks/202609_qsim_migration/`.
 
 # %% [markdown]
 # # Prepare

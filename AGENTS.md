@@ -75,3 +75,21 @@ Ask the user how to access prod resources if this is needed and not instructions
 At any rate, remote job submission is not set up yet so off-prod runs are typically for data analysis, initial prototyping of new measurement code via mock station ASM compilers etc.
 Even on prod, job execution is still coupled to the canonical main branch at `C:\python\multimode_expts`. Worker will only pick up code there, not in other checked out worktrees.
 
+### Worktrees on prod: `configs\versions` is a link to the live archive
+
+Extra worktrees on prod (`C:\python\multimode_expts_<name>`) have `configs\versions` as a
+junction or symbolic link to main's `C:\python\multimode_expts\configs\versions`: the live
+config-version archive. It is not in git; the only other copy is the daily Synology backup.
+Anything that deletes recursively inside a worktree can delete through the link and empty the
+archive. This happened on 2026-10-06 with `git worktree remove --force`
+(`docs/log/2026-10-07_config-archive-deletion.md`).
+
+- To remove a worktree, first remove the link only, then the worktree:
+  `cmd /c rmdir C:\python\multimode_expts_<name>\configs\versions` (no `/s`), then check
+  `Test-Path C:\python\multimode_expts\configs\versions` is still true, then
+  `git worktree remove C:\python\multimode_expts_<name>`.
+- Never run `git worktree remove --force`, `git clean -x`, `rm -rf`, or `Remove-Item -Recurse`
+  on a worktree while the link exists. Check `(Get-Item <path>).LinkType` before any recursive
+  delete; Git Bash `find` does not enter junctions, so "0 files" there does not mean empty.
+- To set up a new worktree, make the link with
+  `New-Item -ItemType Junction -Path <worktree>\configs\versions -Target C:\python\multimode_expts\configs\versions`.

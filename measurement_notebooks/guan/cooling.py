@@ -26,7 +26,7 @@
 # one-liners with no project of their own.
 #
 # Its neighbours: `floquet_calibration.py`, `dark_mode.py`,
-# `flux_excursion.py`, `mbramsey.py`.
+# `flux_excursion.py`.
 
 # %% [markdown]
 # # Prepare

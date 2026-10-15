@@ -1,3 +1,5 @@
+# Note 2026-10-06: experiments/qsim/floquet_dark_mode_readout.py (the compatibility
+# shim) is deleted (GitHub issue 5); the functions here that import it no longer run.
 """Preview a diagonal-disorder campaign from job IDs, and pool its statistics.
 
 Hoisted out of `measurement_notebooks/jonginn/data_postprocess.ipynb` cells
@@ -33,7 +35,7 @@ from slab import AttrDict
 
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
-from experiments.saved_jobs import load_aggregate
+from experiments.qsim.deprecated.saved_jobs import load_aggregate
 
 
 def diag_preview_job_range(date, first, last):

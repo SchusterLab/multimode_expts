@@ -240,8 +240,7 @@ def postprocess_reconstruction(reconstruction,
                                hardware,
                                phase_frame,
                                manual_kerr_MHz,
-                               cycle_branches,
-                               legacy):
+                               cycle_branches):
     """Transform an acquired reconstruction into the requested phase frame.
 
     Moved from the old ``MBRSpectrumExperiment._postprocess_reconstruction``
@@ -251,9 +250,9 @@ def postprocess_reconstruction(reconstruction,
     ``phase_frame`` is ``'as_acquired'`` (only the 180 deg/cycle branch is
     applied), ``'uncorrected'`` (the saved pulse correction is undone),
     ``'zero_kerr'`` or ``'manual_kerr'`` (rebuilt from ``calibration`` with
-    that Kerr rate). Jobs saved before ``final_analyzer_phase_application_sign``
-    existed need ``legacy``: True for the old +correction convention, False
-    for -correction.
+    that Kerr rate). Every job with a nonzero correction records
+    ``final_analyzer_phase_application_sign`` (old files get it at conversion,
+    tools/migrate_mbr_jobs.py).
     """
 
     if manual_kerr_MHz is not None and phase_frame == "as_acquired":
@@ -273,8 +272,6 @@ def postprocess_reconstruction(reconstruction,
     legacy_migration = False
 
     if phase_frame == "as_acquired":
-        if legacy is not None:
-            raise ValueError("legacy is only used with uncorrected/zero_kerr/manual_kerr rephasing")
         for row, branch in enumerate(branches):
             A[row] *= np.exp(-1j * np.deg2rad(180. * branch) * reconstruction.cycles)
         physical_kerr_MHz = hardware.physical_kerr_MHz
@@ -283,12 +280,10 @@ def postprocess_reconstruction(reconstruction,
             raise ValueError("uncorrected/zero_kerr/manual_kerr rephasing requires spectroscopy_phase_correction_mode='final_analyzer'")
         if application_sign is None:
             nonzero_correction = any(not np.isclose(phase, 0.) for phase in saved_correction.phase_by_occupation.values())
-            if nonzero_correction and legacy is None:
-                raise ValueError("saved jobs do not record the analyzer sign; use legacy=True for old +correction jobs or legacy=False for -correction jobs")
-            application_sign = 1. if legacy else -1.
-            legacy_migration = bool(legacy)
-        elif legacy is not None and application_sign != (1. if legacy else -1.):
-            raise ValueError("legacy disagrees with the saved analyzer phase application sign")
+            if nonzero_correction:
+                raise ValueError("saved jobs do not record the analyzer sign; convert them "
+                                 "again with tools/migrate_mbr_jobs.py, which records it")
+            application_sign = -1.
         legacy_migration = application_sign == 1.
 
         if phase_frame == "uncorrected":

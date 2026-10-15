@@ -37,7 +37,7 @@ from experiments.qsim.deprecated import mbr_n3_diagnostics as n3_diagnostics
 # runs a series of independent diagnostics on the result.
 
 # %%
-# Dataset choice: the complete July N=3 sector (tests/data/mbr_datasets.json
+# Dataset choice: the complete July N=3 sector (configs/datasets/mbr_datasets.yaml
 # `july_N3`), converted to the new layout.
 july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
 

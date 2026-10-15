@@ -41,8 +41,6 @@ class Analysis(BaseModel):
     manual_kerr_MHz: float | Literal["recorded"] | None = None
     #: [occupation, branch] pairs; unlisted occupations use branch 0.
     cycle_branches: list[tuple[tuple[int, ...], int]] = []
-    #: Undo the old ``+cycle*correction`` analyzer convention (the July jobs).
-    legacy: bool = False
     #: Occupations left out of the analysis (the 7-1 analysis leaves out (0, 3, 0, 0, 0)).
     excluded_occupations: list[tuple[int, ...]] = []
     #: The model's Kerr: the spectrum's analysis Kerr, or each realization's recorded one.

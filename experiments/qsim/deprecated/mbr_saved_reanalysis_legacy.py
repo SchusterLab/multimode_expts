@@ -18,7 +18,7 @@ from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.qsim.deprecated.legacy_mbr import (
     MBRSpectrumExperiment as LegacySpectrumExperiment,
 )
-from experiments.saved_jobs import load_aggregate
+from experiments.qsim.deprecated.saved_jobs import load_aggregate
 
 
 def occupation_pairs(expt, label):

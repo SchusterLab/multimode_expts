@@ -254,6 +254,7 @@ def offset_returns(offsets_bins, noise=0.01, seed=0):
     return A * np.exp(-2j * np.pi * BIN_MHz * np.outer(offsets_bins, TIME_US))
 
 
+@pytest.mark.slow
 def test_joint_refined_resolves_the_august_point_under_row_offsets():
     """10 rows, sigma 1 kHz (the upper bound on the August data): B resolves about 6 of 35."""
     hardware = Hardware(coupling_MHz=8.615e-3, dt_us=1.4509, samples=300, partial_rows=10)

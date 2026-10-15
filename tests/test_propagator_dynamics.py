@@ -60,7 +60,7 @@ def _synthetic_job(job_class, expt, sweep, returns, cycle_us, name):
     With Ig = 0 and Ie = 1 the signal is Pe, and Pe at [prep, analyzer] =
     [0, 0], [180, 0], [0, 90], [180, 90] is chosen so that Q_0 = Re A and
     Q_90 = -Im A. The stand-in ``prog`` carries the Floquet timing, like the
-    one ``experiments.saved_jobs`` attaches to saved data.
+    one ``experiments.qsim.deprecated.saved_jobs`` attaches to saved data.
     """
     returns = np.asarray(returns, dtype=complex)
     job = job_class.__new__(job_class)

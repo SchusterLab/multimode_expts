@@ -1,3 +1,5 @@
+# Note 2026-10-06: experiments/qsim/floquet_dark_mode_readout.py (the compatibility
+# shim) is deleted (GitHub issue 5); the functions here that import it no longer run.
 """Shot-count and randomized-occupation sampling studies on saved N=3 data.
 
 DEPRECATED. Moved from `experiments/qsim/notebook_helpers/mbr_sampling.py` on 2026-09-24 (MBR redesign

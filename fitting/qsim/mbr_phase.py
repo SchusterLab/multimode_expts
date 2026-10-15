@@ -146,14 +146,9 @@ def saved_correction(expts):
     missing_application_sign = False
     for expt in expts:
         ecfg = expt.cfg.expt
-        occupation = tuple(ecfg.get(
-            "offdiag_decoder_occupation",
-            ecfg.get("spectroscopy_final_occupations", ecfg.spectroscopy_occupations),
-        ))
-        phase = float(ecfg.get(
-            "offdiag_decoder_phase_correction_deg",
-            ecfg.get("final_analyzer_phase_per_cycle_deg", 0.),
-        ))
+        occupation = tuple(ecfg.get("spectroscopy_final_occupations",
+                                    ecfg.spectroscopy_occupations))
+        phase = float(ecfg.get("final_analyzer_phase_per_cycle_deg", 0.))
         if occupation in phase_by_occupation and not np.isclose(phase, phase_by_occupation[occupation]):
             raise ValueError(f"{occupation} spectroscopy chunks used different analyzer corrections")
         phase_by_occupation[occupation] = phase

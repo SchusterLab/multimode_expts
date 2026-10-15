@@ -19,7 +19,7 @@ and `make_plain`. That is a parallel loader to the library's own
 `experiments/floquet_timing.resolve_floquet_timing`.
 
 TODO: those loading paths are still not reconciled here, but the decision has
-been made and half-executed elsewhere. `experiments/saved_jobs.py` is now the
+been made and half-executed elsewhere. `experiments/qsim/deprecated/saved_jobs.py` is now the
 library's HDF5 loader, and it does what this module's copy does -- reads the
 file, resolves the Floquet timing from provenance, never touches a station --
 for every MBR stage. What remains here that `saved_jobs` does not do is the

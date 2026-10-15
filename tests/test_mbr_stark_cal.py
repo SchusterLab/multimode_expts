@@ -139,7 +139,7 @@ def test_migration_writes_the_new_layout(converted):
 def test_migration_keeps_the_shot_order(converted):
     """Row k of the new shots is point (cycle k // 4, ramsey phase k % 4)."""
     from experiments.job_paths import resolve_job_paths
-    from experiments.saved_jobs import load_h5
+    from experiments.qsim.deprecated.saved_jobs import load_h5
 
     _, calibration = converted
     old = resolve_job_paths(STARK_CAL_IDS[:2])
@@ -202,15 +202,13 @@ def test_with_replacements_swaps_only_the_named_rows(converted):
 
 
 def test_with_replacements_refuses_other_hardware(converted):
-    from types import SimpleNamespace
-
     _, saved = converted
     base = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
     other = MBRCalibrationSetExperiment.from_manifest(saved.manifest_path)
     child = other.children[0]
-    cycle_us = child.prog.calculate_floquet_cycle_us()
-    child.prog = SimpleNamespace(calculate_floquet_cycle_us=lambda: 1.1 * cycle_us,
-                                 m1s_pi_fracs=child.prog.m1s_pi_fracs, source="changed")
+    params = child.recorded_derived_params()
+    params["floquet_cycle_us"] *= 1.1
+    child.data["attrs"][child.DERIVED_PARAMS_ATTR] = json.dumps(params)
     with pytest.raises(ValueError, match="Floquet hardware changed"):
         base.with_replacements(MBRCalibrationSetExperiment.from_children([child]))
 

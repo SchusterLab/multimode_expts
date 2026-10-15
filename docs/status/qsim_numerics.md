@@ -1,13 +1,76 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-09-29** (split out of `docs/STATUS.md`, on pippin). Theme: analysis,
-numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch `qsim-analysis`,
-worktree `C:\python\multimode_expts_qsim-analysis`. This file is overwritten at the end of each
-work session on this theme; git keeps the old versions. Cross-theme items and the branch rules
-are in `docs/STATUS.md`.
+**Last updated: 2026-10-06** (all 25 data sets converted, the "D72" sets regrouped; issue 5: the library reads only the files; on `guan`).
+Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
+`guan` (the one branch since 2026-10-06; `qsim-analysis` is retired), worktree
+`C:\python\multimode_expts_guan`. This file is overwritten at
+the end of each work session on this theme; git keeps the old versions. Cross-theme items and
+the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
+  `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
+  `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
+  them first). A fitter is judged by three views (`fitting/qsim/poles/views.py`): poles on the
+  per-row FFT, the stick diagram, the r histogram. On Sep 10 the model is near Poisson (<r> 0.415);
+  A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). First feasibility map
+  (`feasibility_map.py`; vault page `2026-10-05_feasibility_map.md`): at the Sep 10 hardware the
+  resolution keeps the model's r shape only at large disorder (delta/g 6-10); the model's most
+  chaotic cells reach <r> 0.50-0.52. Removing the row offsets (per-photon pattern) lifts the
+  late form factor from 0.30 to 0.85 of the model. **Next:** check the bound stand-in against T1T3
+  on synthetic ensembles at 3 points; a whole-shape test between two points; reachable K and
+  delta (guan); the integer-weight penalty with per-photon offsets.
+- **Jonginn's newer notebook work is migrated/retired** using his issue 7 decisions
+  (`docs/log/2026-10-05_jonginn-notebook-migration.md`). The Sep10 full-basis ensemble
+  now has a catalog-backed section in `analysis_notebooks/202609_qsim_migration/mbr_disorder.py`,
+  beside the historical 7-1 reproduction. It shows spectra, level matches and the form factor.
+  Optional `readout_refit=True` preserves the legacy IQ diagnostic in reusable modules and
+  saves its fit provenance; it cannot repair active reset. Sep10's experimental Matrix Pencil
+  settings were not promoted to global defaults. Five old Jonginn notebooks and the notebook
+  test exceptions are removed. Shared code is on local `guan` and merged into `qsim-analysis`.
+  **Next:** run the updated notebook with pippin data mounted, and publish/merge the branches
+  for prod. Final focused checks: 209 passed. Saved-data checks here require the unavailable
+  data tree; hardware was not accessed.
+- **The survey of every pole-finding method on the Sep 10 ensemble is running unattended**
+  (tmux `nb`, window `survey`; `analysis_notebooks/pole_finding/survey_sep10.py`; record
+  `docs/log/2026-10-02_sep10-pole-survey.md`). Output:
+  `C:\experiments\260818_qsim_spectroscopy\derived_data\pole_finding\sep10_survey\` (`survey.log`
+  and CSVs). **Next:** read the results, write the tables into a log entry, and decide: the
+  offset prior for this set (T1 finds row offsets of 4.7 kHz rms, up to 11.7 kHz, on r=0, against
+  a 0.5 kHz prior), the T3 merge threshold at 35 rows, and the Matrix Pencil settings. Then T2's
+  row-sum bound. `experiments/qsim/pole_data.py` now accepts realizations without a recorded Kerr.
+- **All 25 data sets are converted** (`configs/datasets/mbr_datasets.yaml`; records
+  `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md` and
+  `docs/log/2026-10-06_issue5-d72-and-loaders.md`). The five old "D72" (notebook section 7-2)
+  sets were not off-diagonal: each realization mixes diagonal pairs (407 files) and
+  off-diagonal pairs (188). Renamed `sepNN_pairs_*`, kind `disorder_pairs`: the diagonal pairs
+  are a partial-basis `MBRDisorderEnsembleExperiment` (`manifest`), the off-diagonal ones one
+  `MBRTimeTraceSetExperiment` per realization (`offdiag_manifests`, not analyzed; step 7
+  decision 2). Their g15 timing is 0.409226 us (the archived 0.4135 was the old formula).
+  The July sets were converted again with their analyzer sign (+1), so `legacy` is gone.
+  **Next:** the 37 new partial-basis realizations match 1-20 of 35 theory poles with default
+  settings: decide whether they are worth a pole benchmark. Execute the Sep10 section in
+  `analysis_notebooks/202609_qsim_migration/mbr_disorder.py` and inspect the form factor; run
+  the pole benchmarks (T1T3, C, F) on the two complete-basis registry entries; decide the
+  Matrix Pencil defaults for a 35-row complete basis. To convert a further data set: add it
+  to `tools/build_mbr_dataset_catalog.py`, `pixi run python tools/convert_mbr_catalog.py
+  --check <name>`, then without `--check`, paste the printed manifest lines into the builder
+  and rebuild the YAML. jonginn still owes the `K_source` column.
+- **Loading (issue 5):** `from_manifest` loads each job file with `from_h5file` (no shots) and
+  the timing from its `derived_params` attribute only. `experiments/saved_jobs.py` and
+  `job_records` are now `tools/legacy_saved_jobs.py`, the raw reader of the frozen converter
+  (`tools/migrate_mbr_jobs.py`, `tools/convert_mbr_catalog.py`); the deprecated classes reach it
+  through the alias `experiments/qsim/deprecated/saved_jobs.py`. The sidecar `tests/data/job_provenance.json` stays as the job-ID -> path index.
+- **Coherence vs Kerr** (2026-10-06): `analysis_notebooks/202609_qsim_migration/kerr_coherence.py`,
+  a short library-only example. It replaces jonginn's `decay_investigation.ipynb` (749 code lines
+  that re-derived the loader, timing and Hamiltonian; deleted, git keeps it). Theory-relative fit
+  `|A| = c |A_theory| exp(-t/T) + floor` per diagonal trace, recorded Kerr, no trace dropped:
+  T falls with Kerr and with photons in M1 (g = 15 kHz, n_M1 = 1: 184, 102, 74 us at
+  |K| = 3.8, 20.5, 45 kHz; g = 29 kHz, |K| = 52 kHz: 14-30 us). A wrong model also lowers the
+  overlap, so T is a lower bound. Matrix Pencil pole widths are not a coherence measure here
+  (they include unresolved splitting). **Next:** a closed-pair (StarkCal) run to 100-200 us at
+  three Kerr points, n_M1 = 0-3, for a model-free T (section 2 of the notebook takes it).
 - **Pole finding**: phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
   notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
@@ -31,10 +94,23 @@ are in `docs/STATUS.md`.
   amplitudes; T2 dominates; the present window (about 2 T2) is right. Fitter F (pursuit with
   real, non-negative amplitudes) finds 1-2 more levels than C on synthetic August data; row
   alignment by rank does no better than C, and even with the true offsets the pencil resolves
-  only 22-33 of 35. **Next: the exploration plan `docs/qsim/pole_finding_explore.md`**: T0 (a gap
-  score and a fixed synthetic set) first, then in parallel T1 Hamiltonian fit, T2 the complete
-  basis' weight structure, T3 a convex sparse fit, T4 convert the September complete-basis
-  disorder data (9 x 35 occupations), T5 speed. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
+  only 22-33 of 35. **The exploration plan `docs/qsim/pole_finding_explore.md`: T0 is done**
+  (`gap_score.py`, `fixed_set.py`, `tools/pole_fixed_set.py`, notebook `gap_score.py`; log
+  `docs/log/2026-09-29_pole-finding-t0.md`): 80 synthetic cases (August point; September point
+  on its recorded grid, timing recovered: dt 0.4278 us, 468 samples, g 29.217 kHz) with
+  Cramér-Rao gap bounds, C fitted on all, F on draw 0 / 10 rows. C misses levels (August T2 100
+  us, 10 rows: 6-7 of 26 resolvable gaps) and biases P(r < 0.25) low (August 0.01-0.10 vs
+  0.184); what it finds is near the bound. F beats C everywhere (mean +3.5 gaps, errors 2-3x
+  smaller) but not in the hardest case. **T1 (Hamiltonian fit, `hamiltonian_fit.py`) and T3
+  (convex sparse fit, `sparse_fit.py`, cvxpy) are done** (logs `..._t1.md`, `..._t3.md`,
+  `..._t1t3.md`): T3 started from T1's offsets (T1T3, about 10 s per 10-row case, no C) equals
+  T3 with the true offsets on the subset (draw 0, 10 rows): all resolvable gaps on September,
+  17-26 of 20-27 on August, 0 false poles. The August P(r < 0.25) stays low because most small
+  gaps there are not resolvable at all (a data limit). Real data: the recorded Kerr is 15-20 %
+  too large (T1), and the model leaves 1.8-4x the noise. **Next:** T1T3 on august_disorder and
+  august_N3, then on all 80 cases; T3's merge threshold at 35 rows; P(r < 0.25) from partly
+  resolved spectra; T2 (weight structure) and T4 (September data; timing route in the T0 log)
+  still open. Summed-trace pencil and TLS-ESPRIT only as checks inside it. Still open: C's analytic
   Jacobian (slow), C on benchmark 2 and the new registry entries (guan converts jonginn's
   logs); D rework or drop. Freezing a fitter and switching `MBRDisorderEnsembleExperiment` wait
   for that. Benchmarks run serially (parallel fitter-A workers crash on pippin, 0x80000003). The
@@ -53,7 +129,7 @@ are in `docs/STATUS.md`.
 | Notebook | State | Last check |
 |---|---|---|
 | ana `mbr.py` | N=3, self-Kerr, Aug 15-17 reproduction; canonical-flow cells (step 9B) | analysis suite passes, smoke profile (2026-09-27; xfail cell 18 is the known disorder-theory difference) |
-| ana `mbr_disorder.py` | `MBRDisorderEnsembleExperiment` | analysis suite passes |
+| ana `mbr_disorder.py` | historical 7-1 + complete-basis Sep10 ensemble, optional IQ refit | Oct 5 static checks pass; new Sep10 section needs mounted-data execution |
 | ana `dormant/` | moved-out or old code; loads, not maintained | none |
 
 How to check:
@@ -68,9 +144,10 @@ How to check:
   `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
   `level_statistics`, `calibration` (step 9C); `poles/` (about 1.1 kloc): the pole-finding
   fitters and benchmarks (`docs/qsim/pole_finding.md`).
-- Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py`. Converted sets:
+- Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py` (frozen; all catalog
+  sets are done). Converted sets:
   `C:\experiments\<exp>\converted_data\` and `assembled_data\`. Dataset ID lists:
-  `tests/data/mbr_datasets.json`.
+  `configs/datasets/mbr_datasets.yaml`.
 
 ## Docs: which are current
 
@@ -78,3 +155,4 @@ How to check:
 |---|---|
 | `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft; phase 1 done, 2026-09-28) |
 | `docs/qsim/pole_finding_explore.md` | pole finding: the plan of parallel exploration tasks (2026-09-29) |
+| `docs/qsim/pole_finding_recap.md` | pole finding: recap of every method, what it was tested on, performance; figures (2026-10-03) |

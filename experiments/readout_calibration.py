@@ -57,6 +57,11 @@ def apply_singleshot_calibration(station, expt):
     angle = expt.data['angle']
     print(fids)
 
+    values = [angle, *thresholds_new,
+              np.median(expt.data['Ig_rot']), np.median(expt.data['Ie_rot'])]
+    if not np.isfinite(values).all() or np.isclose(values[-1], values[-2]):
+        raise ValueError('single-shot calibration has invalid readout centers or thresholds')
+
     hardware_cfg = station.hardware_cfg
     readout = hardware_cfg.device.readout
     readout.phase = [readout.phase[0] + angle]

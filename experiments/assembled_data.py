@@ -207,24 +207,23 @@ class AssembledExperiment:
         return [Path(child.fname) for child in self.children]
 
     @classmethod
-    def _load_children(cls, manifest, timing=None):
-        from experiments.saved_jobs import load_experiment
-
-        return [load_experiment(cls.child_class, raw, timing=timing)
+    def _load_children(cls, manifest):
+        """-> the job files a manifest lists, each through ``from_h5file``, no shots."""
+        return [cls.child_class.from_h5file(raw, load_shots=False)
                 for raw in manifest["raw_files"]]
 
     @classmethod
-    def from_manifest(cls, path, timing=None):
-        """Re-assemble from the raw job files a saved manifest lists.
+    def from_manifest(cls, path):
+        """Re-assemble from the job files a saved manifest lists.
 
-        ``timing`` goes to :func:`experiments.saved_jobs.load_experiment` for
-        job files that carry no Floquet timing of their own.
+        Each file is one job of ``child_class``, loaded as it is: config,
+        averaged data and its own ``derived_params``.
         """
         manifest = read_manifest(path)
         if manifest["class"] != cls.__name__:
             raise ValueError(f"{path} is a {manifest['class']} manifest")
         assembled = cls.from_children(
-            cls._load_children(manifest, timing=timing),
+            cls._load_children(manifest),
             job_ids=manifest["job_ids"], notes=manifest.get("notes", ""),
             **cls._from_manifest_kwargs(manifest, Path(path)))
         assembled.manifest_path = Path(path)
