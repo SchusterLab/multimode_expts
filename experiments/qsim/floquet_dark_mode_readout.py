@@ -140,8 +140,8 @@ class FockPopulationProgram(FloquetProgram):
     """The ordinary Qsim reset/readout template with a population experiment core.
 
     ``occupations`` is [n_M1, n_S...] in ``swap_stors`` order. ``ro_stor`` is
-    0 for M1. ``readout_route`` is hub, direct_swap, or dump_then_swap.
-    Storage routes require ``readout_swap_pulses`` (gate descriptions).
+    0 for M1. With ``postpulse=True``, the existing Qsim body swaps
+    ``ro_stor`` into M1 before its ordinary multiparity readout.
     ``use_multiphoton_swap`` selects known-N storage PREPARATION rows only.
     """
 
@@ -160,44 +160,28 @@ class FockPopulationProgram(FloquetProgram):
             expt.occupations, expt.swap_stors,
             expt.get("use_multiphoton_swap", False),
             expt.storage_pulse_wait_us)
-        self.readout_pulses = with_storage_waits(
-            expt.readout_swap_pulses, expt.storage_pulse_wait_us)
         super().initialize()
 
     def _set_population_defaults(self):
-        defaults = dict(prepulse=False, postpulse=False, init_stor=0, ro_stor=0,
-                        readout="multiparity", readout_route="hub",
-                        readout_swap_pulses=[], parity_fast=False,
-                        cond_sec_phase=-90, storage_pulse_wait_us=0.2,
-                        readout_dump_mode=2)
+        defaults = dict(prepulse=False, postpulse=True, init_stor=0, ro_stor=0,
+                        readout="multiparity", parity_fast=False,
+                        cond_sec_phase=-90, storage_pulse_wait_us=0.2)
         for name, value in defaults.items():
             self.cfg.expt.setdefault(name, value)
 
     def _validate_population_config(self):
         expt = self.cfg.expt
         validate_occupations(expt.occupations, expt.swap_stors)
-        if expt.prepulse or expt.postpulse:
-            raise ValueError("population prepulse and postpulse must be False")
+        if expt.prepulse:
+            raise ValueError("prepulse must be False: occupations already supplies Fock preparation")
+        if expt.ro_stor > 0 and not expt.postpulse:
+            raise ValueError("storage readout uses the existing postpulse=True path")
         if expt.readout != "multiparity":
             raise ValueError("FockPopulationProgram requires readout='multiparity'")
         if expt.get("man_mode_no", 1) != 1:
             raise ValueError("the calibrated preparation path uses M1")
         if expt.storage_pulse_wait_us < 0:
             raise ValueError("storage_pulse_wait_us must be non-negative")
-        self._validate_readout_route()
-
-    def _validate_readout_route(self):
-        expt = self.cfg.expt
-        if expt.readout_route == "hub":
-            if expt.ro_stor != 0 or expt.readout_swap_pulses:
-                raise ValueError("hub readout needs ro_stor=0 and no transfer pulses")
-        elif expt.readout_route in ("direct_swap", "dump_then_swap"):
-            if expt.ro_stor not in expt.swap_stors:
-                raise ValueError("storage readout ro_stor must belong to swap_stors")
-            if not expt.readout_swap_pulses:
-                raise ValueError("supply a fixed readout_swap_pulses sequence explicitly")
-        else:
-            raise ValueError("unknown readout_route: " + str(expt.readout_route))
 
     def build_fock_preparation(self, occupations, swap_stors,
                                use_multiphoton_swap=False,
@@ -224,16 +208,6 @@ class FockPopulationProgram(FloquetProgram):
         self.custom_pulse(self.cfg, creator.pulse, prefix=prefix)
         self.sync_all()
 
-    def transfer_storage_for_readout(self):
-        """Apply the caller's fixed transfer; never infer final photon number."""
-        expt = self.cfg.expt
-        if expt.readout_route == "hub":
-            return
-        if expt.readout_route == "dump_then_swap":
-            self.man_reset(man_idx=1, dump_mode_idx=expt.readout_dump_mode,
-                           chi_dressed=False)
-        self._play_gate_list(self.readout_pulses, prefix="population_readout_")
-
     def core_pulses(self):
         self._play_gate_list(self.preparation_pulses, prefix="population_prep_")
         storages = list(self.cfg.expt.swap_stors)
@@ -241,4 +215,5 @@ class FockPopulationProgram(FloquetProgram):
         self.disorder_phase_offsets = [0.0] * len(storages)
         self._play_scramble_with_phase_offsets(
             self.phase_offsets, storages, self.disorder_phase_offsets)
-        self.transfer_storage_for_readout()
+        # QsimProgram.body handles postpulse (ro_stor -> man) and multiparity.
+
