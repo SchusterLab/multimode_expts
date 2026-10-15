@@ -555,7 +555,7 @@ class JobWorker:
 
         _avoid_yoko = expt.cfg.expt.get("avoid_yoko", False)
         if not _avoid_yoko:
-            self.station.yoko_coupler.ramp_current(coupler_current, sweeprate=2e-4)
+            self._ramp_coupler(coupler_current)
             print("[WORKER] Done setting coupler current")
         else:
             print("[WORKER] Detouring yoko")
@@ -575,6 +575,38 @@ class JobWorker:
             pickle.dump(expt, f)
 
         return data_file_path, expt_pickle_path
+
+    def _ramp_coupler(self, current: float):
+        """Ramp the coupler yoko; on a dropped socket, reconnect once and retry.
+
+        The yoko socket is opened once at station init. The yoko (or Windows)
+        sometimes drops it (WinError 10053) while the instrument itself is fine.
+        """
+        yoko = self.station.yoko_coupler
+        try:
+            self._prepare_coupler(yoko)
+            yoko.ramp_current(current, sweeprate=2e-4)
+        except OSError as e:
+            print(f"[WORKER] Yoko socket lost ({e!r}); reconnecting and retrying once...")
+            try:
+                yoko.socket.close()
+            except OSError:
+                pass
+            yoko.on_enable()
+            self._prepare_coupler(yoko)
+            yoko.ramp_current(current, sweeprate=2e-4)
+
+    @staticmethod
+    def _prepare_coupler(yoko):
+        """Put the coupler yoko in current mode with the output on."""
+        mode = (yoko.get_mode() or "").strip()
+        if not mode:
+            # A closed socket reads as an empty reply, not as a mode
+            raise ConnectionError("Yoko gave an empty reply to :SOURCE:FUNCTION?")
+        if mode != "CURR":
+            print(f"[WORKER] Yoko is in {mode} mode; switching to CURR")
+            yoko.set_mode("CURR")
+        yoko.set_output(True)
 
     def _update_job_completed(
         self, job_id: str, data_file_path: str, expt_pickle_path: str, config_versions: dict

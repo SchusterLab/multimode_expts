@@ -117,8 +117,9 @@ the branch rules are in `docs/STATUS.md`.
   current Matrix Pencil's three known defects stay as strict xfails. Record:
   `docs/log/2026-09-28_pole-finding-diagnostics.md` (plan and reasons),
   `docs/log/2026-09-28_pole-finding-phase1.md`.
-- **Physics audit** (a separate stage): the numerical baselines are `xfail(strict=False)`.
-  Known open questions: the disorder theory differs by up to 0.3 kHz from the theory saved with
+- **Physics audit** (a separate stage, not started): the numerical baselines pin the current
+  numbers and must pass (until 2026-10-05 they were `xfail(strict=False)` and could not fail).
+  A pass does not mean the physics is checked. Known open questions: the disorder theory differs by up to 0.3 kHz from the theory saved with
   the August jobs; the 7-1 jobs record other selected occupations than a re-plan gives in 14 of
   19 realizations.
 

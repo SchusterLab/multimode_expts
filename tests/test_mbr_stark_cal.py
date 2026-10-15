@@ -3,7 +3,7 @@
 
 docs/qsim/mbr_redesign.md, section 7, step 2. Code organization, not physics:
 these check that the code loads and runs and that outputs have the expected
-shape and dtype. The numbers are pinned separately, and non-blocking, by
+shape and dtype. The numbers are pinned separately by
 ``test_stark_cal_baseline_matches`` in ``test_mbr_analysis_golden.py``.
 
 - Job class: the Program builds, compiles and acquires in mock mode, on both
@@ -35,9 +35,6 @@ from experiments.qsim.mbr_stark_cal import (
     RAMSEY_PHASES,
     MBRStarkCalExperiment,
     MBRStarkCalProgram,
-)
-from experiments.qsim.deprecated.mbr_phase_correction import (
-    EntireFloquetCyclePhaseCalibrationProgram,
 )
 from tests.mbr_reference import STARK_CAL_IDS, migration_tool
 
@@ -101,11 +98,6 @@ def test_acquire_rejects_the_wrong_job_class(station):
     calibration = MBRCalibrationSetExperiment(OCCUPATIONS, CYCLE_PAIRS, SWAP_STORS)
     with pytest.raises(TypeError, match="MBRStarkCalExperiment"):
         calibration.acquire(runner)
-
-
-def test_old_program_is_a_subclass():
-    """The old one-analyzer-phase program now takes its pulses from the new one."""
-    assert issubclass(EntireFloquetCyclePhaseCalibrationProgram, MBRStarkCalProgram)
 
 
 # --------------------------------------------------------------------------

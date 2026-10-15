@@ -2,15 +2,12 @@
 
 docs/qsim/mbr_redesign.md, section 7, step 4. Code organization, not physics:
 these check that the code loads and runs and that outputs have the expected
-shape and dtype. The numbers are compared, non-blocking, with the old
+shape and dtype. The numbers are compared with the old
 ``reconstruct_orthogonality`` on the same raw files.
 
 - Job class: the Program builds, compiles and acquires in mock mode on both
-  pinned config sets, through ``Orthogonality.acquire(runner)``. Its pulses
-  are the old propagator program's (with the correction on the pulse) at
-  q > 0. At q = 0 they matched the old orthogonality program's too, checked
-  before that program was deleted in redesign step 6; the ASM goldens
-  (``ortho_column_q0``) pin them now.
+  pinned config sets, through ``Orthogonality.acquire(runner)``. The ASM
+  goldens (``ortho_column_q0``, ``ortho_column_q4``) pin its pulses.
 - Assembled class: on converted fixture data (the September N=3 set, through
   ``tools/migrate_mbr_jobs.py``), ``from_manifest``, ``analyze``,
   ``display`` and ``save`` finish.
@@ -34,10 +31,8 @@ from experiments.qsim.mbr_campaign import (
 )
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment, MBROrthoColumnProgram
 from experiments.qsim.mbr_orthogonality import MBROrthogonalityExperiment
-from experiments.qsim.deprecated.mbr_propagator import EncodingPropagatorProgram
 from experiments.qsim.mbr_stark_cal import RAMSEY_PHASES
 from experiments.qsim.deprecated.saved_jobs import load_job
-from tests.asm_golden import render
 from tests.mbr_reference import ORTHOGONALITY_IDS, converted_orthogonality
 
 matplotlib.use("Agg")
@@ -89,24 +84,6 @@ def _program_cfg(st, **expt):
     cfg.device.storage._ds_floquet = st.ds_floquet
     cfg.expt = AttrDict(dict(mbr_defaults(SWAP_STORS, reps=10), **expt))
     return cfg
-
-
-def test_ortho_column_pulses_at_q_are_the_old_propagator_program(station):
-    """At q > 0, with the decoder correction on the pulse."""
-    _, st = station
-    initial, decoder, cycle = OCCUPATIONS[0], OCCUPATIONS[2], 4
-    corrections = [7., -3., 11.]
-    new_expt = MBROrthoColumnExperiment.job_config(
-        initial, OCCUPATIONS, SWAP_STORS, cycle=cycle, decoder_phases_deg=corrections)
-    new = MBROrthoColumnProgram(soccfg=st.soccfg, cfg=_program_cfg(
-        st, **new_expt, decoder_occupation=decoder, ramsey_phase=[0., 90.]))
-    old = EncodingPropagatorProgram(soccfg=st.soccfg, cfg=_program_cfg(
-        st, **new_expt, propagator_occupations=OCCUPATIONS,
-        propagator_decoder_phase_correction_deg=corrections,
-        phase_correction_location="pulse",
-        cycle_decoder_analyzer=[cycle, *decoder, 90.],
-        spectroscopy_prep_phase=0.))
-    assert render(new) == render(old)
 
 
 def test_job_overrides_record_the_calibration():
@@ -181,7 +158,6 @@ def test_an_incomplete_set_is_refused(september):
         MBROrthogonalityExperiment.from_children(september.children[:-1])
 
 
-@pytest.mark.xfail(strict=False, reason="physics audit pending")
 def test_matrix_matches_the_old_reconstruction(september):
     old = LegacyOrthogonality.reconstruct_orthogonality(
         [load_job(job_id) for job_id in ORTHOGONALITY_IDS])
