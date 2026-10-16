@@ -3,9 +3,11 @@
 from slab import AttrDict
 
 from experiments.MM_base import MM_base, MMAveragerProgram
+from experiments.qsim.qsim_base import QsimProgram 
 
 
-class ManActiveResetVerificationProgram(MMAveragerProgram):
+
+class ManActiveResetVerificationProgram(QsimProgram):
     """
     Prepare one manipulate photon before optional active reset.
 
