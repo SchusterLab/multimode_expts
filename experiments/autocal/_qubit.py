@@ -108,17 +108,17 @@ EFRAMSEY = dict(GERAMSEY, if_ef=True, ef_init=True, ramsey_freq=3)
 
 
 def ramsey_delta(expt):
-    """(delta f, fit params, ramsey_freq) of a Ramsey job (RamseyFitting; delta = the smallest |f_adjust|)."""
+    """(delta f, fit params, ramsey_freq, fit covariance) of a Ramsey job (RamseyFitting; delta = the smallest |f_adjust|)."""
     an = RamseyFitting(expt.data, config=expt.cfg); an.analyze()
     adj = np.asarray(an.data['f_adjust_ramsey_avgi'], float)
-    return float(adj[np.argmin(np.abs(adj))]), an.data['fit_avgi'], float(expt.cfg.expt.ramsey_freq)
+    return float(adj[np.argmin(np.abs(adj))]), an.data['fit_avgi'], float(expt.cfg.expt.ramsey_freq), an.data.get('fit_err_avgi')
 
 
 def _ramsey_eval(key):
     def _eval(station, expt, kw):
         q = station.hardware_cfg.device.qubit
-        dlt, p, rf = ramsey_delta(expt); d = expt.data
-        ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf)
+        dlt, p, rf, cov = ramsey_delta(expt); d = expt.data
+        ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf, cov=cov)
         info['delta'] = dlt
         return Outcome(ok=ok, info=info, changes=[item(q[key], 0, float(q[key][0]) + dlt, f'qubit {key}')],
                        plot=plot_fit(d['xpts'], d['avgi'], fitter.decaysin, p, xlabel='time (us)'))

@@ -96,8 +96,8 @@ def _parity_freq_eval(station, expt, kw):
 
 
 def _cav_ramsey_eval(station, expt, kw):
-    dlt, p, rf = ramsey_delta(expt); d = expt.data
-    ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf); info['delta'] = dlt
+    dlt, p, rf, cov = ramsey_delta(expt); d = expt.data
+    ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf, cov=cov); info['delta'] = dlt
     return Outcome(ok=ok, info=info, changes=[item(man(station).f_ge, MAN - 1, float(man(station).f_ge[MAN - 1]) + dlt, 'manipulate f_ge')],
                    plot=plot_fit(d['xpts'], d['avgi'], fitter.decaysin, p, xlabel='time (us)'))
 

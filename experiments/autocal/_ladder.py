@@ -139,8 +139,8 @@ def _ramsey_eval(tr):
     k, n = key_of(tr), int(tr[1])
 
     def _eval(station, expt, kw):
-        dlt, p, rf = ramsey_delta(expt); d = expt.data
-        ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf); info['delta'] = dlt
+        dlt, p, rf, cov = ramsey_delta(expt); d = expt.data
+        ok, info = chk.ramsey(d['xpts'], d['avgi'], p, rf, cov=cov); info['delta'] = dlt
         ch = [item(mp(station, pu)[k]['frequency'], n, float(mp(station, pu)[k]['frequency'][n]) + dlt, f'{pu} {tr} frequency')
               for pu in (('pi', 'hpi') if tr in HPI_RUNGS else ('pi',))]
         return Outcome(ok=ok, info=info, changes=ch, plot=plot_fit(d['xpts'], d['avgi'], fitter.decaysin, p, xlabel='time (us)'))

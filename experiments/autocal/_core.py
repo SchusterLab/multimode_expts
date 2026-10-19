@@ -217,14 +217,26 @@ class AutocalRun:
             plt.close('all')
             return None
 
-    def snapshot(self, phase):
-        """Save the in-memory configs as versions (update_main=False: the main pointer does not move)."""
+    def snapshot(self, phase, stopped_at=None):
+        """Save the in-memory configs as versions (update_main=False: the main pointer does not move). stopped_at: the
+        run stopped inside this phase; the version holds the steps of the phase that passed (resume from it)."""
         ids = dict(phase=phase.name, hardware=self.station.snapshot_hardware_config(update_main=False))
+        if stopped_at:
+            ids['partial, stopped at'] = stopped_at
         if phase.snapshot_storage:
             ids['man1_storage_swap'] = self.station.snapshot_man1_storage_swap(update_main=False)
         self.record['snapshots'].append(ids); self._save()
         print(f'  snapshot after {phase.name}: {ids}')
         return ids
+
+    def _snapshot_on_stop(self, phase, step):
+        """Keep the passed steps of the phase the run stopped in, unless the stop is at its first step."""
+        done = [s for s in self.record['steps'] if s['phase'] == phase.name and s.get('ok')]
+        if done:
+            try:
+                self.snapshot(phase, stopped_at=step.name)
+            except Exception as exc:
+                print(f'  snapshot on stop FAILED: {exc}')
 
     def run(self, phases=None, start_at=None, stop_at=None):
         """Execute the steps; stop (AutocalStop) at the first failed check or job. Returns the record."""
@@ -255,6 +267,7 @@ class AutocalRun:
                 self.record['stopped'] = rec['time']
                 self.record['steps'].append(rec); self._save()
                 print(f'[autocal] {st.name}: ERROR {exc}')
+                self._snapshot_on_stop(ph, st)
                 raise AutocalStop(f'{st.name}: {exc}') from exc
             rec.update(ok=bool(out.ok), info=out.info, seconds=round(time.time() - t0, 1),
                        changes=[dict(label=c.label, old=c.old, new=c.new) for c in out.changes])
@@ -269,6 +282,7 @@ class AutocalRun:
             print(f"[autocal] {st.name} {rec.get('jobs', '')}: {'OK' if out.ok else 'FAILED (' + str(out.info.get('reason')) + ')'}"
                   f"{' | ' + msg if msg else ''}{'' if out.ok else ' -- NOT applied'}")
             if not out.ok:
+                self._snapshot_on_stop(ph, st)
                 raise AutocalStop(f"{st.name}: {out.info.get('reason')}")
         if last_phase is not None:
             self.snapshot(last_phase)

@@ -104,6 +104,28 @@ def test_run_applies_passed_steps_stops_at_failure_and_never_sets_main(tmp_path)
     assert 'p2.b' in page and 'FAILED' in page and 'synthetic failure' in page and 'not applied' in page
 
 
+def test_stop_inside_a_phase_saves_the_passed_steps(tmp_path):
+    """10-19: the run stopped at the EF Ramsey and the passed GE values of the phase were lost."""
+    st = FakeStation()
+    phases = [Phase('p1', [_config_step('p1.a', 'a', 5.0, True), _config_step('p1.b', 'b', 7.0, False)])]
+    run = AutocalRun(st, None, phases, out_dir=tmp_path)
+    with pytest.raises(AutocalStop):
+        run.run()
+    assert st.value == {'a': 5.0, 'b': 2.0}
+    assert run.record['snapshots'] == [{'phase': 'p1', 'hardware': 'CFG-HW-TEST', 'partial, stopped at': 'p1.b'}]
+    assert all(main is False for _, main in st.snapshots)
+
+
+def test_ramsey_frequency_error_limit():
+    t = np.linspace(0.01, 80, 101)
+    p = [20.0, 0.0887, 0.0, 44.0, -10.0, 0.0]
+    y = fitter.decaysin(t, *p) + 6.0 * RNG.standard_normal(t.size)      # 10-19 EF Ramsey: start amplitude / residual ~3.4
+    cov = np.diag([1, 1e-6, 1, 1, 1, 1])
+    assert chk.ramsey(t, y, p, 0.1, cov=cov)[0]
+    ok, info = chk.ramsey(t, y, p, 0.1, cov=np.diag([1, 0.03 ** 2, 1, 1, 1, 1]))
+    assert not ok and 'fit error' in info['reason']
+
+
 def test_start_at_and_phase_filter(tmp_path):
     st = FakeStation()
     phases = [Phase('p1', [_config_step('p1.a', 'a', 5.0, True), _config_step('p1.b', 'b', 6.0, True)]),

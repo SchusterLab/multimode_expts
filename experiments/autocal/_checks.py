@@ -69,20 +69,27 @@ def gaussian(x, y, p, min_amp=0.3, min_snr=4.0, margin=0.1):
     return bool(ok), _plain(info)
 
 
-def ramsey(t, y, p, ramsey_freq, min_snr=4.0, band=(0.25, 1.75)):
+def ramsey(t, y, p, ramsey_freq, cov=None, min_snr=2.5, band=(0.25, 1.75), max_freq_err=0.15):
     """Ramsey fringe: p = [yscale, freq, phase_deg, decay, y0, x0] (fitting.decaysin). The fitted frequency must lie
-    within `band` x ramsey_freq: outside it the sign of the detuning is ambiguous or the fringe is not resolved."""
+    within `band` x ramsey_freq (outside it the sign of the detuning is ambiguous or the fringe is not resolved), and
+    its fit error (from cov) must be below max_freq_err x ramsey_freq: that error is the error of the applied
+    correction. The signal-to-noise floor only rejects a fit to noise (10-19: a clean EF fringe decaying over the
+    scan had start amplitude / residual 3.4)."""
     t = np.asarray(t, float)
     if p is None or not np.all(np.isfinite(p)):
         return False, dict(reason='no fit')
     p = [float(v) for v in p]
     snr = _snr(y, decaysin(t, *p), p[0])
     f = abs(p[1])
-    info = dict(freq=f, ramsey_freq=float(ramsey_freq), decay=abs(p[3]), snr=snr)
-    ok = band[0] * ramsey_freq <= f <= band[1] * ramsey_freq and snr >= min_snr and abs(p[3]) > 2 * (t[1] - t[0])
+    ferr = float(np.sqrt(np.asarray(cov, float)[1, 1])) if cov is not None and np.ndim(cov) == 2 else float('nan')
+    info = dict(freq=f, freq_err=ferr, ramsey_freq=float(ramsey_freq), decay=abs(p[3]), snr=snr)
+    in_band = band[0] * ramsey_freq <= f <= band[1] * ramsey_freq
+    err_ok = cov is None or (np.isfinite(ferr) and ferr < max_freq_err * ramsey_freq)
+    ok = in_band and snr >= min_snr and err_ok and abs(p[3]) > 2 * (t[1] - t[0])
     if not ok:
-        info['reason'] = ('fringe frequency out of band (detuning too large)' if not band[0] * ramsey_freq <= f <= band[1] * ramsey_freq
-                          else 'low signal-to-noise' if snr < min_snr else 'decays within two points')
+        info['reason'] = ('fringe frequency out of band (detuning too large)' if not in_band
+                          else 'low signal-to-noise' if snr < min_snr
+                          else f'frequency fit error {ferr:.3g} MHz too large' if not err_ok else 'decays within two points')
     return bool(ok), _plain(info)
 
 
