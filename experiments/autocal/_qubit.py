@@ -41,14 +41,21 @@ SS_RESET = dict(active_reset=False, ef_reset=True, storage_reset=False, coupler_
                 man_reset=False, use_qubit_man_reset=True, pre_selection_parity=False)
 
 
-def _ss_eval(station, expt, kw, min_fid=0.85):
+def _ss_eval(station, expt, kw, min_fid=None, min_sep=3.0, min_diag=0.7):
+    """min_fid None (the first shot, pi pulse not yet calibrated): the check is the blob separation in widths and the
+    confusion diagonal; the rotation and threshold are what this shot is for. min_fid set (the final shot, after the
+    qubit phase): the fidelity check of the transduction runs (0.85)."""
     expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
     d = expt.data; ro = station.hardware_cfg.device.readout
     fid = float(np.asarray(d['fids']).ravel()[0]); cm = np.asarray(d['confusion_matrix'], float)
-    ok = bool(min_fid < fid < 0.9995 and np.all(np.isfinite(cm)) and 0 < cm.ravel()[1] < 0.2 and 0 < cm.ravel()[2] < 0.2)
-    info = dict(fid=fid, angle=float(d['angle']), confusion=cm.tolist())
+    ig, ie = np.asarray(d['Ig_rot'], float).ravel(), np.asarray(d['Ie_rot'], float).ravel()
+    sep = float(abs(np.median(ie) - np.median(ig)) / np.mean([1.4826 * np.median(abs(v - np.median(v))) for v in (ig, ie)]))
+    sane = bool(fid < 0.9995 and np.all(np.isfinite(cm)) and 0 < cm.ravel()[1] < 0.3 and 0 < cm.ravel()[2] < 0.3)
+    ok = sane and (fid > min_fid if min_fid is not None else (sep > min_sep and cm.ravel()[0] > min_diag and cm.ravel()[3] > min_diag))
+    info = dict(fid=fid, separation_widths=sep, angle=float(d['angle']), confusion=cm.tolist())
     if not ok:
-        info['reason'] = f'fidelity {fid:.4f} or confusion matrix not plausible'
+        info['reason'] = (f'fidelity {fid:.4f} < {min_fid}' if min_fid is not None and sane else
+                          f'blobs not separated ({sep:.1f} widths) or confusion matrix not plausible')
     thr = d['thresholds']
     ch = [item(ro.phase, 0, float(ro.phase[0]) + float(d['angle']), 'readout phase'),
           item(ro, 'threshold', thr, 'readout threshold', cast=lambda v: v),
@@ -202,5 +209,9 @@ def phases():
              lambda s: dict(ramsey_freq=0.1, step=1, relax_delay=2500),
              _ramsey_eval('f_ef'), preprocessor=ramsey_pre, source=f'{src} cell 50 (after the EF amplitude Rabi)'),
         Step('qubit.t1_ef', 'T1Experiment', T1EF, lambda s: {}, _t1_eval('T1_ef', 'avgq'), source=f'{src} cells 53-54'),
+        Step('qubit.single_shot_final', 'HistogramExperiment', SINGLESHOT,
+             lambda s: dict(check_f=False, relax_delay=2500, reps=5000, **SS_RESET),
+             lambda s, e, kw: _ss_eval(s, e, kw, min_fid=0.85),
+             source=f'{src} cells 18-20, repeated after the pi pulse calibration (autocal)'),
     ])
     return [readout, qubit]
