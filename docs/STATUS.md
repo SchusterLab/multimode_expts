@@ -15,6 +15,7 @@ their own status files:
 | Measurement code (`experiments/`, `measurement_notebooks/`, calibration) | `docs/status/measurement.md` |
 | Analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools) | `docs/status/qsim_numerics.md` |
 | Transduction (`experiments/transduction/`, `measurement_notebooks/QEC/transduction_sandbox.ipynb`) | `docs/status/transduction.md` (works on `main`, worktree `C:\python\multimode_expts`) |
+| Automated calibration (`experiments/autocal/`) | `docs/status/autocal.md` (branch `autocal`, worktree `C:\python\multimode_expts_autocal`; since 2026-10-19) |
 
 The second branch, `qsim-analysis`, was retired on 2026-10-06 (guan): the merges between the
 two cost more than the separation gave.
