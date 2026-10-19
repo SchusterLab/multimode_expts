@@ -252,6 +252,7 @@ class AutocalRun:
             except Exception as exc:
                 rec.update(ok=False, error=f'{type(exc).__name__}: {exc}', traceback=traceback.format_exc()[-2000:],
                            seconds=round(time.time() - t0, 1))
+                self.record['stopped'] = rec['time']
                 self.record['steps'].append(rec); self._save()
                 print(f'[autocal] {st.name}: ERROR {exc}')
                 raise AutocalStop(f'{st.name}: {exc}') from exc
@@ -261,6 +262,8 @@ class AutocalRun:
             if out.ok:
                 for c in out.changes:
                     c.set()
+            else:
+                self.record['stopped'] = rec['time']
             self.record['steps'].append(rec); self._save()
             msg = ', '.join(f'{c.label} {_fmt(c.old)} -> {_fmt(c.new)}' for c in out.changes)
             print(f"[autocal] {st.name} {rec.get('jobs', '')}: {'OK' if out.ok else 'FAILED (' + str(out.info.get('reason')) + ')'}"
@@ -301,13 +304,14 @@ def report_html(rec):
     toc = ''.join(f"<a href='#s{i}' style='color:{colour.get(bool(s.get('ok')) and 'error' not in s, '#b3261e')}'>{i:02d} {esc(s['step'])}</a><br>"
                   for i, s in enumerate(rec['steps']))
     snaps = ''.join(f"<li>{esc(x)}</li>" for x in rec.get('snapshots', []))
-    return f"""<!doctype html><meta charset='utf-8'><title>autocal {esc(rec.get('started', ''))}</title>
+    refresh = '' if rec.get('finished') or rec.get('stopped') else "<meta http-equiv='refresh' content='30'>"
+    return f"""<!doctype html><meta charset='utf-8'>{refresh}<title>autocal {esc(rec.get('started', ''))}</title>
 <style>body{{font:14px system-ui,sans-serif;margin:0 auto;max-width:1100px;padding:0 16px;background:#fff;color:#222}}
 h1{{font-size:20px}}h2{{font-size:16px;margin:24px 0 4px}}.m{{color:#666;margin:2px 0}}.w{{color:#b3261e;margin:4px 0}}
 table{{border-collapse:collapse;margin:6px 0}}td,th{{border:1px solid #ddd;padding:2px 8px;text-align:left}}
 img{{max-width:100%;border:1px solid #eee}}nav{{column-width:260px;font-size:13px}}section{{border-top:1px solid #eee}}</style>
 <h1>Autocal run {esc(rec.get('started', ''))} ({esc(rec.get('user', ''))}, coupler {esc(rec.get('coupler_A'))} A)
-{' &middot; finished ' + esc(rec['finished']) if rec.get('finished') else ' &middot; running or stopped'}</h1>
+{' &middot; finished ' + esc(rec['finished']) if rec.get('finished') else ' &middot; STOPPED ' + esc(rec['stopped']) if rec.get('stopped') else ' &middot; running (this page reloads every 30 s)'}</h1>
 <p class='m'>Config versions saved with update_main=False:</p><ul>{snaps or '<li>none yet</li>'}</ul><nav>{toc}</nav>{''.join(rows)}"""
 
 
