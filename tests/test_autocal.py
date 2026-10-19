@@ -116,6 +116,30 @@ def test_stop_inside_a_phase_saves_the_passed_steps(tmp_path):
     assert all(main is False for _, main in st.snapshots)
 
 
+def test_gaussian_rejects_a_pattern_the_fit_does_not_describe():
+    """10-19 e0-f0 at a wrong gain: broad, with a second rise at the edge; product and fit agree poorly."""
+    x = np.linspace(3416, 3420, 50)
+    y = fitter.gaussianfunc(x, 0.0, 0.8, 3418.9, 0.7) + np.where(x > 3419.6, 0.8, 0.0) + 0.12 * RNG.standard_normal(x.size)
+    assert not chk.gaussian(x, y, [0.0, 0.8, 3418.9, 0.7])[0]
+    xr = np.linspace(-1, 1, 50); yr = fitter.gaussianfunc(xr, 0, 1, 0, 0.1) + 0.3 * np.sin(9 * xr)   # SNR fine, shape wrong
+    ok, info = chk.gaussian(xr, yr, [0, 1, 0, 0.1], min_snr=0)
+    assert not ok and 'R^2' in info['reason']
+
+
+def test_stop_file_stops_between_steps_and_keeps_the_passed_values(tmp_path):
+    st = FakeStation()
+
+    def _eval_and_touch(station, expt, kw):                  # step 1 passes and asks for a stop
+        (run.dir / 'STOP').touch()
+        return Outcome(ok=True, changes=[Change('a', 1.0, 5.0, lambda: station.value.__setitem__('a', 5.0))])
+    phases = [Phase('p1', [Step('p1.a', None, {}, lambda s: {}, _eval_and_touch), _config_step('p1.b', 'b', 7.0, True)])]
+    run = AutocalRun(st, None, phases, out_dir=tmp_path)
+    with pytest.raises(AutocalStop, match='STOP'):
+        run.run()
+    assert st.value == {'a': 5.0, 'b': 2.0}
+    assert run.record['snapshots'][0]['partial, stopped at'] == 'p1.b'
+
+
 def test_ramsey_frequency_error_limit():
     t = np.linspace(0.01, 80, 101)
     p = [20.0, 0.0887, 0.0, 44.0, -10.0, 0.0]

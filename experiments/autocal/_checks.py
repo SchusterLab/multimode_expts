@@ -52,20 +52,30 @@ def lorentzian(x, y, p, min_snr=5.0, max_width_frac=0.25, margin=0.05):
     return bool(ok), _plain(info)
 
 
-def gaussian(x, y, p, min_amp=0.3, min_snr=4.0, margin=0.1):
-    """Error-amplification product peak: p = [y0, yscale, x0, sigma] (fitting.fitgaussian), y normalised to max 1."""
+def r_squared(y, yfit):
+    y = np.asarray(y, float)
+    tot = np.sum((y - y.mean()) ** 2)
+    return float(1 - np.sum((y - np.asarray(yfit, float)) ** 2) / tot) if tot > 0 else 0.0
+
+
+def gaussian(x, y, p, min_amp=0.3, min_snr=4.0, min_r2=0.9, margin=0.1):
+    """Error-amplification product peak: p = [y0, yscale, x0, sigma] (fitting.fitgaussian), y normalised to max 1.
+    min_r2: the fit must explain the pattern (10-19: clean ladder scans R^2 0.98-1.00; an e0-f0 scan at a wrong gain,
+    broad with a second rise at the edge, R^2 0.71, and a three-point gain peak on a noisy baseline 0.79)."""
     x = np.asarray(x, float)
     if p is None or not np.all(np.isfinite(p)):
         return False, dict(reason='no fit')
     y0, ys, x0, sig = [float(v) for v in p]
     span = float(x.max() - x.min())
-    snr = _snr(y, gaussianfunc(x, *p), ys)
-    info = dict(x0=x0, amp=ys, sigma=abs(sig), snr=snr, lo=float(x.min()), hi=float(x.max()))
-    ok = (inside(x0, x.min(), x.max(), margin) and ys >= min_amp and snr >= min_snr
+    yfit = gaussianfunc(x, *p)
+    snr, r2 = _snr(y, yfit, ys), r_squared(y, yfit)
+    info = dict(x0=x0, amp=ys, sigma=abs(sig), snr=snr, r2=r2, lo=float(x.min()), hi=float(x.max()))
+    ok = (inside(x0, x.min(), x.max(), margin) and ys >= min_amp and snr >= min_snr and r2 >= min_r2
           and 0.01 * span < abs(sig) < 0.6 * span)
     if not ok:
         info['reason'] = ('center at the edge' if not inside(x0, x.min(), x.max(), margin) else
-                          'low contrast' if ys < min_amp else 'low signal-to-noise' if snr < min_snr else 'width out of range')
+                          'low contrast' if ys < min_amp else 'low signal-to-noise' if snr < min_snr else
+                          f'the fit does not describe the pattern (R^2 {r2:.2f} < {min_r2})' if r2 < min_r2 else 'width out of range')
     return bool(ok), _plain(info)
 
 

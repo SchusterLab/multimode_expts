@@ -13,6 +13,9 @@ Review: ``<run folder>/index.html`` (``AutocalRun.report``) lists every step wit
 check numbers, the job ids and the figure; it is rewritten after each step. The jobs are also logged to the lab
 notebook as usual when the station has ``log_measurements=True`` (the experiments' own plots).
 
+To stop a run between two steps and keep the passed values: create a file named ``STOP`` in the run folder; the run
+saves a version of the phase so far and stops before the next step (killing the process loses the in-memory values).
+
 Changes are made in memory (``station.hardware_cfg`` and ``station.ds_storage``).
 At the end of each phase the run saves config versions with
 ``update_main=False``: the files and DB records are written, the main pointer
@@ -250,6 +253,11 @@ class AutocalRun:
                 self.snapshot(last_phase)
             last_phase = ph
             rec = dict(phase=ph.name, step=st.name, source=st.source, time=datetime.datetime.now().isoformat(timespec='seconds'))
+            if (self.dir / 'STOP').exists():                 # stop between steps, keeping the passed values
+                self.record['stopped'] = rec['time']; self.record['stop_reason'] = f'STOP file before {st.name}'; self._save()
+                print(f'[autocal] STOP file found before {st.name}')
+                self._snapshot_on_stop(ph, st)
+                raise AutocalStop(f'stopped by the STOP file before {st.name}')
             t0 = time.time()
             try:
                 if st.expt is None:
