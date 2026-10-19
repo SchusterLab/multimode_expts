@@ -1,13 +1,17 @@
 """Manipulate photon ladder, from measurement_notebooks/QEC/multiphoton_calibration_v2.ipynb (cells 7-65).
 
-Per qubit rung (g_n-e_n, e_n-f_n): Ramsey -> amplitude Rabi -> error amplification of the pi pulse (frequency, gain)
--> error amplification of the pi/2 pulse (frequency, gain). Per sideband (f_n-g_n+1): spectroscopy -> chevron ->
+Per qubit rung (g_n-e_n, e_n-f_n): error amplification of the pi pulse (frequency, gain) -> of the pi/2 pulse
+(frequency, gain). The notebook's Ramsey and amplitude Rabi before it measure the bare-frame frequency and gain; the
+error amplification gives the driven-frame values, which the pulses use (they differ at larger drive: 10-19, g0-e0
+Ramsey 3561.53 vs error amplification 3562.09 MHz). seb 10-19: skip them; bare_frame=True puts them back. Per sideband (f_n-g_n+1): spectroscopy -> chevron ->
 length Rabi -> error amplification (frequency) -> length Rabi. Settings are the notebook's.
 
 Differences, on purpose:
-- a seed step before each rung sets its starting values: the pi pulse of photon 0 from the bare qubit (just
-  calibrated); photon n > 0 from the new rung n-1 plus the offset (rung n - rung n-1) of the table at the start of the
-  run, which keeps chi. The notebook seeds the first time from the rung below without the offset;
+- a seed step before each rung sets its starting values. Photon 0: the stored (driven-frame) pi value if it is within
+  SEED_KEEP of the new bare qubit value, else the bare value (a cold start; the driven-frame offset, ~0.6 MHz for
+  g0-e0, is inside the +/-2 MHz error-amplification window). Photon n > 0: the new rung n-1 plus the offset
+  (rung n - rung n-1) of the table at the start of the run, which keeps chi. The notebook seeds the first time from
+  the rung below without the offset;
 - pi/2 pulses only on the rungs in HPI_RUNGS (default g0-e0: the only multiphoton pi/2 of the logical preparation,
   MM_dual_rail_base.prep_fock_state; the other pi/2 entries of the table are not calibrated). The pi/2 pulse has its
   own shape (sigma 0.02 vs 0.035 for g0-e0, so its gain is close to the pi gain): its seed keeps its gain and follows
@@ -32,6 +36,7 @@ from experiments.autocal._util import ds_item, item, plot_fit, plot_image, prep_
 AVOID_YOKO = False
 MAN = 1
 HPI_RUNGS = ('g0-e0',)
+SEED_KEEP = dict(frequency=1.5, gain=0.10)        # MHz; relative
 
 RAMSEY = dict(start=0.01, step_size=0.05, expts=75, ramsey_freq=0.2, reps=250, rounds=1, qubits=[0],
               user_defined_freq=[False, 3568.2038290468167, 5304, 0.035], f0g1_cavity=0, normalize=False, active_reset=False,
@@ -220,20 +225,24 @@ def _seed_rung(tr, table0):
     leg = 'ge' if tr[0] == 'g' else 'ef'
 
     def _eval(station, expt, kw):
-        q = station.hardware_cfg.device.qubit; ch = []; new_pi = {}
+        q = station.hardware_cfg.device.qubit; ch = []; new_pi = {}; rule = {}
         for par in ('frequency', 'gain'):
             cur = mp(station, 'pi')[k][par]
             if n == 0:
-                new = q[f'f_{leg}'][0] if par == 'frequency' else q.pulses[f'pi_{leg}'].gain[0]
+                bare = q[f'f_{leg}'][0] if par == 'frequency' else q.pulses[f'pi_{leg}'].gain[0]
+                d = abs(cur[n] - bare) if par == 'frequency' else abs(cur[n] - bare) / bare
+                new = cur[n] if d < SEED_KEEP[par] else bare
+                rule[par] = 'stored (driven frame)' if d < SEED_KEEP[par] else 'bare qubit (stored value too far)'
             else:
                 new = cur[n - 1] + (table0['pi'][k][par][n] - table0['pi'][k][par][n - 1])
+                rule[par] = 'rung below + start-of-run offset'
             new_pi[par] = new
             ch.append(item(cur, n, new, f'seed pi {tr} {par}', cast=float if par == 'frequency' else int))
         if tr in HPI_RUNGS:
             off = table0['hpi'][k]['frequency'][n] - table0['pi'][k]['frequency'][n]
             ch.append(item(mp(station, 'hpi')[k]['frequency'], n, new_pi['frequency'] + off, f'seed hpi {tr} frequency'))
             ch.append(item(mp(station, 'hpi')[k]['gain'], n, table0['hpi'][k]['gain'][n], f'seed hpi {tr} gain', cast=int))
-        return Outcome(ok=True, info=dict(rule='bare qubit' if n == 0 else 'rung below + start-of-run offset'), changes=ch)
+        return Outcome(ok=True, info=rule, changes=ch)
     return _eval
 
 
@@ -249,7 +258,7 @@ def _seed_sideband(sb, table0):
 
 
 # --------------------------------------------------------------------------------------------- steps
-def rung_steps(tr, table0):
+def rung_steps(tr, table0, bare_frame=False):
     k, n = key_of(tr), int(tr[1]); src = 'multiphoton_calibration_v2'
 
     def ea_kw(pulse, param, band, expts, reps=None):
@@ -263,10 +272,15 @@ def rung_steps(tr, table0):
         return _kw
     steps = [
         Step(f'ladder.{tr}.seed', None, {}, lambda s: {}, _seed_rung(tr, table0), source='autocal (see _ladder docstring)'),
-        Step(f'ladder.{tr}.ramsey', 'RamseyExperiment', RAMSEY, lambda s: dict(transition=tr), _ramsey_eval(tr),
-             preprocessor=ramsey_pre, source=f'{src} cells 7, 15-16'),
-        Step(f'ladder.{tr}.amprabi', 'AmplitudeRabiExperiment', AMPRABI, lambda s: dict(transition=tr), _amprabi_eval(tr),
-             preprocessor=amprabi_pre, source=f'{src} cells 9, 19-20'),
+    ]
+    if bare_frame:
+        steps += [
+            Step(f'ladder.{tr}.ramsey', 'RamseyExperiment', RAMSEY, lambda s: dict(transition=tr), _ramsey_eval(tr),
+                 preprocessor=ramsey_pre, source=f'{src} cells 7, 15-16'),
+            Step(f'ladder.{tr}.amprabi', 'AmplitudeRabiExperiment', AMPRABI, lambda s: dict(transition=tr), _amprabi_eval(tr),
+                 preprocessor=amprabi_pre, source=f'{src} cells 9, 19-20'),
+        ]
+    steps += [
         Step(f'ladder.{tr}.ea_pi_freq', 'ErrorAmplificationExperiment', ERRAMP, ea_kw('pi', 'frequency', 2, 50, reps=50),
              _ea_eval(tr, 'pi', 'frequency'), preprocessor=erramp_pre, source=f'{src} cells 24-26'),
         Step(f'ladder.{tr}.ea_pi_gain', 'ErrorAmplificationExperiment', ERRAMP, ea_kw('pi', 'gain', 500, 25),
@@ -307,10 +321,11 @@ def sideband_steps(sb, table0):
     ]
 
 
-def phases(station, top=2):
-    """The ladder up to |top> (2 for the transduction logical {0, 2}): g0-e0, e0-f0, f0-g1, g1-e1, e1-f1, f1-g2, ..."""
+def phases(station, top=2, bare_frame=False):
+    """The ladder up to |top> (2 for the transduction logical {0, 2}): g0-e0, e0-f0, f0-g1, g1-e1, e1-f1, f1-g2, ...
+    bare_frame: also the notebook's Ramsey and amplitude Rabi on each qubit rung (see the module docstring)."""
     table0 = {pu: deepcopy(mp(station, pu)) for pu in ('pi', 'hpi')}       # the table at the start of the run (for seeds)
     steps = []
     for n in range(top):
-        steps += rung_steps(f'g{n}-e{n}', table0) + rung_steps(f'e{n}-f{n}', table0) + sideband_steps(f'f{n}-g{n + 1}', table0)
+        steps += rung_steps(f'g{n}-e{n}', table0, bare_frame) + rung_steps(f'e{n}-f{n}', table0, bare_frame) + sideband_steps(f'f{n}-g{n + 1}', table0)
     return [Phase('ladder', steps, snapshot_storage=True)]

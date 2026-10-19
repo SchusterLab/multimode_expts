@@ -20,9 +20,9 @@ from experiments.autocal import _ladder, _manipulate, _qubit, _storage
 from experiments.autocal._core import AutocalRun, AutocalStop, Change, Outcome, Phase, Step
 
 
-def default_phases(station, ladder_top=2, storage_mode=4):
+def default_phases(station, ladder_top=2, storage_mode=4, ladder_bare_frame=False):
     """readout, qubit, ladder (up to |ladder_top>), manipulate, storage (M1-S<storage_mode> swap)."""
-    return (_qubit.phases() + _ladder.phases(station, top=ladder_top) + _manipulate.phases()
+    return (_qubit.phases() + _ladder.phases(station, top=ladder_top, bare_frame=ladder_bare_frame) + _manipulate.phases()
             + _storage.phases(mode=storage_mode))
 
 

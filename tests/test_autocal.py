@@ -126,6 +126,36 @@ def test_ramsey_frequency_error_limit():
     assert not ok and 'fit error' in info['reason']
 
 
+def test_photon0_seed_keeps_the_driven_frame_value_unless_far_from_the_bare_qubit():
+    from slab import AttrDict
+    from experiments.autocal import _ladder
+
+    def station(f_table, g_table):
+        rung = dict(frequency=[f_table, 3561.0], gain=[g_table, 9000], length=[0, 0], sigma=[0.035, 0.035])
+        cfg = AttrDict(dict(device=dict(qubit=dict(f_ge=[3561.52], f_ef=[3417.98], pulses=dict(pi_ge=dict(gain=[9077]))),
+                                        multiphoton=dict(pi={'gn-en': rung}, hpi={'gn-en': deepcopy_rung(rung)}))))
+        return SimpleNamespace(hardware_cfg=cfg)
+
+    def deepcopy_rung(r):
+        return {k: list(v) for k, v in r.items()}
+
+    warm = station(3562.09, 9204)                            # stored driven-frame values, 0.57 MHz / 1.4 % from bare
+    out = _ladder._seed_rung('g0-e0', {'pi': warm.hardware_cfg.device.multiphoton.pi,
+                                       'hpi': warm.hardware_cfg.device.multiphoton.hpi})(warm, None, {})
+    assert [c.new for c in out.changes][:2] == [3562.09, 9204]
+    cold = station(3566.68, 9449)                            # before the cooldown: 5.2 MHz away
+    out = _ladder._seed_rung('g0-e0', {'pi': cold.hardware_cfg.device.multiphoton.pi,
+                                       'hpi': cold.hardware_cfg.device.multiphoton.hpi})(cold, None, {})
+    assert [c.new for c in out.changes][:2] == [3561.52, 9449]      # frequency from the bare qubit; gain within 10 %: kept
+
+
+def test_ladder_rungs_skip_the_bare_frame_steps_by_default():
+    from experiments.autocal import _ladder
+    names = [s.name for s in _ladder.rung_steps('g1-e1', {})]
+    assert names == ['ladder.g1-e1.seed', 'ladder.g1-e1.ea_pi_freq', 'ladder.g1-e1.ea_pi_gain']
+    assert 'ladder.g0-e0.ramsey' in [s.name for s in _ladder.rung_steps('g0-e0', {}, bare_frame=True)]
+
+
 def test_start_at_and_phase_filter(tmp_path):
     st = FakeStation()
     phases = [Phase('p1', [_config_step('p1.a', 'a', 5.0, True), _config_step('p1.b', 'b', 6.0, True)]),
