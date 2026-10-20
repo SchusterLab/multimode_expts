@@ -20,7 +20,10 @@ def item(container, key, new, label, cast=float):
 
     def _set():
         container[key] = new
-    return Change(label=label, old=as_float(old), new=new, set=_set)
+
+    def _undo():
+        container[key] = old
+    return Change(label=label, old=as_float(old), new=new, set=_set, undo=_undo)
 
 
 def ds_item(station, row, column, new, cast=float):
@@ -28,8 +31,8 @@ def ds_item(station, row, column, new, cast=float):
     ds = station.ds_storage
     get = dict(freq=ds.get_freq, gain=ds.get_gain, pi=ds.get_pi, h_pi=ds.get_h_pi)[column]
     upd = dict(freq=ds.update_freq, gain=ds.update_gain, pi=ds.update_pi, h_pi=ds.update_h_pi)[column]
-    new = cast(new)
-    return Change(label=f'ds {row} {column}', old=as_float(get(row)), new=new, set=lambda: upd(row, new))
+    new, old = cast(new), get(row)
+    return Change(label=f'ds {row} {column}', old=as_float(old), new=new, set=lambda: upd(row, new), undo=lambda: upd(row, old))
 
 
 def fit_line(x, y):

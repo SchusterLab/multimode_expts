@@ -76,6 +76,9 @@ def gaussian(x, y, p, min_amp=0.3, min_snr=4.0, min_r2=0.9, margin=0.1):
         info['reason'] = ('center at the edge' if not inside(x0, x.min(), x.max(), margin) else
                           'low contrast' if ys < min_amp else 'low signal-to-noise' if snr < min_snr else
                           f'the fit does not describe the pattern (R^2 {r2:.2f} < {min_r2})' if r2 < min_r2 else 'width out of range')
+        # clean peak, only too close to the edge (centre still inside the scan): the step may move the window
+        info['edge_only'] = bool(x.min() < x0 < x.max() and ys >= min_amp and snr >= min_snr and r2 >= min_r2
+                                 and 0.01 * span < abs(sig) < 0.6 * span)
     return bool(ok), _plain(info)
 
 

@@ -98,10 +98,12 @@ def _ea_eval(row, param, hist, fine):
                     info.pop('reason', None)
                 else:
                     ok, info['reason'] = False, 'symmetry centre at the edge: resonance not inside the scan'
-        hist.setdefault(param, []).append(val)
+        if ok:                                               # convergence history: accepted values only
+            hist.setdefault(param, []).append(val)
         new = val if param == 'frequency' else int(round(val))
-        return Outcome(ok=ok, info=info, changes=[ds_item(station, row, 'freq' if param == 'frequency' else 'gain', new,
-                                                          cast=float if param == 'frequency' else int)],
+        return Outcome(ok=ok, info=info, recentre=bool(info.get('edge_only')) and info.get('how') == 'product',
+                       changes=[ds_item(station, row, 'freq' if param == 'frequency' else 'gain', new,
+                                        cast=float if param == 'frequency' else int)],
                        plot=plot_fit(x, prod, fitter.gaussianfunc, p, vline=val, xlabel=f'{row} {param}', ylabel='product (normalised)'))
     return _eval
 

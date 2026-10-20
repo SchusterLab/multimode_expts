@@ -135,8 +135,8 @@ def _ea_eval(tr, pulse, param, state_fin='g'):
         ch = [item(mp(station, pulse)[k][param], n, val, f'{pulse} {tr} {param}', cast=float if param == 'frequency' else int)]
         if tr[0] == 'f' and n == 0 and param == 'frequency':
             ch.append(ds_item(station, f'M{MAN}', 'freq', val))
-        return Outcome(ok=ok, info=info, changes=ch, plot=plot_fit(x, y, fitter.gaussianfunc, p, vline=val, xlabel=param,
-                                                                   ylabel='product (normalised)'))
+        return Outcome(ok=ok, info=info, changes=ch, recentre=bool(info.get('edge_only')),
+                       plot=plot_fit(x, y, fitter.gaussianfunc, p, vline=val, xlabel=param, ylabel='product (normalised)'))
     return _eval
 
 

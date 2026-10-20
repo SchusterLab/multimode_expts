@@ -42,11 +42,12 @@ SEQ_US = 30.0                   # pulse sequence + readout per shot, added to th
 
 @dataclass
 class Change:
-    """One config value set by a step. `set` writes the new value; `old` / `new` are recorded."""
+    """One config value set by a step. `set` writes the new value, `undo` the old one; `old` / `new` are recorded."""
     label: str
     old: object
     new: object
     set: Callable[[], None]
+    undo: Optional[Callable[[], None]] = None
 
 
 @dataclass
@@ -55,6 +56,8 @@ class Outcome:
     info: dict = field(default_factory=dict)
     changes: list = field(default_factory=list)
     plot: Optional[Callable] = None              # plot(ax) for the step figure
+    recentre: bool = False                       # failed only because the clean peak is at the scan edge: move the
+                                                 # scan centre to it (apply the changes) and repeat the step once
 
 
 @dataclass
@@ -277,6 +280,28 @@ class AutocalRun:
                 print(f'[autocal] {st.name}: ERROR {exc}')
                 self._snapshot_on_stop(ph, st)
                 raise AutocalStop(f'{st.name}: {exc}') from exc
+            if not out.ok and out.recentre and all(c.undo for c in out.changes):
+                rec.update(ok=False, info=out.info, seconds=round(time.time() - t0, 1), recentred_retry='next',
+                           changes=[dict(label=c.label, old=c.old, new=c.new) for c in out.changes])
+                rec['figure'] = self._figure(st.name, out)
+                self.record['steps'].append(rec); self._save()
+                print(f"[autocal] {st.name} {rec.get('jobs', '')}: peak at the scan edge -> centre moved, repeating once")
+                for c in out.changes:
+                    c.set()
+                rec = dict(phase=ph.name, step=st.name, source=st.source + ' (repeat, centre moved)',
+                           time=datetime.datetime.now().isoformat(timespec='seconds'))
+                t0 = time.time()
+                try:
+                    kw = st.kwargs(self.station); runner = self._runner(st)
+                    expt = runner.execute(postprocess=False, log=self.log, **kw)
+                    rec['jobs'] = list(runner.last_job_ids)
+                    out2 = st.evaluate(self.station, expt, kw)
+                except Exception as exc:
+                    out2 = Outcome(ok=False, info=dict(reason=f'{type(exc).__name__}: {exc}'))
+                if not out2.ok:
+                    for c in out.changes:                    # back to the values before the first scan
+                        c.undo()
+                out = out2
             rec.update(ok=bool(out.ok), info=out.info, seconds=round(time.time() - t0, 1),
                        changes=[dict(label=c.label, old=c.old, new=c.new) for c in out.changes])
             rec['figure'] = self._figure(st.name, out)

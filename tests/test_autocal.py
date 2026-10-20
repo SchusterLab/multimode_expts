@@ -140,6 +140,40 @@ def test_stop_file_stops_between_steps_and_keeps_the_passed_values(tmp_path):
     assert run.record['snapshots'][0]['partial, stopped at'] == 'p1.b'
 
 
+def _edge_then(second_ok):
+    """A step whose first scan has its clean peak at the edge (recentre) and whose repeat passes or fails."""
+    calls = []
+
+    def _eval(station, expt, kw):
+        calls.append(station.value['a'])
+        if len(calls) == 1:
+            return Outcome(ok=False, recentre=True, info={'reason': 'center at the edge'},
+                           changes=[Change('a', 1.0, 3.0, lambda: station.value.__setitem__('a', 3.0),
+                                           lambda: station.value.__setitem__('a', 1.0))])
+        new = 3.1
+        return Outcome(ok=second_ok, info={} if second_ok else {'reason': 'still bad'},
+                       changes=[Change('a', station.value['a'], new, lambda: station.value.__setitem__('a', new),
+                                       lambda: None)])
+    return _eval, calls
+
+
+@pytest.mark.parametrize('second_ok, final', [(True, 3.1), (False, 1.0)])
+def test_edge_peak_moves_the_centre_and_repeats_once(tmp_path, monkeypatch, second_ok, final):
+    st = FakeStation()
+    ev, calls = _edge_then(second_ok)
+    step = Step('p1.ea', 'FakeExperiment', {}, lambda s: {}, ev)
+    run = AutocalRun(st, None, [Phase('p1', [step])], out_dir=tmp_path)
+    monkeypatch.setattr(run, '_runner', lambda st_: SimpleNamespace(execute=lambda **kw: None, last_job_ids=['JOB-X']))
+    if second_ok:
+        run.run()
+    else:
+        with pytest.raises(AutocalStop):
+            run.run()
+    assert calls == [1.0, 3.0]                                # the repeat scanned around the moved centre
+    assert st.value['a'] == final                            # failed repeat: back to the value before the first scan
+    assert [s.get('recentred_retry') for s in run.record['steps']] == ['next', None]
+
+
 def test_ramsey_frequency_error_limit():
     t = np.linspace(0.01, 80, 101)
     p = [20.0, 0.0887, 0.0, 44.0, -10.0, 0.0]
