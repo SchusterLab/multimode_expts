@@ -174,6 +174,16 @@ def test_edge_peak_moves_the_centre_and_repeats_once(tmp_path, monkeypatch, seco
     assert [s.get('recentred_retry') for s in run.record['steps']] == ['next', None]
 
 
+def test_sharp_peak_finds_the_resonance_not_the_off_resonant_plateau():
+    """10-19 M1-S4 coarse scan: off-resonant plateau ~0.6 with spikes up to 1.0; the resonance a narrow 0.9 peak
+    between dark bands."""
+    from experiments.autocal._storage import sharp_peak
+    y = np.r_[0.6 + 0.15 * RNG.standard_normal(35), 0.05 * np.ones(15), [0.4, 0.9, 0.8, 0.4], 0.05 * np.ones(21)]
+    y[20] = 1.0
+    c, i = sharp_peak(y)
+    assert i == 51 and c > 0.7
+
+
 def test_ramsey_frequency_error_limit():
     t = np.linspace(0.01, 80, 101)
     p = [20.0, 0.0887, 0.0, 44.0, -10.0, 0.0]

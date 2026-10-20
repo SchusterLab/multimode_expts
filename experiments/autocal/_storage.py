@@ -57,6 +57,20 @@ def sym_center(x, y, min_half=0.25):
     return float(x[best[1]])
 
 
+def sharp_peak(y, lo=3, hi=9):
+    """(local contrast, index) of the sharpest product peak: its value minus the mean of the points lo..hi steps away on
+    both sides. 10-19 M1-S4: the resonance (a narrow peak between dark bands) had contrast ~0.85; spikes on the
+    off-resonant plateau (even N with no swap look like success) ~0.3, although one of them was the global maximum."""
+    y = np.asarray(y, float); best = (-np.inf, None)
+    for i in range(len(y)):
+        nb = np.r_[y[max(0, i - hi):max(0, i - lo + 1)], y[i + lo:i + hi + 1]]
+        if len(nb) >= hi - lo + 1:
+            c = float(y[i] - nb.mean())
+            if c > best[0]:
+                best = (c, i)
+    return best
+
+
 def _spec_eval(row):
     def _eval(station, expt, kw):
         d = expt.data
@@ -87,7 +101,7 @@ def _ea_eval(row, param, hist, fine):
         expt.analyze(data=d, state_fin='e', periodic=False)
         x, prod, p = np.asarray(d['x_pts'], float), np.asarray(d['prod_avgi'], float), d['fit_avgi']
         ok, info = chk.gaussian(x, prod, p)
-        val = float(p[2]); info['how'] = 'product'
+        val = float(p[2]); info['how'] = 'product'; recentre = bool(info.get('edge_only'))
         if param == 'frequency':
             xs = sym_center(x, np.asarray(d['avgi'], float)); info['symmetry'] = xs; step = float(kw['step'])
             agree = ok and abs(val - xs) <= 3 * step
@@ -98,11 +112,17 @@ def _ea_eval(row, param, hist, fine):
                     ok, val, info['how'] = True, xs, 'symmetry'
                     info.pop('reason', None)
                 else:
-                    ok, info['reason'] = False, 'symmetry centre at the edge: resonance not inside the scan'
+                    c, i = sharp_peak(prod); info['sharp_peak'] = dict(contrast=c, x=float(x[i]) if i is not None else None)
+                    if i is not None and c > 0.5:            # the plateau is off resonance: centre on the resonance, repeat
+                        val, info['how'], recentre = float(x[i]), 'sharp product peak', True
+                        info['reason'] = f'symmetry centre at the edge; sharp product peak at {val:.5f} (contrast {c:.2f})'
+                    else:
+                        info['reason'] = 'symmetry centre at the edge: resonance not inside the scan'
+                    ok = False
         if ok:                                               # convergence history: accepted values only
             hist.setdefault(param, []).append(val)
         new = val if param == 'frequency' else int(round(val))
-        return Outcome(ok=ok, info=info, recentre=bool(info.get('edge_only')) and info.get('how') == 'product',
+        return Outcome(ok=ok, info=info, recentre=recentre and info.get('how') in ('product', 'sharp product peak'),
                        changes=[ds_item(station, row, 'freq' if param == 'frequency' else 'gain', new,
                                         cast=float if param == 'frequency' else int)],
                        plot=plot_fit(x, prod, fitter.gaussianfunc, p, vline=val, xlabel=f'{row} {param}', ylabel='product (normalised)'))
