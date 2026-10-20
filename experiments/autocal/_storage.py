@@ -100,7 +100,9 @@ def _ea_eval(row, param, hist, fine):
         d = expt.data
         expt.analyze(data=d, state_fin='e', periodic=False)
         x, prod, p = np.asarray(d['x_pts'], float), np.asarray(d['prod_avgi'], float), d['fit_avgi']
-        ok, info = chk.gaussian(x, prod, p)
+        # R^2 floor 0.6 (ladder 0.9): the product of 7 rows at 50 reps has a noisy baseline (10-19: a clean fine peak,
+        # symmetry centre 1.3 kHz from the fit, R^2 0.81); the frequency scans also need the symmetry centre to agree
+        ok, info = chk.gaussian(x, prod, p, min_r2=0.6)
         val = float(p[2]); info['how'] = 'product'; recentre = bool(info.get('edge_only'))
         if param == 'frequency':
             xs = sym_center(x, np.asarray(d['avgi'], float)); info['symmetry'] = xs; step = float(kw['step'])
