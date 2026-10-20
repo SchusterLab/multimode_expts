@@ -61,7 +61,8 @@ def _spec_eval(row):
     def _eval(station, expt, kw):
         d = expt.data
         x, y = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float); p = fit_line(x, y)
-        ok, info = chk.both(chk.lorentzian(x, y, p), chk.jump(p[2], station.ds_storage.get_freq(row), max_abs=2.0))
+        # the sideband is |f_Sx - f_M1|: after a cooldown f_M1 alone moves it by MHz (10-19: M1 +4.3, M1-S4 -4.06 MHz)
+        ok, info = chk.both(chk.lorentzian(x, y, p), chk.jump(p[2], station.ds_storage.get_freq(row), max_abs=6.0))
         return Outcome(ok=ok, info=info, changes=[ds_item(station, row, 'freq', p[2])],
                        plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel=f'{row} sideband frequency (MHz)'))
     return _eval
