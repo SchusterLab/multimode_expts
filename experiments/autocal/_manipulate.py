@@ -79,7 +79,8 @@ def parity_gain_pre(station, defaults, **kw):
 def _revival_eval(station, expt, kw):
     d = expt.data
     an = LengthRabiFitting(d, config=expt.cfg); an.analyze(fitparams=[100, 0.1, 0, None, None, None])
-    t = float(an.results['pi_length']); p = an.results.get('fit_avgi')
+    p = an.results.get('fit_avgi')
+    t = float(an._calculate_pi_lengths(list(p))[0])        # as LengthRabiFitting.display (analyze does not set pi_length)
     key = 'revival_time_fast' if expt.cfg.expt.parity_fast else 'revival_time'
     ok, info = chk.both(chk.rabi(d['xpts'], d['avgi'], p, t), chk.jump(t, man(station)[key][MAN - 1], max_rel=0.3))
     pp = list(p) + ([d['xpts'][0]] if p is not None and len(p) == 5 else [])

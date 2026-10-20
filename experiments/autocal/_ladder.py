@@ -211,7 +211,8 @@ def _lenrabi_eval(sb):
         an = getattr(expt, '_length_rabi_analysis', None)
         if an is None:
             an = LengthRabiFitting(d, config=expt.cfg); an.analyze()
-        pi = float(an.results['pi_length']); p = an.results.get('fit_avgi', d.get('fit_avgi'))
+        p = an.results.get('fit_avgi', d.get('fit_avgi'))
+        pi = float(an.results['pi_length'] if 'pi_length' in an.results else an._calculate_pi_lengths(list(p))[0])
         ok, info = chk.rabi(d['xpts'], d['avgi'], p, pi)
         ch = [item(mp(station)['fn-gn+1']['length'], n, pi, f'pi {sb} length')]
         if n == 0:
