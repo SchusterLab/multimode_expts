@@ -1,4 +1,4 @@
-Status: current (2026-10-19, first version; not yet run on the device).
+Status: current (2026-10-20; first device run 2026-10-19 after the cooldown, see docs/log/2026-10-20_cooldown-recal-night.md).
 
 # Automated calibration (`experiments/autocal/`)
 
@@ -50,8 +50,25 @@ fit before it changes the config, stops at the first doubtful fit, and leaves on
   also wrote g0-e0 photon-0 frequencies there).
 - Error amplification analysed with `periodic=False` (the `analyze` default `periodic=True` is biased near scan edges).
 - EF and M1 spectroscopy windows centred on the current value (the notebooks start at fixed frequencies).
+- Ladder qubit rungs: error amplification only (seb 10-19). The notebook's Ramsey / amplitude Rabi measure the
+  bare-frame values; the pulses use the driven-frame values (g0-e0: Ramsey 3561.53 vs error amp. 3562.09 MHz).
+- Recovery rules (each at most one repeat, recorded): a clean error-amp. peak at the scan edge moves the centre; a
+  coarse swap scan off centre (symmetry centre at the edge) moves to the sharpest product peak; a swap gain optimum
+  outside the window moves the window to the end value. A failed repeat restores the old value and stops.
+- Storage swap gain scans with n_step 1: with n_step 2 every row is a multiple of 4 pulses and every swap angle
+  k pi/4 passes (10-19: the scan moved to 3 pi/4 after the cooldown). Verify a new swap with a chevron (one swap,
+  frequency x length) when the gain moves by more than ~10 %.
 - Not included: chi / Kerr gain sweep (hand-picked peaks), dump mode, storage chevron, storage modes other than S4,
   photon-number spectroscopy. Transduction checks (prep gate, eta) stay in the transduction code.
+
+## Known limits (10-19 device run)
+
+- One gain-to-alpha calibration scatters ~1.5 % (2.641 / 2.605e-4); a 2 % alpha-scale error showed as P3 0.06 in the
+  Wigner of |2> (photon-number Ramsey: P3 0.004). Average several runs or check the scale with the |2> Ramsey.
+- Swap convergence limit 0.5 % gain is below the precision of the n_step 1 gain scan (scatter ~1.5 %); give the gain
+  scans 20 pulses (n_pulses 10) or a 2 % limit.
+- The EF Ramsey beats (f level split ~8-12 kHz, size drifts, centre fixed); the one-frequency fit biases f_ef by
+  ~5 kHz. A two-frequency fit should be the EF Ramsey check.
 
 ## Implementation notes
 
