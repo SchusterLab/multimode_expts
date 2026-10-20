@@ -175,7 +175,10 @@ def _qspec_eval(sb):
     def _eval(station, expt, kw):
         d = expt.data
         x, y = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float); p = fit_line(x, y)
-        ok, info = chk.lorentzian(x, y, p, max_width_frac=0.05)
+        # n >= 1: the preparation has more steps, less contrast, and leftover |f_n-1> adds the lower sideband line next
+        # to it (10-19 f1-g2: dip 7 deep vs scatter 1.9, signal-to-noise 4.1, centre pulled ~0.3 MHz toward f0-g1).
+        # The spectroscopy only places the chevron window; the chevron and the error amplification set the value.
+        ok, info = chk.lorentzian(x, y, p, max_width_frac=0.05, min_snr=5.0 if n == 0 else 3.5)
         return Outcome(ok=ok, info=info, changes=[item(mp(station)['fn-gn+1']['frequency'], n, p[2], f'pi {sb} frequency')],
                        plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel='sideband frequency (MHz)'))
     return _eval
