@@ -270,7 +270,8 @@ def test_default_plan_builds_every_step_on_a_mock_station(mock_station, tmp_path
         assert st.expt is None or st.defaults.get('avoid_yoko') is False, st.name
 
 
-@pytest.mark.parametrize('name', ['qubit.t1_ge', 'ladder.f0-g1.lenrabi', 'storage.M1-S4.ea_freq_coarse'])
+@pytest.mark.parametrize('name', ['qubit.t1_ge', 'ladder.f0-g1.lenrabi', 'ladder.f1-g2.n1_map', 'manipulate.single_shot_ar',
+                                  'storage.M1-S4.ea_freq_coarse'])
 def test_mock_acquisition_is_rejected_and_nothing_applied(mock_station, tmp_path, name):
     """Mock data is flat: the step runs end to end (compile, acquire, evaluate) and its check must reject it."""
     from experiments.autocal import default_phases
@@ -286,3 +287,18 @@ def test_mock_acquisition_is_rejected_and_nothing_applied(mock_station, tmp_path
     rec = run.record['steps'][-1]
     assert rec['step'] == name and rec['ok'] is False
     assert state(mock_station) == before
+
+
+def test_sideband_ends_with_the_n1_map_and_gain_to_alpha_follows_an_active_reset_shot(mock_station, tmp_path):
+    """seb 10-20: the ladder needs the single-pulse sideband optimum (10-02 drive memory); the gain-to-alpha scan the
+    active-reset confusion matrix the Wigner uses."""
+    from experiments.autocal import default_phases
+    names = [st.name for ph in default_phases(mock_station) for st in ph.steps]
+    for sb in ('f0-g1', 'f1-g2'):
+        i = names.index(f'ladder.{sb}.n1_map')
+        assert names[i - 1] == f'ladder.{sb}.ea_freq' and names[i + 1] == f'ladder.{sb}.lenrabi_final'
+    i = names.index('manipulate.gain_to_alpha')
+    assert names[i - 1] == 'manipulate.single_shot_ar'
+    run = AutocalRun(mock_station, None, default_phases(mock_station), out_dir=tmp_path)
+    kw, cfg, _ = run.build(next(st for ph in run.phases for st in ph.steps if st.name == 'manipulate.single_shot_ar'))
+    assert cfg.active_reset is True and cfg.pre_selection_reset is True and cfg.pre_selection_parity is True

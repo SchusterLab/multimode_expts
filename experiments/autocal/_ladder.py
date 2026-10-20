@@ -4,7 +4,8 @@ Per qubit rung (g_n-e_n, e_n-f_n): error amplification of the pi pulse (frequenc
 (frequency, gain). The notebook's Ramsey and amplitude Rabi before it measure the bare-frame frequency and gain; the
 error amplification gives the driven-frame values, which the pulses use (they differ at larger drive: 10-19, g0-e0
 Ramsey 3561.53 vs error amplification 3562.09 MHz). seb 10-19: skip them; bare_frame=True puts them back. Per sideband (f_n-g_n+1): spectroscopy -> chevron ->
-length Rabi -> error amplification (frequency) -> length Rabi. Settings are the notebook's.
+length Rabi -> error amplification (frequency) -> N = 1 map (single-pulse optimum, see _n1_eval) -> length Rabi.
+Settings are the notebook's, except the N = 1 map (losssplit refresh_sb).
 
 Differences, on purpose:
 - a seed step before each rung sets its starting values (offsets from `reference`, see phases()). Photon 0: the stored (driven-frame) pi value if it is within
@@ -25,6 +26,8 @@ Differences, on purpose:
 from copy import deepcopy
 
 import numpy as np
+
+from scipy.optimize import curve_fit
 
 from fitting import fitting as fitter
 from fitting.fit_display_classes import ChevronFitting, LengthRabiFitting
@@ -223,6 +226,57 @@ def _lenrabi_eval(sb):
 
 
 # --------------------------------------------------------------------------------------------- seeds
+N1MAP = dict(reps=250, rounds=1, qubit=0, qubits=[0], active_reset=False, man_reset=True, storage_reset=True, relax_delay=2500,
+             man_no=MAN, pulse_name='pi', n_pulses=[1], phase_step_deg=0.0, y_param='length', avoid_yoko=AVOID_YOKO)
+N1_HALF, N1_PTS, N1_LEN = 0.6, 49, (0.85, 0.925, 1.0, 1.075, 1.15)
+
+
+def _n1_kw(sb):
+    n = int(sb[1])
+
+    def _kw(station):
+        f, L = float(mp(station)['fn-gn+1']['frequency'][n]), float(mp(station)['fn-gn+1']['length'][n])
+        return dict(transition=sb, pulse_type=['multiphoton', sb, 'pi', 0], start=f - N1_HALF, step=2 * N1_HALF / (N1_PTS - 1),
+                    expts=N1_PTS, y_values=[round(float(r * L), 4) for r in N1_LEN])
+    return _kw
+
+
+def _n1_eval(sb, min_rows=3, max_spread=0.05, max_jump=0.3):
+    """Single-pulse (N = 1) optimum of a sideband: per length row a Gaussian of the success, centre inside and contrast >
+    0.15 (losssplit run_n1); the median of the rows. 10-02: the sideband remembers the recent drive, so the 20-pulse
+    error amplification is biased (+36..+43 kHz then; 10-19: N = 1 maps 80 / 50 kHz below the autocal values); the ladder
+    prepares states with single pulses, so this is the value it needs."""
+    n = int(sb[1])
+    g = lambda xx, a, x0, s, b: b + a * np.exp(-((xx - x0) / s) ** 2 / 2)
+
+    def _eval(station, expt, kw):
+        expt.analyze(); d = expt.data
+        x, S, y = np.asarray(d['x_pts'], float), np.asarray(d['success'], float)[0], np.asarray(d['y_pts'], float)
+        cs = []
+        for row in S:
+            try:
+                p, _ = curve_fit(g, x, row, p0=[row.max() - row.min(), x[np.argmax(row)], 0.4, row.min()])
+                if x[0] < p[1] < x[-1] and p[0] > 0.15:
+                    cs.append(float(p[1]))
+            except Exception:
+                pass
+        old = float(mp(station)['fn-gn+1']['frequency'][n])
+        c = float(np.median(cs)) if cs else float('nan')
+        spread = float(1.4826 * np.median(np.abs(np.asarray(cs) - c))) if len(cs) > 1 else float('nan')
+        info = dict(centres=cs, median=c, spread=spread, old=old, change=c - old)
+        ok = len(cs) >= min_rows and spread < max_spread and abs(c - old) < max_jump
+        if not ok:
+            info['reason'] = (f'only {len(cs)} of {len(S)} length rows fit' if len(cs) < min_rows else
+                              f'rows disagree (spread {1e3 * spread:.0f} kHz)' if not spread < max_spread else
+                              f'N = 1 optimum {1e3 * (c - old):+.0f} kHz from the error amplification')
+        ch = [item(mp(station)['fn-gn+1']['frequency'], n, c, f'pi {sb} frequency (N = 1)')]
+        if n == 0:
+            ch.append(ds_item(station, f'M{MAN}', 'freq', c))
+        return Outcome(ok=bool(ok), info=info, changes=ch,
+                       plot=plot_image(x, y, S, xlabel=f'{sb} frequency (MHz)', ylabel='pulse length (us)', vline=c))
+    return _eval
+
+
 def _seed_rung(tr, table0):
     """Config step: starting values of a qubit rung (see the module docstring)."""
     k, n = key_of(tr), int(tr[1])
@@ -319,6 +373,9 @@ def sideband_steps(sb, table0):
              lambda s: dict(transition=sb, parameter_to_test='frequency', step=0.4 / 50, start=f(s) - 0.2, expts=50, n_pulses=20,
                             n_step=3, pulse_type=['multiphoton', sb, 'pi', 0]),
              _ea_eval(sb, 'pi', 'frequency', state_fin='e'), preprocessor=erramp_pre, source=f'{src} cells 57-58'),
+        Step(f'ladder.{sb}.n1_map', 'single_qubit.error_amplification_2d.ErrorAmplification2DExperiment', N1MAP, _n1_kw(sb),
+             _n1_eval(sb), source='losssplit refresh_sb / run_n1 (10-02: single-pulse optimum; seb ok 10-20)',
+             seconds=lambda cfg, kw: N1_PTS * len(N1_LEN) * cfg.reps * (cfg.relax_delay + 30) * 1e-6),
         Step(f'ladder.{sb}.lenrabi_final', 'LengthRabiGeneralF0g1Experiment', LENRABI,
              lambda s: dict(transition=sb, gain=g(s), freq=f(s), expts=100, step=1.5 * L(s) / 100),
              _lenrabi_eval(sb), preprocessor=sideband_pre, source=f'{src} cells 63-64'),

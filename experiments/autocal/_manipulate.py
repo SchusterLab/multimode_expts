@@ -13,7 +13,7 @@ from fitting import fitting as fitter
 from fitting.fit_display_classes import LengthRabiFitting
 from experiments.autocal import _checks as chk
 from experiments.autocal._core import Outcome, Phase, Step, default_pre
-from experiments.autocal._qubit import ramsey_delta
+from experiments.autocal._qubit import SINGLESHOT, _ss_eval, ramsey_delta
 from experiments.autocal._util import fit_line, item, plot_fit, prep_photon, pulses
 
 AVOID_YOKO = False
@@ -129,6 +129,12 @@ def phases():
              lambda s: dict(ramsey_freq=3., step=0.01, expts=100, reps=500, prep_e_first=False,
                             user_defined_pulse=[True, man(s).f_ge[MAN - 1], 1500, man(s).displace_sigma[MAN - 1], 0, 4]),
              _cav_ramsey_eval, preprocessor=cav_ramsey_pre, source=f'{src} cells 99-101'),
+        # the parity correction of the Wigner and of the gain-to-alpha scan uses confusion_matrix_with_active_reset; the
+        # readout / qubit single shots run without active reset (readout being recalibrated) and never update it (10-19:
+        # the gain-to-alpha scan used a 10-17 matrix from another set point, e-e 0.9785 vs 0.964 measured at 21:45)
+        Step('manipulate.single_shot_ar', 'HistogramExperiment', SINGLESHOT,
+             lambda s: dict(check_f=False, relax_delay=2500, reps=5000, **AR),
+             lambda s, e, kw: _ss_eval(s, e, kw, min_fid=0.85), source='losssplit single_shot (Wigner active-reset settings; seb ok 10-20)'),
         Step('manipulate.gain_to_alpha', 'single_qubit.parity_gain.ParityGainExperiment', PARITY_GAIN,
              lambda s: dict(pulse_correction=True, reps=500, step=150, expts=100, parity_fast=False, **AR),
              _parity_gain_eval, preprocessor=parity_gain_pre, source=f'{src} cells 104-108'),
