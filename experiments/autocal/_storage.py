@@ -129,8 +129,9 @@ def _ea_eval(row, param, hist, fine):
             if (i <= 1 or i >= len(prod) - 2) and inside < 0.7:   # 10-19: end 1.0, inside noise spikes <= 0.6
                 val, recentre, info['how'] = float(x[i]), True, 'window end (optimum outside)'
                 info['reason'] = f'maximum at the window end ({val:.0f}), nothing inside above {inside:.2f}: window moved'
-        if ok:                                               # convergence history: accepted values only
-            hist.setdefault(param, []).append(val)
+        if ok:                                               # convergence: (old, new) of the accepted steps
+            old = station.ds_storage.get_freq(row) if param == 'frequency' else station.ds_storage.get_gain(row)
+            hist.setdefault(param, []).append((float(old), float(val)))
         new = val if param == 'frequency' else int(round(val))
         return Outcome(ok=ok, info=info, recentre=recentre and info.get('how') in ('product', 'sharp product peak', 'window end (optimum outside)'),
                        changes=[ds_item(station, row, 'freq' if param == 'frequency' else 'gain', new,
@@ -142,9 +143,10 @@ def _ea_eval(row, param, hist, fine):
 def _converged(row, hist, tol_gain=0.005, tol_freq=0.0015):
     def _eval(station, expt, kw):
         g, f = hist.get('gain', []), hist.get('frequency', [])
-        if len(g) < 2 or len(f) < 3:
-            return Outcome(ok=False, info=dict(reason='not enough calibration rounds'))
-        dg, df = abs(g[-1] - g[-2]) / g[-2], abs(f[-1] - f[-2])
+        if not g or not f:
+            return Outcome(ok=False, info=dict(reason='no accepted gain or frequency step in this run'))
+        # the last accepted step of each kind must hardly move the value (also when a run resumes inside the phase)
+        dg, df = abs(g[-1][1] - g[-1][0]) / g[-1][0], abs(f[-1][1] - f[-1][0])
         ok = dg < tol_gain and df < tol_freq
         info = dict(gain_change_rel=dg, freq_change_MHz=df, gains=g, freqs=f)
         if not ok:
