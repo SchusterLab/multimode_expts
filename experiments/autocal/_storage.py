@@ -119,10 +119,18 @@ def _ea_eval(row, param, hist, fine):
                     else:
                         info['reason'] = 'symmetry centre at the edge: resonance not inside the scan'
                     ok = False
+        if param == 'gain' and not ok:
+            # optimum outside the window (10-19: +15 % was not enough after the cooldown): the maximum sits at an end and
+            # the inside has no peak -> centre on that end value and repeat once (the product is normalised to max 1, so
+            # an end maximum alone proves nothing; an inside with no value near 1 does)
+            i = int(np.argmax(prod)); inside = float(np.max(prod[2:-2]))
+            if (i <= 1 or i >= len(prod) - 2) and inside < 0.7:   # 10-19: end 1.0, inside noise spikes <= 0.6
+                val, recentre, info['how'] = float(x[i]), True, 'window end (optimum outside)'
+                info['reason'] = f'maximum at the window end ({val:.0f}), nothing inside above {inside:.2f}: window moved'
         if ok:                                               # convergence history: accepted values only
             hist.setdefault(param, []).append(val)
         new = val if param == 'frequency' else int(round(val))
-        return Outcome(ok=ok, info=info, recentre=recentre and info.get('how') in ('product', 'sharp product peak'),
+        return Outcome(ok=ok, info=info, recentre=recentre and info.get('how') in ('product', 'sharp product peak', 'window end (optimum outside)'),
                        changes=[ds_item(station, row, 'freq' if param == 'frequency' else 'gain', new,
                                         cast=float if param == 'frequency' else int)],
                        plot=plot_fit(x, prod, fitter.gaussianfunc, p, vline=val, xlabel=f'{row} {param}', ylabel='product (normalised)'))
