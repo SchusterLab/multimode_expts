@@ -90,7 +90,13 @@ def _ea_kw(row, mode, param, span_of):
             c = ds.get_freq(row); start, step = c - span / 2, span / (n - 1)
         else:
             c = ds.get_gain(row); start, step = int(c - span / 2), max(1, int(span / (n - 1)))
-        return dict(stor_mode_no=mode, parameter_to_test=param, pulse_type=['storage', row, 'pi', 0], start=start, step=step, span=span)
+        kw = dict(stor_mode_no=mode, parameter_to_test=param, pulse_type=['storage', row, 'pi', 0], start=start, step=step, span=span)
+        if param == 'gain':
+            # each row plays 2N pulses of the same phase; with n_step 2 every row is a multiple of 4 and every swap angle
+            # k pi/4 passes (10-19: after the cooldown the gain scan moved to 3 pi/4 at 4.225 us; chevron JOB-20261019-00165).
+            # n_step 1: multiples of 2 pulses, only k pi/2 passes; the next one after pi/2 needs twice the gain.
+            kw.update(n_start=0, n_step=1, n_pulses=6)
+        return kw
     return _kw
 
 
