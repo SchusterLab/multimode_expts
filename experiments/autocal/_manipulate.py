@@ -9,6 +9,8 @@ Not included: the chi / Kerr gain sweep (cells 111-115) needs hand-picked peak i
 """
 import numpy as np
 
+from scipy.optimize import least_squares
+
 from fitting import fitting as fitter
 from fitting.fit_display_classes import LengthRabiFitting
 from experiments.autocal import _checks as chk
@@ -103,16 +105,43 @@ def _cav_ramsey_eval(station, expt, kw):
                    plot=plot_fit(d['xpts'], d['avgi'], fitter.decaysin, p, xlabel='time (us)'))
 
 
-def _parity_gain_eval(station, expt, kw):
+G2A_START, G2A_STEP, G2A_PTS = 0, 112, 41           # gains 0..4480 (|alpha| <~ 1.2): the vacuum parity falls to ~5e-2
+
+
+def vacuum_width_fit(x, y, g0, free_offset=False):
+    """Least-squares vacuum parity model y = o + c exp(-2 (g2a x)^2), centre at x = 0 (vacuum), offset fixed 0 unless
+    free_offset. Returns (g2a, s_g2a, c, s_c, o, rms). 10-20: the library L1 fit agrees with it (2.6408 / 2.6411e-4);
+    a free centre is degenerate with the width on a one-sided scan (+/-4-5 %); fixing the offset (|o| <= 0.004 measured)
+    gives ~0.6 % at 41 x 2000 shots instead of ~1.0 % (Fisher estimate) at a bias of ~0.37 % per 0.003 of offset."""
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    if free_offset:
+        f = lambda p: p[0] + p[1] * np.exp(-2 * (p[2] * x) ** 2) - y; p0, sc_ = [0.0, y[0], g0], [0.01, 0.1, 1e-5]
+    else:
+        f = lambda p: p[0] * np.exp(-2 * (p[1] * x) ** 2) - y; p0, sc_ = [y[0], g0], [0.1, 1e-5]
+    r = least_squares(f, p0, x_scale=sc_)
+    s2 = float(np.sum(r.fun ** 2) / max(1, len(y) - len(p0))); sp = np.sqrt(np.diag(np.linalg.pinv(r.jac.T @ r.jac) * s2))
+    o = float(r.x[0]) if free_offset else 0.0
+    return float(r.x[-1]), float(sp[-1]), float(r.x[-2]), float(sp[-2]), o, float(np.sqrt(s2))
+
+
+def _parity_gain_eval(station, expt, kw, max_err=0.015, c_range=(0.85, 1.05), max_offset=0.05):   # free offset poorly set on 0..4480 (10-20: +0.027 at 500 reps)
     expt.analyze(scale=True, plot=False); d = expt.data; m = man(station)
-    g2a, sc = float(d['gain_to_alpha']), float(d['scale'])
-    ok, info = chk.both(chk.jump(g2a, m.gain_to_alpha[MAN - 1], max_rel=0.15),
-                        chk.jump(sc, m.alpha_scale[MAN - 1], max_rel=0.15))
-    info.update(gain_to_alpha=g2a, alpha_scale=sc)
-    plot = plot_fit(d['xpts'], d['avgi'], xlabel='displacement gain') if 'xpts' in d and 'avgi' in d else None
-    return Outcome(ok=ok, info=info, plot=plot,
-                   changes=[item(m.gain_to_alpha, MAN - 1, g2a, 'manipulate gain_to_alpha'),
-                            item(m.alpha_scale, MAN - 1, sc, 'manipulate alpha_scale')])
+    y = np.asarray(d['parity'], float); x = np.asarray(d['xpts'], float)[:len(y)]          # first half: the 'minus' gains
+    g_lib, sc_lib = float(d['gain_to_alpha']), float(d['scale'])
+    g, sg, c, sc, _, rms = vacuum_width_fit(x, y, g_lib)
+    g_f, _, _, _, o_f, _ = vacuum_width_fit(x, y, g, free_offset=True)
+    ok, info = chk.both(chk.jump(g, m.gain_to_alpha[MAN - 1], max_rel=0.15), chk.jump(c, m.alpha_scale[MAN - 1], max_rel=0.15))
+    info.update(gain_to_alpha=g, rel_err=sg / g, alpha_scale=c, rms=rms, offset_free_fit=o_f, g2a_offset_free=g_f,
+                library_gain_to_alpha=g_lib, library_scale=sc_lib)
+    if ok and not (sg / g < max_err and c_range[0] < c < c_range[1] and abs(o_f) < max_offset):
+        ok = False
+        info['reason'] = (f'g2a fit error {100 * sg / g:.2f} % >= {100 * max_err} %' if not sg / g < max_err else
+                          f'contrast {c:.3f} outside {c_range}' if not c_range[0] < c < c_range[1] else
+                          f'offset of the free fit {o_f:+.3f} (|o| >= {max_offset})')
+    model = lambda xx, cc, gg: cc * np.exp(-2 * (gg * xx) ** 2)
+    return Outcome(ok=ok, info=info, plot=plot_fit(x, y, model, [c, g], xlabel='displacement gain', ylabel='vacuum parity'),
+                   changes=[item(m.gain_to_alpha, MAN - 1, g, 'manipulate gain_to_alpha'),
+                            item(m.alpha_scale, MAN - 1, c, 'manipulate alpha_scale')])
 
 
 def phases():
@@ -136,6 +165,10 @@ def phases():
              lambda s: dict(check_f=False, relax_delay=2500, reps=5000, **AR),
              lambda s, e, kw: _ss_eval(s, e, kw, min_fid=0.85), source='losssplit single_shot (Wigner active-reset settings; seb ok 10-20)'),
         Step('manipulate.gain_to_alpha', 'single_qubit.parity_gain.ParityGainExperiment', PARITY_GAIN,
-             lambda s: dict(pulse_correction=True, reps=500, step=150, expts=100, parity_fast=False, **AR),
-             _parity_gain_eval, preprocessor=parity_gain_pre, source=f'{src} cells 104-108'),
+             # 10-20 (seb ok, option B'): 41 points on 0..4480 instead of 100 on 0..14850 (60 % of them at zero parity),
+             # 4 rounds x 500 reps, least-squares width fit with the offset fixed (~0.6 % stat. + ~0.4 % offset bias, ~7 min)
+             lambda s: dict(pulse_correction=True, reps=500, rounds=4, start=G2A_START, step=G2A_STEP, expts=G2A_PTS,
+                            parity_fast=False, **AR),
+             _parity_gain_eval, preprocessor=parity_gain_pre, source=f'{src} cells 104-108 (grid and fit: autocal 10-20)',
+             seconds=lambda cfg, kw: cfg.expts * cfg.reps * cfg.rounds * 2 * (cfg.relax_delay + 30) * 1e-6),
     ])]

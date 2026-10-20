@@ -302,3 +302,26 @@ def test_sideband_ends_with_the_n1_map_and_gain_to_alpha_follows_an_active_reset
     run = AutocalRun(mock_station, None, default_phases(mock_station), out_dir=tmp_path)
     kw, cfg, _ = run.build(next(st for ph in run.phases for st in ph.steps if st.name == 'manipulate.single_shot_ar'))
     assert cfg.active_reset is True and cfg.pre_selection_reset is True and cfg.pre_selection_parity is True
+
+
+def test_vacuum_width_fit_recovers_gain_to_alpha():
+    """B' (10-20): offset fixed at 0, centre at 0; the fit error matches the scatter of the synthetic runs."""
+    from experiments.autocal._manipulate import G2A_PTS, G2A_START, G2A_STEP, vacuum_width_fit
+    x = G2A_START + G2A_STEP * np.arange(G2A_PTS)
+    vals = []
+    for k in range(30):
+        y = 0.94 * np.exp(-2 * (2.58e-4 * x) ** 2) + 0.016 * RNG.standard_normal(x.size)       # 0.032 at 500 reps -> 0.016 at 2000
+        g, sg, c, sc, o, rms = vacuum_width_fit(x, y, 2.6e-4)
+        vals.append(g)
+        assert abs(c - 0.94) < 0.03 and o == 0.0
+    vals = np.array(vals)
+    assert abs(vals.mean() / 2.58e-4 - 1) < 0.004 and 0.5 * sg < vals.std() < 2 * sg and vals.std() / 2.58e-4 < 0.01
+
+
+def test_gain_to_alpha_step_uses_the_flank_grid(mock_station, tmp_path):
+    from experiments.autocal import default_phases
+    run = AutocalRun(mock_station, None, default_phases(mock_station), out_dir=tmp_path)
+    st = next(st for ph in run.phases for st in ph.steps if st.name == 'manipulate.gain_to_alpha')
+    kw, cfg, _ = run.build(st)
+    assert (cfg.start, cfg.step, cfg.expts, cfg.reps, cfg.rounds) == (0, 112, 41, 500, 4)
+    assert 6 < st.seconds(cfg, kw) / 60 < 8
