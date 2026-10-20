@@ -49,3 +49,20 @@ f_M1 moves -4.3 + 0.24.
 
 1 gate, 2 eta reference (wrong swap), 3 chevron (wrong swap), 4 chevron (fixed swap), 5 eta reference, 6 pn2,
 7 icpt@0.35, then (chain `night_1019.sh`) f-level check, null23, icpt@0.35. Results: see the end of this entry.
+
+## Night results (analysis `ic_debug/final/night1019_analysis.py`, `analyze_null23.py`)
+
+- eta 0.35 channel sets (cases 7, 9, 10; eta_B 0.327 -> eta_c ~0.33), pooled and frame-aligned: Ic +0.136 +/- 0.028
+  (s = 1) / +0.140 +/- 0.027 (s = 0.98); ideal through the estimator +0.185 / +0.190; MODEL decay only +0.134 / +0.151.
+  Weekend 10-10..12 at the same eta: Ic +0.036 +/- 0.031 with the same ideal. Difference +0.10 +/- 0.04 (~2.4 sigma):
+  tonight the gap to the ideal is about what decay explains; the weekend's unexplained -0.09 is not seen. Cause not
+  known. Candidate (hypothesis, not tested): the swap needs ~21 % less gain after the cooldown (2973 vs 3754, ~37 %
+  less pump power), and the weekend's HOM asymmetry scaled with the swap. Test: Ic at a higher swap gain / shorter
+  length, alternating with the present swap.
+- null23 (one set per detuning, eta_c 0.683-0.689, not exactly 2/3): excess |rho02| over the MODEL +0.013 / +0.000 /
+  +0.005 (+/- 0.009) at 0 / +15 / -15 kHz (s = 1; s = 0.98: +0.018 / +0.003 / +0.009). No significant detuning
+  dependence; the excess at 0 is smaller than the weekend's (+0.024).
+- f level: EF Ramsey split 10.8, 10.8, 7.9 kHz over 13 min (00:38-00:51), centre fixed (131.5 kHz fringe): the split
+  size drifts, the centre does not -> consistent with charge-parity splitting (offset-charge drift); f_ef itself moved
+  ~+30 kHz since the afternoon, f_ge ~-30 kHz (null23's qubit Ramsey).
+- All night jobs ended 03:29; nothing ran after that.
