@@ -15,10 +15,9 @@ swap keeps the pi length fixed and calibrates gain and frequency.
 import numpy as np
 
 from fitting import fitting as fitter
-from fitting.fit_display_classes import Spectroscopy
 from experiments.autocal import _checks as chk
 from experiments.autocal._core import Outcome, Phase, Step, default_pre
-from experiments.autocal._util import ds_item, plot_fit, prep_photon, pulses
+from experiments.autocal._util import ds_item, fit_line, plot_fit, prep_photon, pulses
 
 AVOID_YOKO = False
 MAN = 1
@@ -60,8 +59,8 @@ def sym_center(x, y, min_half=0.25):
 
 def _spec_eval(row):
     def _eval(station, expt, kw):
-        an = Spectroscopy(expt.data); an.analyze(fit=True); d = an.data
-        x, y, p = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float), d['fit_avgi']
+        d = expt.data
+        x, y = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float); p = fit_line(x, y)
         ok, info = chk.both(chk.lorentzian(x, y, p), chk.jump(p[2], station.ds_storage.get_freq(row), max_abs=2.0))
         return Outcome(ok=ok, info=info, changes=[ds_item(station, row, 'freq', p[2])],
                        plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel=f'{row} sideband frequency (MHz)'))

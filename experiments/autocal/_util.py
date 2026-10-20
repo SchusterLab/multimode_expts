@@ -1,6 +1,8 @@
 """Small helpers shared by the step modules: config changes, pulse sequences, plots."""
 import numpy as np
 
+from fitting import fitting as fitter
+from experiments.autocal._checks import r_squared
 from experiments.autocal._core import Change
 
 
@@ -28,6 +30,25 @@ def ds_item(station, row, column, new, cast=float):
     upd = dict(freq=ds.update_freq, gain=ds.update_gain, pi=ds.update_pi, h_pi=ds.update_h_pi)[column]
     new = cast(new)
     return Change(label=f'ds {row} {column}', old=as_float(get(row)), new=new, set=lambda: upd(row, new))
+
+
+def fit_line(x, y):
+    """Lorentzian fit of a spectroscopy line, robust to a narrow line on a wide scan: fitlor's default start guess
+    and a start at the strongest point (3-point median smoothed; width a few steps); keeps the better fit (R^2).
+    10-19: the f0-g1 line at 1992.9 MHz, ~0.5 MHz wide on a 45 MHz scan, was missed by the default guess."""
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    med = float(np.median(y))
+    ys = np.median(np.vstack([np.roll(y, -1), y, np.roll(y, 1)]), axis=0); ys[0], ys[-1] = y[0], y[-1]
+    i = int(np.argmax(np.abs(ys - med)))
+    tries = []
+    for start in (None, [med, float(ys[i] - med), float(x[i]), 3 * float(abs(x[1] - x[0]))]):
+        try:
+            p, _ = fitter.fitlor(x, y, fitparams=None if start is None else list(start))
+            if np.all(np.isfinite(p)):
+                tries.append((r_squared(y, fitter.lorfunc(x, *p)), list(p)))
+        except Exception:
+            pass
+    return max(tries)[1] if tries else [float('nan')] * 4     # nan: the check reports 'no fit'
 
 
 def mm_base(station):

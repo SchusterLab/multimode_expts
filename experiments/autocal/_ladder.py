@@ -7,7 +7,7 @@ Ramsey 3561.53 vs error amplification 3562.09 MHz). seb 10-19: skip them; bare_f
 length Rabi -> error amplification (frequency) -> length Rabi. Settings are the notebook's.
 
 Differences, on purpose:
-- a seed step before each rung sets its starting values. Photon 0: the stored (driven-frame) pi value if it is within
+- a seed step before each rung sets its starting values (offsets from `reference`, see phases()). Photon 0: the stored (driven-frame) pi value if it is within
   SEED_KEEP of the new bare qubit value, else the bare value (a cold start; the driven-frame offset, ~0.6 MHz for
   g0-e0, is inside the +/-2 MHz error-amplification window). Photon n > 0: the new rung n-1 plus the offset
   (rung n - rung n-1) of the table at the start of the run, which keeps chi. The notebook seeds the first time from
@@ -27,11 +27,11 @@ from copy import deepcopy
 import numpy as np
 
 from fitting import fitting as fitter
-from fitting.fit_display_classes import ChevronFitting, LengthRabiFitting, Spectroscopy
+from fitting.fit_display_classes import ChevronFitting, LengthRabiFitting
 from experiments.autocal import _checks as chk
 from experiments.autocal._core import Outcome, Phase, Step, default_pre
 from experiments.autocal._qubit import ramsey_delta
-from experiments.autocal._util import ds_item, item, plot_fit, plot_image, prep_photon, pulses
+from experiments.autocal._util import ds_item, fit_line, item, plot_fit, plot_image, prep_photon, pulses
 
 AVOID_YOKO = False
 MAN = 1
@@ -173,8 +173,8 @@ def _qspec_eval(sb):
     n = int(sb[1])
 
     def _eval(station, expt, kw):
-        an = Spectroscopy(expt.data); an.analyze(fit=True); d = an.data
-        x, y, p = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float), d['fit_avgi']
+        d = expt.data
+        x, y = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float); p = fit_line(x, y)
         ok, info = chk.lorentzian(x, y, p, max_width_frac=0.05)
         return Outcome(ok=ok, info=info, changes=[item(mp(station)['fn-gn+1']['frequency'], n, p[2], f'pi {sb} frequency')],
                        plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel='sideband frequency (MHz)'))
@@ -321,10 +321,14 @@ def sideband_steps(sb, table0):
     ]
 
 
-def phases(station, top=2, bare_frame=False):
+def phases(station, top=2, bare_frame=False, reference=None):
     """The ladder up to |top> (2 for the transduction logical {0, 2}): g0-e0, e0-f0, f0-g1, g1-e1, e1-f1, f1-g2, ...
-    bare_frame: also the notebook's Ramsey and amplitude Rabi on each qubit rung (see the module docstring)."""
-    table0 = {pu: deepcopy(mp(station, pu)) for pu in ('pi', 'hpi')}       # the table at the start of the run (for seeds)
+    bare_frame: also the notebook's Ramsey and amplitude Rabi on each qubit rung (see the module docstring).
+    reference: a device.multiphoton table whose rung-to-rung offsets seed the rungs n > 0 (one consistent earlier
+    calibration); None = the table at the start of this run. Pass it when a run resumes inside the ladder: the
+    start-of-run table then mixes new lower rungs with old upper ones, and its offsets would carry the old shift."""
+    src = reference if reference is not None else station.hardware_cfg.device.multiphoton
+    table0 = {pu: deepcopy(src[pu]) for pu in ('pi', 'hpi')}
     steps = []
     for n in range(top):
         steps += rung_steps(f'g{n}-e{n}', table0, bare_frame) + rung_steps(f'e{n}-f{n}', table0, bare_frame) + sideband_steps(f'f{n}-g{n + 1}', table0)

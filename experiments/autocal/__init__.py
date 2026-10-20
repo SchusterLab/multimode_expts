@@ -20,9 +20,11 @@ from experiments.autocal import _ladder, _manipulate, _qubit, _storage
 from experiments.autocal._core import AutocalRun, AutocalStop, Change, Outcome, Phase, Step
 
 
-def default_phases(station, ladder_top=2, storage_mode=4, ladder_bare_frame=False):
-    """readout, qubit, ladder (up to |ladder_top>), manipulate, storage (M1-S<storage_mode> swap)."""
-    return (_qubit.phases() + _ladder.phases(station, top=ladder_top, bare_frame=ladder_bare_frame) + _manipulate.phases()
+def default_phases(station, ladder_top=2, storage_mode=4, ladder_bare_frame=False, ladder_reference=None):
+    """readout, qubit, ladder (up to |ladder_top>), manipulate, storage (M1-S<storage_mode> swap).
+    ladder_reference: device.multiphoton table for the seed offsets of the upper rungs (see _ladder.phases)."""
+    return (_qubit.phases() + _ladder.phases(station, top=ladder_top, bare_frame=ladder_bare_frame, reference=ladder_reference)
+            + _manipulate.phases()
             + _storage.phases(mode=storage_mode))
 
 

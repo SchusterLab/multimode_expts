@@ -10,11 +10,11 @@ Not included: the chi / Kerr gain sweep (cells 111-115) needs hand-picked peak i
 import numpy as np
 
 from fitting import fitting as fitter
-from fitting.fit_display_classes import LengthRabiFitting, Spectroscopy
+from fitting.fit_display_classes import LengthRabiFitting
 from experiments.autocal import _checks as chk
 from experiments.autocal._core import Outcome, Phase, Step, default_pre
 from experiments.autocal._qubit import ramsey_delta
-from experiments.autocal._util import item, plot_fit, prep_photon, pulses
+from experiments.autocal._util import fit_line, item, plot_fit, prep_photon, pulses
 
 AVOID_YOKO = False
 MAN = 1
@@ -88,8 +88,8 @@ def _revival_eval(station, expt, kw):
 
 
 def _parity_freq_eval(station, expt, kw):
-    an = Spectroscopy(expt.data, config=expt.cfg); an.analyze(); d = an.data
-    x, y, p = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float), d['fit_avgi']
+    d = expt.data
+    x, y = np.asarray(d['xpts'], float), np.asarray(d['avgi'], float); p = fit_line(x, y)
     ok, info = chk.both(chk.lorentzian(x, y, p), chk.jump(p[2], man(station).f_ge[MAN - 1], max_abs=10))
     return Outcome(ok=ok, info=info, changes=[item(man(station).f_ge, MAN - 1, p[2], 'manipulate f_ge')],
                    plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel='M1 drive frequency (MHz)'))

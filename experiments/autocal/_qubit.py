@@ -11,7 +11,7 @@ from fitting import fitting as fitter
 from fitting.fit_display_classes import RamseyFitting
 from experiments.autocal import _checks as chk
 from experiments.autocal._core import Outcome, Phase, Step, default_pre
-from experiments.autocal._util import item, plot_fit
+from experiments.autocal._util import fit_line, item, plot_fit
 
 AVOID_YOKO = False
 
@@ -82,7 +82,7 @@ def _spec_eval(key, max_jump):
     def _eval(station, expt, kw):
         d = expt.data; q = station.hardware_cfg.device.qubit
         x, y = np.asarray(d['xpts'], float)[1:-1], np.asarray(d['avgi'], float)[1:-1]
-        p, _ = fitter.fitlor(x, y)
+        p = fit_line(x, y)
         ok, info = chk.both(chk.lorentzian(x, y, p), chk.jump(p[2], q[key][0], max_abs=max_jump))
         return Outcome(ok=ok, info=info, changes=[item(q[key], 0, p[2], f'qubit {key}')],
                        plot=plot_fit(x, y, fitter.lorfunc, p, vline=p[2], xlabel='frequency (MHz)'))
