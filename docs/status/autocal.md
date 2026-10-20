@@ -9,7 +9,7 @@ Design: `docs/autocal.md`. This file is overwritten at the end of each work sess
 - First device run done on 2026-10-19 after the cooldown, at 0.30 mA, phase by phase with fixes during the run
   (record: `docs/log/2026-10-20_cooldown-recal-night.md`). Final versions (update_main=False, main not set):
   `CFG-HW-20261019-00062`, storage `CFG-M1-20261019-00030`. 20 tests pass.
-- seb has not reviewed the review pages yet (`C:\experiments°601_Transduction_sandboxutocaluns\`).
+- seb has not reviewed the review pages yet (`C:\experiments\260601_Transduction_sandbox\autocal\runs\`).
 
 ## What is next
 
