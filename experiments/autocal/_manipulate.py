@@ -166,8 +166,9 @@ def phases():
              lambda s, e, kw: _ss_eval(s, e, kw, min_fid=0.85), source='losssplit single_shot (Wigner active-reset settings; seb ok 10-20)'),
         Step('manipulate.gain_to_alpha', 'single_qubit.parity_gain.ParityGainExperiment', PARITY_GAIN,
              # 10-20 (seb ok, option B'): 41 points on 0..4480 instead of 100 on 0..14850 (60 % of them at zero parity),
-             # 4 rounds x 500 reps, least-squares width fit with the offset fixed (~0.6 % stat. + ~0.4 % offset bias, ~7 min)
-             lambda s: dict(pulse_correction=True, reps=500, rounds=4, start=G2A_START, step=G2A_STEP, expts=G2A_PTS,
+             # 2000 reps, least-squares width fit with the offset fixed (~0.6 % stat. + ~0.4 % offset bias, ~7 min). rounds > 1
+             # fails in ParityGainExperiment with active reset (10-20: 'cannot reshape array of size 82000 into (4,41,500,4)')
+             lambda s: dict(pulse_correction=True, reps=2000, rounds=1, start=G2A_START, step=G2A_STEP, expts=G2A_PTS,
                             parity_fast=False, **AR),
              _parity_gain_eval, preprocessor=parity_gain_pre, source=f'{src} cells 104-108 (grid and fit: autocal 10-20)',
              seconds=lambda cfg, kw: cfg.expts * cfg.reps * cfg.rounds * 2 * (cfg.relax_delay + 30) * 1e-6),

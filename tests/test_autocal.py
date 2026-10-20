@@ -319,9 +319,10 @@ def test_vacuum_width_fit_recovers_gain_to_alpha():
 
 
 def test_gain_to_alpha_step_uses_the_flank_grid(mock_station, tmp_path):
+    # rounds stays 1: ParityGainExperiment fails with rounds > 1 and active reset (10-20)
     from experiments.autocal import default_phases
     run = AutocalRun(mock_station, None, default_phases(mock_station), out_dir=tmp_path)
     st = next(st for ph in run.phases for st in ph.steps if st.name == 'manipulate.gain_to_alpha')
     kw, cfg, _ = run.build(st)
-    assert (cfg.start, cfg.step, cfg.expts, cfg.reps, cfg.rounds) == (0, 112, 41, 500, 4)
+    assert (cfg.start, cfg.step, cfg.expts, cfg.reps, cfg.rounds) == (0, 112, 41, 2000, 1)
     assert 6 < st.seconds(cfg, kw) / 60 < 8
