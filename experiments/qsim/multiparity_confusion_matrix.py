@@ -5,8 +5,8 @@ It prepares Fock 0, 1, 2, 3 in M1 using QsimProgram's existing prepulse path,
 with no evolution between preparation and readout. Reset settings and shot
 counts come from the caller, as for other Qsim experiments.
 
-Pass ``cal.data['multiparity_confusion_matrix'].tolist()`` to another job as
-``cfg.expt.multiparity_confusion_matrix`` and call ``analyze_multiparity()``.
+Set ``cfg.expt.multiparity_confusion_matrix`` to the numeric matrix, or to an
+analyzed calibration Experiment for in-memory analysis, then call ``analyze()``.
 """
 
 import matplotlib.pyplot as plt
@@ -74,6 +74,7 @@ class MultiParityConfusionMatrixExperiment(MultiparityMixin, QsimExperiment):
         confusion = np.empty((4, 4))
         confusion[prepared.astype(int)] = probabilities
         self.data['multiparity_confusion_matrix'] = confusion
+        self.data.pop('multiparity_confusion_matrix_covariance', None)
         return self.data
 
     def display(self, data=None, **kwargs):
