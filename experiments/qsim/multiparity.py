@@ -230,6 +230,8 @@ class MultiparityMixin:
                     'multiparity_confusion_matrix is singular; '
                     'cannot correct multiparity probabilities'
                 ) from exc
+            for n in range(4):
+                out[f'p_mod{n}_corrected'] = corrected[:, n].reshape(data_shape)
             out['nmod4_mean_corrected'] = (corrected @ np.arange(4)).reshape(data_shape)
             out['confusion_matrix'] = confusion.copy()
         out['n_err'] = multiparity_mean_error(
@@ -239,7 +241,8 @@ class MultiparityMixin:
         # Reanalysis after removing a calibration must not expose an old
         # corrected result, including fields loaded from an analyzed HDF5.
         for key in ['nmod4_mean_corrected', 'confusion_matrix',
-                    'confusion_matrix_covariance', *calibration_keys]:
+                    'confusion_matrix_covariance', *calibration_keys,
+                    *[f'p_mod{n}_corrected' for n in range(4)]]:
             self.data.pop(key, None)
         self.data.update(out)
         return out
