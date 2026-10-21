@@ -28,7 +28,7 @@ def check_multiparity_readout_paramter(expt_cfg):
         if expt_cfg.get('multiparity_confusion_matrix') is not None:
             expt_cfg.multiparity_confusion_matrix = None
             print("multiparity_confusion_matrix has been hard reset to None")
-        if not expt_cfg.get("prepulse", False) or expt_cfg.get("postpulse"):
+        if not expt_cfg.get("prepulse", False) or not expt_cfg.get("postpulse", False):
             raise ValueError("multiparity readout requires prepulse and postpulses")
             
 class MultiParityConfusionMatrixExperiment(MultiparityMixin, QsimExperiment):
@@ -56,7 +56,7 @@ class MultiParityConfusionMatrixExperiment(MultiparityMixin, QsimExperiment):
         """Build C from raw classifications, indexed by prepared Fock number."""
         if data is not None:
             self.data = data
-        self._check_readout()
+        check_multiparity_readout_paramter(self.cfg.expt)
         prepared = np.asarray(self.data['xpts']).reshape(-1)
         if (len(self.data.get('ypts', [])) > 0
                 or prepared.shape != (4,)
@@ -81,6 +81,9 @@ class MultiParityConfusionMatrixExperiment(MultiparityMixin, QsimExperiment):
             data = self.data
         fig, axis = plt.subplots(figsize=(4, 3))
         image = axis.imshow(data['multiparity_confusion_matrix'], vmin=0, vmax=1)
+        for (row, col), value in np.ndenumerate(data['multiparity_confusion_matrix']):
+            axis.text(col, row, f'{value:.2f}', ha='center', va='center',
+                    color='black' if value > 0.5 else 'white', fontsize=8)
         axis.set(xlabel='Measured number', ylabel='Prepared number',
                  xticks=range(4), yticks=range(4))
         fig.colorbar(image, ax=axis, label='Probability')
