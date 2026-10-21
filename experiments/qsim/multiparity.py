@@ -159,4 +159,8 @@ class MultiparityMixin:
 
 
 class MultiparityQsimExperiment(MultiparityMixin, QsimExperiment):
-    pass
+    def analyze(self, data=None, **kwargs):
+        if data is not None:
+            self.data = data
+        self.analyze_multiparity()
+        return self.data
