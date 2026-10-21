@@ -13,6 +13,7 @@ from experiments.MM_base import MMRAveragerProgram
 from experiments.qsim.utils import ensure_list_in_cfg
 from experiments.qsim.qsim_base import QsimProgram
 from experiments.qsim.qsim_base import QsimExperiment, QsimRProgram
+from experiments.qsim.multiparity import MultiparityQsimExperiment
 
 
 
@@ -97,7 +98,7 @@ class ManStorMultiparityChevronRProgram(QsimRProgram):
         )
 
 
-class ManStorMultiparityChevronRExperiment(QsimExperiment):
+class ManStorMultiparityChevronRExperiment(MultiparityQsimExperiment):
     """Software length sweep with a hardware frequency sweep on every line."""
 
     def acquire(self, progress=False, debug=False):
@@ -182,7 +183,7 @@ class ManStorMultiparityChevronRExperiment(QsimExperiment):
             "qdata": [],
         }
 
-        # QsimExperiment.analyze_multiparity expects frequency-major rows.
+        # MultiparityQsimExperiment.analyze_multiparity expects frequency-major rows.
         for frequency_index in range(frequency_count):
             for length_index in range(len(lengths)):
                 data["idata"].append(
