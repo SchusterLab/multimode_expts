@@ -2,17 +2,54 @@
 
 Place MultiparityMixin before the Experiment base in the class declaration.
 The owning Experiment decides when its analyze() calls analyze_multiparity().
-Results are numeric arrays in self.data, ready for the normal save lifecycle.
+Results are flat arrays in self.data, ready for the normal save lifecycle.
 """
 
 import numpy as np
 from experiments.qsim.qsim_base import QsimExperiment
 
+
+def multiparity_mean_error(probabilities, shot_counts, confusion_matrix=None):
+    """Shot-only standard error of mean n, treating the matrix as fixed.
+
+    ``probabilities`` is (points, 4), and ``shot_counts`` is (points,).
+    With correction, solve C @ weights = [0, 1, 2, 3], so the corrected mean
+    is still a weighted mean of measured outcomes.
+    Fewer than two shots gives NaN for that point's error, without blocking
+    classification or the population means.
+    """
+    probabilities = np.asarray(probabilities)
+    weights = np.arange(4, dtype=float)
+    if confusion_matrix is not None:
+        weights = np.linalg.solve(confusion_matrix, weights)
+
+    mean = probabilities @ weights
+    second_moment = probabilities @ weights**2
+    variance = np.full(len(probabilities), np.nan)
+    for point, shots in enumerate(shot_counts):
+        if shots > 1:
+            variance[point] = max(second_moment[point] - mean[point]**2, 0) / (shots - 1)
+
+    return np.sqrt(np.maximum(variance, 0))
+
+
+def _multiparity_calibration_metadata(calibration):
+    """Read the calibration's job provenance."""
+    metadata = {}
+    source = getattr(calibration, 'fname', None)
+    job_id = getattr(calibration, 'job_id', None)
+    for key, value in [('confusion_matrix_job_id', job_id),
+                       ('confusion_matrix_source', source)]:
+        if value is not None:
+            metadata[key] = np.asarray(str(value).encode('utf-8'))
+    return metadata
+
+
 class MultiparityMixin:
     """Manual multiparity analysis explicitly added to an Experiment class.
 
-    ``cfg.expt.multiparity_confusion_matrix``, when supplied, is a 4x4
-    matrix C[prepared number, measured label]. Each row sums to one.
+    ``cfg.expt.multiparity_confusion_matrix`` accepts a 4x4 matrix
+    C[prepared number, measured label] or an analyzed calibration Experiment.
     This mixin owns shot classification, lane order and the label convention.
     """
 
@@ -86,10 +123,12 @@ class MultiparityMixin:
     def analyze_multiparity(self):
         """Classify each point and optionally correct its mean number modulo 4.
 
-        Raw probabilities and their existing names are preserved. Correction
-        solves ``C.T @ p_true = p_raw`` without clipping. Both raw and
-        corrected means retain the shape of the 1D or 2D sweep. Numeric
-        results are added directly to ``self.data`` and also returned.
+        Read the optional matrix or calibration Experiment from
+        ``cfg.expt.multiparity_confusion_matrix``. An Experiment supplies its
+        saved matrix and provenance; replace it in cfg with the
+        numeric matrix so the normal save lifecycle can serialize the config.
+        Correction solves ``C.T @ p_true = p_raw`` without clipping. The
+        external ``multiparity_mean_error`` function calculates shot-only ``n_err``.
         """
         keys = [
             'mean_parity_first', 'mean_parity_second',
@@ -116,15 +155,30 @@ class MultiparityMixin:
         for key in keys:
             out[key] = []
 
+        shot_counts = []
         for j in range(point_count):
             result = self.classify_two_parity_readouts(point_idx=j)
+            shot_counts.append(len(result['n_mod4']))
             for key in keys:
                 out[key].append(result[key])
         for key in keys:
             out[key] = np.asarray(out[key]).reshape(data_shape)
 
         out['nmod4_mean'] = out['mean_n_mod4']
+        raw_probability = np.stack(
+            [out[f'p_mod{n}'] for n in range(4)], axis=-1
+        ).reshape(-1, 4)
         confusion = self.cfg.expt.get('multiparity_confusion_matrix')
+        calibration_keys = ['confusion_matrix_job_id', 'confusion_matrix_source']
+        if isinstance(confusion, QsimExperiment):
+            calibration = confusion
+            confusion = np.asarray(calibration.data['multiparity_confusion_matrix'])
+            out.update(_multiparity_calibration_metadata(calibration))
+            self.cfg.expt.multiparity_confusion_matrix = confusion.tolist()
+        elif confusion is not None and np.array_equal(confusion, self.data.get('confusion_matrix')):
+            # Reanalysis of the same saved matrix keeps its calibration data.
+            out.update({key: self.data[key] for key in calibration_keys if key in self.data})
+
         if confusion is not None:
             confusion = np.asarray(confusion, dtype=float)
             if (confusion.shape != (4, 4)
@@ -137,9 +191,6 @@ class MultiparityMixin:
                     'nonnegative 4x4 matrix C[prepared, measured] '
                     'whose rows sum to one'
                 )
-            raw_probability = np.stack(
-                [out[f'p_mod{n}'] for n in range(4)], axis=-1
-            ).reshape(-1, 4)
             try:
                 corrected = np.linalg.solve(confusion.T, raw_probability.T).T
             except np.linalg.LinAlgError as exc:
@@ -149,11 +200,15 @@ class MultiparityMixin:
                 ) from exc
             out['nmod4_mean_corrected'] = (corrected @ np.arange(4)).reshape(data_shape)
             out['confusion_matrix'] = confusion.copy()
+        out['n_err'] = multiparity_mean_error(
+            raw_probability, shot_counts, confusion
+        ).reshape(data_shape)
 
         # Reanalysis after removing a calibration must not expose an old
         # corrected result, including fields loaded from an analyzed HDF5.
-        self.data.pop('nmod4_mean_corrected', None)
-        self.data.pop('confusion_matrix', None)
+        for key in ['nmod4_mean_corrected', 'confusion_matrix',
+                    'confusion_matrix_covariance', *calibration_keys]:
+            self.data.pop(key, None)
         self.data.update(out)
         return out
 
