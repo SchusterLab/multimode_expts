@@ -6,6 +6,7 @@ Results are numeric arrays in self.data, ready for the normal save lifecycle.
 """
 
 import numpy as np
+from experiments.qsim.qsim_base import QsimExperiment
 
 class MultiparityMixin:
     """Manual multiparity analysis explicitly added to an Experiment class.
@@ -155,3 +156,7 @@ class MultiparityMixin:
         self.data.pop('confusion_matrix', None)
         self.data.update(out)
         return out
+
+
+class MultiparityQsimExperiment(MultiparityMixin, QsimExperiment):
+    pass
