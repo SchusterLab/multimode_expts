@@ -6,14 +6,22 @@ Design: `docs/autocal.md`. This file is overwritten at the end of each work sess
 
 ## State
 
-- First device run done on 2026-10-19 after the cooldown, at 0.30 mA, phase by phase with fixes during the run
-  (record: `docs/log/2026-10-20_cooldown-recal-night.md`). Final versions (update_main=False, main not set):
-  `CFG-HW-20261019-00062`, storage `CFG-M1-20261019-00030`. 20 tests pass.
-- seb has not reviewed the review pages yet (`C:\experiments\260601_Transduction_sandbox\autocal\runs\`).
+- First full device run 2026-10-19 after the cooldown (0.30 mA): `CFG-HW-20261019-00062`, storage
+  `CFG-M1-20261019-00030` (record: `docs/log/2026-10-20_cooldown-recal-night.md`).
+- 10-20 additions (seb ok), on main, 25 tests pass: N = 1 sideband map, active-reset single shot before gain to alpha,
+  gain to alpha B' (41 gains 0-4480, 2000 reps x 1 round). Device results: `docs/log/2026-10-20_sidebands-g2a.md`.
+- Latest versions (update_main=False): `CFG-HW-20261020-00034` (B' gain to alpha 2.558e-4, N = 1 sidebands, photon-1
+  rungs 15:50), storage `CFG-M1-20261020-00010`. The best |2> preparation uses the 10-19 sideband values
+  (f0-g1 1989.6315, f1-g2 1989.0730, lengths 0.5599 / 0.3952), not the N = 1 ones; the 10-20/21 night runs with them
+  (losssplit `--sb`). Main is not set (seb decides).
 
 ## What is next
 
-1. seb: review the night, decide whether to set main to the final versions.
-2. Fix the known limits in `docs/autocal.md` (gain scans with 20 pulses or a 2 % limit; averaged gain-to-alpha or a
-   |2>-Ramsey scale check; two-frequency EF Ramsey check; a swap chevron check when the swap gain moves > 10 %).
-3. A second full run from a cold start to measure the time and the number of stops.
+1. Replace the sideband frequency rule (N = 1 centre) by a final-state optimisation (P2 of |2>; grid or fit, see the
+   known limits in `docs/autocal.md`). Ask seb first.
+2. seb: set main (hardware = 20-00034 with the 10-19 sideband values; storage 20-00010).
+3. Still open from 10-19: storage gain scans with 20 pulses or a 2 % limit; two-frequency EF Ramsey check; swap
+   chevron check when the swap gain moves > 10 %.
+4. Shared code, reported to seb, not changed: `ParityGainExperiment` fails with rounds > 1 and active reset
+   (reshape error); the `MM_base.custom_pulse` docstring lists channel ids the code does not use (it takes the DAC
+   channel).

@@ -34,8 +34,8 @@ fit before it changes the config, stops at the first doubtful fit, and leaves on
 | --- | --- | --- |
 | readout | resonator spectroscopy (report only, as the notebook), single shot | autocalibrate cells 14-20 |
 | qubit | ge spec (100 MHz) -> Ramsey -> amplitude Rabi -> fine Ramsey -> T1; ef spec -> Ramsey -> Rabi -> fine Ramsey -> T1_ef | autocalibrate cells 23-56 |
-| ladder | per rung g_n-e_n, e_n-f_n: seed -> Ramsey -> Rabi -> error amp. pi (freq, gain) [-> pi/2 (freq, gain) on g0-e0]; per sideband f_n-g_n+1: seed -> spec (1965-2010 MHz) -> chevron -> length Rabi -> error amp. freq -> length Rabi; up to \|2> | multiphoton cells 7-65 |
-| manipulate | parity revival time -> parity spectroscopy -> cavity Ramsey -> gain to alpha | multiphoton cells 81-108 |
+| ladder | per rung g_n-e_n, e_n-f_n: seed -> Ramsey -> Rabi -> error amp. pi (freq, gain) [-> pi/2 (freq, gain) on g0-e0]; per sideband f_n-g_n+1: seed -> spec (1965-2010 MHz) -> chevron -> length Rabi -> error amp. freq -> N = 1 map -> length Rabi; up to \|2> | multiphoton cells 7-65; N = 1 map from transduction losssplit |
+| manipulate | parity revival time -> parity spectroscopy -> cavity Ramsey -> active-reset single shot -> gain to alpha (41 gains 0-4480, 2000 reps, width fit with the offset fixed) | multiphoton cells 81-108 |
 | storage | M1-S4 spectroscopy -> full-swap error amplification at fixed pi length: freq coarse -> gain -> freq fine -> gain fine -> freq fine -> convergence check | autocalibrate cell 110; transduction losssplit `calibrate_swap_conv` |
 
 ## Differences from the notebooks (on purpose)
@@ -61,10 +61,17 @@ fit before it changes the config, stops at the first doubtful fit, and leaves on
 - Not included: chi / Kerr gain sweep (hand-picked peaks), dump mode, storage chevron, storage modes other than S4,
   photon-number spectroscopy. Transduction checks (prep gate, eta) stay in the transduction code.
 
-## Known limits (10-19 device run)
+## Known limits (10-19 and 10-20 device runs)
 
-- One gain-to-alpha calibration scatters ~1.5 % (2.641 / 2.605e-4); a 2 % alpha-scale error showed as P3 0.06 in the
-  Wigner of |2> (photon-number Ramsey: P3 0.004). Average several runs or check the scale with the |2> Ramsey.
+- Sideband frequencies: neither the 20-pulse error amplification nor the N = 1 map centre gives the best preparation.
+  10-20, |2> Wigner (P2) on a 5 x 5 grid of f0-g1 x f1-g2: f0-g1 best at +40..+80 kHz above the N = 1 centre
+  (row means 0.955-0.957 vs 0.944 at the centre); f1-g2 flat over -40..+120 kHz; the error amplification was 80 kHz
+  below the N = 1 centre that day (P2 0.909) and 128 kHz from the day before. The step should optimise the final
+  state (P2 of |2>, or a fast proxy) instead; the same setting repeats within +/-0.013 in P2, so a grid or a fit is
+  needed, not one point.
+- Gain to alpha (10-20, B'): 2.558e-4 +/- 0.7 %, within 1 % of the photon-number Ramsey of a coherent state; the old
+  full-grid runs (2.641 / 2.605e-4) were ~3 % high. A free-offset fit on the short grid gives offset ~+0.03 every time
+  (possible non-Gaussian tail); the gate Wigners agree with the new scale (s ~ 0.975 on the old scale).
 - Swap convergence limit 0.5 % gain is below the precision of the n_step 1 gain scan (scatter ~1.5 %); give the gain
   scans 20 pulses (n_pulses 10) or a 2 % limit.
 - The EF Ramsey beats (f level split ~8-12 kHz, size drifts, centre fixed); the one-frequency fit biases f_ef by
