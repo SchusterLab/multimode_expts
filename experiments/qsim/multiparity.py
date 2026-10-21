@@ -5,12 +5,13 @@ The owning Experiment decides when its analyze() calls analyze_multiparity().
 Results are flat arrays in self.data, ready for the normal save lifecycle.
 """
 
+import h5py
 import numpy as np
 from experiments.qsim.qsim_base import QsimExperiment
 
 
 def multiparity_mean_error(probabilities, shot_counts, confusion_matrix=None):
-    """Shot-only standard error of mean n, treating the matrix as fixed.
+    """Shot-only standard error of mean n_mod4, treating the matrix as fixed.
 
     ``probabilities`` is (points, 4), and ``shot_counts`` is (points,).
     With correction, solve C @ weights = [0, 1, 2, 3], so the corrected mean
@@ -33,11 +34,35 @@ def multiparity_mean_error(probabilities, shot_counts, confusion_matrix=None):
     return np.sqrt(np.maximum(variance, 0))
 
 
+def multiparity_calibration_config(calibration):
+    """Extract an analyzed calibration as a JSON-compatible config dictionary.
+
+    Call this before queue submission and pass the result as
+    ``cfg.expt.multiparity_confusion_matrix``. The worker then has the matrix
+    and provenance needed to analyze and save without loading another job.
+    """
+    config = {
+        'matrix': np.asarray(calibration.data['multiparity_confusion_matrix']).tolist(),
+    }
+    for name in ['job_id', 'fname']:
+        value = getattr(calibration, name, None)
+        if value is not None:
+            config[name] = str(value)
+    return config
+
+
+def multiparity_calibration_from_file(fname):
+    """Read the saved calibration matrix from an HDF5 file."""
+    with h5py.File(fname, 'r') as data:
+        matrix = data['multiparity_confusion_matrix'][()]
+    return {'matrix': matrix.tolist(), 'fname': str(fname)}
+
+
 def _multiparity_calibration_metadata(calibration):
     """Read the calibration's job provenance."""
     metadata = {}
-    source = getattr(calibration, 'fname', None)
-    job_id = getattr(calibration, 'job_id', None)
+    source = calibration.get('fname')
+    job_id = calibration.get('job_id')
     for key, value in [('confusion_matrix_job_id', job_id),
                        ('confusion_matrix_source', source)]:
         if value is not None:
@@ -48,8 +73,10 @@ def _multiparity_calibration_metadata(calibration):
 class MultiparityMixin:
     """Manual multiparity analysis explicitly added to an Experiment class.
 
-    ``cfg.expt.multiparity_confusion_matrix`` accepts a 4x4 matrix
-    C[prepared number, measured label] or an analyzed calibration Experiment.
+    ``cfg.expt.multiparity_confusion_matrix`` accepts a calibration HDF5
+    filename, a 4x4 matrix
+    C[prepared number, measured label], a dictionary returned by
+    ``multiparity_calibration_config``, or an analyzed calibration Experiment.
     This mixin owns shot classification, lane order and the label convention.
     """
 
@@ -123,10 +150,11 @@ class MultiparityMixin:
     def analyze_multiparity(self):
         """Classify each point and optionally correct its mean number modulo 4.
 
-        Read the optional matrix or calibration Experiment from
-        ``cfg.expt.multiparity_confusion_matrix``. An Experiment supplies its
-        saved matrix and provenance; replace it in cfg with the
-        numeric matrix so the normal save lifecycle can serialize the config.
+        Read the optional matrix or calibration config from
+        ``cfg.expt.multiparity_confusion_matrix``. An HDF5 filename loads the saved
+        matrix during analysis and keeps a snapshot in cfg for later reloads.
+        An in-memory Experiment also supplies its saved matrix and provenance;
+        replace it in cfg with the numeric matrix for normal JSON saving.
         Correction solves ``C.T @ p_true = p_raw`` without clipping. The
         external ``multiparity_mean_error`` function calculates shot-only ``n_err``.
         """
@@ -170,11 +198,15 @@ class MultiparityMixin:
         ).reshape(-1, 4)
         confusion = self.cfg.expt.get('multiparity_confusion_matrix')
         calibration_keys = ['confusion_matrix_job_id', 'confusion_matrix_source']
+        if isinstance(confusion, str):
+            confusion = multiparity_calibration_from_file(confusion)
+            self.cfg.expt.multiparity_confusion_matrix = confusion
         if isinstance(confusion, QsimExperiment):
-            calibration = confusion
-            confusion = np.asarray(calibration.data['multiparity_confusion_matrix'])
-            out.update(_multiparity_calibration_metadata(calibration))
-            self.cfg.expt.multiparity_confusion_matrix = confusion.tolist()
+            confusion = multiparity_calibration_config(confusion)
+            self.cfg.expt.multiparity_confusion_matrix = confusion['matrix']
+        if isinstance(confusion, dict):
+            out.update(_multiparity_calibration_metadata(confusion))
+            confusion = np.asarray(confusion['matrix'])
         elif confusion is not None and np.array_equal(confusion, self.data.get('confusion_matrix')):
             # Reanalysis of the same saved matrix keeps its calibration data.
             out.update({key: self.data[key] for key in calibration_keys if key in self.data})
