@@ -1,12 +1,14 @@
 """Measure the four rows of C[prepared number, measured multiparity label].
 
-Use ``MultiParityConfusionMatrix`` as a CharacterizationRunner's ExptClass.
+Use ``MultiParityConfusionMatrixExperiment`` as a CharacterizationRunner's ExptClass.
 It prepares Fock 0, 1, 2, 3 in M1 using QsimProgram's existing prepulse path,
 with no evolution between preparation and readout. Reset settings and shot
 counts come from the caller, as for other Qsim experiments.
 
-Set ``cfg.expt.multiparity_confusion_matrix`` to the numeric matrix, or to an
-analyzed calibration Experiment for in-memory analysis, then call ``analyze()``.
+Set ``cfg.expt.multiparity_confusion_matrix`` to this calibration's HDF5 filename
+in the target Experiment. Its analyze() reads the saved matrix and source path.
+A numeric matrix or an analyzed calibration Experiment for in-memory analysis
+is also accepted.
 """
 
 import matplotlib.pyplot as plt
