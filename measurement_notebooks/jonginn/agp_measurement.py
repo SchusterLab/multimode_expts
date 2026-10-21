@@ -1,11 +1,12 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: py:percent
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Multimode (direct remote)
 #     language: python
@@ -54,10 +55,11 @@ from experiments.qsim.notebook_helpers.defaults import (
 )
 
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261010-00132',
- 'multiphoton_config': 'CFG-MP-20260121-00001', 
- 'man1_storage_swap': 'CFG-M1-20261009-00040',
- 'floquet_storage_swap': 'CFG-FL-20261010-00024'}
+config_dict = {'hardware_config': 'CFG-HW-20261019-00058',
+ 'multiphoton_config': 'CFG-MP-20260121-00001',
+ 'man1_storage_swap': 'CFG-M1-20261019-00001',
+ 'floquet_storage_swap': 'CFG-FL-20261017-00034'}
+
 
 client = JobClient()
 health = client.health_check()
@@ -80,12 +82,12 @@ station = MultimodeStation(
 population_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
-    storage_reset=[2, 3, 4, 5], pre_relax_delay=100, relax_delay=200,
+    storage_reset=[4, 5, 6, 7], pre_relax_delay=100, relax_delay=200,
     prepulse=False, postpulse=True, init_fock=False, init_stor=0,
     readout="multiparity", parity_fast=False,
     cond_sec_phase=-90, phase_second_pulse=180,
-    occupations=[3, 0, 0, 0, 0], swap_stors=[2, 3, 4, 5],
-    use_multiphoton_swap=True, storage_pulse_wait_us=0.2, ro_stor=0,
+    occupations=[3, 0, 0, 0, 0], swap_stors=[4, 5, 6, 7],
+    use_multiphoton_swap=False, storage_pulse_wait_us=0.2, ro_stor=0,
     update_phases=True, detunings=[0.0, 0.0, 0.0, 0.0],
     floquet_cycles=[0], swept_params=["floquet_cycle"],
 ))
@@ -123,8 +125,8 @@ for number in range(4):
         use_queue=True,
         reps=6000,
         occupations=[number, 0, 0, 0, 0],
-        swap_stors=[2, 3, 4, 5],
-        storage_reset=[2, 3, 4, 5],
+        swap_stors=[4, 5, 6, 7],
+        storage_reset=[4, 5, 6, 7],
         ro_stor=0,
         readout="multiparity",
         prepulse=False,
@@ -143,6 +145,7 @@ for readout_expt in readout_expts:
     number = readout_expt.cfg.expt.occupations[0]
     multiparity = readout_expt.analyze_multiparity()
     readout_confusion[number] = [multiparity[f"p_mod{n}"][0] for n in range(4)]
+    print(readout_expt.fname)
 
 fig, axis = plt.subplots(figsize=(4, 3))
 image = axis.imshow(readout_confusion, vmin=0, vmax=1)
@@ -159,12 +162,12 @@ print("Confusion matrix condition number:", np.linalg.cond(readout_confusion))
 # Cycles below are 0, 2, ..., 934; the stop value in range is exclusive.
 
 # %%
-swap_stors = [5, 3, 4]
+swap_stors = [4, 5, 6, 7]
 meas_stors = [0] + swap_stors
 
-occupations = [2, 0, 0, 0]
-detunings = [0.0, 0.0, 0.]  # MHz; zero disorder
-floquet_cycles = list(range(0, 100, 1))
+occupations = [3, 0, 0, 0, 0]
+detunings = [0.0, 0.0, 0.0, 0.0]  # MHz; zero disorder
+floquet_cycles = list(range(0, 100, 2))
 
 walk_expts = []
 for meas_stor in meas_stors:
@@ -222,7 +225,7 @@ import numpy as np
 from IPython.display import display
 from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
 
-KERR_KHZ = -44.0  # Set K / (2*pi), including its sign.
+KERR_KHZ = -27.0  # Set K / (2*pi), including its sign.
 
 theory_axis = axes[1]
 
@@ -312,7 +315,7 @@ from fitting.qsim.agp import (
     save_analysis_h5,
 )
 
-STORAGE_MODES = [2, 3, 4, 5]
+STORAGE_MODES = [4, 5, 6, 7]
 TOTAL_PHOTONS = 3
 MODE_COUNT = 1 + len(STORAGE_MODES)
 OCCUPATIONS = fock_basis(TOTAL_PHOTONS, MODE_COUNT)
@@ -321,7 +324,7 @@ PROBES = [("Kerr", "kerr", 0)]
 PROBES += [(f"Storage {storage}", "number", index + 1)
            for index, storage in enumerate(STORAGE_MODES)]
 
-DISORDER_PATTERN = np.array([-0.774342, -1.061424, 1.460449, 0.375317])
+DISORDER_PATTERN = np.array([-0.70675335,  0.19463085, -1.03457499,  1.54669749])
 DISORDER_PATTERN = DISORDER_PATTERN - np.mean(DISORDER_PATTERN)
 pattern_rms = np.sqrt(np.mean(DISORDER_PATTERN ** 2))
 if pattern_rms > 0:
@@ -374,9 +377,9 @@ for occupation, weight in zip(OCCUPATIONS, kerr_weights):
 # scan_expts[W][probe_name] contains the ordinary returned experiment objects.
 
 # %%
-meas_stors = [0]
-DISORDER_RMS_KHZ = [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]
-floquet_cycles = list(range(0, 935, 2))
+meas_stors = [7]#[0] + STORAGE_MODES
+DISORDER_RMS_KHZ = [0]
+floquet_cycles = list(range(0, 400, 1))
 if any(value != 0 for value in DISORDER_RMS_KHZ) and not pattern_rms > 0:
     raise ValueError("Nonzero disorder needs a nonconstant DISORDER_PATTERN; use W=0 to turn disorder off.")
 
@@ -395,7 +398,7 @@ for disorder_khz in DISORDER_RMS_KHZ:
                 continue
             scan_expt = population_runner.execute(
                 use_queue=True,
-                reps=1000,
+                reps=500,
                 occupations=list(occupation),
                 swap_stors=STORAGE_MODES,
                 storage_reset=STORAGE_MODES,
@@ -410,6 +413,14 @@ for disorder_khz in DISORDER_RMS_KHZ:
             scan_expts[disorder_khz][name].append(scan_expt)
             print(scan_expt.fname)
 
+# %%
+for scan_expt_disorder_strength, scan_expt_sub_dict in scan_expts.items():
+    print(scan_expt_disorder_strength)
+    for scan_expt_diction, scan_expt_ind_dict in scan_expt_sub_dict.items():
+        print(scan_expt_diction)
+        for _ in scan_expt_ind_dict:
+            print(_.fname)
+
 # %% [markdown]
 # ## 7. AGP analysis of the selected experiments
 #
@@ -421,7 +432,7 @@ for disorder_khz in DISORDER_RMS_KHZ:
 
 # %%
 readout_files = [str(expt.fname) for expt in readout_expts]
-pilot_files = [str(expt.fname) for expt in pilot_expts]
+# pilot_files = [str(expt.fname) for expt in pilot_expts]
 scan_files = {
     disorder_khz: {name: [str(expt.fname) for expt in expts]
                    for name, expts in by_probe.items()}
@@ -432,19 +443,19 @@ scan_files = {
 readout_jobs = [load_population_job(filename) for filename in readout_files]
 prepared_numbers = [job["config"]["expt"]["occupations"][0] for job in readout_jobs]
 calibration = calibrate_readout(readout_jobs, prepared_numbers)
-pilot_jobs = [load_population_job(filename) for filename in pilot_files]
+# pilot_jobs = [load_population_job(filename) for filename in pilot_files]
 scan_jobs = []
 correlations = {}
 
 # population_moments(..., calibration=calibration) applies the same confusion
 # correction shown in the walk plot, and propagates shot and calibration errors.
-if pilot_jobs:
-    traces = [population_moments(job, calibration=calibration) for job in pilot_jobs]
-    inputs = [job["config"]["expt"]["occupations"] for job in pilot_jobs]
-    correlations["pilot_Kerr"] = build_correlation(
-        traces, inputs, total_photons=TOTAL_PHOTONS, mode_count=MODE_COUNT,
-        probe="kerr", mode=0,
-    )
+# if pilot_jobs:
+#     traces = [population_moments(job, calibration=calibration) for job in pilot_jobs]
+#     inputs = [job["config"]["expt"]["occupations"] for job in pilot_jobs]
+#     correlations["pilot_Kerr"] = build_correlation(
+#         traces, inputs, total_photons=TOTAL_PHOTONS, mode_count=MODE_COUNT,
+#         probe="kerr", mode=0,
+#     )
 
 for disorder_khz, by_probe in scan_files.items():
     for name, probe, mode in PROBES:
@@ -472,7 +483,7 @@ if correlations:
 # %%
 # Analysis-only settings; none of these changes measurement or readout.
 CUTOFF_KHZ = None  # mean compiled g * MODE_COUNT / DIMENSION
-MPM_MAX_MODES = 16
+MPM_MAX_MODES = 35
 NUMERICAL_GAP_RATIO = None
 OUTPUT_DIR = Path("agp_processed")
 
@@ -506,7 +517,7 @@ def compiled_reference_mhz(job):
 agp_results = {}
 fit_results = {}
 if correlations:
-    reference_job = (pilot_jobs + scan_jobs)[0]
+    reference_job = ( scan_jobs)[0]
     reference_mhz = compiled_reference_mhz(reference_job)
     cutoff_mhz = 0.001 * CUTOFF_KHZ if CUTOFF_KHZ is not None else reference_mhz * MODE_COUNT / DIMENSION
     print(f"g reference = {1000 * reference_mhz:.4g} kHz; cutoff = {1000 * cutoff_mhz:.4g} kHz")
