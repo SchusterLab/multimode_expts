@@ -2034,43 +2034,44 @@ class MM_base:
         pulse_str += qubit_ef + man_pi + storage_pi
         return pulse_str
 
-    def prep_man_fock_state(self, man_no, state, broadband=False):
+    def prep_man_fock_state(self, man_no, state, broadband=False, n=1):
         """
-        Build a gate-based pulse string to prepare a Fock state (or
-        superposition of two adjacent Fock states) in the manipulate mode.
+        Build a gate-based pulse string to prepare a Fock state, or the
+        superposition of |0> and a Fock state |n>, in the manipulate mode.
 
         Args:
             man_no: Manipulate mode number.
             state: Which state to prepare.
                 '0'  → |0> (vacuum, returns empty list)
-                '1'  → |1>
-                '+'  → |0> + |1>
-                '-'  → |0> - |1>
-                '+i' → |0> + i|1>
-                '-i' → |0> - i|1>
+                'k'  → |k> (a digit string: '1', '2', ...)
+                '+'  → |0> + |n>
+                '-'  → |0> - |n>
+                '+i' → |0> + i|n>
+                '-i' → |0> - i|n>
             broadband: If True, use broadband preparation (drives through
                 g0-e0 transition for all steps).
+            n: Upper Fock level of the superposition states (default 1).
+                For n = 2 and broadband=True, '+' is the |0>,|2> encoder of
+                experiments.transduction.decoder (g0-e0 hpi, then e0-f0,
+                g0-e0, f0-g1, g0-e0, e1-f1, f1-g2).
 
         Returns:
             List of gate-string descriptors suitable for get_prepulse_creator().
         """
-        STATE_MAP = {
-            '0': (None, None),   # (fock_n, phase) — no pulse
-            '1': (1, None),      # single Fock |1>
-            '+': ([0, 1], 0),    # |0> + |1>
-            '-': ([0, 1], 180),  # |0> - |1>
-            '+i': ([0, 1], 90),  # |0> + i|1>
-            '-i': ([0, 1], -90), # |0> - i|1>
-        }
-        if state not in STATE_MAP:
+        SUPERPOSITION_PHASE = {'+': 0, '-': 180, '+i': 90, '-i': -90}
+        if state in SUPERPOSITION_PHASE:
+            if int(n) < 1:
+                raise ValueError(f"n must be >= 1 for state '{state}'; got {n}")
+            fock_spec, phase = [0, int(n)], SUPERPOSITION_PHASE[state]
+        elif isinstance(state, str) and state.isdigit():
+            fock_spec, phase = int(state), None
+        else:
             raise ValueError(
-                f"Unknown state '{state}'. "
-                f"Use one of: {list(STATE_MAP.keys())}")
+                f"Unknown state '{state}'. Use a digit string ('0', '1', "
+                f"'2', ...) or one of: {list(SUPERPOSITION_PHASE)}")
 
-        if state == '0':
+        if fock_spec == 0:
             return []
-
-        fock_spec, phase = STATE_MAP[state]
 
         # Single Fock state |n>
         if isinstance(fock_spec, int):
@@ -2097,13 +2098,13 @@ class MM_base:
         diff = state_2 - state_1
         shelving = 0
         for k in range(diff):
-            n = state_1 + k
-            pulse_seq += [['multiphoton', f'e{n}-f{n}', 'pi', 0]]
+            m = state_1 + k
+            pulse_seq += [['multiphoton', f'e{m}-f{m}', 'pi', 0]]
             if shelving < diff - 1:
                 pulse_seq += [
                     ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]
                 ]
-            pulse_seq += [['multiphoton', f'f{n}-g{n + 1}', 'pi', 0]]
+            pulse_seq += [['multiphoton', f'f{m}-g{m + 1}', 'pi', 0]]
             if shelving < diff - 1:
                 pulse_seq += [
                     ['multiphoton', f'g{start_idx}-e{start_idx}', 'pi', 0]

@@ -8,6 +8,8 @@ second half of the gate with a Ramsey phase.
 State preparation is automatic based on the mode:
   - storage: qubit_hpi + ef_pi + man_pi → storage_pi (Ramsey) → wait → ...
   - manipulate: g0-e0_hpi + e0-f0_pi → f0-g1_pi (Ramsey) → wait → ...
+    With fock=2 the state is |0>+|2> (the broadband ladder of
+    MM_base.prep_man_fock_state(n=2)) and the Ramsey pulse is f1-g2.
   - coupler: custom pulse (user must specify coupler_pulse)
 
 After the Ramsey interaction, the reverse of the state prep brings the
@@ -15,8 +17,18 @@ state back for parity readout.
 
 Custom pre/postpulses override the automatic ones (with a warning).
 
+phase_cycle=True measures every wait twice, with the second Ramsey pulse at
+phase_offset and phase_offset + 180 deg, and analyses half the difference.
+Everything that does not depend on the Ramsey phase cancels. For fock=2 this
+removes the background from the photons that decay to |1> or |0> during the
+wait: the sideband pulses are not photon-number selective, so the decoder
+moves that population in a wait-dependent way, but it cannot make a fringe.
+
 Refactored from t2_cavity.py — Feb 2026
 """
+
+from contextlib import contextmanager
+from copy import deepcopy
 
 import numpy as np
 from qick import *
@@ -58,6 +70,11 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         )
         print('Config expt:', cfg.expt)
 
+        self.fock = int(cfg.expt.get('fock', 1))
+        if self.fock != 1 and mode != 'manipulate':
+            raise ValueError(f"fock={self.fock} is only supported for mode 'manipulate'")
+        print(f"f0g1_freq_override: {cfg.expt.get('f0g1_freq', None)}")
+
         # --- Build state prep, Ramsey pulse, and determine channels ---
         if mode == 'storage':
             man_mode_no = cfg.expt.man_mode_no
@@ -81,26 +98,12 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         elif mode == 'manipulate':
             man_mode_idx = cfg.expt.get('man_mode_idx', 1)
             full_prep = self.prep_man_fock_state(
-                man_no=man_mode_idx, state='+', broadband=True)
+                man_no=man_mode_idx, state='+', broadband=True, n=self.fock)
             self.auto_prep_str = full_prep[:-1]
-            ramsey_str = [full_prep[-1]]
+            ramsey_str = [full_prep[-1]]       # f0-g1, or f1-g2 for fock=2
             self.auto_post_str = self.auto_prep_str[::-1]
 
-            # Handle f0g1_freq override (e.g., for per-current calibration).
-            # NB: this override must be active for *all* compilations that
-            # touch the f0-g1 sideband, including the echo pulse below.
-            f0g1_freq_override = cfg.expt.get('f0g1_freq', None)
-            print(f"f0g1_freq_override: {f0g1_freq_override}")
-            self._f0g1_freq_override = f0g1_freq_override
-            if f0g1_freq_override is not None:
-                mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
-                _saved_f0g1 = mp_entry['frequency'][0]
-                mp_entry['frequency'][0] = float(f0g1_freq_override)
-                try:
-                    self.creator = self.get_prepulse_creator(ramsey_str)
-                finally:
-                    mp_entry['frequency'][0] = _saved_f0g1
-            else:
+            with self._f0g1_override():
                 self.creator = self.get_prepulse_creator(ramsey_str)
             print(f"Ramsey pulse: {self.creator.pulse}")
             self.phase_update_channel = self.f0g1_ch
@@ -120,18 +123,12 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
                 f"Unknown mode '{mode}'. "
                 "Use 'storage', 'manipulate', or 'coupler'.")
 
-        # Compile auto pre/post pulses
-        if self.auto_prep_str:
-            creator = self.get_prepulse_creator(self.auto_prep_str)
-            self.auto_prep_pulse = creator.pulse.tolist()
-        else:
-            self.auto_prep_pulse = None
-
-        if self.auto_post_str:
-            creator = self.get_prepulse_creator(self.auto_post_str)
-            self.auto_post_pulse = creator.pulse.tolist()
-        else:
-            self.auto_post_pulse = None
+        # Compile auto pre/post pulses (for fock=2 they contain f0-g1)
+        with self._f0g1_override():
+            self.auto_prep_pulse = (self.get_prepulse_creator(self.auto_prep_str).pulse.tolist()
+                                    if self.auto_prep_str else None)
+            self.auto_post_pulse = (self.get_prepulse_creator(self.auto_post_str).pulse.tolist()
+                                    if self.auto_post_str else None)
 
         # Handle custom pre/post overrides
         self.use_custom_prep = cfg.expt.get('prepulse', False)
@@ -154,23 +151,11 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
                 raise ValueError(
                     f"Echoes not supported for mode '{mode}'")
             # full_prep is defined for 'storage' and 'manipulate' above.
-            # The echo string contains the f0-g1 sideband (twice for
-            # 'manipulate'), so we must apply the same f0g1_freq override
-            # that was used for the Ramsey pulse — otherwise the echo pi
-            # is off-resonant at any current away from the nominal
-            # calibration point.
+            # Decode, flip the qubit (the two hpi), encode: a pi on the
+            # 0 <-> fock pair. It contains the f0-g1 sideband, so it is
+            # compiled with the same f0g1_freq override as the Ramsey pulse.
             echo_str = full_prep[::-1] + full_prep
-            f0g1_freq_override = getattr(self, '_f0g1_freq_override', None)
-            if mode == 'manipulate' and f0g1_freq_override is not None:
-                mp_entry = cfg.device.multiphoton['pi']['fn-gn+1']
-                _saved_f0g1 = mp_entry['frequency'][0]
-                mp_entry['frequency'][0] = float(f0g1_freq_override)
-                try:
-                    self.echo_pulse = self.get_prepulse_creator(
-                        echo_str).pulse.tolist()
-                finally:
-                    mp_entry['frequency'][0] = _saved_f0g1
-            else:
+            with self._f0g1_override():
                 self.echo_pulse = self.get_prepulse_creator(
                     echo_str).pulse.tolist()
 
@@ -193,7 +178,11 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         else:
             self.safe_regwi(self.phase_update_page, self.r_wait,
                             self.us2cycles(cfg.expt.start))
-        self.safe_regwi(self.phase_update_page, self.r_phase2, 0)
+        # Phase of the second Ramsey pulse at the first wait: phase_offset
+        # (deg; phase_cycle sets it to offset and offset + 180).
+        self.safe_regwi(self.phase_update_page, self.r_phase2, self.deg2reg(
+            float(cfg.expt.get('phase_offset', 0.0)) % 360,
+            gen_ch=self.phase_update_channel[qTest]))
 
         # Phase step register (register-register math avoids mathi limit)
         phase_step_val = self.deg2reg(
@@ -209,6 +198,23 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             man_mode_no, return_pulse=True, second_phase=180, fast=False)
 
         self.sync_all(200)
+
+    @contextmanager
+    def _f0g1_override(self):
+        """Compile with expt.f0g1_freq as the f0-g1 sideband frequency (e.g. for
+        a per-current calibration). Manipulate mode only; every compilation
+        that can contain f0-g1 (Ramsey pulse, auto pre/post, echo) uses it."""
+        freq = self.cfg.expt.get('f0g1_freq', None) if self.mode == 'manipulate' else None
+        if freq is None:
+            yield
+            return
+        frequencies = self.cfg.device.multiphoton['pi']['fn-gn+1']['frequency']
+        saved = frequencies[0]
+        frequencies[0] = float(freq)
+        try:
+            yield
+        finally:
+            frequencies[0] = saved
 
     def body(self):
         cfg = AttrDict(self.cfg)
@@ -341,6 +347,9 @@ class CavityModeRamseyExperiment(Experiment):
 
         # for manipulate mode:
         man_mode_idx: manipulate mode index (e.g. 1)
+        fock: upper Fock level of the superposition, 1 (|0>+|1>, default)
+            or 2 (|0>+|2>; Ramsey pulse f1-g2)
+        f0g1_freq: optional f0-g1 frequency override [MHz]
 
         # for coupler mode:
         coupler_pulse: list of pulse descriptors
@@ -349,6 +358,11 @@ class CavityModeRamseyExperiment(Experiment):
             Timing is standard CPMG (Bylander 2011 Eq. 18): end-spacings
             tau/(2N), inter-pi spacings tau/N.
         parity_meas: True to use parity measurement (default True)
+        phase_offset: phase of the second Ramsey pulse at the first wait
+            [deg] (default 0)
+        phase_cycle: True to measure at phase_offset and phase_offset + 180
+            and analyse half the difference (default False); the raw traces
+            are kept as avgi_0 / avgi_180, avgq_0 / avgq_180
 
         # optional custom pre/post (overrides auto state prep with warning):
         prepulse: True/False (default False)
@@ -385,30 +399,37 @@ class CavityModeRamseyExperiment(Experiment):
             params = MM_base.get_active_reset_params(self.cfg)
             read_num += MMAveragerProgram.active_reset_read_num(**params)
 
-        ramsey = CavityModeRamseyProgram(soccfg=self.soccfg, cfg=self.cfg)
+        if not self.cfg.expt.get('phase_cycle', False):
+            x_pts, avgi, avgq, shots = self._acquire_once(self.cfg, read_num, progress)
+            data = {'xpts': x_pts, 'avgi': avgi, 'avgq': avgq}
+            data['idata'], data['qdata'] = shots
+        else:
+            offset = float(self.cfg.expt.get('phase_offset', 0.0))
+            data = {}
+            for tag, phase in (('0', offset), ('180', offset + 180.0)):
+                cfg = deepcopy(self.cfg)
+                cfg.expt.phase_offset = phase
+                x_pts, data[f'avgi_{tag}'], data[f'avgq_{tag}'], shots = self._acquire_once(cfg, read_num, progress)
+                data[f'idata_{tag}'], data[f'qdata_{tag}'] = shots
+            data['xpts'] = x_pts
+            data['avgi'] = (data['avgi_0'] - data['avgi_180']) / 2
+            data['avgq'] = (data['avgq_0'] - data['avgq_180']) / 2
+        data['amps'] = np.abs(data['avgi'] + 1j * data['avgq'])
+        data['phases'] = np.angle(data['avgi'] + 1j * data['avgq'])
+        self.data = data
+        return data
 
+    def _acquire_once(self, cfg, read_num, progress):
+        """One program over all waits: (xpts, avgi, avgq, (idata, qdata))."""
+        ramsey = CavityModeRamseyProgram(soccfg=self.soccfg, cfg=cfg)
         x_pts, avgi, avgq = ramsey.acquire(
-            self.im[self.cfg.aliases.soc],
+            self.im[cfg.aliases.soc],
             threshold=None,
             load_pulses=True,
             progress=progress,
             readouts_per_experiment=read_num)
-
-        avgi = avgi[0][-1]
-        avgq = avgq[0][-1]
-        amps = np.abs(avgi + 1j * avgq)
-        phases = np.angle(avgi + 1j * avgq)
-
-        data = {
-            'xpts': x_pts,
-            'avgi': avgi,
-            'avgq': avgq,
-            'amps': amps,
-            'phases': phases,
-        }
-        data['idata'], data['qdata'] = ramsey.collect_shots()
-        self.data = data
-        return data
+        self.prog = ramsey
+        return x_pts, avgi[0][-1], avgq[0][-1], ramsey.collect_shots()
 
     def _fitting_cfg(self):
         """Return a config copy with fields that RamseyFitting expects."""

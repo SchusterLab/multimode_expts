@@ -1,0 +1,7 @@
+{
+  "_note": "Config snapshot of the 10-20 calibration after the cooldown (sideband N = 1, photon-1 rungs, B' gain to alpha), for tests/test_cavity_mode_coherence.py. Copied from configs/versions; station kwargs -> file name in this folder.",
+  "floquet_file": "CFG-FL-20261017-00034.csv",
+  "hardware_config": "CFG-HW-20261020-00034.yml",
+  "multiphoton_config": "CFG-MP-20260121-00001.yml",
+  "storage_man_file": "CFG-M1-20261020-00010.csv"
+}
