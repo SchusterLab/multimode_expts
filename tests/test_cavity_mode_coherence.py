@@ -141,3 +141,65 @@ def test_cavity_ramsey_storage_rejects_fock_2(mock_station):
     station, client = mock_station
     with pytest.raises(Exception, match="fock"):
         _run(station, client, CavityModeRamseyExperiment, mode='storage', storage_mode_idx=4, fock=2, ramsey_freq=0.05)
+
+
+# --- sweep='phase' and mid_pulse (10-21: swap round trips on |0>+|2>) -------------------------------------
+
+def test_fit_fringe_recovers_amplitude_and_phase():
+    from experiments.single_qubit.t2_cavity_mode import fit_fringe, fringe
+    rng = np.random.default_rng(3)
+    phase = np.arange(12) * 30.0
+    y = fringe(phase, -4.0, 9.0, 72.0) + rng.normal(0, 0.5, phase.size)
+    d = fit_fringe(phase, y)
+    assert d['fringe_amp'] == pytest.approx(9.0, abs=4 * d['fringe_amp_err'])
+    assert d['fringe_phase_deg'] == pytest.approx(72.0, abs=4 * d['fringe_phase_err_deg'])
+    assert 0 < d['fringe_amp_err'] < 1 and 0 < d['fringe_phase_err_deg'] < 10
+
+
+ROUND_TRIP = [['storage', 'M1-S4', 'pi', 0], ['storage', 'M1-S4', 'pi', 180]]
+
+
+def test_cavity_ramsey_phase_sweep_with_swap_round_trips(mock_station):
+    from experiments.single_qubit.t2_cavity_mode import CavityModeRamseyExperiment
+    station, client = mock_station
+    expt = _run(station, client, CavityModeRamseyExperiment, mode='manipulate', fock=2, ramsey_freq=0.0, parity_meas=False,
+                sweep='phase', expts=12, start=0.05, mid_pulse=ROUND_TRIP * 2)
+    assert np.allclose(expt.data['xpts'], 30.0 * np.arange(12))
+    prog = expt.prog
+    assert len(prog.mid_pulse[0]) == 4                                           # two round trips
+    assert prog.creator.pulse[4][0] not in prog.mid_pulse[4]                     # not on the Ramsey channel
+    d = expt.analyze()
+    assert {'fringe_amp', 'fringe_amp_err', 'fringe_phase_deg'} <= set(d)
+
+
+def test_cavity_ramsey_mid_pulse_compiled_array(mock_station):
+    from experiments.MM_dual_rail_base import MM_dual_rail_base as MMD
+    from experiments.single_qubit.t2_cavity_mode import CavityModeRamseyExperiment
+    station, client = mock_station
+    compiled = MMD(station.hardware_cfg, station.soccfg).get_prepulse_creator(ROUND_TRIP).pulse.tolist()
+    expt = _run(station, client, CavityModeRamseyExperiment, mode='manipulate', fock=2, ramsey_freq=0.0, parity_meas=False,
+                sweep='phase', expts=12, start=0.05, mid_pulse=compiled, mid_gate_based=False)
+    assert [list(map(str, row)) for row in expt.prog.mid_pulse] == [list(map(str, row)) for row in compiled]
+
+
+def test_cavity_ramsey_refuses_mid_pulse_on_the_ramsey_channel(mock_station):
+    from experiments.single_qubit.t2_cavity_mode import CavityModeRamseyExperiment
+    station, client = mock_station
+    with pytest.raises(Exception, match="Ramsey channel"):
+        _run(station, client, CavityModeRamseyExperiment, mode='manipulate', fock=2, ramsey_freq=0.0, parity_meas=False,
+             sweep='phase', expts=12, mid_pulse=[['multiphoton', 'f1-g2', 'pi', 0]])
+
+
+def test_cavity_ramsey_refuses_phase_sweep_with_phase_cycle(mock_station):
+    from experiments.single_qubit.t2_cavity_mode import CavityModeRamseyExperiment
+    station, client = mock_station
+    with pytest.raises(Exception, match="phase_cycle"):
+        _run(station, client, CavityModeRamseyExperiment, mode='manipulate', fock=2, ramsey_freq=0.0, sweep='phase',
+             expts=12, phase_cycle=True)
+
+
+def test_t1_cavity_mode_with_mid_pulse(mock_station):
+    station, client = mock_station
+    expt = _run(station, client, CavityModeT1Experiment, mode='manipulate', fock=2, readout='parity', expts=3,
+                mid_pulse=ROUND_TRIP * 3)
+    assert len(expt.prog.mid_pulse[0]) == 6

@@ -87,6 +87,10 @@ class CavityModeT1Program(MMRAveragerProgram):
         print(f"T1 {mode} |{fock}>: prep {prep_str}, readout {readout}: {post_str}")
         self.prep_pulse = self.get_prepulse_creator(prep_str).pulse.tolist()
         self.post_pulse = self.get_prepulse_creator(post_str).pulse.tolist()
+        # optional operation after the wait, before the readout (e.g. swap round trips)
+        mid = cfg.expt.get('mid_pulse')
+        self.mid_pulse = (None if not mid else
+                          self.get_prepulse_creator(mid).pulse.tolist() if cfg.expt.get('mid_gate_based', True) else mid)
 
         # wait register on the qubit page (as T1Program)
         self.wait_page = self.ch_page(self.qubit_chs[qTest])
@@ -103,6 +107,9 @@ class CavityModeT1Program(MMRAveragerProgram):
         self.sync_all()
         self.sync(self.wait_page, self.r_wait)
         self.sync_all()
+        if self.mid_pulse is not None:
+            self.custom_pulse(cfg, self.mid_pulse, prefix='mid_')
+            self.sync_all()
         self.custom_pulse(cfg, self.post_pulse, prefix='post_')
         self.measure_wrapper()
 
@@ -135,6 +142,9 @@ class CavityModeT1Experiment(Experiment):
         # for the parity readout:
         man_mode_no: manipulate mode of the parity measurement (default 1)
 
+        mid_pulse: optional pulse sequence played after the wait, before the
+            readout (e.g. swap round trips); mid_gate_based: True (default)
+            for gate-based format, False for a compiled 7-row pulse array
         active_reset: True/False (default False)
         relax_delay: [us]
     )

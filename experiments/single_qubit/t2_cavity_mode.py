@@ -30,6 +30,7 @@ Refactored from t2_cavity.py — Feb 2026
 from contextlib import contextmanager
 from copy import deepcopy
 
+import matplotlib.pyplot as plt
 import numpy as np
 from qick import *
 from slab import AttrDict, Experiment
@@ -37,6 +38,28 @@ from slab import AttrDict, Experiment
 from experiments.MM_base import MM_base, MMAveragerProgram, MMRAveragerProgram, warn_step_subcycle
 from fitting.fit_display_classes import RamseyFitting
 from fitting.decaysin_analysis import h5_safe_data
+
+
+def fringe(phase_deg, offset, amp, phase0_deg):
+    """offset + amp * cos(phase - phase0), phases in degrees."""
+    return offset + amp * np.cos(np.radians(np.asarray(phase_deg, float) - phase0_deg))
+
+
+def fit_fringe(phase_deg, y):
+    """Linear least squares of y = B + C cos(phase) + S sin(phase): amplitude A = hypot(C, S) and phase0 =
+    atan2(S, C), with errors from the residual variance. Returns the data keys of a sweep='phase' analysis."""
+    ph, y = np.radians(np.asarray(phase_deg, float)), np.asarray(y, float)
+    X = np.column_stack([np.ones_like(ph), np.cos(ph), np.sin(ph)])
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    b, c, s = beta
+    resid = y - X @ beta
+    cov = np.sum(resid ** 2) / max(len(y) - 3, 1) * np.linalg.inv(X.T @ X)
+    amp = float(np.hypot(c, s))
+    amp_err = float(np.sqrt(c ** 2 * cov[1, 1] + s ** 2 * cov[2, 2] + 2 * c * s * cov[1, 2]) / amp) if amp > 0 else np.nan
+    phase_err = float(np.degrees(np.sqrt(s ** 2 * cov[1, 1] + c ** 2 * cov[2, 2] - 2 * c * s * cov[1, 2]) / amp ** 2)) if amp > 0 else np.nan
+    phase0 = float(np.degrees(np.arctan2(s, c)))
+    return dict(fit_avgi=np.array([b, amp, phase0]), fringe_amp=amp, fringe_amp_err=amp_err, fringe_phase_deg=phase0,
+                fringe_phase_err_deg=phase_err, fringe_offset=float(b))
 
 
 class CavityModeRamseyProgram(MMRAveragerProgram):
@@ -55,19 +78,23 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         mode = cfg.expt.mode  # 'storage', 'manipulate', or 'coupler'
         self.mode = mode
         self.num_echoes = cfg.expt.get('echoes', 0)
+        self.sweep = cfg.expt.get('sweep', 'wait')
+        if self.sweep not in ('wait', 'phase'):
+            raise ValueError(f"Unknown sweep '{self.sweep}'. Use 'wait' or 'phase'.")
         # Standard CPMG timing (Bylander 2011 Eq. 18): end-spacings tau/(2N)
         # and inter-pi spacings tau/N. For Hahn echo (N=1) the end spacing is
         # tau/2; for Ramsey (N=0) there are no echoes and the wait is tau.
         # The smallest sub-segment determines the subcycle warning.
-        if self.num_echoes >= 1:
-            min_seg = cfg.expt.step / (2 * self.num_echoes)
-            seg_label = f"step/(2*echoes={self.num_echoes}) [CPMG]"
-        else:
-            min_seg = cfg.expt.step
-            seg_label = "step [Ramsey]"
-        warn_step_subcycle(
-            self.soccfg, min_seg, gen_ch=None, label=seg_label,
-        )
+        if self.sweep == 'wait':
+            if self.num_echoes >= 1:
+                min_seg = cfg.expt.step / (2 * self.num_echoes)
+                seg_label = f"step/(2*echoes={self.num_echoes}) [CPMG]"
+            else:
+                min_seg = cfg.expt.step
+                seg_label = "step [Ramsey]"
+            warn_step_subcycle(
+                self.soccfg, min_seg, gen_ch=None, label=seg_label,
+            )
         print('Config expt:', cfg.expt)
 
         self.fock = int(cfg.expt.get('fock', 1))
@@ -145,6 +172,22 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         self.phase_update_page = self.ch_page(
             self.phase_update_channel[qTest])
 
+        # --- Middle pulse: an operation played after the wait, before the
+        # second half-pulse (e.g. swap round trips). The second half reuses
+        # the registers of its channel, so the middle pulse must not use it.
+        self.mid_pulse = None
+        if cfg.expt.get('mid_pulse'):
+            if cfg.expt.get('mid_gate_based', True):
+                with self._f0g1_override():
+                    self.mid_pulse = self.get_prepulse_creator(cfg.expt.mid_pulse).pulse.tolist()
+            else:
+                self.mid_pulse = cfg.expt.mid_pulse
+            if mode in ('storage', 'manipulate'):
+                ramsey_ch = self.creator.pulse[4][0]
+                if any(ch == ramsey_ch for ch in self.mid_pulse[4]):
+                    raise ValueError(f"mid_pulse uses the Ramsey channel {ramsey_ch}; "
+                                     "the second half-pulse would play its registers")
+
         # --- Echo pulse construction ---
         if self.num_echoes > 0:
             if mode == 'coupler':
@@ -184,13 +227,18 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
             float(cfg.expt.get('phase_offset', 0.0)) % 360,
             gen_ch=self.phase_update_channel[qTest]))
 
-        # Phase step register (register-register math avoids mathi limit)
-        phase_step_val = self.deg2reg(
-            360 * abs(cfg.expt.ramsey_freq) * cfg.expt.step,
-            gen_ch=self.phase_update_channel[qTest])
+        # Phase step register (register-register math avoids mathi limit).
+        # sweep='wait': 360 * ramsey_freq * step per point; sweep='phase':
+        # phase_step [deg] per point (default 360 / expts), fixed wait.
+        if self.sweep == 'phase':
+            step_deg = float(cfg.expt.get('phase_step', 360.0 / cfg.expt.expts))
+            self.ramsey_freq_sign = 1 if step_deg >= 0 else -1
+        else:
+            step_deg = 360 * cfg.expt.ramsey_freq * cfg.expt.step
+            self.ramsey_freq_sign = 1 if cfg.expt.ramsey_freq >= 0 else -1
+        phase_step_val = self.deg2reg(abs(step_deg) % 360, gen_ch=self.phase_update_channel[qTest])
         self.safe_regwi(
             self.phase_update_page, self.r_phase_step, phase_step_val)
-        self.ramsey_freq_sign = 1 if cfg.expt.ramsey_freq >= 0 else -1
 
         # --- Parity measurement pulse ---
         man_mode_no = cfg.expt.get('man_mode_no', 1)
@@ -272,6 +320,11 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
                 self.sync(self.phase_update_page, wait_reg)
                 self.sync_all()
 
+        # Middle pulse (after the wait, before the second half-pulse)
+        if self.mid_pulse is not None:
+            self.custom_pulse(cfg, self.mid_pulse, prefix='mid_')
+            self.sync_all()
+
         # Apply Ramsey phase and second half-pulse
         self.mathi(self.phase_update_page, self.r_flux_phase,
                     self.r_phase2, "+", 0)
@@ -304,7 +357,9 @@ class CavityModeRamseyProgram(MMRAveragerProgram):
         self.measure_wrapper()
 
     def update(self):
-        if self.num_echoes >= 1:
+        if self.sweep == 'phase':
+            pass                               # fixed wait: only the phase steps
+        elif self.num_echoes >= 1:
             step_end_cycles = self.us2cycles(
                 self.cfg.expt.step / (2 * self.num_echoes))
             step_mid_cycles = self.us2cycles(
@@ -364,6 +419,17 @@ class CavityModeRamseyExperiment(Experiment):
             and analyse half the difference (default False); the raw traces
             are kept as avgi_0 / avgi_180, avgq_0 / avgq_180
 
+        sweep: 'wait' (default) or 'phase'. 'phase': the wait stays at
+            start, the phase of the second half steps by phase_step [deg]
+            (default 360 / expts) from phase_offset; xpts is that phase.
+            analyze() then fits B + A cos(phase - phase0): A (fringe_amp) is
+            proportional to the coherence, phase0 (fringe_phase_deg) is the
+            phase the sequence adds. Not with phase_cycle.
+        mid_pulse: optional pulse sequence played after the wait, before the
+            second half-pulse (e.g. swap round trips); it must not use the
+            Ramsey channel. mid_gate_based: True (default) for gate-based
+            format, False for a compiled 7-row pulse array.
+
         # optional custom pre/post (overrides auto state prep with warning):
         prepulse: True/False (default False)
         pre_sweep_pulse: pulse sequence
@@ -399,8 +465,14 @@ class CavityModeRamseyExperiment(Experiment):
             params = MM_base.get_active_reset_params(self.cfg)
             read_num += MMAveragerProgram.active_reset_read_num(**params)
 
+        phase_sweep = self.cfg.expt.get('sweep', 'wait') == 'phase'
+        if phase_sweep and self.cfg.expt.get('phase_cycle', False):
+            raise ValueError("sweep='phase' already sweeps the phase; do not combine it with phase_cycle")
         if not self.cfg.expt.get('phase_cycle', False):
             x_pts, avgi, avgq, shots = self._acquire_once(self.cfg, read_num, progress)
+            if phase_sweep:
+                step = float(self.cfg.expt.get('phase_step', 360.0 / self.cfg.expt.expts))
+                x_pts = float(self.cfg.expt.get('phase_offset', 0.0)) + step * np.arange(len(avgi))
             data = {'xpts': x_pts, 'avgi': avgi, 'avgq': avgq}
             data['idata'], data['qdata'] = shots
         else:
@@ -446,15 +518,34 @@ class CavityModeRamseyExperiment(Experiment):
     def analyze(self, data=None, fit=True, fitparams=None, **kwargs):
         if data is None:
             data = self.data
-        if fit:
-            analysis = RamseyFitting(data, config=self._fitting_cfg())
-            analysis.analyze(fitparams=fitparams)
-            return analysis.data
-        return data
+        if not fit:
+            return data
+        if self.cfg.expt.get('sweep', 'wait') == 'phase':
+            data.update(fit_fringe(data['xpts'], data['avgi']))
+            return data
+        analysis = RamseyFitting(data, config=self._fitting_cfg())
+        analysis.analyze(fitparams=fitparams)
+        return analysis.data
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
             data = self.data
+        if self.cfg.expt.get('sweep', 'wait') == 'phase':
+            phase, y = np.asarray(data['xpts'], float), np.asarray(data['avgi'], float)
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot(phase, y, 'o', ms=4, label='data')
+            if fit and 'fringe_amp' in data:
+                pp = np.linspace(phase[0], phase[-1], 400)
+                ax.plot(pp, fringe(pp, *data['fit_avgi']), '-',
+                        label=f"A = {data['fringe_amp']:.2f} +/- {data['fringe_amp_err']:.2f}, "
+                              f"phase0 = {data['fringe_phase_deg']:.0f} deg")
+            ax.set_xlabel('phase of the second half (deg)')
+            ax.set_ylabel('I (ADC)')
+            ax.set_title(f"{self.cfg.expt.mode} phase sweep (wait {self.cfg.expt.start} us)")
+            ax.legend()
+            fig.tight_layout()
+            plt.show()
+            return fig, ax
         analysis = RamseyFitting(data, config=self._fitting_cfg())
         analysis.display()
 
