@@ -5,7 +5,7 @@ where jonginn added it as a "temporary amendment for adiabatic gauge potential
 measurement". The rest of that file was a compatibility shim that guan deleted
 on 2026-10-06; this code is the only part kept.
 """
-
+from copy import deepcopy
 from numbers import Integral
 
 from experiments.dataset import StorageManSwapDataset
