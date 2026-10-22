@@ -5,7 +5,10 @@ The owning Experiment decides when its analyze() calls analyze_multiparity().
 Results are flat arrays in self.data, ready for the normal save lifecycle.
 """
 
+from pathlib import Path
+
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
 from experiments.qsim.qsim_base import QsimExperiment
 
@@ -254,3 +257,41 @@ class MultiparityQsimExperiment(MultiparityMixin, QsimExperiment):
             self.data = data
         self.analyze_multiparity()
         return self.data
+
+    def display(self, data=None, raw=False, **kwargs):
+        """Plot mean n mod 4, using corrected data when available.
+
+        ``raw=True`` selects the uncorrected mean. Without calibration, the
+        default also shows the raw mean and labels it accordingly.
+        """
+        if data is None:
+            data = self.data
+        key, kind = 'nmod4_mean_corrected', 'corrected'
+        if raw or key not in data:
+            key, kind = 'nmod4_mean', 'raw'
+
+        xpts = np.asarray(data['xpts']).reshape(-1)
+        ypts = np.asarray(data.get('ypts', [])).reshape(-1)
+        is_2d = len(ypts) > 0
+        swept_params = self.cfg.expt.get('swept_params', [])
+        xlabel = getattr(
+            self, 'inner_param' if is_2d else 'outer_param',
+            swept_params[-1] if swept_params else 'x',
+        )
+        label = f'Mean n mod 4 ({kind})'
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.set_title(Path(getattr(self, 'fname', type(self).__name__)).name)
+        ax.set_xlabel(xlabel)
+        if is_2d:
+            ylabel = getattr(
+                self, 'outer_param', swept_params[0] if len(swept_params) > 1 else 'y',
+            )
+            mesh = ax.pcolormesh(xpts, ypts, data[key], shading='auto')
+            fig.colorbar(mesh, ax=ax, label=label)
+            ax.set_ylabel(ylabel)
+        else:
+            ax.plot(xpts, data[key], 'o-')
+            ax.set_ylabel(label)
+        fig.tight_layout()
+        return fig, ax
