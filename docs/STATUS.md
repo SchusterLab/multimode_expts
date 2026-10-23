@@ -1,9 +1,9 @@
 # Where things stand
 
-**Last updated: 2026-10-15** (housekeeping during cooldown: `guan` and `tests-cleanup` merged into `main`). This file holds only what is
+**Last updated: 2026-10-23** (AGP layers item added; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
-file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`
-(newest: `2026-10-15_housekeeping-merge.md`). Read the log only if you need the history.
+file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
+Read the log only if you need the history.
 
 ## Themes, branch, worktree (guan, 2026-10-06)
 
@@ -39,6 +39,12 @@ Rules:
   kernels once.** The `tests-cleanup` branch and worktree are fully merged; delete the
   worktree only by the link-safe steps in `AGENTS.md`. Record:
   `docs/log/2026-10-15_housekeeping-merge.md`.
+- **AGP data in three layers (2026-10-23, guan's decision, on `main`):** jonginn's
+  `CentralBosonAGPExperiment` and `CentralBosonAGPDisorderScan` are now assembled classes over
+  one-state `FockPopulationExperiment` jobs, with no shots above the job. His
+  `convert_legacy_agp.py` is replaced by `tools/convert_fock_population_catalog.py`; his
+  `agp_measurement.py` still uses the old one-job-per-state runner (works, but not the new
+  classes). Record: `docs/log/2026-10-23_agp-population-layers.md`.
 - **jonginn's AGP code moved:** `FockPopulationProgram`, `validate_occupations` and
   `with_storage_waits` are now in `experiments/qsim/fock_population.py` (the
   `floquet_dark_mode_readout.py` shim is deleted). `jonginn/qsim_experiments.ipynb` is kept

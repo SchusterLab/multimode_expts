@@ -94,7 +94,9 @@ def save_figs(tag):
     print("saved", paths)
 
 
-# %% Cell 2: readout confusion as a population set: Fock 0..3 in M1, zero cycles, read M1
+# %% Cell 2: readout confusion as a population set: Fock 0..3 in M1, zero cycles, read M1. Ran
+# 2026-10-23 00:59 (JOB-20261023-00011..00014): not diagonal at 0.30 mA (1 reads as 3, 3 as 0;
+# condition number 31). The settings are for 0.25 mA; the cause is not investigated.
 # (4 jobs). C[n] is the raw label distribution of job n.
 calibration_set = FockPopulationSetExperiment(
     [([number, 0, 0, 0, 0], 0) for number in range(4)], [0], STORS, [0.] * 4,
@@ -108,6 +110,8 @@ calibration = dict(matrix=confusion.tolist(), fname=str(calibration_manifest),
                    job_id=",".join(calibration_set.job_ids))
 
 # %% Cell 3: a two-W scan, N=2 prepared and read in S7 (5 states per W), cycles 0..90 by 10.
+# Ran 2026-10-23 01:00-01:02: JOB-20261023-00015..00027, interleaved with seb 00018/22/26;
+# scan manifest assembled_data/261023_010214_CentralBosonAGPDisorderScan.yaml.
 # The detuning pattern is the 10-17 scans' (unit RMS); W = 0 and 60 kHz. 10 jobs.
 PATTERN = [-0.7067, 0.1947, -1.0346, 1.5467]
 scan = CentralBosonAGPDisorderScan.from_pattern(
