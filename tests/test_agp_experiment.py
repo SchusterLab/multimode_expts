@@ -1,379 +1,132 @@
-"""Central-boson sweeps, number moments, correlations and save lifecycle."""
-
-import json
-
-import h5py
+"""CentralBosonAGPExperiment: the direction sector, C_1 and C_2, and its save lifecycle."""
+import matplotlib
 import numpy as np
 import pytest
-from slab import AttrDict
-from slab.experiment import Experiment
+import yaml
 
-from experiments.qsim.agp import CentralBosonAGPExperiment
-from experiments.qsim.fock_population import FockPopulationProgram
+matplotlib.use("Agg")
 
+from experiments.qsim.agp import (  # noqa: E402
+    CentralBosonAGPExperiment,
+    direction_sector,
+    rms_khz,
+    sector_dimension,
+)
+from tests.population_jobs import (  # noqa: E402
+    CONFUSION,
+    FakeRunner,
+    population_job,
+    random_labels,
+    save_job,
+)
 
-OCCUPATIONS = [[1, 1], [2, 0]]
 CYCLES = [0, 3]
-POINT_LABELS = {
-    ((1, 1), 0): [0, 0, 0, 0],
-    ((1, 1), 3): [1, 1, 1, 1],
-    ((2, 0), 0): [2, 2, 2, 2],
-    ((2, 0), 3): [0, 1, 2, 3],
-}
-RAW_PROBABILITIES = np.array([
-    [[1., 0., 0., 0.], [0., 1., 0., 0.]],
-    [[0., 0., 1., 0.], [.25, .25, .25, .25]],
-])
-RAW_MEAN = np.array([[0., 1.], [2., 1.5]])
-RAW_SECOND_MOMENT = np.array([[0., 1.], [4., 3.5]])
-# C has 0.85 on its diagonal and 0.05 elsewhere: p_raw = 0.8*p_true + 0.05.
-CONFUSION = .8 * np.eye(4) + .05
 
 
-class ShotProgram:
-    """Program protocol only; acquisition/reshaping is the real Qsim driver."""
-
-    visits = []
-
-    @classmethod
-    def readouts_per_shot(cls, cfg):
-        return 4
-
-    def __init__(self, soccfg, cfg):
-        self.point = (tuple(cfg.expt.occupations), cfg.expt.floquet_cycle)
-        self.visits.append((self.point, cfg.expt.ro_stor, list(cfg.expt.detunings)))
-        labels = np.asarray(POINT_LABELS[self.point])
-        lanes = np.full((len(labels), 4), 100.)
-        lanes[:, -2] = 2 * (labels % 2) - 1
-        lanes[:, -1] = 2 * (labels // 2) - 1
-        self.idata = lanes.reshape(-1)
-
-    def acquire(self, soc, **kwargs):
-        # The final lane's average is what QsimExperiment.acquire extracts.
-        return np.array([[0., 0., 0., np.mean(POINT_LABELS[self.point])]]), np.zeros((1, 4))
-
-    def collect_shots(self):
-        return self.idata, np.zeros_like(self.idata)
+def test_direction_sector_is_complete_ordered_and_uses_physical_ids():
+    states = direction_sector(3, [7, 4, 5, 6], 4)
+    assert len(states) == 15 and sector_dimension(3, 5) == 35
+    assert states == sorted(states)
+    assert all(sum(state) == 3 and state[2] > 0 for state in states)
+    assert direction_sector(2, [7], 7) == [[0, 2], [1, 1]]
+    assert direction_sector(1, [], 0) == [[1]]
+    with pytest.raises(ValueError, match="direction 3"):
+        direction_sector(2, [4, 5], 3)
 
 
-@pytest.fixture
-def experiment():
-    expt = CentralBosonAGPExperiment.__new__(CentralBosonAGPExperiment)
-    expt.cfg = AttrDict({
-        'aliases': {'soc': 'synthetic'},
-        'device': {'readout': {'threshold': [0.]}, 'qubit': {'f_ge': [5000.]}},
-        'hw': {'soc': {}},
-        'expt': {
-            'photon_sector_number': 2, 'direction': 0,
-            'floquet_cycles': list(CYCLES),
-            'qubits': [0], 'readout': 'multiparity',
-            'ro_stor': 7, 'swap_stors': [7], 'detunings': [.02],
-        },
-    })
-    expt.soccfg = object()
-    expt.im = {'synthetic': object()}
-    expt._ProgramClass = ShotProgram
-    expt.data = {}
-    ShotProgram.visits = []
-    return expt
+def sector_jobs(tmp_path, labels_by_state, swap_stors, direction, confusion=None,
+                detunings=None):
+    detunings = [0.] * len(swap_stors) if detunings is None else detunings
+    jobs = []
+    for index, (state, labels) in enumerate(labels_by_state.items()):
+        job = population_job(list(state), direction, labels, CYCLES, swap_stors, detunings,
+                             confusion=confusion)
+        jobs.append(save_job(job, tmp_path / "data" / f"JOB-{index}.h5"))
+    return jobs
 
 
-def test_acquire_visits_every_occupation_and_cycle_with_raw_shots(experiment):
-    data = experiment.acquire()
-    assert ShotProgram.visits == [
-        ((tuple(occupation), cycle), 7, [.02])
-        for occupation in OCCUPATIONS for cycle in CYCLES
-    ]
-    np.testing.assert_array_equal(data['occupations'], OCCUPATIONS)
-    assert data['occupations'].dtype.kind in 'iu'
-    np.testing.assert_array_equal(data['xpts'], CYCLES)
-    np.testing.assert_array_equal(data['ypts'], [0, 1])
-    np.testing.assert_array_equal(data['avgi'], RAW_MEAN)
-    assert np.asarray(data['idata']).shape == (4, 16)
-    assert np.asarray(data['qdata']).shape == (4, 16)
-    assert experiment.cfg.expt.photon_sector_number == 2
-    assert experiment.generate_fock_strings() == OCCUPATIONS
-    assert experiment.cfg.expt.floquet_cycles == CYCLES
+def test_correlations_match_operator_trace_for_unitary_dynamics(tmp_path):
+    # Two photons in [M1, S7]; the states with S7 occupied, at t=0 and after a
+    # balanced beamsplitter. Labels are the read S7 number of each shot.
+    labels = {(0, 2): [[2, 2, 2, 2], [0, 1, 1, 2]],
+              (1, 1): [[1, 1, 1, 1], [0, 0, 2, 2]]}
+    agp = CentralBosonAGPExperiment.from_children(
+        sector_jobs(tmp_path, labels, [7], 7), direction=7)
+    data = agp.analyze()
+    assert int(data["sector_dimension"]) == 3  # full sector; [2, 0] is not measured
 
-
-@pytest.mark.parametrize('photons, storages, direction, expected_count', [
-    (0, [], 0, 0), (0, [4, 5, 6, 7], 7, 0),
-    (1, [4, 7], 0, 1), (1, [4, 7], 7, 1),
-    (3, [4, 5, 6, 7], 0, 15), (3, [4, 5, 6, 7], 7, 15),
-])
-def test_generated_direction_sector_is_complete_and_json_serializable(
-        experiment, photons, storages, direction, expected_count):
-    experiment.cfg.expt.photon_sector_number = photons
-    experiment.cfg.expt.swap_stors = storages
-    experiment.cfg.expt.direction = direction
-    modes = 1 + len(storages)
-    selected_column = [0, *storages].index(direction)
-
-    states = experiment.generate_fock_strings()
-
-    assert len(states) == expected_count
-    assert len(set(map(tuple, states))) == len(states)
-    assert all(len(state) == modes and sum(state) == photons for state in states)
-    assert all(isinstance(n, int) and n >= 0 for state in states for n in state)
-    assert all(state[selected_column] > 0 for state in states)
-    assert json.loads(json.dumps(states)) == states
-
-
-def test_generated_sector_keeps_state_and_storage_column_order(experiment):
-    assert experiment.generate_fock_strings() == [[1, 1], [2, 0]]
-    experiment.cfg.expt.direction = 7
-    assert experiment.generate_fock_strings() == [[0, 2], [1, 1]]
-
-
-def test_direction_uses_physical_storage_id_with_reordered_storages(experiment):
-    experiment.cfg.expt.photon_sector_number = 1
-    experiment.cfg.expt.swap_stors = [7, 4]
-    experiment.cfg.expt.direction = 4
-    assert experiment.generate_fock_strings() == [[0, 0, 1]]
-
-
-def test_direction_must_be_m1_or_a_configured_storage(experiment):
-    experiment.cfg.expt.direction = 4  # Only Storage 7 is in this job.
-    with pytest.raises(ValueError):
-        experiment.generate_fock_strings()
-
-
-@pytest.mark.parametrize('corrected', [False, True])
-def test_analyze_classifies_and_corrects_each_occupation_cycle(experiment, corrected):
-    acquired = experiment.acquire()
-    if corrected:
-        experiment.cfg.expt.multiparity_confusion_matrix = CONFUSION.tolist()
-    data = experiment.analyze(acquired)
-    assert data is experiment.data
-    np.testing.assert_array_equal(data['mean_n_mod4'], RAW_MEAN)
-    for n in range(4):
-        np.testing.assert_array_equal(data[f'p_mod{n}'], RAW_PROBABILITIES[..., n])
-        assert data[f'p_mod{n}'].shape == (2, 2)
-        if corrected:
-            np.testing.assert_allclose(
-                data[f'p_mod{n}_corrected'], (RAW_PROBABILITIES[..., n] - .05) / .8,
-            )
-        else:
-            assert f'p_mod{n}_corrected' not in data
-    if corrected:
-        np.testing.assert_allclose(data['nmod4_mean_corrected'], (RAW_MEAN - .3) / .8)
-    else:
-        assert 'nmod4_mean_corrected' not in data
-    np.testing.assert_array_equal(data['nmod4_second_moment'], RAW_SECOND_MOMENT)
-    assert data['nmod4_second_moment'].shape == (2, 2)
-    assert data['sector_dimension'] == 3  # Full sector; only two states were measured.
-    np.testing.assert_allclose(data['nmod4_ensemble_averaged_correlation'], [4 / 3, 4 / 3])
-    np.testing.assert_allclose(data['nmod4_second_moment_ensemble_averaged_correlation'], [16 / 3, 5])
-    if corrected:
-        np.testing.assert_allclose(
-            data['nmod4_second_moment_corrected'], (RAW_SECOND_MOMENT - .7) / .8,
-        )
-        np.testing.assert_allclose(data['nmod4_ensemble_averaged_correlation_corrected'], [31 / 24, 31 / 24])
-        np.testing.assert_allclose(
-            data['nmod4_second_moment_ensemble_averaged_correlation_corrected'], [125 / 24, 115 / 24],
-        )
-    else:
-        for key in ['nmod4_second_moment', 'nmod4_ensemble_averaged_correlation',
-                    'nmod4_second_moment_ensemble_averaged_correlation']:
-            assert f'{key}_corrected' not in data
-    expected_error = np.array([[0., 0.], [0., np.sqrt(5 / 12)]])
-    if corrected:
-        expected_error /= .8
-    np.testing.assert_allclose(data['n_err'], expected_error, atol=1e-7)
-
-
-def test_correlations_match_operator_trace_for_unitary_dynamics(experiment):
-    # Two photons in two modes; select states with Storage 7 initially occupied.
-    experiment.cfg.expt.direction = 7
-    experiment.cfg.read_num = 4
-    occupations = experiment.generate_fock_strings()
-    assert occupations == [[0, 2], [1, 1]]
-    # Each state's shots at t=0, then after a balanced beamsplitter.
-    labels = np.array([[2, 2, 2, 2], [0, 1, 1, 2],
-                       [1, 1, 1, 1], [0, 0, 2, 2]])
-    lanes = np.full((*labels.shape, 4), 100.)
-    lanes[..., -2] = 2 * (labels % 2) - 1
-    lanes[..., -1] = 2 * (labels // 2) - 1
-    data = experiment.analyze({
-        'occupations': np.array(occupations), 'xpts': np.array(CYCLES),
-        'ypts': np.arange(2), 'idata': lanes.reshape(4, -1),
-        'qdata': np.zeros((4, 16)),
-    })
-
-    # Independent complete-basis operator calculation, including the omitted n=0 state.
+    # Independent operator calculation in the basis n_S7 = 0, 1, 2.
     unitary = np.array([[.5, -np.sqrt(.5), .5],
                         [np.sqrt(.5), 0., -np.sqrt(.5)],
                         [.5, np.sqrt(.5), .5]])
     number = np.diag([0., 1., 2.])
-    for power, key in [(1, 'nmod4_ensemble_averaged_correlation'),
-                       (2, 'nmod4_second_moment_ensemble_averaged_correlation')]:
+    for power in (1, 2):
         operator = np.linalg.matrix_power(number, power)
         expected = [np.trace(operator @ operator) / 3,
                     np.trace(unitary.T @ operator @ unitary @ operator) / 3]
-        np.testing.assert_allclose(data[key], expected)
+        np.testing.assert_allclose(data[f"C{power}"], expected)
 
 
-def test_reanalysis_without_calibration_clears_corrected_moments_and_correlations(experiment):
-    experiment.acquire()
-    experiment.cfg.expt.multiparity_confusion_matrix = CONFUSION.tolist()
-    experiment.analyze()
-    for suffix in ['', '_corrected']:
-        experiment.data[f'nmod4_correlation{suffix}'] = np.full(2, -999.)
-        experiment.data[f'nmod4_second_moment_correlation{suffix}'] = np.full(2, -999.)
-    experiment.cfg.expt.multiparity_confusion_matrix = None
-    data = experiment.analyze()
-    np.testing.assert_array_equal(data['nmod4_second_moment'], RAW_SECOND_MOMENT)
-    np.testing.assert_allclose(data['nmod4_ensemble_averaged_correlation'], [4 / 3, 4 / 3])
-    np.testing.assert_allclose(data['nmod4_second_moment_ensemble_averaged_correlation'], [16 / 3, 5])
-    for key in ['nmod4_second_moment', 'nmod4_ensemble_averaged_correlation',
-                'nmod4_second_moment_ensemble_averaged_correlation']:
-        assert f'{key}_corrected' not in data
-    for suffix in ['', '_corrected']:
-        assert f'nmod4_correlation{suffix}' not in data
-        assert f'nmod4_second_moment_correlation{suffix}' not in data
+@pytest.mark.parametrize("confusion", [None, CONFUSION])
+def test_correlations_and_errors_from_the_moments(tmp_path, confusion):
+    rng = np.random.default_rng(4)
+    states = direction_sector(2, [4, 7], 7)
+    labels = {tuple(state): random_labels(rng, CYCLES) for state in states}
+    agp = CentralBosonAGPExperiment.from_children(
+        sector_jobs(tmp_path, labels, [4, 7], 7, confusion=confusion), direction=7)
+    data = agp.analyze()
+    initial = np.array([state[2] for state in states], dtype=float)
+    dimension = sector_dimension(2, 3)
+    suffix = "" if confusion is None else "_corrected"
+    for k, moment, error in [(1, "n_mean", "n_err"), (2, "n2_mean", "n2_err")]:
+        weights = initial**k / dimension
+        np.testing.assert_allclose(data[f"C{k}{suffix}"], weights @ data[f"{moment}{suffix}"])
+        # Independent jobs: the shot variances add with the squared weights.
+        variance = sum(w**2 * row**2 for w, row in zip(weights, data[error]))
+        np.testing.assert_allclose(data[f"C{k}_err"], np.sqrt(variance))
+        assert (f"C{k}_corrected" in data) == (confusion is not None)
+    agp.display()
 
 
-@pytest.mark.parametrize('storages, direction, cycles, shape, dimension', [
-    ([7, 4, 5, 6], 4, [0, 2, 7], (15, 3), 35),
-    ([7, 4, 5, 6], 4, [0], (15, 1), 35),
-    ([], 0, [0, 2, 7], (1, 3), 1),
-    ([], 0, [0], (1, 1), 1),
-])
-@pytest.mark.parametrize('corrected', [False, True])
-def test_2d_analysis_preserves_each_point_through_save_and_reload(
-        experiment, tmp_path, storages, direction, cycles, shape, dimension, corrected):
-    experiment.cfg.expt.update(
-        photon_sector_number=3, swap_stors=storages, direction=direction,
-        floquet_cycles=cycles, ro_stor=0, detunings=[0.] * len(storages),
-    )
-    occupations = experiment.generate_fock_strings()
-    counts = np.empty((*shape, 4), dtype=int)
-    for state in range(shape[0]):
-        for cycle in range(shape[1]):
-            first_three = [state + 1, cycle + 1, (state + 2 * cycle) % 5]
-            counts[state, cycle] = [*first_three, 32 - sum(first_three)]
-
-    class GridShotProgram(ShotProgram):
-        @classmethod
-        def readouts_per_shot(cls, cfg):
-            return 6
-
-        def __init__(self, soccfg, cfg):
-            state = occupations.index(cfg.expt.occupations)
-            cycle = cycles.index(cfg.expt.floquet_cycle)
-            self.labels = np.repeat(np.arange(4), counts[state, cycle])
-            lanes = np.full((32, 6), 100.)
-            lanes[:, -2] = 2 * (self.labels % 2) - 1
-            lanes[:, -1] = 2 * (self.labels // 2) - 1
-            self.idata = lanes.reshape(-1)
-
-        def acquire(self, soc, **kwargs):
-            averages = np.zeros((1, 6))
-            averages[0, -1] = self.labels.mean()
-            return averages, np.zeros_like(averages)
-
-    experiment._ProgramClass = GridShotProgram
-    if corrected:
-        experiment.cfg.expt.multiparity_confusion_matrix = CONFUSION.tolist()
-    experiment.fname = str(tmp_path / 'grid.h5')
-    experiment.go(analyze=True, save=True)
-    data = experiment.data
-
-    np.testing.assert_array_equal(data['occupations'], occupations)
-    np.testing.assert_array_equal(data['xpts'], cycles)
-    np.testing.assert_array_equal(data['ypts'], np.arange(shape[0]))
-    assert np.asarray(data['idata']).shape == (shape[0] * shape[1], 32 * 6)
-    assert data['sector_dimension'] == dimension
-    initial_n = np.asarray(occupations)[:, [0, *storages].index(direction)]
-    raw_probability = counts / 32
-    raw_mean = raw_probability @ np.arange(4)
-    expected_error = np.sqrt((raw_probability @ np.array([0, 1, 4, 9]) - raw_mean**2) / 31)
-    if corrected:
-        expected_error /= .8
-    assert data['n_err'].shape == shape
-    np.testing.assert_allclose(data['n_err'], expected_error)
-
-    for suffix in ['', '_corrected'] if corrected else ['']:
-        probability = (raw_probability - .05) / .8 if suffix else raw_probability
-        for n in range(4):
-            assert data[f'p_mod{n}{suffix}'].shape == shape
-            np.testing.assert_allclose(data[f'p_mod{n}{suffix}'], probability[..., n])
-        mean = probability @ np.arange(4)
-        second_moment = probability @ np.array([0, 1, 4, 9])
-        assert data[f'nmod4_mean{suffix}'].shape == shape
-        assert data[f'nmod4_second_moment{suffix}'].shape == shape
-        np.testing.assert_allclose(data[f'nmod4_mean{suffix}'], mean)
-        np.testing.assert_allclose(data[f'nmod4_second_moment{suffix}'], second_moment)
-        for key, moment, weights in [
-            ('nmod4_ensemble_averaged_correlation', mean, initial_n),
-            ('nmod4_second_moment_ensemble_averaged_correlation', second_moment, initial_n**2),
-        ]:
-            assert data[f'{key}{suffix}'].shape == (shape[1],)
-            np.testing.assert_allclose(
-                data[f'{key}{suffix}'], np.sum(weights[:, None] * moment, axis=0) / dimension,
-            )
-
-    with h5py.File(experiment.fname, 'r') as saved:
-        for key in data:
-            np.testing.assert_array_equal(saved[key][()], data[key])
-    loaded = CentralBosonAGPExperiment.from_h5file(experiment.fname)
-    reanalyzed = loaded.analyze()
-    for key in data:
-        np.testing.assert_array_equal(reanalyzed[key], data[key])
+def test_children_are_sorted_into_sector_order_and_must_cover_it(tmp_path):
+    rng = np.random.default_rng(5)
+    states = direction_sector(2, [4, 7], 7)
+    labels = {tuple(state): random_labels(rng, CYCLES) for state in reversed(states)}
+    jobs = sector_jobs(tmp_path, labels, [4, 7], 7)
+    agp = CentralBosonAGPExperiment.from_children(jobs, job_ids=["c", "b", "a"], direction=7)
+    assert [list(child.cfg.expt.occupations) for child in agp.children] == states
+    assert agp.job_ids == ["a", "b", "c"]
+    with pytest.raises(ValueError, match="exactly once"):
+        CentralBosonAGPExperiment.from_children(jobs[:2], direction=7)
+    with pytest.raises(ValueError, match="direction"):
+        CentralBosonAGPExperiment.from_children(jobs)
 
 
-def test_go_saves_calibration_and_occupation_table_for_reanalysis(
-        experiment, tmp_path, monkeypatch):
-    calibration_path = tmp_path / 'calibration.h5'
-    with h5py.File(calibration_path, 'w') as saved:
-        saved['multiparity_confusion_matrix'] = CONFUSION
-    experiment.cfg.expt.multiparity_confusion_matrix = str(calibration_path)
-    experiment.fname = str(tmp_path / 'central_boson.h5')
+def test_acquire_save_and_reload_keep_direction_and_disorder(tmp_path):
+    detunings = [.03, -.01]
+    agp = CentralBosonAGPExperiment(2, 7, [4, 7], CYCLES, detunings, calibration=CONFUSION)
+    assert agp.disorder_khz == pytest.approx(rms_khz(detunings))
+    overrides = agp.job_overrides()
+    assert [o["occupations"] for o in overrides] == direction_sector(2, [4, 7], 7)
+    assert {o["ro_stor"] for o in overrides} == {7}
 
-    experiment.go(analyze=True, save=True)
-    with h5py.File(experiment.fname, 'r') as saved:
-        config = json.loads(saved.attrs['config'])['expt']
-        assert config['photon_sector_number'] == 2
-        assert config['direction'] == 0
-        assert config['floquet_cycles'] == CYCLES
-        assert config['swept_params'] == ['occupations', 'floquet_cycle']
-        assert config['multiparity_confusion_matrix']['fname'] == str(calibration_path)
-        assert config['multiparity_confusion_matrix']['matrix'] == CONFUSION.tolist()
-        np.testing.assert_array_equal(saved['occupations'][()], OCCUPATIONS)
-        np.testing.assert_array_equal(saved['ypts'][()], [0, 1])
-        for n in range(4):
-            assert saved[f'p_mod{n}_corrected'].shape == (2, 2)
-        assert saved['sector_dimension'][()] == 3
-        for suffix in ['', '_corrected']:
-            assert saved[f'nmod4_second_moment{suffix}'].shape == (2, 2)
-            assert saved[f'nmod4_ensemble_averaged_correlation{suffix}'].shape == (2,)
-            assert saved[f'nmod4_second_moment_ensemble_averaged_correlation{suffix}'].shape == (2,)
-        assert saved['n_err'].shape == (2, 2)
-        assert saved['confusion_matrix_source'][()].decode() == str(calibration_path)
+    agp.acquire(FakeRunner(tmp_path / "data"))
+    agp.analyze()
+    manifest_path = agp.save()
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["parameters"]["direction"] == 7
+    assert len(manifest["raw_files"]) == 3
 
-    def unexpected_calibration_lookup(fname):
-        raise AssertionError('reanalysis should use the saved calibration snapshot')
-
-    monkeypatch.setattr(
-        'experiments.qsim.multiparity.multiparity_calibration_from_file',
-        unexpected_calibration_lookup,
-    )
-    loaded = CentralBosonAGPExperiment.from_h5file(experiment.fname)
-    result = loaded.analyze()
-    for key, expected in experiment.data.items():
-        np.testing.assert_array_equal(result[key], expected)
-    assert loaded.cfg.expt.photon_sector_number == 2
-    assert loaded.cfg.expt.direction == 0
-    assert loaded.generate_fock_strings() == OCCUPATIONS
+    reloaded = CentralBosonAGPExperiment.from_manifest(manifest_path)
+    assert reloaded.direction == 7 and reloaded.disorder_khz == pytest.approx(agp.disorder_khz)
+    reloaded.analyze()
+    for key in ["C1", "C2", "C1_corrected", "C2_corrected", "C1_err"]:
+        np.testing.assert_allclose(reloaded.data[key], agp.data[key])
+    view = CentralBosonAGPExperiment.from_h5file(manifest_path.with_suffix(".h5"))
+    view.display()
 
 
-def test_default_program_is_fock_population_without_hardware_initialization(monkeypatch):
-    def initialize_base(self, **kwargs):
-        self.cfg = AttrDict({})
-
-    monkeypatch.setattr(Experiment, '__init__', initialize_base)
-    expt = CentralBosonAGPExperiment(expt_params={
-        'photon_sector_number': 2, 'direction': 0, 'floquet_cycles': list(CYCLES),
-    })
-    assert expt.ProgramClass is FockPopulationProgram
-    assert expt.cfg.expt.QickProgramName == 'FockPopulationProgram'
+def test_read_mode_may_differ_from_direction(tmp_path):
+    agp = CentralBosonAGPExperiment(2, 7, [4, 7], CYCLES, [0., 0.], ro_stor=4)
+    assert {mode for _, mode in agp.entries} == {4}
+    assert all(occupation[2] > 0 for occupation, _ in agp.entries)

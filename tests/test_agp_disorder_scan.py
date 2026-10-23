@@ -1,265 +1,107 @@
-"""Complete AGP child archives and flat disorder-by-cycle datasets."""
-
-import hashlib
-import json
-from pathlib import Path
-
+"""CentralBosonAGPDisorderScan: one CentralBosonAGPExperiment per W, saved as C_k(W, t) maps."""
 import h5py
 import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from slab import AttrDict
+import yaml
 
-from experiments.qsim.agp import CentralBosonAGPDisorderScan, CentralBosonAGPExperiment
+matplotlib.use("Agg")
 
+from experiments.qsim.agp import (  # noqa: E402
+    CentralBosonAGPDisorderScan,
+    CentralBosonAGPExperiment,
+    direction_sector,
+)
+from experiments.qsim.fock_population import FockPopulationExperiment  # noqa: E402
+from tests.population_jobs import CONFUSION, FakeRunner  # noqa: E402
 
-def write_job(directory, name, disorder, *, contrast=.8, corrected=True, shots=20):
-    directory.mkdir(parents=True, exist_ok=True)
-    fname = directory / f'{name}.h5'
-    expt = CentralBosonAGPExperiment.__new__(CentralBosonAGPExperiment)
-    expt.cfg = AttrDict({
-        'read_num': 4,
-        'expt': {'photon_sector_number': 2, 'direction': 0, 'ro_stor': 7,
-                 'swap_stors': [7], 'detunings': [disorder / 1000],
-                 'readout': 'multiparity', 'qubits': [0]},
-        'device': {'readout': {'threshold': [0.]}},
-    })
-    if corrected:
-        matrix = contrast * np.eye(4) + (1 - contrast) / 4
-        expt.cfg.expt.multiparity_confusion_matrix = {
-            'matrix': matrix.tolist(), 'fname': f'calibration_{name}.h5',
-        }
-    rows = []
-    for point in range(6):
-        labels = np.repeat(np.arange(4), [point + 1, 2, 3, shots - point - 6])
-        lanes = np.full((shots, 4), 100.)
-        lanes[:, -2] = 2 * (labels % 2) - 1
-        lanes[:, -1] = 2 * (labels // 2) - 1
-        rows.append(lanes.reshape(-1))
-    expt.data = {
-        'xpts': np.array([0, 2, 5]), 'ypts': np.arange(2),
-        'occupations': np.array([[1, 1], [2, 0]]),
-        'idata': np.array(rows), 'qdata': np.zeros_like(rows),
-        'unfamiliar_numeric_data': np.array([32768, 3], dtype=np.uint16),
-    }
-    expt.analyze()
-    external = directory / f'{name}_external.h5'
-    with h5py.File(external, 'w') as saved:
-        group = saved.create_group('original_group')
-        group.attrs['origin'] = 'external source'
-        group['values'] = np.array([4., 5.])
-    with h5py.File(fname, 'w') as saved:
-        for key, value in expt.data.items():
-            saved[key] = value
-        saved.attrs['config'] = json.dumps(expt.cfg)
-        saved.attrs['derived_params'] = json.dumps({'floquet_cycle_us': 1.2})
-        saved.attrs['original_attribute'] = np.array([3, 8], dtype=np.int16)
-        saved['annotation'] = '원본 측정 메모'
-        nested = saved.create_group('unfamiliar_group')
-        nested.attrs['group_attribute'] = 'preserve this too'
-        values = nested.create_dataset('complex_data', data=np.array([1 + 2j, 3 - 4j]),
-                                       compression='gzip', shuffle=True)
-        values.attrs['units'] = 'ADC'
-        saved['soft_link'] = h5py.SoftLink('/unfamiliar_group/complex_data')
-        saved['external_link'] = h5py.ExternalLink(str(external), '/original_group')
-    return fname
+CYCLES = [0, 2, 4, 6]
+PATTERN = [1., -3.]
+SECTOR = dict(photon_sector_number=2, direction=7, swap_stors=[4, 7], cycles=CYCLES)
 
 
-@pytest.fixture
-def jobs(tmp_path):
-    directory = tmp_path / 'data'
-    return [write_job(directory, 'high', 40, contrast=.6),
-            write_job(directory, 'zero', 0, contrast=.9),
-            write_job(directory, 'middle', 20, contrast=.8)]
+def planned(strengths=(60, 0, 30), **changes):
+    return CentralBosonAGPDisorderScan.from_pattern(
+        list(strengths), PATTERN, **dict(SECTOR, **changes), calibration=CONFUSION)
 
 
-def assert_h5_contents_equal(source, copied):
-    assert set(source.attrs) == set(copied.attrs)
-    for key in source.attrs:
-        np.testing.assert_array_equal(copied.attrs[key], source.attrs[key])
-    assert set(source) == set(copied)
-    for key, item in source.items():
-        other = copied[key]
-        if isinstance(item, h5py.Group):
-            assert isinstance(other, h5py.Group)
-            assert_h5_contents_equal(item, other)
-        else:
-            assert isinstance(other, h5py.Dataset)
-            assert other.dtype == item.dtype
-            assert other.shape == item.shape
-            assert other.compression == item.compression
-            assert other.shuffle == item.shuffle
-            np.testing.assert_array_equal(other[()], item[()])
-            assert set(item.attrs) == set(other.attrs)
-            for attribute in item.attrs:
-                np.testing.assert_array_equal(other.attrs[attribute], item.attrs[attribute])
+def test_pattern_sets_each_parts_detunings_and_parts_are_sorted_by_w():
+    scan = planned()
+    assert [part.disorder_khz for part in scan.children] == [0, 30, 60]
+    unit = np.asarray(PATTERN) / np.sqrt(np.mean(np.square(PATTERN)))
+    for part in scan.children:
+        np.testing.assert_allclose(part.detunings, 1e-3 * part.disorder_khz * unit)
+    assert len(scan.job_overrides()) == 3 * len(direction_sector(2, [4, 7], 7))
+    with pytest.raises(ValueError, match="nonzero pattern"):
+        CentralBosonAGPDisorderScan.from_pattern([30], [0., 0.], **SECTOR)
 
 
-def test_collects_sorted_jobs_and_keeps_each_jobs_correction(jobs, monkeypatch):
-    read_dataset = h5py.Dataset.__getitem__
+def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
+    scan = planned()
+    runner = FakeRunner(tmp_path / "data")
+    scan.acquire(runner, batch_size=4, use_queue=True)
+    assert runner.calls == [dict(count=9, batch_size=4, use_queue=True)]
+    for part in scan.children:
+        assert len(part.children) == 3 and len(part.job_ids) == 3
+        assert all(isinstance(child, FockPopulationExperiment) for child in part.children)
+        assert {tuple(child.cfg.expt.detunings) for child in part.children} == {tuple(part.detunings)}
 
-    def read_results_only(dataset, *args, **kwargs):
-        assert dataset.name not in ('/idata', '/qdata'), 'assembly must not read raw shots'
-        return read_dataset(dataset, *args, **kwargs)
-
-    monkeypatch.setattr(h5py.Dataset, '__getitem__', read_results_only)
-    scan = CentralBosonAGPDisorderScan(jobs)
     data = scan.analyze()
-    assert data is scan.data
-    ordered = [jobs[1], jobs[2], jobs[0]]
-    assert scan.fnames == [str(path.resolve()) for path in ordered]
-    np.testing.assert_array_equal(data['disorder_khz'], [0., 20., 40.])
-    np.testing.assert_array_equal(data['cycles'], [0, 2, 5])
-    np.testing.assert_array_equal(data['detunings'], [[0.], [.02], [.04]])
-    assert 'idata' not in data and 'qdata' not in data
-    assert data['p_mod0'].shape == (3, 2, 3)
-    assert data['unfamiliar_numeric_data'].dtype == np.uint16
-    for index, fname in enumerate(ordered):
-        with h5py.File(fname, 'r') as saved:
-            for key in ['p_mod0', 'n_err', 'confusion_matrix',
-                        'unfamiliar_numeric_data', *scan.correlation_keys,
-                        *[f'{key}_corrected' for key in scan.correlation_keys]]:
-                np.testing.assert_array_equal(data[key][index], saved[key][()])
-    assert not np.array_equal(data['confusion_matrix'][0], data['confusion_matrix'][1])
-    for key in scan.correlation_keys:
-        assert data[key].shape == data[f'{key}_corrected'].shape == (3, 3)
+    assert data["C1"].shape == (3, 4) and data["C1_corrected"].shape == (3, 4)
+    np.testing.assert_array_equal(data["disorder_khz"], [0, 30, 60])
+    assert data["detunings"].shape == (3, 2)
+
+    manifest_path = scan.save()
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["class"] == "CentralBosonAGPDisorderScan"
+    assert all("_CentralBosonAGPExperiment" in path for path in manifest["raw_files"])
+    assert manifest["parameters"]["disorder_khz"] == [0, 30, 60]
+    with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
+        assert set(handle) == {"disorder_khz", "cycles", "detunings", "time_us", "C1", "C2",
+                               "C1_err", "C2_err", "C1_corrected", "C2_corrected"}
+
+    reloaded = CentralBosonAGPDisorderScan.from_manifest(manifest_path)
+    reloaded.analyze()
+    for key, value in data.items():
+        np.testing.assert_allclose(reloaded.data[key], value)
+    view = CentralBosonAGPDisorderScan.from_h5file(manifest_path.with_suffix(".h5"))
+    for moment in (1, 2):
+        for raw in (False, True):
+            fig, ax = view.display(moment=moment, raw=raw)
+            assert ("corrected" in ax.get_title()) != raw
 
 
-def test_saves_all_child_contents_and_attributes_without_changing_inputs(jobs, tmp_path):
-    before = [hashlib.sha256(path.read_bytes()).digest() for path in jobs]
-    scan = CentralBosonAGPDisorderScan(jobs, notes='disorder sweep 전체 보관')
-    output = scan.save_data(tmp_path / 'assembled.h5')
-    assert output == scan.fname == str((tmp_path / 'assembled.h5').resolve())
-    with h5py.File(output, 'r') as saved:
-        assert 'scan' not in saved and 'assembled' not in saved and 'processed' not in saved
-        assert 'idata' not in saved and 'qdata' not in saved
-        assert saved.attrs['notes'] == scan.notes
-        assert json.loads(saved.attrs['source_files']) == scan.fnames
-        assert list(saved['children']) == ['0000', '0001', '0002']
-        for key in scan.data:
-            np.testing.assert_array_equal(saved[key][()], scan.data[key])
-        for index, fname in enumerate(scan.fnames):
-            with h5py.File(fname, 'r') as original:
-                assert_h5_contents_equal(original, saved[f'children/{index:04d}'])
-    assert before == [hashlib.sha256(path.read_bytes()).digest() for path in jobs]
-    assert not list(tmp_path.glob('*.yaml'))
+def test_saved_parts_combine_without_saving_them_again(tmp_path):
+    scan = planned((0, 30))
+    scan.acquire(FakeRunner(tmp_path / "data"))
+    for part in scan.children:
+        part.analyze()
+    part_paths = [part.save() for part in scan.children]
+    parts = [CentralBosonAGPExperiment.from_manifest(path) for path in reversed(part_paths)]
+    combined = CentralBosonAGPDisorderScan.from_children(parts, notes="two W")
+    combined.save()
+    assert [part.manifest_path for part in combined.children] == part_paths
+    assert len(list((tmp_path / "assembled_data").glob("*_CentralBosonAGPExperiment*.yaml"))) == 2
 
 
-def test_bundle_can_reanalyze_display_and_resave_after_originals_are_removed(jobs, tmp_path):
-    scan = CentralBosonAGPDisorderScan(jobs)
-    first = scan.save_data(tmp_path / 'first.h5')
-    for path in (tmp_path / 'data').glob('*.h5'):
-        path.unlink()
-    loaded = CentralBosonAGPDisorderScan.from_h5file(first)
-    assert loaded.fnames == scan.fnames
-    assert 'idata' not in loaded.data and 'qdata' not in loaded.data
-    for key in scan.data:
-        np.testing.assert_array_equal(loaded.data[key], scan.data[key])
-    reanalyzed = loaded.analyze()
-    for key in scan.data:
-        np.testing.assert_array_equal(reanalyzed[key], scan.data[key])
-    fig, ax = loaded.display(moment=2)
-    assert ax.get_xlabel() == 'Floquet cycles'
-    plt.close(fig)
-    loaded.data['new_processed_result'] = np.arange(3.)
-    second = loaded.save_data(tmp_path / 'second.h5')
-    with h5py.File(first, 'r') as original, h5py.File(second, 'r') as copied:
-        assert 'idata' not in copied and 'qdata' not in copied
-        assert_h5_contents_equal(original['children'], copied['children'])
-        np.testing.assert_array_equal(copied['new_processed_result'][()], np.arange(3.))
-    # The original in-memory collector also switches to its saved snapshots.
-    scan.save_data(tmp_path / 'third.h5')
+@pytest.mark.parametrize("change", [dict(cycles=[0, 2]), dict(direction=4)])
+def test_parts_with_different_settings_are_not_combined(change):
+    first = planned((0,)).children[0]
+    other = planned((30,), **change).children[0]
+    with pytest.raises(ValueError, match="different"):
+        CentralBosonAGPDisorderScan([first, other])
 
 
-def test_ragged_and_child_specific_data_is_not_lost(tmp_path):
-    first = write_job(tmp_path / 'data', 'first', 0, shots=12)
-    second = write_job(tmp_path / 'data', 'second', 30, shots=24)
-    with h5py.File(first, 'a') as saved:
-        saved['only_in_first_job'] = np.array([6, 7, 8])
-    scan = CentralBosonAGPDisorderScan([first, second])
-    output = scan.save_data(tmp_path / 'ragged.h5')
-    assert 'idata' not in scan.data and 'qdata' not in scan.data
-    with h5py.File(output, 'r') as saved:
-        assert saved['children/0000/idata'].shape == (6, 48)
-        assert saved['children/0001/idata'].shape == (6, 96)
-        np.testing.assert_array_equal(saved['children/0000/only_in_first_job'][()], [6, 7, 8])
-        for index, fname in enumerate([first, second]):
-            with h5py.File(fname, 'r') as original:
-                assert_h5_contents_equal(original, saved[f'children/{index:04d}'])
+def test_acquire_needs_a_population_runner(tmp_path):
+    runner = FakeRunner(tmp_path)
+    runner.ExptClass = CentralBosonAGPExperiment
+    with pytest.raises(TypeError, match="FockPopulationExperiment"):
+        planned().acquire(runner)
 
 
-@pytest.mark.parametrize('calibrated', [False, True])
-def test_missing_correction_never_substitutes_raw_values(tmp_path, calibrated):
-    jobs = [write_job(tmp_path / 'data', 'first', 0, corrected=calibrated),
-            write_job(tmp_path / 'data', 'second', 30, corrected=False)]
-    scan = CentralBosonAGPDisorderScan(jobs)
+def test_display_needs_one_part_per_w(tmp_path):
+    scan = planned((30, 30))
+    scan.acquire(FakeRunner(tmp_path / "data"))
     scan.analyze()
-    for key in scan.correlation_keys:
-        if calibrated:
-            assert np.isfinite(scan.data[f'{key}_corrected'][0]).all()
-            assert np.isnan(scan.data[f'{key}_corrected'][1]).all()
-        else:
-            assert f'{key}_corrected' not in scan.data
-    fig, ax = scan.display()
-    assert ('corrected' if calibrated else 'raw') in ax.get_title()
-    plt.close(fig)
-
-
-@pytest.mark.parametrize('moment', [1, 2])
-@pytest.mark.parametrize('raw', [False, True])
-def test_display_uses_selected_stacked_array(jobs, tmp_path, moment, raw):
-    scan = CentralBosonAGPDisorderScan(jobs)
-    scan.analyze()
-    fig, ax = scan.display(moment=moment, raw=raw)
-    key = scan.correlation_keys[moment - 1] + ('' if raw else '_corrected')
-    np.testing.assert_array_equal(np.asarray(ax.collections[0].get_array()).reshape(3, 3),
-                                  scan.data[key])
-    assert ax.get_ylabel() == 'Disorder (kHz)'
-    fig.savefig(tmp_path / f'moment-{moment}-raw-{raw}.png')
-    plt.close(fig)
-
-
-@pytest.mark.parametrize('field, replacement', [
-    ('direction', 7), ('ro_stor', 0), ('swap_stors', [4]), ('photon_sector_number', 3),
-])
-def test_incompatible_jobs_are_not_combined(jobs, field, replacement):
-    with h5py.File(jobs[0], 'a') as saved:
-        config = json.loads(saved.attrs['config'])
-        config['expt'][field] = replacement
-        saved.attrs['config'] = json.dumps(config)
-    with pytest.raises(ValueError, match=field):
-        CentralBosonAGPDisorderScan(jobs).analyze()
-
-
-def test_cycle_axis_mismatch_is_not_combined(jobs):
-    with h5py.File(jobs[0], 'a') as saved:
-        saved['xpts'][...] = [0, 3, 5]
-    with pytest.raises(ValueError, match='cycle axis'):
-        CentralBosonAGPDisorderScan(jobs).analyze()
-
-
-def test_recorded_disorder_overrides_rms_and_duplicate_rows_are_preserved(jobs, tmp_path):
-    with h5py.File(jobs[0], 'a') as saved:
-        config = json.loads(saved.attrs['config'])
-        config['expt']['disorder_khz'] = 20.
-        saved.attrs['config'] = json.dumps(config)
-    scan = CentralBosonAGPDisorderScan(jobs)
-    scan.save_data(tmp_path / 'duplicate.h5')
-    np.testing.assert_array_equal(scan.data['disorder_khz'], [0, 20, 20])
-    assert len(scan.fnames) == 3
-    with pytest.raises(ValueError, match='one job per disorder value'):
+    with pytest.raises(ValueError, match="one part per W"):
         scan.display()
-
-
-def test_default_save_directory_and_existing_file_protection(jobs):
-    scan = CentralBosonAGPDisorderScan(jobs)
-    first = Path(scan.save_data())
-    second = Path(scan.save_data())
-    assert first.parent == jobs[0].parent.parent / 'assembled_data'
-    assert first != second and first.exists() and second.exists()
-    original = jobs[0].read_bytes()
-    with pytest.raises(FileExistsError):
-        scan.save_data(jobs[0])
-    assert jobs[0].read_bytes() == original
