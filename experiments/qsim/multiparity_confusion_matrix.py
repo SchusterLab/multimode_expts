@@ -58,7 +58,6 @@ class MultiParityConfusionMatrixExperiment(MultiparityMixin, QsimExperiment):
         """Build C from raw classifications, indexed by prepared Fock number."""
         if data is not None:
             self.data = data
-        check_multiparity_readout_paramter(self.cfg.expt)
         prepared = np.asarray(self.data['xpts']).reshape(-1)
         if (len(self.data.get('ypts', [])) > 0
                 or prepared.shape != (4,)
