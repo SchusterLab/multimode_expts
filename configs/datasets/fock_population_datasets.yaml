@@ -1,0 +1,154 @@
+# Fock population data sets (quantum walks and AGP scans): which old job IDs form which data set.
+#
+# Read by tools/convert_fock_population_catalog.py, which converts the old jobs
+# (QsimExperiment + FockPopulationProgram) to the new layout (docs/qsim/mbr_redesign.md,
+# section 6; the layers are in experiments/qsim/fock_population.py and agp.py).
+#
+# Sources: jonginn's catalog in analysis_notebooks/jonginn/convert_legacy_agp.py (commit 7e3a3c3,
+# "file associations from the supplied catalog"), and the manifests of the 2026-10-19 stopgap
+# backfill (tools/backfill_fock_population.py, never committed) for the quantum walks.
+# Job IDs are literal lists, never ranges: the queue is one global counter shared by every user.
+#
+# Fields
+#   calibrations.<name>   four old jobs that prepare Fock 0..3 in M1 at zero cycles and read M1
+#   datasets.<name>
+#     label        what the data set is
+#     kind         walk (one occupation, several read modes) | agp_scan (one CentralBosonAGPExperiment
+#                  per disorder strength, then one CentralBosonAGPDisorderScan)
+#     folder       experiment folder under the data root (C:\experiments on pippin)
+#     calibration  walk: the calibration of its jobs
+#     job_ids      walk: the population jobs
+#     direction    agp_scan: the initially occupied mode d (0 = M1, else a storage ID)
+#     parts        agp_scan: {W in kHz: {calibration, job_ids}}. W labels the disorder strength;
+#                  the jobs' detunings are W times one fixed pattern (W = their RMS, in kHz)
+#     manifest     the top-level manifest once converted, relative to the data root
+
+calibrations:
+  cal_20261017_272:
+    folder: agp_k44_first_scan
+    job_ids: [JOB-20261017-00272, JOB-20261017-00273, JOB-20261017-00274, JOB-20261017-00275]
+  cal_20261017_369:
+    folder: agp_k44_first_scan
+    job_ids: [JOB-20261017-00369, JOB-20261017-00370, JOB-20261017-00371, JOB-20261017-00372]
+  cal_20261019_009:
+    folder: agp_k44_first_scan
+    job_ids: [JOB-20261019-00009, JOB-20261019-00010, JOB-20261019-00011, JOB-20261019-00012]
+
+datasets:
+  walk_n3_20261017:
+    label: N=3 quantum walk from [3,0,0,0,0], read M1 and S4-S7, no disorder, 400 cycles
+    kind: walk
+    folder: agp_k44_first_scan
+    calibration: cal_20261017_272
+    job_ids: [JOB-20261017-00276, JOB-20261017-00277, JOB-20261017-00278, JOB-20261017-00279,
+              JOB-20261017-00280]
+    manifest: agp_k44_first_scan/assembled_data/261023_001438_FockPopulationSetExperiment.yaml
+
+  walk_n2_20261017:
+    label: N=2 quantum walk from [2,0,0,0,0], read M1 and S4-S7, no disorder, 200 cycles
+    kind: walk
+    folder: agp_k44_first_scan
+    calibration: cal_20261017_272
+    job_ids: [JOB-20261017-00281, JOB-20261017-00282, JOB-20261017-00283, JOB-20261017-00284,
+              JOB-20261017-00285]
+    manifest: agp_k44_first_scan/assembled_data/261023_001439_FockPopulationSetExperiment.yaml
+
+  walk_n1_20261017:
+    label: N=1 quantum walk from [1,0,0,0,0], read M1 and S4-S7, no disorder, 200 cycles
+    kind: walk
+    folder: agp_k44_first_scan
+    calibration: cal_20261017_272
+    job_ids: [JOB-20261017-00286, JOB-20261017-00287, JOB-20261017-00288, JOB-20261017-00289,
+              JOB-20261017-00290]
+    manifest: agp_k44_first_scan/assembled_data/261023_001440_FockPopulationSetExperiment.yaml
+
+  # jonginn's "coarse" scan: cycles 0, 5, ..., 795 (160 points), 300 reps.
+  agp_n3_s7_cycles0to795step5:
+    label: AGP scan N=3, prepared and read S7, W = 30-150 kHz, cycles 0-795 in steps of 5
+    kind: agp_scan
+    folder: agp_k44_first_scan
+    direction: 7
+    parts:
+      30:
+        calibration: cal_20261017_272
+        job_ids: [JOB-20261017-00292, JOB-20261017-00293, JOB-20261017-00294, JOB-20261017-00295,
+                  JOB-20261017-00296, JOB-20261017-00297, JOB-20261017-00298, JOB-20261017-00299,
+                  JOB-20261017-00300, JOB-20261017-00301, JOB-20261017-00302, JOB-20261017-00303,
+                  JOB-20261017-00304, JOB-20261017-00305, JOB-20261017-00306]
+      60:
+        calibration: cal_20261017_272
+        job_ids: [JOB-20261017-00307, JOB-20261017-00308, JOB-20261017-00309, JOB-20261017-00310,
+                  JOB-20261017-00311, JOB-20261017-00312, JOB-20261017-00313, JOB-20261017-00314,
+                  JOB-20261017-00315, JOB-20261017-00316, JOB-20261017-00317, JOB-20261017-00318,
+                  JOB-20261017-00319, JOB-20261017-00320, JOB-20261017-00321]
+      90:
+        calibration: cal_20261017_272
+        job_ids: [JOB-20261017-00322, JOB-20261017-00323, JOB-20261017-00324, JOB-20261017-00325,
+                  JOB-20261017-00326, JOB-20261017-00327, JOB-20261017-00328, JOB-20261017-00329,
+                  JOB-20261017-00330, JOB-20261017-00331, JOB-20261017-00332, JOB-20261017-00333,
+                  JOB-20261017-00334, JOB-20261017-00335, JOB-20261017-00336]
+      120:
+        calibration: cal_20261017_272
+        job_ids: [JOB-20261017-00337, JOB-20261017-00338, JOB-20261017-00339, JOB-20261017-00340,
+                  JOB-20261017-00341, JOB-20261017-00342, JOB-20261017-00343, JOB-20261017-00344,
+                  JOB-20261017-00345, JOB-20261017-00346, JOB-20261017-00347, JOB-20261017-00348,
+                  JOB-20261017-00349, JOB-20261017-00350, JOB-20261017-00351]
+      150:
+        calibration: cal_20261017_272
+        job_ids: [JOB-20261017-00352, JOB-20261017-00353, JOB-20261017-00354, JOB-20261017-00355,
+                  JOB-20261017-00356, JOB-20261017-00357, JOB-20261017-00358, JOB-20261017-00359,
+                  JOB-20261017-00360, JOB-20261017-00361, JOB-20261017-00362, JOB-20261017-00363,
+                  JOB-20261017-00364, JOB-20261017-00365, JOB-20261017-00366]
+    manifest: agp_k44_first_scan/assembled_data/261023_001448_CentralBosonAGPDisorderScan.yaml
+
+  # jonginn's "fine" scan: cycles 0, 1, ..., 399 (400 points), 500 reps. W=90 spans Oct 17-18;
+  # W=0 was taken on Oct 19 with its own calibration.
+  agp_n3_s7_cycles0to399step1:
+    label: AGP scan N=3, prepared and read S7, W = 0-150 kHz, cycles 0-399 in steps of 1
+    kind: agp_scan
+    folder: agp_k44_first_scan
+    direction: 7
+    parts:
+      0:
+        calibration: cal_20261019_009
+        job_ids: [JOB-20261019-00023, JOB-20261019-00024, JOB-20261019-00025, JOB-20261019-00026,
+                  JOB-20261019-00027, JOB-20261019-00028, JOB-20261019-00029, JOB-20261019-00030,
+                  JOB-20261019-00031, JOB-20261019-00032, JOB-20261019-00033, JOB-20261019-00034,
+                  JOB-20261019-00035, JOB-20261019-00036, JOB-20261019-00037]
+      30:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261017-00373, JOB-20261017-00374, JOB-20261017-00375, JOB-20261017-00376,
+                  JOB-20261017-00377, JOB-20261017-00378, JOB-20261017-00379, JOB-20261017-00380,
+                  JOB-20261017-00381, JOB-20261017-00382, JOB-20261017-00383, JOB-20261017-00384,
+                  JOB-20261017-00385, JOB-20261017-00386, JOB-20261017-00387]
+      40:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261017-00388, JOB-20261017-00389, JOB-20261017-00390, JOB-20261017-00391,
+                  JOB-20261017-00392, JOB-20261017-00393, JOB-20261017-00394, JOB-20261017-00395,
+                  JOB-20261017-00396, JOB-20261017-00397, JOB-20261017-00398, JOB-20261017-00399,
+                  JOB-20261017-00400, JOB-20261017-00401, JOB-20261017-00402]
+      60:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261017-00403, JOB-20261017-00404, JOB-20261017-00405, JOB-20261017-00406,
+                  JOB-20261017-00407, JOB-20261017-00408, JOB-20261017-00409, JOB-20261017-00410,
+                  JOB-20261017-00411, JOB-20261017-00412, JOB-20261017-00413, JOB-20261017-00414,
+                  JOB-20261017-00415, JOB-20261017-00416, JOB-20261017-00417]
+      90:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261017-00418, JOB-20261017-00419, JOB-20261017-00420, JOB-20261018-00001,
+                  JOB-20261018-00002, JOB-20261018-00003, JOB-20261018-00004, JOB-20261018-00005,
+                  JOB-20261018-00006, JOB-20261018-00007, JOB-20261018-00008, JOB-20261018-00009,
+                  JOB-20261018-00010, JOB-20261018-00011, JOB-20261018-00012]
+      120:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261018-00013, JOB-20261018-00014, JOB-20261018-00015, JOB-20261018-00016,
+                  JOB-20261018-00017, JOB-20261018-00018, JOB-20261018-00019, JOB-20261018-00020,
+                  JOB-20261018-00021, JOB-20261018-00022, JOB-20261018-00023, JOB-20261018-00024,
+                  JOB-20261018-00025, JOB-20261018-00026, JOB-20261018-00027]
+      150:
+        calibration: cal_20261017_369
+        job_ids: [JOB-20261018-00028, JOB-20261018-00029, JOB-20261018-00030, JOB-20261018-00031,
+                  JOB-20261018-00032, JOB-20261018-00033, JOB-20261018-00034, JOB-20261018-00035,
+                  JOB-20261018-00036, JOB-20261018-00037, JOB-20261018-00038, JOB-20261018-00039,
+                  JOB-20261018-00040, JOB-20261018-00041, JOB-20261018-00042]
+    manifest: agp_k44_first_scan/assembled_data/261023_001509_CentralBosonAGPDisorderScan.yaml
