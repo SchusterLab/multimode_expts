@@ -118,7 +118,8 @@ class CentralBosonAGPDisorderScan:
     otherwise it is the RMS of the saved storage detunings, converted to kHz.
 
     self.data contains flat arrays for the HDF5 viewer. Compatible numeric
-    child datasets are stacked along the job axis. save_data() additionally
+    child datasets other than raw idata/qdata are stacked along the job axis.
+    Raw shots are stored only in the complete child snapshots. save_data()
     copies every child's complete HDF5 contents, including nested groups and
     all attributes, into children/0000, children/0001, ... in disorder order.
 
@@ -157,7 +158,8 @@ class CentralBosonAGPDisorderScan:
             with h5py.File(fname, 'r') as saved:
                 group = saved[group_path]
                 children.append({key: item[()] for key, item in group.items()
-                                 if isinstance(item, h5py.Dataset)})
+                                 if isinstance(item, h5py.Dataset)
+                                 and key not in ('idata', 'qdata')})
                 expt = json.loads(group.attrs['config'])['expt']
                 settings.append(expt)
                 detunings = np.asarray(expt['detunings'], dtype=float)
@@ -182,8 +184,8 @@ class CentralBosonAGPDisorderScan:
         self.fnames = [self.fnames[index] for index in order]
         self._child_sources = [self._child_sources[index] for index in order]
 
-        # All original content is archived; also stack compatible numeric data
-        # at the root so the viewer can access the assembled arrays directly.
+        # Keep complete children, and stack their numeric results at the root.
+        # Raw shots stay in the children without a duplicate assembled array.
         data = {}
         common_keys = set.intersection(*(set(child) for child in children))
         for key in sorted(common_keys):

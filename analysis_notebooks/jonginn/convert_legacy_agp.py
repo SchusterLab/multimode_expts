@@ -25,9 +25,10 @@
 # 4. Assemble coarse and fine scans separately and display their color maps.
 #
 # Source HDF5 files are always opened with `r`; output files use `x` and never
-# overwrite existing files. Every original dataset, group, and attribute is
-# preserved under `legacy_jobs/0000`, ... in the new file. New analysis results
-# are stored at the root. Each scan uses its associated converted calibration.
+# overwrite existing files. Combined shots and analysis results are stored at
+# the root. Original filenames are recorded in the `converted_from` attribute;
+# original JOB contents are not copied into a separate archive. Each scan uses
+# its associated converted calibration. Assembled files keep shots only in children.
 # No AGP integral, T1 correction, matrix-pencil fitting, or calibration
 # statistical error propagation is added.
 
@@ -119,7 +120,8 @@ def legacy_groups(raw_dir):
 #
 # These functions reorder and reshape analysis arrays in memory without
 # changing hardware or pulse settings. The new cfg's occupation and sweep
-# axes describe the combined layout; every original cfg remains in the archive.
+# axes describe the combined layout. Original per-JOB configs and other legacy
+# contents remain in the source files listed in `converted_from`.
 
 # %% tags=["definitions"]
 def read_legacy_job(fname):
@@ -161,7 +163,7 @@ def check_readout_settings(jobs, calibration_config=None):
 
 
 def stack_legacy_data(jobs, point_shape):
-    """Stack compatible numeric data; preserve everything else in legacy_jobs."""
+    """Combine shots and compatible numeric data from the source jobs."""
     data = {}
     common = set.intersection(*(set(job['data']) for job in jobs))
     excluded = {'xpts', 'ypts', 'idata', 'qdata', 'occupations'}
@@ -179,7 +181,7 @@ def stack_legacy_data(jobs, point_shape):
 
 
 def write_converted(fname, experiment, jobs):
-    """Create a new HDF5; copy complete source roots opened read-only."""
+    """Create a new HDF5 with combined data and the original filenames."""
     fname = Path(fname).resolve()
     fname.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(fname, 'x') as saved:
@@ -193,11 +195,6 @@ def write_converted(fname, experiment, jobs):
             saved.attrs['derived_params'] = timing
         for key, value in experiment.data.items():
             saved.create_dataset(key, data=value)
-        archive = saved.create_group('legacy_jobs')
-        for index, job in enumerate(jobs):
-            with h5py.File(job['fname'], 'r') as source:
-                source.copy('/', archive, name=f'{index:04d}', expand_soft=True,
-                            expand_external=True, expand_refs=True)
     experiment.fname = str(fname)
     return fname
 
@@ -268,28 +265,12 @@ def convert_agp(fnames, calibration_fname, output_fname, disorder_khz, direction
 # %% [markdown]
 # ## Verifying source preservation and analysis results
 #
-# Compare probabilities classified from individual source files with the
-# converted probabilities. Reloading and reanalysis must give the same results,
-# and every original dataset, group, and attribute must be present in the archive.
-# A legacy n_err that includes calibration uncertainty need not match the current
-# shot-only n_err. Legacy values are preserved in the archive.
+# Compare combined shots and probabilities with the individual source files.
+# Reloading and reanalysis must give the same results. A legacy n_err that includes
+# calibration uncertainty need not match the current shot-only n_err.
+# Legacy analysis values remain in the original files.
 
 # %% tags=["definitions"]
-def assert_same_hdf5(source, copied):
-    """Compare complete groups, dataset values/properties and all attributes."""
-    assert set(source.attrs) == set(copied.attrs), source.name
-    for key in source.attrs:
-        np.testing.assert_array_equal(source.attrs[key], copied.attrs[key])
-    if isinstance(source, h5py.Dataset):
-        assert source.shape == copied.shape and source.dtype == copied.dtype, source.name
-        assert source.compression == copied.compression and source.shuffle == copied.shuffle
-        np.testing.assert_array_equal(source[()], copied[()])
-    else:
-        assert set(source) == set(copied), source.name
-        for key in source:
-            assert_same_hdf5(source[key], copied[key])
-
-
 def verify_converted(fname):
     classes = {cls.__name__: cls for cls in
                [MultiParityConfusionMatrixExperiment, CentralBosonAGPExperiment]}
@@ -298,13 +279,14 @@ def verify_converted(fname):
         expected = {key: item[()] for key, item in saved.items()
                     if isinstance(item, h5py.Dataset)}
         originals = json.loads(saved.attrs['converted_from'])
-        for index, source_fname in enumerate(originals):
-            with h5py.File(source_fname, 'r') as source:
-                assert_same_hdf5(source['/'], saved[f'legacy_jobs/{index:04d}'])
 
     # Classify each original job separately to check the state/point ordering.
     for index, source_fname in enumerate(originals):
         job = read_legacy_job(source_fname)
+        point_count = len(job['data']['xpts'])
+        start = index * point_count
+        for key in ['idata', 'qdata']:
+            np.testing.assert_array_equal(expected[key][start:start + point_count], job['data'][key])
         raw = MultiparityQsimExperiment.__new__(MultiparityQsimExperiment)
         raw.cfg = job['config']
         raw.cfg.expt.multiparity_confusion_matrix = None
@@ -330,7 +312,7 @@ def verify_converted(fname):
             np.testing.assert_allclose(reloaded.data[key], value, rtol=1e-13, atol=1e-13)
         else:
             np.testing.assert_array_equal(reloaded.data[key], value)
-    return {'file': str(fname), 'legacy_jobs_preserved': len(originals), 'reanalysis': 'same'}
+    return {'file': str(fname), 'source_files': len(originals), 'shots': 'same', 'reanalysis': 'same'}
 
 
 def file_sha256(fname):
@@ -407,7 +389,8 @@ display(pd.DataFrame(conversion_checks))
 #
 # CentralBosonAGPDisorderScan checks that cycle axes agree across disorder values.
 # Fine W=0 retains its separate calibration. Each converted AGP is copied in full
-# into the assembled HDF5's children group, including its legacy_jobs archive.
+# into the assembled HDF5's children group. Shots are stored only in those children;
+# the assembled root contains axes and results without duplicate idata/qdata.
 
 # %% tags=["assemble"]
 assembled_files = {}
