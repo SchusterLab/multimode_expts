@@ -78,7 +78,7 @@ class Job(Base):
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, index=True)
     priority = Column(Integer, default=0, index=True)
 
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.now, index=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
