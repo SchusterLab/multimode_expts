@@ -1,7 +1,8 @@
 """Measure central-boson populations for a selected initial-state direction.
 
 One job fixes the dynamics and readout mode, then sweeps initial occupations
-and Floquet cycles. Multiparity analysis and display come from the parent.
+and Floquet cycles. Analysis adds number moments and sector-averaged
+two-time correlations to the parent's multiparity results.
 """
 import numpy as np
 
@@ -22,8 +23,10 @@ class CentralBosonAGPExperiment(MultiparityQsimExperiment):
 
     ``data['occupations']`` records the state table; ``ypts`` holds its row
     indices and ``xpts`` holds cycles. Analyzed probabilities and means have
-    shape ``(initial states, cycle points)``. This class does not calculate a
-    correlation or an AGP estimate.
+    shape ``(initial states, cycle points)``. First- and second-moment
+    ensemble-averaged correlations have shape ``(cycle points,)`` and use
+    the full sector dimension, including unmeasured zero-weight states.
+    Moments describe photon number when populations are confined to n <= 3.
     """
 
     default_program = FockPopulationProgram #Evinced just in case. Might be better to define AGPProgram?
@@ -49,3 +52,52 @@ class CentralBosonAGPExperiment(MultiparityQsimExperiment):
         data['occupations'] = np.asarray(axes[0][1], dtype=int)
         data['ypts'] = np.arange(len(data['occupations']))
         return data
+
+    def analyze(self, data=None, **kwargs):
+        """Add <n_r^2(t)> and ensemble-averaged two-time correlations.
+
+        The initial mode d is ``direction``; the measured mode r is ``ro_stor``.
+        C_k(t) = Tr_N[n_r^k(t) n_d^k(0)] / D.
+        For k=1,2, weight each state's moment by its initial occupation to
+        that power and divide by the full fixed-N sector dimension D.
+        Raw results use the existing keys' convention; corrected results
+        have a ``_corrected`` suffix when a calibration is configured.
+        """
+        super().analyze(data=data, **kwargs)
+        modes = [0, *self.cfg.expt.swap_stors]
+        direction_index = modes.index(self.cfg.expt.direction)
+        initial_n = np.asarray(self.data['occupations'])[:, direction_index]
+        photons = self.cfg.expt.photon_sector_number
+        # Count the complete fixed-N basis, including zero-direction states.
+        dimension = 0
+        for state in product(range(photons + 1), repeat=len(modes)):
+            if sum(state) == photons:
+                dimension += 1
+        self.data['sector_dimension'] = np.asarray(dimension)
+
+        for suffix in ['', '_corrected']:
+            second_key = f'nmod4_second_moment{suffix}'
+            averaged_correlation_key = f'nmod4_ensemble_averaged_correlation{suffix}'
+            second_averaged_correlation_key = f'nmod4_second_moment_ensemble_averaged_correlation{suffix}'
+            
+            # Drop the previous names when reanalyzing an older result.
+            self.data.pop(f'nmod4_correlation{suffix}', None)
+            self.data.pop(f'nmod4_second_moment_correlation{suffix}', None)
+            
+            if f'nmod4_mean{suffix}' not in self.data:
+                for key in [second_key, averaged_correlation_key,
+                            second_averaged_correlation_key]:
+                    self.data.pop(key, None)
+                continue
+            #For now, the only hard-coded part is inserting 4 in range(4) below.
+            #This is the only part to edit for the higher photon number extension
+            probabilities = np.stack([self.data[f'p_mod{n}{suffix}'] for n in range(4)], axis=-1) 
+            
+            first_moment = self.data[f'nmod4_mean{suffix}']
+            n_values = np.arange(probabilities.shape[-1])
+            second_moment = probabilities @ n_values**2
+            self.data[second_key] = second_moment
+            self.data[averaged_correlation_key] = initial_n @ first_moment / dimension
+            self.data[second_averaged_correlation_key] = initial_n**2 @ second_moment / dimension
+
+        return self.data
