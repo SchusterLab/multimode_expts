@@ -70,7 +70,7 @@ station = MultimodeStation(
     user=user,
     experiment_name="agp_k44_first_scan",
     project="AGP",
-    log_measurements=False,
+    log_measurements=True,
     hardware_config=config_dict["hardware_config"],
     multiphoton_config=config_dict["multiphoton_config"],
     storage_man_file=config_dict["man1_storage_swap"],
@@ -79,6 +79,7 @@ station = MultimodeStation(
 
 # %%
 # Common pulse/reset settings. Acquisition settings are written at each call.
+
 population_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
@@ -94,16 +95,36 @@ population_defaults = AttrDict(dict(
 population_defaults.update(ACTIVE_RESET_DEFAULTS)
 population_defaults.update(FLOQUET_DEFAULTS)
 
+def multiparity_preprocessor(station, defaults, **overrides):
+    settings = deepcopy(defaults)
+    settings.update({"prepulse": True,
+                     "postpulse" : True})
+    settings.update(overrides)
+    return settings
 
 def population_preprocessor(station, defaults, **overrides):
     settings = deepcopy(defaults)
     settings.update(overrides)
     return settings
 
+from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
+from experiments.qsim.multiparity import MultiparityQsimExperiment
+
+confusion_matrix_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=MultiParityConfusionMatrixExperiment,
+    default_expt_cfg=population_defaults,
+    preprocessor= multiparity_preprocessor,
+    job_client=client,
+    use_queue=True,
+    show=False,
+)
+
+
 
 population_runner = CharacterizationRunner(
     station=station,
-    ExptClass=QsimExperiment,
+    ExptClass=MultiparityQsimExperiment,
     ExptProgram=FockPopulationProgram,
     default_expt_cfg=population_defaults,
     preprocessor=population_preprocessor,
@@ -111,6 +132,12 @@ population_runner = CharacterizationRunner(
     use_queue=True,
     show=False,
 )
+
+# %%
+result = confusion_matrix_runner.execute(reps = 6000)
+
+# %%
+result.display()
 
 # %% [markdown]
 # ## 2. Fock 0, 1, 2, 3 readout calibration
@@ -134,6 +161,7 @@ for number in range(4):
         detunings=[0.0, 0.0, 0.0, 0.0],
         floquet_cycles=[0],
         postprocess=False, show=False, log=False,
+        multiparity_confusion_matrix = result.fname
     )
     readout_expts.append(readout_expt)
     print(readout_expt.fname)
@@ -153,6 +181,8 @@ axis.set(xlabel="Measured number", ylabel="Prepared number", xticks=range(4), yt
 fig.colorbar(image, ax=axis, label="Probability")
 plt.show()
 print("Confusion matrix condition number:", np.linalg.cond(readout_confusion))
+
+# %%
 
 # %% [markdown]
 # ## 3. Floquet population measurement
