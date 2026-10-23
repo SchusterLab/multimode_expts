@@ -93,3 +93,9 @@ archive. This happened on 2026-10-06 with `git worktree remove --force`
   delete; Git Bash `find` does not enter junctions, so "0 files" there does not mean empty.
 - To set up a new worktree, make the link with
   `New-Item -ItemType Junction -Path <worktree>\configs\versions -Target C:\python\multimode_expts\configs\versions`.
+
+## Running on the real device
+
+We are starting to explore the possibility of agentic execution of real experiments on the device. 
+Before you submit any job to the real device, read `docs/running_experiments.md`.
+

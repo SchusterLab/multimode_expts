@@ -19,9 +19,10 @@
 # (experiments/qsim/fock_population.py, agp.py): FockPopulationExperiment jobs
 # (one state, one read mode, a few seconds each), a CentralBosonAGPExperiment per W,
 # and a CentralBosonAGPDisorderScan. Few reps, few cycles: the numbers are not physics.
-# Interleaves with other users' jobs (batch_size=3). avoid_yoko=True keeps the coupler
-# at the current the worker has (seb's overnight runs: 0.30 mA), so the S4-S7 swaps,
-# calibrated at 0.25 mA, are off; that does not matter for the logic.
+# Interleaves with other users' jobs (batch_size=3). The worker ramps the coupler to the
+# hardware_config set point (0.25 mA) for each job; other users' jobs ramp it back.
+# The first run (2026-10-23 01:00) had avoid_yoko=True, so it ran at seb's 0.30 mA, and
+# relax_delay=200 us with S modes in use: its numbers are not valid.
 
 # %% Cell 1: station on the s4s7 snapshots (measurement_notebooks/guan/mbr_s4s7_n2.py, the
 # config versions its 10-22 jobs ran with), and the population runner (its cell 8).
@@ -52,7 +53,7 @@ station = MultimodeStation(
     user="guan",
     experiment_name="261023_agp_layers_check",
     project="AGP",
-    log_measurements=False,
+    log_measurements=True,
     hardware_config=config_dict["hardware_config"],
     multiphoton_config=config_dict["multiphoton_config"],
     storage_man_file=config_dict["man1_storage_swap"],
@@ -63,7 +64,7 @@ STORS = [4, 5, 6, 7]
 population_defaults = AttrDict(dict(
     expts=1, reps=100, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
-    storage_reset=STORS, pre_relax_delay=100, relax_delay=200,
+    storage_reset=STORS, pre_relax_delay=100, relax_delay=2500,  # us; qubit + M + S, active reset
     prepulse=False, postpulse=True, init_fock=False, init_stor=0,
     readout="multiparity", parity_fast=False,
     cond_sec_phase=-90, phase_second_pulse=180,
@@ -71,7 +72,6 @@ population_defaults = AttrDict(dict(
     use_multiphoton_swap=False, storage_pulse_wait_us=0.2, ro_stor=0,
     update_phases=True, detunings=[0.0] * len(STORS),
     floquet_cycles=[0], swept_params=["floquet_cycle"],
-    avoid_yoko=True,
 ))
 population_defaults.update(ACTIVE_RESET_DEFAULTS)
 population_defaults.update(FLOQUET_DEFAULTS)
@@ -94,14 +94,14 @@ def save_figs(tag):
     print("saved", paths)
 
 
-# %% Cell 2: readout confusion as a population set: Fock 0..3 in M1, zero cycles, read M1. Ran
-# 2026-10-23 00:59 (JOB-20261023-00011..00014): not diagonal at 0.30 mA (1 reads as 3, 3 as 0;
-# condition number 31). The settings are for 0.25 mA; the cause is not investigated.
-# (4 jobs). C[n] is the raw label distribution of job n.
+# %% Cell 2: readout confusion as a population set: Fock 0..3 in M1, zero cycles, read M1
+# (4 jobs; qubit + M only, so relax_delay=500 us). C[n] is the raw label distribution of job n.
+# First run 2026-10-23 00:59 (JOB-20261023-00011..00014, 0.30 mA, 200 us): not diagonal
+# (1 reads as 3, 3 as 0; condition number 31).
 calibration_set = FockPopulationSetExperiment(
     [([number, 0, 0, 0, 0], 0) for number in range(4)], [0], STORS, [0.] * 4,
     notes="readout confusion for the AGP layers check")
-calibration_set.acquire(runner, batch_size=3, reps=600, log=False, show=False)
+calibration_set.acquire(runner, batch_size=3, reps=600, relax_delay=500, show=False)
 calibration_set.analyze()
 calibration_manifest = calibration_set.save()
 confusion = calibration_set.data.p_mod[:, 0, :]
@@ -117,7 +117,7 @@ PATTERN = [-0.7067, 0.1947, -1.0346, 1.5467]
 scan = CentralBosonAGPDisorderScan.from_pattern(
     [0, 60], PATTERN, photon_sector_number=2, direction=7, swap_stors=STORS,
     cycles=list(range(0, 100, 10)), calibration=calibration, notes="AGP layers check, low depth")
-scan.acquire(runner, batch_size=3, reps=100, log=False, show=False)
+scan.acquire(runner, batch_size=3, reps=100, show=False)
 scan.analyze()
 scan_manifest = scan.save()
 print("scan manifest:", scan_manifest)
