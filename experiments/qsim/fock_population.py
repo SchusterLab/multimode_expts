@@ -283,8 +283,8 @@ class FockPopulationExperiment(MultiparityQsimExperiment):
             ax.fill_between(cycles, mean - error, mean + error, alpha=.3, lw=0)
         expt = self.cfg.expt
         name = Path(getattr(self, "fname", None) or type(self).__name__).name
-        ax.set(xlabel="Floquet cycles", ylabel=f"Mean n mod 4 ({kind})",
-               title=f"{list(expt.occupations)}, read {mode_name(expt.ro_stor)}: {name}")
+        ax.set(xlabel="Floquet cycles", ylabel=f"Mean n mod 4 ({kind})")
+        ax.set_title(f"{list(expt.occupations)}, read {mode_name(expt.ro_stor)}\n{name}", fontsize=9)
         fig.tight_layout()
         return fig, ax
 
