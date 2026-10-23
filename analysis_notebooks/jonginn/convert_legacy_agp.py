@@ -13,21 +13,23 @@
 # ---
 
 # %% [markdown]
-# # Legacy AGP conversion — 원본은 읽기만 합니다
+# # Legacy AGP conversion: read-only source files
 #
-# pippin의 repo 환경에서 Jupytext notebook으로 열고 위에서부터 실행합니다.
-# SSH, station, runner, worker, 측정 장비는 사용하지 않습니다.
+# Open this file as a Jupytext notebook in the repo environment on pippin
+# and run the cells from top to bottom. No SSH, station, runner, worker,
+# or measurement hardware is used.
 #
-# 1. 지정한 legacy 파일을 읽고 목록과 원본 SHA-256을 확인합니다.
-# 2. 준비 상태별 네 JOB을 새 confusion-matrix 파일 하나로 변환합니다.
-# 3. occupation별 15 JOB을 disorder별 새 CentralBosonAGPExperiment로 변환합니다.
-# 4. coarse/fine 각각을 assemble하고 color map을 표시합니다.
+# 1. Read the listed legacy files, inspect the inventory, and hash the sources.
+# 2. Convert four prepared-state JOBs into one new confusion-matrix file.
+# 3. Convert 15 occupation JOBs per disorder into one CentralBosonAGPExperiment.
+# 4. Assemble coarse and fine scans separately and display their color maps.
 #
-# 원본 HDF5는 항상 `r`, 결과 HDF5는 항상 `x`로 엽니다. 기존 파일에는
-# 덮어쓰지 않습니다. 모든 원본 dataset/group/attribute는 새 파일의
-# `legacy_jobs/0000`, ... 안에 보존합니다. 새 분석 결과는 최상위에 저장합니다.
-# calibration은 각 측정에 연결된 변환본을 사용합니다. AGP 적분, T1 보정,
-# matrix-pencil fitting, calibration 통계 오차 전파는 추가하지 않습니다.
+# Source HDF5 files are always opened with `r`; output files use `x` and never
+# overwrite existing files. Every original dataset, group, and attribute is
+# preserved under `legacy_jobs/0000`, ... in the new file. New analysis results
+# are stored at the root. Each scan uses its associated converted calibration.
+# No AGP integral, T1 correction, matrix-pencil fitting, or calibration
+# statistical error propagation is added.
 
 # %% tags=["definitions"]
 from copy import deepcopy
@@ -51,12 +53,13 @@ from experiments.qsim.qsim_base import readout_lane_count, saved_readout_mode
 
 
 # %% [markdown]
-# ## 첨부 목록의 파일 연결
+# ## File associations from the supplied catalog
 #
-# 날짜와 번호는 제공된 목록을 명시적으로 옮겼습니다. 디렉터리 검색이나
-# 파일 순서로 준비 상태·occupation·calibration을 추측하지 않습니다.
-# Fine W=90은 10/17과 10/18에 걸쳐 있습니다. Fine W=0은 10/19의 별도
-# calibration을 사용하지만 최종 fine scan에는 다른 W들과 함께 들어갑니다.
+# Dates and JOB numbers are listed explicitly from the supplied catalog.
+# Prepared states, occupations, and calibrations are not inferred from
+# directory searches or file order. Fine W=90 spans Oct17 and Oct18.
+# Fine W=0 uses a separate Oct19 calibration and joins the other fine scans
+# in the final assembled file.
 
 # %% tags=["definitions"]
 def job_files(raw_dir, day, numbers):
@@ -112,11 +115,11 @@ def legacy_groups(raw_dir):
 
 
 # %% [markdown]
-# ## 읽기, 배열 배치와 새 파일 저장
+# ## Reading, arranging arrays, and writing new files
 #
-# 다음 함수들은 메모리에서 분석용 배열의 순서와 모양을 맞춥니다.
-# hardware/pulse 설정은 바꾸지 않습니다. 새 cfg의 occupation/sweep 축은
-# 합쳐진 배열의 구조를 나타내며, 각 원본 cfg는 archive에 그대로 남습니다.
+# These functions reorder and reshape analysis arrays in memory without
+# changing hardware or pulse settings. The new cfg's occupation and sweep
+# axes describe the combined layout; every original cfg remains in the archive.
 
 # %% tags=["definitions"]
 def read_legacy_job(fname):
@@ -200,11 +203,11 @@ def write_converted(fname, experiment, jobs):
 
 
 # %% [markdown]
-# ## Calibration과 AGP 변환
+# ## Calibration and AGP conversion
 #
-# Calibration의 행은 `occupations[0]`으로 결정합니다. AGP의 행은 저장된
-# occupation을 현재 `generate_fock_strings()`의 순서에 맞춥니다.
-# 입력 파일 순서가 새 클래스의 순서와 달라도 올바른 상태로 연결됩니다.
+# Calibration rows are identified by `occupations[0]`. AGP rows are matched
+# by their saved occupations to the current `generate_fock_strings()` order.
+# Input file order may differ from the new class's state order.
 
 # %% tags=["definitions"]
 def convert_calibration(fnames, output_fname):
@@ -263,12 +266,13 @@ def convert_agp(fnames, calibration_fname, output_fname, disorder_khz, direction
 
 
 # %% [markdown]
-# ## 원본 보존과 분석 결과 검증
+# ## Verifying source preservation and analysis results
 #
-# 원본을 하나씩 분류한 확률과 변환 후 확률을 비교합니다. 다시 불러와 분석한
-# 결과도 같아야 하며, 모든 원본 dataset/group/attribute가 archive에 있어야 합니다.
-# 과거 n_err에 calibration 통계 오차가 포함되어 있다면 현재의 shot-only n_err와
-# 같을 필요는 없습니다. 과거 값도 archive에 보존됩니다.
+# Compare probabilities classified from individual source files with the
+# converted probabilities. Reloading and reanalysis must give the same results,
+# and every original dataset, group, and attribute must be present in the archive.
+# A legacy n_err that includes calibration uncertainty need not match the current
+# shot-only n_err. Legacy values are preserved in the archive.
 
 # %% tags=["definitions"]
 def assert_same_hdf5(source, copied):
@@ -354,11 +358,11 @@ def inspect_inputs(groups):
 
 
 # %% [markdown]
-# ## 실행 설정
+# ## Run settings
 #
-# 여기부터는 pippin의 원본 파일이 필요합니다. 실행마다 새 출력 폴더를
-# 사용합니다. 같은 이름의 파일이 있으면 덮어쓰지 않고 중단합니다.
-# 기존 data 디렉터리는 입력으로만 사용합니다.
+# The remaining cells require the original files on pippin. Each run uses new
+# output directories. An existing output filename stops conversion instead of
+# being overwritten. The original data directory is used only as an input.
 
 # %% tags=["settings"]
 EXPERIMENT_ROOT = Path(r'C:\experiments\agp_k44_first_scan')
@@ -399,11 +403,11 @@ conversion_checks = [verify_converted(fname) for fname in converted_files]
 display(pd.DataFrame(conversion_checks))
 
 # %% [markdown]
-# ## Assembled data와 color map
+# ## Assembled data and color maps
 #
-# Disorder 사이의 cycle 축 일치 검사는 CentralBosonAGPDisorderScan이 담당합니다.
-# Fine W=0의 calibration은 별도로 유지합니다. 각 새 AGP의 전체 내용이
-# assembled HDF5의 children에 들어가며, 그 안의 legacy_jobs도 보존됩니다.
+# CentralBosonAGPDisorderScan checks that cycle axes agree across disorder values.
+# Fine W=0 retains its separate calibration. Each converted AGP is copied in full
+# into the assembled HDF5's children group, including its legacy_jobs archive.
 
 # %% tags=["assemble"]
 assembled_files = {}
