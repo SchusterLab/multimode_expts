@@ -140,6 +140,16 @@ def test_full_notebook_preserves_192_sources_and_corrects_all_17_outputs(noteboo
     assert len(ns['conversion_checks']) == 15
     for fname in sources:
         assert ns['file_sha256'](fname) == before[fname]
+    for fname in ns['converted_files']:
+        with h5py.File(fname, 'r') as saved:
+            assert 'legacy_jobs' not in saved and 'old_analysis' not in saved
+            assert 'idata' in saved and 'qdata' in saved
+            originals = json.loads(saved.attrs['converted_from'])
+            assert all(Path(original) in sources for original in originals)
+            for key in ['idata', 'qdata']:
+                expected_shots = np.concatenate([ns['read_legacy_job'](original)['data'][key]
+                                                 for original in originals])
+                np.testing.assert_array_equal(saved[key][()], expected_shots)
 
     for name, fname in ns['converted_calibrations'].items():
         calibration = ns['MultiParityConfusionMatrixExperiment'].from_h5file(fname)
@@ -174,10 +184,18 @@ def test_full_notebook_preserves_192_sources_and_corrects_all_17_outputs(noteboo
         np.testing.assert_array_equal(scan.data['disorder_khz'], disorders)
         assert scan.data['nmod4_ensemble_averaged_correlation_corrected'].shape == (len(disorders), len(scan.data['cycles']))
         with h5py.File(scan.fname, 'r') as saved:
+            assert 'idata' not in saved and 'qdata' not in saved
             assert len(saved['children']) == len(disorders)
             for child in saved['children'].values():
-                assert len(child['legacy_jobs']) == 15
-                assert 'old_analysis/trace' in child['legacy_jobs/0000']
+                assert 'legacy_jobs' not in child
+                assert len(json.loads(child.attrs['converted_from'])) == 15
+                assert child['idata'].shape == child['qdata'].shape == (15 * len(scan.data['cycles']), 160)
+            shot_paths = []
+            saved.visititems(lambda path, item: shot_paths.append(path)
+                             if isinstance(item, h5py.Dataset)
+                             and path.rsplit('/', 1)[-1] in ('idata', 'qdata') else None)
+            assert len(shot_paths) == 2 * len(disorders)
+            assert all(path.startswith('children/') for path in shot_paths)
         previous = deepcopy(scan.data)
         scan.analyze()  # Rebuild from embedded children, not from the original paths.
         for key, value in previous.items():
