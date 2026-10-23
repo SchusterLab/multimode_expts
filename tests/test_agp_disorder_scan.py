@@ -97,7 +97,14 @@ def assert_h5_contents_equal(source, copied):
                 np.testing.assert_array_equal(other.attrs[attribute], item.attrs[attribute])
 
 
-def test_collects_sorted_jobs_and_keeps_each_jobs_correction(jobs):
+def test_collects_sorted_jobs_and_keeps_each_jobs_correction(jobs, monkeypatch):
+    read_dataset = h5py.Dataset.__getitem__
+
+    def read_results_only(dataset, *args, **kwargs):
+        assert dataset.name not in ('/idata', '/qdata'), 'assembly must not read raw shots'
+        return read_dataset(dataset, *args, **kwargs)
+
+    monkeypatch.setattr(h5py.Dataset, '__getitem__', read_results_only)
     scan = CentralBosonAGPDisorderScan(jobs)
     data = scan.analyze()
     assert data is scan.data
@@ -106,12 +113,12 @@ def test_collects_sorted_jobs_and_keeps_each_jobs_correction(jobs):
     np.testing.assert_array_equal(data['disorder_khz'], [0., 20., 40.])
     np.testing.assert_array_equal(data['cycles'], [0, 2, 5])
     np.testing.assert_array_equal(data['detunings'], [[0.], [.02], [.04]])
-    assert data['idata'].shape == (3, 6, 80)
+    assert 'idata' not in data and 'qdata' not in data
     assert data['p_mod0'].shape == (3, 2, 3)
     assert data['unfamiliar_numeric_data'].dtype == np.uint16
     for index, fname in enumerate(ordered):
         with h5py.File(fname, 'r') as saved:
-            for key in ['idata', 'qdata', 'p_mod0', 'n_err', 'confusion_matrix',
+            for key in ['p_mod0', 'n_err', 'confusion_matrix',
                         'unfamiliar_numeric_data', *scan.correlation_keys,
                         *[f'{key}_corrected' for key in scan.correlation_keys]]:
                 np.testing.assert_array_equal(data[key][index], saved[key][()])
@@ -127,6 +134,7 @@ def test_saves_all_child_contents_and_attributes_without_changing_inputs(jobs, t
     assert output == scan.fname == str((tmp_path / 'assembled.h5').resolve())
     with h5py.File(output, 'r') as saved:
         assert 'scan' not in saved and 'assembled' not in saved and 'processed' not in saved
+        assert 'idata' not in saved and 'qdata' not in saved
         assert saved.attrs['notes'] == scan.notes
         assert json.loads(saved.attrs['source_files']) == scan.fnames
         assert list(saved['children']) == ['0000', '0001', '0002']
@@ -146,6 +154,7 @@ def test_bundle_can_reanalyze_display_and_resave_after_originals_are_removed(job
         path.unlink()
     loaded = CentralBosonAGPDisorderScan.from_h5file(first)
     assert loaded.fnames == scan.fnames
+    assert 'idata' not in loaded.data and 'qdata' not in loaded.data
     for key in scan.data:
         np.testing.assert_array_equal(loaded.data[key], scan.data[key])
     reanalyzed = loaded.analyze()
@@ -157,6 +166,7 @@ def test_bundle_can_reanalyze_display_and_resave_after_originals_are_removed(job
     loaded.data['new_processed_result'] = np.arange(3.)
     second = loaded.save_data(tmp_path / 'second.h5')
     with h5py.File(first, 'r') as original, h5py.File(second, 'r') as copied:
+        assert 'idata' not in copied and 'qdata' not in copied
         assert_h5_contents_equal(original['children'], copied['children'])
         np.testing.assert_array_equal(copied['new_processed_result'][()], np.arange(3.))
     # The original in-memory collector also switches to its saved snapshots.
@@ -170,7 +180,7 @@ def test_ragged_and_child_specific_data_is_not_lost(tmp_path):
         saved['only_in_first_job'] = np.array([6, 7, 8])
     scan = CentralBosonAGPDisorderScan([first, second])
     output = scan.save_data(tmp_path / 'ragged.h5')
-    assert 'idata' not in scan.data  # Different shot counts cannot form a dense stack.
+    assert 'idata' not in scan.data and 'qdata' not in scan.data
     with h5py.File(output, 'r') as saved:
         assert saved['children/0000/idata'].shape == (6, 48)
         assert saved['children/0001/idata'].shape == (6, 96)
