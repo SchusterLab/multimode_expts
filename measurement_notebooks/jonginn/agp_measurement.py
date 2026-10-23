@@ -21,9 +21,10 @@
 # Pass the calibration HDF5 filename so corrected populations and moments are saved
 # with each measurement. Plot the saved results directly.
 #
-# One calibration JOB prepares Fock 0..3. One AGP JOB sweeps all selected occupations
-# and cycles for one disorder strength and initial-state direction. The final cells
-# collect those AGP files into a disorder scan with complete child data.
+# One calibration JOB prepares Fock 0..3. Each FockPopulationExperiment JOB measures
+# one occupation and read mode over cycles. AGP classes orchestrate those JOBs from
+# this notebook and assemble their moments into C1/C2; they do not run on the worker.
+# Assembled HDF5s contain their own arrays, with manifests pointing to the layer below.
 # ro_stor=0 selects M1; positive values are physical storage IDs.
 
 # %% tags=["imports"]
@@ -36,9 +37,8 @@ from IPython.display import display
 from slab import AttrDict
 
 from experiments import CharacterizationRunner, MultimodeStation
-from experiments.qsim.agp import CentralBosonAGPDisorderScan, CentralBosonAGPExperiment
-from experiments.qsim.fock_population import FockPopulationProgram
-from experiments.qsim.multiparity import MultiparityQsimExperiment
+from experiments.qsim.agp import CentralBosonAGPDisorderScan
+from experiments.qsim.fock_population import FockPopulationExperiment
 from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
 from experiments.qsim.notebook_helpers.defaults import ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS
 from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
@@ -52,12 +52,10 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {
-    "hardware_config": "CFG-HW-20261019-00058",
-    "multiphoton_config": "CFG-MP-20260121-00001",
-    "man1_storage_swap": "CFG-M1-20261019-00001",
-    "floquet_storage_swap": "CFG-FL-20261017-00034",
-}
+config_dict = {'hardware_config': 'CFG-HW-20261023-00012',
+ 'multiphoton_config': 'CFG-MP-20260121-00001',
+ 'man1_storage_swap': 'CFG-M1-20261023-00003',
+ 'floquet_storage_swap': 'CFG-FL-20261023-00001'}
 
 client = JobClient()
 health = client.health_check()
@@ -96,7 +94,6 @@ population_defaults = AttrDict(dict(
     common_defaults, prepulse=False, occupations=[3, 0, 0, 0, 0],
     floquet_cycles=[0], swept_params=["floquet_cycle"],
 ))
-agp_defaults = AttrDict(dict(common_defaults, prepulse=False))
 
 # %% tags=["runners"]
 confusion_matrix_runner = CharacterizationRunner(
@@ -110,18 +107,8 @@ confusion_matrix_runner = CharacterizationRunner(
 
 population_runner = CharacterizationRunner(
     station=station,
-    ExptClass=MultiparityQsimExperiment,
-    ExptProgram=FockPopulationProgram,
+    ExptClass=FockPopulationExperiment,
     default_expt_cfg=population_defaults,
-    job_client=client,
-    use_queue=True,
-    show=False,
-)
-
-agp_runner = CharacterizationRunner(
-    station=station,
-    ExptClass=CentralBosonAGPExperiment,
-    default_expt_cfg=agp_defaults,
     job_client=client,
     use_queue=True,
     show=False,
@@ -152,7 +139,7 @@ CONFUSION_MATRIX_FNAME = str(calibration_expt.fname)
 #
 # Each measured mode uses a fresh preparation and a separate JOB. The worker
 # saves raw and corrected populations, mean n mod 4, and shot errors through
-# MultiparityQsimExperiment.analyze(). postpulse=True swaps the selected storage
+# FockPopulationExperiment.analyze(). postpulse=True swaps the selected storage
 # into M1 before readout.
 
 # %% tags=["walk_settings"]
@@ -252,65 +239,65 @@ walk_fig.tight_layout()
 display(walk_fig)
 
 # %% [markdown]
-# ## 4. Central-boson occupation-by-cycle measurements
+# ## 4. Central-boson population JOBs and correlations
 #
-# One JOB per disorder strength and direction. CentralBosonAGPExperiment generates
-# the fixed-photon-number occupations internally and excludes states with zero
-# photons in the selected direction. Here ro_stor=direction measures autocorrelations;
+# One population JOB per selected occupation, disorder strength and direction.
+# from_pattern() plans the fixed-photon-number occupations, excluding states with
+# zero photons in the selected direction. acquire() submits them through the
+# population runner in batches. Here ro_stor=direction measures autocorrelations;
 # direction=0 selects M1 and other values are physical IDs in STORAGE_MODES.
 #
-# analyze() saves first and second moments and their ensemble-averaged two-time
-# correlations. No Matrix Pencil fit or AGP norm is calculated in this notebook.
+# Each JOB saves first and second moments. scan.analyze() combines them into
+# ensemble-averaged C1 and C2 correlations. No Matrix Pencil fit or AGP norm is
+# calculated in this notebook.
 
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
 AGP_DIRECTIONS = [7]
 DISORDER_RMS_KHZ = [0]
-AGP_REPS = 500
-AGP_CYCLES = list(range(0, 400, 1))
+AGP_REPS = 300
+AGP_CYCLES = list(range(0, 800, 5))
+AGP_BATCH_SIZE = 1
 
 DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
 DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)
-pattern_rms = np.sqrt(np.mean(DISORDER_PATTERN**2))
-if pattern_rms > 0:
-    DISORDER_PATTERN /= pattern_rms
-if any(value != 0 for value in DISORDER_RMS_KHZ) and pattern_rms == 0:
-    raise ValueError("Nonzero disorder needs a nonconstant DISORDER_PATTERN.")
+# from_pattern() normalizes the pattern to unit RMS before scaling by W.
 
 # %% tags=["agp_acquire"]
-scan_expts = {direction: [] for direction in AGP_DIRECTIONS}
+disorder_scans = {}
 for direction in AGP_DIRECTIONS:
-    for disorder_khz in DISORDER_RMS_KHZ:
-        scan_expt = agp_runner.execute(
-            reps=AGP_REPS,
-            photon_sector_number=TOTAL_PHOTONS,
-            direction=direction,
-            ro_stor=direction,
-            swap_stors=STORAGE_MODES,
-            storage_reset=STORAGE_MODES,
-            detunings=(0.001 * disorder_khz * DISORDER_PATTERN).tolist(),
-            disorder_khz=float(disorder_khz),
-            floquet_cycles=AGP_CYCLES,
-            multiparity_confusion_matrix=CONFUSION_MATRIX_FNAME,
-            postprocess=False, show=False, log=False,
-        )
-        scan_expts[direction].append(scan_expt)
-        print(f"Direction {direction}, W={disorder_khz:g} kHz: {scan_expt.fname}")
-        print("Occupations:", scan_expt.data["occupations"].shape,
-              "cycles:", len(scan_expt.data["xpts"]))
+    scan = CentralBosonAGPDisorderScan.from_pattern(
+        DISORDER_RMS_KHZ, DISORDER_PATTERN,
+        photon_sector_number=TOTAL_PHOTONS,
+        direction=direction,
+        ro_stor=direction,
+        swap_stors=STORAGE_MODES,
+        cycles=AGP_CYCLES,
+        calibration=CONFUSION_MATRIX_FNAME,
+        notes=f"Central-boson correlations, direction {direction}",
+    )
+    scan.acquire(
+        population_runner, batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
+        storage_reset=STORAGE_MODES, postprocess=False, show=False, log=False,
+    )
+    scan.analyze()
+    disorder_scans[direction] = scan
+    for part in scan.children:
+        print(f"Direction {direction}, W={part.disorder_khz:g} kHz: "
+              f"{len(part.children)} population JOBs, {len(part.cycles)} cycles")
 
 # %% tags=["agp_display"]
 raw = False  # True selects uncorrected correlations.
 suffix = "" if raw else "_corrected"
-for direction, expts in scan_expts.items():
+for direction, scan in disorder_scans.items():
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True)
     for axis, key, moment in [
-        (axes[0], "nmod4_ensemble_averaged_correlation", 1),
-        (axes[1], "nmod4_second_moment_ensemble_averaged_correlation", 2),
+        (axes[0], "C1", 1),
+        (axes[1], "C2", 2),
     ]:
-        for expt in expts:
-            axis.plot(expt.data["xpts"], expt.data[key + suffix],
-                      label=f"W={expt.cfg.expt.disorder_khz:g} kHz")
+        for part in scan.children:
+            axis.plot(part.data["cycles"], part.data[key + suffix],
+                      label=f"W={part.disorder_khz:g} kHz")
         axis.set(xlabel="Floquet cycles", ylabel="Ensemble-averaged correlation",
                  title=f"Direction {direction}, moment {moment} ({'raw' if raw else 'corrected'})")
         axis.legend()
@@ -318,26 +305,20 @@ for direction, expts in scan_expts.items():
     plt.show()
 
 # %% [markdown]
-# ## 5. Assemble disorder scans
+# ## 5. Save the assembled layers
 #
-# Each direction has a separate bundle. The assembler checks cycle axes and
-# measurement settings, keeps each JOB's correction, and copies complete AGP
-# children into a new HDF5. The root contains axes and results without duplicate
-# idata/qdata. save_data() writes a new file under the experiment's assembled_data.
+# Each direction has its own scan. save() writes each unsaved AGP part and then
+# the disorder scan under the experiment's assembled_data directory. Each layer
+# stores only its arrays in HDF5 and a YAML manifest pointing to the layer below.
+# Shots remain in the original population JOB files.
 #
-# To inspect a saved bundle later, use
-# CentralBosonAGPDisorderScan.from_h5file("path/to/assembled.h5").
+# Use from_h5file("path/to/scan.h5") for an arrays-only view, or
+# from_manifest("path/to/scan.yaml") to load the layers for reanalysis.
 
 # %% tags=["assemble"]
-disorder_scans = {}
-for direction, expts in scan_expts.items():
-    scan = CentralBosonAGPDisorderScan(
-        [expt.fname for expt in expts], notes=f"Central-boson correlations, direction {direction}",
-    )
-    scan.analyze()
-    scan.save_data()
-    disorder_scans[direction] = scan
-    print(f"Direction {direction}: {scan.fname}")
+for direction, scan in disorder_scans.items():
+    manifest_path = scan.save()
+    print(f"Direction {direction}: {manifest_path}")
 
 # %% tags=["disorder_display"]
 for scan in disorder_scans.values():
