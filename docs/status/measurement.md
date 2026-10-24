@@ -10,10 +10,9 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 ## What is next
 
 - **Error amplification: `analyze()` gets `state_fin` from the pulse type, `periodic=False` by
-  default (2026-10-24, `docs/log/2026-10-24_error-amp-final-state.md`).** In the `main` checkout,
-  not committed; the worker uses it already. With custom `pre_sweep_pulse` / `post_sweep_pulse`,
-  set `state_fin` in the expt config (else a warning and no fit). **Next:** commit after guan's
-  review.
+  default (2026-10-24, `docs/log/2026-10-24_error-amp-final-state.md`).** On `main` (commit
+  635d2f8); the worker uses it. With custom `pre_sweep_pulse` / `post_sweep_pulse`, set
+  `state_fin` in the expt config (else a warning and no fit).
 - **Population jobs and AGP data in three layers, on `main` since 2026-10-23**
   (`docs/log/2026-10-23_agp-population-layers.md`). Job: `FockPopulationExperiment` (one state,
   one read mode, a cycle sweep, a few minutes; shots and raw + corrected moments). Assembled:
