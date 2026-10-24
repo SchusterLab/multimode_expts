@@ -248,16 +248,17 @@ display(walk_fig)
 # direction=0 selects M1 and other values are physical IDs in STORAGE_MODES.
 #
 # Each JOB saves first and second moments. scan.analyze() combines them into
-# ensemble-averaged C1 and C2 correlations. No Matrix Pencil fit or AGP norm is
-# calculated in this notebook.
+# sector-averaged C1/C2 and integrates C1 with the AGP kernel over the measured
+# time window. The stored agp is g^2 ||A_mu||^2, without a fit or decay correction.
 
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
 AGP_DIRECTIONS = [7]
 DISORDER_RMS_KHZ = [0]
-AGP_REPS = 300
-AGP_CYCLES = list(range(0, 800, 5))
-AGP_BATCH_SIZE = 1
+AGP_REPS = 500
+AGP_CYCLES = list(range(0, 400, 1))
+AGP_BATCH_SIZE = 3
+AGP_MU_KHZ = None  # None: g * L / D; set e.g. 5.915 to choose mu explicitly.
 
 DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
 DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)
@@ -280,7 +281,7 @@ for direction in AGP_DIRECTIONS:
         population_runner, batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
         storage_reset=STORAGE_MODES, postprocess=False, show=False, log=False,
     )
-    scan.analyze()
+    scan.analyze(mu=AGP_MU_KHZ)
     disorder_scans[direction] = scan
     for part in scan.children:
         print(f"Direction {direction}, W={part.disorder_khz:g} kHz: "
@@ -304,12 +305,18 @@ for direction, scan in disorder_scans.items():
     fig.tight_layout()
     plt.show()
 
+# %% tags=["agp_integral_display"]
+for scan in disorder_scans.values():
+    scan.display()
+    plt.show()
+
 # %% [markdown]
 # ## 5. Save the assembled layers
 #
 # Each direction has its own scan. save() writes each unsaved AGP part and then
 # the disorder scan under the experiment's assembled_data directory. Each layer
-# stores only its arrays in HDF5 and a YAML manifest pointing to the layer below.
+# stores its arrays (including agp or agp_list) in HDF5 and a YAML manifest
+# pointing to the layer below. The used mu is stored beside each AGP value.
 # Shots remain in the original population JOB files.
 #
 # Use from_h5file("path/to/scan.h5") for an arrays-only view, or
@@ -323,6 +330,6 @@ for direction, scan in disorder_scans.items():
 # %% tags=["disorder_display"]
 for scan in disorder_scans.values():
     for moment in (1, 2):
-        fig, axis = scan.display(moment=moment, raw=False)
+        fig, axis = scan.display_correlation(moment=moment, raw=False)
         plt.show()
         plt.close(fig)
