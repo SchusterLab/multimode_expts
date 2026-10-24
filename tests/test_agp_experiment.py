@@ -1,7 +1,10 @@
 """CentralBosonAGPExperiment: the direction sector, C_1 and C_2, and its save lifecycle."""
+import json
+import h5py
 import matplotlib
 import numpy as np
 import pytest
+from scipy.integrate import trapezoid
 import yaml
 
 matplotlib.use("Agg")
@@ -68,13 +71,19 @@ def test_correlations_match_operator_trace_for_unitary_dynamics(tmp_path):
 
 
 @pytest.mark.parametrize("confusion", [None, CONFUSION])
-def test_correlations_and_errors_from_the_moments(tmp_path, confusion):
+@pytest.mark.parametrize("mu", [None, 5.915])
+def test_correlations_and_errors_from_the_moments(tmp_path, confusion, mu):
     rng = np.random.default_rng(4)
     states = direction_sector(2, [4, 7], 7)
     labels = {tuple(state): random_labels(rng, CYCLES) for state in states}
     agp = CentralBosonAGPExperiment.from_children(
         sector_jobs(tmp_path, labels, [4, 7], 7, confusion=confusion), direction=7)
-    data = agp.analyze()
+    # Only the active links (S4, S7) define g; unequal/signed/zero links are allowed.
+    for child in agp.children:
+        params = child.recorded_derived_params()
+        params["couplings_MHz"] = [1., 1., 1., -.02, 1., 1., 0.]
+        child.data["attrs"]["derived_params"] = json.dumps(params)
+    data = agp.analyze(mu=mu)
     initial = np.array([state[2] for state in states], dtype=float)
     dimension = sector_dimension(2, 3)
     suffix = "" if confusion is None else "_corrected"
@@ -85,6 +94,15 @@ def test_correlations_and_errors_from_the_moments(tmp_path, confusion):
         variance = sum(w**2 * row**2 for w, row in zip(weights, data[error]))
         np.testing.assert_allclose(data[f"C{k}_err"], np.sqrt(variance))
         assert (f"C{k}_corrected" in data) == (confusion is not None)
+    # Independent kernel calculation checks kHz/us units, normalization and C1 selection.
+    g_khz = 10.  # mean(|-20 kHz|, |0 kHz|); inactive links do not contribute.
+    cutoff = g_khz * 3 / dimension if mu is None else mu
+    tau = 1000 / (2 * np.pi * cutoff)
+    times = data["time_us"]
+    kernel = tau / 2 * (1 - times / tau) * np.exp(-times / tau)
+    expected = (2 * np.pi * g_khz / 1000)**2 * trapezoid(kernel * data[f"C1{suffix}"], x=times)
+    assert data["agp_mu"] == pytest.approx(cutoff)
+    assert data["agp"] == pytest.approx(expected)
     agp.display()
 
 
@@ -116,11 +134,14 @@ def test_acquire_save_and_reload_keep_direction_and_disorder(tmp_path):
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["parameters"]["direction"] == 7
     assert len(manifest["raw_files"]) == 3
+    with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
+        assert handle["agp"][()] == pytest.approx(agp.data["agp"])
+        assert handle["agp_mu"][()] == pytest.approx(agp.data["agp_mu"])
 
     reloaded = CentralBosonAGPExperiment.from_manifest(manifest_path)
     assert reloaded.direction == 7 and reloaded.disorder_khz == pytest.approx(agp.disorder_khz)
     reloaded.analyze()
-    for key in ["C1", "C2", "C1_corrected", "C2_corrected", "C1_err"]:
+    for key in ["C1", "C2", "C1_corrected", "C2_corrected", "C1_err", "agp", "agp_mu"]:
         np.testing.assert_allclose(reloaded.data[key], agp.data[key])
     view = CentralBosonAGPExperiment.from_h5file(manifest_path.with_suffix(".h5"))
     view.display()
@@ -130,3 +151,7 @@ def test_read_mode_may_differ_from_direction(tmp_path):
     agp = CentralBosonAGPExperiment(2, 7, [4, 7], CYCLES, [0., 0.], ro_stor=4)
     assert {mode for _, mode in agp.entries} == {4}
     assert all(occupation[2] > 0 for occupation, _ in agp.entries)
+    agp.acquire(FakeRunner(tmp_path / "data"))
+    with pytest.warns(UserWarning):
+        data = agp.analyze()
+    assert "C1" in data and "C2" in data and "agp" not in data

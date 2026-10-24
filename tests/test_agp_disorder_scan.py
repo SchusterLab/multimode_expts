@@ -46,10 +46,12 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
         assert all(isinstance(child, FockPopulationExperiment) for child in part.children)
         assert {tuple(child.cfg.expt.detunings) for child in part.children} == {tuple(part.detunings)}
 
-    data = scan.analyze()
+    data = scan.analyze(mu=5.915)
     assert data["C1"].shape == (3, 4) and data["C1_corrected"].shape == (3, 4)
     np.testing.assert_array_equal(data["disorder_khz"], [0, 30, 60])
     assert data["detunings"].shape == (3, 2)
+    np.testing.assert_allclose(data["agp_list"], [part.data["agp"] for part in scan.children])
+    np.testing.assert_allclose(data["agp_mu_list"], [5.915] * 3)
 
     manifest_path = scan.save()
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
@@ -58,17 +60,27 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     assert manifest["parameters"]["disorder_khz"] == [0, 30, 60]
     with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
         assert set(handle) == {"disorder_khz", "cycles", "detunings", "time_us", "C1", "C2",
-                               "C1_err", "C2_err", "C1_corrected", "C2_corrected"}
+                               "C1_err", "C2_err", "C1_corrected", "C2_corrected",
+                               "agp_list", "agp_mu_list"}
 
     reloaded = CentralBosonAGPDisorderScan.from_manifest(manifest_path)
-    reloaded.analyze()
+    reloaded.analyze(mu=5.915)
     for key, value in data.items():
         np.testing.assert_allclose(reloaded.data[key], value)
     view = CentralBosonAGPDisorderScan.from_h5file(manifest_path.with_suffix(".h5"))
     for moment in (1, 2):
         for raw in (False, True):
-            fig, ax = view.display(moment=moment, raw=raw)
+            fig, ax = view.display_correlation(moment=moment, raw=raw)
             assert ("corrected" in ax.get_title()) != raw
+            matplotlib.pyplot.close(fig)
+    fig, ax = view.display()
+    assert ax.get_xscale() == ax.get_yscale() == "linear"
+    np.testing.assert_array_equal(ax.lines[0].get_xdata(), [0, 30, 60])
+    np.testing.assert_allclose(ax.lines[0].get_ydata(), data["agp_list"])
+    matplotlib.pyplot.close(fig)
+
+    updated = scan.analyze()
+    assert not np.allclose(updated["agp_list"], data["agp_list"])
 
 
 def test_saved_parts_combine_without_saving_them_again(tmp_path):
@@ -104,4 +116,4 @@ def test_display_needs_one_part_per_w(tmp_path):
     scan.acquire(FakeRunner(tmp_path / "data"))
     scan.analyze()
     with pytest.raises(ValueError, match="one part per W"):
-        scan.display()
+        scan.display_correlation()
