@@ -12,15 +12,17 @@
 Each assembled layer writes a manifest YAML (the files of the layer below) and
 a small HDF5 with only its own arrays (``AssembledExperiment.save``). Load an
 HDF5 alone with ``from_h5file`` to look at it; ``from_manifest`` re-assembles
-from the layer below. No AGP integral, T1 correction or fitting is done here
-(see ``fitting/qsim/agp.py``).
+from the layer below. analyze() integrates C1 with the AGP kernel, without
+decay correction or fitting. analyze(mu=...) takes kHz; default is g L/D.
 """
 from itertools import product
 from math import comb
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
+from fitting.qsim.agp import finite_time_agp
 
 from experiments.assembled_data import AssembledExperiment
 from experiments.qsim.fock_population import (
@@ -114,7 +116,8 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         parameters = manifest["parameters"]
         return dict(direction=parameters["direction"], disorder_khz=parameters["disorder_khz"])
 
-    def analyze(self, **kwargs):
+    def analyze(self, mu=None, **kwargs):
+        """Build correlations and integrate C1; mu is in kHz (None: g L/D)."""
         super().analyze(**kwargs)
         modes = [0, *self.swap_stors]
         initial = self.data.occupations[:, modes.index(self.direction)].astype(float)
@@ -130,6 +133,24 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
                          direction=np.asarray(self.direction),
                          photon_sector_number=np.asarray(self.photon_sector_number),
                          sector_dimension=np.asarray(dimension))
+
+        # Use recorded coupling and the direction's existing autocorrelation.
+        job = self.children[0]
+        params = job.recorded_derived_params() or {}
+        if self.ro_stor != self.direction or "time_us" not in self.data or "couplings_MHz" not in params:
+            warnings.warn("AGP skipped: needs an autocorrelation and recorded timing/coupling.",
+                          stacklevel=2)
+            return self.data
+        couplings = np.asarray(params["couplings_MHz"])[np.asarray(self.swap_stors, dtype=int) - 1]
+        if not couplings.size or not np.all(np.isfinite(couplings)):
+            raise ValueError("AGP requires finite recorded couplings")
+        g_khz = 1000 * float(np.mean(np.abs(couplings)))
+        if mu is None:
+            mu = g_khz * len(modes) / dimension
+        correlation = self.data.get("C1_corrected", self.data["C1"])
+        result = finite_time_agp(self.data["time_us"], correlation, mu / 1000)
+        self.data["agp"] = float(result["values"] * (2 * np.pi * g_khz / 1000)**2)
+        self.data["agp_mu"] = float(mu)  # kHz; agp stores dimensionless g^2 ||A_mu||^2.
         return self.data
 
     def display(self, raw=False, **kwargs):
@@ -242,11 +263,10 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         self.data = {}
         return self.children
 
-    def analyze(self, **kwargs):
-        """Stack the parts' correlations; parts without them are analyzed first."""
+    def analyze(self, mu=None, **kwargs):
+        """Analyze every W with mu in kHz (None: g L/D) and collect results."""
         for part in self.children:
-            if "C1" not in part.data:
-                part.analyze()
+            part.analyze(mu=mu, **kwargs)
         parts = [part.data for part in self.children]
         data = dict(disorder_khz=np.asarray([part.disorder_khz for part in self.children]),
                     cycles=np.asarray(parts[0]["cycles"]),
@@ -258,10 +278,20 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             keys += ["C1_corrected", "C2_corrected"]
         for key in keys:
             data[key] = np.asarray([part[key] for part in parts])
+        if all("agp" in part for part in parts):
+            data["agp_list"] = [part["agp"] for part in parts]
+            data["agp_mu_list"] = [part["agp_mu"] for part in parts]
         self.data = AttrDict(data)
         return self.data
 
-    def display(self, moment=1, raw=False, **kwargs):
+    def display(self):
+        """Plot the measured kernel integral against disorder on linear axes."""
+        fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+        ax.plot(self.data["disorder_khz"], self.data["agp_list"], "o-")
+        ax.set(xlabel="Disorder RMS (kHz)", ylabel=r"$g^2\|A_\mu\|^2$")
+        return fig, ax
+
+    def display_correlation(self, moment=1, raw=False, **kwargs):
         """One correlation as a map: x = Floquet cycles, y = disorder W (kHz).
 
         Corrected when every part is corrected; ``raw=True`` selects raw.
