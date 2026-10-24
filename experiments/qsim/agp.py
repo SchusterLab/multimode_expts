@@ -34,17 +34,18 @@ from experiments.qsim.fock_population import (
 
 
 def direction_sector(photon_sector_number, swap_stors, direction):
-    """-> fixed-N occupations [n_M1, *swap_stors] with mode ``direction`` occupied.
+    """-> fixed-N occupations contributing to the selected AGP direction.
 
-    ``direction`` is 0 for M1 or a physical storage ID in ``swap_stors``.
+    ``direction`` is 0 for M1 Kerr (n_M1 >= 2), else a storage ID (n_s >= 1).
     The states are in ascending lexicographic order.
     """
     modes = [0, *swap_stors]
     if direction not in modes:
         raise ValueError(f"direction {direction} is not M1 (0) or one of {list(swap_stors)}")
     index = modes.index(direction)
+    minimum = 2 if direction == 0 else 1
     return [list(state) for state in product(range(photon_sector_number + 1), repeat=len(modes))
-            if sum(state) == photon_sector_number and state[index] > 0]
+            if sum(state) == photon_sector_number and state[index] >= minimum]
 
 
 def sector_dimension(photon_sector_number, mode_count):
@@ -61,12 +62,14 @@ def rms_khz(detunings):
 class CentralBosonAGPExperiment(FockPopulationSetExperiment):
     """The population jobs of one disorder strength, and their two-time correlations.
 
-    One job per fixed-N state |i> with the direction mode d occupied, all read
-    in mode r = ``ro_stor`` (default d). With D the full sector dimension,
+    One job per fixed-N state |i> with nonzero initial probe, all read in mode
+    r = ``ro_stor`` (default d). Direction 0 probes P = n_M1(n_M1-1)/2;
+    storage directions probe n_s. With O the selected probe and D the full sector,
 
-        C_k(t) = Tr_N[n_r^k(t) n_d^k(0)] / D = sum_i n_d,i^k <i|n_r^k(t)|i> / D,
+        C_k(t) = Tr_N[O(t)^k O(0)^k] / D,
 
-    for k = 1, 2. States with n_d = 0 add nothing and are not measured. The
+    for k = 1 (Kerr) or k = 1, 2 (storage). Kerr has no C1_err or C2 output.
+    States with zero initial probe are not measured. The
     moments are photon-number moments only while n <= 3 (multiparity reads n mod 4).
 
         agp = CentralBosonAGPExperiment(3, direction=7, swap_stors=[4, 5, 6, 7],
@@ -122,13 +125,20 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         modes = [0, *self.swap_stors]
         initial = self.data.occupations[:, modes.index(self.direction)].astype(float)
         dimension = sector_dimension(self.photon_sector_number, len(modes))
-        for k, moment in [(1, "n_mean"), (2, "n2_mean")]:
-            weights = initial**k / dimension
-            self.data[f"C{k}"] = weights @ self.data[moment]
-            if f"{moment}_corrected" in self.data:
-                self.data[f"C{k}_corrected"] = weights @ self.data[f"{moment}_corrected"]
-            error = self.data["n_err" if k == 1 else "n2_err"]
-            self.data[f"C{k}_err"] = np.sqrt(weights**2 @ error**2)
+        if self.direction == 0:
+            weights = initial * (initial - 1) / 2 / dimension
+            self.data["C1"] = weights @ (self.data["n2_mean"] - self.data["n_mean"]) / 2
+            if "n_mean_corrected" in self.data:
+                self.data["C1_corrected"] = weights @ (
+                    self.data["n2_mean_corrected"] - self.data["n_mean_corrected"]) / 2
+        else:
+            for k, moment in [(1, "n_mean"), (2, "n2_mean")]:
+                weights = initial**k / dimension
+                self.data[f"C{k}"] = weights @ self.data[moment]
+                if f"{moment}_corrected" in self.data:
+                    self.data[f"C{k}_corrected"] = weights @ self.data[f"{moment}_corrected"]
+                error = self.data["n_err" if k == 1 else "n2_err"]
+                self.data[f"C{k}_err"] = np.sqrt(weights**2 @ error**2)
         self.data.update(disorder_khz=np.asarray(self.disorder_khz),
                          direction=np.asarray(self.direction),
                          photon_sector_number=np.asarray(self.photon_sector_number),
@@ -170,9 +180,11 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         # The errors belong to the corrected values when there are some.
         with_error = corrected == ("C1_corrected" in self.data)
         for k in (1, 2):
+            if f"C{k}" not in self.data:
+                continue
             values = np.asarray(self.data[f"C{k}{suffix}"])
             bottom.plot(cycles, values, lw=1, label=f"C_{k}")
-            if with_error:
+            if with_error and f"C{k}_err" in self.data:
                 error = np.asarray(self.data[f"C{k}_err"])
                 bottom.fill_between(cycles, values - error, values + error, alpha=.3, lw=0)
         bottom.set(xlabel="Floquet cycles", ylabel=f"Correlation ({kind})")
@@ -277,7 +289,8 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         if all("C1_corrected" in part for part in parts):
             keys += ["C1_corrected", "C2_corrected"]
         for key in keys:
-            data[key] = np.asarray([part[key] for part in parts])
+            if all(key in part for part in parts):
+                data[key] = np.asarray([part[key] for part in parts])
         if all("agp" in part for part in parts):
             data["agp_list"] = [part["agp"] for part in parts]
             data["agp_mu_list"] = [part["agp_mu"] for part in parts]
