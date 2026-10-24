@@ -243,9 +243,9 @@ display(walk_fig)
 #
 # One population JOB per selected occupation, disorder strength and direction.
 # from_pattern() plans the fixed-photon-number occupations, excluding states with
-# zero photons in the selected direction. acquire() submits them through the
+# zero initial probe. acquire() submits them through the
 # population runner in batches. Here ro_stor=direction measures autocorrelations;
-# direction=0 selects M1 and other values are physical IDs in STORAGE_MODES.
+# direction=0 selects M1 Kerr, n_M1(n_M1-1)/2; other directions select storage number.
 #
 # Each JOB saves first and second moments. scan.analyze() combines them into
 # sector-averaged C1/C2 and integrates C1 with the AGP kernel over the measured
@@ -253,7 +253,7 @@ display(walk_fig)
 
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
-AGP_DIRECTIONS = [7]
+AGP_DIRECTIONS = [0]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
 DISORDER_RMS_KHZ = [0]
 AGP_REPS = 500
 AGP_CYCLES = list(range(0, 400, 1))
@@ -291,11 +291,11 @@ for direction in AGP_DIRECTIONS:
 raw = False  # True selects uncorrected correlations.
 suffix = "" if raw else "_corrected"
 for direction, scan in disorder_scans.items():
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharex=True)
-    for axis, key, moment in [
-        (axes[0], "C1", 1),
-        (axes[1], "C2", 2),
-    ]:
+    moments = (1, 2) if "C2" in scan.data else (1,)
+    fig, axes = plt.subplots(1, len(moments), figsize=(6 * len(moments), 4),
+                             sharex=True, squeeze=False)
+    for axis, moment in zip(axes[0], moments):
+        key = f"C{moment}"
         for part in scan.children:
             axis.plot(part.data["cycles"], part.data[key + suffix],
                       label=f"W={part.disorder_khz:g} kHz")
@@ -329,7 +329,8 @@ for direction, scan in disorder_scans.items():
 
 # %% tags=["disorder_display"]
 for scan in disorder_scans.values():
-    for moment in (1, 2):
+    moments = (1, 2) if "C2" in scan.data else (1,)
+    for moment in moments:
         fig, axis = scan.display_correlation(moment=moment, raw=False)
         plt.show()
         plt.close(fig)
