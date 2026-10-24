@@ -26,6 +26,8 @@
 
 # %% Cell 1: station on the s4s7 snapshots (measurement_notebooks/guan/mbr_s4s7_n2.py, the
 # config versions its 10-22 jobs ran with), and the population runner (its cell 8).
+# CFG-HW-20261023-00039: the s4s7 hardware config (0.25 mA) with seb's 10-23 readout
+# (CFG-HW-20261023-00036: 750.1 MHz, 1.5 us); the first run used CFG-HW-20261022-00017.
 import os
 from copy import deepcopy
 
@@ -35,12 +37,13 @@ from slab import AttrDict
 
 from experiments import CharacterizationRunner, MultimodeStation
 from experiments.qsim.agp import CentralBosonAGPDisorderScan
-from experiments.qsim.fock_population import FockPopulationExperiment, FockPopulationSetExperiment
+from experiments.qsim.fock_population import FockPopulationExperiment
+from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
 from experiments.qsim.notebook_helpers.defaults import ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS
 from job_server import JobClient
 
 config_dict = {
-    "hardware_config": "CFG-HW-20261022-00017",
+    "hardware_config": "CFG-HW-20261023-00039",
     "multiphoton_config": "CFG-MP-20260121-00001",
     "man1_storage_swap": "CFG-M1-20261020-00016",
     "floquet_storage_swap": "CFG-FL-20261017-00034",
@@ -81,6 +84,18 @@ runner = CharacterizationRunner(
     default_expt_cfg=population_defaults, job_client=client, use_queue=True, show=False,
 )
 
+# The calibration prepares Fock 0..3 in M1 with Qsim's prepulse: the same pulses as a
+# zero-cycle population job (compiled programs differ only by a 0.1 us wait, 2026-10-23).
+POPULATION_ONLY = ("expts", "occupations", "use_multiphoton_swap", "storage_pulse_wait_us",
+                   "floquet_cycles", "swept_params")
+calibration_defaults = AttrDict({key: value for key, value in population_defaults.items()
+                                 if key not in POPULATION_ONLY})
+calibration_defaults.update(prepulse=True)
+calibration_runner = CharacterizationRunner(
+    station=station, ExptClass=MultiParityConfusionMatrixExperiment,
+    default_expt_cfg=calibration_defaults, job_client=client, use_queue=True, show=False,
+)
+
 SCRATCH = os.environ.get("AGP_CHECK_FIGURES", ".")
 
 
@@ -94,20 +109,13 @@ def save_figs(tag):
     print("saved", paths)
 
 
-# %% Cell 2: readout confusion as a population set: Fock 0..3 in M1, zero cycles, read M1
-# (4 jobs; qubit + M only, so relax_delay=500 us). C[n] is the raw label distribution of job n.
-# First run 2026-10-23 00:59 (JOB-20261023-00011..00014, 0.30 mA, 200 us): not diagonal
-# (1 reads as 3, 3 as 0; condition number 31).
-calibration_set = FockPopulationSetExperiment(
-    [([number, 0, 0, 0, 0], 0) for number in range(4)], [0], STORS, [0.] * 4,
-    notes="readout confusion for the AGP layers check")
-calibration_set.acquire(runner, batch_size=3, reps=600, relax_delay=500, show=False)
-calibration_set.analyze()
-calibration_manifest = calibration_set.save()
-confusion = calibration_set.data.p_mod[:, 0, :]
+# %% Cell 2: readout confusion in one job: Fock 0..3 in M1, read M1 (qubit + M only, so
+# relax_delay=500 us). C[prepared, measured]. 2026-10-23 16:44, JOB-20261023-00444: condition
+# number 1.36; the 4-job population set of the same states (00449..52) agreed within 0.025.
+# Earlier runs (4-job sets): 00:59 (JOB 00011..14, 0.30 mA, 200 us, stale phase) not diagonal.
+calibration = calibration_runner.execute(reps=600, relax_delay=500)
+confusion = np.asarray(calibration.data["multiparity_confusion_matrix"])
 print("C[prepared, measured]:\n", np.round(confusion, 3), "\ncondition number", np.linalg.cond(confusion))
-calibration = dict(matrix=confusion.tolist(), fname=str(calibration_manifest),
-                   job_id=",".join(calibration_set.job_ids))
 
 # %% Cell 3: a two-W scan, N=2 prepared and read in S7 (5 states per W), cycles 0..90 by 10.
 # Ran 2026-10-23 01:00-01:02: JOB-20261023-00015..00027, interleaved with seb 00018/22/26;
@@ -132,7 +140,7 @@ part = type(scan.children[1]).from_h5file(scan.children[1].manifest_path.with_su
 part.display()
 view = CentralBosonAGPDisorderScan.from_h5file(scan_manifest.with_suffix(".h5"))
 view.display(moment=1)
-calibration_set.display()
+calibration.display()
 save_figs("agp_layers_check")
 for path in [job.fname, part.fname, view.fname]:
     print(f"{os.path.getsize(path) / 1e3:8.1f} kB  {path}")
