@@ -13,6 +13,61 @@ import h5py
 import numpy as np
 
 
+def _angular_cutoff(cutoff_mhz):
+    """Dunno why Codex generated this one precisely for cutoff mu
+    
+    But it works fine, and I think it follows our philosophy of "human-readable" code, so I will let it be.
+    """
+    
+    if not np.isfinite(cutoff_mhz) or cutoff_mhz <= 0:
+        raise ValueError("cutoff_mhz must be a positive cyclic frequency in MHz")
+    return 2 * np.pi * cutoff_mhz
+
+def finite_time_agp(time_us, correlation, cutoff_mhz, covariance=None):
+    """Direct trapezoid kernel integral over the measured window; no decay correction.
+    time_us and correlation are matching 1D arrays; values is a scalar.
+    
+    It is a sum of (f_i + f_{i+1})/2 * (t_i+1 - t_i), which is more precise than Riemannian LUP/HUP
+
+    The filter function is what Guan suggested, except for that mu is used instead of tau, to match the convention
+    with the PRX paper.
+     
+    This is a truncated correlation integral, not the positive finite-window
+    operator norm Q_T. Missing late-time cancellation can leave a DC bias.
+    """
+    times = np.asarray(time_us, dtype=float)
+    signal = np.asarray(correlation, dtype=float)
+    mu = _angular_cutoff(cutoff_mhz)
+
+    kernel = np.exp(-mu * times) * (1 - mu * times) / (2 * mu)
+    
+    integrand = signal * kernel
+    dt = times[1:] - times[:-1]
+    value = np.sum((integrand[:-1] + integrand[1:]) / 2 * dt)
+
+
+    result = dict(values=float(value),
+                  cutoff_mhz=float(cutoff_mhz),
+                  units="us^2; parameter in rad/us",
+                  window_us=float(times[-1]),
+                  interpretation="direct finite-time integral of the measured correlation")
+    if covariance is not None:
+        weights = np.zeros_like(times)
+        weights[:-1] += dt / 2
+        weights[1:] += dt / 2
+        weights *= kernel
+        variance = weights @ np.asarray(covariance) @ weights
+        result["weights"] = weights
+        result["standard_error"] = float(np.sqrt(max(variance, 0)))
+    return result
+
+
+########################################################################
+###########                                                  ###########
+###########           D  E  P  R  E  C  A  T  E  D           ###########
+###########                   USED NOWHERE                   ###########
+########################################################################
+
 def _json_attribute(handle, key, default=None):
     value = handle.attrs.get(key)
     if value is None:
@@ -401,29 +456,6 @@ def regularized_agp_from_fit(fit, cutoff_mhz, reference_mhz=None):
     return dict(values=values, cutoff_mhz=float(cutoff_mhz), reference_mhz=reference_mhz,
                 units=units, interpretation="zero-decay even-signal inference from fitted poles",
                 spectral_filter=spectral_filter)
-
-
-def finite_time_agp(time_us, correlation, cutoff_mhz, covariance=None):
-    """Direct trapezoid kernel integral over the measured window; no decay correction.
-
-    This is a truncated correlation integral, not the positive finite-window
-    operator norm Q_T. Missing late-time cancellation can leave a DC bias.
-    """
-    times, signal = _real_correlations(time_us, correlation)
-    if len(times) < 2 or times[0] != 0 or np.any(np.diff(times) <= 0):
-        raise ValueError("Use increasing times starting at zero")
-    mu = _angular_cutoff(cutoff_mhz)
-    widths = np.diff(times)
-    trapezoid = np.zeros(len(times))
-    trapezoid[:-1] += widths / 2
-    trapezoid[1:] += widths / 2
-    weights = trapezoid * np.exp(-mu * times) * (1 - mu * times) / (2 * mu)
-    result = dict(values=signal @ weights, weights=weights, cutoff_mhz=float(cutoff_mhz),
-                  units="us^2; parameter in rad/us", window_us=float(times[-1]),
-                  interpretation="direct finite-time integral of the measured correlation")
-    if covariance is not None:
-        result["standard_error"] = float(np.sqrt(max(weights @ np.asarray(covariance) @ weights, 0)))
-    return result
 
 
 def _write_value(group, name, value):
