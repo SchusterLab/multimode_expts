@@ -1,3 +1,4 @@
+import warnings
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
@@ -283,6 +284,36 @@ class ErrorAmplificationProgram(MMRAveragerProgram):
         return shots_i0, shots_q0
 
 
+def _has_pulses(pulse_list):
+    """True if a pre/post_sweep_pulse holds any pulse (None, [] and empty rows hold none)."""
+    return pulse_list is not None and any(len(row) for row in pulse_list)
+
+
+def expected_final_state(expt_cfg):
+    """Qubit state ('g' or 'e') read out when the tested pulse is right, or None if unknown.
+
+    The tested pulses cancel when the pulse is right (2N pi in gain mode, pi / -pi pairs in
+    frequency mode), so the readout state is what the pre and post pulses of
+    ErrorAmplificationProgram leave. Each sequence ends in the state that puts the leaked
+    population in the other readout state:
+      qubit (ge, ef)                      -> g
+      man, storage, floquet               -> e  (post pulses stop at ef)
+      multiphoton gN-..., eN-...          -> g
+      multiphoton fN-gN+1                 -> e  (post pulse eN-fN only)
+    A custom pre_sweep_pulse or post_sweep_pulse can end anywhere: None.
+    """
+    if _has_pulses(expt_cfg.get('pre_sweep_pulse')) or _has_pulses(expt_cfg.get('post_sweep_pulse')):
+        return None
+    channel, transition = expt_cfg.pulse_type[0], expt_cfg.pulse_type[1]
+    if channel == 'qubit':
+        return 'g'
+    if channel in ('man', 'storage', 'floquet'):
+        return 'e'
+    if channel == 'multiphoton':
+        return 'e' if transition[0] == 'f' else 'g'
+    return None
+
+
 class ErrorAmplificationExperiment(Experiment):
     """
     Experiment to test the error amplification by changing
@@ -358,7 +389,7 @@ class ErrorAmplificationExperiment(Experiment):
         self.data=data
         return data
 
-    def analyze(self, data=None, fit=True, state_fin='g', periodic=True, **kwargs):
+    def analyze(self, data=None, fit=True, state_fin=None, periodic=None, **kwargs):
         """
         use the fitting process implemented by MIT https://arxiv.org/abs/2406.08295
         for avgi, avgq, amp and phase take the product of the raws and
@@ -366,9 +397,24 @@ class ErrorAmplificationExperiment(Experiment):
         prod_avgq = np.abs(np.prod(data['avgq'], axis=0))
         prod_amp = np.abs(np.prod(data['amp'], axis=0))
         prod_phase = np.abs(np.prod(data['phase'], axis=0))
+
+        state_fin: readout state when the pulse is right. None -> cfg.expt.state_fin, else
+            expected_final_state(cfg.expt). If neither gives one (custom sweep pulses), warn
+            and skip the product and the fit, so the worker still saves the data.
+        periodic: None -> cfg.expt.periodic, else False (gain and frequency scans do not wrap).
         """
         if data is None:
             data=self.data
+
+        if state_fin is None:
+            state_fin = self.cfg.expt.get('state_fin') or expected_final_state(self.cfg.expt)
+        if state_fin is None:
+            warnings.warn("ErrorAmplificationExperiment.analyze: custom pre/post_sweep_pulse, so the "
+                          "final state is unknown. Set state_fin ('g' or 'e') in the expt config or "
+                          "pass it to analyze(); no fit done.")
+            return data
+        if periodic is None:
+            periodic = self.cfg.expt.get('periodic', False)
 
         Ie = self.cfg.device.readout.Ie[0]
         Ig = self.cfg.device.readout.Ig[0]
@@ -393,7 +439,7 @@ class ErrorAmplificationExperiment(Experiment):
             # add the fit parameters to the data dictionary
             data['fit_avgi'] = p_avgi
             data['fit_prod_avgi_err'] = np.sqrt(np.diag(pCov_avgi))
-
+        return data
 
     def display(self, data=None, fit=True, **kwargs):
         if data is None:
@@ -433,7 +479,7 @@ class ErrorAmplificationExperiment(Experiment):
         ax[1].set_ylabel('N pulse')
         fig.colorbar(ax[1].imshow(np.flip(avgq, 0), cmap='viridis', extent=[x_sweep[0], x_sweep[-1], y_sweep[0], y_sweep[-1]], aspect='auto'), ax=ax[1], label='Q [ADC level]')
 
-        if fit:
+        if fit and 'prod_avgi' in data:
             if 'fit_avgi' in data:
                 x_opt = data['fit_avgi'][2]
                 ax[0].axvline(x_opt, color='black', linestyle='--')

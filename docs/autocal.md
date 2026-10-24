@@ -48,7 +48,8 @@ fit before it changes the config, stops at the first doubtful fit, and leaves on
   (other pulse shape); the Rabi sets the pi gain only.
 - The M1 row of the storage dataset changes only from the f0-g1 sideband (the notebook's error-amp postprocessor
   also wrote g0-e0 photon-0 frequencies there).
-- Error amplification analysed with `periodic=False` (the `analyze` default `periodic=True` is biased near scan edges).
+- Error amplification analysed with `periodic=False` (`periodic=True` is biased near scan edges; since 2026-10-24
+  False is also the `analyze` default).
 - EF and M1 spectroscopy windows centred on the current value (the notebooks start at fixed frequencies).
 - Ladder qubit rungs: error amplification only (seb 10-19). The notebook's Ramsey / amplitude Rabi measure the
   bare-frame values; the pulses use the driven-frame values (g0-e0: Ramsey 3561.53 vs error amp. 3562.09 MHz).
