@@ -97,6 +97,23 @@ def damped_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz, rate_per_us=0
     return values if np.ndim(cutoff_mhz) else float(values[0])
 
 
+def window_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz, window_us, rate_per_us=0.):
+    """-> the AGP kernel integral from 0 to ``window_us`` of ``damped_correlation``, exact (no grid).
+
+    With s = mu + rate - i omega, the term integral is
+    Re[(1 - e^{-sT}) / s - mu (1 - e^{-sT} (1 + sT)) / s^2] / (2 mu). Compare with
+    the same kernel on a sampled grid (``fitting.qsim.agp.agp_kernel_weights``)
+    to see the sampling error alone; ``window_us`` -> infinity gives :func:`damped_agp`.
+    """
+    rates = np.ravel(np.broadcast_to(np.asarray(rate_per_us, dtype=float), np.shape(weights)))
+    mu = 2 * np.pi * np.atleast_1d(np.asarray(cutoff_mhz, dtype=float))[:, None]
+    s = mu + rates[None, :] - 2j * np.pi * np.ravel(differences_MHz)[None, :]
+    tail = np.exp(-s * window_us)
+    terms = ((1 - tail) / s - mu * (1 - tail * (1 + s * window_us)) / s**2) / (2 * mu)
+    values = (2 * np.pi * coupling_mhz)**2 * np.real(terms) @ np.ravel(weights)
+    return values if np.ndim(cutoff_mhz) else float(values[0])
+
+
 def spectral_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz):
     """-> g^2 ||A_mu||^2 (dimensionless) for each cutoff in ``cutoff_mhz``."""
     cutoffs = np.atleast_1d(np.asarray(cutoff_mhz, dtype=float))
