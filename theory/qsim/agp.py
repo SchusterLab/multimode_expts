@@ -60,6 +60,43 @@ def two_time_correlation(differences_MHz, weights, time_us):
     return np.cos(phases) @ np.ravel(weights)
 
 
+def split_dc(differences_MHz, weights, tolerance_mhz=1e-12):
+    """-> (dc, mask): the weight of the zero-frequency (diagonal and degenerate) terms, and their mask.
+
+    ``dc`` is the infinite-time average of the closed-system C(t), the part that
+    the AGP filter removes only over an infinite window.
+    """
+    mask = np.isclose(np.asarray(differences_MHz), 0, atol=tolerance_mhz)
+    return float(np.asarray(weights)[mask].sum()), mask
+
+
+def damped_correlation(differences_MHz, weights, time_us, rate_per_us=0.):
+    """-> sum_ij w_ij cos(2 pi Delta_ij t) e^{-rate_ij t}: a toy open system.
+
+    ``rate_per_us`` is a scalar or one rate per term (the shape of ``weights``).
+    Not a Lindblad model: every term only decays, at the rate given.
+    """
+    rates = np.broadcast_to(np.asarray(rate_per_us, dtype=float), np.shape(weights))
+    times = np.asarray(time_us, dtype=float)[:, None]
+    phases = 2 * np.pi * times * np.ravel(differences_MHz)[None, :]
+    return (np.cos(phases) * np.exp(-times * np.ravel(rates)[None, :])) @ np.ravel(weights)
+
+
+def damped_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz, rate_per_us=0.):
+    """-> the AGP kernel integral from 0 to infinity of ``damped_correlation`` (dimensionless).
+
+    The trace of a system that decays to 0, zero-padded to infinity. With
+    s = mu + rate - i omega, the term integral is Re[(1/s - mu/s^2) / (2 mu)].
+    ``rate_per_us=0`` gives :func:`spectral_agp`; a decaying zero-frequency term
+    contributes w rate / (2 mu (mu + rate)^2), which the closed system does not have.
+    """
+    rates = np.ravel(np.broadcast_to(np.asarray(rate_per_us, dtype=float), np.shape(weights)))
+    mu = 2 * np.pi * np.atleast_1d(np.asarray(cutoff_mhz, dtype=float))[:, None]
+    s = mu + rates[None, :] - 2j * np.pi * np.ravel(differences_MHz)[None, :]
+    values = (2 * np.pi * coupling_mhz)**2 * np.real((1 / s - mu / s**2) / (2 * mu)) @ np.ravel(weights)
+    return values if np.ndim(cutoff_mhz) else float(values[0])
+
+
 def spectral_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz):
     """-> g^2 ||A_mu||^2 (dimensionless) for each cutoff in ``cutoff_mhz``."""
     cutoffs = np.atleast_1d(np.asarray(cutoff_mhz, dtype=float))

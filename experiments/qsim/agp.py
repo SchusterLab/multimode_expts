@@ -34,7 +34,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.assembled_data import AssembledExperiment
-from experiments.job_paths import JobPathError, _reroot, data_root
+from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
 from experiments.qsim.fock_population import (
     FockPopulationExperiment,
     FockPopulationSetExperiment,
@@ -390,6 +390,39 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         scan = cls(children, notes=notes)
         scan.job_ids = list(job_ids)
         return scan
+
+    @classmethod
+    def from_job_files(cls, paths, direction, complete_only=True, notes=""):
+        """Assemble population job files of one direction, for a scan still running or never saved.
+
+        Only autocorrelation jobs (read mode = ``direction``) are used. They are
+        grouped into parts by photon number, storages, cycles and detunings. With
+        ``complete_only``, a W whose direction sector is not complete yet is left
+        out with a warning.
+        """
+        groups = {}
+        for path in paths:
+            job = FockPopulationExperiment.from_h5file(path, load_shots=False)
+            expt = job.cfg.expt
+            if int(expt.ro_stor) != int(direction):
+                continue
+            key = (sum(expt.occupations), tuple(expt.swap_stors), tuple(expt.floquet_cycles),
+                   tuple(np.round(np.asarray(expt.detunings, dtype=float), 12)))
+            match = JOB_ID_RE.search(Path(path).name)
+            groups.setdefault(key, []).append((job, match.group(0) if match else Path(path).stem))
+        parts = []
+        for key, members in groups.items():
+            jobs, job_ids = zip(*members)
+            try:
+                parts.append(CentralBosonAGPExperiment.from_children(
+                    jobs, job_ids=job_ids, direction=direction,
+                    disorder_khz=round(rms_khz(key[-1]), 6)))  # the detuning RMS, without float noise
+            except ValueError as error:
+                if not complete_only:
+                    raise
+                warnings.warn(f"left out W = {rms_khz(key[-1]):g} kHz ({len(jobs)} jobs): {error}",
+                              stacklevel=2)
+        return cls(parts, notes=notes)
 
     def job_overrides(self):
         return [override for part in self.children for override in part.job_overrides()]

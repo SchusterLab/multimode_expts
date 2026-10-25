@@ -81,3 +81,15 @@ def test_calibration_factors_match_the_delta_method_by_finite_differences():
         covariance = (np.diag(matrix[row]) - np.outer(matrix[row], matrix[row])) / (count - 1)
         expected += jacobian @ covariance @ jacobian.T
     np.testing.assert_allclose(factors @ factors.T, expected, rtol=1e-6)
+
+
+def test_exponential_background_fit_recovers_amplitude_and_rate():
+    from fitting.qsim.agp import fit_exponential_background
+
+    rng = np.random.default_rng(2)
+    times = np.linspace(0, 245, 800)
+    error = np.full(len(times), .003)
+    trace = .7 * np.exp(-times / 300) + .3 * np.exp(-times / 4) * np.cos(times) + rng.normal(0, error)
+    fit = fit_exponential_background(times, trace, error, start_us=30.)
+    np.testing.assert_allclose([fit["amplitude"], fit["lifetime_us"]], [.7, 300], rtol=.02)
+    assert fit["covariance"].shape == (2, 2) and fit["start_us"] == 30.

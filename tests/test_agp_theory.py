@@ -26,3 +26,25 @@ def test_spectral_agp_is_a_lorentzian_filter_and_keeps_scalars():
     np.testing.assert_allclose(spectral_agp(differences, weights, cutoff, coupling), expected)
     np.testing.assert_allclose(spectral_agp(differences, weights, [cutoff, cutoff], coupling),
                                [expected] * 2)
+
+
+def test_damped_agp_is_the_infinite_kernel_integral_of_the_damped_correlation():
+    from fitting.qsim.agp import finite_time_agp
+    from theory.qsim.agp import damped_agp, damped_correlation, split_dc
+
+    model = fixed_n_hamiltonian(2, 3, [.03, -.01], [.02] * 2, -.027)
+    differences, weights = spectral_weights(model, probe_values(model.fock_basis, 2))
+    dc, mask = split_dc(differences, weights)
+    np.testing.assert_allclose(dc, weights[mask].sum())
+    assert 0 < dc < weights.sum()
+    np.testing.assert_allclose(damped_agp(differences, weights, .005, .02),
+                               spectral_agp(differences, weights, .005, .02))
+    rates = np.where(mask, 1 / 300., 1 / 150.)  # DC and oscillating parts decay differently
+    times = np.linspace(0, 6000, 600001)
+    window = finite_time_agp(times, damped_correlation(differences, weights, times, rates), .005)
+    np.testing.assert_allclose(damped_agp(differences, weights, [.005], .02, rates),
+                               [(2 * np.pi * .02)**2 * window["values"]], rtol=1e-6)
+    # A decaying constant is not removed: it adds w rate / (2 mu (mu + rate)^2).
+    mu, rate = 2 * np.pi * .005, 1 / 300.
+    np.testing.assert_allclose(damped_agp([[0.]], [[1.]], .005, .02, rate),
+                               (2 * np.pi * .02)**2 * rate / (2 * mu * (mu + rate)**2))

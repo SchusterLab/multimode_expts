@@ -17,7 +17,10 @@ the branch rules are in `docs/STATUS.md`.
   `theory.qsim.central_boson`; `theory.qsim.agp` has the closed-system C_1(t) and AGP;
   `fitting.qsim.agp` the exact kernel weights, T1 compensation and calibration errors. Example:
   `analysis_notebooks/agp/agp_disorder_scan.py`. Found: at mu below about 5 kHz the finite
-  window, not the dynamics, sets the AGP of these scans (table in the log). **Next:** guan's
+  window, not the dynamics, sets the AGP of these scans (table in the log). The decaying DC part
+  of C_1 is the larger error; exponential-fit and per-W envelope removal compared in
+  `analysis_notebooks/agp/agp_dc_background.py` (`docs/log/2026-10-24_agp-dc-background.md`);
+  none is in `analyze()` yet (seb to decide). **Next:** guan's
   `WalkModel` (open-system walks, `kerr_n123_consistency.py`) into `theory/`.
 - **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
   `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by

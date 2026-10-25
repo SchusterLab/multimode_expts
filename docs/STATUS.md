@@ -58,6 +58,11 @@ Rules:
     scan) and 8x (coarse) the infinite-time AGP at mu = 3 kHz, W = 0; about 1 only at
     mu = 10 kHz. The default mu = g L/D is 2.9 kHz. The table is in the log. Your Kerr-direction
     scan (W = 20-200, mu = 10 kHz) now gets `C1_err` and theory too.
+  - **Your e^{t/T} envelope (T about 200 us)** is `analyze(t1_us=T)` (`agp_t1`). Compared with an
+    exponential DC fit, on the toy model and on the data (`analysis_notebooks/agp/agp_dc_background.py`,
+    `docs/log/2026-10-24_agp-dc-background.md`): for your Kerr run it agrees with the fitted methods
+    and the closed system within about 10% at mu = 10 kHz; for S7 the envelope lifetime is 240-520 us
+    and rises with W, so a fixed 200 us is wrong there (negative at W >= 60 kHz). Fit T per W.
 - **`simulation/` deleted (2026-10-24, seb).** The RAQM-era QuTiP notebooks; nothing imported
   them. Git tag `raqm-simulation-notebooks` is the last commit with them (local; push with the
   branch). guan: FYI.

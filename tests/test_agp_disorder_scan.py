@@ -131,3 +131,17 @@ def test_display_needs_one_part_per_w(tmp_path):
     scan.analyze()
     with pytest.raises(ValueError, match="one part per W"):
         scan.display_correlation()
+
+
+def test_job_files_assemble_complete_parts_only(tmp_path):
+    scan = planned((0, 30))
+    scan.acquire(FakeRunner(tmp_path / "data"))
+    paths = sorted((tmp_path / "data").glob("*_FockPopulationExperiment.h5"))
+    rebuilt = CentralBosonAGPDisorderScan.from_job_files(paths, direction=7)
+    assert [part.disorder_khz for part in rebuilt.children] == pytest.approx([0, 30])
+    assert all(len(part.children) == 3 for part in rebuilt.children)
+    assert rebuilt.children[1].job_ids[0].startswith("JOB-20990101-")
+    np.testing.assert_allclose(rebuilt.analyze(mu=5.)["C1"], scan.analyze(mu=5.)["C1"])
+    with pytest.warns(UserWarning, match="left out W = 30"):
+        partial = CentralBosonAGPDisorderScan.from_job_files(paths[:-1], direction=7)
+    assert [part.disorder_khz for part in partial.children] == [0]

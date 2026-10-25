@@ -43,13 +43,16 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
 - `theory/qsim/central_boson.py`: `fixed_n_hamiltonian` (moved from `fitting/qsim/mbr_hamiltonian.py`,
   arithmetic unchanged).
 - `theory/qsim/agp.py`: `probe_values`, `spectral_weights`, `two_time_correlation`,
-  `spectral_agp` (closed system).
+  `spectral_agp` (closed system); `split_dc`, `damped_correlation`, `damped_agp` (a toy
+  open system: each term only decays).
 - `fitting/qsim/agp.py`: `agp_kernel_weights` (exact for piecewise-linear data, optional local
-  T1 compensation), `finite_time_agp`, `calibration_error_factors`; and the raw-shot classifier
+  T1 compensation), `finite_time_agp`, `calibration_error_factors`, `fit_exponential_background`;
+  and the raw-shot classifier
   that `tools/convert_fock_population_catalog.py` uses as a cross-check.
 - `experiments/qsim/agp.py`: `CentralBosonAGPExperiment.analyze(mu, t1_us, t1_err_us, kerr_mhz)`
   and `CentralBosonAGPDisorderScan` (maps over W and mu, `theory_agp`, `display`, `display_traces`).
-- Example: `analysis_notebooks/agp/agp_disorder_scan.py`.
+- Examples: `analysis_notebooks/agp/agp_disorder_scan.py`; the DC-background study
+  `analysis_notebooks/agp/agp_dc_background.py`.
 
 ## Next candidates
 

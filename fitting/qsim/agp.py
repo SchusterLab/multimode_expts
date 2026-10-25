@@ -6,6 +6,8 @@
   standard error from a covariance.
 - :func:`calibration_error_factors`: the readout-calibration error of a
   corrected moment, as factors that sum like independent errors.
+- :func:`fit_exponential_background`: the decaying DC background of a
+  disconnected correlation.
 
 The closed-system theory of the same quantities is in ``theory/qsim/agp.py``.
 The kernel weights and the calibration factors are from jonginn's 10-23
@@ -17,6 +19,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+from scipy.optimize import curve_fit
 
 
 def _angular_cutoff(cutoff_mhz):
@@ -106,6 +109,30 @@ def calibration_error_factors(corrected_probabilities, confusion_matrix, calibra
     projected = np.array([weights @ ((np.diag(row) - np.outer(row, row)) / (count - 1)) @ weights
                           for row, count in zip(matrix, shots)])
     return np.asarray(corrected_probabilities, dtype=float) * np.sqrt(projected)
+
+
+def fit_exponential_background(time_us, correlation, error=None, start_us=0.):
+    """Fit A e^{-rate t} to a correlation for t >= ``start_us``. -> dict.
+
+    The slow decaying background of a disconnected correlation: its
+    infinite-time (DC) part, damped by loss. ``start_us`` skips the first fast
+    transient, which otherwise pulls A and the rate up. ``error`` weights the
+    fit (absolute). The dict has ``amplitude``, ``rate_per_us``,
+    ``lifetime_us``, ``covariance`` (of amplitude and rate) and ``start_us``.
+    """
+    times = np.asarray(time_us, dtype=float)
+    values = np.asarray(correlation, dtype=float)
+    keep = times >= start_us
+    if keep.sum() < 3:
+        raise ValueError("fewer than three points after start_us")
+    sigma = None if error is None else np.asarray(error, dtype=float)[keep]
+    guess_rate = 1 / max(times[keep][-1] - times[keep][0], 1e-9)
+    guess = (abs(values[keep][0]) * np.exp(guess_rate * times[keep][0]), guess_rate)
+    (amplitude, rate), covariance = curve_fit(
+        lambda t, a, r: a * np.exp(-r * t), times[keep], values[keep], p0=guess, sigma=sigma,
+        absolute_sigma=sigma is not None, maxfev=20000)
+    return dict(amplitude=float(amplitude), rate_per_us=float(rate), lifetime_us=float(1 / rate),
+                covariance=covariance, start_us=float(start_us))
 
 
 ########################################################################
