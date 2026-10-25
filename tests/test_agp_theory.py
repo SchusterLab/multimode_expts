@@ -48,3 +48,23 @@ def test_damped_agp_is_the_infinite_kernel_integral_of_the_damped_correlation():
     mu, rate = 2 * np.pi * .005, 1 / 300.
     np.testing.assert_allclose(damped_agp([[0.]], [[1.]], .005, .02, rate),
                                (2 * np.pi * .02)**2 * rate / (2 * mu * (mu + rate)**2))
+
+
+def test_window_agp_is_the_exact_finite_window_integral():
+    from fitting.qsim.agp import agp_kernel_weights
+    from theory.qsim.agp import damped_agp, damped_correlation, window_agp
+
+    model = fixed_n_hamiltonian(2, 3, [.03, -.01], [.02] * 2, -.027)
+    differences, weights = spectral_weights(model, probe_values(model.fock_basis, 2))
+    rates = 1 / 250.
+    times = np.linspace(0, 120, 120001)  # dense grid: the piecewise-linear rule is then exact enough
+    grid = (2 * np.pi * .02)**2 * agp_kernel_weights(times, .008) @ damped_correlation(
+        differences, weights, times, rates)
+    np.testing.assert_allclose(window_agp(differences, weights, .008, .02, 120., rates), grid, rtol=1e-7)
+    assert isinstance(window_agp(differences, weights, .008, .02, 120.), float)
+    np.testing.assert_allclose(window_agp(differences, weights, [.008], .02, 1e5, rates),
+                               [damped_agp(differences, weights, .008, .02, rates)])
+    # A constant over [0, T]: T e^{-mu T} / (2 mu) per unit weight.
+    mu = 2 * np.pi * .008
+    np.testing.assert_allclose(window_agp([[0.]], [[1.]], .008, .02, 50.),
+                               (2 * np.pi * .02)**2 * 50 * np.exp(-mu * 50) / (2 * mu))
