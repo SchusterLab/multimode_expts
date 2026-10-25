@@ -44,7 +44,12 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
   arithmetic unchanged).
 - `theory/qsim/agp.py`: `probe_values`, `spectral_weights`, `two_time_correlation`,
   `spectral_agp` (closed system); `split_dc`, `damped_correlation`, `damped_agp` (a toy
-  open system: each term only decays).
+  open system: each term only decays); `window_agp` (the kernel integral over a finite window,
+  exact, no grid; 2026-10-25).
+- `theory/qsim/open_system.py` (2026-10-25): `OpenCentralBoson`, the Lindblad central boson on
+  all states with at most N photons (loss and dephasing per mode), for Fock or general starts;
+  `sector_correlation` gives the open-system C(t). From guan's `WalkModel`. Used and checked
+  against the data in the AGP lab book (`analysis_notebooks/agp/labbook/`).
 - `fitting/qsim/agp.py`: `agp_kernel_weights` (exact for piecewise-linear data, optional local
   T1 compensation), `finite_time_agp`, `calibration_error_factors`, `fit_exponential_background`;
   and the raw-shot classifier
@@ -58,7 +63,8 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
 
 Not moved yet; each moves when someone next works on it:
 
-- guan's Lindblad walk model (`WalkModel` in `measurement_notebooks/guan/kerr_n123_consistency.py`):
-  open-system walks with M1 loss and dephasing, the obvious next piece (`theory/qsim/open_system.py`).
+- guan's notebook still has its own `WalkModel` (`measurement_notebooks/guan/kerr_n123_consistency.py`);
+  `theory.qsim.open_system.OpenCentralBoson` does the same and more (rates per mode). Switch the
+  notebook when guan next works on it.
 - The model parts of `fitting/qsim/poles/synthetic.py` and `fitting/qsim/mbr_disorder.py`
   (disorder realizations), if they are used without a fit.

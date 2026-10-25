@@ -43,3 +43,17 @@ def test_loss_and_dephasing_limits():
     total = pops[0] @ model.numbers.sum(axis=1)
     assert np.all(np.diff(total) < 0)
     np.testing.assert_allclose(pops.sum(axis=-1), 1, atol=1e-12)
+
+
+def test_density_start_matches_fock_start_and_is_linear():
+    model = OpenCentralBoson(2, 2)
+    times = np.arange(21) * 2.
+    rates = dict(loss_per_us=[1 / 200., 1 / 1000., 1 / 600.], dephasing_per_us=[.01, 0, 0])
+    a, b = model.index[(1, 1, 0)], model.index[(0, 1, 1)]
+    rho_a, rho_b = np.zeros((2, model.dim, model.dim))
+    rho_a[a, a] = rho_b[b, b] = 1
+    fock = model.populations([(1, 1, 0), (0, 1, 1)], times, COUPLINGS, DETUNINGS, KERR, **rates)
+    dens = model.populations_from_density([rho_a, rho_b, (rho_a + rho_b) / 2], times, COUPLINGS,
+                                          DETUNINGS, KERR, **rates)
+    np.testing.assert_allclose(dens[:2], fock, atol=1e-13)
+    np.testing.assert_allclose(dens[2], fock.mean(axis=0), atol=1e-13)

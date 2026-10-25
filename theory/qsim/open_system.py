@@ -82,16 +82,31 @@ class OpenCentralBoson:
 
         ``time_us`` must be evenly spaced from 0 (the measured Floquet grids are).
         """
+        vectors = np.zeros((len(self.keep), len(occupations)), dtype=complex)
+        for column, occupation in enumerate(occupations):
+            vectors[self.diagonal[self.index[tuple(occupation)]], column] = 1
+        return self._propagate(vectors, time_us, couplings_MHz, detunings, kerr_MHz, loss_per_us,
+                               dephasing_per_us)
+
+    def populations_from_density(self, densities, time_us, couplings_MHz, detunings, kerr_MHz,
+                                 loss_per_us=0., dephasing_per_us=0.):
+        """-> populations (starts, times, basis) for initial density matrices (starts, dim, dim).
+
+        Only the blocks of equal photon number are used (the others are not kept).
+        """
+        flat = np.asarray(densities, dtype=complex).transpose(0, 2, 1).reshape(len(densities), -1)
+        return self._propagate(flat[:, self.keep].T, time_us, couplings_MHz, detunings, kerr_MHz,
+                               loss_per_us, dephasing_per_us)
+
+    def _propagate(self, vectors, time_us, couplings_MHz, detunings, kerr_MHz, loss_per_us,
+                   dephasing_per_us):
         times = np.asarray(time_us, dtype=float)
         steps = np.diff(times)
         if times[0] != 0 or (len(times) > 1 and not np.allclose(steps, steps[0])):
             raise ValueError("time_us must start at 0 and be evenly spaced")
         generator = self.liouvillian(couplings_MHz, detunings, kerr_MHz, loss_per_us, dephasing_per_us)
         step = expm(generator * steps[0]) if len(times) > 1 else None
-        vectors = np.zeros((len(self.keep), len(occupations)), dtype=complex)
-        for column, occupation in enumerate(occupations):
-            vectors[self.diagonal[self.index[tuple(occupation)]], column] = 1
-        out = np.empty((len(occupations), len(times), self.dim))
+        out = np.empty((vectors.shape[1], len(times), self.dim))
         for t in range(len(times)):
             out[:, t] = np.real(vectors[self.diagonal]).T
             if step is not None and t + 1 < len(times):
