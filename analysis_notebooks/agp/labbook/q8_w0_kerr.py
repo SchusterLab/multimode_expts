@@ -63,3 +63,17 @@ ax.plot(times, model_c1(storage_dephasing=res_b.x[0]), "C2--", lw=1,
 ax.set(xlabel="time (us)", ylabel="C_1", title="Q8 [model vs measured]: Kerr direction, W = 0 (10-24 00:30)")
 ax.legend(fontsize=7)
 fig.savefig(VAULT / "q8_w0_kerr.png", dpi=120)
+
+
+# Follow-up: is the M1 dephasing too strong for this run? Fit gamma_phi (M1) alone, and with M1 loss.
+def model_c1_m1(gamma_phi, m1_loss=LOSS[0]):
+    sector = fixed_n_hamiltonian(3, 5, np.zeros(4), couplings, kerr).fock_basis
+    return sector_correlation(MODEL, sector, lambda b: probe_values(b, 0, "kerr"), times, couplings,
+                              np.zeros(4), kerr, np.r_[m1_loss, LOSS[1:]], np.r_[gamma_phi, np.zeros(4)])[0]
+
+
+res_g = least_squares(lambda x: (model_c1_m1(x[0]) - data) / error, x0=[0.0106], bounds=([0], [1]), diff_step=1e-3)
+res_gk = least_squares(lambda x: (model_c1_m1(x[0], x[1]) - data) / error, x0=[0.0106, LOSS[0]],
+                       bounds=([0, 0], [1, 1]), diff_step=1e-3)
+print(f"M1 dephasing free: {res_g.x[0]:.4f} /us, chi2/pt {np.mean(res_g.fun**2):.2f}")
+print(f"M1 dephasing and loss free: gamma {res_gk.x[0]:.4f} /us, T1 {1 / res_gk.x[1]:.0f} us, chi2/pt {np.mean(res_gk.fun**2):.2f}")

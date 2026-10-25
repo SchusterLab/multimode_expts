@@ -1,7 +1,7 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-24** (`theory/` package and the AGP analysis, on `main` after the
-`theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
+**Last updated: 2026-10-25** (AGP overnight lab book, branch `theory`; `theory/` package and
+the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
 `guan` (the one branch since 2026-10-06; `qsim-analysis` is retired), worktree
@@ -11,17 +11,23 @@ the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **AGP from the time traces: overnight lab book (2026-10-25, Claude; branch `theory`).** Read the
+  vault page first: `G:\Shared drives\SLab\Multimode\Lab\guan\AGP\2026-10-25 lab book - AGP from time traces.md`
+  (12 questions, figures, comments as `> [!question]`); short record
+  `docs/log/2026-10-25_agp-labbook-night.md`. New: `theory.qsim.open_system` (Lindblad central
+  boson, rates per mode), `theory.qsim.agp.window_agp`; scripts `analysis_notebooks/agp/labbook/`.
+  State: the decay of C_1 is M1 loss + M1 dephasing (no free parameter); W = 0 needs 2-4 kHz
+  residual detunings; the measured AGP agrees with the closed system where resolvable (Kerr at all
+  W, S7 at W <= 60 kHz, mu >= mu_min). **Next (user to decide):** a background option in
+  `analyze()` (exp fit + fit-start scan + 0.13 x DC-term systematic); the large-W extra damping.
 - **`theory/` package (2026-10-24, seb; `docs/qsim/theory_package.md`,
   `docs/log/2026-10-24_theory-package-agp.md`).** Models in `theory/` (parameters ->
   predictions), estimators in `fitting/`. `fixed_n_hamiltonian` is now
   `theory.qsim.central_boson`; `theory.qsim.agp` has the closed-system C_1(t) and AGP;
   `fitting.qsim.agp` the exact kernel weights, T1 compensation and calibration errors. Example:
-  `analysis_notebooks/agp/agp_disorder_scan.py`. Found: at mu below about 5 kHz the finite
-  window, not the dynamics, sets the AGP of these scans (table in the log). The decaying DC part
-  of C_1 is the larger error; exponential-fit and per-W envelope removal compared in
-  `analysis_notebooks/agp/agp_dc_background.py` (`docs/log/2026-10-24_agp-dc-background.md`);
-  none is in `analyze()` yet (seb to decide). **Next:** guan's
-  `WalkModel` (open-system walks, `kerr_n123_consistency.py`) into `theory/`.
+  `analysis_notebooks/agp/agp_disorder_scan.py`. The DC-background study of 10-24
+  (`analysis_notebooks/agp/agp_dc_background.py`) is superseded in its conclusions by the lab book
+  (realistic open model instead of a toy).
 - **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
   `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
   `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
