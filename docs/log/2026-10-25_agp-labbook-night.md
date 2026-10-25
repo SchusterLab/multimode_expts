@@ -58,6 +58,15 @@ window, the cutoff mu, and what to do with the decay.
   g_eff/g_saved = 0.97 +/- 0.05 (Kerr traces). The 5-cycle grid is fine for mu <= 10 kHz.
   The connected correlator (all 35 starts) gains little at equal measurement time.
 
+## Added in the morning (user's request)
+
+- Lab book section "Context for a new session": ideas not done (model-shape background template,
+  a DC-blind kernel, mu-scaling as a chaos test, ...), caveats (shot-only chi2, no error bar on the
+  theory target from K and g, the f0-g1 configuration of the W = 0 runs, mixed days), and physics
+  points for the interpretation (measurable vs informative mu; the DC fraction as an alternative
+  localization observable). Q9 wording corrected: the Kerr run gives "no evidence" for extra
+  storage dephasing (fit on the lower bound), not "absent".
+
 ## Decisions / open (for the user)
 
 - No estimator is in `analyze()` yet. Candidate: an exp-fit background option with a fit-start scan
