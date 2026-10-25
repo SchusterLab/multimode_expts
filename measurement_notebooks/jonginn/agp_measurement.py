@@ -52,10 +52,10 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261023-00012',
+config_dict = {'hardware_config': 'CFG-HW-20261023-00038',
  'multiphoton_config': 'CFG-MP-20260121-00001',
  'man1_storage_swap': 'CFG-M1-20261023-00003',
- 'floquet_storage_swap': 'CFG-FL-20261023-00001'}
+ 'floquet_storage_swap': 'CFG-FL-20261023-00002'}
 
 client = JobClient()
 health = client.health_check()
@@ -254,11 +254,11 @@ display(walk_fig)
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
 AGP_DIRECTIONS = [0]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
-DISORDER_RMS_KHZ = [0]
-AGP_REPS = 500
-AGP_CYCLES = list(range(0, 400, 1))
-AGP_BATCH_SIZE = 3
-AGP_MU_KHZ = None  # None: g * L / D; set e.g. 5.915 to choose mu explicitly.
+DISORDER_RMS_KHZ = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+AGP_REPS = 1000
+AGP_CYCLES = list(range(0, 800, 1))
+AGP_BATCH_SIZE = 2
+AGP_MU_KHZ = 10  # None: g * L / D; set e.g. 5.915 to choose mu explicitly.
 
 DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
 DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)
@@ -334,3 +334,5 @@ for scan in disorder_scans.values():
         fig, axis = scan.display_correlation(moment=moment, raw=False)
         plt.show()
         plt.close(fig)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
