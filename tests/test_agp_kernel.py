@@ -1,8 +1,10 @@
-"""Numerical checks of the direct AGP kernel against independent integrals."""
+"""Numerical checks of the AGP kernel and the calibration errors against independent calculations."""
 
 import numpy as np
 
-from fitting.qsim.agp import finite_time_agp
+from scipy.integrate import trapezoid
+
+from fitting.qsim.agp import agp_kernel_weights, calibration_error_factors, finite_time_agp
 
 
 def test_finite_window_constant_and_cosine():
@@ -34,3 +36,48 @@ def test_long_window_matches_angular_spectral_filter():
     result = finite_time_agp(times, np.cos(omega * times), cutoff_mhz)
     expected = omega**2 / (omega**2 + mu**2)**2
     np.testing.assert_allclose(result["values"], expected, rtol=1e-6)
+
+
+def test_weights_integrate_the_linear_interpolation_exactly_with_t1():
+    # A coarse, uneven grid: the weights integrate K(t) e^{t/T1} C(t) for C linear between samples.
+    times = np.array([0., .7, 2., 2.5, 6., 11.])
+    correlation = np.array([1., .3, -.4, .2, .5, .1])
+    cutoff_mhz, lifetime_us = .02, 40.
+    mu = 2 * np.pi * cutoff_mhz
+    dense = np.linspace(0, times[-1], 400001)
+    kernel = np.exp(-mu * dense) * (1 - mu * dense) / (2 * mu) * np.exp(dense / lifetime_us)
+    expected = trapezoid(kernel * np.interp(dense, times, correlation), x=dense)
+    weights = agp_kernel_weights(times, cutoff_mhz, lifetime_us)
+    np.testing.assert_allclose(weights @ correlation, expected, rtol=1e-9)
+    result = finite_time_agp(times, correlation, cutoff_mhz, covariance=np.eye(len(times)),
+                             lifetime_us=lifetime_us)
+    np.testing.assert_allclose(result["standard_error"], np.linalg.norm(weights))
+    with np.testing.assert_raises(ValueError):
+        agp_kernel_weights(times + 1, cutoff_mhz)  # must start at 0
+    with np.testing.assert_raises(ValueError):
+        agp_kernel_weights(times, cutoff_mhz, lifetime_us=1.)  # 1/T1 above mu
+
+
+def test_calibration_factors_match_the_delta_method_by_finite_differences():
+    rng = np.random.default_rng(3)
+    matrix = .8 * np.eye(4) + .05 + rng.uniform(0, .02, (4, 4))
+    matrix /= matrix.sum(axis=1, keepdims=True)
+    raw = rng.dirichlet(np.ones(4), size=3)
+    values, shots = np.arange(4.)**2, np.array([500, 600, 700, 800])
+    corrected = np.linalg.solve(matrix.T, raw.T).T
+    factors = calibration_error_factors(corrected, matrix, shots, values)
+
+    def moments(confusion):
+        return np.linalg.solve(confusion.T, raw.T).T @ values
+
+    # Covariance by the delta method, from a numerical Jacobian over each prepared row.
+    expected = np.zeros((3, 3))
+    for row, count in enumerate(shots):
+        jacobian = np.zeros((3, 4))
+        for column in range(4):
+            step = np.zeros((4, 4))
+            step[row, column] = 1e-7
+            jacobian[:, column] = (moments(matrix + step) - moments(matrix - step)) / 2e-7
+        covariance = (np.diag(matrix[row]) - np.outer(matrix[row], matrix[row])) / (count - 1)
+        expected += jacobian @ covariance @ jacobian.T
+    np.testing.assert_allclose(factors @ factors.T, expected, rtol=1e-6)

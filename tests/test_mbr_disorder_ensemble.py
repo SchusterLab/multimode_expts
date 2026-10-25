@@ -25,7 +25,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 from fitting.qsim import mbr_disorder
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.mbr_spectrum import analyze_spectrum
 from slab import AttrDict
 from tests.mbr_reference import (

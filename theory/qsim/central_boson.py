@@ -1,10 +1,19 @@
-"""The fixed-photon-number Hamiltonian of the many-body Ramsey Floquet map.
+"""The central-boson (star) model in one fixed photon number sector.
+
+The effective Hamiltonian of the Floquet map: M1 (mode 0, the hub, Kerr
+nonlinear) coupled to the storage modes (the leaves). In cyclic MHz (H/h),
+
+    H = sum_s (-detuning_s) n_s + (K/2) n_M1 (n_M1 - 1) + sum_s g_s (a_M1^dag a_s + h.c.)
+
+- ``detunings`` are what the pulse program adds to the storage-M1 sidebands;
+  the onsite energy is minus that.
+- The Kerr term is (K/2) n(n-1), with K the physical Kerr, device sign.
+- Basis order: ``itertools.product`` over (M1, *storages), lexicographic.
 
 Moved out of :func:`fitting.qsim.mbr_spectrum.analyze_spectrum` in MBR
-redesign step 7b (2026-09-24), without changes to the arithmetic, so that
-theory levels can be computed without a measured reconstruction (the disorder
-planning and ensemble analysis need only the levels). ``analyze_spectrum``
-calls it; ``tests/test_mbr_analysis_golden.py`` pins the result through it.
+redesign step 7b (2026-09-24), and from ``fitting/qsim/mbr_hamiltonian.py``
+to ``theory/`` on 2026-10-24, both without changes to the arithmetic.
+``tests/test_mbr_analysis_golden.py`` pins the result through ``analyze_spectrum``.
 
 Pure numerics.
 """

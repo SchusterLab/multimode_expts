@@ -14,6 +14,9 @@ from slab import AttrDict
 from experiments.qsim.fock_population import FockPopulationExperiment
 
 CYCLE_US = 0.3
+# Recorded M1-storage couplings (one per storage ID 1..7) and the device M1 Kerr, both MHz.
+COUPLINGS_MHZ = [0.02] * 7
+KERR_MHZ = -0.027
 # C has 0.85 on its diagonal and 0.05 elsewhere: p_raw = 0.8 p_true + 0.05.
 CONFUSION = .8 * np.eye(4) + .05
 
@@ -35,7 +38,7 @@ def population_job(occupation, ro_stor, labels, cycles, swap_stors, detunings,
                                                       fname="calibration.h5")
     job.cfg = AttrDict(dict(
         read_num=4,
-        device=dict(readout=dict(threshold=[0.])),
+        device=dict(readout=dict(threshold=[0.]), manipulate=dict(kerr=[KERR_MHZ])),
         expt=dict(qubits=[0], readout="multiparity", occupations=list(occupation),
                   ro_stor=ro_stor, swap_stors=list(swap_stors), detunings=list(detunings),
                   floquet_cycles=list(cycles), swept_params=["floquet_cycle"],
@@ -49,12 +52,18 @@ def population_job(occupation, ro_stor, labels, cycles, swap_stors, detunings,
 
 
 def save_job(job, path, cycle_us=CYCLE_US):
-    """Write ``job`` in the job-file layout. -> the file loaded back without shots."""
+    """Write ``job`` in the job-file layout. -> the file loaded back without shots.
+
+    ``job`` itself then reports the recorded timing and couplings too, as a
+    worker-saved job does.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    derived = json.dumps(dict(floquet_cycle_us=cycle_us, couplings_MHz=COUPLINGS_MHZ))
+    job.data["attrs"] = dict(derived_params=derived)
     with h5py.File(path, "w") as handle:
         handle.attrs["config"] = json.dumps(job.cfg)
-        handle.attrs["derived_params"] = json.dumps(dict(floquet_cycle_us=cycle_us))
+        handle.attrs["derived_params"] = derived
         for key, value in job.data.items():
             if key != "attrs":
                 handle.create_dataset(key, data=np.asarray(value))

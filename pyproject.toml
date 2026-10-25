@@ -12,6 +12,7 @@ where = ["."]
 include = [
   "experiments",
   "fitting",
+  "theory",
   "slab",
   "job_server",
 ]

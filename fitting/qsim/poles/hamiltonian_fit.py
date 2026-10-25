@@ -1,6 +1,6 @@
 """Fitter T1: a fit of the Hamiltonian to all rows at once (plan ``docs/qsim/pole_finding_explore.md``, T1).
 
-The model is :func:`fitting.qsim.mbr_hamiltonian.fixed_n_hamiltonian`, linear in its parameters
+The model is :func:`theory.qsim.central_boson.fixed_n_hamiltonian`, linear in its parameters
 p = (detunings per storage mode, couplings per link, Kerr on M1): H(p) = sum_k p_k D_k. With
 H = V diag(E) V^T a diagonal row b is
 
@@ -33,7 +33,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from scipy.optimize import least_squares
 
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles.noise import row_noise
 from fitting.qsim.poles.pole_fit import (PoleFit, check_shape, normalize_to_initial_return, sample_time,
                                          wrap_frequency)

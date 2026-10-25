@@ -14,7 +14,7 @@ left for its own commit. The golden baseline covers this function through the
 FFT path, so that split will be verifiable numerically.
 
 The basis and Hamiltonian construction is now
-:func:`fitting.qsim.mbr_hamiltonian.fixed_n_hamiltonian` (MBR redesign step 7b),
+:func:`theory.qsim.central_boson.fixed_n_hamiltonian` (MBR redesign step 7b),
 so theory can be computed without a reconstruction.
 """
 
@@ -22,7 +22,7 @@ import numpy as np
 
 from slab import AttrDict
 
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 
 #: The FFT windows a spectrum can be computed with, by name.

@@ -1,6 +1,8 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-06** (all 25 data sets converted, the "D72" sets regrouped; issue 5: the library reads only the files; on `guan`).
+**Last updated: 2026-10-24** (`theory/` package and the AGP analysis, on `main` after the
+`theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
+regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
 `guan` (the one branch since 2026-10-06; `qsim-analysis` is retired), worktree
 `C:\python\multimode_expts_guan`. This file is overwritten at
@@ -9,6 +11,14 @@ the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **`theory/` package (2026-10-24, seb; `docs/qsim/theory_package.md`,
+  `docs/log/2026-10-24_theory-package-agp.md`).** Models in `theory/` (parameters ->
+  predictions), estimators in `fitting/`. `fixed_n_hamiltonian` is now
+  `theory.qsim.central_boson`; `theory.qsim.agp` has the closed-system C_1(t) and AGP;
+  `fitting.qsim.agp` the exact kernel weights, T1 compensation and calibration errors. Example:
+  `analysis_notebooks/agp/agp_disorder_scan.py`. Found: at mu below about 5 kHz the finite
+  window, not the dynamics, sets the AGP of these scans (table in the log). **Next:** guan's
+  `WalkModel` (open-system walks, `kerr_n123_consistency.py`) into `theory/`.
 - **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
   `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
   `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
@@ -140,9 +150,11 @@ How to check:
 
 ## Code map
 
+- `theory/qsim/` (models): `central_boson` (`fixed_n_hamiltonian`, was
+  `fitting/qsim/mbr_hamiltonian`), `agp`.
 - `fitting/qsim/` (about 2.8 kloc, pure functions): `matrix_pencil` (settings are
   `MatrixPencilSettings`; the FFT of its fits is `mbr_spectrum.local_spectrum`), `mbr_spectrum`,
-  `mbr_hamiltonian`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
+  `agp`, `mbr_phase`, `mbr_reconstruction`, `mbr_propagator`, `mbr_disorder`,
   `level_statistics`, `calibration` (step 9C); `poles/` (about 1.1 kloc): the pole-finding
   fitters and benchmarks (`docs/qsim/pole_finding.md`).
 - Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py` (frozen; all catalog
@@ -154,6 +166,7 @@ How to check:
 
 | Doc | Status |
 |---|---|
+| `docs/qsim/theory_package.md` | the `theory/` package: rule, conventions, contents (current, 2026-10-24) |
 | `docs/qsim/pole_finding.md` | pole finding method and benchmark (draft; phase 1 done, 2026-09-28) |
 | `docs/qsim/pole_finding_explore.md` | pole finding: the plan of parallel exploration tasks (2026-09-29) |
 | `docs/qsim/pole_finding_recap.md` | pole finding: recap of every method, what it was tested on, performance; figures (2026-10-03) |

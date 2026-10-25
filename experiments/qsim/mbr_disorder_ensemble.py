@@ -40,7 +40,7 @@ from slab import AttrDict
 from experiments.assembled_data import AssembledExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from fitting.qsim import mbr_disorder
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 #: The Matrix Pencil settings of the 7-1 campaign's analysis cell (cell 332).
 DEFAULT_MATRIX_PENCIL = dict(

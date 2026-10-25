@@ -40,7 +40,7 @@ import numpy as np
 from experiments.job_paths import data_root
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.mbr_disorder import disorder_direction
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles.registry import data_set
 from fitting.qsim.poles.views import (MODEL_COLOR, INK, display_gap_ratio_cdfs, display_gap_ratio_histograms,
                                       display_row_heatmaps, display_sticks, pooled_ratios)

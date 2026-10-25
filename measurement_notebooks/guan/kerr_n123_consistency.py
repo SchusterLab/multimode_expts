@@ -632,7 +632,7 @@ def show(params):
 # %% Cell 12: MBR lines. For each [n,0,0,0,0] return A(t): fit n+1 damped lines (start values:
 # the largest FFT peaks), then the line spacings against fixed_n_hamiltonian
 # (mbr_s4s7_n2.py cells 15, 15b). Spacings do not depend on the frame (StarkCal phase).
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 FFT_SIGN = -1.0  # the spectrum code plots A ~ exp(-2 pi i E t) (mbr_s4s7_n2.py cell 15)
 

@@ -9,7 +9,7 @@ import numpy as np
 
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles.real_benchmarks import RealSpectrum
 from fitting.qsim.poles.registry import Analysis, manifest_path
 from fitting.qsim.poles.synthetic import distinct_levels

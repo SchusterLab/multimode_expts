@@ -46,12 +46,19 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
         assert all(isinstance(child, FockPopulationExperiment) for child in part.children)
         assert {tuple(child.cfg.expt.detunings) for child in part.children} == {tuple(part.detunings)}
 
-    data = scan.analyze(mu=5.915)
+    data = scan.analyze(mu=[5.915, 10.], t1_us=600.)
     assert data["C1"].shape == (3, 4) and data["C1_corrected"].shape == (3, 4)
     np.testing.assert_array_equal(data["disorder_khz"], [0, 30, 60])
     assert data["detunings"].shape == (3, 2)
-    np.testing.assert_allclose(data["agp_list"], [part.data["agp"] for part in scan.children])
-    np.testing.assert_allclose(data["agp_mu_list"], [5.915] * 3)
+    np.testing.assert_allclose(data["agp_mu"], [5.915, 10.])
+    for key in CentralBosonAGPDisorderScan.AGP_KEYS:
+        np.testing.assert_allclose(data[key], [part.data[key] for part in scan.children])
+        assert data[key].shape == (3, 2)
+    np.testing.assert_allclose(scan.theory_agp(data["disorder_khz"]), data["agp_theory"])
+    other = scan.analyze(mu=[5.915, 10.], kerr_mhz=0.)  # theory_agp follows the analyzed Kerr
+    np.testing.assert_allclose(scan.theory_agp(other["disorder_khz"]), other["agp_theory"])
+    assert not np.allclose(other["agp_theory"], data["agp_theory"])
+    data = scan.analyze(mu=[5.915, 10.], t1_us=600.)
 
     manifest_path = scan.save()
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
@@ -60,11 +67,11 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     assert manifest["parameters"]["disorder_khz"] == [0, 30, 60]
     with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
         assert set(handle) == {"disorder_khz", "cycles", "detunings", "time_us", "C1", "C2",
-                               "C1_err", "C2_err", "C1_corrected", "C2_corrected",
-                               "agp_list", "agp_mu_list"}
+                               "C1_err", "C2_err", "C1_corrected", "C2_corrected", "C1_theory",
+                               "agp_mu", *CentralBosonAGPDisorderScan.AGP_KEYS}
 
     reloaded = CentralBosonAGPDisorderScan.from_manifest(manifest_path)
-    reloaded.analyze(mu=5.915)
+    reloaded.analyze(mu=[5.915, 10.], t1_us=600.)
     for key, value in data.items():
         np.testing.assert_allclose(reloaded.data[key], value)
     view = CentralBosonAGPDisorderScan.from_h5file(manifest_path.with_suffix(".h5"))
@@ -73,14 +80,21 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
             fig, ax = view.display_correlation(moment=moment, raw=raw)
             assert ("corrected" in ax.get_title()) != raw
             matplotlib.pyplot.close(fig)
-    fig, ax = view.display()
-    assert ax.get_xscale() == ax.get_yscale() == "linear"
-    np.testing.assert_array_equal(ax.lines[0].get_xdata(), [0, 30, 60])
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), data["agp_list"])
+    fig, axes = view.display()
+    assert len(axes) == 2
+    assert axes[1].get_xscale() == axes[1].get_yscale() == "linear"
+    np.testing.assert_array_equal(axes[1].lines[0].get_xdata(), [0, 30, 60])
+    np.testing.assert_allclose(axes[1].lines[0].get_ydata(), data["agp"][:, 1])
+    matplotlib.pyplot.close(fig)
+    fig, axes = scan.display(mu=10.)  # with the parts: adds the infinite-time theory
+    assert len(axes) == 1 and len(axes[0].lines) > len(view.display(mu=10.)[1][0].lines)
+    matplotlib.pyplot.close("all")
+    fig, axes = scan.display_traces()
+    assert len(axes) == 3
     matplotlib.pyplot.close(fig)
 
     updated = scan.analyze()
-    assert not np.allclose(updated["agp_list"], data["agp_list"])
+    assert updated["agp"].shape == (3, 1) and "agp_t1" not in updated
 
 
 def test_saved_parts_combine_without_saving_them_again(tmp_path):

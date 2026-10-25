@@ -27,7 +27,8 @@ the start of every session.
   `pixi run pytest`, `pixi run jupyter`, etc.
 - Tasks are defined in `pyproject.toml` under `[tool.pixi.tasks]`.
 - Imports: a top-level folder is importable only if it is listed under
-  `[tool.setuptools.packages.find] include`.
+  `[tool.setuptools.packages.find] include`. After a change to that list, run `pixi install`
+  in each checkout: it rewrites the editable-install finder that maps the packages.
 
 
 ## Repo map
@@ -35,12 +36,12 @@ the start of every session.
 | Path | What lives there |
 | --- | --- |
 | `experiments/` | Experiment classes. Top level modules are infra. Subpackages are themed by physics. Typically each module contains one QICK Program and its related Experiment class, but not a hard rule. |
-| `fitting/` | Reusable numerical analysis + display. `fitting/qsim/` |
+| `fitting/` | Estimators: data in, parameters or numbers out (fits, kernel integrals, error propagation), + display. `fitting/qsim/` |
+| `theory/` | Models: parameters in, predictions out (Hamiltonians, dynamics, correlators, spectral sums). Imports only numpy/scipy. See `docs/qsim/theory_package.md` |
 | `job_server/` | FastAPI job queue, worker, client, config versioning, dashboard. See `job_server/README.md` |
 | `slab/` | Vendored legacy `slab` code, kept in its original state. |
 | `configs/` | YAML hardware/experiment configs, calibration CSVs, `versions/` snapshots managed by a versioning system |
 | `analysis_notebooks/`, `measurement_notebooks/` | Notebooks with per-user sandboxing. Not a library — do not import from outside |
-| `simulation/` | Historical standalone QuTiP notebooks. Largely outdated and to be deprecated. |
 | `tests/` | pytest. |
 | `docs/` | `STATUS.md` (current state, start here), `log/` (dated session records), design specs, architecture notes, history |
 | `tools/` | One-off maintenance scripts |
@@ -50,6 +51,7 @@ the start of every session.
 
 - Outside infra, the core of this repo consists the physics modules under `experiments/`. The canonical design pattern follows the protocol laid out in `slab/experiments`: one physics experiment consists of data acquisition code and the (naturally coupled) analysis and display code. However, much of the existing code breaks this pattern, sometimes with good reasons, often not. Exercise judgment.
 - The life cycle of a measurement typically starts from instantiating a `MultimodeStation`. See notebooks (ipynb or jupytext .py) under the measurement_notebooks sandboxes for details and submitting jobs to the job server using one of the runners. The canonical general pattern for measurement submission was first laid out in the single qubit autocalibrate notebooks: define default config, customize pre- and post-job functions if needed, execute with kwarg overrides. Keep this pattern, wrap complex behaviors in proper modules and leave the notebooks as clean as reasonably possible.
+- Theory goes in `theory/`, estimators in `fitting/`, and an Experiment class's `analyze()` and `display()` call both. Do not write a model or an analysis chain inline in a notebook: put it in the module, and let the notebook set parameters and call it (example: `analysis_notebooks/agp/agp_disorder_scan.py`). The old `simulation/` notebooks were deleted on 2026-10-24; git tag `raqm-simulation-notebooks` is the last commit that has them.
 - The canonical output is HDF5 files. Experiment object pickles are available for ephemeral debugging only. Do not rely on them for data persistence or read out.
 - Nor is the `jobs.db` database a good place for durable physics data or record keeping: those should belong in HDF5 metadata. The full db only lives on one machine. Relying on it makes data exchange (for collaborator analysis or eventual publication) impossible.
 - As a default, it's preferable to save aggregated/processed data as new HDF5s with provenance and param persistence rather than overwriting raw data files.

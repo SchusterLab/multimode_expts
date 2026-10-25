@@ -428,7 +428,7 @@ for meas_stor in [0] + WALK_STORS:
 # over the fixed-N model with the couplings and cycle time saved in each job (derived_params).
 import json
 import h5py
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 KERR_KHZ = -27.0  # jonginn's value for K / (2 pi), with sign
 
@@ -707,7 +707,7 @@ print("model lines (MHz):", np.round(energies_joint, 5), "weights", np.round(wei
 # Checked 2026-10-22 against the values before the loss (same C, phases and traces).
 import json
 import h5py
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian  # cells 10 and 15 use these
+from theory.qsim.central_boson import fixed_n_hamiltonian  # cells 10 and 15 use these
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 
 RUN_DATA = r"C:\experiments\261020_mbr_s4s7_n2\data"

@@ -36,7 +36,7 @@ from experiments.job_paths import data_root
 from experiments.qsim.mbr_disorder_ensemble import DEFAULT_MATRIX_PENCIL, MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from fitting.qsim.matrix_pencil import settings_from_options
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles import fft_peaks, joint_pencil, per_row_reconciled
 from fitting.qsim.poles.matching import level_tolerances, match_poles
 from fitting.qsim.poles.pole_fit import normalize_to_initial_return, poles_from

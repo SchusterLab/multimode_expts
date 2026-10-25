@@ -41,7 +41,7 @@ from experiments.qsim.agp import CentralBosonAGPDisorderScan
 from experiments.qsim.fock_population import FockPopulationExperiment
 from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
 from experiments.qsim.notebook_helpers.defaults import ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from job_server import JobClient
 
 # %% [markdown]

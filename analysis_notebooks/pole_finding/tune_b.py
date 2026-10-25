@@ -29,7 +29,7 @@ import pandas as pd
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles import joint_pencil
 from fitting.qsim.poles.bench_summaries import scores_table, small_gap_table
 from fitting.qsim.poles.benchmarks import run_nonideal_bench

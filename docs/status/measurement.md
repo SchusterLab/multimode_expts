@@ -1,7 +1,7 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-10-24** (error amplification readout state; the AGP item is as of
-2026-10-23, the others as of 2026-10-06 and not re-checked). Theme: measurement code
+**Last updated: 2026-10-24** (error amplification readout state; AGP analysis and `theory/`;
+the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -22,8 +22,12 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   walks and AGP scans are converted (`tools/convert_fock_population_catalog.py`,
   `configs/datasets/fock_population_datasets.yaml`); the old 7.5 GB outputs are deleted.
   Device check: `measurement_notebooks/guan/agp_layers_hw_check.py` (result in the log).
-  **Next (jonginn):** move `measurement_notebooks/jonginn/agp_measurement.py` to a
-  `FockPopulationExperiment` runner and `CentralBosonAGPDisorderScan.from_pattern(...).acquire()`.
+  jonginn's `agp_measurement.py` uses that path since 10-23.
+  **2026-10-24 (`docs/log/2026-10-24_theory-package-agp.md`):** `analyze(mu=[...], t1_us,
+  t1_err_us, kerr_mhz)` adds the AGP with shot + calibration errors, local T1 compensation and
+  closed-system theory (jonginn's Julia-repo notebook, moved in). The job layer is unchanged.
+  **Next (jonginn):** check it against his notebook and work from
+  `analysis_notebooks/agp/agp_disorder_scan.py` (see `docs/STATUS.md`).
 - **Issue 5 changes on `guan`, not on `main` yet** (`docs/log/2026-10-06_issue5-d72-and-loaders.md`).
   For acquisition code: `floquet_dark_mode_readout.py` (the compatibility shim) is deleted;
   import from the owning modules. Renamed modules: `dark_mode_scramble.py` (was

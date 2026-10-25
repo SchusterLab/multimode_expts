@@ -446,6 +446,7 @@ class JobWorker:
         # - fitting.*: analysis/reconstruction helpers that experiment modules
         #   import (e.g. fitting.state_tomography). Without this they stay cached
         #   from the first job and source edits are silently ignored.
+        # - theory.*: the models that fitting and experiment modules import.
         #
         # We preserve specific modules where objects persist in self.station:
         # - experiments.dataset: station.ds_storage is a StorageManSwapDataset instance
@@ -458,6 +459,8 @@ class JobWorker:
             or name.startswith('multimode_expts.')
             or name == 'fitting'
             or name.startswith('fitting.')
+            or name == 'theory'
+            or name.startswith('theory.')
             or (name.startswith('experiments.') and name not in preserved_modules)
         ]
         for name in modules_to_remove:

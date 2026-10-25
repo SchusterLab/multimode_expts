@@ -28,7 +28,7 @@ import pandas as pd
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles.offsets import calibration_sigma, model_offset_sigma, model_returns
 from fitting.qsim.poles.pole_fit import normalize_to_initial_return
 

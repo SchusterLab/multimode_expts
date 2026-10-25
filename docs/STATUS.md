@@ -1,6 +1,7 @@
 # Where things stand
 
-**Last updated: 2026-10-23** (AGP layers item added; the rest as of 2026-10-15). This file holds only what is
+**Last updated: 2026-10-24** (`theory/` package and the jonginn AGP item; AGP layers item as of
+2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
 Read the log only if you need the history.
@@ -32,6 +33,34 @@ Rules:
   `main` and can be deleted when seb agrees.
 
 ## Cross-theme items
+
+- **For jonginn (from seb, 2026-10-24). Agents: tell jonginn about this item at the start of
+  his next session, and help him do it.** Record: `docs/log/2026-10-24_theory-package-agp.md`.
+  - Your AGP notebook in the Julia repo
+    (`multimode_thermalization_sim/notebooks/jonginn/agp_storage7_mu1_to10_t1_theory_ENTIERLYCODEX.ipynb`)
+    is now in the classes: `CentralBosonAGPDisorderScan.analyze(mu=[...], t1_us=..., t1_err_us=...,
+    kerr_mhz=...)` gives the AGP with shot + calibration errors, the local T1 compensation and
+    the closed-system theory; `display()`, `display_traces()`. It reproduces your notebook's
+    numbers to 1e-12. Example: `analysis_notebooks/agp/agp_disorder_scan.py`. Please check it,
+    then work from it; analysis that lives only in a notebook has no tests and no record.
+  - **New rule** (`AGENTS.md`, `docs/qsim/theory_package.md`): models go in `theory/`
+    (parameters -> predictions), estimators in `fitting/`, and `analyze()` calls both. Do not
+    write a model or an analysis chain inline in a notebook. `fixed_n_hamiltonian` moved to
+    `theory.qsim.central_boson` (your `agp_measurement.py` import is updated).
+  - **Breaking:** the scan's `agp_list` / `agp_mu_list` are now `agp` (W, mu) / `agp_mu`;
+    `display()` returns `(fig, axes)`.
+  - Your uncommitted edits in the `main` checkout were committed as they were (c2f1e9b) before
+    the merge.
+  - Three AGP tests failed on `main` after the 10-23 commits (Kerr direction n_M1 >= 2,
+    `agp_list`, no couplings in the fake jobs); they are fixed.
+  - **Physics to check before you use small mu:** C_1 is not connected, so its constant part
+    enters the finite-window integral. In the closed-system theory, the window value is 35x (fine
+    scan) and 8x (coarse) the infinite-time AGP at mu = 3 kHz, W = 0; about 1 only at
+    mu = 10 kHz. The default mu = g L/D is 2.9 kHz. The table is in the log. Your Kerr-direction
+    scan (W = 20-200, mu = 10 kHz) now gets `C1_err` and theory too.
+- **`simulation/` deleted (2026-10-24, seb).** The RAQM-era QuTiP notebooks; nothing imported
+  them. Git tag `raqm-simulation-notebooks` is the last commit with them (local; push with the
+  branch). guan: FYI.
 
 - **Branches (2026-10-15):** `main` has all of `guan` and `tests-cleanup`, and `main` is
   merged back into `guan`. The uncommitted edits in the `main` checkout (worker yoko reconnect,

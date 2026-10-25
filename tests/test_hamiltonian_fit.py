@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from fitting.qsim.mbr_disorder import disorder_direction
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles import hamiltonian_fit as hf
 from fitting.qsim.poles.synthetic import Hardware, ModelPoint, Nonideal, synthetic_returns
 

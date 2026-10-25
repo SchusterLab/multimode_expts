@@ -2,7 +2,7 @@
 
 A case is a point of the phase diagram (Kerr ``K / g``, disorder ``delta / g``, one
 disorder draw), the hardware grid, and the non-idealities. The model is
-:func:`fitting.qsim.mbr_hamiltonian.fixed_n_hamiltonian`: a star of storage modes
+:func:`theory.qsim.central_boson.fixed_n_hamiltonian`: a star of storage modes
 around M1, coupling ``g``, Kerr on M1, onsite energies ``delta u_i``.
 
 Pure numerics.
@@ -15,7 +15,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from fitting.qsim.mbr_disorder import disorder_direction, select_diagonal_rows
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 _Positive = Annotated[float, Field(gt=0., allow_inf_nan=False)]
 _NonNegative = Annotated[float, Field(ge=0., allow_inf_nan=False)]

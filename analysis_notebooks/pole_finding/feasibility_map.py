@@ -44,7 +44,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from fitting.qsim.mbr_disorder import disorder_direction
-from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
+from theory.qsim.central_boson import fixed_n_hamiltonian
 from fitting.qsim.poles.design import Design, gap_errors
 from fitting.qsim.poles.statistics import bulk_gap_ratios
 from fitting.qsim.poles.views import INK, MODEL_COLOR, goe_density, poisson_density
