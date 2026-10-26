@@ -55,7 +55,7 @@ def figures(out):
     for n, d in out.items():
         fig, axes = plt.subplots(1, 2, figsize=(12, 4.6), constrained_layout=True)
         for ax, key, title, ref in ((axes[0], "mean_r", r"$\langle r\rangle$", (POISSON_MEAN_R, GOE_MEAN_R)),
-                                    (axes[1], "small", r"$P(r<0.25)$", (0.40, 0.12))):
+                                    (axes[1], "small", r"$P(r<0.25)$", (0.40, 0.158))):
             im = ax.imshow(d[key], origin="lower", cmap="viridis", aspect="auto")
             for i in range(len(KERRS)):
                 for j in range(len(DISORDERS)):

@@ -35,6 +35,9 @@ import sys
 from copy import deepcopy
 
 import h5py
+import matplotlib
+
+matplotlib.use("Agg")  # a script: no plot window (one blocked the first run, 2026-10-25 17:02)
 import numpy as np
 import yaml
 
@@ -55,6 +58,10 @@ STORS = [4, 5, 6, 7]
 SYNCS = (1, 34)
 OCCUPATIONS = [[1, 0, 0, 0, 0], [2, 0, 0, 0, 0]]
 OUT = r"C:\experiments\261025_level_stats\claude_work"
+DATA = r"C:\experiments\261025_level_stats\data"
+# Jobs already done (run 2 of 2026-10-25 stopped at the traces: the calibration was not saved yet).
+REUSE_SINGLE_SHOT = "JOB-20261025-00114"
+REUSE_STARK = {1: ["JOB-20261025-00116", "JOB-20261025-00117"]}
 os.makedirs(OUT, exist_ok=True)
 
 config_dict = {
@@ -104,7 +111,11 @@ def singleshot_postproc(station, expt):
     ro.confusion_matrix_without_reset = d["confusion_matrix"]
 
 
-if not MOCK:
+if not MOCK and REUSE_SINGLE_SHOT:
+    ss = meas.HistogramExperiment.from_h5file(os.path.join(DATA, f"{REUSE_SINGLE_SHOT}_HistogramExperiment.h5"))
+    singleshot_postproc(station, ss)
+    print("single shot reused:", REUSE_SINGLE_SHOT)
+elif not MOCK:
     ss_runner = CharacterizationRunner(
         station=station, ExptClass=meas.HistogramExperiment,
         default_expt_cfg=AttrDict(dict(
@@ -112,7 +123,7 @@ if not MOCK:
             storage_reset=False, qubit=0, pulse_manipulate=False, cavity_freq=4984.373226159381,
             cavity_gain=400, cavity_length=2, prepulse=False, pre_sweep_pulse=None, gate_based=True,
             qubits=[0], avoid_yoko=False)),
-        postprocessor=singleshot_postproc, job_client=client)
+        postprocessor=singleshot_postproc, job_client=client, show=False)
     ss = ss_runner.execute(go_kwargs=dict(analyze=False, display=False), active_reset=False, ef_reset=True,
                            storage_reset=False, coupler_reset=False, pre_selection_reset=True, man_reset=False,
                            use_qubit_man_reset=True, pre_selection_parity=False)
@@ -124,11 +135,18 @@ cycle_pairs = np.arange(0, 3, dtype=int) if MOCK else np.arange(0, 65, dtype=int
 cycles = np.array([0, 4]) if MOCK else np.arange(0, 300, 2)
 reps_cal, reps_trace = (10, 10) if MOCK else (1000, 500)
 for sync in SYNCS:
-    calibration = MBRCalibrationSetExperiment(OCCUPATIONS, cycle_pairs=cycle_pairs, swap_stors=STORS,
-                                              sync_cycles=sync, reps=reps_cal)
-    calibration.acquire(runner_for(sync, MBRStarkCalExperiment), batch_size=2, log=not MOCK, show=False)
+    if not MOCK and sync in REUSE_STARK:
+        children = [MBRStarkCalExperiment.from_h5file(os.path.join(DATA, f"{job}_MBRStarkCalExperiment.h5"),
+                                                      load_shots=False) for job in REUSE_STARK[sync]]
+        calibration = MBRCalibrationSetExperiment.from_children(children, job_ids=REUSE_STARK[sync])
+    else:
+        calibration = MBRCalibrationSetExperiment(OCCUPATIONS, cycle_pairs=cycle_pairs, swap_stors=STORS,
+                                                  sync_cycles=sync, reps=reps_cal)
+        calibration.acquire(runner_for(sync, MBRStarkCalExperiment), batch_size=2, log=not MOCK, show=False)
+    calibration_manifest = None
     if not MOCK:  # mock data have no phase to fit
         calibration.analyze()
+        calibration_manifest = str(calibration.save())  # the trace jobs record this manifest
     trace = MBRSpectrumExperiment(OCCUPATIONS, cycles, STORS, calibration=None if MOCK else calibration,
                                   sync_cycles=sync, reps=reps_trace)
     trace.acquire(runner_for(sync, MBRTimeTraceExperiment), batch_size=2, log=not MOCK, show=False)
@@ -139,7 +157,7 @@ for sync in SYNCS:
     record["runs"][sync] = dict(stark_jobs=calibration.job_ids, trace_jobs=trace.job_ids, trace_files=files,
                                 cycle_us=timing["floquet_cycle_us"], g_MHz=timing["couplings_MHz"][3],
                                 phase_deg_per_cycle=None if MOCK else {str(o): calibration.phase_for(o) for o in calibration.occupations},
-                                calibration_manifest=None if MOCK else str(calibration.save()))
+                                calibration_manifest=calibration_manifest)
     print("sync", sync, json.dumps(record["runs"][sync], default=str))
     with open(os.path.join(OUT, "idle_check_mock.json" if MOCK else "idle_check.json"), "w") as f:
         json.dump(record, f, indent=1, default=str)
