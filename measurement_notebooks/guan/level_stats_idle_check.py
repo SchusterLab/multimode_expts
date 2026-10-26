@@ -53,15 +53,20 @@ from experiments.qsim.mbr_stark_cal import MBRStarkCalExperiment
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 from experiments.qsim.mbr_campaign import build_campaign, campaign_runner
 
-MOCK = len(sys.argv) > 1 and sys.argv[1] == "mock"
+MOCK = "mock" in sys.argv[1:]
+# Part 2 ("onebody", added 2026-10-25 19:40): the idle gave detunings of 10-30 kHz (Q6). The four
+# single-storage rows at sync 34, with [1,0,0,0,0] from part 1, fix the one-body matrix (onsite offset
+# of each storage, couplings): is the idle only a static offset per mode that the detuning knob can cancel?
+ONEBODY = "onebody" in sys.argv[1:]
 STORS = [4, 5, 6, 7]
-SYNCS = (1, 34)
-OCCUPATIONS = [[1, 0, 0, 0, 0], [2, 0, 0, 0, 0]]
+SYNCS = (34,) if ONEBODY else (1, 34)
+OCCUPATIONS = ([[0, 1, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 1, 0], [0, 0, 0, 0, 1]] if ONEBODY
+               else [[1, 0, 0, 0, 0], [2, 0, 0, 0, 0]])
 OUT = r"C:\experiments\261025_level_stats\claude_work"
 DATA = r"C:\experiments\261025_level_stats\data"
 # Jobs already done (run 2 of 2026-10-25 stopped at the traces: the calibration was not saved yet).
 REUSE_SINGLE_SHOT = "JOB-20261025-00114"
-REUSE_STARK = {1: ["JOB-20261025-00116", "JOB-20261025-00117"]}
+REUSE_STARK = {} if ONEBODY else {1: ["JOB-20261025-00116", "JOB-20261025-00117"]}
 os.makedirs(OUT, exist_ok=True)
 
 config_dict = {
@@ -159,6 +164,7 @@ for sync in SYNCS:
                                 phase_deg_per_cycle=None if MOCK else {str(o): calibration.phase_for(o) for o in calibration.occupations},
                                 calibration_manifest=calibration_manifest)
     print("sync", sync, json.dumps(record["runs"][sync], default=str))
-    with open(os.path.join(OUT, "idle_check_mock.json" if MOCK else "idle_check.json"), "w") as f:
+    record_name = ("idle_onebody" if ONEBODY else "idle_check") + ("_mock" if MOCK else "")
+    with open(os.path.join(OUT, record_name + ".json"), "w") as f:
         json.dump(record, f, indent=1, default=str)
 print("done")
