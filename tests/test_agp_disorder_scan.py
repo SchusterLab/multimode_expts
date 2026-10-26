@@ -92,6 +92,11 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     fig, axes = scan.display_traces()
     assert len(axes) == 3
     matplotlib.pyplot.close(fig)
+    fig, axes = scan.display_spectrum()  # with the parts: adds the binned theory weights
+    assert len(axes) == 3 and len(axes[0].patches) > len(view.display_spectrum()[1][0].patches)
+    fig, axes = scan.display_spectrum(background_start_us=0.)
+    assert "background subtracted" in axes[0].lines[0].get_label()
+    matplotlib.pyplot.close("all")
 
     updated = scan.analyze()
     assert updated["agp"].shape == (3, 1) and "agp_t1" not in updated

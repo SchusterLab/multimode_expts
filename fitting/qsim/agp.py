@@ -8,6 +8,8 @@
   corrected moment, as factors that sum like independent errors.
 - :func:`fit_exponential_background`: the decaying DC background of a
   disconnected correlation.
+- :func:`cosine_transform_weights`: the spectral function of a measured
+  correlation, the quantity that the AGP filter integrates.
 
 The closed-system theory of the same quantities is in ``theory/qsim/agp.py``.
 The kernel weights and the calibration factors are from jonginn's 10-23
@@ -133,6 +135,32 @@ def fit_exponential_background(time_us, correlation, error=None, start_us=0.):
         absolute_sigma=sigma is not None, maxfev=20000)
     return dict(amplitude=float(amplitude), rate_per_us=float(rate), lifetime_us=float(1 / rate),
                 covariance=covariance, start_us=float(start_us))
+
+
+def cosine_transform_weights(time_us, frequency_mhz, window="hann"):
+    """-> M (frequency, time) with ``M @ C`` the one-sided spectral function of C, per MHz.
+
+    S(f) = 4 int_0^T W(t) C(t) cos(2 pi f t) dt for f >= 0 (trapezoid rule). C is
+    real and even in t, so this is its Fourier transform with -f folded onto f:
+    a term w cos(2 pi Delta t) gives a peak of area w at |Delta|, and the
+    integral of S over f >= 0 is C(0). The AGP is the integral of S(f) times
+    g^2 f^2 / (f^2 + mu^2)^2 (``theory.qsim.agp.spectral_agp``). ``window``:
+    "hann" (W = cos^2(pi t / 2T), less leakage) or "raw" (W = 1). The
+    resolution is about 1/T. ``time_us`` must start at 0 and increase.
+    """
+    times = np.asarray(time_us, dtype=float)
+    if times.ndim != 1 or len(times) < 2 or times[0] != 0 or np.any(np.diff(times) <= 0):
+        raise ValueError("time_us must be 1D, start at 0 and increase")
+    if window == "hann":
+        envelope = np.cos(np.pi * times / (2 * times[-1]))**2
+    elif window == "raw":
+        envelope = np.ones(len(times))
+    else:
+        raise ValueError("window must be 'hann' or 'raw'")
+    steps = np.diff(times)
+    trapezoid = np.concatenate([steps, [0]]) / 2 + np.concatenate([[0], steps]) / 2
+    phases = 2 * np.pi * np.asarray(frequency_mhz, dtype=float)[:, None] * times[None, :]
+    return 4 * trapezoid * envelope * np.cos(phases)
 
 
 ########################################################################

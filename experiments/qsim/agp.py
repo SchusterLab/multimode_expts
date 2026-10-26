@@ -42,8 +42,19 @@ from experiments.qsim.fock_population import (
     mode_name,
     multiparity_moment_error,
 )
-from fitting.qsim.agp import agp_kernel_weights, calibration_error_factors
-from theory.qsim.agp import probe_values, spectral_agp, spectral_weights, two_time_correlation
+from fitting.qsim.agp import (
+    agp_kernel_weights,
+    calibration_error_factors,
+    cosine_transform_weights,
+    fit_exponential_background,
+)
+from theory.qsim.agp import (
+    probe_values,
+    spectral_agp,
+    spectral_weights,
+    split_dc,
+    two_time_correlation,
+)
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
 # The photon numbers multiparity readout resolves (n mod 4, n <= 3).
@@ -555,6 +566,87 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             ax.set_ylabel(f"W = {self.data['disorder_khz'][row]:g} kHz", fontsize=8)
         axes[0, 0].legend(fontsize=7, ncol=2)
         axes[-1, 0].set_xlabel("Floquet cycles")
+        return fig, axes[:, 0]
+
+    def display_spectrum(self, mu=None, window="hann", background_start_us=None, max_khz=None,
+                         raw=False, theory=True, yscale="linear"):
+        """The one-sided spectral function S(f) of C_1 for every W. -> (fig, axes).
+
+        S is the cosine transform of the measured C_1 over its window
+        (``fitting.qsim.agp.cosine_transform_weights``), per kHz, with the shot
+        error. ``background_start_us``: first subtract A e^{-rate t} fitted for
+        t >= this time (``fit_exponential_background``); the unsubtracted S is
+        then grey and the theory is the connected part (no DC). With the parts
+        loaded: the closed-system S over the same window (dashed) and its
+        weights in bins of 1/T (steps). The AGP filters f^2 / (f^2 + mu^2)^2,
+        scaled to a peak of 1, are on the right axis; ``mu`` in kHz, default
+        the analyzed cutoffs. ``max_khz`` defaults to the Nyquist frequency.
+        """
+        if "C1" not in self.data:
+            self.analyze()
+        if "time_us" not in self.data:
+            raise ValueError("a spectrum needs the times of the cycles (time_us)")
+        key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
+        times = np.asarray(self.data["time_us"])
+        resolution_khz = 1000 / times[-1]
+        if max_khz is None:
+            max_khz = 1000 / (2 * np.median(np.diff(times)))
+        frequency_khz = np.arange(0, max_khz, resolution_khz / 4)
+        transform = cosine_transform_weights(times, frequency_khz / 1000, window) / 1000
+        cutoffs = np.atleast_1d(self.data.get("agp_mu", []) if mu is None else mu).astype(float)
+        with_parts = theory and bool(self.children) and "agp_theory" in self.data
+        subtract = background_start_us is not None
+        count = len(self.data["disorder_khz"])
+        fig, axes = plt.subplots(count, 1, figsize=(9, 2 * count), sharex=True, squeeze=False,
+                                 constrained_layout=True)
+        for row, ax in enumerate(axes[:, 0]):
+            values, error = np.asarray(self.data[key][row]), np.asarray(self.data["C1_err"][row])
+            dc = 0.
+            unsubtracted = transform @ values
+            if subtract:
+                fit = fit_exponential_background(times, values, error, background_start_us)
+                values = values - fit["amplitude"] * np.exp(-fit["rate_per_us"] * times)
+            spectrum, spread = transform @ values, np.sqrt(transform**2 @ error**2)
+            ax.plot(frequency_khz, spectrum, lw=1,
+                    label=key.replace("_", " ") + (", background subtracted" if subtract else ""))
+            ax.fill_between(frequency_khz, spectrum - spread, spectrum + spread, alpha=.3, lw=0)
+            if with_parts:
+                part = self.children[row]
+                differences, weights = part.theory_spectrum(
+                    kerr_mhz=float(part.data["theory_kerr_mhz"]))
+                dc, mask = split_dc(differences, weights)
+                kept = ~mask if subtract else np.ones(mask.shape, dtype=bool)
+                edges = np.arange(0, max_khz + resolution_khz, resolution_khz)
+                binned, _ = np.histogram(1000 * np.abs(differences[kept]), edges,
+                                         weights=weights[kept])
+                ax.stairs(binned / resolution_khz, edges, color="0.5", lw=.8,
+                          label="closed system, weights in bins of 1/T")
+            if "C1_theory" in self.data and (with_parts or not subtract):
+                ax.plot(frequency_khz, transform @ (self.data["C1_theory"][row] - dc), "k--",
+                        lw=1, label="closed system, same window")
+            ax.set_yscale(yscale)
+            if subtract:  # grey, and the y range stays on the subtracted S
+                limits = ax.get_ylim()
+                ax.plot(frequency_khz, unsubtracted, color="0.7", lw=1,
+                        label=f"{key.replace('_', ' ')}, with background")
+                ax.set_ylim(limits)
+            ax.set_ylabel(f"W = {self.data['disorder_khz'][row]:g} kHz\nS (1/kHz)", fontsize=8)
+            if len(cutoffs):
+                filters = ax.twinx()
+                for cutoff in cutoffs:
+                    shape = 4 * cutoff**2 * frequency_khz**2 / (frequency_khz**2 + cutoff**2)**2
+                    filters.plot(frequency_khz, shape, ":", lw=1, label=rf"filter, $\mu$ = {cutoff:g} kHz")
+                low, high = ax.get_ylim()  # the zero of the filters on the zero of S
+                filters.set(ylim=(1.05 * min(low, 0) / max(high, 1e-12), 1.05), yticks=[])
+                if row == 0:
+                    handles = ax.get_legend_handles_labels()
+                    others = filters.get_legend_handles_labels()
+                    ax.legend(handles[0] + others[0], handles[1] + others[1], fontsize=7, ncol=2)
+            elif row == 0:
+                ax.legend(fontsize=7, ncol=2)
+        fig.suptitle(f"{type(self).__name__}: spectral function of C_1, {window} window, "
+                     f"1/T = {resolution_khz:.2g} kHz", fontsize=10)
+        axes[-1, 0].set(xlabel="f (kHz)", xlim=(0, max_khz))
         return fig, axes[:, 0]
 
     def display_correlation(self, moment=1, raw=False, **kwargs):

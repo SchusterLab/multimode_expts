@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-25 evening** (level-statistics verdict, branch `theory`; AGP overnight lab book; `theory/` package and
+**Last updated: 2026-10-26** (AGP spectral function display, branch `theory`; level-statistics verdict; AGP overnight lab book; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -34,6 +34,10 @@ the branch rules are in `docs/STATUS.md`.
   residual detunings; the measured AGP agrees with the closed system where resolvable (Kerr at all
   W, S7 at W <= 60 kHz, mu >= mu_min). **Next (user to decide):** a background option in
   `analyze()` (exp fit + fit-start scan + 0.13 x DC-term systematic); the large-W extra damping.
+  2026-10-26: `CentralBosonAGPDisorderScan.display_spectrum()` shows the spectral function S(f)
+  of the measured C_1 with the closed system and the AGP filters; lab book `q13_spectrum.py`;
+  record `docs/log/2026-10-26_agp-spectrum.md`. Open: the low-frequency weight (< 5 kHz) after
+  background subtraction differs from the closed system (S7 at large W: less; Kerr: more).
 - **`theory/` package (2026-10-24, seb; `docs/qsim/theory_package.md`,
   `docs/log/2026-10-24_theory-package-agp.md`).** Models in `theory/` (parameters ->
   predictions), estimators in `fitting/`. `fixed_n_hamiltonian` is now

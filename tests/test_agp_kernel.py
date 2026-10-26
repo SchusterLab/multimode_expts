@@ -93,3 +93,31 @@ def test_exponential_background_fit_recovers_amplitude_and_rate():
     fit = fit_exponential_background(times, trace, error, start_us=30.)
     np.testing.assert_allclose([fit["amplitude"], fit["lifetime_us"]], [.7, 300], rtol=.02)
     assert fit["covariance"].shape == (2, 2) and fit["start_us"] == 30.
+
+
+def test_cosine_transform_peak_area_and_sum_rule():
+    from fitting.qsim.agp import cosine_transform_weights
+
+    times = np.linspace(0, 400, 2001)
+    weights, frequencies_mhz = np.array([.5, .3, .2]), np.array([0., .05, .12])
+    trace = weights @ np.cos(2 * np.pi * frequencies_mhz[:, None] * times)
+    grid = np.linspace(0, 1, 20001)
+    for window in ("hann", "raw"):
+        spectrum = cosine_transform_weights(times, grid, window) @ trace
+        np.testing.assert_allclose(trapezoid(spectrum, grid), trace[0], rtol=2e-3)
+        for weight, frequency in zip(weights[1:], frequencies_mhz[1:]):
+            near = abs(grid - frequency) < .02
+            np.testing.assert_allclose(trapezoid(spectrum[near], grid[near]), weight, rtol=.03)
+            assert abs(grid[near][np.argmax(spectrum[near])] - frequency) < 1e-3
+
+
+def test_cosine_transform_filtered_matches_the_spectral_agp():
+    from fitting.qsim.agp import cosine_transform_weights
+
+    cutoff_mhz, frequency_mhz = .01, .027
+    times = np.linspace(0, 3000, 30001)
+    grid = np.linspace(0, .2, 40001)
+    spectrum = cosine_transform_weights(times, grid) @ np.cos(2 * np.pi * frequency_mhz * times)
+    value = trapezoid(spectrum * grid**2 / (grid**2 + cutoff_mhz**2)**2, grid)
+    expected = frequency_mhz**2 / (frequency_mhz**2 + cutoff_mhz**2)**2
+    np.testing.assert_allclose(value, expected, rtol=1e-2)
