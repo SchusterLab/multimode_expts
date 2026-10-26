@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-25** (AGP overnight lab book, branch `theory`; `theory/` package and
+**Last updated: 2026-10-25 evening** (level-statistics verdict, branch `theory`; AGP overnight lab book; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,20 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Level statistics: can MBR spectra show level repulsion turn on? Verdict (2026-10-25 evening, Claude,
+  full rein; branch `theory`).** Read the vault page first:
+  `G:\Shared drives\SLab\Multimode\Lab\guan\LevelStatistics\LevelStatistics - overview.md`; short record
+  `docs/log/2026-10-25_level-statistics-verdict.md`; scripts `analysis_notebooks/level_stats/labbook/`.
+  Yes from the linear limit, not from the dark-mode limit, not tonight: complete N = 3 basis at W/g 2-2.4,
+  count merged poles by their integer weights, compare P(r<0.25) shape by shape with the linear spectrum
+  from N = 1 data of the same pattern. 11-13 shapes at K/g -1.8 (18-25 at the present -0.9); 120-275 h of
+  device time. Resolution is not the limit with a complete basis (the frozen sparse fit + counting is
+  within +0.00..+0.06 of exact on synthetic traces, even at 92 us); the shape count is. The Sep 10 data
+  pass the frozen test (0.31 +/- 0.06 vs model 0.32). An idle per Trotter pulse (scramble_sync_cycles 34,
+  a cheaper way to a high K/g) does not work as it is: M1 and the storages barely exchange, and no
+  one-body Hamiltonian fits (device check, 10-25). **Next (user to decide):** a campaign, at a new coupler
+  set point with |K| ~ 35-40 kHz (measure M1 T2 there, rerun `q10_fitter_check.py` at its hardware first).
 
 - **AGP from the time traces: overnight lab book (2026-10-25, Claude; branch `theory`).** Read the
   vault page first: `G:\Shared drives\SLab\Multimode\Lab\guan\AGP\2026-10-25 lab book - AGP from time traces.md`
