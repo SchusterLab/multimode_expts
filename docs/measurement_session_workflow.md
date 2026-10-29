@@ -2,8 +2,8 @@
 
 Status: draft (2026-10-29), from the first session of this kind (2026-10-28). This file: how we
 work together on this PC: who does what, kernels, records, the order of a session. Some of it
-is different for each user. Some parts need tools that are not built yet
-(`docs/lab_workflow_tooling_spec.md`); those parts say "(planned)".
+is different for each user. The tools for it are in `docs/lab_workflow_tooling_spec.md`
+(items A-D built 2026-10-29).
 
 How the code and the device behave (the queue, mock mode, config branches, readout phase,
 relax delays) is in `docs/running_experiments.md`. Read it first.
@@ -32,10 +32,10 @@ churn for git, and a status file that we must keep current by hand is bad for fo
   - Under each entry (or the last entry of a group of jobs), a note that starts with the
     author, e.g. `(<user>)` or `(Claude)`: what was run (job-ID range, script cell), the result in
     numbers, and what it means.
-  - A reading that turns out wrong is not deleted: add `[Update <time>: withdrawn, because
-    ...]` and point to the new entry.
-  - Analysis figures for a group of jobs: `station.log_analysis(...)` (planned); until then
-    `station.log_measurement(experiment=None, fig=..., title=..., notes=...)`.
+  - A reading that turns out wrong is not deleted: `experiments.vault.withdraw_note` adds
+    `[withdrawn <date>: <why>]` after the author. Then point to the new entry.
+  - Analysis figures for a group of jobs: `station.log_analysis(fig, title, job_ids,
+    note=..., author=...)`; it returns the entry id. It logs in mock mode too.
 - **The repo records code, not device state.** This has been changing in the past but current
   decision is that `docs/STATUS.md`, `docs/status/*.md` and
   `docs/log/` hold code changes, code bugs found, and decisions about code and tools. No
@@ -47,9 +47,10 @@ churn for git, and a status file that we must keep current by hand is bad for fo
     older one.
   - Older status files and log entries also have physics in them, from before this rule. Leave
     them as they are; for the device state, the vault wins.
-- Editing the vault day file: use the anchor-based note writer (planned). Until then: change
-  one line at a time, read the file just before you write, and do not write while one of your
-  jobs is about to finish (the logger appends then).
+- Editing the vault day file: `station.add_note(entry_id, text, author=...)` (entry id = job
+  ID, or the id `log_analysis` returned). Schema and limits: `experiments/vault.py`. Entries
+  from before 2026-10-29 have no anchors; for them change one line at a time, read the file
+  just before you write, and do not write while one of your jobs is about to finish.
 - Figures in chat (CC board) only when the human asks; the vault and the kernel output have
   them.
 
@@ -73,7 +74,8 @@ Per user:
   its session name. Lab console output streams only to the clients that are connected at that
   time. The agent: find the session by name with `GET /api/sessions` (the token is in the
   `jpserver-*.json`; never print it) and attach a `jupyter_client.BlockingKernelClient` to
-  `kernel-<id>.json`. `tools/kernel_exec.py` (planned) will do this.
+  `kernel-<id>.json`. `tools/kernel_exec.py` does this (`list`, `start`, `cells`, `run`,
+  `interrupt`; see its docstring).
 - **seb, jonginn:** VSCode, mostly. (To agree: how the agent reaches their kernels.)
 
 ## The script

@@ -38,6 +38,7 @@ import copy
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -54,6 +55,7 @@ from slab.experiment import Experiment
 from slab.instruments import InstrumentManager
 from slab.instruments.voltsource import YokogawaGS200
 
+from experiments import vault
 from experiments.dataset import FloquetStorageSwapDataset, StorageManSwapDataset
 from experiments.mock_hardware import MockInstrumentManager, MockYokogawa
 
@@ -485,7 +487,7 @@ class MultimodeStation:
     def _install_mock_instruments(self):
         """Build mock im + yokos and assign to self. Does not touch soc/configs."""
         qick_alias = self.hardware_cfg["aliases"]["soc"]
-        self.im = MockInstrumentManager(qick_alias=qick_alias)
+        self.im = MockInstrumentManager(qick_alias=qick_alias, soccfg=self.soccfg)
         self.yoko_coupler = MockYokogawa(name="yoko_coupler", address="mock://192.168.137.148")
         self.yoko_jpa = MockYokogawa(name="yoko_jpa", address="mock://192.168.137.149")
 
@@ -655,8 +657,21 @@ class MultimodeStation:
         data_path=None,
         notes: str = "",
         tags: Optional[List[str]] = None,
+        kind: Optional[str] = None,
+        entry_id: Optional[str] = None,
+        body: str = "",
+        author: Optional[str] = None,
+        log_in_mock: bool = False,
     ) -> Optional[Path]:
         """Append a measurement entry to the user's daily lab-notebook file in the vault.
+
+        The day file follows the schema in experiments/vault.py: each entry has
+        an id (the job ID if `data_path` has one, else `entry_id` or a
+        generated `ENT-`/`ANA-` id) and a notes block between two anchors, so
+        notes can be added later with `add_note`. `kind` is `job` (the
+        default if there is a job ID), `analysis` or `entry`. `body` is
+        markdown put after the figures. `author` is the author of `notes`
+        (default: the station user).
 
         Two calling modes:
         - Mode A (`experiment` is a slab Experiment): title, project, parameters,
@@ -668,11 +683,13 @@ class MultimodeStation:
         No-op (returns None) if `vault_root` is not configured, or if the
         station is currently in mock mode (mock measurements would pollute the
         real lab notebook). Flip out of mock mode briefly if you need to test
-        the logging path itself.
+        the logging path itself. `log_in_mock=True` logs in mock mode too
+        (for `log_analysis`: an analysis kernel can be a mock station).
 
         Returns the path to the daily markdown file, or None if disabled.
+        The file and the entry id are also in `self.last_vault_entry`.
         """
-        if self._is_mock:
+        if self._is_mock and not log_in_mock:
             print("[log_measurement] mock mode active; skipping vault write.")
             return None
         if self.vault_root is None:
@@ -724,6 +741,19 @@ class MultimodeStation:
         figures_dir = target_dir / "figures"
         target_dir.mkdir(parents=True, exist_ok=True)
         figures_dir.mkdir(parents=True, exist_ok=True)
+        daily_file = target_dir / f"{today}.md"
+
+        job_id = vault.job_id_in(data_path) if data_path is not None else None
+        if kind is None:
+            kind = "job" if job_id else "entry"
+        if entry_id is None:
+            if kind == "job" and job_id:
+                entry_id = job_id
+            else:
+                prefix = "ANA" if kind == "analysis" else "ENT"
+                entry_id = f"{prefix}-{now:%Y%m%d-%H%M%S}"
+        existing = daily_file.read_text(encoding="utf-8") if daily_file.exists() else ""
+        entry_id = vault.unique_entry_id(existing, entry_id)
 
         # Save plot copies into the vault. `fig` may be a single Figure or a
         # list of Figures; multi-fig case happens for displays that emit a 2D
@@ -743,7 +773,7 @@ class MultimodeStation:
                 print(f"[log_measurement] Could not save figure {idx + 1}: {exc}")
 
         # Build per-measurement section meta
-        section_meta: dict = {"timestamp": timestamp_iso}
+        section_meta: dict = {"entry_id": entry_id, "kind": kind, "timestamp": timestamp_iso}
         if experiment is not None:
             section_meta["experiment_class"] = type(experiment).__name__
         if hasattr(self, "experiment_name") and self.experiment_name:
@@ -795,6 +825,7 @@ class MultimodeStation:
         quoted_yaml = "\n".join(("> " + line) if line else ">" for line in yaml_lines)
         entry_parts = [
             f"## {time_str} \u2014 {title}\n\n",
+            vault.id_line(entry_id),
             "> [!note]- parameters\n",
             "> ```yaml\n",
             quoted_yaml + "\n",
@@ -802,17 +833,18 @@ class MultimodeStation:
         ]
         for rel in plot_rels:
             entry_parts.append(f"![[{rel}]]\n\n")
-        entry_parts.append("### Notes\n\n")
-        # Avoid `<...>` which Obsidian's HTML-block parser may treat as an
-        # unclosed tag and let it consume subsequent content (breaking the
-        # next entry's rendering).
-        entry_parts.append((notes.rstrip() + "\n\n") if notes else "_add interpretation here_\n\n")
+        if body.strip():
+            entry_parts.append(body.strip() + "\n\n")
+        # Notes text is plain markdown. Avoid `<...>` in it, which Obsidian's
+        # HTML-block parser may treat as an unclosed tag and let it consume
+        # subsequent content. The anchors are full one-line HTML comments.
+        notes_text = vault.format_note(notes, author or user) if notes.strip() else ""
+        entry_parts.append(vault.notes_block(entry_id, notes_text))
         entry_parts.append("---\n\n")
         entry_text = "".join(entry_parts)
 
         # Top-of-file: write frontmatter + H1 only on first creation. Same
         # buffer-then-write pattern, so a yaml failure can't leave a partial.
-        daily_file = target_dir / f"{today}.md"
         if not daily_file.exists():
             top_tags = ["lab", "measurement", project, user]
             if tags:
@@ -822,6 +854,7 @@ class MultimodeStation:
                 "user": user,
                 "project": project,
                 "tags": top_tags,
+                "vault_schema": vault.SCHEMA_VERSION,
             }
             try:
                 top_yaml = yaml.safe_dump(
@@ -838,12 +871,77 @@ class MultimodeStation:
             )
             daily_file.write_text(top_text, encoding="utf-8")
 
-        # Atomic single append of the fully-built entry
-        with daily_file.open("a", encoding="utf-8") as f:
-            f.write(entry_text)
+        vault.append_entry(daily_file, entry_text)
+        self.last_vault_entry = (daily_file, entry_id)
 
-        print(f"[log_measurement] Appended section to {daily_file}")
+        print(f"[log_measurement] Appended {entry_id} to {daily_file}")
         return daily_file
+
+    def log_analysis(
+        self,
+        fig,
+        title: str,
+        job_ids,
+        note: str = "",
+        parameters: Optional[dict] = None,
+        data_files=None,
+        source: Optional[str] = None,
+        project: Optional[str] = None,
+        author: Optional[str] = None,
+    ) -> Optional[str]:
+        """Append an analysis entry about a group of jobs to the vault day file.
+
+        For figures that belong to several jobs (a population ladder, a fit
+        over a scan), not to one. The entry has the job IDs as a range and as
+        links to their entries, the source of the figure, the figures, the
+        parameters and a notes block. Logs in mock mode too: the jobs are real.
+
+        Args:
+            fig: a Figure or a list of Figures.
+            job_ids: one job ID or a list of them.
+            note: the first note (author: `author`, default the station user).
+            data_files: paths of files the analysis wrote, if any.
+            source: where the figure came from, e.g. "mbr_s4s7_n2.py, cell 'ladder'".
+                Default: what tools/kernel_exec.py set for the running cell.
+
+        Returns the entry id (for `add_note`), or None if the vault is off.
+        """
+        job_ids = [job_ids] if isinstance(job_ids, str) else list(job_ids)
+        if source is None:
+            source = getattr(sys.modules.get("__main__"), "__kernel_exec_source__", None)
+        parameters = dict(parameters or {})
+        parameters.setdefault("job_ids", job_ids)
+        body = ""
+        if self.vault_root is not None:
+            user_dir = self.vault_root / "Lab" / (self.user or "unknown")
+            body = vault.analysis_body(self.vault_root / "Lab", user_dir, job_ids, source)
+        path = self.log_measurement(
+            fig=fig, title=title, project=project, parameters=parameters,
+            data_path=data_files, notes=note, kind="analysis", body=body,
+            author=author, log_in_mock=True,
+        )
+        return self.last_vault_entry[1] if path is not None else None
+
+    def add_note(self, entry_id: str, text: str, author: Optional[str] = None,
+                 day_file=None) -> Optional[Path]:
+        """Add a note to the notes block of a vault entry (see experiments/vault.py).
+
+        `entry_id` is a job ID or the id `log_analysis` returned. The day file
+        is found from the date in the id, in any project folder of the station
+        user, unless `day_file` is given. `author` defaults to the station user.
+        Works in mock mode: it only adds to an entry that exists.
+        """
+        if self.vault_root is None:
+            print("[add_note] vault_root not configured; skipping.")
+            return None
+        if day_file is None:
+            user_dir = self.vault_root / "Lab" / (self.user or "unknown")
+            day_file = vault.find_entry_file(user_dir, entry_id)
+            if day_file is None:
+                raise vault.VaultError(f"no day file under {user_dir} has an entry {entry_id}")
+        path = vault.add_note(day_file, entry_id, text, author or self.user or "unknown")
+        print(f"[add_note] {entry_id} in {path}")
+        return path
 
     def save_plot(
         self, fig, filename: str = "plot.png", subdir: Optional[str | Path] = None

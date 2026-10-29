@@ -14,7 +14,8 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   `docs/log/2026-10-28_fock-prep-f-decay.md`. **Next:** the short copyable notebook for jonginn
   and the module-gap note (script `measurement_notebooks/guan/yoko450ua_calibration.py`, last
   cell); jonginn's calibration notebooks write the f0-g1 length only to the ds_storage `M1` row.
-  Tooling for these sessions: `docs/lab_workflow_tooling_spec.md` (draft), workflow:
+  Tooling for these sessions: `docs/lab_workflow_tooling_spec.md` (A-D built 2026-10-29,
+  `docs/log/2026-10-29_session-tooling.md`), workflow:
   `docs/measurement_session_workflow.md` (draft).
 - **Error amplification: `analyze()` gets `state_fin` from the pulse type, `periodic=False` by
   default (2026-10-24, `docs/log/2026-10-24_error-amp-final-state.md`).** On `main` (commit

@@ -36,10 +36,11 @@ For a working example, follow a recent jupytext script in a measurement sandbox 
    default the mock run does not analyze and does not postprocess (a mock fit must not write
    into your configs). To test the analysis code, pass `go_kwargs=dict(analyze=True)`; leave
    `postprocess` off. Mock runs are not logged to the vault.
-7. **The mock does not check board resources** (envelope memory, readout buffer lengths). A job
-   that exceeds them compiles in mock and fails at upload on the real board. Until the check
-   exists (`docs/lab_workflow_tooling_spec.md`, item D), be careful with long pulses and many
-   prepulse gates on one channel.
+7. **The mock checks board resources** (since 2026-10-29): envelope memory per generator, mux
+   tones, readout buffer lengths, tProc program memory, with the limits in `soccfg`
+   (`experiments/board_resources.py`). A program that does not fit raises
+   `BoardResourceError` in the mock, with the envelopes on the channel. The runner does not
+   check before submit: run new or changed pulse sequences in the mock first.
 8. **Submit:** a job-server-aware runner, e.g. `CharacterizationRunner(station, ExptClass,
    default_expt_cfg, job_client=JobClient(), use_queue=True)`, then
    `runner.execute(overrides=[...], batch_size=...)`. Extra kwargs (such as `reps`,

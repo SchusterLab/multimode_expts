@@ -1,7 +1,9 @@
 # Spec: tooling for shared-kernel measurement sessions
 
-Status: draft (guan + Claude, 2026-10-29). Not started. Scope agreed with guan; item E is for
-discussion only. Origin: the 2026-10-28 session (`docs/log/2026-10-28_fock-prep-f-decay.md`),
+Status: A-D implemented 2026-10-29 (`docs/log/2026-10-29_session-tooling.md`); B's schema is
+guan's decision and may change after use in Obsidian. D: the mock checks only; no runner
+preflight (guan: the mock at program composition catches these). Item E is for discussion only.
+Original status: draft (guan + Claude, 2026-10-29). Origin: the 2026-10-28 session (`docs/log/2026-10-28_fock-prep-f-decay.md`),
 where an agent and guan worked in the same kernel and the same vault day file.
 
 Four tools (A-D) and one design note (E). Each one can be done and tested alone.
