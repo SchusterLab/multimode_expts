@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-10-23** (AGP layers item added; the rest as of 2026-10-15). This file holds only what is
+**Last updated: 2026-10-28** (M1 Fock prep item added; AGP layers as of 2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
 Read the log only if you need the history.
@@ -33,6 +33,11 @@ Rules:
 
 ## Cross-theme items
 
+- **M1 Fock N >= 2 prep (2026-10-28, all users):** with photons in M1 the qubit f state decays
+  to g and loses one photon (|f,n> -> |g,n-1>; ~6 us for n=1 at 0.45 mA, ~20x slower at 0.25 mA).
+  Physics: vault `Lab/guan/AGP/2026/10/2026-10-28.md`; record: `docs/log/2026-10-28_fock-prep-f-decay.md`.
+- **Records (guan, 2026-10-29, being tried):** history and physics go to the Obsidian vault; the
+  repo is for code. Draft: `docs/measurement_session_workflow.md`.
 - **Branches (2026-10-15):** `main` has all of `guan` and `tests-cleanup`, and `main` is
   merged back into `guan`. The uncommitted edits in the `main` checkout (worker yoko reconnect,
   transduction docs, jonginn's AGP work, QEC notebooks) are committed. **Users restart their
