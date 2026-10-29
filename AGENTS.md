@@ -10,12 +10,10 @@ the start of every session.
 - **Read `docs/STATUS.md` first.** It lists the themes, their branches and worktrees, and
   the cross-theme items. Then read the status file of your theme under `docs/status/`: where
   things stand, what is next, which docs are current. Read `docs/log/` only when you need the
-  history.
-- At the end of a work session that changes the state, **overwrite** the status file of your
-  theme (update its date; change `docs/STATUS.md` only for cross-theme items) and **add** one
-  `docs/log/YYYY-MM-DD_<topic>.md`: what was done,
-  decisions and who made them, what was found. Do not edit a log entry after its day;
-  write a new one. A newer entry wins over an older one.
+  history. These files record the code, not the device: the device state and physics results
+  are in the Obsidian vault day files.
+- What to record where (status files, `docs/log/`, the vault), and when: see "Records" in
+  `docs/measurement_session_workflow.md`. Follow it for every session, code-only or not.
 - Design specs (`docs/qsim/*.md` etc.) start with a `Status:` line. When one is
   replaced, say so on that line and name the successor. Keep specs to the design; put
   progress and handoff notes in the log.
@@ -97,5 +95,7 @@ archive. This happened on 2026-10-06 with `git worktree remove --force`
 ## Running on the real device
 
 We are starting to explore the possibility of agentic execution of real experiments on the device. 
-Before you submit any job to the real device, read `docs/running_experiments.md`.
+Before you submit any job to the real device, read `docs/running_experiments.md` (how the code
+and the device behave) and `docs/measurement_session_workflow.md` (how we work: kernels,
+records, the order of a session).
 
