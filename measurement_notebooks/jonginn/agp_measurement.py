@@ -52,10 +52,11 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261023-00038',
+config_dict = {'hardware_config': 'CFG-HW-20261028-00102',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261023-00003',
- 'floquet_storage_swap': 'CFG-FL-20261023-00002'}
+ 'man1_storage_swap': 'CFG-M1-20261028-00047',
+ 'floquet_storage_swap': 'CFG-FL-20261027-00074'}
+
 
 client = JobClient()
 health = client.health_check()
@@ -64,7 +65,7 @@ client.print_queue()
 
 station = MultimodeStation(
     user=user,
-    experiment_name="agp_k44_first_scan",
+    experiment_name="261027AGPlowKerr",
     project="AGP",
     log_measurements=True,
     hardware_config=config_dict["hardware_config"],
@@ -74,7 +75,7 @@ station = MultimodeStation(
 )
 
 # %% tags=["defaults"]
-STORAGE_MODES = [4, 5, 6, 7]
+STORAGE_MODES = [1, 2]
 common_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
@@ -145,9 +146,9 @@ CONFUSION_MATRIX_FNAME = str(calibration_expt.fname)
 # %% tags=["walk_settings"]
 swap_stors = list(STORAGE_MODES)
 meas_stors = [0] + swap_stors
-occupations = [3, 0, 0, 0, 0]
-detunings = [0.0, 0.0, 0.0, 0.0]  # MHz
-floquet_cycles = list(range(0, 100, 2))
+occupations = [3, 0, 0]
+detunings = [0.0, 0.0]  # MHz
+floquet_cycles = list(range(0, 2, 2))
 
 # %% tags=["walk_acquire"]
 walk_expts = []
@@ -171,14 +172,22 @@ walk_fig, walk_axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
 for walk_expt in walk_expts:
     data = walk_expt.data
     mode = walk_expt.cfg.expt.ro_stor
-    walk_axes[0].plot(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
-    walk_axes[1].plot(data["xpts"], data["nmod4_mean_corrected"],
+    
+    walk_axes[0].scatter(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
+    walk_axes[1].scatter(data["xpts"], data["nmod4_mean_corrected"],
                       label=f"Corrected, Mode {mode}")
+    # walk_axes[0].plot(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
+    # walk_axes[1].plot(data["xpts"], data["nmod4_mean_corrected"],
+    #                   label=f"Corrected, Mode {mode}")
 for axis in walk_axes:
     axis.set(xlabel="Floquet cycles", ylabel="Mean n mod 4")
     axis.legend()
 walk_fig.tight_layout()
 plt.show()
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+for walk_expt in walk_expts:
+    print(walk_expt.fname)
 
 # %% [markdown]
 # ### Optional: compare population evolution with the fixed-N Hamiltonian
@@ -188,7 +197,7 @@ plt.show()
 # energies -detuning. For the N=3 input above, number and number modulo 4 agree.
 
 # %% tags=["theory_settings"]
-KERR_KHZ = -27.0  # K / (2*pi), including its sign.
+KERR_KHZ = -3.0  # K / (2*pi), including its sign.
 
 # %% tags=["walk_theory"]
 theory_axis = walk_axes[1]
@@ -334,5 +343,3 @@ for scan in disorder_scans.values():
         fig, axis = scan.display_correlation(moment=moment, raw=False)
         plt.show()
         plt.close(fig)
-
-# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
