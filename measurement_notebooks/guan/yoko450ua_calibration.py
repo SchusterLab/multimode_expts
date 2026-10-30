@@ -73,19 +73,8 @@ singleshot_defaults = AttrDict(dict(
 
 
 def singleshot_postproc(station, expt):
-    expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
-    readout = station.hardware_cfg.device.readout
-    thresholds = expt.data["thresholds"]
-    readout.phase = [readout.phase[0] + expt.data["angle"]]
-    readout.threshold = thresholds
-    readout.threshold_list = [thresholds]
-    readout.Ie = [np.median(expt.data["Ie_rot"])]
-    readout.Ig = [np.median(expt.data["Ig_rot"])]
-    if expt.cfg.expt.active_reset:
-        readout.confusion_matrix_with_active_reset = expt.data["confusion_matrix"]
-    else:
-        readout.confusion_matrix_without_reset = expt.data["confusion_matrix"]
-    print("fids", expt.data["fids"], "angle", expt.data["angle"])
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 
 def ge_direction_deg(expt):
@@ -106,9 +95,9 @@ print("phase", old_phase, "->", station.hardware_cfg.device.readout.phase[0])
 ss.display(station=station)
 print(bm.commit("agp_0.45mA", note="single shot ge baseline, no active reset"))
 
-# %% Cell 3: single shot g/e/f, to look at the g vs f separation. No postprocessor: with f shots
-# the fitted angle is the e-f axis (fitting/fit_display_classes.py Histogram), so nothing from
-# this run goes into the config. Runs on the phase that cell 2 just set.
+# %% Cell 3: single shot g/e/f, to look at the g vs f separation. Runs on the phase that cell 2
+# just set. No postprocessor here (as run on 10-28); since 10-29 the analysis keeps the g-e axis
+# with f shots, so singleshot_postproc would also work on this run.
 gef_runner = CharacterizationRunner(
     station=station, ExptClass=meas.HistogramExperiment, default_expt_cfg=singleshot_defaults,
     job_client=client, use_queue=True, show=False,
@@ -654,13 +643,12 @@ print("saved", report_fig)
 # Each item is a helper or a block above that should move into a module, so the final notebook is
 # only defaults -> pre/postprocessor -> runner.execute.
 #
-# 1. **Single-shot postprocessor** (cell 2, `singleshot_postproc`): copied from
-#    `single_qubit_autocalibrate_v2.py`; the same code is in several notebooks. Belongs next to
-#    `HistogramExperiment` as the standard "update readout" postprocessor.
-# 2. **`HistogramExperiment` with f shots** (cell 3): the fitted angle is the e-f axis
-#    (`fitting/fit_display_classes.py` Histogram, theta from e-f when f shots exist), so the
-#    printed gf fidelity is not g vs f. Missing: pairwise fidelity on each pair's own axis, and a
-#    3x3 g/e/f assignment matrix (`blob_centers`, `assign`, `assignment_matrix`, cells 5).
+# 1. **Single-shot postprocessor** (cell 2): done 2026-10-29. `HistogramExperiment.analyze()`
+#    sets `expt.readout_cfg`; every notebook's `singleshot_postproc` copies it into the station.
+# 2. **`HistogramExperiment` with f shots** (cell 3): done 2026-10-29. The rotation stays g-e;
+#    gf is read on I, ef on Q, and `data["assignment_matrix"]` is the 3x3 g/e/f matrix
+#    (I against the ge threshold, then Q). The cell-5 helpers (`blob_centers`, `assign`,
+#    `assignment_matrix`, nearest center) still run here; they move with item 3.
 # 3. **`HistogramExperiment` has no prepared-state-only mode** (cell 5): with `check_e=False`
 #    the analysis fails, so every truncation job also acquires an e branch we do not use. Missing:
 #    a "read g/e/f populations after a prepulse" experiment that returns corrected populations.

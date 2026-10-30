@@ -116,24 +116,8 @@ singleshot_defaults = AttrDict(dict(
 # You can use kwargs in the run function to override these values
 
 def singleshot_postproc(station, expt):
-    expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
-    fids = expt.data['fids']
-    confusion_matrix = expt.data['confusion_matrix']
-    thresholds_new = expt.data['thresholds']
-    angle = expt.data['angle']
-    print(fids)
-
-    hardware_cfg = station.hardware_cfg
-    hardware_cfg.device.readout.phase = [hardware_cfg.device.readout.phase[0] + angle]
-    hardware_cfg.device.readout.threshold = thresholds_new
-    hardware_cfg.device.readout.threshold_list = [thresholds_new]
-    hardware_cfg.device.readout.Ie = [np.median(expt.data['Ie_rot'])]
-    hardware_cfg.device.readout.Ig = [np.median(expt.data['Ig_rot'])]
-    if expt.cfg.expt.active_reset:
-        hardware_cfg.device.readout.confusion_matrix_with_active_reset = confusion_matrix
-    else:
-        hardware_cfg.device.readout.confusion_matrix_without_reset = confusion_matrix
-    print('Updated readout!')
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 
 # %% jupyterlab_notify.notify={"defaultThreshold": "30s", "mode": "default"}

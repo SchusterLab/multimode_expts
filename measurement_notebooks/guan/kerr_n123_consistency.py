@@ -149,20 +149,8 @@ singleshot_defaults = AttrDict(dict(
 
 
 def singleshot_postproc(station, expt):
-    expt.analyze(plot=False, station=station, subdir=station.autocalib_path)
-    d = expt.data
-    print("old: phase", ro.phase[0], "threshold", ro.threshold)
-    ro.phase = [ro.phase[0] + d["angle"]]
-    ro.threshold = d["thresholds"]
-    ro.threshold_list = [d["thresholds"]]
-    ro.Ie = [np.median(d["Ie_rot"])]
-    ro.Ig = [np.median(d["Ig_rot"])]
-    if expt.cfg.expt.active_reset:
-        ro.confusion_matrix_with_active_reset = d["confusion_matrix"]
-    else:
-        ro.confusion_matrix_without_reset = d["confusion_matrix"]
-    print("new: phase", ro.phase[0], "threshold", ro.threshold)
-    print("fid", d["fids"], "angle", d["angle"], "confusion", np.round(d["confusion_matrix"], 4))
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 
 ss_runner = CharacterizationRunner(

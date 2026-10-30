@@ -56,7 +56,6 @@ from experiments.MM_base import MM_base, prepulse_creator2
 from experiments.qubit_cavity.single_mode_wigner_tomography import (
     WignerTomography1ModeExperiment,
 )
-from experiments.readout_calibration import apply_singleshot_calibration
 from experiments.single_qubit.single_shot import HistogramExperiment
 from experiments.single_qubit.single_shot_prepulse import HistogramPrepulseExperiment
 from fitting import fitting as fitter
@@ -296,7 +295,8 @@ ge_calibration = reference_runner.execute(
     relax_delay=2500,
     wait_after_reset_us=0.0,
 )
-apply_singleshot_calibration(station, ge_calibration)
+ge_calibration.analyze(station=station, subdir=station.autocalib_path)
+station.hardware_cfg.device.readout.update(ge_calibration.readout_cfg)
 calibration_jobs["readout"] = ge_calibration
 # Acquire fresh g/e/f references below after applying this calibration.
 
