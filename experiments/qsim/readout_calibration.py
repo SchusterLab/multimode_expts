@@ -4,9 +4,13 @@ Use with CharacterizationRunner: each subsequent job snapshots the updated
 station readout settings. Active reset is disabled while measuring the clouds.
 """
 from experiments.characterization_runner import CharacterizationRunner
-from experiments.readout_calibration import apply_singleshot_calibration as singleshot_postproc
 from experiments.single_qubit.single_shot import HistogramExperiment
 from slab import AttrDict
+
+
+def singleshot_postproc(station, expt):
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 
 def singleshot_runner(station, client=None, use_queue=False, reps=5000,

@@ -711,7 +711,6 @@ def _recalibrate_readout(
 
         device.readout.phase[0]        := old + delta_phase_deg   (ADDITIVE)
         device.readout.threshold[0]    := new_threshold           (replace)
-        device.readout.threshold_list  := [[new_threshold]]       (replace)
 
     The readout cfg used for this single-shot is the SAME pinned hw_cfg_base
     the Wigner will use (modulo phase/threshold), so the rotation it returns
@@ -896,7 +895,6 @@ def submit_wigner_via_queue(req: RunWignerRequest, iter_id: str) -> tuple[np.nda
         new_phase = old_phase + delta_phase_deg
         ro["phase"]          = [new_phase]
         ro["threshold"]      = [new_threshold]
-        ro["threshold_list"] = [[new_threshold]]
         recal_meta["recal_phase_old_deg"] = old_phase
         recal_meta["recal_phase_new_deg"] = new_phase
 
@@ -1068,7 +1066,6 @@ def submit_state_tomo_1q_via_queue(req: "RunStateTomo1QRequest", iter_id: str) -
         new_phase = old_phase + delta_phase_deg
         ro["phase"]          = [new_phase]
         ro["threshold"]      = [new_threshold]
-        ro["threshold_list"] = [[new_threshold]]
         recal_meta["recal_phase_old_deg"] = old_phase
         recal_meta["recal_phase_new_deg"] = new_phase
 

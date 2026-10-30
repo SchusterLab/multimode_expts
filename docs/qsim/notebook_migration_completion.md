@@ -35,9 +35,9 @@ the ensemble manifest or jobs.db. Estimated planning time excludes single-shot o
 
 `MBRSpectrumExperiment.acquire(before_batch=callback, batch_size=1)` completes each
 batch before recalibrating and submitting the next. The single-shot runner disables
-active reset for the calibration itself, then uses the shared
-`experiments.readout_calibration.apply_singleshot_calibration` to update rotation,
-thresholds, centers and confusion matrix. Non-finite/indistinguishable centers stop
+active reset for the calibration itself, then copies `HistogramExperiment.readout_cfg`
+(set by `analyze()`) into the station to update rotation, threshold, centers and
+confusion matrix (`experiments/qsim/readout_calibration.py`, `singleshot_postproc`). Non-finite/indistinguishable centers stop
 the campaign before the next submission. Calibration HDF5 paths and queue job IDs
 are saved in subsequent spectroscopy configs. Increasing the occupation interval
 is an explicit notebook setting; no stability threshold has been inferred.

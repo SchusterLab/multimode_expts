@@ -56,14 +56,9 @@ def _ss_eval(station, expt, kw, min_fid=None, min_sep=3.0, min_diag=0.7):
     if not ok:
         info['reason'] = (f'fidelity {fid:.4f} < {min_fid}' if min_fid is not None and sane else
                           f'blobs not separated ({sep:.1f} widths) or confusion matrix not plausible')
-    thr = d['thresholds']
-    ch = [item(ro.phase, 0, float(ro.phase[0]) + float(d['angle']), 'readout phase'),
-          item(ro, 'threshold', thr, 'readout threshold', cast=lambda v: v),
-          item(ro, 'threshold_list', [thr], 'readout threshold_list', cast=lambda v: v),
-          item(ro, 'Ie', [float(np.median(d['Ie_rot']))], 'readout Ie', cast=lambda v: v),
-          item(ro, 'Ig', [float(np.median(d['Ig_rot']))], 'readout Ig', cast=lambda v: v),
-          item(ro, 'confusion_matrix_with_active_reset' if expt.cfg.expt.active_reset else 'confusion_matrix_without_reset',
-               d['confusion_matrix'], 'readout confusion matrix', cast=lambda v: np.asarray(v).tolist())]
+    new = expt.readout_cfg
+    ch = [item(ro.phase, 0, new.phase[0], 'readout phase')] + [
+          item(ro, k, v, f'readout {k}', cast=lambda v: np.asarray(v, float).tolist()) for k, v in new.items() if k != 'phase']
 
     def _plot(ax):
         ax.hist(np.asarray(d['Ig_rot']).ravel(), 80, alpha=0.6, label='g'); ax.hist(np.asarray(d['Ie_rot']).ravel(), 80, alpha=0.6, label='e')
