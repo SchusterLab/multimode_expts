@@ -52,10 +52,10 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261028-00102',
+config_dict = {'hardware_config': 'CFG-HW-20261029-00069',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261028-00047',
- 'floquet_storage_swap': 'CFG-FL-20261027-00074'}
+ 'man1_storage_swap': 'CFG-M1-20261029-00026',
+ 'floquet_storage_swap': 'CFG-FL-20261029-00020'}
 
 
 client = JobClient()
@@ -75,7 +75,7 @@ station = MultimodeStation(
 )
 
 # %% tags=["defaults"]
-STORAGE_MODES = [1, 2]
+STORAGE_MODES = [4, 5, 6, 7]
 common_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
@@ -146,9 +146,9 @@ CONFUSION_MATRIX_FNAME = str(calibration_expt.fname)
 # %% tags=["walk_settings"]
 swap_stors = list(STORAGE_MODES)
 meas_stors = [0] + swap_stors
-occupations = [3, 0, 0]
-detunings = [0.0, 0.0]  # MHz
-floquet_cycles = list(range(0, 2, 2))
+occupations = [3, 0, 0, 0, 0]
+detunings = [0.0, 0.0, 0.0, 0.0]  # MHz
+floquet_cycles = list(range(0, 100, 2))
 
 # %% tags=["walk_acquire"]
 walk_expts = []
@@ -162,7 +162,7 @@ for meas_stor in meas_stors:
         detunings=detunings,
         floquet_cycles=floquet_cycles,
         multiparity_confusion_matrix=CONFUSION_MATRIX_FNAME,
-        postprocess=False, show=False, log=False,
+        postprocess=False, show=False, log=True,
     )
     walk_expts.append(walk_expt)
     print(walk_expt.fname)
@@ -173,12 +173,12 @@ for walk_expt in walk_expts:
     data = walk_expt.data
     mode = walk_expt.cfg.expt.ro_stor
     
-    walk_axes[0].scatter(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
-    walk_axes[1].scatter(data["xpts"], data["nmod4_mean_corrected"],
-                      label=f"Corrected, Mode {mode}")
-    # walk_axes[0].plot(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
-    # walk_axes[1].plot(data["xpts"], data["nmod4_mean_corrected"],
+    # walk_axes[0].scatter(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
+    # walk_axes[1].scatter(data["xpts"], data["nmod4_mean_corrected"],
     #                   label=f"Corrected, Mode {mode}")
+    walk_axes[0].plot(data["xpts"], data["nmod4_mean"], label=f"Raw, Mode {mode}")
+    walk_axes[1].plot(data["xpts"], data["nmod4_mean_corrected"],
+                      label=f"Corrected, Mode {mode}")
 for axis in walk_axes:
     axis.set(xlabel="Floquet cycles", ylabel="Mean n mod 4")
     axis.legend()
@@ -197,7 +197,7 @@ for walk_expt in walk_expts:
 # energies -detuning. For the N=3 input above, number and number modulo 4 agree.
 
 # %% tags=["theory_settings"]
-KERR_KHZ = -3.0  # K / (2*pi), including its sign.
+KERR_KHZ = -30.0  # K / (2*pi), including its sign.
 
 # %% tags=["walk_theory"]
 theory_axis = walk_axes[1]
@@ -262,11 +262,11 @@ display(walk_fig)
 
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
-AGP_DIRECTIONS = [0]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
-DISORDER_RMS_KHZ = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
-AGP_REPS = 1000
-AGP_CYCLES = list(range(0, 800, 1))
-AGP_BATCH_SIZE = 2
+AGP_DIRECTIONS = [7]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
+DISORDER_RMS_KHZ = [120, 140, 160, 180, 200] #for kerr it was [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+AGP_REPS = 300 #for Kerr it was 1000
+AGP_CYCLES = list(range(0, 800, 1)) #for Kerr it was (0, 800, 1)
+AGP_BATCH_SIZE = 1
 AGP_MU_KHZ = 10  # None: g * L / D; set e.g. 5.915 to choose mu explicitly.
 
 DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
@@ -288,7 +288,7 @@ for direction in AGP_DIRECTIONS:
     )
     scan.acquire(
         population_runner, batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
-        storage_reset=STORAGE_MODES, postprocess=False, show=False, log=False,
+        storage_reset=STORAGE_MODES, postprocess=False, show=False, log=True,
     )
     scan.analyze(mu=AGP_MU_KHZ)
     disorder_scans[direction] = scan
