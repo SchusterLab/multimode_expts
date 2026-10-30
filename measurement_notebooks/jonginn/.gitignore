@@ -7,3 +7,6 @@ untracked_backups/
 data_postprocess.ipynb.bak
 
 qsim_experiments_highkerr_untracked.ipynb
+
+agp_measurement.ipynb
+agp_reanalysis.ipynb

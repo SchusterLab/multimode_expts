@@ -106,5 +106,3 @@ dmypy.json
 
 # PyPI configuration file
 .pypirc
-measurement_notebooks/jonginn/agp_measurement.ipynb
-analysis_notebooks/jonginn/agp_reanalysis.ipynb
