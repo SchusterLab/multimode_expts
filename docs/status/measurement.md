@@ -11,9 +11,8 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 - **Single shot: g/e/f analysis and `HistogramExperiment.readout_cfg` (2026-10-29,
   `docs/log/2026-10-29_singleshot-gef-readout-cfg.md`).** Gap items 1-2 of the yoko450ua
-  script are done; `experiments/readout_calibration.py` is deleted. **Next:** change jonginn's
-  notebooks to the two-line postprocessor after he saves (two of them import the deleted
-  module), then gap item 3.
+  script are done; `experiments/readout_calibration.py` is deleted and every notebook uses the
+  two-line postprocessor. **Next:** gap item 3.
 - **M1 Fock 2/3 prep is limited by |f,n> -> |g,n-1> decay (2026-10-28).** Physics: vault
   `Lab/guan/AGP/2026/10/2026-10-28.md` (Day summary); configs, code findings, decisions:
   `docs/log/2026-10-28_fock-prep-f-decay.md`. **Next:** the short copyable notebook for jonginn

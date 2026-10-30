@@ -38,11 +38,8 @@ seb + Claude. Gap items 1 and 2 of `measurement_notebooks/guan/yoko450ua_calibra
 
 ## Open
 
-- Notebook consumers: every notebook copy of `singleshot_postproc` becomes the two-line one
-  (guan, connie, QEC, raph, 202609 done in the working tree; jonginn's files after he saves
-  his running work). `jonginn/multiphoton_calibration.py` and
-  `Multiphoton_Debugging_notebook.py` import the deleted module; a new kernel fails there until
-  they are changed.
+- Notebook consumers: done the same day. Every notebook copy of `singleshot_postproc` (guan,
+  jonginn, connie, QEC, raph, 202609) is the two-line one; jonginn reloads his kernels.
 - Pre-existing test failures, not from this work (same on clean HEAD):
   `test_agp_experiment.py` (2), `test_agp_disorder_scan.py` (1),
   `test_matrix_pencil_regression.py` (3).
