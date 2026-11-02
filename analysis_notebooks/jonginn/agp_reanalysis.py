@@ -35,38 +35,130 @@ from experiments.qsim.fock_population import FockPopulationExperiment
 from fitting.qsim.agp import finite_time_agp
 from fitting.qsim.mbr_hamiltonian import fixed_n_hamiltonian
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+import json
+import h5py
+
+def import_jobs_by_w(data_dir, first_job, last_job, *, ro_stor=0, photons=3):
+    groups = {}
+    for path in sorted(Path(data_dir).glob("JOB-*_FockPopulationExperiment.h5")):
+        job_id = path.name.split("_", 1)[0]
+        if not first_job <= job_id <= last_job:
+            continue
+        with h5py.File(path, "r") as handle:
+            expt = json.loads(handle.attrs["config"])["expt"]
+        if expt["ro_stor"] != ro_stor or sum(expt["occupations"]) != photons:
+            continue
+        w = round(1000 * np.sqrt(np.mean(np.square(expt["detunings"]))), 6)
+        groups.setdefault(w, []).append(job_id)
+    return dict(sorted(groups.items()))
+
+
 # %%
-DATA_DIR = Path(r"C:\experiments\agp_k44_first_scan\data")
+# DATA_DIR = Path(r"C:\experiments\agp_k44_first_scan\data")
+DATA_DIR = Path(r"C:\experiments\261027AGPlowKerr\data")
+
 MU_KHZ = 10.0  # None uses the existing default g * L / D.
 T1_M_US = 221.19395791954372  # JOB-20261019-00046_T1CavityExperiment, independent calibration.
 
-JOBS_BY_W = {
-    0: ["JOB-20261023-00515", "JOB-20261023-00516", "JOB-20261023-00518",
-        "JOB-20261023-00519", "JOB-20261023-00525"],
-    20: ["JOB-20261024-00002", "JOB-20261024-00003", "JOB-20261024-00009",
-         "JOB-20261024-00010", "JOB-20261024-00027"],
-    40: ["JOB-20261024-00028", "JOB-20261024-00033", "JOB-20261024-00034",
-         "JOB-20261024-00039", "JOB-20261024-00040"],
-    60: ["JOB-20261024-00063", "JOB-20261024-00064", "JOB-20261024-00071",
-         "JOB-20261024-00072", "JOB-20261024-00079"],
-    80: ["JOB-20261024-00080", "JOB-20261024-00086", "JOB-20261024-00087",
-         "JOB-20261024-00107", "JOB-20261024-00108"],
-    100: ["JOB-20261024-00161", "JOB-20261024-00162", "JOB-20261024-00176",
-          "JOB-20261024-00177", "JOB-20261024-00226"],
-    120: ["JOB-20261024-00227", "JOB-20261024-00244", "JOB-20261024-00245",
-          "JOB-20261024-00278", "JOB-20261024-00279"],
-    140: ["JOB-20261024-00313", "JOB-20261024-00314", "JOB-20261024-00320",
-          "JOB-20261024-00321", "JOB-20261024-00323"],
-    160: ["JOB-20261024-00324", "JOB-20261024-00326", "JOB-20261024-00327", "JOB-20261024-00333",
-          "JOB-20261024-00334"],
-    180: ["JOB-20261024-00340", "JOB-20261024-00341", "JOB-20261024-00347", "JOB-20261024-00348",
-          "JOB-20261024-00349"],
-    200: ["JOB-20261024-00350", "JOB-20261025-00001", "JOB-20261025-00002", "JOB-20261025-00003",
-          "JOB-20261025-00004"],
-}
+# JOBS_BY_W = {
+#     0: ["JOB-20261023-00515", "JOB-20261023-00516", "JOB-20261023-00518",
+#         "JOB-20261023-00519", "JOB-20261023-00525"],
+#     20: ["JOB-20261024-00002", "JOB-20261024-00003", "JOB-20261024-00009",
+#          "JOB-20261024-00010", "JOB-20261024-00027"],
+#     40: ["JOB-20261024-00028", "JOB-20261024-00033", "JOB-20261024-00034",
+#          "JOB-20261024-00039", "JOB-20261024-00040"],
+#     60: ["JOB-20261024-00063", "JOB-20261024-00064", "JOB-20261024-00071",
+#          "JOB-20261024-00072", "JOB-20261024-00079"],
+#     80: ["JOB-20261024-00080", "JOB-20261024-00086", "JOB-20261024-00087",
+#          "JOB-20261024-00107", "JOB-20261024-00108"],
+#     100: ["JOB-20261024-00161", "JOB-20261024-00162", "JOB-20261024-00176",
+#           "JOB-20261024-00177", "JOB-20261024-00226"],
+#     120: ["JOB-20261024-00227", "JOB-20261024-00244", "JOB-20261024-00245",
+#           "JOB-20261024-00278", "JOB-20261024-00279"],
+#     140: ["JOB-20261024-00313", "JOB-20261024-00314", "JOB-20261024-00320",
+#           "JOB-20261024-00321", "JOB-20261024-00323"],
+#     160: ["JOB-20261024-00324", "JOB-20261024-00326", "JOB-20261024-00327", "JOB-20261024-00333",
+#           "JOB-20261024-00334"],
+#     180: ["JOB-20261024-00340", "JOB-20261024-00341", "JOB-20261024-00347", "JOB-20261024-00348",
+#           "JOB-20261024-00349"],
+#     200: ["JOB-20261024-00350", "JOB-20261025-00001", "JOB-20261025-00002", "JOB-20261025-00003",
+#           "JOB-20261025-00004"],
+# }
+JOBS_BY_W = import_jobs_by_w(
+    r"C:\experiments\261027AGPlowKerr\data",
+    "JOB-20261029-00393",
+    "JOB-20261030-00035",
+    ro_stor=7,  
+)
 
 # %% [markdown]
 # ## Assemble and analyze with the existing classes
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+from pathlib import Path
+
+from experiments.qsim.agp import (
+    CentralBosonAGPExperiment,
+    CentralBosonAGPDisorderScan,
+    direction_sector,
+)
+from experiments.qsim.fock_population import FockPopulationExperiment
+
+DATA_DIR = Path(r"C:\experiments\261027AGPlowKerr\data")
+
+parts, scan = [], None
+
+for w, job_ids in JOBS_BY_W.items():
+    paths = [
+        DATA_DIR / f"{job_id}_FockPopulationExperiment.h5"
+        for job_id in job_ids
+    ]
+
+    if not paths or not all(path.is_file() for path in paths):
+        print(f"W={w:g}: missing HDF5; skipped")
+        continue
+
+    jobs = [
+        FockPopulationExperiment.from_h5file(path, load_shots=False)
+        for path in paths
+    ]
+
+    expt = jobs[0].cfg.expt
+    direction = int(expt.ro_stor)
+
+    expected = sorted(
+        (tuple(state), direction)
+        for state in direction_sector(
+            sum(expt.occupations), expt.swap_stors, direction
+        )
+    )
+    actual = sorted(
+        (tuple(job.cfg.expt.occupations), int(job.cfg.expt.ro_stor))
+        for job in jobs
+    )
+
+    if actual != expected:
+        print(f"W={w:g}: incomplete ({len(actual)}/{len(expected)}); skipped")
+        continue
+
+    parts.append(
+        CentralBosonAGPExperiment.from_children(
+            jobs,
+            job_ids=job_ids,
+            direction=direction,
+            disorder_khz=w,
+        )
+    )
+
+if parts:
+    scan = CentralBosonAGPDisorderScan.from_children(parts)
+    scan.analyze(mu=MU_KHZ)
+    manifest_path = scan.save()
+    print(f"Saved: {manifest_path}")
+    scan.display()
+else:
+    print("No complete W groups; nothing saved.")
 
 # %%
 parts = []
@@ -75,7 +167,7 @@ for disorder_khz, job_ids in JOBS_BY_W.items():
         DATA_DIR / f"{job_id}_FockPopulationExperiment.h5", load_shots=False)
         for job_id in job_ids]
     parts.append(CentralBosonAGPExperiment.from_children(
-        jobs, job_ids=job_ids, direction=0, disorder_khz=disorder_khz))
+        jobs, job_ids=job_ids, direction=7, disorder_khz=disorder_khz))
 
 scan = CentralBosonAGPDisorderScan.from_children(parts)
 scan.analyze(mu=MU_KHZ)
