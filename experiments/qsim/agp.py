@@ -33,7 +33,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from slab import AttrDict
 
-from experiments.assembled_data import AssembledExperiment
+import yaml
+
+from experiments.assembled_data import AssembledExperiment, read_manifest
 from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
 from experiments.qsim.fock_population import (
     FockPopulationExperiment,
@@ -47,6 +49,7 @@ from fitting.qsim.agp import (
     calibration_error_factors,
     cosine_transform_weights,
     fit_exponential_background,
+    subtract_background,
 )
 from theory.qsim.agp import (
     probe_values,
@@ -226,12 +229,18 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         values = probe_values(model.fock_basis, self.mode_index, self.probes[0][1])
         return spectral_weights(model, values)
 
-    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None, **kwargs):
+    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
+                background_start_us=None, **kwargs):
         """Build C_k, integrate C_1 with the AGP kernel, and add the closed-system theory.
 
         ``mu``: cutoff or cutoffs in kHz (None: g L/D). ``t1_us``, ``t1_err_us``:
         T1 of the direction mode, for ``agp_t1``. ``kerr_mhz``: the Kerr of the
-        theory (None: the recorded device Kerr).
+        theory (None: the recorded device Kerr). ``background_start_us``: also
+        fit A e^{-rate t} to C_1 for t >= this time and integrate C_1 minus it
+        (``agp_connected``, lab book Q5). The decaying DC part of C_1 is what
+        the kernel picks up most at small mu; the closed-system theory has no
+        such part in ``agp_theory``. ``agp_connected_err`` is shot and
+        calibration noise only: not the error of the fitted background.
         """
         super().analyze(**kwargs)
         dimension = sector_dimension(self.photon_sector_number, 1 + len(self.swap_stors))
@@ -284,6 +293,14 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         window, agp, variance = estimate(None)
         self.data.update(agp_mu=mu_khz, agp=agp, agp_err=np.sqrt(variance),
                          coupling_mhz=np.asarray(g_mhz))
+        if background_start_us is not None:
+            connected, fit = subtract_background(self.data["time_us"], correlation,
+                                                 self.data["C1_err"], background_start_us)
+            self.data.update(agp_connected=window @ connected,
+                             agp_connected_err=np.sqrt(variance),
+                             background_amplitude=np.asarray(fit["amplitude"]),
+                             background_rate_per_us=np.asarray(fit["rate_per_us"]),
+                             background_start_us=np.asarray(float(background_start_us)))
         if t1_us is not None:
             _, value, variance = estimate(t1_us)
             if t1_err_us:
@@ -364,6 +381,8 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
     from_h5file = classmethod(assembled_from_h5file)
     SHARED = ("photon_sector_number", "direction", "ro_stor", "swap_stors", "cycles")
     AGP_KEYS = ("agp", "agp_err", "agp_t1", "agp_t1_err", "agp_theory", "agp_theory_window")
+    BACKGROUND_KEYS = ("agp_connected", "agp_connected_err", "background_amplitude",
+                       "background_rate_per_us")
 
     def __init__(self, parts, notes=""):
         super().__init__(notes=notes)
@@ -455,10 +474,12 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         self.data = {}
         return self.children
 
-    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None, **kwargs):
+    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
+                background_start_us=None, **kwargs):
         """Analyze every W (see ``CentralBosonAGPExperiment.analyze``) and collect the maps."""
         for part in self.children:
-            part.analyze(mu=mu, t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz, **kwargs)
+            part.analyze(mu=mu, t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz,
+                         background_start_us=background_start_us, **kwargs)
         parts = [part.data for part in self.children]
         data = dict(disorder_khz=np.asarray([part.disorder_khz for part in self.children]),
                     cycles=np.asarray(parts[0]["cycles"]),
@@ -473,12 +494,45 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             if any(c.shape != cutoffs[0].shape or not np.allclose(c, cutoffs[0]) for c in cutoffs):
                 raise ValueError("the parts have different default cutoffs; give mu")
             data["agp_mu"] = cutoffs[0]
-            keys += self.AGP_KEYS
+            keys += self.AGP_KEYS + self.BACKGROUND_KEYS
         for key in keys:
             if all(key in part for part in parts):
                 data[key] = np.asarray([part[key] for part in parts])
         self.data = AttrDict(data)
         return self.data
+
+    def summary(self):
+        """-> a short text: the settings the parts share, then one line per W."""
+        first = self.children[0]
+        if "time_us" not in first.data:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                first.analyze()
+        source = scan_stem(self.manifest_path) if self.manifest_path else "(not saved)"
+        cycles = np.asarray(first.cycles)
+        steps = np.unique(np.diff(cycles))
+        step = f"step {steps[0]:g}" if len(steps) == 1 else "uneven steps"
+        couplings, kerr = first.recorded_couplings_mhz(), first.recorded_kerr_mhz()
+        lines = [f"{type(self).__name__} {source}" + (f": {self.notes}" if self.notes else ""),
+                 f"N = {first.photon_sector_number}, direction {mode_name(first.direction)}, "
+                 f"storages {list(first.swap_stors)}, cycles {cycles[0]}-{cycles[-1]} {step} "
+                 f"({len(cycles)}), T = {first.data['time_us'][-1]:.1f} us",
+                 "g = " + ("not recorded" if couplings is None
+                           else f"{1e3 * np.mean(np.abs(couplings)):.2f} kHz")
+                 + ", K = " + ("not recorded" if kerr is None else f"{1e3 * kerr:.2f} kHz")]
+        try:
+            pattern = self.disorder_pattern()
+            lines.append("pattern (unit RMS): " + ("W = 0 only" if pattern is None
+                                                   else np.array2string(pattern, precision=3)))
+        except ValueError:
+            lines.append("pattern: the parts do not share one")
+        lines.append(f"{'W (kHz)':>8}  {'jobs':<46} detunings (kHz)")
+        for part in self.children:
+            ids = sorted(part.job_ids)
+            jobs = f"{len(ids)}: {ids[0]} .. {ids[-1]}" if ids else "none recorded"
+            lines.append(f"{part.disorder_khz:8g}  {jobs:<46} "
+                         + " ".join(f"{1e3 * value:7.1f}" for value in part.detunings))
+        return "\n".join(lines)
 
     def disorder_pattern(self):
         """-> the unit-RMS detuning pattern of the scan (MHz per kHz of W), or None at W = 0 only."""
@@ -537,6 +591,10 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                 ax.errorbar(strengths, self.data["agp_t1"][:, column],
                             self.data["agp_t1_err"][:, column], fmt="s-", ms=4, capsize=2,
                             label="local T1 compensated")
+            if "agp_connected" in self.data:
+                ax.errorbar(strengths, self.data["agp_connected"][:, column],
+                            self.data["agp_connected_err"][:, column], fmt="D-", ms=4, capsize=2,
+                            label="background subtracted")
             if "agp_theory_window" in self.data:
                 ax.plot(strengths, self.data["agp_theory_window"][:, column], "x:", color="gray",
                         label="closed system, same window")
@@ -700,3 +758,137 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
 
     def assembled_arrays(self):
         return dict(self.data)
+
+
+########################################################################
+# Data sets: find, load and compare disorder scans.
+########################################################################
+
+SCAN_REGISTRY = Path(__file__).resolve().parents[2] / "analysis_notebooks" / "datasets" / "agp_scans.yaml"
+SCAN_TAG = "_CentralBosonAGPDisorderScan"
+
+
+def scan_stem(path):
+    """-> the short name of a scan manifest: its time stamp (and ``_2``... when saved twice in a second)."""
+    return Path(path).stem.replace(SCAN_TAG, "")
+
+
+def local_path(path):
+    """-> ``path`` on this machine: as given when it exists, else re-rooted onto the data root.
+
+    So a path copied on the measurement PC (``C:\\experiments\\...``) works off it.
+    """
+    given = Path(path)
+    if given.exists():
+        return given
+    rerooted = _reroot(str(path), data_root())
+    if rerooted is None or not rerooted.exists():
+        raise FileNotFoundError(f"{path} (data root {data_root()})")
+    return rerooted
+
+
+def registered_scans():
+    """-> {key: entry} of ``analysis_notebooks/datasets/agp_scans.yaml``."""
+    with open(SCAN_REGISTRY, encoding="utf-8") as handle:
+        return yaml.safe_load(handle)["scans"]
+
+
+def _job_range(ids):
+    ids = sorted(ids)
+    return f"{ids[0]} .. {ids[-1]}" if ids else ""
+
+
+def list_scans(folder):
+    """-> a table (pandas DataFrame) of the disorder-scan manifests in an experiment folder.
+
+    Reads only the manifests, so it is fast. ``folder`` is the experiment folder
+    or its ``assembled_data``. ``part_of`` names a scan in the same folder
+    whose jobs include all of this one's: then this one is a subset.
+    """
+    import pandas as pd
+
+    folder = local_path(folder)
+    if (folder / "assembled_data").is_dir():
+        folder = folder / "assembled_data"
+    rows, jobs = [], {}
+    for path in sorted(folder.glob(f"*{SCAN_TAG}*.yaml")):
+        manifest = read_manifest(path)
+        stem = scan_stem(path)
+        jobs[stem] = set()
+        for part in manifest["raw_files"]:
+            with open(part, encoding="utf-8") as handle:
+                jobs[stem] |= set(yaml.safe_load(handle).get("job_ids", []))
+        p = manifest["parameters"]
+        cycles = np.asarray(p["cycles"])
+        rows.append(dict(scan=stem, direction=mode_name(p["direction"]),
+                         W_khz=p["disorder_khz"], cycles=f"{cycles[0]}-{cycles[-1]} ({len(cycles)})",
+                         jobs=len(jobs[stem]), job_range=_job_range(jobs[stem]),
+                         notes=manifest.get("notes", "")))
+    for row in rows:
+        supersets = [other for other, ids in jobs.items()
+                     if other != row["scan"] and jobs[row["scan"]] < ids]
+        row["part_of"] = ", ".join(supersets)
+    return pd.DataFrame(rows)
+
+
+def load_scan(source):
+    """-> a ``CentralBosonAGPDisorderScan`` from a registry key or a manifest path (loaded, not analyzed).
+
+    A path may be one from the measurement PC (``local_path``).
+    """
+    entries = registered_scans()
+    if isinstance(source, str) and source in entries:
+        path = data_root() / entries[source]["manifest"]
+    else:
+        path = local_path(source)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Calibration file not found")
+        return CentralBosonAGPDisorderScan.from_manifest(path)
+
+
+def load_scans(*keys):
+    """-> {key: scan} for registry keys (all of them when none is given)."""
+    return {key: load_scan(key) for key in (keys or registered_scans())}
+
+
+def display_scans(scans, mu, estimator="agp_connected", theory=True, yscale="linear"):
+    """AGP against W of several analyzed scans, one panel per cutoff. -> (fig, axes).
+
+    ``scans``: {label: scan}, each analyzed at every ``mu`` (kHz). ``estimator``:
+    ``agp_connected`` (needs ``analyze(background_start_us=...)``), ``agp`` or
+    ``agp_t1``. Points: measured, with their errors. Dashed, same color: the
+    infinite-time closed system on that scan's pattern, couplings and Kerr.
+    """
+    cutoffs = np.atleast_1d(np.asarray(mu, dtype=float))
+    fig, axes = plt.subplots(1, len(cutoffs), figsize=(4.5 * len(cutoffs), 3.8), squeeze=False,
+                             sharex=True, constrained_layout=True)
+    for index, (label, scan) in enumerate(scans.items()):
+        if estimator not in scan.data:
+            raise ValueError(f"{label} has no {estimator}; analyze it first "
+                             "(agp_connected needs background_start_us)")
+        analyzed = np.asarray(scan.data["agp_mu"])
+        strengths = np.asarray(scan.data["disorder_khz"])
+        pattern = scan.disorder_pattern() if theory and scan.children else None
+        for ax, cutoff in zip(axes[0], cutoffs):
+            match = np.flatnonzero(np.isclose(analyzed, cutoff))
+            if not match.size:
+                raise ValueError(f"{label} was not analyzed at mu = {cutoff:g} kHz "
+                                 f"(it has {analyzed.tolist()})")
+            column = match[0]
+            ax.errorbar(strengths, scan.data[estimator][:, column],
+                        scan.data[f"{estimator}_err"][:, column], fmt="o", ms=4, capsize=2,
+                        color=f"C{index}", label=label)
+            if not theory or "agp_theory" not in scan.data:
+                continue
+            if pattern is None:  # W = 0 only, or no parts: the analyzed theory points
+                ax.plot(strengths, scan.data["agp_theory"][:, column], "_", ms=12,
+                        color=f"C{index}")
+            else:
+                dense = np.linspace(0, strengths.max(), 81)
+                ax.plot(dense, scan.theory_agp(dense, mu=cutoff)[:, 0], "--", lw=1,
+                        color=f"C{index}")
+    for ax, cutoff in zip(axes[0], cutoffs):
+        ax.set(title=rf"$\mu$ = {cutoff:g} kHz", xlabel="Disorder RMS W (kHz)", yscale=yscale)
+    axes[0, 0].set_ylabel(r"$g^2\|A_\mu\|^2$" + f" ({estimator})")
+    axes[0, 0].legend(fontsize=7, title="dashed: closed system", title_fontsize=7)
+    return fig, axes[0]

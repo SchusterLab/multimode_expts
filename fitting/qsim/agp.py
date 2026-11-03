@@ -137,6 +137,18 @@ def fit_exponential_background(time_us, correlation, error=None, start_us=0.):
                 covariance=covariance, start_us=float(start_us))
 
 
+def subtract_background(time_us, correlation, error=None, start_us=0.):
+    """-> (correlation minus A e^{-rate t}, the fit): the connected part of C_1.
+
+    The fit is ``fit_exponential_background`` from ``start_us``. The kernel
+    integral of the result is the background-subtracted AGP (lab book Q5).
+    """
+    times = np.asarray(time_us, dtype=float)
+    fit = fit_exponential_background(times, correlation, error, start_us)
+    background = fit["amplitude"] * np.exp(-fit["rate_per_us"] * times)
+    return np.asarray(correlation, dtype=float) - background, fit
+
+
 def cosine_transform_weights(time_us, frequency_mhz, window="hann"):
     """-> M (frequency, time) with ``M @ C`` the one-sided spectral function of C, per MHz.
 

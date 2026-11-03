@@ -1,0 +1,26 @@
+# AGP disorder scans (CentralBosonAGPDisorderScan manifests), by key.
+#
+# Read by experiments/qsim/agp.py: load_scan(key), load_scans(*keys), registered_scans().
+# A new data set is one new entry. To see what a folder holds first: list_scans(folder).
+#
+# Fields
+#   manifest   the scan manifest, relative to the data root (C:\experiments on pippin)
+#   label      what the data set is
+#   superseded optional: the key of a newer data set that replaces this one (where they overlap)
+
+scans:
+  s7_fine:
+    manifest: agp_k44_first_scan/assembled_data/261023_001509_CentralBosonAGPDisorderScan.yaml
+    label: N=3, direction S7, W = 0-150 kHz, cycles 0-399 by 1 (122 us); 10-17..19
+  s7_coarse:
+    manifest: agp_k44_first_scan/assembled_data/261027_163118_CentralBosonAGPDisorderScan.yaml
+    label: N=3, direction S7, W = 0-150 kHz, cycles 0-795 by 5 (244 us); W = 0 from 10-23
+  kerr:
+    manifest: agp_k44_first_scan/assembled_data/261025_010957_CentralBosonAGPDisorderScan.yaml
+    label: N=3, direction M1 (Kerr), W = 20-200 kHz (245 us); 10-24
+  kerr_w0:
+    manifest: agp_k44_first_scan/assembled_data/261024_003051_CentralBosonAGPDisorderScan.yaml
+    label: N=3, direction M1 (Kerr), W = 0 only; f0-g1 57 kHz off (lab book Q8 caveat)
+  s7_high_w:
+    manifest: 261027AGPlowKerr/assembled_data/261030_123324_CentralBosonAGPDisorderScan.yaml
+    label: N=3, direction S7, W = 120, 140, 200 kHz, cycles 0-799 by 1 (245 us); jonginn's 10-29..30 retake
