@@ -16,6 +16,12 @@ Branch `theory`. Asked by guan; done by Claude.
   `docs/qsim/pole_finding.md`, `docs/qsim/pole_finding_explore.md`, `docs/status/qsim_numerics.md`.
   The older `docs/log/` entries keep the old paths.
 
+- Deleted `postprocess_manifests/` (6 JSON files of 2026-09-09 and 09-15; guan agreed). No code read them:
+  they were the optional report of the deprecated `experiments/qsim/deprecated/mbr_disorder_h5.py`, written by
+  `dormant/mbr_disorder_offdiag.py`, which now has `manifest_directory = None`. Every job ID in them is in
+  `analysis_notebooks/datasets/mbr_datasets.yaml`, except JOB-20260907-00394..00405: a partial realization 3
+  (11 jobs) in a snapshot made while the Sep07 run was in progress. The registry's realization 3 starts at 00406.
+
 ## Checks
 
 - Pole tests (`test_poles`, `test_pole_finding_spec`, `test_gap_score`, `test_hamiltonian_fit`,
