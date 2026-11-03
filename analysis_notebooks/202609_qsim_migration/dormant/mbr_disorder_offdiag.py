@@ -73,7 +73,7 @@ load_shots = False  # FFT/MPM use means; shot checks read shots on demand.
 reload_data = False  # True rereads selected H5 arrays; no server requests.
 hardware_override = None  # Archived timing for a new dataset lacking an H5 snapshot.
 
-manifest_directory = 'postprocess_manifests'  # None disables the optional JSON report.
+manifest_directory = None  # a folder name writes the optional JSON report there
 
 dataset_dumps, hardware_by_job_id = h5only.build_dataset_manifest()
 print("datasets in the manifest:", sorted(dataset_dumps))
