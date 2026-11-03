@@ -11,13 +11,10 @@ Writes cache/q5_cost.npz. Run (about 15 min on 32 cores):
 pixi run python analysis_notebooks/level_stats/labbook/q5_cost.py
 """
 import itertools
-import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CACHE, disorder_shape, gap_ratios  # noqa: E402
 from q2_resolution import merge  # noqa: E402
 from fitting.qsim.poles.design import Design, gap_errors  # noqa: E402

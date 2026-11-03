@@ -56,7 +56,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # %% [markdown]
 # # 1. The 7-1 diagonal-disorder campaign
 #
-# Realizations 0-18 of `diagonal_disorder_71` (configs/datasets/mbr_datasets.yaml);
+# Realizations 0-18 of `diagonal_disorder_71` (analysis_notebooks/datasets/mbr_datasets.yaml);
 # r=19 has 11 of 20 jobs and was not converted.
 
 # %%
@@ -147,11 +147,7 @@ plt.show()
 # Use the pole-finding survey for fitter comparisons.
 
 # %%
-catalog_path = Path("configs/datasets/mbr_datasets.yaml")
-# Jupyter may start in this notebook's folder.
-if not catalog_path.exists():
-    catalog_path = Path("../../configs/datasets/mbr_datasets.yaml")
-catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+catalog = yaml.safe_load(Path("../datasets/mbr_datasets.yaml").read_text(encoding="utf-8"))
 sep10_entry = catalog["datasets"]["sep10_full_K3p6_g29p2"]
 sep10 = MBRDisorderEnsembleExperiment.from_manifest(data_root() / sep10_entry["manifest"])
 print("Sep10 realizations:", [record["realization"] for record in sep10.realizations])

@@ -22,7 +22,7 @@ calibration expectations list. Other calibration limitations are outside this mi
 | P2-P3: Sept05 dark-mode cells / N2 decoder section | Retired with the old notebooks; `dormant/mbr_n2_decoder_mode.py` deleted. Other dormant dark-mode work and the historical N2 file list are retained. |
 | P4: Sep10 / offline IQ refit | Sep10 was cataloged and converted Oct 2. `fitting/qsim/readout.py` preserves the two-cloud fitter; `experiments/qsim/readout_refit.py` adapts final-shot correction to current four-phase MBR jobs. Spectrum/ensemble `analyze(readout_refit=True)` is optional, raises on fit failure, and records fit provenance. Raw HDF5 is never overwritten. |
 | P4: Matrix Pencil tolerances | Exploratory Sep10 tuning, not promoted to universal defaults. Fitter comparison stays in the pole-finding work. |
-| P6 / R2: duplicate loaders and job lists | Replaced by `configs/datasets/mbr_datasets.yaml` and converted manifests; human plot vault retained. |
+| P6 / R2: duplicate loaders and job lists | Replaced by `analysis_notebooks/datasets/mbr_datasets.yaml` and converted manifests; human plot vault retained. |
 | R1: grouped debug figures | Not copied: Jonginn did not rely on their exact layout. Existing spectrum, level-match and ensemble/SFF displays are the maintained views. |
 | H: high-Kerr copies | Both copies deleted; no unique logic. |
 

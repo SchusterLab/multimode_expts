@@ -15,7 +15,7 @@ import numpy as np
 from theory.qsim.agp import probe_values, spectral_agp, spectral_weights
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 g, K = 0.02036, -0.0271
 p = np.array([-0.71, 0.19, -1.03, 1.55])
 PROBES = {"probe $n_{S7}$": (4, "number"), "probe Kerr": (0, "kerr")}

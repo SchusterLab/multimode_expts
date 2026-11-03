@@ -51,7 +51,7 @@ from experiments.qsim.agp import CentralBosonAGPDisorderScan
 # %% [markdown]
 # ## 1. The data: N = 3, prepared and read S7 (direction S7)
 #
-# The 10-17..19 scans, converted on 10-23 (`configs/datasets/fock_population_datasets.yaml`).
+# The 10-17..19 scans, converted on 10-23 (`analysis_notebooks/datasets/fock_population_datasets.yaml`).
 # "fine": cycles 0-399 by 1 (122 us), W = 0-150 kHz. "coarse": cycles 0-795 by 5
 # (244 us); its W = 0 part is the 10-23 acquisition, a scan of its own.
 

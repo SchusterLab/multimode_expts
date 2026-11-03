@@ -8,14 +8,12 @@ data the Hamiltonian fit recovers the offsets to 0.02-0.05 kHz, so this stands i
 Counting as in Q4. Writes cache/q10_fitter_check.pkl.
 Run: pixi run python analysis_notebooks/level_stats/labbook/q10_fitter_check.py [option]   (about 15 min)
 """
-import os
 import pickle
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CACHE, disorder_shape, gap_ratios  # noqa: E402
 from q2_resolution import merge  # noqa: E402
 from fitting.qsim.poles import joint_pencil, sparse_fit  # noqa: E402

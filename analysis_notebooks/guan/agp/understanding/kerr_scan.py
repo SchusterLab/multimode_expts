@@ -14,7 +14,7 @@ import numpy as np
 from theory.qsim.agp import probe_values, spectral_agp, spectral_weights
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 p = np.array([-0.71, 0.19, -1.03, 1.55])
 KG = np.linspace(0, 3, 121)          # |K| / g, device sign K < 0
 WG = [1.5, 3., 5.]

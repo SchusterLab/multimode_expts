@@ -12,13 +12,10 @@ Also shown, not part of the test: the same fit without counting (naive), and the
 
 Run: pixi run python analysis_notebooks/level_stats/labbook/q4_sep10_counting.py   (about 3 min)
 """
-import os
 import pickle
-import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CACHE, gap_ratios  # noqa: E402
 from q2_resolution import merge  # noqa: E402
 from experiments.job_paths import data_root  # noqa: E402

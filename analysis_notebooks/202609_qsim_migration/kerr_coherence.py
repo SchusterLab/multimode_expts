@@ -48,7 +48,7 @@ from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_saved import saved_parameters
 
-CATALOG = yaml.safe_load(open("../../configs/datasets/mbr_datasets.yaml", encoding="utf-8"))["datasets"]
+CATALOG = yaml.safe_load(open("../datasets/mbr_datasets.yaml", encoding="utf-8"))["datasets"]
 
 # Same g (15 kHz), three Kerr values; then the g = 30 kHz pair.
 DATA_SETS = ["sep02to04_pairs_K3p6_g15", "sep02_pairs_K20_g15", "sep01_pairs_K44_g15",

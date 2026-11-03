@@ -32,7 +32,7 @@ from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.deprecated.saved_jobs import load_aggregate as _load_aggregate
 from experiments.qsim.deprecated.saved_jobs import load_h5
 
-DATASETS = Path(__file__).parents[1] / "configs" / "datasets" / "mbr_datasets.yaml"
+DATASETS = Path(__file__).parents[1] / "analysis_notebooks" / "datasets" / "mbr_datasets.yaml"
 
 
 def catalog():

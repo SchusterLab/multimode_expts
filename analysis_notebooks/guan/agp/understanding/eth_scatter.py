@@ -13,7 +13,7 @@ import numpy as np
 from theory.qsim.agp import probe_values
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 g, K, W = 0.02036, -0.0271, 60.
 p = np.array([-0.71, 0.19, -1.03, 1.55])
 plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False})

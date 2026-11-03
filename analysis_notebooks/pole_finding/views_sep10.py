@@ -127,8 +127,7 @@ ax.legend(fontsize=8, frameon=False)
 form_factor = save(fig, "form_factor")
 
 # the two survey figures of the recap, copied
-repo_figures = Path(__file__).resolve().parents[2] / "docs" / "qsim" / "figures" / "pole_finding" \
-    if "__file__" in globals() else Path("docs/qsim/figures/pole_finding")
+repo_figures = Path("../../docs/qsim/figures/pole_finding")
 for name in ("sep10_found_per_fitter", "sep10_row_offsets", "sep10_t3_merge_scan", "sep10_form_factor"):
     shutil.copy(repo_figures / f"{name}.png", FIGURES / f"{name}.png")
 

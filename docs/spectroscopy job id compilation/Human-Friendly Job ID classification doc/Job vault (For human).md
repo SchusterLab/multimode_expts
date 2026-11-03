@@ -1,7 +1,7 @@
 # Job vault (For human)
 
 > **Where the job IDs live now (2026-10-05).** The one master list is
-> `configs/datasets/mbr_datasets.yaml` on the `qsim-analysis` branch: one entry per data set with
+> `analysis_notebooks/datasets/mbr_datasets.yaml` on the `qsim-analysis` branch: one entry per data set with
 > the literal job IDs, the folder, the Floquet config, rough g/K labels, and the converted manifest
 > under `assembled_data/`. The code reads only that file (`tools/convert_mbr_catalog.py`,
 > `tests/mbr_reference.py`). This document keeps the plots and the human-readable description;

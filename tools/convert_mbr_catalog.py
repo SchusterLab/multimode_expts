@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Convert the data sets of ``configs/datasets/mbr_datasets.yaml`` to the new job layout.
+"""Convert the data sets of ``analysis_notebooks/datasets/mbr_datasets.yaml`` to the new job layout.
 
 A one-off driver around :mod:`tools.migrate_mbr_jobs` (docs/qsim/mbr_redesign.md,
 section 6). It reads the catalog, and for each named data set that is not yet
@@ -48,7 +48,7 @@ from experiments.job_paths import data_root, resolve_job_paths  # noqa: E402
 from legacy_saved_jobs import job_records  # noqa: E402
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment  # noqa: E402
 
-CATALOG = REPO_ROOT / "configs" / "datasets" / "mbr_datasets.yaml"
+CATALOG = REPO_ROOT / "analysis_notebooks" / "datasets" / "mbr_datasets.yaml"
 
 # Old-key spellings of one disorder realization, in the order they appeared.
 # Each maps record field -> old cfg.expt key; "realization" marks the spelling.

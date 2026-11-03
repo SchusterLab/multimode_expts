@@ -41,7 +41,7 @@ import yaml
 from experiments.job_paths import data_root
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
-catalog = yaml.safe_load(open("configs/datasets/mbr_datasets.yaml", encoding="utf-8"))
+catalog = yaml.safe_load(open("analysis_notebooks/datasets/mbr_datasets.yaml", encoding="utf-8"))
 entry = catalog["datasets"]["august_quickplot"]
 expt = MBRSpectrumExperiment.from_manifest(data_root() / entry["manifest"])
 assert len(expt.children) == 4, expt.children

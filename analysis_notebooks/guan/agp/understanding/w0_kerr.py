@@ -14,7 +14,7 @@ import numpy as np
 from theory.qsim.agp import probe_values, spectral_agp, spectral_weights, split_dc
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 g, K = 0.02036, -0.0271
 p = np.array([-0.71, 0.19, -1.03, 1.55])
 C = ["#2a78d6", "#eb6834", "#1baf7a"]

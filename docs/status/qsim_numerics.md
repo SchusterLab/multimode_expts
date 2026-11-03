@@ -29,7 +29,7 @@ the branch rules are in `docs/STATUS.md`.
   vault page first: `G:\Shared drives\SLab\Multimode\Lab\guan\AGP\2026-10-25 lab book - AGP from time traces.md`
   (12 questions, figures, comments as `> [!question]`); short record
   `docs/log/2026-10-25_agp-labbook-night.md`. New: `theory.qsim.open_system` (Lindblad central
-  boson, rates per mode), `theory.qsim.agp.window_agp`; scripts `analysis_notebooks/agp/labbook/`.
+  boson, rates per mode), `theory.qsim.agp.window_agp`; scripts `analysis_notebooks/guan/agp/labbook/`.
   State: the decay of C_1 is M1 loss + M1 dephasing (no free parameter); W = 0 needs 2-4 kHz
   residual detunings; the measured AGP agrees with the closed system where resolvable (Kerr at all
   W, S7 at W <= 60 kHz, mu >= mu_min). **Next (user to decide):** a background option in
@@ -43,8 +43,8 @@ the branch rules are in `docs/STATUS.md`.
   predictions), estimators in `fitting/`. `fixed_n_hamiltonian` is now
   `theory.qsim.central_boson`; `theory.qsim.agp` has the closed-system C_1(t) and AGP;
   `fitting.qsim.agp` the exact kernel weights, T1 compensation and calibration errors. Example:
-  `analysis_notebooks/agp/agp_disorder_scan.py`. The DC-background study of 10-24
-  (`analysis_notebooks/agp/agp_dc_background.py`) is superseded in its conclusions by the lab book
+  `analysis_notebooks/guan/agp/agp_disorder_scan.py`. The DC-background study of 10-24
+  (`analysis_notebooks/guan/agp/agp_dc_background.py`) is superseded in its conclusions by the lab book
   (realistic open model instead of a toy).
 - **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
   `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
@@ -77,7 +77,7 @@ the branch rules are in `docs/STATUS.md`.
   offset prior for this set (T1 finds row offsets of 4.7 kHz rms, up to 11.7 kHz, on r=0, against
   a 0.5 kHz prior), the T3 merge threshold at 35 rows, and the Matrix Pencil settings. Then T2's
   row-sum bound. `experiments/qsim/pole_data.py` now accepts realizations without a recorded Kerr.
-- **All 25 data sets are converted** (`configs/datasets/mbr_datasets.yaml`; records
+- **All 25 data sets are converted** (`analysis_notebooks/datasets/mbr_datasets.yaml`; records
   `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md` and
   `docs/log/2026-10-06_issue5-d72-and-loaders.md`). The five old "D72" (notebook section 7-2)
   sets were not off-diagonal: each realization mixes diagonal pairs (407 files) and
@@ -187,7 +187,7 @@ How to check:
 - Old jobs reach the new classes only through `tools/migrate_mbr_jobs.py` (frozen; all catalog
   sets are done). Converted sets:
   `C:\experiments\<exp>\converted_data\` and `assembled_data\`. Dataset ID lists:
-  `configs/datasets/mbr_datasets.yaml`.
+  `analysis_notebooks/datasets/mbr_datasets.yaml`.
 
 ## Docs: which are current
 

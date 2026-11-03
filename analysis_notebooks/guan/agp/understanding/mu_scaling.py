@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import quad
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 LAM, GAMMA, W0 = 100., 2., 0.01  # bandwidth, Lorentzian half-width, low cut of 1/w (kHz)
 C = ["#2a78d6", "#eb6834", "#1baf7a"]
 

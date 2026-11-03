@@ -41,7 +41,7 @@ Rules:
     is now in the classes: `CentralBosonAGPDisorderScan.analyze(mu=[...], t1_us=..., t1_err_us=...,
     kerr_mhz=...)` gives the AGP with shot + calibration errors, the local T1 compensation and
     the closed-system theory; `display()`, `display_traces()`. It reproduces your notebook's
-    numbers to 1e-12. Example: `analysis_notebooks/agp/agp_disorder_scan.py`. Please check it,
+    numbers to 1e-12. Example: `analysis_notebooks/guan/agp/agp_disorder_scan.py`. Please check it,
     then work from it; analysis that lives only in a notebook has no tests and no record.
   - **New rule** (`AGENTS.md`, `docs/qsim/theory_package.md`): models go in `theory/`
     (parameters -> predictions), estimators in `fitting/`, and `analyze()` calls both. Do not
@@ -59,7 +59,7 @@ Rules:
     mu = 10 kHz. The default mu = g L/D is 2.9 kHz. The table is in the log. Your Kerr-direction
     scan (W = 20-200, mu = 10 kHz) now gets `C1_err` and theory too.
   - **Your e^{t/T} envelope (T about 200 us)** is `analyze(t1_us=T)` (`agp_t1`). Compared with an
-    exponential DC fit, on the toy model and on the data (`analysis_notebooks/agp/agp_dc_background.py`,
+    exponential DC fit, on the toy model and on the data (`analysis_notebooks/guan/agp/agp_dc_background.py`,
     `docs/log/2026-10-24_agp-dc-background.md`): for your Kerr run it agrees with the fitted methods
     and the closed system within about 10% at mu = 10 kHz; for S7 the envelope lifetime is 240-520 us
     and rises with W, so a fixed 200 us is wrong there (negative at W >= 60 kHz). Fit T per W.
@@ -83,7 +83,7 @@ Rules:
   `with_storage_waits` are now in `experiments/qsim/fock_population.py` (the
   `floquet_dark_mode_readout.py` shim is deleted). `jonginn/qsim_experiments.ipynb` is kept
   for jonginn, but its first cell still imports the deleted shim; jonginn to update or retire it.
-- **One data set catalog**: `configs/datasets/mbr_datasets.yaml` holds every MBR spectroscopy
+- **One data set catalog**: `analysis_notebooks/datasets/mbr_datasets.yaml` holds every MBR spectroscopy
   data set (job IDs, kind, folder, rough g/K labels, converted manifests); jonginn's human vault
   with plots stays. **All 25 are converted** (2026-10-06). The five old "D72" sets were mixed
   diagonal and off-diagonal, not off-diagonal; they are now `sepNN_pairs_*`. The library loads

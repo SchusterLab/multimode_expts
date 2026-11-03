@@ -62,7 +62,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # runs a series of independent diagnostics on the result.
 
 # %%
-# Dataset choice: the complete July N=3 sector (configs/datasets/mbr_datasets.yaml
+# Dataset choice: the complete July N=3 sector (analysis_notebooks/datasets/mbr_datasets.yaml
 # `july_N3`), converted to the new layout.
 july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "261006_151633_MBRSpectrumExperiment.yaml"
 
@@ -194,8 +194,8 @@ plt.show()
 # ## 3a. With the phase calibration applied
 
 # %%
-# Complete N=3 spectroscopy with its calibration set (configs/datasets/
-# mbr_datasets.yaml `august_N3`), converted to the new layout.
+# Complete N=3 spectroscopy with its calibration set (analysis_notebooks/
+# datasets/mbr_datasets.yaml `august_N3`), converted to the new layout.
 saved_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"
 # The four-realization quick-plot set (`august_quickplot`).
 saved_four_realization_manifest = data_root() / "260814_qsim_encspec" / "assembled_data" / "260924_163516_MBRSpectrumExperiment.yaml"

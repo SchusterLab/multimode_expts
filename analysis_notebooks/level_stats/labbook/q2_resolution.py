@@ -11,13 +11,10 @@ Writes cache/q2_resolution.npz. Run (about 10 min on 32 cores):
 pixi run python analysis_notebooks/level_stats/labbook/q2_resolution.py
 """
 import itertools
-import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import CACHE, disorder_shape, gap_ratios  # noqa: E402
 from fitting.qsim.poles.design import Design, gap_errors  # noqa: E402
 from theory.qsim.central_boson import fixed_n_hamiltonian  # noqa: E402

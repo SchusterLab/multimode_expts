@@ -3,7 +3,7 @@ matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from theory.qsim.agp import probe_values, spectral_weights, spectral_agp, split_dc
 from theory.qsim.central_boson import fixed_n_hamiltonian
 from pathlib import Path
-OUT = str(Path(__file__).parent / "figures") + "/"
+OUT = str(Path("figures")) + "/"
 g = 0.02036; K = -0.0271; p = np.array([-0.71, 0.19, -1.03, 1.55])
 resid = 1e-3*np.array([0.4, -2.6, -2.6, -1.6])  # Q3b fitted W=0 residual detunings (10-23)
 PROBES = {"probe $n_{S7}$ (detuning direction)": (4, "number"), "probe Kerr $n_M(n_M-1)/2$": (0, "kerr")}

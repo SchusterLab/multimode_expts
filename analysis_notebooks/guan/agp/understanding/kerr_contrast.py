@@ -4,7 +4,6 @@ Measured: exp-fit estimate (lab book Q5) at mu = 10, 20 kHz, error = shot noise 
 decaying-DC term (Q5 systematic). Theory: closed system on the scans' disorder pattern with the
 recorded K, with guan's dressed K = -19 kHz, and with K = 0 (free bosons, integrable).
 """
-import sys
 import warnings
 from pathlib import Path
 
@@ -13,59 +12,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "labbook"))
 from fitting.qsim.agp import agp_kernel_weights, fit_exponential_background
-from experiments.qsim.agp import CentralBosonAGPDisorderScan
-from load_scans import ROOT, load_scans
+from measured import measured_scans
 from theory.qsim.agp import probe_values, spectral_agp, spectral_weights
 from theory.qsim.central_boson import fixed_n_hamiltonian
 
-OUT = Path(__file__).parent / "figures"
+OUT = Path("figures")
 MU = [10., 20.]
 SYSTEMATIC = 0.13
 PROBE = {"S7 fine": (4, "number"), "S7 coarse": (4, "number"), "Kerr": (0, "kerr"), "Kerr W=0": (0, "kerr")}
 C = ["#2a78d6", "#eb6834", "#1baf7a"]
 
-CACHE = Path(__file__).parent / "figures" / "scans_cache.npz"
-
-
-# The Kerr-direction W = 0 run (10-24 00:30, lab book Q8) has its own manifest; load_scans leaves it out.
-# It used the configuration with f0-g1 57 kHz off (lab book caveat).
-KERR_W0 = "261024_003051_CentralBosonAGPDisorderScan.yaml"
-
-
-def _arrays(scan):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        scan.analyze(mu=[10.])
-    ref = scan.children[1] if len(scan.children) > 1 else scan.children[0]
-    try:
-        pattern = np.asarray(scan.disorder_pattern())
-    except Exception:  # a W = 0 run alone has no pattern
-        pattern = np.full(4, np.nan)
-    return dict(
-        times=np.asarray(scan.data["time_us"]), data=np.asarray(scan.data["C1_corrected"]),
-        err=np.asarray(scan.data["C1_err"]), pattern=pattern,
-        W=np.array([p.disorder_khz for p in scan.children]),
-        g=np.array([float(p.data["coupling_mhz"]) for p in scan.children]),
-        couplings=np.asarray(ref.recorded_couplings_mhz()), kerr=float(ref.recorded_kerr_mhz()))
-
-
-def cached_scans():
-    """-> {name: dict of arrays}; the SMB load takes ~2 min, so keep a local copy."""
-    out = np.load(CACHE, allow_pickle=True)["scans"].item() if CACHE.exists() else {}
-    if not out:
-        out = {name: _arrays(scan) for name, scan in load_scans().items()}
-    if "Kerr W=0" not in out:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            out["Kerr W=0"] = _arrays(CentralBosonAGPDisorderScan.from_manifest(ROOT / "assembled_data" / KERR_W0))
-    CACHE.parent.mkdir(exist_ok=True)
-    np.savez(CACHE, scans=np.array(out, dtype=object))
-    return out
-
-
-scans = cached_scans()
+scans = measured_scans()
 Ws = np.arange(0, 200.1, 1.)
 plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False})
 fig, ax = plt.subplots(2, 2, figsize=(11, 7), sharex=True)

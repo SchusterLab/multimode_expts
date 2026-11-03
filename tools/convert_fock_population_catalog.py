@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Convert the data sets of ``configs/datasets/fock_population_datasets.yaml`` to the new layout.
+"""Convert the data sets of ``analysis_notebooks/datasets/fock_population_datasets.yaml`` to the new layout.
 
 A one-off driver (docs/qsim/mbr_redesign.md, section 6) for the old population
 jobs (``QsimExperiment`` + ``FockPopulationProgram``) of the quantum walks and
@@ -60,7 +60,7 @@ from experiments.qsim.multiparity_confusion_matrix import (  # noqa: E402
 )
 from fitting.qsim.agp import load_population_job  # noqa: E402
 
-CATALOG = REPO_ROOT / "configs" / "datasets" / "fock_population_datasets.yaml"
+CATALOG = REPO_ROOT / "analysis_notebooks" / "datasets" / "fock_population_datasets.yaml"
 TOOL = "tools/convert_fock_population_catalog.py"
 POINT_KEYS = ("xpts", "avgi", "avgq", "amps", "phases", "idata", "qdata")
 

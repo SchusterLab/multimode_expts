@@ -49,15 +49,15 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
 - `theory/qsim/open_system.py` (2026-10-25): `OpenCentralBoson`, the Lindblad central boson on
   all states with at most N photons (loss and dephasing per mode), for Fock or general starts;
   `sector_correlation` gives the open-system C(t). From guan's `WalkModel`. Used and checked
-  against the data in the AGP lab book (`analysis_notebooks/agp/labbook/`).
+  against the data in the AGP lab book (`analysis_notebooks/guan/agp/labbook/`).
 - `fitting/qsim/agp.py`: `agp_kernel_weights` (exact for piecewise-linear data, optional local
   T1 compensation), `finite_time_agp`, `calibration_error_factors`, `fit_exponential_background`;
   and the raw-shot classifier
   that `tools/convert_fock_population_catalog.py` uses as a cross-check.
 - `experiments/qsim/agp.py`: `CentralBosonAGPExperiment.analyze(mu, t1_us, t1_err_us, kerr_mhz)`
   and `CentralBosonAGPDisorderScan` (maps over W and mu, `theory_agp`, `display`, `display_traces`).
-- Examples: `analysis_notebooks/agp/agp_disorder_scan.py`; the DC-background study
-  `analysis_notebooks/agp/agp_dc_background.py`.
+- Examples: `analysis_notebooks/guan/agp/agp_disorder_scan.py`; the DC-background study
+  `analysis_notebooks/guan/agp/agp_dc_background.py`.
 
 ## Next candidates
 

@@ -20,14 +20,14 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   C_1 and C_2), `CentralBosonAGPDisorderScan` (C_k(W, t) only). No shots above the job; each layer
   has a manifest to the one below and `from_h5file` to look at its own arrays. The 10-17..19
   walks and AGP scans are converted (`tools/convert_fock_population_catalog.py`,
-  `configs/datasets/fock_population_datasets.yaml`); the old 7.5 GB outputs are deleted.
+  `analysis_notebooks/datasets/fock_population_datasets.yaml`); the old 7.5 GB outputs are deleted.
   Device check: `measurement_notebooks/guan/agp_layers_hw_check.py` (result in the log).
   jonginn's `agp_measurement.py` uses that path since 10-23.
   **2026-10-24 (`docs/log/2026-10-24_theory-package-agp.md`):** `analyze(mu=[...], t1_us,
   t1_err_us, kerr_mhz)` adds the AGP with shot + calibration errors, local T1 compensation and
   closed-system theory (jonginn's Julia-repo notebook, moved in). The job layer is unchanged.
   **Next (jonginn):** check it against his notebook and work from
-  `analysis_notebooks/agp/agp_disorder_scan.py` (see `docs/STATUS.md`).
+  `analysis_notebooks/guan/agp/agp_disorder_scan.py` (see `docs/STATUS.md`).
 - **Issue 5 changes on `guan`, not on `main` yet** (`docs/log/2026-10-06_issue5-d72-and-loaders.md`).
   For acquisition code: `floquet_dark_mode_readout.py` (the compatibility shim) is deleted;
   import from the owning modules. Renamed modules: `dark_mode_scramble.py` (was

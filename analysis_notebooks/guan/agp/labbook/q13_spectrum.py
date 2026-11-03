@@ -3,33 +3,25 @@
 ``CentralBosonAGPDisorderScan.display_spectrum``: the cosine transform of C_1 over its window
 (Hann), per W, next to the closed system over the same window and its weights in bins of 1/T,
 with the AGP filters of MU_KHZ. Once as measured, once after the exponential background fit
-(Q5) for t >= FIT_START_US. Figures go to ``figures/``. Runs as a script from any folder, or
-cell by cell in a REPL (no ``__file__`` needed: the folder is found from the checkout).
+(Q5) for t >= FIT_START_US. Figures go to ``figures/``. Run from this folder.
 """
 # %%
 from pathlib import Path
-import sys
 import warnings
 
 import matplotlib
-
-import experiments
 
 try:
     get_ipython()
 except NameError:  # a plain script: no screen, draw off-screen
     matplotlib.use("Agg")
 
-HERE = Path(experiments.__file__).resolve().parents[1] / "analysis_notebooks" / "agp" / "labbook"
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
-
-from load_scans import load_scans  # noqa: E402
+from load_scans import load_scans
 
 MU_KHZ = [5., 10.]
 FIT_START_US = 30.
 MAX_KHZ = 120.
-FIGURES = HERE / "figures"
+FIGURES = Path("figures")
 FIGURES.mkdir(exist_ok=True)
 
 # %%

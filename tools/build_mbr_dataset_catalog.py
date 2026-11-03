@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""One-off: build ``configs/datasets/mbr_datasets.yaml`` from the two old lists.
+"""One-off: build ``analysis_notebooks/datasets/mbr_datasets.yaml`` from the two old lists.
 
 Run once on 2026-10-02 (GitHub issue 6, question 1: one master list). Inputs:
 
@@ -29,7 +29,7 @@ SRC_MD = "docs/spectroscopy job id compilation/Only JOB IDs for Agents.md"
 # The JSON is deleted after the first run; read it from the last commit that has it.
 JSON_COMMIT = "c3bfeda"
 OLD_JSON = "tests/data/mbr_datasets.json"
-OUT = REPO / "configs" / "datasets" / "mbr_datasets.yaml"
+OUT = REPO / "analysis_notebooks" / "datasets" / "mbr_datasets.yaml"
 
 JOB = r"JOB-\d{8}-\d{5}"
 
