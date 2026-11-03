@@ -23,7 +23,7 @@
 # (`survey_sep10.py`, folder `SURVEY` below); nothing is fitted here.
 #
 # The page and its figures go to the lab vault (`VAULT` below), where guan reads and comments.
-# Run as a script to rebuild the page: `pixi run python analysis_notebooks/pole_finding/views_sep10.py`.
+# Run as a script to rebuild the page: `pixi run python analysis_notebooks/guan/pole_finding/views_sep10.py`.
 
 # %%
 import pickle
@@ -127,7 +127,7 @@ ax.legend(fontsize=8, frameon=False)
 form_factor = save(fig, "form_factor")
 
 # the two survey figures of the recap, copied
-repo_figures = Path("../../docs/qsim/figures/pole_finding")
+repo_figures = Path("../../../docs/qsim/figures/pole_finding")
 for name in ("sep10_found_per_fitter", "sep10_row_offsets", "sep10_t3_merge_scan", "sep10_form_factor"):
     shutil.copy(repo_figures / f"{name}.png", FIGURES / f"{name}.png")
 
@@ -144,7 +144,7 @@ model_r = np.mean(pooled_ratios(model_sets))
 page = f"""---
 date: 2026-10-05
 data_set: {LABEL}
-generated_by: analysis_notebooks/pole_finding/views_sep10.py at {commit}
+generated_by: analysis_notebooks/guan/pole_finding/views_sep10.py at {commit}
 ---
 
 # Sep 10 ensemble: the three views per fitter

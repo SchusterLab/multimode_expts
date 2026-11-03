@@ -1,6 +1,6 @@
 """Q5b: Q5 with the fair null: the linear system (K = 0, same shape, same g) measured by the SAME
 counting procedure (Cramér-Rao merge at the option's grid, decay and noise). Also 250 reps (noise 0.14).
-Run: pixi run python analysis_notebooks/level_stats/labbook/q5b_fair_null.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q5b_fair_null.py
 """
 import itertools
 from concurrent.futures import ProcessPoolExecutor

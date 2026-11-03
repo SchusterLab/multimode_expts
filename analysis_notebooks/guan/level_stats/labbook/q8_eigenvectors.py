@@ -7,7 +7,7 @@ Per realization, over the bulk eigenvectors (10 % cut each edge), statistics:
 - small: fraction of D w < 0.05 (Porter-Thomas: 0.177);
 - logw: mean of log(D w) (Porter-Thomas: -1.27 = -(gamma + ln 2)).
 Paired shapes, K/g = 0 vs K/g at W/g; realizations for 3 sigma.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q8_eigenvectors.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q8_eigenvectors.py
 """
 import numpy as np
 from scipy.stats import chi2

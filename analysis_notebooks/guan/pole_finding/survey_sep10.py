@@ -7,7 +7,7 @@ A, B, T1, T1T3, the design bounds, the T3 merge-threshold scan, the diagnosis), 
 spectra, then F from T1 on realization 0. Started detached (tmux window in ``nb``) on
 2026-10-02; read the results from the CSVs and the log in the output folder.
 
-    pixi run python analysis_notebooks/pole_finding/survey_sep10.py [stage,...]
+    pixi run python analysis_notebooks/guan/pole_finding/survey_sep10.py [stage,...]
 
 Stages: ff, fast, design, merge, diagnose, C, F (default: all, in this order).
 """

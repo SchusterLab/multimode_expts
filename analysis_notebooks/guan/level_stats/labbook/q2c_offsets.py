@@ -1,6 +1,6 @@
 """Q2c: does the counting observer survive larger row offsets? (Q2 method; per-photon pattern free,
 random rest per row with prior 0.5 / 2 / 5 kHz.)
-Run: pixi run python analysis_notebooks/level_stats/labbook/q2c_offsets.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q2c_offsets.py
 """
 import itertools
 from concurrent.futures import ProcessPoolExecutor

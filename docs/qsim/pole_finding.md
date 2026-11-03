@@ -283,7 +283,7 @@ spectrum (`hann_spectrum`) farther than 4 bins from every level. `residual_exces
 in-band residual power over that noise power: 1 if the residual in band is only noise; more is
 structure the fit did not take. `cause_counts` sums the causes per fitter, `display_causes`
 draws the table (`fitting/qsim/poles/pole_plots.py`). Notebook:
-`analysis_notebooks/pole_finding/level_causes.py`.
+`analysis_notebooks/guan/pole_finding/level_causes.py`.
 
 ### 5.6 Design calculator (`design_summary`, `fitting/qsim/poles/design.py`)
 
@@ -299,7 +299,7 @@ amplitudes as explicit parameters (`fisher_matrix` of `design.py`), for a `Desig
 
 It gives the resolvable levels (5.5), the median gap error, and the small gaps (under half
 the mean gap, which P(r < r0) counts) resolved (`gap_errors`). The condition test is on the
-unit-free matrix (`scaled_condition`). Notebook: `analysis_notebooks/pole_finding/design.py`.
+unit-free matrix (`scaled_condition`). Notebook: `analysis_notebooks/guan/pole_finding/design.py`.
 
 ## 6. The row-to-row offset `sigma`
 
@@ -330,7 +330,7 @@ merging and false poles change first. The choice of `r0` is open (section 10); `
 
 ### 8.1 Entry point
 
-`analysis_notebooks/pole_finding/report.py` (jupytext), laid out as a lab report: Method,
+`analysis_notebooks/guan/pole_finding/report.py` (jupytext), laid out as a lab report: Method,
 Benchmark 1, 2, 3, 4, Summary. Each section is a few lines that call one `run_*_bench`. The
 Method section is rendered from the fitters' docstrings and settings, so the text cannot drift
 from what ran. Run headless: `pixi run pole-report --fitters A,B,E --size small`
@@ -338,12 +338,12 @@ from what ran. Run headless: `pixi run pole-report --fitters A,B,E --size small`
 
 ### 8.2 Data set registry
 
-`analysis_notebooks/pole_finding/registry.yaml`, format `fitting.qsim.poles.registry.DataSet`
+`analysis_notebooks/datasets/pole_registry.yaml`, format `fitting.qsim.poles.registry.DataSet`
 (`load_registry`), one entry per data set: its analysis frame (`Analysis`: phase frame, manual
 Kerr or "recorded", branches, legacy, excluded occupations, the model's Kerr), so that
 `experiments.qsim.pole_data.load_spectra` builds every spectrum from the entry alone
 (benchmarks 3 and 4: `fitting/qsim/poles/real_benchmarks.py`,
-`analysis_notebooks/pole_finding/real_benchmarks.py`); manifest path relative to `data_root()`, label,
+`analysis_notebooks/guan/pole_finding/real_benchmarks.py`); manifest path relative to `data_root()`, label,
 complete or partial, disorder parameters, source log reference. guan converts jonginn's logs
 to manifests (with `tools/migrate_mbr_jobs.py`) and to these entries. The benchmark reads
 only the registry.
@@ -355,7 +355,7 @@ only the registry.
 the data and of the residual, with the found poles (at each row's own offset) and the model
 levels where the row has weight; the row sums; the residual of each row. A level that a fitter
 misses but the data hold is a peak in the residual FFT of its rows. Notebook:
-`analysis_notebooks/pole_finding/diagnose.py`.
+`analysis_notebooks/guan/pole_finding/diagnose.py`.
 
 ### 8.4 Outputs
 

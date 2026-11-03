@@ -1,7 +1,7 @@
 """Q3b: the same test with paired disorder patterns (one shape measured at both Kerr values).
 
 Per shape i: d_i = P_B,i(r<0.25) - P_A,i(r<0.25); z = mean(d) / (sd(d) / sqrt(M)).
-Run: pixi run python analysis_notebooks/level_stats/labbook/q3b_paired.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q3b_paired.py
 """
 import numpy as np
 

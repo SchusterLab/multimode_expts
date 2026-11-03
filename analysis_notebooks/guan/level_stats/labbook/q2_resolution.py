@@ -8,7 +8,7 @@ random rest), adjacent levels merged while their gap is under 4 errors. Two obse
 - counting: a merged cluster of weight m is m coincident levels (complete basis, weights known).
 
 Writes cache/q2_resolution.npz. Run (about 10 min on 32 cores):
-pixi run python analysis_notebooks/level_stats/labbook/q2_resolution.py
+pixi run python analysis_notebooks/guan/level_stats/labbook/q2_resolution.py
 """
 import itertools
 from concurrent.futures import ProcessPoolExecutor

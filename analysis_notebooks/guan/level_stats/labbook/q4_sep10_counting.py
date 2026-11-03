@@ -10,7 +10,7 @@ Frozen before looking (2026-10-25 evening):
   counting observer at this data's grid and noise (as Q2).
 Also shown, not part of the test: the same fit without counting (naive), and the other fitters.
 
-Run: pixi run python analysis_notebooks/level_stats/labbook/q4_sep10_counting.py   (about 3 min)
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q4_sep10_counting.py   (about 3 min)
 """
 import pickle
 

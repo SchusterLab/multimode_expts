@@ -6,7 +6,7 @@ Reads ``C:/experiments/261025_level_stats/claude_work/idle_check.json`` (written
 - [2,0,0,0,0]: three damped lines; the two spacings against ``fixed_n_hamiltonian`` with K and g free
   (exact, no dof), and with g fixed to the N = 1 value (K free, 1 dof).
 Line spacings do not depend on the Stark frame. Writes figure q6_idle_check.png.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q6_idle_check.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q6_idle_check.py
 """
 import json
 

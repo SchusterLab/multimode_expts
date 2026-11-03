@@ -8,7 +8,7 @@ The counting bias raises P_N3 (towards Poisson), so it can hide a change but not
 Device time per N = 3 occupation: Stark calibration 5.5 min + trace 11 min per 150 samples (500 reps),
 from the 2026-10-24 jobs; the N = 1 reference adds 5 occupations of the same cost.
 Writes cache/q5_cost.npz. Run (about 15 min on 32 cores):
-pixi run python analysis_notebooks/level_stats/labbook/q5_cost.py
+pixi run python analysis_notebooks/guan/level_stats/labbook/q5_cost.py
 """
 import itertools
 from concurrent.futures import ProcessPoolExecutor

@@ -2,7 +2,7 @@
 
 Gap ratios of the N = 3 and N = 4 sectors over (K/g, W/g), W = RMS storage onsite spread.
 Writes cache/q1_model_stats.npz and the figures q1_*.png to the vault.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q1_model_stats.py   (about 1 min)
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q1_model_stats.py   (about 1 min)
 """
 import matplotlib
 

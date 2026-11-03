@@ -157,7 +157,7 @@ display(gaps.assign(bias=gaps.found - gaps.true).groupby(["fitter", "snr", "offs
 # %% [markdown]
 # ## Benchmarks 3 and 4: real data
 #
-# In `analysis_notebooks/pole_finding/real_benchmarks.py` (about 1 min; reads the registry,
+# In `analysis_notebooks/guan/pole_finding/real_benchmarks.py` (about 1 min; reads the registry,
 # measures each set's lambda_eff with benchmark 2 at its own conditions).
 
 # %% [markdown]

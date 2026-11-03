@@ -2,7 +2,7 @@
 
 q9_observers.png: P(r<0.25) true / naive / counting per hardware case and Kerr (Q2).
 q9_sep10_test.png: the Sep 10 frozen test, r histograms of the counted fit and the model (Q4).
-Run: pixi run python analysis_notebooks/level_stats/labbook/q9_figures.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q9_figures.py
 """
 import pickle
 

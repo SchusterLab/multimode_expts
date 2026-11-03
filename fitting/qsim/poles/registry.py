@@ -1,6 +1,6 @@
 """The data set registry (spec 8.2): which real data sets the benchmarks read.
 
-A checked-in YAML list, ``analysis_notebooks/pole_finding/registry.yaml``, one entry per
+A checked-in YAML list, ``analysis_notebooks/datasets/pole_registry.yaml``, one entry per
 data set. Benchmarks 3 and 4 read only the registry, never a path of their own.
 """
 from pathlib import Path
@@ -9,7 +9,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-REGISTRY = Path(__file__).parents[3] / "analysis_notebooks" / "pole_finding" / "registry.yaml"
+REGISTRY = Path(__file__).parents[3] / "analysis_notebooks" / "datasets" / "pole_registry.yaml"
 
 
 class DataSet(BaseModel):

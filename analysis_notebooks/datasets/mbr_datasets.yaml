@@ -11,7 +11,7 @@
 # Job IDs are literal lists, never ranges: the queue is one global counter shared by every user.
 #
 # Readers: tools/convert_mbr_catalog.py (conversion to the new layout, one block per data set),
-# tests/mbr_reference.py (test fixtures). Downstream, analysis_notebooks/pole_finding/registry.yaml
+# tests/mbr_reference.py (test fixtures). Downstream, analysis_notebooks/datasets/pole_registry.yaml
 # lists the converted manifests the benchmarks read.
 #
 # Fields per data set

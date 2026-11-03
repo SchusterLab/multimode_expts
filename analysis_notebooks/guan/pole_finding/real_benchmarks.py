@@ -17,7 +17,7 @@
 # # Benchmarks 3 and 4: real data
 #
 # docs/qsim/pole_finding.md 5.3 and 5.4 on the registry
-# (`analysis_notebooks/pole_finding/registry.yaml`; july_N3 left out, it is aliased). Fitter A
+# (`analysis_notebooks/datasets/pole_registry.yaml`; july_N3 left out, it is aliased). Fitter A
 # with the settings of the 7-1 analysis notebook (`ANALYSIS_SETTINGS`), fitter B with its
 # defaults. `lambda_eff` for the d flag and the re-merging comes from benchmark 2 at each
 # disorder set's own conditions (B, SNR 100, decay 0.01 per us, row offsets at the floor of

@@ -2,7 +2,7 @@
 
     pixi run pole-report [--fitters A,B,E] [--size small|full] [--experiment 260818_qsim_spectroscopy]
 
-Executes ``analysis_notebooks/pole_finding/report.py`` in a fresh kernel and writes, under
+Executes ``analysis_notebooks/guan/pole_finding/report.py`` in a fresh kernel and writes, under
 ``<data root>/<experiment>/derived_data/pole_finding/<run>/``, the executed notebook as HTML
 and the results HDF5 (``results.h5``). The run settings reach the kernel as the JSON
 environment variable ``POLE_REPORT_RUN``. ``--registry`` (the real data sets, spec 8.2) is
@@ -21,7 +21,7 @@ from nbconvert import HTMLExporter
 
 from experiments.job_paths import data_root
 
-REPORT = Path(__file__).parents[1] / "analysis_notebooks" / "pole_finding" / "report.py"
+REPORT = Path(__file__).parents[1] / "analysis_notebooks" / "guan" / "pole_finding" / "report.py"
 
 
 def main():

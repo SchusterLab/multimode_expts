@@ -28,7 +28,7 @@ log entry, and the spec takes over what is kept.
 ## Rules for every task
 
 - One new module per task under `fitting/qsim/poles/`, one notebook under
-  `analysis_notebooks/pole_finding/`, tests in its own file; do not edit another task's module.
+  `analysis_notebooks/guan/pole_finding/`, tests in its own file; do not edit another task's module.
   Shared modules (`pole_fit`, `diagnosis`, `design`, `synthetic`) only by T0, or by a small
   additive change named in the log.
 - Every fitter keeps the interface `fit(A, time_us, settings, row_groups=None) -> PoleFit`, so
@@ -93,7 +93,7 @@ The design calculator has only the column sums, with local bounds.
 
 - 9 realizations x 35 occupations (630 spectroscopy jobs) and their calibrations, from
   `Job_list.md`, with `tools/migrate_mbr_jobs.py`; registry entries
-  (`analysis_notebooks/pole_finding/registry.yaml`) with the analysis frame.
+  (`analysis_notebooks/datasets/pole_registry.yaml`) with the analysis frame.
 - Then the diagnosis (spec 5.5) and the design calculator on them: how many levels are
   resolvable with 35 rows at this Kerr and T2. The data answer "is the complete basis worth
   measuring every time" (guan: if yes, measure it every time).

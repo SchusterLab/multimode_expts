@@ -1,5 +1,5 @@
 """Q2b: the counting observer for hardware options that reach K/g <= -1.8 (same method as Q2).
-Run: pixi run python analysis_notebooks/level_stats/labbook/q2b_options.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q2b_options.py
 """
 import itertools
 from concurrent.futures import ProcessPoolExecutor

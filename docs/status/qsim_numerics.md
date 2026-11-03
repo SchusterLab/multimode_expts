@@ -14,7 +14,7 @@ the branch rules are in `docs/STATUS.md`.
 - **Level statistics: can MBR spectra show level repulsion turn on? Verdict (2026-10-25 evening, Claude,
   full rein; branch `theory`).** Read the vault page first:
   `G:\Shared drives\SLab\Multimode\Lab\guan\LevelStatistics\LevelStatistics - overview.md`; short record
-  `docs/log/2026-10-25_level-statistics-verdict.md`; scripts `analysis_notebooks/level_stats/labbook/`.
+  `docs/log/2026-10-25_level-statistics-verdict.md`; scripts `analysis_notebooks/guan/level_stats/labbook/`.
   Yes from the linear limit, not from the dark-mode limit, not tonight: complete N = 3 basis at W/g 2-2.4,
   count merged poles by their integer weights, compare P(r<0.25) shape by shape with the linear spectrum
   from N = 1 data of the same pattern. 11-13 shapes at K/g -1.8 (18-25 at the present -0.9); 120-275 h of
@@ -48,7 +48,7 @@ the branch rules are in `docs/STATUS.md`.
   (realistic open model instead of a toy).
 - **Read in the lab vault, with figures** (2026-10-05; `docs/log/2026-10-05_pole-views-and-vault.md`):
   `G:\Shared drives\SLab\Multimode\Lab\guan\qsim_analysis\pole_finding\`, built by
-  `analysis_notebooks/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
+  `analysis_notebooks/guan/pole_finding/views_sep10.py`; guan comments with `> [!guan]` callouts (read
   them first). A fitter is judged by three views (`fitting/qsim/poles/views.py`): poles on the
   per-row FFT, the stick diagram, the r histogram. On Sep 10 the model is near Poisson (<r> 0.415);
   A, B, C show false repulsion (0.50-0.57); T1T3 matches (0.414). First feasibility map
@@ -70,7 +70,7 @@ the branch rules are in `docs/STATUS.md`.
   for prod. Final focused checks: 209 passed. Saved-data checks here require the unavailable
   data tree; hardware was not accessed.
 - **The survey of every pole-finding method on the Sep 10 ensemble is running unattended**
-  (tmux `nb`, window `survey`; `analysis_notebooks/pole_finding/survey_sep10.py`; record
+  (tmux `nb`, window `survey`; `analysis_notebooks/guan/pole_finding/survey_sep10.py`; record
   `docs/log/2026-10-02_sep10-pole-survey.md`). Output:
   `C:\experiments\260818_qsim_spectroscopy\derived_data\pole_finding\sep10_survey\` (`survey.log`
   and CSVs). **Next:** read the results, write the tables into a log entry, and decide: the
@@ -110,7 +110,7 @@ the branch rules are in `docs/STATUS.md`.
   three Kerr points, n_M1 = 0-3, for a model-free T (section 2 of the notebook takes it).
 - **Pole finding**: phases 1 and 2 of
   `docs/qsim/pole_finding.md` are done, fitters C and D sketched (`fitting/qsim/poles/`;
-  notebooks in `analysis_notebooks/pole_finding/`). The limit is the data: the 7-1 window loses
+  notebooks in `analysis_notebooks/guan/pole_finding/`). The limit is the data: the 7-1 window loses
   the small gaps for every fitter, and on the August sets row offsets (sigma 0.5-1 kHz) break
   A and B. **C** (B plus one offset per row, calibration prior) removes the offset loss on
   synthetic data (26 of 35 resolved at every sigma, A and B 7-9 at 1 kHz) and is best on real
@@ -119,7 +119,7 @@ the branch rules are in `docs/STATUS.md`.
   None of A-D is good enough on the real data, and the scores do not say why (guan): so first
   find the cause of each miss. Done: `display_pole_fit` (one figure for any fitter's
   `PoleFit`), and the per-level diagnosis (`diagnose_levels`, spec 5.5; notebook
-  `analysis_notebooks/pole_finding/level_causes.py`): in the rows, resolvable (Cramér-Rao),
+  `analysis_notebooks/guan/pole_finding/level_causes.py`): in the rows, resolvable (Cramér-Rao),
   held (refinement started at the model), found. Result (bounds at the data's decay, 0.005 per
   us): august_N3 is fitter-limited, and C finds all 10 levels; august_disorder/0 has 24 of 35
   levels resolvable (31 if the row offsets were known), of which C finds 19, B 18, A 15; 7-1/0
@@ -162,7 +162,7 @@ the branch rules are in `docs/STATUS.md`.
 
 ## Entry points: the notebooks
 
-`analysis_notebooks/202609_qsim_migration/` and `analysis_notebooks/pole_finding/`.
+`analysis_notebooks/202609_qsim_migration/` and `analysis_notebooks/guan/pole_finding/`.
 
 | Notebook | State | Last check |
 |---|---|---|

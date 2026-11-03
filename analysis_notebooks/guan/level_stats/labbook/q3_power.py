@@ -8,7 +8,7 @@ number per point, realizations are the independent units). Two forms:
 - one-point: one point measured, compared with the model's prediction at the other.
 
 Writes cache/q3_power.npz and figure q3_power.png.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q3_power.py   (about 2 min)
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q3_power.py   (about 2 min)
 """
 import matplotlib
 

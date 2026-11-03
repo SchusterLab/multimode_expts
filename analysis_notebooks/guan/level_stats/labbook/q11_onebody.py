@@ -6,7 +6,7 @@ Joint fit of all rows: a_b(t) = s_b exp(-(gamma + 2 pi i delta_b) t) sum_k V_bk^
 Parameters: eps (4), g (4), delta_b (5; the mean is fixed to 0 so that eps keeps its meaning), gamma,
 s_b complex (projected out). If the idle only adds a static onsite offset per mode, this fit is good
 (chi2/point ~ 1) and g_s ~ 10.2 kHz; the detuning knob can then cancel eps.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q11_onebody.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q11_onebody.py
 """
 import json
 

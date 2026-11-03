@@ -3,7 +3,7 @@
 Paired: the same disorder shapes at every (K, W). Shows P(r < 0.25) against W/g for several K/g, the
 Kerr contrast P(K) - P(K=0), and its per-shape spread (what sets the realization count).
 Writes figure q7_island.png and cache/q7_island.npz.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q7_island.py   (about 3 min)
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q7_island.py   (about 3 min)
 """
 from concurrent.futures import ProcessPoolExecutor
 

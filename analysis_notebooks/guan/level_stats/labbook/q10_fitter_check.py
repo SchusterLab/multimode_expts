@@ -6,7 +6,7 @@ shapes at K = 0 (the linear reference) and K/g = -1.8. Fitter: the frozen one of
 fit), started from the joint pencil for band and decay scale, with the true row offsets (0): on synthetic
 data the Hamiltonian fit recovers the offsets to 0.02-0.05 kHz, so this stands in for its offsets.
 Counting as in Q4. Writes cache/q10_fitter_check.pkl.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q10_fitter_check.py [option]   (about 15 min)
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q10_fitter_check.py [option]   (about 15 min)
 """
 import pickle
 import sys

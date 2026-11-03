@@ -1,7 +1,7 @@
 """Q12: the paired test when the N = 3 coupling is 4 % larger than the N = 1 coupling (10-24 Kerr log).
 Null case: the N = 3 system is linear with g' = 1.04 g, the reference is the sums of the N = 1 levels (g).
 -> the bias and the extra spread of d per shape. Also with Kerr, for the contrast.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q12_g_mismatch.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q12_g_mismatch.py
 """
 import numpy as np
 

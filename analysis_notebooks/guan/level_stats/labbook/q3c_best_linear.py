@@ -1,6 +1,6 @@
 """Q3c: the best linear statistic of the per-realization r histogram (Fisher discriminant),
 trained on one set of shapes and tested on another (no in-sample gain). Perfect resolution.
-Run: pixi run python analysis_notebooks/level_stats/labbook/q3c_best_linear.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q3c_best_linear.py
 """
 import numpy as np
 

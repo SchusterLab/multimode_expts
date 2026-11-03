@@ -1,5 +1,5 @@
 """Q11b: the five sync-34 rows with one common storage offset eps and one common g (row offsets free).
-Run: pixi run python analysis_notebooks/level_stats/labbook/q11b_common.py
+Run: pixi run python analysis_notebooks/guan/level_stats/labbook/q11b_common.py
 """
 import json
 
