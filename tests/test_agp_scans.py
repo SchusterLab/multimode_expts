@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 
 from experiments.qsim import agp  # noqa: E402
 from experiments.qsim.agp import (  # noqa: E402
+    CentralBosonAGPExperiment,
     CentralBosonAGPDisorderScan,
     display_scans,
     list_scans,
@@ -193,3 +194,34 @@ def test_part_names_and_old_stems():
     assert agp.part_name("s7", 0.5) == "s7_W0p5kHz"
     assert agp.scan_stem("x/261030_123324_CentralBosonAGPDisorderScan.yaml") == "261030_123324"
     assert agp.scan_stem("x/CentralBosonAGPDisorderScan_s7_high_w.yaml") == "s7_high_w"
+
+
+def test_each_w_has_its_curves_on_shared_axes(tmp_path):
+    scan = acquired(tmp_path, strengths=(0, 30), name="curves")
+    data = scan.analyze(background_start_us=0.)
+    part = scan.children[1]
+    np.testing.assert_allclose(data["agp_mu"], CentralBosonAGPExperiment.DEFAULT_MU_KHZ)
+    assert {2., 5., 10., 20., 50.} <= set(np.round(data["agp_mu"], 9))
+    assert data["agp"].shape == (2, len(data["agp_mu"]))
+    assert data["spectrum"].shape == (2, len(data["frequency_khz"]))
+    np.testing.assert_allclose(data["spectrum"][1], part.data["spectrum"])
+    # The stored S is what the plot computes from C_1 with the same settings.
+    fig, axes = scan.display_spectrum()
+    computed = scan.display_spectrum(window="hann", raw=False, background_start_us=0.)
+    np.testing.assert_allclose(axes[1].lines[0].get_ydata(), computed[1][1].lines[0].get_ydata())
+    assert list(scan.shown_cutoffs()) == [5., 10., 20.]
+    scan.display_mu(estimator="agp_connected")
+    matplotlib.pyplot.close("all")
+
+
+def test_parts_with_different_couplings_share_the_default_axis(tmp_path):
+    scan = acquired(tmp_path, strengths=(0, 30), name="couplings")
+    scan.analyze()
+    first, second = scan.children
+    for child in second.children:  # other recorded couplings for the second W only
+        params = child.recorded_derived_params()
+        params["couplings_MHz"] = [2 * c for c in params["couplings_MHz"]]
+        child.recorded_derived_params = (lambda p=params: p)
+    data = scan.analyze()
+    assert data["mu_gld_khz"][1] == pytest.approx(2 * data["mu_gld_khz"][0])
+    assert data["agp"].shape == (2, len(CentralBosonAGPExperiment.DEFAULT_MU_KHZ))

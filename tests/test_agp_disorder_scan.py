@@ -1,4 +1,5 @@
 """CentralBosonAGPDisorderScan: one CentralBosonAGPExperiment per W, saved as C_k(W, t) maps."""
+import json
 from pathlib import Path
 
 import h5py
@@ -71,7 +72,9 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
         assert set(handle) == {"disorder_khz", "cycles", "detunings", "time_us", "C1", "C2",
                                "C1_err", "C2_err", "C1_corrected", "C2_corrected", "C1_theory",
-                               "agp_mu", *CentralBosonAGPDisorderScan.AGP_KEYS}
+                               "agp_mu", *CentralBosonAGPDisorderScan.AGP_KEYS, "mu_gld_khz",
+                               "frequency_khz", "spectrum", "spectrum_err", "spectrum_theory"}
+        assert json.loads(handle.attrs["analysis"])["t1_us"] == 600.
 
     reloaded = CentralBosonAGPDisorderScan.from_manifest(manifest_path)
     reloaded.analyze(mu=[5.915, 10.], t1_us=600.)
@@ -102,7 +105,8 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     matplotlib.pyplot.close("all")
 
     updated = scan.analyze()
-    assert updated["agp"].shape == (3, 1) and "agp_t1" not in updated
+    assert updated["agp"].shape == (3, len(CentralBosonAGPExperiment.DEFAULT_MU_KHZ))
+    assert "agp_t1" not in updated
 
 
 def test_saved_parts_combine_without_saving_them_again(tmp_path):

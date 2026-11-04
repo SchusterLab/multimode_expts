@@ -175,6 +175,27 @@ def cosine_transform_weights(time_us, frequency_mhz, window="hann"):
     return 4 * trapezoid * envelope * np.cos(phases)
 
 
+def spectrum_frequencies_khz(time_us):
+    """-> the frequency axis (kHz) of a spectrum of C over ``time_us``: 0 to Nyquist by 1/(4T).
+
+    A property of the time grid alone, so the traces of one cycle grid share it.
+    """
+    times = np.asarray(time_us, dtype=float)
+    resolution_khz = 1000 / times[-1]
+    nyquist_khz = 1000 / (2 * np.median(np.diff(times)))
+    return np.arange(0, nyquist_khz, resolution_khz / 4)
+
+
+def spectral_function(time_us, correlation, error, frequency_khz, window="hann"):
+    """-> (S, its error) per kHz on ``frequency_khz``: ``cosine_transform_weights`` applied to C.
+
+    ``error`` is the independent error of each point of C (shot noise).
+    """
+    transform = cosine_transform_weights(time_us, np.asarray(frequency_khz) / 1000, window) / 1000
+    return transform @ np.asarray(correlation, dtype=float), \
+        np.sqrt(transform**2 @ np.asarray(error, dtype=float)**2)
+
+
 ########################################################################
 # An independent raw-shot classifier. tools/convert_fock_population_catalog.py
 # checks every converted job's raw probabilities against it.

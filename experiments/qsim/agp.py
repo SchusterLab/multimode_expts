@@ -53,8 +53,8 @@ from experiments.qsim.fock_population import (
 from fitting.qsim.agp import (
     agp_kernel_weights,
     calibration_error_factors,
-    cosine_transform_weights,
-    fit_exponential_background,
+    spectral_function,
+    spectrum_frequencies_khz,
     subtract_background,
 )
 from theory.qsim.agp import (
@@ -148,12 +148,17 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
     (shot-only, of the corrected values when there are some),
     ``C1_calibration_factors`` (cycles, 4) when the calibration file is
     readable, ``disorder_khz``, ``direction``, ``photon_sector_number`` and
-    ``sector_dimension``. With timing and couplings recorded and r = d, per
-    cutoff in ``agp_mu`` (kHz): ``agp`` and ``agp_err`` (dimensionless
-    g^2 ||A_mu||^2), ``agp_t1`` and ``agp_t1_err`` with a T1, and
-    ``coupling_mhz``. With a Kerr: ``C1_theory`` (cycles,), ``agp_theory``
-    (infinite time), ``agp_theory_window`` (the same kernel and window as the
-    data) and ``theory_kerr_mhz``.
+    ``sector_dimension``. With timing recorded and r = d, the spectrum of C_1
+    on ``frequency_khz`` (0 to Nyquist by 1/(4T)): ``spectrum``, ``spectrum_err``
+    and, background-subtracted, ``spectrum_with_background``. With couplings
+    too, per cutoff in ``agp_mu`` (kHz, default ``DEFAULT_MU_KHZ``, the same
+    for every W): ``agp`` and ``agp_err`` (dimensionless g^2 ||A_mu||^2),
+    ``agp_t1`` and ``agp_t1_err`` with a T1, ``agp_connected`` with a
+    background start, ``coupling_mhz`` and ``mu_gld_khz`` (g L/D). With a
+    Kerr: ``C1_theory`` (cycles,), ``agp_theory`` (infinite time),
+    ``agp_theory_window`` (the same kernel and window as the data),
+    ``spectrum_theory`` and ``theory_kerr_mhz``. The HDF5 attribute
+    ``analysis`` holds the settings.
     """
 
     def __init__(self, photon_sector_number, direction, swap_stors, cycles, detunings,
@@ -235,11 +240,20 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         values = probe_values(model.fock_basis, self.mode_index, self.probes[0][1])
         return spectral_weights(model, values)
 
-    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
-                background_start_us=None, **kwargs):
-        """Build C_k, integrate C_1 with the AGP kernel, and add the closed-system theory.
+    # The default cutoff axis (kHz), the same for every W: 41 log steps from 1 to 100, and 2, 5, 20, 50.
+    DEFAULT_MU_KHZ = np.unique(np.round(np.concatenate([np.geomspace(1., 100., 41),
+                                                        [2., 5., 20., 50.]]), 9))
 
-        ``mu``: cutoff or cutoffs in kHz (None: g L/D). ``t1_us``, ``t1_err_us``:
+    def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
+                background_start_us=None, window="hann", **kwargs):
+        """Build C_k, its spectrum S(f) and AGP(mu) curves, and the closed-system theory.
+
+        All processed curves of this W, on axes that do not depend on it:
+        ``agp_mu`` (``mu`` in kHz, default ``DEFAULT_MU_KHZ``) and
+        ``frequency_khz`` (0 to Nyquist by 1/(4T), from the time grid). g L/D is
+        kept as ``mu_gld_khz``. S is the cosine transform of C_1 (``window``),
+        background-subtracted when ``background_start_us`` is given, with
+        ``spectrum_with_background`` and ``spectrum_theory``. ``t1_us``, ``t1_err_us``:
         T1 of the direction mode, for ``agp_t1``. ``kerr_mhz``: the Kerr of the
         theory (None: the recorded device Kerr). ``background_start_us``: also
         fit A e^{-rate t} to C_1 for t >= this time and integrate C_1 minus it
@@ -275,16 +289,35 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
                          photon_sector_number=np.asarray(self.photon_sector_number),
                          sector_dimension=np.asarray(dimension))
 
-        couplings = self.recorded_couplings_mhz()
-        if self.ro_stor != self.direction or "time_us" not in self.data or couplings is None:
-            warnings.warn("AGP skipped: needs an autocorrelation and recorded timing/coupling.",
+        self.analysis = dict(mu_khz=None if mu is None else np.atleast_1d(mu).tolist(),
+                             t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz,
+                             background_start_us=background_start_us, window=window)
+        if self.ro_stor != self.direction or "time_us" not in self.data:
+            warnings.warn("AGP and spectrum skipped: need an autocorrelation and recorded timing.",
                           stacklevel=2)
             return self.data
-        g_mhz = float(np.mean(np.abs(couplings)))
-        mu_khz = np.atleast_1d(np.asarray(
-            1000 * g_mhz * (1 + len(self.swap_stors)) / dimension if mu is None else mu,
-            dtype=float))
         correlation = self.data["C1_corrected" if corrected else "C1"]
+        if background_start_us is not None:
+            connected, fit = subtract_background(self.data["time_us"], correlation,
+                                                 self.data["C1_err"], background_start_us)
+            self.data.update(background_amplitude=np.asarray(fit["amplitude"]),
+                             background_rate_per_us=np.asarray(fit["rate_per_us"]),
+                             background_start_us=np.asarray(float(background_start_us)))
+        frequency_khz = spectrum_frequencies_khz(self.data["time_us"])
+        spectrum, spectrum_err = spectral_function(
+            self.data["time_us"], correlation if background_start_us is None else connected,
+            self.data["C1_err"], frequency_khz, window)
+        self.data.update(frequency_khz=frequency_khz, spectrum=spectrum, spectrum_err=spectrum_err)
+        if background_start_us is not None:
+            self.data["spectrum_with_background"] = spectral_function(
+                self.data["time_us"], correlation, self.data["C1_err"], frequency_khz, window)[0]
+
+        couplings = self.recorded_couplings_mhz()
+        if couplings is None:
+            warnings.warn("AGP skipped: needs recorded couplings.", stacklevel=2)
+            return self.data
+        g_mhz = float(np.mean(np.abs(couplings)))
+        mu_khz = np.atleast_1d(np.asarray(self.DEFAULT_MU_KHZ if mu is None else mu, dtype=float))
         factors = self.data.get("C1_calibration_factors")
         scale = (2 * np.pi * g_mhz)**2  # agp stores dimensionless g^2 ||A_mu||^2
 
@@ -296,17 +329,12 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
                 variance = variance + ((weights @ factors)**2).sum(axis=-1)
             return weights, weights @ correlation, variance
 
-        window, agp, variance = estimate(None)
+        kernel, agp, variance = estimate(None)
         self.data.update(agp_mu=mu_khz, agp=agp, agp_err=np.sqrt(variance),
-                         coupling_mhz=np.asarray(g_mhz))
+                         coupling_mhz=np.asarray(g_mhz),
+                         mu_gld_khz=np.asarray(1000 * g_mhz * (1 + len(self.swap_stors)) / dimension))
         if background_start_us is not None:
-            connected, fit = subtract_background(self.data["time_us"], correlation,
-                                                 self.data["C1_err"], background_start_us)
-            self.data.update(agp_connected=window @ connected,
-                             agp_connected_err=np.sqrt(variance),
-                             background_amplitude=np.asarray(fit["amplitude"]),
-                             background_rate_per_us=np.asarray(fit["rate_per_us"]),
-                             background_start_us=np.asarray(float(background_start_us)))
+            self.data.update(agp_connected=kernel @ connected, agp_connected_err=np.sqrt(variance))
         if t1_us is not None:
             _, value, variance = estimate(t1_us)
             if t1_err_us:
@@ -323,10 +351,19 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
             return self.data
         differences, weights = self.theory_spectrum(kerr_mhz=kerr)
         theory = two_time_correlation(differences, weights, self.data["time_us"])
-        self.data.update(C1_theory=theory, agp_theory_window=window @ theory,
+        # Against a background-subtracted S, the theory without its DC part (the connected C_1).
+        dc = split_dc(differences, weights)[0] if background_start_us is not None else 0.
+        self.data.update(C1_theory=theory, agp_theory_window=kernel @ theory,
                          agp_theory=spectral_agp(differences, weights, mu_khz / 1000, g_mhz),
-                         theory_kerr_mhz=np.asarray(kerr))
+                         theory_kerr_mhz=np.asarray(kerr),
+                         spectrum_theory=spectral_function(
+                             self.data["time_us"], theory - dc, np.zeros(len(theory)),
+                             frequency_khz, window)[0])
         return self.data
+
+    def assembled_attrs(self):
+        """The analysis settings of the saved curves (cutoffs, window, background, T1, Kerr)."""
+        return dict(analysis=getattr(self, "analysis", {}))
 
     def display(self, raw=False, **kwargs):
         """Top: <i|n_r(t)|i> for every |i>. Bottom: C_1(t), C_2(t) with shot errors, and theory."""
@@ -380,9 +417,12 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
     ``data`` and the assembled HDF5, rows sorted by W: ``disorder_khz`` (W,),
     ``cycles``, ``time_us`` (when every part has it), ``detunings`` (W, storages),
     and ``C1``, ``C2``, ``C1_err``, ``C2_err``, ``C1_theory``, with ``C1_corrected``
-    and ``C2_corrected`` when every part is corrected, each (W, cycles). With
-    an AGP in every part: ``agp_mu`` (mu,) in kHz and ``agp``, ``agp_err``,
-    ``agp_t1``, ``agp_t1_err``, ``agp_theory``, ``agp_theory_window``, each (W, mu).
+    and ``C2_corrected`` when every part is corrected, each (W, cycles). The
+    parts' curves on their shared axes: ``agp_mu`` (mu,) in kHz with ``agp``,
+    ``agp_err``, ``agp_t1``, ``agp_t1_err``, ``agp_connected``, ``agp_theory``,
+    ``agp_theory_window`` (W, mu) and ``mu_gld_khz`` (W,); ``frequency_khz`` (f,)
+    with ``spectrum``, ``spectrum_err``, ``spectrum_with_background``,
+    ``spectrum_theory`` (W, f). The HDF5 attribute ``analysis`` holds the settings.
     """
 
     child_class = CentralBosonAGPExperiment
@@ -391,6 +431,7 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
     AGP_KEYS = ("agp", "agp_err", "agp_t1", "agp_t1_err", "agp_theory", "agp_theory_window")
     BACKGROUND_KEYS = ("agp_connected", "agp_connected_err", "background_amplitude",
                        "background_rate_per_us")
+    SPECTRUM_KEYS = ("spectrum", "spectrum_err", "spectrum_with_background", "spectrum_theory")
 
     def __init__(self, parts, notes=""):
         super().__init__(notes=notes)
@@ -516,11 +557,16 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                                  notes=notes)
 
     def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
-                background_start_us=None, **kwargs):
-        """Analyze every W (see ``CentralBosonAGPExperiment.analyze``) and collect the maps."""
+                background_start_us=None, window="hann", **kwargs):
+        """Analyze every W (see ``CentralBosonAGPExperiment.analyze``) and stack its curves.
+
+        The parts share their axes (``agp_mu``, ``frequency_khz``), so the scan
+        only stacks: (W, mu) and (W, f) maps.
+        """
         for part in self.children:
             part.analyze(mu=mu, t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz,
-                         background_start_us=background_start_us, **kwargs)
+                         background_start_us=background_start_us, window=window, **kwargs)
+        self.analysis = self.children[0].analysis
         parts = [part.data for part in self.children]
         data = dict(disorder_khz=np.asarray([part.disorder_khz for part in self.children]),
                     cycles=np.asarray(parts[0]["cycles"]),
@@ -530,12 +576,14 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         keys = ["C1", "C2", "C1_err", "C2_err", "C1_theory"]
         if all("C1_corrected" in part for part in parts):
             keys += ["C1_corrected", "C2_corrected"]
-        if all("agp" in part for part in parts):
-            cutoffs = [np.asarray(part["agp_mu"]) for part in parts]
-            if any(c.shape != cutoffs[0].shape or not np.allclose(c, cutoffs[0]) for c in cutoffs):
-                raise ValueError("the parts have different default cutoffs; give mu")
-            data["agp_mu"] = cutoffs[0]
-            keys += self.AGP_KEYS + self.BACKGROUND_KEYS
+        for axis, curves in (("frequency_khz", self.SPECTRUM_KEYS),
+                             ("agp_mu", self.AGP_KEYS + self.BACKGROUND_KEYS + ("mu_gld_khz",))):
+            if all(axis in part for part in parts):
+                values = [np.asarray(part[axis]) for part in parts]
+                if any(v.shape != values[0].shape or not np.allclose(v, values[0]) for v in values):
+                    raise ValueError(f"the parts have different {axis}")
+                data[axis] = values[0]
+                keys += list(curves)
         for key in keys:
             if all(key in part for part in parts):
                 data[key] = np.asarray([part[key] for part in parts])
@@ -619,8 +667,7 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             ax.set(xlabel="Disorder RMS (kHz)", ylabel=r"$g^2\|A_\mu\|^2$")
             return fig, np.array([ax])
         cutoffs = np.asarray(self.data["agp_mu"])
-        columns = range(len(cutoffs)) if mu is None else [
-            int(np.argmin(abs(cutoffs - value))) for value in np.atleast_1d(mu)]
+        columns = [int(np.argmin(abs(cutoffs - value))) for value in self.shown_cutoffs(mu)]
         strengths = np.asarray(self.data["disorder_khz"])
         dense = np.linspace(0, strengths.max(), 121)
         fig, axes = plt.subplots(1, len(columns), figsize=(4 * len(columns), 3.6),
@@ -647,6 +694,32 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         axes[0, 0].legend(fontsize=7)
         return fig, axes[0]
 
+    def display_mu(self, estimator="agp", theory=True):
+        """AGP(mu) for every W on a log mu axis, with its error band. -> (fig, ax).
+
+        ``estimator``: "agp", "agp_connected" or "agp_t1". Dashed: the
+        infinite-time closed system; the dots mark g L/D of each W.
+        """
+        if estimator not in self.data:
+            raise ValueError(f"no {estimator}: analyze with the settings it needs")
+        cutoffs = np.asarray(self.data["agp_mu"])
+        fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
+        for row, strength in enumerate(self.data["disorder_khz"]):
+            values = np.asarray(self.data[estimator][row])
+            error = np.asarray(self.data[f"{estimator}_err"][row])
+            line, = ax.plot(cutoffs, values, lw=1.2, label=f"W = {strength:g} kHz")
+            ax.fill_between(cutoffs, values - error, values + error, color=line.get_color(),
+                            alpha=.25, lw=0)
+            if theory and "agp_theory" in self.data:
+                ax.plot(cutoffs, self.data["agp_theory"][row], "--", lw=.8, color=line.get_color())
+            if "mu_gld_khz" in self.data:
+                gld = float(self.data["mu_gld_khz"][row])
+                ax.plot(gld, np.interp(gld, cutoffs, values), "o", ms=4, color=line.get_color())
+        ax.set(xscale="log", xlabel=r"$\mu$ (kHz)", ylabel=r"$g^2\|A_\mu\|^2$",
+               title=f"{estimator}: dashed closed system (infinite time), dots g L/D")
+        ax.legend(fontsize=7, ncol=2)
+        return fig, ax
+
     def display_traces(self, raw=False):
         """C_1(t) for every W with its shot error and the closed-system C_1. -> (fig, axes)."""
         if "C1" not in self.data:
@@ -667,52 +740,69 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         axes[-1, 0].set_xlabel("Floquet cycles")
         return fig, axes[:, 0]
 
-    def display_spectrum(self, mu=None, window="hann", background_start_us=None, max_khz=None,
+    def display_spectrum(self, mu=None, window=None, background_start_us=None, max_khz=None,
                          raw=False, theory=True, yscale="linear"):
         """The one-sided spectral function S(f) of C_1 for every W. -> (fig, axes).
 
-        S is the cosine transform of the measured C_1 over its window
-        (``fitting.qsim.agp.cosine_transform_weights``), per kHz, with the shot
-        error. ``background_start_us``: first subtract A e^{-rate t} fitted for
-        t >= this time (``fit_exponential_background``); the unsubtracted S is
-        then grey and the theory is the connected part (no DC). With the parts
-        loaded: the closed-system S over the same window (dashed) and its
-        weights in bins of 1/T (steps). The AGP filters f^2 / (f^2 + mu^2)^2,
-        scaled to a peak of 1, are on the right axis; ``mu`` in kHz, default
-        the analyzed cutoffs. ``max_khz`` defaults to ``SPECTRUM_MARGIN`` times
-        the highest closed-system frequency over all W, at most the Nyquist
-        frequency (the Nyquist frequency without the parts). A W whose
-        closed-system weight is partly above the Nyquist frequency (it folds
-        back into the measured S) is marked with that fraction.
+        By default the analyzed curves (``spectrum``, ``spectrum_err``,
+        ``spectrum_with_background`` in grey, ``spectrum_theory`` dashed): S is
+        the cosine transform of C_1 over its window, per kHz, with the shot
+        error, background-subtracted when analyzed so. A ``window``,
+        ``background_start_us`` other than the analyzed ones, or ``raw``,
+        computes S from C_1 here instead (``fitting.qsim.agp.spectral_function``).
+        With the parts loaded: the closed-system weights in bins of 1/T
+        (steps). The AGP filters f^2 / (f^2 + mu^2)^2, scaled to a peak of 1,
+        are on the right axis (``mu`` in kHz; default ``shown_cutoffs``).
+        ``max_khz`` defaults to ``SPECTRUM_MARGIN`` times the highest
+        closed-system frequency over all W, at most the Nyquist frequency (the
+        Nyquist frequency without the parts). A W whose closed-system weight is
+        partly above the Nyquist frequency (it folds back into the measured S)
+        is marked with that fraction.
         """
         if "C1" not in self.data:
             self.analyze()
         if "time_us" not in self.data:
             raise ValueError("a spectrum needs the times of the cycles (time_us)")
+        analysis = getattr(self, "analysis", {}) or {}
+        analyzed_window = analysis.get("window", "hann")
+        analyzed_background = analysis.get("background_start_us")
+        stored = ("spectrum" in self.data and not raw
+                  and window in (None, analyzed_window)
+                  and background_start_us in (None, analyzed_background))
+        window = window or analyzed_window
+        if stored:
+            background_start_us = analyzed_background
+        subtract = background_start_us is not None
         key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
         times = np.asarray(self.data["time_us"])
         resolution_khz = 1000 / times[-1]
         nyquist_khz = 1000 / (2 * np.median(np.diff(times)))
+        frequency_khz = (np.asarray(self.data["frequency_khz"]) if stored
+                         else spectrum_frequencies_khz(times))
         model = self.model_spectra_khz() if self.children else []
         if max_khz is None:
             top = max((f[w > 1e-3 * w.max()].max() for f, w in model if len(f)), default=None)
             max_khz = nyquist_khz if top is None else min(nyquist_khz, self.SPECTRUM_MARGIN * top)
-        frequency_khz = np.arange(0, max_khz, resolution_khz / 4)
-        transform = cosine_transform_weights(times, frequency_khz / 1000, window) / 1000
-        cutoffs = np.atleast_1d(self.data.get("agp_mu", []) if mu is None else mu).astype(float)
-        with_parts = theory and bool(self.children) and "agp_theory" in self.data
-        subtract = background_start_us is not None
+        cutoffs = self.shown_cutoffs(mu)
+        with_parts = theory and bool(self.children) and "theory_kerr_mhz" in self.children[0].data
         count = len(self.data["disorder_khz"])
         fig, axes = plt.subplots(count, 1, figsize=(9, 2 * count), sharex=True, squeeze=False,
                                  constrained_layout=True)
         for row, ax in enumerate(axes[:, 0]):
-            values, error = np.asarray(self.data[key][row]), np.asarray(self.data["C1_err"][row])
-            dc = 0.
-            unsubtracted = transform @ values
-            if subtract:
-                fit = fit_exponential_background(times, values, error, background_start_us)
-                values = values - fit["amplitude"] * np.exp(-fit["rate_per_us"] * times)
-            spectrum, spread = transform @ values, np.sqrt(transform**2 @ error**2)
+            theory_curve = None
+            if stored:
+                spectrum = np.asarray(self.data["spectrum"][row])
+                spread = np.asarray(self.data["spectrum_err"][row])
+                unsubtracted = (np.asarray(self.data["spectrum_with_background"][row])
+                                if subtract else None)
+                if theory and "spectrum_theory" in self.data:
+                    theory_curve = np.asarray(self.data["spectrum_theory"][row])
+            else:
+                values, error = np.asarray(self.data[key][row]), np.asarray(self.data["C1_err"][row])
+                unsubtracted = spectral_function(times, values, error, frequency_khz, window)[0]
+                if subtract:
+                    values = subtract_background(times, values, error, background_start_us)[0]
+                spectrum, spread = spectral_function(times, values, error, frequency_khz, window)
             ax.plot(frequency_khz, spectrum, lw=1,
                     label=key.replace("_", " ") + (", background subtracted" if subtract else ""))
             ax.fill_between(frequency_khz, spectrum - spread, spectrum + spread, alpha=.3, lw=0)
@@ -727,11 +817,17 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                                          weights=weights[kept])
                 ax.stairs(binned / resolution_khz, edges, color="0.5", lw=.8,
                           label="closed system, weights in bins of 1/T")
-            if "C1_theory" in self.data and (with_parts or not subtract):
-                ax.plot(frequency_khz, transform @ (self.data["C1_theory"][row] - dc), "k--",
-                        lw=1, label="closed system, same window")
+                if theory_curve is None and theory and "C1_theory" in self.data:
+                    theory_curve = spectral_function(
+                        times, self.data["C1_theory"][row] - (dc if subtract else 0.),
+                        np.zeros(len(times)), frequency_khz, window)[0]
+            elif theory_curve is None and theory and "C1_theory" in self.data and not subtract:
+                theory_curve = spectral_function(times, self.data["C1_theory"][row],
+                                                 np.zeros(len(times)), frequency_khz, window)[0]
+            if theory_curve is not None:
+                ax.plot(frequency_khz, theory_curve, "k--", lw=1, label="closed system, same window")
             ax.set_yscale(yscale)
-            if subtract:  # grey, and the y range stays on the subtracted S
+            if subtract and unsubtracted is not None:  # grey, and the y range stays on the subtracted S
                 limits = ax.get_ylim()
                 ax.plot(frequency_khz, unsubtracted, color="0.7", lw=1,
                         label=f"{key.replace('_', ' ')}, with background")
@@ -761,6 +857,19 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                      f"1/T = {resolution_khz:.2g} kHz", fontsize=10)
         axes[-1, 0].set(xlabel="f (kHz)", xlim=(0, max_khz))
         return fig, axes[:, 0]
+
+    SHOWN_CUTOFFS_KHZ = (5., 10., 20.)
+
+    def shown_cutoffs(self, mu=None):
+        """-> the cutoffs (kHz) a plot shows: ``mu``; else the analyzed ones, when 4 or fewer;
+        else the analyzed ones nearest to ``SHOWN_CUTOFFS_KHZ``."""
+        if mu is not None:
+            return np.atleast_1d(mu).astype(float)
+        analyzed = np.asarray(self.data.get("agp_mu", []), dtype=float)
+        if len(analyzed) <= 4:
+            return analyzed
+        return np.unique([analyzed[np.argmin(abs(analyzed - value))]
+                          for value in self.SHOWN_CUTOFFS_KHZ])
 
     SPECTRUM_MARGIN = 1.3
 
@@ -841,6 +950,10 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
 
     def assembled_arrays(self):
         return dict(self.data)
+
+    def assembled_attrs(self):
+        """The analysis settings of the saved curves (cutoffs, window, background, T1, Kerr)."""
+        return dict(analysis=getattr(self, "analysis", {}))
 
 
 ########################################################################

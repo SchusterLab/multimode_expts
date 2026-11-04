@@ -104,19 +104,25 @@ def test_correlations_and_errors_from_the_moments(tmp_path, confusion, mu):
         assert (f"C{k}_corrected" in data) == (confusion is not None)
     # Independent kernel calculation checks kHz/us units, normalization and C1 selection.
     g_khz = 10.  # mean(|-20 kHz|, |0 kHz|); inactive links do not contribute.
-    cutoff = g_khz * 3 / dimension if mu is None else mu
+    # g L/D is kept as a value; the default cutoff axis is the same for every W.
+    np.testing.assert_allclose(data["mu_gld_khz"], g_khz * 3 / dimension)
+    if mu is None:
+        np.testing.assert_allclose(data["agp_mu"], CentralBosonAGPExperiment.DEFAULT_MU_KHZ)
+        column, cutoff = int(np.argmin(abs(data["agp_mu"] - 10.))), 10.
+    else:
+        column, cutoff = 0, mu
+        np.testing.assert_allclose(data["agp_mu"], [cutoff])
     tau = 1000 / (2 * np.pi * cutoff)
     times = data["time_us"]
     dense = np.linspace(0, times[-1], 200001)
     kernel = tau / 2 * (1 - dense / tau) * np.exp(-dense / tau)
     scale = (2 * np.pi * g_khz / 1000)**2
     expected = scale * trapezoid(kernel * np.interp(dense, times, data[f"C1{suffix}"]), x=dense)
-    np.testing.assert_allclose(data["agp_mu"], [cutoff])
-    np.testing.assert_allclose(data["agp"], [expected], rtol=1e-8)
+    np.testing.assert_allclose(data["agp"][column], expected, rtol=1e-8)
     # No readable calibration file: the AGP error is the shot error of C1, independent per time.
     weights = scale * np.array([trapezoid(kernel * np.interp(dense, times, row), x=dense)
                                 for row in np.eye(len(times))])
-    np.testing.assert_allclose(data["agp_err"], [np.sqrt(weights**2 @ data["C1_err"]**2)],
+    np.testing.assert_allclose(data["agp_err"][column], np.sqrt(weights**2 @ data["C1_err"]**2),
                                rtol=1e-8)
     agp.display()
 
