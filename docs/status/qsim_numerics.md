@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-10-26** (AGP spectral function display, branch `theory`; level-statistics verdict; AGP overnight lab book; `theory/` package and
+**Last updated: 2026-11-03** (AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,14 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **AGP data sets have names; jonginn's 10-29 remeasure to-dos A1-A5 done (2026-11-03, guan with
+  Claude; branch `theory`).** Record: `docs/log/2026-11-03_agp-remeasure-names.md`; notebook
+  `analysis_notebooks/guan/agp/agp_remeasure_20261029.py`. Load data sets by key: `load_scan("s7_fine")`
+  (`analysis_notebooks/datasets/agp_scans.yaml`). Each W keeps AGP(mu) on `DEFAULT_MU_KHZ` and S(f);
+  `scan.acquire(runner, name)` saves W by W. Open: W = 160 kHz (3 of 15 jobs, no measurement for now);
+  jonginn's answer on the 7 S6 jobs of 10-23; 28 MBR tests fail until `tools/migrate_mbr_jobs.py` gives
+  names (guan, separate fix); the old files in `assembled_data_old_20261103` can go when guan agrees.
 
 - **Level statistics: can MBR spectra show level repulsion turn on? Verdict (2026-10-25 evening, Claude,
   full rein; branch `theory`).** Read the vault page first:

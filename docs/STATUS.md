@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-10-24** (`theory/` package and the jonginn AGP item; AGP layers item as of
+**Last updated: 2026-11-03** (required names for assembled data sets; 10-24: `theory/` package and the jonginn AGP item; AGP layers item as of
 2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
@@ -33,6 +33,16 @@ Rules:
   `main` and can be deleted when seb agrees.
 
 ## Cross-theme items
+
+- **Assembled data sets need a name (2026-11-03, guan's decision; branch `theory`, not yet on
+  `main`).** `AssembledExperiment.save(name)` (all MBR, Fock population and AGP classes) writes
+  `<Class>_<name>.yaml/.h5` and never overwrites; there is no time-stamp fallback. AGP:
+  `CentralBosonAGPDisorderScan.acquire(runner, name)` saves W by W. Old notebooks and migration
+  scripts are not changed: they ask for a name when they run again (jonginn's
+  `agp_measurement.py`: `scan.acquire(...)` and `scan.save(...)`). 28 MBR tests fail until
+  `tools/migrate_mbr_jobs.py` gives names (guan, separate fix). The AGP data in
+  `agp_k44_first_scan` and `261027AGPlowKerr` are made again under names (old files in
+  `assembled_data_old_20261103`). Record: `docs/log/2026-11-03_agp-remeasure-names.md`.
 
 - **For jonginn (from seb, 2026-10-24). Agents: tell jonginn about this item at the start of
   his next session, and help him do it.** Record: `docs/log/2026-10-24_theory-package-agp.md`.
