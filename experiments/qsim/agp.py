@@ -369,11 +369,13 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
 class CentralBosonAGPDisorderScan(AssembledExperiment):
     """One ``CentralBosonAGPExperiment`` per disorder strength W, as C_k(W, t) maps.
 
-    Acquire all of it with ``from_pattern(...).acquire(runner)``: every job of
-    every W goes through one ``runner.execute``, at most ``batch_size`` waiting
-    in the queue, so other users' jobs run between them. Or acquire and save
-    one ``CentralBosonAGPExperiment`` per W, and combine them with
-    ``from_children``. ``save()`` saves the parts that are not saved yet first.
+    Acquire all of it with ``from_pattern(...).acquire(runner, name)``: W by W,
+    at most ``batch_size`` jobs waiting in the queue, so other users' jobs run
+    between them; each W is analyzed and saved as soon as its jobs are in, and
+    the scan at the end. A stopped run keeps its finished W:
+    ``from_saved_parts(name, directory)``. Or combine saved or loaded
+    ``CentralBosonAGPExperiment`` parts with ``from_children``; ``save(name)``
+    saves the parts that are not saved yet first.
 
     ``data`` and the assembled HDF5, rows sorted by W: ``disorder_khz`` (W,),
     ``cycles``, ``time_us`` (when every part has it), ``detunings`` (W, storages),
@@ -463,22 +465,55 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
     def job_overrides(self):
         return [override for part in self.children for override in part.job_overrides()]
 
-    def acquire(self, runner, batch_size=10, **execute_kwargs):
-        """Run every part's jobs through one ``runner.execute``. -> the parts."""
+    def acquire(self, runner, name, analyze_kwargs=None, directory=None, batch_size=10,
+                **execute_kwargs):
+        """Acquire W by W; analyze and save each W when its jobs are in, then the scan.
+
+        One ``runner.execute`` per W, at most ``batch_size`` jobs waiting in the
+        queue. ``name`` names the scan and its parts (see ``save``); all names
+        are checked before the first job when the runner's station gives the
+        experiment folder, else before the first save. ``analyze_kwargs`` go
+        to every ``analyze`` (``mu``, ``t1_us``, ``background_start_us``, ...).
+        If the run stops, the finished W are saved: ``from_saved_parts(name)``.
+        -> the scan manifest path.
+        """
         if runner.ExptClass is not FockPopulationExperiment:
             raise TypeError(f"runner.ExptClass is {runner.ExptClass.__name__}; "
                             f"{type(self).__name__} needs FockPopulationExperiment")
-        jobs = list(runner.execute(overrides=self.job_overrides(), batch_size=batch_size,
-                                   **execute_kwargs))
-        job_ids = list(runner.last_job_ids)
-        start = 0
+        analyze_kwargs = dict(analyze_kwargs or {})
+        if directory is None:
+            experiment_path = getattr(getattr(runner, "station", None), "experiment_path", None)
+            directory = None if experiment_path is None else Path(experiment_path) / ASSEMBLED_DIR
+        if directory is not None:
+            self._check_names(name, directory)
         for part in self.children:
-            stop = start + len(part.entries)
-            part.children, part.job_ids = jobs[start:stop], job_ids[start:stop]
-            part.data = {}
-            start = stop
-        self.data = {}
-        return self.children
+            part.children = list(runner.execute(overrides=part.job_overrides(),
+                                                batch_size=batch_size, **execute_kwargs))
+            part.job_ids = list(runner.last_job_ids)
+            if directory is None:
+                directory = experiment_root(part.children[0].fname) / ASSEMBLED_DIR
+                self._check_names(name, directory)
+            part.analyze(**analyze_kwargs)
+            part.save(part_name(name, part.disorder_khz), directory=directory)
+        self.analyze(**analyze_kwargs)
+        return self.save(name, directory=directory)
+
+    def _check_names(self, name, directory):
+        """Raise before anything is written if the scan or an unsaved part name is taken."""
+        named_stem(type(self).__name__, name, directory)
+        for part in self.children:
+            if part.manifest_path is None:
+                named_stem(type(part).__name__, part_name(name, part.disorder_khz), directory)
+
+    @classmethod
+    def from_saved_parts(cls, name, directory, notes=""):
+        """-> the scan of the parts saved under ``name`` in ``directory`` (after a stopped run)."""
+        paths = sorted(Path(directory).glob(f"{cls.child_class.__name__}_{name}_W*kHz.yaml"))
+        if not paths:
+            raise FileNotFoundError(f"no saved parts of {name!r} in {directory}")
+        parts = [cls.child_class.from_manifest(path) for path in paths]
+        return cls.from_children(parts, job_ids=[i for part in parts for i in part.job_ids],
+                                 notes=notes)
 
     def analyze(self, mu=None, t1_us=None, t1_err_us=None, kerr_mhz=None,
                 background_start_us=None, **kwargs):
@@ -782,11 +817,8 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         """
         if directory is None:
             directory = experiment_root(self.children[0].children[0].fname) / ASSEMBLED_DIR
-        unsaved = [part for part in self.children if part.manifest_path is None]
-        named_stem(type(self).__name__, name, directory)
-        for part in unsaved:
-            named_stem(type(part).__name__, part_name(name, part.disorder_khz), directory)
-        for part in unsaved:
+        self._check_names(name, directory)
+        for part in [part for part in self.children if part.manifest_path is None]:
             if not part.data:
                 part.analyze()
             part.save(part_name(name, part.disorder_khz), directory=directory)

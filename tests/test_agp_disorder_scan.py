@@ -41,8 +41,9 @@ def test_pattern_sets_each_parts_detunings_and_parts_are_sorted_by_w():
 def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     scan = planned()
     runner = FakeRunner(tmp_path / "data")
-    scan.acquire(runner, batch_size=4, use_queue=True)
-    assert runner.calls == [dict(count=9, batch_size=4, use_queue=True)]
+    manifest_path = scan.acquire(runner, "s7_test", analyze_kwargs=dict(mu=[5.915, 10.], t1_us=600.),
+                                 batch_size=4, use_queue=True)
+    assert runner.calls == [dict(count=3, batch_size=4, use_queue=True)] * 3  # one execute per W
     for part in scan.children:
         assert len(part.children) == 3 and len(part.job_ids) == 3
         assert all(isinstance(child, FockPopulationExperiment) for child in part.children)
@@ -62,7 +63,6 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     assert not np.allclose(other["agp_theory"], data["agp_theory"])
     data = scan.analyze(mu=[5.915, 10.], t1_us=600.)
 
-    manifest_path = scan.save("s7_test")
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["class"] == "CentralBosonAGPDisorderScan"
     assert [Path(path).name for path in manifest["raw_files"]] == [
@@ -107,14 +107,13 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
 
 def test_saved_parts_combine_without_saving_them_again(tmp_path):
     scan = planned((0, 30))
-    scan.acquire(FakeRunner(tmp_path / "data"))
-    for part in scan.children:
-        part.analyze()
-    part_paths = [part.save(f"part{index}") for index, part in enumerate(scan.children)]
+    scan.acquire(FakeRunner(tmp_path / "data"), "acquired")
+    part_paths = [part.manifest_path for part in scan.children]
     parts = [CentralBosonAGPExperiment.from_manifest(path) for path in reversed(part_paths)]
     combined = CentralBosonAGPDisorderScan.from_children(parts, notes="two W")
     combined.save("two_w")
     assert [part.manifest_path for part in combined.children] == part_paths
+    assert len(list((tmp_path / "assembled_data").glob("CentralBosonAGPDisorderScan_*.yaml"))) == 2
     assert len(list((tmp_path / "assembled_data").glob("CentralBosonAGPExperiment_*.yaml"))) == 2
 
 
@@ -130,12 +129,13 @@ def test_acquire_needs_a_population_runner(tmp_path):
     runner = FakeRunner(tmp_path)
     runner.ExptClass = CentralBosonAGPExperiment
     with pytest.raises(TypeError, match="FockPopulationExperiment"):
-        planned().acquire(runner)
+        planned().acquire(runner, "wrong_runner")
 
 
 def test_display_needs_one_part_per_w(tmp_path):
     scan = planned((30, 30))
-    scan.acquire(FakeRunner(tmp_path / "data"))
+    with pytest.raises(FileExistsError):  # two parts of one W cannot have one name
+        scan.acquire(FakeRunner(tmp_path / "data"), "same_w")
     scan.analyze()
     with pytest.raises(ValueError, match="one part per W"):
         scan.display_correlation()
@@ -143,7 +143,7 @@ def test_display_needs_one_part_per_w(tmp_path):
 
 def test_job_files_assemble_complete_parts_only(tmp_path):
     scan = planned((0, 30))
-    scan.acquire(FakeRunner(tmp_path / "data"))
+    scan.acquire(FakeRunner(tmp_path / "data"), "acquired")
     paths = sorted((tmp_path / "data").glob("*_FockPopulationExperiment.h5"))
     rebuilt = CentralBosonAGPDisorderScan.from_job_files(paths, direction=7)
     assert [part.disorder_khz for part in rebuilt.children] == pytest.approx([0, 30])

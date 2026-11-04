@@ -57,8 +57,8 @@ def test_scan_acquires_every_job_and_saves_small_layers(runner, tmp_path):
         [0, 40], [1., -1.], photon_sector_number=1, direction=2, swap_stors=SWAP_STORS,
         cycles=[0, 2, 4], calibration=CONFUSION)
     # The worker analyzes before it saves; a local run does so only when asked.
-    scan.acquire(runner, batch_size=2, use_queue=False, log=False, show=False,
-                 go_kwargs=dict(analyze=True))
+    manifest = scan.acquire(runner, "mock", directory=tmp_path, batch_size=2, use_queue=False,
+                            log=False, show=False, go_kwargs=dict(analyze=True))
     for part in scan.children:
         (job,) = part.children  # N=1 with S2 occupied: one state
         assert isinstance(job, FockPopulationExperiment)
@@ -67,7 +67,6 @@ def test_scan_acquires_every_job_and_saves_small_layers(runner, tmp_path):
         assert "nmod4_mean_corrected" in job.data and "n2_err" in job.data
     scan.analyze()
     assert scan.data["C1_corrected"].shape == (2, 3)
-    manifest = scan.save("mock", directory=tmp_path)
     assert manifest.exists()
     view = CentralBosonAGPDisorderScan.from_h5file(manifest.with_suffix(".h5"))
     assert "idata" not in view.data

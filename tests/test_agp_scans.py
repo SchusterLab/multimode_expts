@@ -20,10 +20,10 @@ from tests.population_jobs import CONFUSION, FakeRunner  # noqa: E402
 SECTOR = dict(photon_sector_number=2, direction=7, swap_stors=[4, 7], cycles=[0, 2, 4, 6, 8, 10])
 
 
-def acquired(tmp_path, strengths=(0, 30, 60)):
+def acquired(tmp_path, strengths=(0, 30, 60), name="acquired"):
     scan = CentralBosonAGPDisorderScan.from_pattern(list(strengths), [1., -3.], **SECTOR,
                                                     calibration=CONFUSION)
-    scan.acquire(FakeRunner(tmp_path / "data"))
+    scan.acquire(FakeRunner(tmp_path / "data"), name)
     return scan
 
 
@@ -57,13 +57,13 @@ def test_scan_collects_the_background_subtracted_agp(tmp_path):
 def test_list_scans_reads_manifests_and_flags_a_subset(tmp_path):
     scan = acquired(tmp_path)
     scan.analyze(mu=[10.])
-    full = scan.save("full", notes="full")
+    full = scan.save("full", notes="full")  # the same parts as "acquired"
     subset = CentralBosonAGPDisorderScan.from_children(scan.children[1:2])
     subset.analyze(mu=[10.])
     part = subset.save("one_w", notes="one W")
     table = list_scans(tmp_path).set_index("notes")
     stem = agp.scan_stem
-    assert table.loc["one W", "part_of"] == stem(full)
+    assert table.loc["one W", "part_of"].split(", ") == ["acquired", stem(full)]
     assert table.loc["full", "part_of"] == ""
     assert table.loc["full", "W_khz"] == [0, 30, 60]
     assert table.loc["one W", "jobs"] == len(scan.children[1].job_ids)
@@ -143,13 +143,12 @@ def test_spectrum_marks_closed_system_weight_above_nyquist(tmp_path):
 
 
 def test_save_needs_a_name_and_never_overwrites(tmp_path):
-    scan = acquired(tmp_path, strengths=(0, 30))
-    scan.analyze(mu=[10.])
+    scan = acquired(tmp_path, strengths=(0, 30), name="s7_test")
     with pytest.raises(TypeError):
         scan.save()
     with pytest.raises(ValueError, match="letters"):
         scan.save("bad name")
-    manifest = scan.save("s7_test")
+    manifest = scan.manifest_path
     assert manifest.name == "CentralBosonAGPDisorderScan_s7_test.yaml"
     assert agp.scan_stem(manifest) == "s7_test"
     names = sorted(path.name for path in manifest.parent.glob("CentralBosonAGPExperiment_*.yaml"))
@@ -162,14 +161,31 @@ def test_save_needs_a_name_and_never_overwrites(tmp_path):
 
 
 def test_a_taken_scan_name_writes_no_parts(tmp_path):
-    first = acquired(tmp_path, strengths=(0,))
-    first.analyze(mu=[10.])
-    first.save("taken")
-    second = acquired(tmp_path / "other", strengths=(30,))
-    second.analyze(mu=[10.])
+    acquired(tmp_path, strengths=(0,), name="taken")
+    second = CentralBosonAGPDisorderScan.from_pattern([30], [1., -3.], **SECTOR, calibration=CONFUSION)
     with pytest.raises(FileExistsError):
-        second.save("taken", directory=tmp_path / "assembled_data")
+        second.acquire(FakeRunner(tmp_path / "data"), "taken")
     assert not list((tmp_path / "assembled_data").glob("*_taken_W30kHz*"))
+
+
+class StopsAtSecondW(FakeRunner):
+    def execute(self, overrides, batch_size=10, **kwargs):
+        if len(self.calls) == 1:
+            raise KeyboardInterrupt
+        return super().execute(overrides, batch_size=batch_size, **kwargs)
+
+
+def test_a_stopped_run_keeps_its_finished_w(tmp_path):
+    scan = CentralBosonAGPDisorderScan.from_pattern([0, 30, 60], [1., -3.], **SECTOR,
+                                                    calibration=CONFUSION)
+    with pytest.raises(KeyboardInterrupt):
+        scan.acquire(StopsAtSecondW(tmp_path / "data"), "stopped", analyze_kwargs=dict(mu=[10.]))
+    folder = tmp_path / "assembled_data"
+    assert [p.name for p in folder.glob("*.yaml")] == ["CentralBosonAGPExperiment_stopped_W0kHz.yaml"]
+    partial = CentralBosonAGPDisorderScan.from_saved_parts("stopped", folder)
+    assert [part.disorder_khz for part in partial.children] == [0]
+    partial.analyze(mu=[10.])
+    assert partial.save("stopped").name == "CentralBosonAGPDisorderScan_stopped.yaml"
 
 
 def test_part_names_and_old_stems():
