@@ -45,8 +45,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.job_paths import data_root
-from experiments.qsim.agp import CentralBosonAGPDisorderScan
+from experiments.qsim.agp import load_scan
 
 # %% [markdown]
 # ## 1. The data: N = 3, prepared and read S7 (direction S7)
@@ -56,15 +55,8 @@ from experiments.qsim.agp import CentralBosonAGPDisorderScan
 # (244 us); its W = 0 part is the 10-23 acquisition, a scan of its own.
 
 # %%
-ASSEMBLED = data_root() / "agp_k44_first_scan" / "assembled_data"
-fine = CentralBosonAGPDisorderScan.from_manifest(
-    ASSEMBLED / "261023_001509_CentralBosonAGPDisorderScan.yaml")
-coarse = CentralBosonAGPDisorderScan.from_children(
-    CentralBosonAGPDisorderScan.from_manifest(
-        ASSEMBLED / "261023_001448_CentralBosonAGPDisorderScan.yaml").children
-    + CentralBosonAGPDisorderScan.from_manifest(
-        ASSEMBLED / "261023_120247_CentralBosonAGPDisorderScan.yaml").children,
-    notes="agp_n3_s7_cycles0to795step5 with the 10-23 W = 0 part")
+fine = load_scan("s7_fine")
+coarse = load_scan("s7_coarse")  # agp_n3_s7_cycles0to795step5 with the 10-23 W = 0 part
 scans = dict(fine=fine, coarse=coarse)
 
 # %% [markdown]
@@ -152,4 +144,4 @@ plt.show()
 SAVE = False
 if SAVE:
     fine.analyze(mu=MU_KHZ, t1_us=T1_US, t1_err_us=T1_ERR_US, kerr_mhz=KERR_MHZ)
-    print(fine.save(notes="AGP mu = 1-10 kHz, local T1 S7, theory at the device Kerr"))
+    print(fine.save("s7_fine_t1", notes="AGP mu = 1-10 kHz, local T1 S7, theory at the device Kerr"))

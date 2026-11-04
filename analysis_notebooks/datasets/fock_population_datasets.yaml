@@ -42,7 +42,7 @@ datasets:
     calibration: cal_20261017_272
     job_ids: [JOB-20261017-00276, JOB-20261017-00277, JOB-20261017-00278, JOB-20261017-00279,
               JOB-20261017-00280]
-    manifest: agp_k44_first_scan/assembled_data/261023_001438_FockPopulationSetExperiment.yaml
+    manifest: agp_k44_first_scan/assembled_data/FockPopulationSetExperiment_walk_n3_20261017.yaml
 
   walk_n2_20261017:
     label: N=2 quantum walk from [2,0,0,0,0], read M1 and S4-S7, no disorder, 200 cycles
@@ -51,7 +51,7 @@ datasets:
     calibration: cal_20261017_272
     job_ids: [JOB-20261017-00281, JOB-20261017-00282, JOB-20261017-00283, JOB-20261017-00284,
               JOB-20261017-00285]
-    manifest: agp_k44_first_scan/assembled_data/261023_001439_FockPopulationSetExperiment.yaml
+    manifest: agp_k44_first_scan/assembled_data/FockPopulationSetExperiment_walk_n2_20261017.yaml
 
   walk_n1_20261017:
     label: N=1 quantum walk from [1,0,0,0,0], read M1 and S4-S7, no disorder, 200 cycles
@@ -60,7 +60,7 @@ datasets:
     calibration: cal_20261017_272
     job_ids: [JOB-20261017-00286, JOB-20261017-00287, JOB-20261017-00288, JOB-20261017-00289,
               JOB-20261017-00290]
-    manifest: agp_k44_first_scan/assembled_data/261023_001440_FockPopulationSetExperiment.yaml
+    manifest: agp_k44_first_scan/assembled_data/FockPopulationSetExperiment_walk_n1_20261017.yaml
 
   # jonginn's "coarse" scan: cycles 0, 5, ..., 795 (160 points), 300 reps.
   agp_n3_s7_cycles0to795step5:
@@ -99,7 +99,9 @@ datasets:
                   JOB-20261017-00356, JOB-20261017-00357, JOB-20261017-00358, JOB-20261017-00359,
                   JOB-20261017-00360, JOB-20261017-00361, JOB-20261017-00362, JOB-20261017-00363,
                   JOB-20261017-00364, JOB-20261017-00365, JOB-20261017-00366]
-    manifest: agp_k44_first_scan/assembled_data/261023_001448_CentralBosonAGPDisorderScan.yaml
+    # Since 2026-11-03 these jobs are in s7_coarse (with the W = 0 of 10-23); the first
+    # conversion was 261023_001448, in agp_k44_first_scan/assembled_data_old_20261103.
+    manifest: agp_k44_first_scan/assembled_data/CentralBosonAGPDisorderScan_s7_coarse.yaml
 
   # jonginn's "fine" scan: cycles 0, 1, ..., 399 (400 points), 500 reps. W=90 spans Oct 17-18;
   # W=0 was taken on Oct 19 with its own calibration.
@@ -151,4 +153,4 @@ datasets:
                   JOB-20261018-00032, JOB-20261018-00033, JOB-20261018-00034, JOB-20261018-00035,
                   JOB-20261018-00036, JOB-20261018-00037, JOB-20261018-00038, JOB-20261018-00039,
                   JOB-20261018-00040, JOB-20261018-00041, JOB-20261018-00042]
-    manifest: agp_k44_first_scan/assembled_data/261023_001509_CentralBosonAGPDisorderScan.yaml
+    manifest: agp_k44_first_scan/assembled_data/CentralBosonAGPDisorderScan_s7_fine.yaml

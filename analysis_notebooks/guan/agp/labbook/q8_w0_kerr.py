@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import least_squares
 
-from experiments.qsim.agp import CentralBosonAGPDisorderScan
+from experiments.qsim.agp import load_scan
 from load_scans import ROOT, VAULT
 from open_models import LOSS, MODEL
 from theory.qsim.agp import probe_values
@@ -20,7 +20,7 @@ from theory.qsim.open_system import sector_correlation
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    scan = CentralBosonAGPDisorderScan.from_manifest(ROOT / "assembled_data" / "261024_003051_CentralBosonAGPDisorderScan.yaml")
+    scan = load_scan("kerr_w0")
     scan.analyze(mu=[10.])
 part = scan.children[0]
 times, data, error = part.data["time_us"], part.data["C1_corrected"], part.data["C1_err"]

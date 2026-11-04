@@ -5,12 +5,11 @@ import warnings
 import numpy as np
 
 sys.path.insert(0, "../labbook")
-from experiments.qsim.agp import CentralBosonAGPDisorderScan  # noqa: E402
-from load_scans import ROOT, load_scans  # noqa: E402
+from experiments.qsim.agp import load_scan  # noqa: E402
+from load_scans import load_scans  # noqa: E402
 
-# The Kerr-direction W = 0 run (10-24 00:30, lab book Q8) has its own manifest; load_scans leaves it out.
-# It used the configuration with f0-g1 57 kHz off (lab book caveat).
-KERR_W0 = "261024_003051_CentralBosonAGPDisorderScan.yaml"
+# The Kerr-direction W = 0 run (10-24 00:30, lab book Q8) is its own data set (kerr_w0);
+# load_scans leaves it out. It used the configuration with f0-g1 57 kHz off (lab book caveat).
 
 
 def scan_arrays(scan):
@@ -36,5 +35,5 @@ def measured_scans():
     scans = load_scans()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        scans["Kerr W=0"] = CentralBosonAGPDisorderScan.from_manifest(ROOT / "assembled_data" / KERR_W0)
+        scans["Kerr W=0"] = load_scan("kerr_w0")
     return {name: scan_arrays(scan) for name, scan in scans.items()}

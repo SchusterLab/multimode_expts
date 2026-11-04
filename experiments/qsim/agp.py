@@ -715,8 +715,8 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             if "mu_gld_khz" in self.data:
                 gld = float(self.data["mu_gld_khz"][row])
                 ax.plot(gld, np.interp(gld, cutoffs, values), "o", ms=4, color=line.get_color())
-        ax.set(xscale="log", xlabel=r"$\mu$ (kHz)", ylabel=r"$g^2\|A_\mu\|^2$",
-               title=f"{estimator}: dashed closed system (infinite time), dots g L/D")
+        ax.set(xscale="log", xlabel=r"$\mu$ (kHz)", ylabel=r"$g^2\|A_\mu\|^2$")
+        ax.set_title(f"{estimator}; dashed: closed system, infinite time; dots: g L/D", fontsize=9)
         ax.legend(fontsize=7, ncol=2)
         return fig, ax
 

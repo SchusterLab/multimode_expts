@@ -39,7 +39,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from experiments.job_paths import data_root
-from experiments.qsim.agp import CentralBosonAGPDisorderScan
+from experiments.qsim.agp import CentralBosonAGPDisorderScan, load_scan
 from fitting.qsim.agp import agp_kernel_weights, fit_exponential_background
 from theory.qsim.agp import damped_agp, damped_correlation, spectral_agp, split_dc
 
@@ -54,12 +54,9 @@ RNG = np.random.default_rng(1)
 
 # %%
 root = data_root() / "agp_k44_first_scan"
-manifest = lambda name: CentralBosonAGPDisorderScan.from_manifest(root / "assembled_data" / name)
 scans = {
-    "S7 fine (122 us)": manifest("261023_001509_CentralBosonAGPDisorderScan.yaml"),
-    "S7 coarse (244 us)": CentralBosonAGPDisorderScan.from_children(
-        manifest("261023_001448_CentralBosonAGPDisorderScan.yaml").children
-        + manifest("261023_120247_CentralBosonAGPDisorderScan.yaml").children),
+    "S7 fine (122 us)": load_scan("s7_fine"),
+    "S7 coarse (244 us)": load_scan("s7_coarse"),
     # Still running: the W values whose 5 jobs are all done.
     "Kerr (245 us)": CentralBosonAGPDisorderScan.from_job_files(
         sorted((root / "data").glob("JOB-20261024-*_FockPopulationExperiment.h5")), direction=0),
