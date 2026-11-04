@@ -10,7 +10,7 @@ off-diagonal part is the leakage between access paths.
     ortho = MBROrthogonalityExperiment(occupations, swap_stors=[2, 3, 4, 5])
     ortho.acquire(runner, batch_size=10)   # runner.ExptClass is MBROrthoColumnExperiment
     ortho.analyze(); ortho.display()
-    ortho.save()                           # manifest YAML + assembled HDF5
+    ortho.save("ortho_n2")                 # MBROrthogonalityExperiment_ortho_n2.yaml + .h5
 
     ortho = MBROrthogonalityExperiment.from_manifest(path)
 

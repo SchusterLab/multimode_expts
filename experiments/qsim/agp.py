@@ -35,7 +35,13 @@ from slab import AttrDict
 
 import yaml
 
-from experiments.assembled_data import AssembledExperiment, read_manifest
+from experiments.assembled_data import (
+    ASSEMBLED_DIR,
+    AssembledExperiment,
+    experiment_root,
+    named_stem,
+    read_manifest,
+)
 from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
 from experiments.qsim.fock_population import (
     FockPopulationExperiment,
@@ -135,7 +141,7 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
                                         cycles=range(0, 400, 4), detunings=detunings,
                                         calibration=calibration_h5)
         agp.acquire(runner)   # 15 short jobs; runner.ExptClass is FockPopulationExperiment
-        agp.analyze(mu=[2, 5, 10], t1_us=635); agp.save(); agp.display()
+        agp.analyze(mu=[2, 5, 10], t1_us=635); agp.save("s7_w30"); agp.display()
 
     ``data`` adds to the population set's arrays: ``C1``, ``C2`` (cycles,),
     ``C1_corrected``, ``C2_corrected`` with a correction, ``C1_err``, ``C2_err``
@@ -638,7 +644,11 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         loaded: the closed-system S over the same window (dashed) and its
         weights in bins of 1/T (steps). The AGP filters f^2 / (f^2 + mu^2)^2,
         scaled to a peak of 1, are on the right axis; ``mu`` in kHz, default
-        the analyzed cutoffs. ``max_khz`` defaults to the Nyquist frequency.
+        the analyzed cutoffs. ``max_khz`` defaults to ``SPECTRUM_MARGIN`` times
+        the highest closed-system frequency over all W, at most the Nyquist
+        frequency (the Nyquist frequency without the parts). A W whose
+        closed-system weight is partly above the Nyquist frequency (it folds
+        back into the measured S) is marked with that fraction.
         """
         if "C1" not in self.data:
             self.analyze()
@@ -647,8 +657,11 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
         key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
         times = np.asarray(self.data["time_us"])
         resolution_khz = 1000 / times[-1]
+        nyquist_khz = 1000 / (2 * np.median(np.diff(times)))
+        model = self.model_spectra_khz() if self.children else []
         if max_khz is None:
-            max_khz = 1000 / (2 * np.median(np.diff(times)))
+            top = max((f[w > 1e-3 * w.max()].max() for f, w in model if len(f)), default=None)
+            max_khz = nyquist_khz if top is None else min(nyquist_khz, self.SPECTRUM_MARGIN * top)
         frequency_khz = np.arange(0, max_khz, resolution_khz / 4)
         transform = cosine_transform_weights(times, frequency_khz / 1000, window) / 1000
         cutoffs = np.atleast_1d(self.data.get("agp_mu", []) if mu is None else mu).astype(float)
@@ -689,6 +702,13 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                         label=f"{key.replace('_', ' ')}, with background")
                 ax.set_ylim(limits)
             ax.set_ylabel(f"W = {self.data['disorder_khz'][row]:g} kHz\nS (1/kHz)", fontsize=8)
+            if model:
+                f, w = model[row]
+                folded = w[f > nyquist_khz].sum() / w.sum() if w.sum() > 0 else 0.
+                if folded >= 1e-3:
+                    ax.text(.99, .95, f"{100 * folded:.1f} % of the closed-system weight is above "
+                            f"Nyquist ({nyquist_khz:.0f} kHz) and folds back", transform=ax.transAxes,
+                            ha="right", va="top", fontsize=7, color="C3")
             if len(cutoffs):
                 filters = ax.twinx()
                 for cutoff in cutoffs:
@@ -706,6 +726,27 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                      f"1/T = {resolution_khz:.2g} kHz", fontsize=10)
         axes[-1, 0].set(xlabel="f (kHz)", xlim=(0, max_khz))
         return fig, axes[:, 0]
+
+    SPECTRUM_MARGIN = 1.3
+
+    def model_spectra_khz(self):
+        """-> per W, (f_kHz, |weights|) of the closed-system C_1 without its DC terms.
+
+        At the Kerr of the last analysis (else the recorded one). ``[]`` when a
+        part has no recorded couplings or Kerr.
+        """
+        spectra = []
+        for part in self.children:
+            kerr = part.data.get("theory_kerr_mhz")
+            try:
+                differences, weights = part.theory_spectrum(
+                    kerr_mhz=None if kerr is None else float(kerr))
+            except ValueError:
+                return []
+            _, mask = split_dc(differences, weights)
+            spectra.append((1000 * np.abs(np.asarray(differences)[~mask]),
+                            np.abs(np.asarray(weights)[~mask])))
+        return spectra
 
     def display_correlation(self, moment=1, raw=False, **kwargs):
         """One correlation as a map: x = Floquet cycles, y = disorder W (kHz).
@@ -732,16 +773,26 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
 
     # -- persistence ------------------------------------------------------
 
-    def save(self, directory=None, notes=None):
-        """Save the parts that are not saved yet, then this scan. -> the manifest path."""
-        for part in self.children:
-            if part.manifest_path is None:
-                if not part.data:
-                    part.analyze()
-                part.save(directory=directory)
+    def save(self, name, directory=None, notes=None):
+        """Save the parts that are not saved yet, then this scan. -> the manifest path.
+
+        The scan is ``CentralBosonAGPDisorderScan_<name>``, a part
+        ``CentralBosonAGPExperiment_<name>_W<W>kHz`` (``p`` for a decimal
+        point). All names are checked before anything is written.
+        """
+        if directory is None:
+            directory = experiment_root(self.children[0].children[0].fname) / ASSEMBLED_DIR
+        unsaved = [part for part in self.children if part.manifest_path is None]
+        named_stem(type(self).__name__, name, directory)
+        for part in unsaved:
+            named_stem(type(part).__name__, part_name(name, part.disorder_khz), directory)
+        for part in unsaved:
+            if not part.data:
+                part.analyze()
+            part.save(part_name(name, part.disorder_khz), directory=directory)
         if not self.data:
             self.analyze()
-        return super().save(directory=directory, notes=notes)
+        return super().save(name, directory=directory, notes=notes)
 
     def _child_files(self):
         """-> the parts' manifests."""
@@ -765,12 +816,24 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
 ########################################################################
 
 SCAN_REGISTRY = Path(__file__).resolve().parents[2] / "analysis_notebooks" / "datasets" / "agp_scans.yaml"
-SCAN_TAG = "_CentralBosonAGPDisorderScan"
+SCAN_CLASS = "CentralBosonAGPDisorderScan"
+
+
+def part_name(name, disorder_khz):
+    """-> the name of one W of the scan ``name``: ``<name>_W120kHz``, ``<name>_W0p5kHz``."""
+    return f"{name}_W{float(disorder_khz):g}kHz".replace(".", "p").replace("-", "m")
 
 
 def scan_stem(path):
-    """-> the short name of a scan manifest: its time stamp (and ``_2``... when saved twice in a second)."""
-    return Path(path).stem.replace(SCAN_TAG, "")
+    """-> the short name of a scan manifest: its name, ``CentralBosonAGPDisorderScan_<name>``.
+
+    Files saved before names were required (``<time stamp>_CentralBosonAGPDisorderScan[_2]``)
+    give their time stamp.
+    """
+    stem = Path(path).stem
+    if stem.startswith(SCAN_CLASS + "_"):
+        return stem[len(SCAN_CLASS) + 1:]
+    return stem.replace("_" + SCAN_CLASS, "")
 
 
 def local_path(path):
@@ -811,7 +874,7 @@ def list_scans(folder):
     if (folder / "assembled_data").is_dir():
         folder = folder / "assembled_data"
     rows, jobs = [], {}
-    for path in sorted(folder.glob(f"*{SCAN_TAG}*.yaml")):
+    for path in sorted(folder.glob(f"*{SCAN_CLASS}*.yaml")):
         manifest = read_manifest(path)
         stem = scan_stem(path)
         jobs[stem] = set()
@@ -823,7 +886,7 @@ def list_scans(folder):
         rows.append(dict(scan=stem, direction=mode_name(p["direction"]),
                          W_khz=p["disorder_khz"], cycles=f"{cycles[0]}-{cycles[-1]} ({len(cycles)})",
                          jobs=len(jobs[stem]), job_range=_job_range(jobs[stem]),
-                         notes=manifest.get("notes", "")))
+                         notes=manifest.get("notes", ""), manifest=str(path)))
     for row in rows:
         supersets = [other for other, ids in jobs.items()
                      if other != row["scan"] and jobs[row["scan"]] < ids]

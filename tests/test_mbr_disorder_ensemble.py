@@ -196,7 +196,7 @@ def test_analyze_display_save(diagonal_disorder, tmp_path):
     arrays = diagonal_disorder.assembled_arrays()
     assert arrays["theory_levels_MHz"].shape == (2, 35)
     assert arrays["detunings"].shape == (2, 4)
-    manifest = diagonal_disorder.save(directory=tmp_path)
+    manifest = diagonal_disorder.save("diag", directory=tmp_path)
     reloaded = MBRDisorderEnsembleExperiment.from_manifest(manifest)
     assert reloaded.realizations == diagonal_disorder.realizations
     assert reloaded.calibration is not None

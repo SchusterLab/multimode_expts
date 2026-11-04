@@ -57,10 +57,10 @@ def test_scan_collects_the_background_subtracted_agp(tmp_path):
 def test_list_scans_reads_manifests_and_flags_a_subset(tmp_path):
     scan = acquired(tmp_path)
     scan.analyze(mu=[10.])
-    full = scan.save(notes="full")
+    full = scan.save("full", notes="full")
     subset = CentralBosonAGPDisorderScan.from_children(scan.children[1:2])
     subset.analyze(mu=[10.])
-    part = subset.save(notes="one W")
+    part = subset.save("one_w", notes="one W")
     table = list_scans(tmp_path).set_index("notes")
     stem = agp.scan_stem
     assert table.loc["one W", "part_of"] == stem(full)
@@ -73,7 +73,7 @@ def test_list_scans_reads_manifests_and_flags_a_subset(tmp_path):
 def test_load_scan_reads_a_saved_manifest(tmp_path):
     scan = acquired(tmp_path)
     scan.analyze(mu=[10.])
-    loaded = load_scan(scan.save())
+    loaded = load_scan(scan.save("loaded"))
     assert [p.disorder_khz for p in loaded.children] == [0, 30, 60]
     assert loaded.data == {}  # loaded, not analyzed
 
@@ -106,6 +106,74 @@ def test_every_registered_scan_names_a_manifest_and_a_label():
         entries = yaml.safe_load(handle)["scans"]
     assert entries
     for key, entry in entries.items():
-        assert agp.SCAN_TAG in entry["manifest"], key
+        assert agp.SCAN_CLASS in entry["manifest"], key
         assert entry["label"], key
         assert entry.get("superseded", next(iter(entries))) in entries, key
+
+
+def _nyquist_khz(scan):
+    return 1000 / (2 * np.median(np.diff(scan.data["time_us"])))
+
+
+def test_spectrum_range_follows_the_closed_system_frequencies(tmp_path):
+    scan = acquired(tmp_path, strengths=(0, 30))
+    scan.analyze()
+    model = scan.model_spectra_khz()
+    assert len(model) == 2 and all(len(f) == len(w) > 0 for f, w in model)
+    top = max(f[w > 1e-3 * w.max()].max() for f, w in model)
+    fig, axes = scan.display_spectrum()
+    assert axes[-1].get_xlim()[1] == pytest.approx(
+        min(_nyquist_khz(scan), CentralBosonAGPDisorderScan.SPECTRUM_MARGIN * top))
+    fig, axes = scan.display_spectrum(max_khz=50.)
+    assert axes[-1].get_xlim()[1] == 50.
+    matplotlib.pyplot.close("all")
+
+
+def test_spectrum_marks_closed_system_weight_above_nyquist(tmp_path):
+    scan = acquired(tmp_path, strengths=(0, 30000))   # 30 MHz: far above Nyquist
+    scan.analyze()
+    nyquist = _nyquist_khz(scan)
+    folded = [w[f > nyquist].sum() / w.sum() for f, w in scan.model_spectra_khz()]
+    assert folded[0] < 1e-3 < folded[1]
+    fig, axes = scan.display_spectrum()
+    marked = ["folds back" in " ".join(t.get_text() for t in ax.texts) for ax in axes]
+    assert marked == [False, True]
+    assert axes[-1].get_xlim()[1] == pytest.approx(nyquist)
+    matplotlib.pyplot.close("all")
+
+
+def test_save_needs_a_name_and_never_overwrites(tmp_path):
+    scan = acquired(tmp_path, strengths=(0, 30))
+    scan.analyze(mu=[10.])
+    with pytest.raises(TypeError):
+        scan.save()
+    with pytest.raises(ValueError, match="letters"):
+        scan.save("bad name")
+    manifest = scan.save("s7_test")
+    assert manifest.name == "CentralBosonAGPDisorderScan_s7_test.yaml"
+    assert agp.scan_stem(manifest) == "s7_test"
+    names = sorted(path.name for path in manifest.parent.glob("CentralBosonAGPExperiment_*.yaml"))
+    assert names == ["CentralBosonAGPExperiment_s7_test_W0kHz.yaml",
+                     "CentralBosonAGPExperiment_s7_test_W30kHz.yaml"]
+    again = CentralBosonAGPDisorderScan.from_children(scan.children)
+    again.analyze(mu=[10.])
+    with pytest.raises(FileExistsError):
+        again.save("s7_test")
+
+
+def test_a_taken_scan_name_writes_no_parts(tmp_path):
+    first = acquired(tmp_path, strengths=(0,))
+    first.analyze(mu=[10.])
+    first.save("taken")
+    second = acquired(tmp_path / "other", strengths=(30,))
+    second.analyze(mu=[10.])
+    with pytest.raises(FileExistsError):
+        second.save("taken", directory=tmp_path / "assembled_data")
+    assert not list((tmp_path / "assembled_data").glob("*_taken_W30kHz*"))
+
+
+def test_part_names_and_old_stems():
+    assert agp.part_name("s7", 120.) == "s7_W120kHz"
+    assert agp.part_name("s7", 0.5) == "s7_W0p5kHz"
+    assert agp.scan_stem("x/261030_123324_CentralBosonAGPDisorderScan.yaml") == "261030_123324"
+    assert agp.scan_stem("x/CentralBosonAGPDisorderScan_s7_high_w.yaml") == "s7_high_w"

@@ -139,7 +139,7 @@ def test_analyze_display_save(september, tmp_path):
     assert september.display() is not None
     assert september.children[0].display() is not None
 
-    reloaded = MBROrthogonalityExperiment.from_manifest(september.save(directory=tmp_path))
+    reloaded = MBROrthogonalityExperiment.from_manifest(september.save("september", directory=tmp_path))
     assert reloaded.occupations == september.occupations
     assert reloaded.calibration is None
     np.testing.assert_array_equal(reloaded.analyze().matrix, data.matrix)

@@ -54,7 +54,7 @@ def test_analyze_display_save(august, tmp_path):
     assert data.floquet_cycle_us > 0
     assert august.display() is not None
 
-    manifest = august.save(directory=tmp_path)
+    manifest = august.save("august", directory=tmp_path)
     reloaded = MBRHamTomoExperiment.from_manifest(manifest)
     assert reloaded.cycles == august.cycles
     assert reloaded.occupations == august.occupations
@@ -71,7 +71,7 @@ def test_unsaved_parts_are_refused_by_save(august, tmp_path):
     tomo = MBRHamTomoExperiment.from_parts([part])
     tomo.analyze()
     with pytest.raises(ValueError, match="save"):
-        tomo.save(directory=tmp_path)
+        tomo.save("unsaved_parts", directory=tmp_path)
 
 
 def test_acquire_is_not_offered(august):
@@ -87,12 +87,12 @@ def test_parts_must_share_occupations(august):
         MBRHamTomoExperiment.from_parts([first, shuffled])
 
 
-def test_two_saves_in_one_second_do_not_collide(august, tmp_path):
+def test_a_saved_name_is_never_overwritten(august, tmp_path):
     part = august.children[0]
-    first = part.save(directory=tmp_path)
-    second = part.save(directory=tmp_path)
-    assert first != second
-    assert first.exists() and second.exists()
+    first = part.save("cycle0", directory=tmp_path)
+    with pytest.raises(FileExistsError):
+        part.save("cycle0", directory=tmp_path)
+    assert first.exists() and first.name == "MBROrthogonalityExperiment_cycle0.yaml"
 
 
 def test_matrices_match_the_old_reconstruction(august):

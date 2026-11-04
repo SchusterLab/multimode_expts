@@ -94,7 +94,7 @@ def test_walk_set_stacks_saves_and_reloads_without_shots(tmp_path):
     np.testing.assert_allclose(data["time_us"], np.asarray(CYCLES) * CYCLE_US)
     np.testing.assert_allclose(data["confusion_matrix"], CONFUSION)
 
-    manifest_path = walk.save()
+    manifest_path = walk.save("walk_test")
     assert manifest_path.parent == tmp_path / "assembled_data"
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["class"] == "FockPopulationSetExperiment"
@@ -152,7 +152,7 @@ def test_overrides_carry_the_correction_and_acquire_assembles(tmp_path):
     assert walk.job_ids == runner.last_job_ids
     walk.analyze()
     assert "n_mean_corrected" in walk.data
-    assert walk.save().exists()
+    assert walk.save("walk_queue").exists()
 
 
 def test_calibration_record_reads_a_calibration_file(tmp_path):

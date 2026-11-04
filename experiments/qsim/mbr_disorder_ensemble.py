@@ -13,13 +13,13 @@ then combines them::
     parts = []
     for record in plan.realizations:
         spectrum = realization_spectrum(plan, record, cal, campaign, config)
-        spectrum.acquire(runner); spectrum.analyze(); spectrum.save()
+        spectrum.acquire(runner); spectrum.analyze(); spectrum.save(f"diag_n2_r{record['realization']}")
         parts.append(spectrum)
     ensemble = MBRDisorderEnsembleExperiment.from_parts(
         parts, realizations=plan.realizations[:len(parts)], calibration=cal)
     analyze_diagonal_disorder(ensemble, plan, config)
     ensemble.display()
-    ensemble.save()                        # manifest lists the parts' manifests
+    ensemble.save("diag_n2")               # manifest lists the parts' manifests
 
     ensemble = MBRDisorderEnsembleExperiment.from_manifest(path)
 

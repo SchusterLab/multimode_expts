@@ -10,7 +10,7 @@ worker itself.
                                      cycle_branches={(3, 0, 0, 0, 0): 1})
     spectrum.acquire(runner, batch_size=10)   # runner.ExptClass is MBRTimeTraceExperiment
     spectrum.analyze(); spectrum.display()
-    spectrum.save()                           # manifest YAML + assembled HDF5
+    spectrum.save("spectrum_n2")              # MBRSpectrumExperiment_spectrum_n2.yaml + .h5
 
     spectrum = MBRSpectrumExperiment.from_manifest(path)
 

@@ -11,11 +11,11 @@ part, then combines them::
     for q in (0, 20, 40):
         ortho = MBROrthogonalityExperiment(occupations, swap_stors, cycle=q,
                                            calibration=cal)
-        ortho.acquire(runner); ortho.analyze(); ortho.save()
+        ortho.acquire(runner); ortho.analyze(); ortho.save(f"hamtomo_n2_cycle{q}")
         orthos.append(ortho)
     tomo = MBRHamTomoExperiment.from_parts(orthos, calibration=cal)
     tomo.analyze(); tomo.display()
-    tomo.save()                  # manifest lists the parts' manifests
+    tomo.save("hamtomo_n2")      # manifest lists the parts' manifests
 
     tomo = MBRHamTomoExperiment.from_manifest(path)
 

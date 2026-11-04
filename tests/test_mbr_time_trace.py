@@ -136,7 +136,7 @@ def test_analyze_display_save(quickplot, method, tmp_path):
     assert quickplot.display() is not None
     assert quickplot.display(occupation=0) is not None
 
-    manifest = quickplot.save(directory=tmp_path)
+    manifest = quickplot.save("quickplot", directory=tmp_path)
     reloaded = MBRSpectrumExperiment.from_manifest(manifest)
     assert reloaded.occupations == quickplot.occupations
     assert reloaded.calibration is None
@@ -151,7 +151,7 @@ def test_the_calibration_link_survives_a_save(quickplot, tmp_path):
     spectrum = MBRSpectrumExperiment.from_children(
         quickplot.children, calibration=calibration)
     spectrum.analyze(**CHARACTERIZATION_ANALYSIS)
-    reloaded = MBRSpectrumExperiment.from_manifest(spectrum.save(directory=tmp_path))
+    reloaded = MBRSpectrumExperiment.from_manifest(spectrum.save("linked", directory=tmp_path))
     assert Path(reloaded.calibration.manifest_path) == Path(calibration.manifest_path).resolve()
 
 

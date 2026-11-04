@@ -168,7 +168,7 @@ def test_from_manifest_analyze_display_save(converted, tmp_path):
     occupation = calibration.occupations[0]
     assert calibration.phase_for(occupation) == correction.phase_by_occupation[occupation]
 
-    manifest_path = calibration.save(directory=tmp_path)
+    manifest_path = calibration.save("stark", directory=tmp_path)
     reloaded = MBRCalibrationSetExperiment.from_manifest(manifest_path)
     assert reloaded.occupations == calibration.occupations
     assert reloaded.job_ids == calibration.job_ids

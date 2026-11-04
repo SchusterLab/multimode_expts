@@ -336,7 +336,7 @@ class FockPopulationSetExperiment(AssembledExperiment):
             [([1, 0, 0, 0, 0], mode) for mode in (0, 4, 5, 6, 7)], cycles,
             swap_stors=[4, 5, 6, 7], detunings=[0.] * 4, calibration=calibration_h5)
         walk.acquire(runner)      # runner.ExptClass is FockPopulationExperiment
-        walk.analyze(); walk.save(); walk.display()
+        walk.analyze(); walk.save("walk_n1_s4s7"); walk.display()
         walk = FockPopulationSetExperiment.from_manifest(manifest_path)
         walk = FockPopulationSetExperiment.from_h5file(h5_path)   # arrays only, to look
 

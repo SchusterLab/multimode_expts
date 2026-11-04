@@ -20,6 +20,7 @@ Infrastructure, not physics: nothing here knows what is being measured.
 """
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +68,25 @@ def new_stem(class_name, directory):
         count += 1
         candidate = f"{stem}_{count}"
     return candidate
+
+
+NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def named_stem(class_name, name, directory):
+    """-> ``<class_name>_<name>``, the stem of an assembled data set's files.
+
+    The name says what the data set is; whoever saves it chooses it.
+    ``FileExistsError`` if ``directory`` already has a manifest or HDF5 of
+    that stem: a saved data set is never overwritten.
+    """
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+        raise ValueError(f"name {name!r}: use only letters, digits, '_' and '-'")
+    stem = f"{class_name}_{name}"
+    for suffix in (".yaml", ".h5"):
+        if (Path(directory) / f"{stem}{suffix}").exists():
+            raise FileExistsError(Path(directory) / f"{stem}{suffix}")
+    return stem
 
 
 def _relative(path, base):
@@ -234,11 +254,13 @@ class AssembledExperiment:
         """-> extra ``from_children`` keyword arguments read from a manifest."""
         return {}
 
-    def save(self, directory=None, notes=None):
-        """Write the manifest YAML and the assembled HDF5. -> the manifest path.
+    def save(self, name, directory=None, notes=None):
+        """Write ``<Class>_<name>.yaml`` (manifest) and ``.h5``. -> the manifest path.
 
-        ``directory`` defaults to ``assembled_data/`` beside the first job's
-        data directory. Needs ``analyze()`` to have run.
+        ``name`` is required: it says what the data set is (letters, digits,
+        ``_``, ``-``). An existing data set of that name is never overwritten
+        (``FileExistsError``). ``directory`` defaults to ``assembled_data/``
+        beside the first job's data directory. Needs ``analyze()`` to have run.
         """
         if not self.data:
             raise ValueError("run analyze() before save()")
@@ -247,7 +269,7 @@ class AssembledExperiment:
         raw_files = self._child_files()
         if directory is None:
             directory = experiment_root(raw_files[0]) / ASSEMBLED_DIR
-        stem = new_stem(type(self).__name__, directory)
+        stem = named_stem(type(self).__name__, name, directory)
         manifest_path = Path(directory) / f"{stem}.yaml"
         h5_path = Path(directory) / f"{stem}.h5"
         version = code_version()

@@ -67,7 +67,7 @@ def test_scan_acquires_every_job_and_saves_small_layers(runner, tmp_path):
         assert "nmod4_mean_corrected" in job.data and "n2_err" in job.data
     scan.analyze()
     assert scan.data["C1_corrected"].shape == (2, 3)
-    manifest = scan.save(directory=tmp_path)
+    manifest = scan.save("mock", directory=tmp_path)
     assert manifest.exists()
     view = CentralBosonAGPDisorderScan.from_h5file(manifest.with_suffix(".h5"))
     assert "idata" not in view.data

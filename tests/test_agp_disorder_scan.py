@@ -1,4 +1,6 @@
 """CentralBosonAGPDisorderScan: one CentralBosonAGPExperiment per W, saved as C_k(W, t) maps."""
+from pathlib import Path
+
 import h5py
 import matplotlib
 import numpy as np
@@ -60,10 +62,11 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     assert not np.allclose(other["agp_theory"], data["agp_theory"])
     data = scan.analyze(mu=[5.915, 10.], t1_us=600.)
 
-    manifest_path = scan.save()
+    manifest_path = scan.save("s7_test")
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["class"] == "CentralBosonAGPDisorderScan"
-    assert all("_CentralBosonAGPExperiment" in path for path in manifest["raw_files"])
+    assert [Path(path).name for path in manifest["raw_files"]] == [
+        f"CentralBosonAGPExperiment_s7_test_W{w}kHz.yaml" for w in (0, 30, 60)]
     assert manifest["parameters"]["disorder_khz"] == [0, 30, 60]
     with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
         assert set(handle) == {"disorder_khz", "cycles", "detunings", "time_us", "C1", "C2",
@@ -107,12 +110,12 @@ def test_saved_parts_combine_without_saving_them_again(tmp_path):
     scan.acquire(FakeRunner(tmp_path / "data"))
     for part in scan.children:
         part.analyze()
-    part_paths = [part.save() for part in scan.children]
+    part_paths = [part.save(f"part{index}") for index, part in enumerate(scan.children)]
     parts = [CentralBosonAGPExperiment.from_manifest(path) for path in reversed(part_paths)]
     combined = CentralBosonAGPDisorderScan.from_children(parts, notes="two W")
-    combined.save()
+    combined.save("two_w")
     assert [part.manifest_path for part in combined.children] == part_paths
-    assert len(list((tmp_path / "assembled_data").glob("*_CentralBosonAGPExperiment*.yaml"))) == 2
+    assert len(list((tmp_path / "assembled_data").glob("CentralBosonAGPExperiment_*.yaml"))) == 2
 
 
 @pytest.mark.parametrize("change", [dict(cycles=[0, 2]), dict(direction=4)])

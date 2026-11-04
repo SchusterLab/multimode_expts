@@ -11,7 +11,7 @@ trace programs subtract.
                                       swap_stors=[1, 2, 3, 4])
     cal.acquire(runner, batch_size=10)     # runner.ExptClass is MBRStarkCalExperiment
     cal.analyze(); cal.display()
-    cal.save()                             # manifest YAML + assembled HDF5
+    cal.save("stark_n2")                   # MBRCalibrationSetExperiment_stark_n2.yaml + .h5
     cal.phase_for((3, 0, 0, 0, 0))         # deg / cycle, for one occupation
 
     cal = MBRCalibrationSetExperiment.from_manifest(path)

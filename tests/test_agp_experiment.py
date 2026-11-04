@@ -145,7 +145,7 @@ def test_acquire_save_and_reload_keep_direction_and_disorder(tmp_path):
 
     agp.acquire(FakeRunner(tmp_path / "data"))
     agp.analyze()
-    manifest_path = agp.save()
+    manifest_path = agp.save("s7_w30")
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert manifest["parameters"]["direction"] == 7
     assert len(manifest["raw_files"]) == 3

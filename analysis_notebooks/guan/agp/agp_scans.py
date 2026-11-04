@@ -46,7 +46,7 @@ print(new.summary())
 new.analyze(mu=MU, background_start_us=BACKGROUND_US)
 new.display(mu=[10., 20.])
 new.display_traces()
-new.display_spectrum(mu=[10., 20.], background_start_us=BACKGROUND_US, max_khz=250.)
+new.display_spectrum(mu=[10., 20.], background_start_us=BACKGROUND_US)
 
 # %% [markdown]
 # ## Against the older S7 scans
