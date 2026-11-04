@@ -9,9 +9,17 @@ overhead.
 
 A real `qick.QickConfig` is still used in mock mode -- only the `QickSoc`
 proxy and the Yokogawa drivers are stubbed. See docs/mock_mode_architecture_plan.md.
+
+With a `soccfg`, `MockQickSoc` also does the resource checks that the board
+drivers do at upload (envelope memory, mux tones, readout buffers, tProc
+program memory), so a program that does not fit fails in the mock too.
 """
 
+import sys
+
 import numpy as np
+
+from experiments.board_resources import BoardResourceError, envelope_report
 
 
 class MockQickSoc:
@@ -21,12 +29,20 @@ class MockQickSoc:
     call slightly different soc methods; this class covers all three. All
     methods either no-op or return correctly-shaped zeros. Methods accept
     *args/**kwargs so future qick library additions don't break us silently.
+
+    With ``soccfg``, the calls where the board drivers check a resource limit
+    raise ``BoardResourceError`` on the same condition. Without it, they do not
+    check.
     """
 
-    def __init__(self):
+    def __init__(self, soccfg=None):
+        self.soccfg = soccfg
         # Recorded by start_readout so poll_data can return the right shape.
         self._total_count = 0
         self._reads_per_shot = []
+
+    def _readout(self, ch):
+        return self.soccfg["readouts"][ch]
 
     # --- config_all / config_gens / config_readouts / load_pulses ---
 
@@ -36,8 +52,28 @@ class MockQickSoc:
     def stop_tproc(self, *args, **kwargs):
         pass
 
-    def load_pulse_data(self, *args, **kwargs):
-        pass
+    def load_pulse_data(self, ch, data, addr):
+        # Same check as qick/drivers/generator.py AbsSignalGen.load.
+        if self.soccfg is None:
+            return
+        gen = self.soccfg["gens"][ch]
+        if len(data) + addr <= gen["maxlen"]:
+            return
+        message = (
+            f"gen ch {ch} ({gen['type']}): envelope of {len(data)} samples at address {addr} "
+            f"ends past maxlen {gen['maxlen']}. On the board: 'buffer length must be "
+            f"{gen['maxlen']} samples or less'."
+        )
+        # The caller is QickProgram.load_pulses; its `self` is the program,
+        # which has the envelope names.
+        prog = sys._getframe(1).f_locals.get("self")
+        envelopes = getattr(prog, "envelopes", None)
+        if envelopes is not None and ch < len(envelopes):
+            message += (
+                f"\n{type(prog).__name__} has {envelopes[ch]['next_addr']} samples of envelopes "
+                f"on ch {ch}:\n" + envelope_report(prog, ch)
+            )
+        raise BoardResourceError(message)
 
     def set_nyquist(self, *args, **kwargs):
         pass
@@ -45,8 +81,15 @@ class MockQickSoc:
     def set_mixer_freq(self, *args, **kwargs):
         pass
 
-    def config_mux_gen(self, *args, **kwargs):
-        pass
+    def config_mux_gen(self, ch, tones):
+        # Same check as qick/drivers/generator.py AxisSgMux4V2.set_tones_int.
+        if self.soccfg is None:
+            return
+        n_tones = self.soccfg["gens"][ch].get("n_tones")
+        if n_tones is not None and len(tones) > n_tones:
+            raise BoardResourceError(
+                f"gen ch {ch}: {len(tones)} mux tones, the generator has {n_tones}."
+            )
 
     def configure_readout(self, *args, **kwargs):
         pass
@@ -54,14 +97,27 @@ class MockQickSoc:
     def config_mux_readout(self, *args, **kwargs):
         pass
 
-    def load_bin_program(self, *args, **kwargs):
-        pass
+    def load_bin_program(self, binprog, load_mem=True):
+        # The board fails when the program does not fit the program memory.
+        if self.soccfg is None:
+            return
+        tproc = self.soccfg["tprocs"][0]
+        pmem = binprog["pmem"] if isinstance(binprog, dict) else binprog
+        if len(pmem) > tproc["pmem_size"]:
+            raise BoardResourceError(
+                f"tProc: program is {len(pmem)} words, pmem_size is {tproc['pmem_size']}."
+            )
 
     def config_avg(self, *args, **kwargs):
         pass
 
-    def config_buf(self, *args, **kwargs):
-        pass
+    def config_buf(self, ch, address=0, length=1, enable=True):
+        # Same check as qick/drivers/readout.py AxisAvgBuffer.config_buf.
+        if self.soccfg is not None and length >= self._readout(ch)["buf_maxlen"]:
+            raise BoardResourceError(
+                f"readout ch {ch}: decimated length {length} >= buf_maxlen "
+                f"{self._readout(ch)['buf_maxlen']}."
+            )
 
     def reload_mem(self, *args, **kwargs):
         pass
@@ -98,15 +154,30 @@ class MockQickSoc:
         # returns >= total_count.
         return self._total_count
 
+    def _check_transfer(self, ch, length, key):
+        # Same check as qick/drivers/readout.py transfer_avg / transfer_buf,
+        # with the transfer length that QickSoc.get_accumulated / get_decimated pass.
+        if self.soccfg is None:
+            return
+        transfer = int(length) + int(length) % 2 + 2
+        maxlen = self._readout(ch)[key]
+        if transfer >= maxlen:
+            raise BoardResourceError(
+                f"readout ch {ch}: transfer of {length} samples needs {transfer} >= {key} {maxlen}."
+            )
+
     def get_decimated(self, ch=None, address=0, length=0):
+        self._check_transfer(ch, length, "buf_maxlen")
         return np.zeros((int(length), 2))
 
     def get_accumulated(self, ch=None, address=0, length=0):
+        self._check_transfer(ch, length, "avg_maxlen")
         # Caller does .reshape((*loop_dims, trigs, 2)), needs length*2 elements.
         return np.zeros((int(length), 2))
 
     def __repr__(self):
-        return "<MockQickSoc: stub, zero data>"
+        checks = "resource checks on" if self.soccfg is not None else "no resource checks"
+        return f"<MockQickSoc: stub, zero data, {checks}>"
 
 
 class MockInstrumentManager(dict):
@@ -116,9 +187,9 @@ class MockInstrumentManager(dict):
     MultimodeStation populates this with the right alias key.
     """
 
-    def __init__(self, qick_alias="Qick101"):
+    def __init__(self, qick_alias="Qick101", soccfg=None):
         super().__init__()
-        self[qick_alias] = MockQickSoc()
+        self[qick_alias] = MockQickSoc(soccfg=soccfg)
 
     def __repr__(self):
         return f"<MockInstrumentManager: {list(self.keys())}>"

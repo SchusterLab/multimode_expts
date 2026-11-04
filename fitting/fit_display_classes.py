@@ -1297,9 +1297,10 @@ class Histogram(GeneralFitting):
             if plot_f:
                 print(f'If {xf} +/- {np.std(If)} \t Qf {yf} +/- {np.std(Qf)} \t Amp f {np.abs(xf+1j*yf)}')
 
+        # Always rotate so that g -> e points along +I: the hardware threshold and
+        # the readout phase are for g vs e. With f shots, f then sits off the I
+        # axis (near e in I, apart in Q), so g vs e/f is read on I and e vs f on Q.
         theta = -np.arctan2((ye - yg), (xe - xg))
-        if plot_f:
-            theta = -np.arctan2((ye - yf), (xe - xf))
 
         Ig_new = Ig * np.cos(theta) - Qg * np.sin(theta)
         Qg_new = Ig * np.sin(theta) + Qg * np.cos(theta)
@@ -1310,10 +1311,11 @@ class Histogram(GeneralFitting):
         self.data['Ie_rot'] = Ie_new
         self.data['Qe_rot'] = Qe_new
 
-
         if plot_f:
             If_new = If * np.cos(theta) - Qf * np.sin(theta)
             Qf_new = If * np.sin(theta) + Qf * np.cos(theta)
+            self.data['If_rot'] = If_new
+            self.data['Qf_rot'] = Qf_new
 
         xg, yg = np.median(Ig_new), np.median(Qg_new)
         xe, ye = np.median(Ie_new), np.median(Qe_new)
@@ -1327,9 +1329,10 @@ class Histogram(GeneralFitting):
             if plot_f:
                 print(f'If {xf} +/- {np.std(If_new)} \t Qf {yf} +/- {np.std(Qf_new)} \t Amp f {np.abs(xf+1j*yf)}')
 
+        all_I = np.concatenate((Ie_new, Ig_new, If_new) if plot_f else (Ie_new, Ig_new))
         if self.span is None:
-            self.span = (np.max(np.concatenate((Ie_new, Ig_new))) - np.min(np.concatenate((Ie_new, Ig_new)))) / 2
-        midpoint = (np.max(np.concatenate((Ie_new, Ig_new))) + np.min(np.concatenate((Ie_new, Ig_new))))/2
+            self.span = (np.max(all_I) - np.min(all_I)) / 2
+        midpoint = (np.max(all_I) + np.min(all_I)) / 2
         xlims = [midpoint-self.span, midpoint+self.span]
 
         ng, binsg = np.histogram(Ig_new, bins=numbins, range=xlims, density=True)
@@ -1346,24 +1349,13 @@ class Histogram(GeneralFitting):
                             1 - np.cumsum(ng)[tind] / ng.sum(),  #  g counts counted as e
                             np.cumsum(ne)[tind] / ne.sum(),#  e counts counted as g
                             1 - np.cumsum(ne)[tind] / ne.sum()] # e counts counted as e
-        
+
         '''
         If this matrix is [Pgg, Pge, Peg, Pee], then:
         [P_g_after, P_e_after] = [Pgg, Peg; Pge, Pee] * [P_g_before, P_e_before]
-        Note the order of matrix elements Peg and Pge    
-        
+        Note the order of matrix elements Peg and Pge
+
         '''
-
-        if plot_f:
-            contrast = np.abs(((np.cumsum(ng) - np.cumsum(nf)) / (0.5 * ng.sum() + 0.5 * nf.sum())))
-            tind = contrast.argmax()
-            thresholds.append(binsg[tind])
-            fids.append(contrast[tind])
-
-            contrast = np.abs(((np.cumsum(ne) - np.cumsum(nf)) / (0.5 * ne.sum() + 0.5 * nf.sum())))
-            tind = contrast.argmax()
-            thresholds.append(binsg[tind])
-            fids.append(contrast[tind])
 
         self.results = {
             'fids': fids,
@@ -1372,18 +1364,47 @@ class Histogram(GeneralFitting):
             'confusion_matrix': confusion_matrix
         }
 
+        if plot_f:
+            # g vs f on I, same axis as the ge threshold
+            contrast = np.abs(((np.cumsum(ng) - np.cumsum(nf)) / (0.5 * ng.sum() + 0.5 * nf.sum())))
+            tind = contrast.argmax()
+            thresholds.append(binsg[tind])
+            fids.append(contrast[tind])
+
+            # e vs f on Q
+            all_Q = np.concatenate((Qe_new, Qf_new))
+            qlims = [np.min(all_Q), np.max(all_Q)]
+            neq, binsq = np.histogram(Qe_new, bins=numbins, range=qlims, density=True)
+            nfq, _ = np.histogram(Qf_new, bins=numbins, range=qlims, density=True)
+            contrast = np.abs(((np.cumsum(neq) - np.cumsum(nfq)) / (0.5 * neq.sum() + 0.5 * nfq.sum())))
+            tind = contrast.argmax()
+            thresholds.append(binsq[tind])
+            fids.append(contrast[tind])
+
+            # 3-state assignment: I below the ge threshold -> g, else Q on the f side
+            # of the ef threshold -> f, else e. A[prepared, assigned], rows g/e/f.
+            f_high_q = yf > ye
+            def _assign(I, Q):
+                on_f_side = (Q > thresholds[2]) if f_high_q else (Q < thresholds[2])
+                return np.where(I < thresholds[0], 0, np.where(on_f_side, 2, 1))
+            assignment_matrix = np.array([
+                np.bincount(_assign(I, Q), minlength=3) / len(I)
+                for I, Q in ((Ig_new, Qg_new), (Ie_new, Qe_new), (If_new, Qf_new))])
+            self.results['assignment_matrix'] = assignment_matrix
+            self.results['f_high_q'] = bool(f_high_q)
+            if self.verbose:
+                print('assignment matrix A[prepared, assigned] (g, e, f):')
+                print(np.round(assignment_matrix, 4))
+
         if plot:
-            fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(16, 10))
+            ncols = 3 if plot_f else 2
+            fig, axs = plt.subplots(nrows=2, ncols=ncols, figsize=(8 * ncols, 10))
             fig.tight_layout()
 
             axs[0, 0].scatter(Ie, Qe, label='e', color='r', marker='.', s=1)
             axs[0, 0].scatter(Ig, Qg, label='g', color='b', marker='.', s=1)
             if plot_f:
                 axs[0, 0].scatter(If, Qf, label='f', color='g', marker='.', s=1)
-            axs[0, 0].scatter(xg, yg, color='k', marker='o')
-            axs[0, 0].scatter(xe, ye, color='k', marker='o')
-            if plot_f:
-                axs[0, 0].scatter(xf, yf, color='k', marker='o')
             axs[0, 0].set_xlabel('I [ADC levels]')
             axs[0, 0].set_ylabel('Q [ADC levels]')
             axs[0, 0].legend(loc='upper right')
@@ -1402,6 +1423,10 @@ class Histogram(GeneralFitting):
             axs[0, 1].legend(loc='upper right')
             axs[0, 1].set_title('Rotated')
             axs[0, 1].axis('equal')
+            axs[0, 1].axvline(thresholds[0], color='black', linestyle='--')
+            if plot_f:
+                # e/f boundary: only right of the ge threshold
+                axs[0, 1].plot([thresholds[0], np.max(all_I)], [thresholds[2]] * 2, color='brown', linestyle='--')
 
             if ps_funnel_text is not None:
                 axs[0, 1].text(
@@ -1411,15 +1436,12 @@ class Histogram(GeneralFitting):
 
             axs[1, 0].hist(Ig_new, bins=numbins, range=xlims, alpha=0.5, label='g', color='blue', density=True)
             axs[1, 0].hist(Ie_new, bins=numbins, range=xlims, alpha=0.5, label='e', color='red', density=True)
-            # self.data['Ig_rot'] = Ig_new
-            # self.data['Qg_rot'] = Qg_new
             if plot_f:
                 axs[1, 0].hist(If_new, bins=numbins, range=xlims, alpha=0.5, label='f', color='green', density=True)
             axs[1, 0].axvline(thresholds[0], color='black', linestyle='--', label='Threshold ge')
-            if len(thresholds) > 1:
+            if plot_f:
                 axs[1, 0].axvline(thresholds[1], color='gray', linestyle='--', label='Threshold gf')
-                axs[1, 0].axvline(thresholds[2], color='brown', linestyle='--', label='Threshold ef')
-            axs[1, 0].set_title(f'Histogram (Fidelity g-e: {100 * fids[0]:.3}%)')
+            axs[1, 0].set_title(f'Histogram on I (Fidelity g-e: {100 * fids[0]:.3}%)')
             axs[1, 0].set_xlabel('I [ADC levels]')
             axs[1, 0].set_ylabel('Density')
             axs[1, 0].legend()
@@ -1436,13 +1458,31 @@ class Histogram(GeneralFitting):
                 cumsum_f = np.cumsum(nf) / np.sum(nf)
                 axs[1, 1].plot(binsg[:-1], cumsum_f, label='f', color='green')
             axs[1, 1].axvline(thresholds[0], color='black', linestyle='--', label='Threshold ge')
-            if len(thresholds) > 1:
+            if plot_f:
                 axs[1, 1].axvline(thresholds[1], color='gray', linestyle='--', label='Threshold gf')
-                axs[1, 1].axvline(thresholds[2], color='brown', linestyle='--', label='Threshold ef')
-            axs[1, 1].set_title('Cumulative Counts')
+            axs[1, 1].set_title('Cumulative Counts on I')
             axs[1, 1].set_xlabel('I [ADC levels]')
             axs[1, 1].set_ylabel('Cumulative Density')
             axs[1, 1].legend()
+
+            if plot_f:
+                axs[0, 2].hist(Qe_new, bins=numbins, range=qlims, alpha=0.5, label='e', color='red', density=True)
+                axs[0, 2].hist(Qf_new, bins=numbins, range=qlims, alpha=0.5, label='f', color='green', density=True)
+                axs[0, 2].axvline(thresholds[2], color='brown', linestyle='--', label='Threshold ef')
+                axs[0, 2].set_title(f'Histogram on Q (Fidelity e-f: {100 * fids[2]:.3}%)')
+                axs[0, 2].set_xlabel('Q [ADC levels]')
+                axs[0, 2].legend()
+
+                axs[1, 2].imshow(assignment_matrix, cmap='Blues', vmin=0, vmax=1)
+                for i in range(3):
+                    for j in range(3):
+                        axs[1, 2].text(j, i, f'{assignment_matrix[i, j]:.3f}', ha='center', va='center',
+                                       color='white' if assignment_matrix[i, j] > 0.5 else 'black', fontsize=14)
+                axs[1, 2].set_xticks(range(3), ['g', 'e', 'f'])
+                axs[1, 2].set_yticks(range(3), ['g', 'e', 'f'])
+                axs[1, 2].set_xlabel('assigned')
+                axs[1, 2].set_ylabel('prepared')
+                axs[1, 2].set_title('Assignment matrix (I then Q)')
 
             plt.subplots_adjust(hspace=0.25, wspace=0.15)
             plt.show()

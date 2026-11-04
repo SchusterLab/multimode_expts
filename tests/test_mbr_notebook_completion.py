@@ -10,7 +10,6 @@ from experiments.qsim.mbr_disorder_ensemble import DiagDisorderConfig, plan_diag
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
 from experiments.qsim.readout_refit import refit_readout
-from experiments.readout_calibration import apply_singleshot_calibration
 from fitting.qsim.mbr_disorder import disorder_direction
 
 
@@ -86,20 +85,6 @@ def test_calibration_finishes_before_next_batch_and_records_all_job_ids():
     with pytest.raises(ValueError, match='unusable'):
         spectrum.acquire(runner, before_batch=broken_hook)
     assert events[-1] == ('traces', 1, 2)
-
-
-def test_unusable_histogram_does_not_overwrite_readout():
-    readout = AttrDict(dict(phase=[10.], Ig=[-1.], Ie=[1.]))
-    station = SimpleNamespace(autocalib_path='unused',
-                              hardware_cfg=AttrDict(dict(device=dict(readout=readout))))
-    expt = SimpleNamespace(
-        analyze=lambda **kwargs: None,
-        cfg=AttrDict(dict(expt=dict(active_reset=False))),
-        data=dict(fids=[1.], angle=5., thresholds=[0.],
-                  confusion_matrix=np.eye(2), Ig_rot=[np.nan], Ie_rot=[1.]))
-    with pytest.raises(ValueError, match='invalid readout'):
-        apply_singleshot_calibration(station, expt)
-    assert readout.phase == [10.] and readout.Ig == [-1.]
 
 
 def test_offline_refit_uses_final_lane_and_does_not_mutate_raw_job(tmp_path):

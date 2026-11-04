@@ -31,7 +31,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS = sorted((REPO_ROOT / "measurement_notebooks" / "guan").glob("*.py"))
 NOTEBOOKS += sorted((REPO_ROOT / "analysis_notebooks" / "guan").glob("*.py"))
-SHARED_IPYNB = REPO_ROOT / "analysis_notebooks" / "qsim analysis.ipynb"
+SHARED_IPYNB = REPO_ROOT / "analysis_notebooks" / "guan" / "qsim analysis.ipynb"
 
 # Prefixes this repo actually provides. An import of anything else (numpy,
 # qutip, slab) is not this test's concern.

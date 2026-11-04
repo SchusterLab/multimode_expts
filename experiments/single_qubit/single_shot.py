@@ -1,8 +1,8 @@
+import numpy as np
 from slab import Experiment, AttrDict
 from experiments.MM_base import MMAveragerProgram, MM_base
 from fitting.fit_display_classes import Histogram
 
-# TODO: add gef analysis and rotation/threshold for g vs f
 
 class HistogramProgram(MMAveragerProgram):
     _pre_selection_filtering = True
@@ -107,6 +107,20 @@ class HistogramExperiment(Experiment):
         check_e: whether to test the e state blob (true if unspecified)
         check_f: whether to also test the f state blob
     )
+
+    analyze() rotates so that g -> e lies along +I, and sets `self.readout_cfg`:
+    the g-e readout settings (phase, threshold, Ig, Ie, confusion matrix) as an
+    AttrDict. The standard postprocessor copies it into the station:
+
+        def singleshot_postproc(station, expt):
+            expt.analyze(station=station, subdir=station.autocalib_path)
+            station.hardware_cfg.device.readout.update(expt.readout_cfg)
+
+    With check_f, f sits near e in I and apart in Q: data["fids"] and
+    data["thresholds"] are (ge on I, gf on I, ef on Q), and
+    data["assignment_matrix"] is A[prepared, assigned] for g/e/f (I against
+    the ge threshold first, then Q against the ef threshold). The readout
+    settings stay g-e only, so a g/e/f run also calibrates the readout.
     """
 
     def __init__(
@@ -217,6 +231,27 @@ class HistogramExperiment(Experiment):
         data["angle"] = hist_fitter.results["angle"]
         data["thresholds"] = hist_fitter.results["thresholds"]
         data["confusion_matrix"] = hist_fitter.results["confusion_matrix"]
+        if "assignment_matrix" in hist_fitter.results:
+            data["assignment_matrix"] = hist_fitter.results["assignment_matrix"]
+            data["f_high_q"] = hist_fitter.results["f_high_q"]
+
+        # The g-e readout settings this histogram calibrates, ready for
+        # station.hardware_cfg.device.readout.update(expt.readout_cfg).
+        # The phase is the one the shots were taken with plus the fitted
+        # residual angle, so re-applying the same histogram does not rotate twice.
+        Ig_c, Ie_c = np.median(data["Ig_rot"]), np.median(data["Ie_rot"])
+        values = [data["angle"], data["thresholds"][0], Ig_c, Ie_c]
+        if not np.isfinite(values).all() or np.isclose(Ig_c, Ie_c):
+            raise ValueError("single-shot calibration has invalid readout centers or thresholds")
+        cm_key = ("confusion_matrix_with_active_reset" if self.cfg.expt.active_reset
+                  else "confusion_matrix_without_reset")
+        self.readout_cfg = AttrDict({
+            "phase": [self.cfg.device.readout.phase[0] + data["angle"]],
+            "threshold": [data["thresholds"][0]],
+            "Ig": [Ig_c],
+            "Ie": [Ie_c],
+            cm_key: data["confusion_matrix"],
+        })
 
         return data
 
@@ -250,14 +285,14 @@ class HistogramExperiment(Experiment):
             self.cfg.expt.check_e = plot_e
             self.cfg.expt.check_f = plot_f
         if self.cfg.expt.check_f:
-            print(f"gf fidelity (%): {100*fids[1]}")
-            print(f"ef fidelity (%): {100*fids[2]}")
+            print(f"gf fidelity on I (%): {100*fids[1]}")
+            print(f"ef fidelity on Q (%): {100*fids[2]}")
         print(f"rotation angle (deg): {angle}")
         # print(f'set angle to (deg): {-angle}')
-        print(f"threshold ge: {thresholds[0]}")
+        print(f"threshold ge (I): {thresholds[0]}")
         if self.cfg.expt.check_f:
-            print(f"threshold gf: {thresholds[1]}")
-            print(f"threshold ef: {thresholds[2]}")
+            print(f"threshold gf (I): {thresholds[1]}")
+            print(f"threshold ef (Q): {thresholds[2]}")
 
     def save_data(self, data=None):
         print(f"Saving {self.fname}")

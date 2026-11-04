@@ -1095,7 +1095,9 @@ singleshot_defaults = AttrDict(dict(
 )) # Shouldn't be modifying this on the fly!
 # You can use kwargs in the run function to override these values
 
-from experiments.readout_calibration import apply_singleshot_calibration as singleshot_postproc
+def singleshot_postproc(station, expt):
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 # %%
 # Execute

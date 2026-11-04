@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-11-03** (required names for assembled data sets; 10-24: `theory/` package and the jonginn AGP item; AGP layers item as of
+**Last updated: 2026-11-03** (required names for assembled data sets; 10-28: M1 Fock prep item; 10-24: `theory/` package and the jonginn AGP item; AGP layers as of
 2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
@@ -33,6 +33,12 @@ Rules:
   `main` and can be deleted when seb agrees.
 
 ## Cross-theme items
+
+- **M1 Fock N >= 2 prep (2026-10-28, all users):** with photons in M1 the qubit f state decays
+  to g and loses one photon (|f,n> -> |g,n-1>; ~6 us for n=1 at 0.45 mA, ~20x slower at 0.25 mA).
+  Physics: vault `Lab/guan/AGP/2026/10/2026-10-28.md`; record: `docs/log/2026-10-28_fock-prep-f-decay.md`.
+- **Records (guan, 2026-10-29, being tried):** history and physics go to the Obsidian vault; the
+  repo is for code. Draft: `docs/measurement_session_workflow.md`.
 
 - **Assembled data sets need a name (2026-11-03, guan's decision; branch `theory`, not yet on
   `main`).** `AssembledExperiment.save(name)` (all MBR, Fock population and AGP classes) writes

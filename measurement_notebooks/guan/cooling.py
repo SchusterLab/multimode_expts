@@ -81,11 +81,9 @@ station = MultimodeStation(
 )
 
 # %%
-# The swap-parameter reader and the readout-calibration postprocessor used to
-# be defined in this cell. Seven notebooks had byte-identical copies, and both
-# of them write or read calibration, so they are modules now.
+# The swap-parameter reader used to be defined in this cell. Seven notebooks
+# had byte-identical copies, and it reads calibration, so it is a module now.
 from experiments.qsim.utils import floquet_pulse_parameters
-from experiments.readout_calibration import apply_singleshot_calibration
 
 get_floquet_parameters = floquet_pulse_parameters  # old name, same function
 
@@ -131,8 +129,10 @@ singleshot_defaults = AttrDict(dict(
 )) # Shouldn't be modifying this on the fly!
 # You can use kwargs in the run function to override these values
 
-# `apply_singleshot_calibration` replaces the local
-# `singleshot_postproc` this cell used to define.
+
+def singleshot_postproc(station, expt):
+    expt.analyze(station=station, subdir=station.autocalib_path)
+    station.hardware_cfg.device.readout.update(expt.readout_cfg)
 
 
 # %%
@@ -142,7 +142,7 @@ ss_runner = CharacterizationRunner(
     station = station,
     ExptClass = meas.HistogramExperiment,
     default_expt_cfg = singleshot_defaults,
-    postprocessor = apply_singleshot_calibration,
+    postprocessor = singleshot_postproc,
     job_client=client,
 )
 

@@ -1,7 +1,7 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-10-24** (error amplification readout state; AGP analysis and `theory/`;
-the others as of 2026-10-06 and not re-checked). Theme: measurement code
+**Last updated: 2026-10-29** (single-shot g/e/f and `readout_cfg`; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
+2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
 overwritten at the end of each work session on this theme; git keeps the old versions.
@@ -9,6 +9,18 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **Single shot: g/e/f analysis and `HistogramExperiment.readout_cfg` (2026-10-29,
+  `docs/log/2026-10-29_singleshot-gef-readout-cfg.md`).** Gap items 1-2 of the yoko450ua
+  script are done; `experiments/readout_calibration.py` is deleted and every notebook uses the
+  two-line postprocessor. **Next:** gap item 3.
+- **M1 Fock 2/3 prep is limited by |f,n> -> |g,n-1> decay (2026-10-28).** Physics: vault
+  `Lab/guan/AGP/2026/10/2026-10-28.md` (Day summary); configs, code findings, decisions:
+  `docs/log/2026-10-28_fock-prep-f-decay.md`. **Next:** the short copyable notebook for jonginn
+  and the module-gap note (script `measurement_notebooks/guan/yoko450ua_calibration.py`, last
+  cell); jonginn's calibration notebooks write the f0-g1 length only to the ds_storage `M1` row.
+  Tooling for these sessions: `docs/lab_workflow_tooling_spec.md` (A-D built 2026-10-29,
+  `docs/log/2026-10-29_session-tooling.md`), workflow:
+  `docs/measurement_session_workflow.md` (draft).
 - **Error amplification: `analyze()` gets `state_fin` from the pulse type, `periodic=False` by
   default (2026-10-24, `docs/log/2026-10-24_error-amp-final-state.md`).** On `main` (commit
   635d2f8); the worker uses it. With custom `pre_sweep_pulse` / `post_sweep_pulse`, set
