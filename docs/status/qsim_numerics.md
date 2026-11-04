@@ -16,7 +16,8 @@ the branch rules are in `docs/STATUS.md`.
   `analysis_notebooks/guan/agp/agp_remeasure_20261029.py`. Load data sets by key: `load_scan("s7_fine")`
   (`analysis_notebooks/datasets/agp_scans.yaml`). Each W keeps AGP(mu) on `DEFAULT_MU_KHZ` and S(f);
   `scan.acquire(runner, name)` saves W by W. Open: W = 160 kHz (3 of 15 jobs, no measurement for now);
-  jonginn's answer on the 7 S6 jobs of 10-23; 28 MBR tests fail until `tools/migrate_mbr_jobs.py` gives
+  jonginn's answer on the 7 S6 jobs of 10-23; 43 tests fail until `tools/migrate_mbr_jobs.py` and
+  `tools/convert_fock_population_catalog.py` give
   names (guan, separate fix); the old files in `assembled_data_old_20261103` can go when guan agrees.
 
 - **Level statistics: can MBR spectra show level repulsion turn on? Verdict (2026-10-25 evening, Claude,

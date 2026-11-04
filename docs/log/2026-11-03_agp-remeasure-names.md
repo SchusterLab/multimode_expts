@@ -41,5 +41,6 @@ To-do list: vault note `Jonginn/000000 Separate Lab Notebook/20261001 AGP/202610
 
 ## Known
 
-- 28 MBR tests fail: their fixtures use `tools/migrate_mbr_jobs.py`, which saves without a name.
+- 43 tests fail (7 MBR files, the converter test): their fixtures use `tools/migrate_mbr_jobs.py`
+  or `tools/convert_fock_population_catalog.py`, which save without a name.
   guan fixes this separately.

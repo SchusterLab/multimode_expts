@@ -24,6 +24,10 @@ the start of every session.
   pixi environment; a bare interpreter picks up the wrong packages. Same for
   `pixi run pytest`, `pixi run jupyter`, etc.
 - Tasks are defined in `pyproject.toml` under `[tool.pixi.tasks]`.
+- **Shared kernels:** to run code or notebook cells in a kernel of the always-on Lab server
+  (port 8765) by its session name, use `tools/kernel_exec.py` (`list`, `start`, `cells`, `run`,
+  `interrupt`; see its docstring and "Kernels" in `docs/measurement_session_workflow.md`). Do not
+  write a new client for this.
 - Imports: a top-level folder is importable only if it is listed under
   `[tool.setuptools.packages.find] include`. After a change to that list, run `pixi install`
   in each checkout: it rewrites the editable-install finder that maps the packages.

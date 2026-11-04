@@ -45,8 +45,9 @@ Rules:
   `<Class>_<name>.yaml/.h5` and never overwrites; there is no time-stamp fallback. AGP:
   `CentralBosonAGPDisorderScan.acquire(runner, name)` saves W by W. Old notebooks and migration
   scripts are not changed: they ask for a name when they run again (jonginn's
-  `agp_measurement.py`: `scan.acquire(...)` and `scan.save(...)`). 28 MBR tests fail until
-  `tools/migrate_mbr_jobs.py` gives names (guan, separate fix). The AGP data in
+  `agp_measurement.py`: `scan.acquire(...)` and `scan.save(...)`). 43 tests fail until
+  `tools/migrate_mbr_jobs.py` and `tools/convert_fock_population_catalog.py` give names (guan,
+  separate fix; their fixtures use these tools). The AGP data in
   `agp_k44_first_scan` and `261027AGPlowKerr` are made again under names (old files in
   `assembled_data_old_20261103`). Record: `docs/log/2026-11-03_agp-remeasure-names.md`.
 
