@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-11-05** (sequential readout, calibration Experiment and inherited AGP notebook; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
+**Last updated: 2026-11-05** (sequential readout, calibration Experiment and native multi-direction AGP; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
 2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
@@ -23,14 +23,19 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   `MultiParityConfusionMatrixSequentialExperiment` measures `(4, 4, steps)` matrices in
   one prepared-occupation sweep/JOB; raw shots, target counts and preparation metadata
   are saved with the matrix. The earlier `calibrate_readout_steps` helper is removed.
-  `agp_sequential.py` adds subclasses of the existing AGP part and disorder scan. They
-  keep native sequential children and select processed mode arrays privately for the
-  existing numerical analysis. Manifests reference original sequential JOBs directly.
-  Population arrays are now collected directly in `_SequentialPopulationAnalysis`;
-  existing AGP `analyze()` is inherited unchanged. Temporary input objects, `__new__`,
-  temporary legacy AGP instances and the earlier input-construction helper are removed.
-  Per-mode HDF5 export is removed. Every mode stays in its original JOB HDF5;
-  assembled layers only save their own collected/AGP results and source references.
+  `agp_sequential.py` now gives each W Experiment a native `directions` list and
+  one union of sequential JOB children. The usual `acquire()` measures each
+  required occupation once; no additional acquisition API or per-direction
+  Experiment objects are used. Analysis directly calls the existing fitting and
+  theory functions and stores results with a direction axis in `self.data`.
+  Correlations are (direction, cycle), AGP is (direction, cutoff), and the scan
+  prepends W. One W HDF5/manifest contains all requested directions and references
+  the original JOBs. Kerr C2 is NaN when storage C2 rows are present.
+  N=3: S7 needs 15 JOBs/W, S4+S7 needs 25, Kerr+S7 needs 19, all five need 35.
+  The optional walk notebook overlays prepared-state population theory using
+  inline evolution, as in the reference notebook and requested by the user.
+  The 37 sequential tests pass; walk theory cells also pass on a local JOB copy.
+  Legacy AGP/base/pulse code and pippin remain unchanged.
   Readout configuration and calibration metadata use plain lists and explicit
   loops; `tile`, `repeat` and `atleast_1d` are removed from the new code/tests.
   Arrays use explicit zero initialization; calibration rows use ordinary
@@ -39,7 +44,7 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   reference notebook's two-runner pattern and uses the new AGP subclasses.
   Existing Python modules are unchanged. **Next:** user review and hardware validation.
   New tests cover calibration, numerical agreement, raw-source preservation, named
-  saves/reloads and interrupted-W recovery. The notebook's short mock pipeline passes.
+  saves/reloads and interrupted-W recovery, with mock pulse compilation.
   Record: `docs/log/2026-11-05_sequential-fock-readout.md`.
   Follow-up: `docs/log/2026-11-05_sequential-multiparity-agp-review.md`.
   Implementation: `docs/log/2026-11-05_sequential-agp-calibration-notebook.md`.
@@ -48,6 +53,7 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   Export removal: `docs/log/2026-11-05_sequential-readout-remove-mode-export.md`.
   Plain lists: `docs/log/2026-11-05_sequential-readout-plain-lists.md`.
   Legacy timing: `docs/log/2026-11-05_sequential-readout-legacy-timing.md`.
+  Shared directions: `docs/log/2026-11-05_sequential-agp-shared-directions.md`.
 - **Single shot: g/e/f analysis and `HistogramExperiment.readout_cfg` (2026-10-29,
   `docs/log/2026-10-29_singleshot-gef-readout-cfg.md`).** Gap items 1-2 of the yoko450ua
   script are done; `experiments/readout_calibration.py` is deleted and every notebook uses the
