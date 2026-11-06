@@ -16,6 +16,8 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   the new multiparity implementation, and the new Program's outer measurement hook is a no-op.
   Both Ramsey stages, conditional phases, measurements and qubit feedback are now defined
   locally; no legacy multiparity, parity-reset or measurement wrapper is called by this block.
+  The legacy measurement prefix is restored: readout register initialization precedes
+  the first Ramsey, and `sync_all(10)` precedes every second-bit measurement.
   Analysis writes probabilities, moments, errors, lane metadata and optional step-specific
   corrections into `self.data` for normal HDF5 saving. Separate calibration class
   `MultiParityConfusionMatrixSequentialExperiment` measures `(4, 4, steps)` matrices in
@@ -45,6 +47,7 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   Direct arrays: `docs/log/2026-11-05_sequential-agp-direct-arrays.md`.
   Export removal: `docs/log/2026-11-05_sequential-readout-remove-mode-export.md`.
   Plain lists: `docs/log/2026-11-05_sequential-readout-plain-lists.md`.
+  Legacy timing: `docs/log/2026-11-05_sequential-readout-legacy-timing.md`.
 - **Single shot: g/e/f analysis and `HistogramExperiment.readout_cfg` (2026-10-29,
   `docs/log/2026-10-29_singleshot-gef-readout-cfg.md`).** Gap items 1-2 of the yoko450ua
   script are done; `experiments/readout_calibration.py` is deleted and every notebook uses the

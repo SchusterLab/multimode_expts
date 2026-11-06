@@ -162,12 +162,15 @@ def test_program_completes_each_bit_pair_and_only_relaxes_at_the_end(modes, fast
     assert all(value["adcs"] == [0] and value["wait"] for value in measurements)
     assert all(value.get("syncdelay", 0) == 0 for value in measurements[:-1])
     assert measurements[-1]["syncdelay"] == 1_000_000
-    final_index = max(index for index, (kind, _) in enumerate(events) if kind == "measure")
-    assert events[final_index - 1] == ("sync", 10)
+    measure_indices = [index for index, (kind, _) in enumerate(events) if kind == "measure"]
+    for first_bit_index in measure_indices[::2]:
+        assert events[first_bit_index - 1][0] == "custom_pulse"
+    for second_bit_index in measure_indices[1::2]:
+        assert events[second_bit_index - 1] == ("sync", 10)
+    final_index = measure_indices[-1]
     assert not any(kind in {"read", "pulse"} for kind, _ in events[final_index + 1:])
 
     # Every nonterminal bit is read and reset before the next measurement.
-    measure_indices = [index for index, (kind, _) in enumerate(events) if kind == "measure"]
     for index in range(len(measure_indices) - 1):
         first = measure_indices[index]
         following = measure_indices[index + 1]
