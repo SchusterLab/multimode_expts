@@ -152,6 +152,9 @@ class FockPopulationSequentialReadoutProgram(FockPopulationProgram):
         cfg = self.cfg
         qTest = cfg.expt.qubits[0]
         self.r_cond_phase, self.r_read_q, self.r_thresh_q = 8, 9, 11
+        self.safe_regwi(0, self.r_read_q, 0)
+        threshold = cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]
+        self.safe_regwi(0, self.r_thresh_q, int(threshold))
         second_phase = cfg.expt.get("phase_second_pulse", 180)
         cond_sec_phase = cfg.expt.get("cond_sec_phase", -90)
         revival_time = cfg.device.manipulate.revival_time[man_idx - 1]
@@ -196,6 +199,7 @@ class FockPopulationSequentialReadoutProgram(FockPopulationProgram):
         self.mathi(reg_page, reg_phase, self.r_cond_phase, "+", 0)
         self.pulse(ch=qubit_ch)
         self.sync_all()
+        self.sync_all(10)
         self._measure_multiparity_bit(register_label + "_bit1", final=final)
 
     def _measure_multiparity_bit(self, register_label, final=False):
@@ -203,14 +207,10 @@ class FockPopulationSequentialReadoutProgram(FockPopulationProgram):
         cfg = self.cfg
         qTest = cfg.expt.qubits[0]
         if final:
-            self.sync_all(10)
             self.measure(pulse_ch=self.res_chs[qTest], adcs=[self.adc_chs[qTest]],
                          adc_trig_offset=cfg.device.readout.trig_offset[qTest], wait=True,
                          syncdelay=self.us2cycles(cfg.device.readout.relax_delay[qTest]))
         else:
-            self.safe_regwi(0, self.r_read_q, 0)
-            threshold = cfg.device.readout.threshold[qTest] * self.readout_lengths_adc[qTest]
-            self.safe_regwi(0, self.r_thresh_q, int(threshold))
             self.measure(pulse_ch=self.res_chs[qTest], adcs=[self.adc_chs[qTest]],
                          adc_trig_offset=cfg.device.readout.trig_offset[qTest], t="auto", wait=True)
             self.wait_all(self.us2cycles(0.10))
