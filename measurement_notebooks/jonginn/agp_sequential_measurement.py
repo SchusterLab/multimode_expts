@@ -46,6 +46,7 @@ from experiments.qsim.notebook_helpers.defaults import (
 )
 from job_server import JobClient
 from slab import AttrDict
+from theory.qsim.central_boson import fixed_n_hamiltonian
 
 # %% [markdown]
 # ## 1. Station and worker
@@ -181,22 +182,60 @@ walk_expt.display(raw=True)
 walk_expt.display()
 plt.show()
 
+# %% tags=["theory_settings"]
+KERR_KHZ = -30.0  # Same signed physical Kerr convention as agp_measurement.py.
+
+# %% tags=["walk_theory"]
+settings = walk_expt.cfg.expt
+timing = walk_expt.recorded_derived_params()
+storages = list(settings.swap_stors)
+couplings_mhz = np.array([timing["couplings_MHz"][storage - 1] for storage in storages])
+if settings.get("zero_floquet_gain", False):
+    couplings_mhz[:] = 0.
+detunings_mhz = settings.get("detunings")
+if detunings_mhz is None or detunings_mhz is False or len(detunings_mhz) == 0:
+    detunings_mhz = [0.] * len(storages)
+model = fixed_n_hamiltonian(
+    photon_number=sum(settings.occupations), mode_count=1 + len(storages),
+    detunings=detunings_mhz, couplings_MHz=couplings_mhz,
+    physical_kerr_MHz=KERR_KHZ / 1000,
+)
+cycles = np.asarray(walk_expt.data["xpts"], dtype=float)
+theory_cycles = np.linspace(cycles.min(), cycles.max(), max(1000, len(cycles)))
+time_us = theory_cycles * timing["floquet_cycle_us"]
+initial_index = model.fock_index[tuple(settings.occupations)]
+eigenstate_amplitudes = model.states[initial_index, :].conj()
+phases = np.exp(-2j * np.pi * model.energies_MHz[:, None] * time_us[None, :])
+state = model.states @ (eigenstate_amplitudes[:, None] * phases)
+probability = np.abs(state) ** 2
+theory_populations = probability.T @ np.asarray(model.fock_basis)
+walk_fig, walk_axis = walk_expt.display()
+for step, mode in enumerate(walk_expt.data["ro_stors"]):
+    mode_index = [0, *storages].index(mode)
+    color = walk_axis.lines[step].get_color()
+    walk_axis.plot(theory_cycles, theory_populations[:, mode_index],
+                   color=color, alpha=.45, linewidth=3, label=f"Theory, Mode {mode}")
+walk_axis.legend(ncol=2)
+walk_fig.tight_layout()
+plt.show()
+
 # %% [markdown]
 # ## 4. AGP measurements and assembled layers
 #
 # from_pattern() plans the initial states and normalizes the disorder pattern.
-# Every JOB reads RO_STORS; the AGP class selects the requested direction.
-# acquire() analyzes and saves each completed W, then saves the disorder scan.
+# acquire() measures the union of required initial states once per W.
+# Every JOB reads RO_STORS, and all directions share those original JOBs.
+# With N=3 and directions [0, 4, 5, 6, 7], this is 35 JOBs per W.
+# Each completed W saves all directions together before continuing.
 #
 # Choose a fresh SCAN_NAME before a new run. Named assembled files are never
-# overwritten. Multiple directions use the reference notebook's separate loops;
-# shared initial states are not deduplicated across directions.
+# overwritten. One W manifest references its unique population JOBs.
 
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
-AGP_DIRECTIONS = [7]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
-DISORDER_RMS_KHZ = [120, 140, 160, 180, 200]  # For Kerr: 20..200 in steps of 20.
-AGP_REPS = 300  # For Kerr: 1000.
+AGP_DIRECTIONS = [0, 4, 5, 6, 7]  # 0: M1 Kerr; storage numbers: 4, 5, 6, 7.
+DISORDER_RMS_KHZ = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+AGP_REPS = 100
 AGP_CYCLES = list(range(0, 800, 1))
 AGP_BATCH_SIZE = 1
 AGP_MU_KHZ = 10  # Cutoff in kHz; None uses the existing AGP default axis.
@@ -206,36 +245,28 @@ DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
 DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)
 
 # %% tags=["agp_acquire"]
-disorder_scans = {}
-manifest_paths = {}
-for direction in AGP_DIRECTIONS:
-    scan = CentralBosonAGPSequentialDisorderScan.from_pattern(
-        DISORDER_RMS_KHZ, DISORDER_PATTERN,
-        photon_sector_number=TOTAL_PHOTONS,
-        direction=direction,
-        ro_stors=RO_STORS,
-        swap_stors=STORAGE_MODES,
-        cycles=AGP_CYCLES,
-        calibration=CONFUSION_MATRIX_FNAME,
-        notes=f"Central-boson correlations, direction {direction}",
-    )
-    manifest_paths[direction] = scan.acquire(
-        population_runner, name=f"{SCAN_NAME}_d{direction}",
-        analyze_kwargs=dict(mu=AGP_MU_KHZ),
-        batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
-        storage_reset=STORAGE_MODES, postprocess=False, show=False, log=True,
-        go_kwargs=dict(analyze=True, save=True),
-    )
-    disorder_scans[direction] = scan
-    for part in scan.children:
-        print(f"Direction {direction}, W={part.disorder_khz:g} kHz: "
-              f"{len(part.children)} population JOBs, {len(part.cycles)} cycles")
-    print(f"Direction {direction}: {manifest_paths[direction]}")
+scan = CentralBosonAGPSequentialDisorderScan.from_pattern(
+    DISORDER_RMS_KHZ, DISORDER_PATTERN,
+    photon_sector_number=TOTAL_PHOTONS,
+    direction=AGP_DIRECTIONS,
+    ro_stors=RO_STORS,
+    swap_stors=STORAGE_MODES,
+    cycles=AGP_CYCLES,
+    calibration=CONFUSION_MATRIX_FNAME,
+    notes="Central-boson correlations, sequential readout",
+)
+manifest_path = scan.acquire(
+    population_runner, name=SCAN_NAME,
+    analyze_kwargs=dict(mu=AGP_MU_KHZ),
+    batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
+    storage_reset=STORAGE_MODES, postprocess=False, show=False, log=True,
+    go_kwargs=dict(analyze=True, save=True),
+)
+print(manifest_path)
 
 # %% tags=["agp_display"]
-for scan in disorder_scans.values():
-    scan.display()
-    scan.display_traces()
+scan.display()
+scan.display_traces()
 plt.show()
 
 # %% [markdown]
@@ -245,8 +276,7 @@ plt.show()
 # assembled layers and their inputs for reanalysis without saving another copy.
 
 # %% tags=["reload"]
-direction = AGP_DIRECTIONS[0]
-reloaded_scan = CentralBosonAGPSequentialDisorderScan.from_manifest(manifest_paths[direction])
+reloaded_scan = CentralBosonAGPSequentialDisorderScan.from_manifest(manifest_path)
 reloaded_scan.analyze(mu=AGP_MU_KHZ)
 reloaded_scan.display()
 plt.show()
@@ -254,5 +284,5 @@ plt.show()
 # %% [markdown] tags=["module_gaps"]
 # ## Module gaps
 #
-# No notebook-local helpers are needed. The direction loop follows
-# agp_measurement.py; calibration and assembled acquisition live in the modules.
+# No notebook-local helpers are needed. Calibration and shared acquisition across
+# directions live in the Experiment classes.

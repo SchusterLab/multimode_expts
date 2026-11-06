@@ -1,8 +1,9 @@
-"""Inherited AGP analysis over native sequential jobs, without exported files."""
+"""Native multidirection AGP arrays, legacy numerical agreement, and persistence."""
 
 import json
 import warnings
 from copy import deepcopy
+from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -116,29 +117,40 @@ def test_native_children_match_legacy_analysis_and_reload_original_files(
             warnings.filterwarnings("ignore", message="Calibration file not found.*")
             warnings.filterwarnings("ignore", message="AGP and spectrum skipped.*")
             actual = part.analyze(mu=[2., 10.], t1_us=600.)
-    assert CentralBosonAGPSequentialExperiment.analyze is CentralBosonAGPExperiment.analyze
     for key, expected_value in expected.items():
-        np.testing.assert_allclose(actual[key], expected_value)
+        if key in ("agp_mu", "frequency_khz", "time_us"):
+            np.testing.assert_allclose(actual[key], expected_value)
+        elif (key.startswith(("C", "agp", "spectrum", "background_"))
+              or key in ("coupling_mhz", "mu_gld_khz", "theory_kerr_mhz", "t1_us", "t1_err_us")):
+            np.testing.assert_allclose(actual[key][0], expected_value)
     assert {id(job) for job in part.children} == {id(job) for job in jobs}
     assert all(isinstance(job, FockPopulationSequentialReadoutExperiment) for job in part.children)
-    assert ("C2" in actual) == (direction != 0)
-    assert ("agp" in actual) == (direction == read_mode)
+    assert actual["C1"].shape == (1, len(CYCLES))
+    if direction == 0 and "C2" in actual:
+        assert np.isnan(actual["C2"][0]).all()
+    if direction == read_mode:
+        assert actual["agp"].shape == (1, 2)
+    elif "agp" in actual:
+        assert np.isnan(actual["agp"][0]).all()
     for job, cfg_before, previous_data in zip(jobs, configs_before, data_before):
         assert json.dumps(job.cfg, cls=NpEncoder, sort_keys=True) == cfg_before
         assert set(job.data) == set(previous_data)
         for key in previous_data:
             np.testing.assert_array_equal(job.data[key], previous_data[key])
-    assert actual["p_mod"].shape == (len(jobs), len(CYCLES), 4)
-    assert actual["n_mean"].shape == (len(jobs), len(CYCLES))
-    np.testing.assert_array_equal(actual["ro_stor"], [read_mode] * len(jobs))
+    assert actual["p_mod"].shape == (len(jobs), len(CYCLES), len(MODES), 4)
+    assert actual["n_mean"].shape == (len(jobs), len(CYCLES), len(MODES))
+    np.testing.assert_array_equal(actual["directions"], [direction])
     np.testing.assert_array_equal(actual["ro_stors"], MODES)
-    assert int(actual["readout_step"]) == MODES.index(read_mode)
+    np.testing.assert_array_equal(actual["readout_steps"], [MODES.index(read_mode)])
+    if corrected:
+        np.testing.assert_allclose(actual["multiparity_confusion_matrices"], MATRICES)
 
     manifest_path = part.save("native_sequential", directory=tmp_path / "assembled_data")
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     original_paths = {(manifest_path.parent / path).resolve() for path in manifest["raw_files"]}
     assert original_paths == {Path(job.fname).resolve() for job in jobs}
     assert manifest["parameters"]["ro_stors"] == MODES
+    assert manifest["parameters"]["directions"] == [direction]
     if corrected:
         np.testing.assert_allclose(manifest["parameters"]["readout_calibration"]["matrices"],
                                    MATRICES)
@@ -148,7 +160,7 @@ def test_native_children_match_legacy_analysis_and_reload_original_files(
         warnings.filterwarnings("ignore", message="Calibration file not found.*")
         warnings.filterwarnings("ignore", message="AGP and spectrum skipped.*")
         restored = reloaded.analyze(mu=[2., 10.], t1_us=600.)
-    assert reloaded.ro_stor == read_mode
+    assert reloaded.directions == [direction]
     for key, expected_value in actual.items():
         np.testing.assert_allclose(restored[key], expected_value)
     arrays_only = CentralBosonAGPSequentialExperiment.from_h5file(
@@ -168,7 +180,7 @@ def test_job_overrides_keep_selected_probe_separate_from_physical_readout_order(
         assert override["ro_stors"] == MODES
         assert override["multiparity_confusion_matrix"] is None
         np.testing.assert_allclose(override["multiparity_confusion_matrices"], MATRICES)
-    assert part.direction == 7 and part.ro_stor == 4
+    assert part.directions == [7]
 
 
 class SequentialRunner:
@@ -224,8 +236,8 @@ def test_scan_acquires_and_reloads_native_layers_and_checks_names_before_jobs(tm
     assert len(runner.calls) == 2
     assert all(len(call["overrides"]) == 3 for call in runner.calls)
     assert all(call["batch_size"] == 2 for call in runner.calls)
-    assert scan.data["C1"].shape == (2, len(CYCLES))
-    assert scan.data["agp"].shape == (2, 2)
+    assert scan.data["C1"].shape == (2, 1, len(CYCLES))
+    assert scan.data["agp"].shape == (2, 1, 2)
     assert all(part.manifest_path.exists() for part in scan.children)
     for part in scan.children:
         for job in part.children:
@@ -255,5 +267,64 @@ def test_interrupted_scan_leaves_completed_w_available_from_saved_parts(tmp_path
     assert all(isinstance(job, FockPopulationSequentialReadoutExperiment)
                for job in completed.children[0].children)
     completed.analyze(mu=10.)
-    assert completed.data["agp"].shape == (1, 1)
+    assert completed.data["agp"].shape == (1, 1, 1)
     assert len(runner.calls) == 2
+
+
+@pytest.mark.parametrize("directions, count", [([7], 15), ([4, 7], 25), ([0, 7], 19),
+                                               ([4, 5, 6, 7], 34), ([0, 4, 5, 6, 7], 35)])
+def test_shared_plan_uses_only_selected_direction_states(tmp_path, directions, count):
+    modes = [0, 4, 5, 6, 7]
+    scan = CentralBosonAGPSequentialDisorderScan.from_pattern(
+        [0], [1., -3., 2., 0.], photon_sector_number=3, direction=directions,
+        swap_stors=modes[1:], cycles=CYCLES, ro_stors=modes)
+    runner = SequentialRunner(tmp_path, fail_on_call=1)
+    with pytest.raises(RuntimeError, match="stopped"):
+        scan.acquire(runner, "selected")
+    occupations = [tuple(o["occupations"]) for o in runner.calls[0]["overrides"]]
+    expected = set()
+    for state in product(range(4), repeat=5):
+        if sum(state) == 3:
+            for direction in directions:
+                if (direction == 0 and state[0] >= 2
+                        or direction != 0 and state[modes.index(direction)] >= 1):
+                    expected.add(state)
+    assert len(occupations) == len(set(occupations)) == count
+    assert set(occupations) == expected
+
+
+def test_shared_directions_reuse_jobs_at_each_w_and_reload_saved_scans(tmp_path):
+    scan = CentralBosonAGPSequentialDisorderScan.from_pattern(
+        [0, 30], [1., -3.], photon_sector_number=2, direction=MODES,
+        swap_stors=[4, 7], cycles=CYCLES, ro_stors=MODES, calibration=MATRICES)
+    runner = SequentialRunner(tmp_path)
+    path = scan.acquire(runner, "shared", batch_size=2, analyze_kwargs=dict(mu=10.))
+    assert path == scan.manifest_path
+    assert len(runner.calls) == 2 and runner.count == 12
+    for call in runner.calls:
+        occupations = [tuple(o["occupations"]) for o in call["overrides"]]
+        assert len(occupations) == len(set(occupations)) == 6
+        assert call["batch_size"] == 2
+    assert len(scan.children) == 2
+    assert scan.data["C1"].shape == (2, len(MODES), len(CYCLES))
+    assert scan.data["agp"].shape == (2, len(MODES), 1)
+    _, labels, masks, *_ = synthetic_job(calibration=MATRICES)
+    for part in scan.children:
+        assert len({id(job) for job in part.children}) == len(part.job_ids) == 6
+        assert part.data["p_mod"].shape == (6, len(CYCLES), len(MODES), 4)
+        np.testing.assert_array_equal(part.data["directions"], MODES)
+        np.testing.assert_array_equal(part.data["readout_steps"], [0, 1, 2])
+        np.testing.assert_allclose(part.data["multiparity_confusion_matrices"], MATRICES)
+        assert np.isnan(part.data["C2"][0]).all()
+        for step, direction in enumerate(MODES):
+            states = direction_sector(2, [4, 7], direction)
+            references = [legacy_reference(job, labels, masks, direction, True)
+                          for job in part.children if list(job.cfg.expt.occupations) in states]
+            reference = CentralBosonAGPExperiment.from_children(references, direction=direction)
+            expected = reference.analyze(mu=10.)
+            for key in ("C1", "C1_corrected", "C1_err", "agp", "agp_err"):
+                np.testing.assert_allclose(part.data[key][step], expected[key])
+    restored = CentralBosonAGPSequentialDisorderScan.from_manifest(path)
+    restored.analyze(mu=10.)
+    for key, value in scan.data.items():
+        np.testing.assert_allclose(restored.data[key], value)
