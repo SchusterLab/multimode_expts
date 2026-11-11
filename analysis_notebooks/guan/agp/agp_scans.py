@@ -35,7 +35,7 @@ BACKGROUND_US = 30.
 # `part_of`: a scan whose jobs are all in another scan of the folder (a subset).
 
 # %%
-list_scans(r"C:\experiments\261027AGPlowKerr")
+list_scans("261027AGPlowKerr")
 
 # %% [markdown]
 # ## One scan: settings, analysis, plots
@@ -57,3 +57,12 @@ for scan in scans.values():
     scan.analyze(mu=MU, background_start_us=BACKGROUND_US)
 display_scans(scans, mu=[10., 20.])
 display_scans(scans, mu=[10., 20.], yscale="log")
+
+
+
+# %% [markdown]
+# ## manual check new S5 scan
+
+
+# %%
+s5scan = load_scan("261105_S5_direction5")

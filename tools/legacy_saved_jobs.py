@@ -1,6 +1,6 @@
 # Moved 2026-10-06 (GitHub issue 5) from experiments/saved_jobs.py, without changes
 # except its import lines and the sidecar reader job_records (from
-# experiments/job_paths.py). The raw-file reader of the frozen converter
+# experiments/data_paths.py). The raw-file reader of the frozen converter
 # (tools/migrate_mbr_jobs.py, tools/convert_mbr_catalog.py); the canonical classes
 # load job files with from_h5file and read the timing from their derived_params
 # attribute. The deprecated classes reach it through
@@ -67,7 +67,7 @@ import numpy as np
 from slab import AttrDict
 
 from experiments.floquet_timing import TimingResolutionError, resolve_floquet_timing
-from experiments.job_paths import JOB_ID_RE, JobPathError, provenance_path, resolve_job_paths
+from experiments.data_paths import JOB_ID_RE, DataPathError, provenance_path, resolve_job_paths
 
 # Timing needs both of these: the couplings are 1/(4 * pi_frac * cycle_us), so
 # a cycle time without the pi fracs cannot produce them.
@@ -94,7 +94,7 @@ def job_records(required: bool = True) -> dict:
     if not required:
         try:
             path = provenance_path()
-        except JobPathError:
+        except DataPathError:
             return {}
     else:
         path = provenance_path()

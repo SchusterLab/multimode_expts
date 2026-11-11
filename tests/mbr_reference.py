@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from experiments.job_paths import resolve_job_paths
+from experiments.data_paths import resolve_job_paths
 from experiments.qsim.deprecated.saved_jobs import job_records
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.deprecated.saved_jobs import load_aggregate as _load_aggregate
@@ -178,7 +178,7 @@ def run_reference_analysis(spectrum, **overrides):
 def job_provenance():
     """-> {job_id: record} from the exported sidecar (spec section 3.2).
 
-    Delegates to :func:`experiments.job_paths.job_records`; kept as a name
+    Delegates to :func:`experiments.data_paths.job_records`; kept as a name
     because the golden test reads the version IDs out of it directly.
     """
     return job_records()

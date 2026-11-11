@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 
 from experiments.assembled_data import read_assembled_h5, read_manifest
-from experiments.job_paths import JOB_ID_RE, data_root
+from experiments.data_paths import JOB_ID_RE, locate
 from experiments.qsim.agp import (
     CentralBosonAGPDisorderScan,
     list_scans,
@@ -196,7 +196,7 @@ walk_fig = walk.display()
 
 # %%
 note_table = NOTE.read_text(encoding="utf-8").split("### Comparing with previous round")[-1]
-registry = {(data_root() / entry["manifest"]).resolve(): key for key, entry in registered_scans().items()}
+registry = {(locate(entry["manifest"])).resolve(): key for key, entry in registered_scans().items()}
 
 
 def h5_ok(path):

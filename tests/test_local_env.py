@@ -29,13 +29,13 @@ def _file(tmp_path, text, monkeypatch):
 
 
 def test_sets_unset_variables(tmp_path, monkeypatch):
-    _file(tmp_path, "MULTIMODE_DATA_ROOT=/Volumes/pippin/experiments\n", monkeypatch)
-    monkeypatch.delenv("MULTIMODE_DATA_ROOT", raising=False)
+    _file(tmp_path, "MULTIMODE_DATA_ROOTS=/Volumes/pippin/experiments\n", monkeypatch)
+    monkeypatch.delenv("MULTIMODE_DATA_ROOTS", raising=False)
 
     applied = local_env.load_env()
 
-    assert applied == {"MULTIMODE_DATA_ROOT": "/Volumes/pippin/experiments"}
-    assert os.environ["MULTIMODE_DATA_ROOT"] == "/Volumes/pippin/experiments"
+    assert applied == {"MULTIMODE_DATA_ROOTS": "/Volumes/pippin/experiments"}
+    assert os.environ["MULTIMODE_DATA_ROOTS"] == "/Volumes/pippin/experiments"
 
 
 def test_real_environment_wins(tmp_path, monkeypatch):

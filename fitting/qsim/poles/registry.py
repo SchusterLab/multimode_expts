@@ -17,7 +17,7 @@ class DataSet(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     label: str
-    #: Relative to ``data_root()``: an MBRSpectrumExperiment or
+    #: Below the data root (``experiments.data_paths``): an MBRSpectrumExperiment or
     #: MBRDisorderEnsembleExperiment manifest.
     manifest: str
     #: complete: all D occupations measured (integer pole weights); partial:
@@ -65,7 +65,7 @@ def data_set(label, path=REGISTRY):
     return next(entry for entry in load_registry(path) if entry.label == label)
 
 
-def manifest_path(data_set, root):
-    """-> the absolute manifest path under the data tree ``root``
-    (``experiments.job_paths.data_root()`` on a machine that has one)."""
-    return Path(root) / data_set.manifest
+def manifest_path(data_set):
+    """-> the manifest of ``data_set`` on this machine (``experiments.data_paths.locate``)."""
+    from experiments.data_paths import locate
+    return locate(data_set.manifest)

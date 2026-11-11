@@ -343,7 +343,7 @@ from what ran. Run headless: `pixi run pole-report --fitters A,B,E --size small`
 Kerr or "recorded", branches, legacy, excluded occupations, the model's Kerr), so that
 `experiments.qsim.pole_data.load_spectra` builds every spectrum from the entry alone
 (benchmarks 3 and 4: `fitting/qsim/poles/real_benchmarks.py`,
-`analysis_notebooks/guan/pole_finding/real_benchmarks.py`); manifest path relative to `data_root()`, label,
+`analysis_notebooks/guan/pole_finding/real_benchmarks.py`); manifest path below the data root (`experiments.data_paths`), label,
 complete or partial, disorder parameters, source log reference. guan converts jonginn's logs
 to manifests (with `tools/migrate_mbr_jobs.py`) and to these entries. The benchmark reads
 only the registry.

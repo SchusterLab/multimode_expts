@@ -45,7 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from experiments import assembled_data  # noqa: E402
-from experiments.job_paths import resolve_job_paths  # noqa: E402
+from experiments.data_paths import resolve_job_paths  # noqa: E402
 from experiments.qsim.agp import (  # noqa: E402
     CentralBosonAGPDisorderScan,
     CentralBosonAGPExperiment,

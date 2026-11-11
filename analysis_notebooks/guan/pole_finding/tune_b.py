@@ -26,7 +26,7 @@
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from theory.qsim.central_boson import fixed_n_hamiltonian
@@ -71,7 +71,7 @@ summary.round(2)
 MODEL_ERROR_MHz = 0.3e-3
 BRANCHES = {(2, 1, 0, 0, 0): 1, (2, 0, 1, 0, 0): 1, (1, 1, 0, 1, 0): 1, (1, 1, 0, 0, 1): 1,
             (1, 0, 1, 1, 0): 1, (1, 0, 1, 0, 1): 1}
-root = data_root() / "260526_qsim_darkmode/assembled_data"
+root = locate("260526_qsim_darkmode/assembled_data")
 spectra = {"august_N3": MBRSpectrumExperiment.from_manifest(root / "260924_163516_MBRSpectrumExperiment.yaml").analyze(
     phase_frame="manual_kerr", manual_kerr_MHz=-10.5e-3, cycle_branches=BRANCHES, spectrum_method="fft")}
 ensemble = MBRDisorderEnsembleExperiment.from_manifest(root / "260924_195547_MBRDisorderEnsembleExperiment.yaml")

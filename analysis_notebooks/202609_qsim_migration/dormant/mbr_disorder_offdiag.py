@@ -48,7 +48,7 @@ from tqdm.notebook import tqdm
 import experiments as meas
 from slab import AttrDict
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.deprecated.legacy_mbr import MBRPhaseCorrectionExperiment
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.deprecated.legacy_mbr import (
@@ -66,8 +66,8 @@ from experiments.qsim.deprecated import mbr_disorder_h5 as h5only
 # 1. Choose a dataset; its explicit job lists are in the manifest below.
 dataset_to_postproc =  'Sep10 K3.6 g29.2'           # Sep05 K3.6 g30'
 # The project subdirectory is part of the dataset; the root it sits under is
-# per-machine, so it comes from $MULTIMODE_DATA_ROOT or the repo-root .env.
-data_base_directory = data_root() / '260818_qsim_spectroscopy' / 'data'
+# per-machine, so it comes from $MULTIMODE_DATA_ROOTS or the repo-root .env.
+data_base_directory = locate('260818_qsim_spectroscopy') / 'data'
 
 load_shots = False  # FFT/MPM use means; shot checks read shots on demand.
 reload_data = False  # True rereads selected H5 arrays; no server requests.

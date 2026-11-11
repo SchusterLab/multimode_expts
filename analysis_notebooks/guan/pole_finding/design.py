@@ -28,7 +28,7 @@
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles.design import Design, design_summary
 from fitting.qsim.poles.diagnosis import row_noise
@@ -36,7 +36,7 @@ from fitting.qsim.poles.pole_fit import normalize_to_initial_return
 from fitting.qsim.poles.registry import data_set
 
 pd.set_option("display.width", 220)
-spectrum = load_spectra(data_set("august_disorder"), data_root())[0]
+spectrum = load_spectra(data_set("august_disorder"))[0]
 a = normalize_to_initial_return(spectrum.A)
 noise = float(np.median(row_noise(a, spectrum.dt_us, spectrum.levels_MHz, 4.)))
 measured = [spectrum.model_occupations.index(o) for o in spectrum.occupations]

@@ -50,7 +50,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import yaml
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 
 # %% [markdown]
@@ -60,7 +60,7 @@ from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 # r=19 has 11 of 20 jobs and was not converted.
 
 # %%
-diag_disorder_manifest = data_root() / "260818_qsim_spectroscopy" / "assembled_data" / "260924_195637_MBRDisorderEnsembleExperiment.yaml"
+diag_disorder_manifest = locate("260818_qsim_spectroscopy") / "assembled_data" / "260924_195637_MBRDisorderEnsembleExperiment.yaml"
 
 ensemble = MBRDisorderEnsembleExperiment.from_manifest(diag_disorder_manifest)
 print("realizations:", [record["realization"] for record in ensemble.realizations])
@@ -149,7 +149,7 @@ plt.show()
 # %%
 catalog = yaml.safe_load(Path("../datasets/mbr_datasets.yaml").read_text(encoding="utf-8"))
 sep10_entry = catalog["datasets"]["sep10_full_K3p6_g29p2"]
-sep10 = MBRDisorderEnsembleExperiment.from_manifest(data_root() / sep10_entry["manifest"])
+sep10 = MBRDisorderEnsembleExperiment.from_manifest(locate(sep10_entry["manifest"]))
 print("Sep10 realizations:", [record["realization"] for record in sep10.realizations])
 
 # %%

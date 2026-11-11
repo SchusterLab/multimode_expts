@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-10** (AGP display stages; 11-03: AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
+**Last updated: 2026-11-10** (data roots and scan HDF5s that analyze alone; AGP re-analysis of all scans and the slow load; AGP display stages; 11-03: AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,25 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Data roots; a scan analyzes from its one HDF5 (2026-11-10, guan with Claude; branch `theory`,
+  not committed).** Record: `docs/log/2026-11-10_data-roots-and-scan-h5.md`. All file lookup is
+  `experiments/data_paths.py` (`locate`, `resolve_job_paths`; `MULTIMODE_DATA_ROOTS` in `.env`,
+  several roots). The scan HDF5 now holds each W's analysis inputs; `load_scan(key)` reads only
+  that file (0.01 s against 6-15 s per small scan) and `analyze()` gives the same numbers as the
+  job files. `agp_table` (in `agp.py`) is the summary table; `agp_summary_20261110.py` only loads,
+  analyzes and draws. `tools/rewrite_scan_h5.py` writes a scan's HDF5 again from its jobs; the
+  old HDF5 moves to `<experiment>/assembled_data_old_<YYYYMMDD>`.
+
+- **AGP re-analysis of all nine scans; the load reads every job file (2026-11-10, guan with
+  Claude; branch `theory`, not committed).** Record: `docs/log/2026-11-10_agp-summary-and-load-time.md`.
+  Notebook `analysis_notebooks/guan/agp/agp_summary_20261110.py`; five new registry keys for the
+  11-05..07 scans; deck https://claude.ai/artifact/U3miLCq9jrxnrUJ4TSgjt8. `load_scan` opens
+  about 960 job files over SMB (about 0.5 s each, 8 min in all); the aggregate h5 loads in 0.5 s
+  but cannot be analyzed again. **Next (guan to decide):** self-contained aggregates (store the
+  `analyze` inputs, save again on pippin) or run on pippin; move the notebook's table and
+  summary plots into `experiments/qsim/agp.py`; confirm the Kerr set point of the 11-05..07 runs
+  (all record K = -27.13 kHz).
 
 - **AGP displays are one set of stages (2026-11-10, guan with Claude; branch `theory`).** Record:
   `docs/log/2026-11-10_agp-display-stages.md`. All four AGP classes (single and sequential,

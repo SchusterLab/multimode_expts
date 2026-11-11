@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_saved import saved_parameters
@@ -71,7 +71,7 @@ def fit_envelope(t, measured, theory):
 
 rows = []  # one per diagonal trace
 for name in DATA_SETS:
-    ensemble = MBRDisorderEnsembleExperiment.from_manifest(data_root() / CATALOG[name]["manifest"])
+    ensemble = MBRDisorderEnsembleExperiment.from_manifest(locate(CATALOG[name]["manifest"]))
     for record, part in zip(ensemble.realizations, ensemble.children):
         kerr_MHz = 1e-3 * float(record["self_kerr_kHz"])
         data = part.analyze(phase_frame="manual_kerr", manual_kerr_MHz=kerr_MHz)
@@ -121,7 +121,7 @@ CLOSED_PAIR_SETS = {name: CATALOG[name]["calibration_manifest"] for name in DATA
 fig, axes = plt.subplots(1, len(CLOSED_PAIR_SETS), figsize=(5 * len(CLOSED_PAIR_SETS), 4),
                          constrained_layout=True, sharey=True)
 for ax, (name, manifest) in zip(axes, CLOSED_PAIR_SETS.items()):
-    calibration = MBRCalibrationSetExperiment.from_manifest(data_root() / manifest)
+    calibration = MBRCalibrationSetExperiment.from_manifest(locate(manifest))
     cycle_us = saved_parameters(calibration.children).hardware.floquet_cycle_us
     for child in calibration.children:
         data = child.analyze()

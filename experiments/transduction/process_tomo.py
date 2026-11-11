@@ -15,7 +15,6 @@ outputs (``measure_parity=True``), decoder K0 only; Ic is then conditional.
 """
 
 import datetime
-import glob
 import json
 import os
 from dataclasses import dataclass, field
@@ -26,6 +25,7 @@ import qutip as qt
 from scipy.optimize import minimize_scalar
 
 from experiments.assembled_data import code_version, new_stem
+from experiments.data_paths import resolve_job_path
 from experiments.transduction.channel_model import (
     apply_logical_z, coherent_information, entanglement_fidelity, even_survival,
     ideal_channel_output, logical_ket, process_operators,
@@ -35,7 +35,6 @@ from experiments.transduction.sequences import PROC_INPUTS, channel_prep
 from fitting.wigner import WignerAnalysis, parity_from_counts
 
 DIM = 4                       # Fock {0, 1, 2, 3}: the channel output space
-DATA_ROOTS = (r'C:\experiments',)
 _BRANCH = {1: 'full', 2: 'even'}
 
 
@@ -53,11 +52,11 @@ class ChannelSet:
     expts: dict = field(default_factory=dict, repr=False)
     meta: dict = field(default_factory=dict)
 
-    def load(self, roots=DATA_ROOTS):
+    def load(self):
         """Load the missing experiments from the HDF5 files of ``jobs``."""
         for L, job in self.jobs.items():
             if L not in self.expts:
-                self.expts[L] = load_wigner(job, roots)
+                self.expts[L] = load_wigner(job)
         return self
 
     @property
@@ -65,20 +64,15 @@ class ChannelSet:
         return all(L in self.expts or L in self.jobs for L in PROC_INPUTS)
 
 
-def find_wigner_h5(job_id, roots=DATA_ROOTS):
-    """Path of the Wigner HDF5 file of ``job_id`` under any experiment folder."""
-    hits = []
-    for root in roots:
-        hits += glob.glob(os.path.join(root, '*', 'data', f'{job_id}_WignerTomography1ModeExperiment.h5'))
-    if len(hits) != 1:
-        raise FileNotFoundError(f'{job_id}: expected one Wigner file, found {hits}')
-    return hits[0]
+def find_wigner_h5(job_id):
+    """Path of the Wigner HDF5 file of ``job_id`` (``experiments.data_paths``)."""
+    return str(resolve_job_path(job_id))
 
 
-def load_wigner(job_or_path, roots=DATA_ROOTS):
+def load_wigner(job_or_path):
     """WignerTomography1ModeExperiment from a job ID or an HDF5 path, analyzed."""
     from experiments.qubit_cavity.single_mode_wigner_tomography import WignerTomography1ModeExperiment
-    path = job_or_path if os.path.exists(str(job_or_path)) else find_wigner_h5(job_or_path, roots)
+    path = job_or_path if os.path.exists(str(job_or_path)) else find_wigner_h5(job_or_path)
     expt = WignerTomography1ModeExperiment.from_h5file(path)
     expt.man_mode_idx = expt.cfg.expt.get('man_mode_no', 1) - 1   # analyze() needs it
     expt.analyze()

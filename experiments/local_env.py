@@ -2,12 +2,12 @@
 
 Why a file and not just the shell
 ---------------------------------
-The path-resolving modules here (``job_paths``, ``floquet_timing``) each read a
+The path-resolving modules here (``data_paths``, ``floquet_timing``) each read a
 ``MULTIMODE_*`` variable to find data that lives somewhere different on every
 machine: ``C:/experiments`` on the acquisition workstation, an SMB mount on a
 laptop. Leaving that to the shell means every Jupyter kernel, pytest run and
 editor-launched process has to inherit an export that only one interactive
-shell had -- which they routinely do not, and the symptom is a JobPathError
+shell had -- which they routinely do not, and the symptom is a DataPathError
 pointing at a default nobody set.
 
 One file at the repo root fixes that for every entry point at once, because it

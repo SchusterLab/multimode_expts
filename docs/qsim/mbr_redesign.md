@@ -241,7 +241,7 @@ still need. Exception: their runner calls move in step 1.
   prod data tree with `tools/migrate_mbr_jobs.py` (`converted_data/` + `assembled_data/`):
   July N=1, N=2, N=2 supplement, N=3 and August N=3 under `260526_qsim_darkmode`, the
   August quickplot under `260814_qsim_encspec`. `analysis_notebooks/202609_qsim_migration/mbr.py`
-  loads them by manifest (`data_root() / ...`); `mbr_replot` and the N=3 parts of
+  loads them by manifest (`locate(...)`); `mbr_replot` and the N=3 parts of
   `mbr_n3_reprocess` / `mbr_saved_reanalysis` use the new classes. Old and new paths were
   compared on the same raw files: spectra, returns and Matrix Pencil frequencies are
   identical. Still old-class, step 7: the disorder realizations (`load_disorder_*`), the

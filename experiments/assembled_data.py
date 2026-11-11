@@ -14,7 +14,9 @@ files to ``<experiment root>/assembled_data/``:
 
 Raw file paths are stored relative to the manifest's directory when they are
 under the same experiment root, so a manifest still resolves when the data is
-mounted somewhere else.
+mounted somewhere else. A listed file that is not beside the manifest (its
+experiment folder is in another data root) is looked up in the data roots
+(``experiments.data_paths.locate``).
 
 Infrastructure, not physics: nothing here knows what is being measured.
 """
@@ -30,6 +32,7 @@ import numpy as np
 import yaml
 
 from experiments.characterization_runner import json_plain
+from experiments.data_paths import DataPathError, locate
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -110,18 +113,26 @@ def write_manifest(path, manifest, raw_files):
     return path
 
 
+def _listed_file(entry, directory):
+    """-> a file a manifest lists: beside the manifest, else in the data roots, else as written."""
+    path = Path(entry) if Path(entry).is_absolute() else (directory / entry).resolve()
+    if path.exists():
+        return path
+    try:
+        return locate(path)
+    except DataPathError:
+        return path
+
+
 def read_manifest(path):
     """-> the manifest as a dict, with ``raw_files`` resolved to absolute paths."""
     path = Path(path)
     with open(path, encoding="utf-8") as handle:
         manifest = yaml.safe_load(handle)
-    manifest["raw_files"] = [
-        f if Path(f).is_absolute() else (path.parent / f).resolve()
-        for f in manifest.get("raw_files", [])
-    ]
+    manifest["raw_files"] = [_listed_file(f, path.parent) for f in manifest.get("raw_files", [])]
     calibration = manifest.get("calibration_manifest")
-    if calibration and not Path(calibration).is_absolute():
-        manifest["calibration_manifest"] = (path.parent / calibration).resolve()
+    if calibration:
+        manifest["calibration_manifest"] = _listed_file(calibration, path.parent)
     return manifest
 
 

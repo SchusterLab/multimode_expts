@@ -4,10 +4,10 @@ import warnings
 
 import numpy as np
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.agp import CentralBosonAGPDisorderScan, load_scan
 
-ROOT = data_root() / "agp_k44_first_scan"
+ROOT = locate("agp_k44_first_scan")
 VAULT = Path(r"G:\Shared drives\SLab\Multimode\Lab\guan\AGP\labbook_figures")
 
 

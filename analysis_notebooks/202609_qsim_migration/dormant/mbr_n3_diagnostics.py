@@ -25,7 +25,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.deprecated import mbr_n3_diagnostics as n3_diagnostics
 
@@ -39,7 +39,7 @@ from experiments.qsim.deprecated import mbr_n3_diagnostics as n3_diagnostics
 # %%
 # Dataset choice: the complete July N=3 sector (analysis_notebooks/datasets/mbr_datasets.yaml
 # `july_N3`), converted to the new layout.
-july_n3_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
+july_n3_manifest = locate("260526_qsim_darkmode") / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml"
 
 spectroscopy_expt = MBRSpectrumExperiment.from_manifest(july_n3_manifest)
 calibration_expt = spectroscopy_expt.calibration

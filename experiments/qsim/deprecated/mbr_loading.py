@@ -31,7 +31,7 @@ knowing at the call site:
 The `hdf5_path_generator`/`path_to_experiment`/`load_dark_experiments` trio
 that used to live here is gone: it globbed a hard-coded `C:\\experiments` and
 loaded children without their Floquet timing.
-:func:`experiments.job_paths.resolve_job_paths` does the path resolution
+:func:`experiments.data_paths.resolve_job_paths` does the path resolution
 properly, and works off the acquisition workstation. The dormant notebooks
 under `analysis_notebooks/202609_qsim_migration/dormant/` keep their own inline
 copies, so they are unaffected.

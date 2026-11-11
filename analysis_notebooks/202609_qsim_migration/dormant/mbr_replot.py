@@ -25,7 +25,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from experiments.qsim.deprecated import mbr_replot as replot
 
@@ -58,14 +58,14 @@ replot_config = replot.ReplotConfig(
 # Dataset choice: one saved spectrum per photon number (July 2026 sets,
 # analysis_notebooks/datasets/mbr_datasets.yaml), with its calibration set linked.
 replot_manifests = {
-    1: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163501_MBRSpectrumExperiment.yaml",
-    2: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163502_MBRSpectrumExperiment.yaml",
-    3: data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml",
+    1: locate("260526_qsim_darkmode") / "assembled_data" / "260924_163501_MBRSpectrumExperiment.yaml",
+    2: locate("260526_qsim_darkmode") / "assembled_data" / "260924_163502_MBRSpectrumExperiment.yaml",
+    3: locate("260526_qsim_darkmode") / "assembled_data" / "260924_163508_MBRSpectrumExperiment.yaml",
 }
 
 # N=2 has one occupation on a different time grid, so only its FFT rows can
 # join the report spectrum -- not its time traces.
-replot_N2_supplement_manifest = data_root() / "260526_qsim_darkmode" / "assembled_data" / "260924_163503_MBRSpectrumExperiment.yaml"
+replot_N2_supplement_manifest = locate("260526_qsim_darkmode") / "assembled_data" / "260924_163503_MBRSpectrumExperiment.yaml"
 replot_N2_supplement_occupation = (0, 0, 0, 0, 2)
 
 # %%

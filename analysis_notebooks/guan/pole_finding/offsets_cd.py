@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles import joint_pencil, joint_refined, per_row_clustered, per_row_reconciled
 from fitting.qsim.poles.bench_plots import FITTER_COLORS, plot_resolution
@@ -90,8 +90,8 @@ plot_resolution(resolution_curve(synthetic, august.bin_MHz), unit="bins");
 # against its multiplicity.
 
 # %%
-n3 = load_spectra(data_set("august_N3"), data_root())[0]
-disorder = load_spectra(data_set("august_disorder"), data_root())
+n3 = load_spectra(data_set("august_N3"))[0]
+disorder = load_spectra(data_set("august_disorder"))
 fits = {(s.label, name): fit(s.A, s.time_us, settings) for s in [n3, *disorder] for name, (fit, settings) in FITTERS.items()}
 
 

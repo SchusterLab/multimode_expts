@@ -36,6 +36,10 @@ class CentralBosonAGPSequentialExperiment(CentralBosonAGPExperiment):
     """
 
     child_class = FockPopulationSequentialReadoutExperiment
+    POPULATION_KEYS = ("occupations", "directions", "ro_stors", "readout_steps", "cycles",
+                       "swap_stors", "detunings", "time_us", "shot_counts", "p_mod", "n_mean",
+                       "n2_mean", "n_err", "n2_err", "p_mod_corrected", "n_mean_corrected",
+                       "n2_mean_corrected", "multiparity_confusion_matrices")
 
     def __init__(self, photon_sector_number, direction, swap_stors, cycles, detunings,
                  ro_stor=None, disorder_khz=None, calibration=None, notes="", ro_stors=None):

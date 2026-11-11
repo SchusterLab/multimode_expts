@@ -33,12 +33,12 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from fitting.qsim.poles.fixed_set import load_fits, load_set, set_folder
 from fitting.qsim.poles.gap_score import gauge_shift, pooled_small_gap_fraction, score_gaps
 
 pd.set_option("display.width", 250, "display.max_columns", 40)
-FOLDER = set_folder(data_root())
+FOLDER = set_folder()
 FITTERS = ("C", "F", "T3", "T3F", "T3oracle")
 cases = load_set(FOLDER / "set.h5")
 fits = {name: load_fits(FOLDER / f"fits_{name}.h5", cases) for name in FITTERS}

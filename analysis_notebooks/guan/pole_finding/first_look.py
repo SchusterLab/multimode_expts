@@ -32,7 +32,7 @@
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_disorder_ensemble import DEFAULT_MATRIX_PENCIL, MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from fitting.qsim.matrix_pencil import settings_from_options
@@ -59,24 +59,23 @@ AUG_BRANCHES = {(2, 1, 0, 0, 0): 1, (2, 0, 1, 0, 0): 1, (1, 1, 0, 1, 0): 1, (1, 
 # ## The spectra, in their notebooks' frames
 
 # %%
-root = data_root()
 spectra = {}  # label -> (analyzed data, model Kerr in MHz)
 july = MBRSpectrumExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/261006_151633_MBRSpectrumExperiment.yaml")
+    locate("260526_qsim_darkmode/assembled_data/261006_151633_MBRSpectrumExperiment.yaml"))
 spectra["july_N3"] = july.analyze(phase_frame="manual_kerr", manual_kerr_MHz=-19.756e-3, cycle_branches={},
                                   spectrum_method="fft")
 august = MBRSpectrumExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml")
+    locate("260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml"))
 spectra["august_N3"] = august.analyze(phase_frame="manual_kerr", manual_kerr_MHz=-10.5e-3,
                                       cycle_branches=AUG_BRANCHES, spectrum_method="fft")
 august_disorder = MBRDisorderEnsembleExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/260924_195547_MBRDisorderEnsembleExperiment.yaml")
+    locate("260526_qsim_darkmode/assembled_data/260924_195547_MBRDisorderEnsembleExperiment.yaml"))
 for record, part in zip(august_disorder.realizations, august_disorder.children):
     spectra[f"august_disorder/{record['realization']}"] = part.analyze(
         phase_frame="manual_kerr", manual_kerr_MHz=1e-3 * float(record["self_kerr_kHz"]),
         cycle_branches={o: AUG_BRANCHES.get(o, 0) for o in part.occupations}, spectrum_method="fft")
 disorder_71 = MBRDisorderEnsembleExperiment.from_manifest(
-    root / "260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml")
+    locate("260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml"))
 for record, part in zip(disorder_71.realizations, disorder_71.children):
     kept = [c for c in part.children if c.initial_occupation != (0, 3, 0, 0, 0)]
     part = MBRSpectrumExperiment.from_children(kept, calibration=part.calibration, notes=part.notes)

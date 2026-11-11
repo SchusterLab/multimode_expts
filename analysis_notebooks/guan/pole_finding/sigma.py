@@ -25,7 +25,7 @@
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 from theory.qsim.central_boson import fixed_n_hamiltonian
@@ -35,13 +35,12 @@ from fitting.qsim.poles.pole_fit import normalize_to_initial_return
 pd.set_option("display.width", 220)
 BRANCHES = {(2, 1, 0, 0, 0): 1, (2, 0, 1, 0, 0): 1, (1, 1, 0, 1, 0): 1, (1, 1, 0, 0, 1): 1,
             (1, 0, 1, 1, 0): 1, (1, 0, 1, 0, 1): 1}
-root = data_root()
 august = MBRSpectrumExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml")
+    locate("260526_qsim_darkmode/assembled_data/260924_163516_MBRSpectrumExperiment.yaml"))
 august_disorder = MBRDisorderEnsembleExperiment.from_manifest(
-    root / "260526_qsim_darkmode/assembled_data/260924_195547_MBRDisorderEnsembleExperiment.yaml")
+    locate("260526_qsim_darkmode/assembled_data/260924_195547_MBRDisorderEnsembleExperiment.yaml"))
 disorder_71 = MBRDisorderEnsembleExperiment.from_manifest(
-    root / "260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml")
+    locate("260818_qsim_spectroscopy/assembled_data/260924_195637_MBRDisorderEnsembleExperiment.yaml"))
 
 # %% [markdown]
 # ## Floor: the Stark-calibration slope errors

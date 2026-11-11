@@ -91,7 +91,7 @@ from slab import AttrDict  # noqa: E402
 from slab.experiment import NpEncoder  # noqa: E402
 
 from experiments import assembled_data  # noqa: E402
-from experiments.job_paths import resolve_job_paths  # noqa: E402
+from experiments.data_paths import resolve_job_paths  # noqa: E402
 from experiments.qsim.mbr_calibration_set import MBRCalibrationSetExperiment  # noqa: E402
 from experiments.qsim.mbr_ham_tomo import MBRHamTomoExperiment  # noqa: E402
 from experiments.qsim.mbr_ortho_column import MBROrthoColumnExperiment  # noqa: E402

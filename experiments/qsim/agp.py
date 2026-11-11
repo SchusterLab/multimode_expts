@@ -11,9 +11,12 @@
   Only the C_k(W, t) maps, the AGP (W, mu) maps and their axes.
 
 Each assembled layer writes a manifest YAML (the files of the layer below) and
-a small HDF5 with only its own arrays (``AssembledExperiment.save``). Load an
-HDF5 alone with ``from_h5file`` to look at it; ``from_manifest`` re-assembles
-from the layer below, which ``analyze()`` and the theory need.
+a small HDF5 (``AssembledExperiment.save``). ``from_manifest`` re-assembles from
+the layer below. The scan HDF5 also holds what ``analyze()`` and the theory read
+from the jobs (``ANALYSIS_INPUTS``: the stacked populations, the recorded
+couplings, Kerr and calibration shots), so ``from_h5file`` gives a scan that
+analyzes without opening the job files (``load_scan`` does this). Scan files saved
+before 2026-11-10 have only the arrays; ``rewrite_h5`` saves them again.
 
 analyze(mu=...) takes cutoffs in kHz (one or many; default g L/D). The AGP is
 the kernel integral of the measured C_1 over its window (``fitting.qsim.agp``),
@@ -22,9 +25,11 @@ compensation; no fit. The theory (``theory.qsim``) is the closed system at the
 recorded couplings, detunings and Kerr: C_1(t), the AGP of the same window, and
 the infinite-time AGP. It is for comparison only and never changes a measured value.
 """
+from datetime import datetime
 from itertools import product
 from math import comb
 import json
+import shutil
 from pathlib import Path
 import warnings
 
@@ -38,11 +43,14 @@ import yaml
 from experiments.assembled_data import (
     ASSEMBLED_DIR,
     AssembledExperiment,
+    code_version,
     experiment_root,
     named_stem,
+    read_assembled_h5,
     read_manifest,
+    write_assembled_h5,
 )
-from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
+from experiments.data_paths import JOB_ID_RE, DataPathError, locate
 from experiments.qsim.agp_display import (
     AGP_LABEL,
     AGPDisplayMixin,
@@ -106,19 +114,17 @@ def rms_khz(detunings):
 def calibration_shots(calibration):
     """-> the shots per prepared state of a calibration record's file, or None.
 
-    The recorded path is re-rooted onto the local data root when it does not
-    exist here (``experiments.job_paths``). None when the record names no
-    file, or the file is not found; the AGP errors are then shot-only.
+    The recorded path is looked up in the data roots (``experiments.data_paths``).
+    None when the record names no file, or the file is not found; the AGP errors
+    are then shot-only.
     """
     fname = (calibration or {}).get("fname")
     if not fname:
         return None
-    path = Path(fname)
-    if not path.is_file():
-        try:
-            path = _reroot(str(fname), data_root()) or path
-        except JobPathError:
-            return None
+    try:
+        path = locate(fname)
+    except DataPathError:
+        return None
     if not path.is_file():
         return None
     with h5py.File(path, "r") as handle:
@@ -167,7 +173,19 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
     ``agp_theory_window`` (the same kernel and window as the data),
     ``spectrum_theory`` and ``theory_kerr_mhz``. The HDF5 attribute
     ``analysis`` holds the settings.
+
+    Without jobs, a W analyzes from ``frozen_inputs`` (``analysis_inputs()`` of
+    the same W when its jobs were loaded; the scan HDF5 keeps them).
     """
+
+    # The keys of ``data`` that hold the stacked populations (``_collect_populations``).
+    POPULATION_KEYS = ("occupations", "ro_stor", "cycles", "swap_stors", "detunings", "time_us",
+                       "shot_counts", "p_mod", "n_mean", "n2_mean", "n_err", "n2_err",
+                       "p_mod_corrected", "n_mean_corrected", "n2_mean_corrected",
+                       "confusion_matrix", "direction")
+    # What analyze() reads from the jobs, without the jobs: populations and these.
+    RECORDED_KEYS = ("recorded_couplings_mhz", "recorded_kerr_mhz", "calibration_shots")
+    frozen_inputs = None
 
     def __init__(self, photon_sector_number, direction, swap_stors, cycles, detunings,
                  ro_stor=None, disorder_khz=None, calibration=None, notes=""):
@@ -216,6 +234,8 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
 
     def recorded_couplings_mhz(self):
         """-> the recorded M1-storage couplings of ``swap_stors`` (MHz), or None."""
+        if not self.children:
+            return self._frozen("recorded_couplings_mhz")
         params = self.children[0].recorded_derived_params() or {}
         if "couplings_MHz" not in params:
             return None
@@ -227,6 +247,9 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
 
     def recorded_kerr_mhz(self):
         """-> the M1 Kerr of the jobs' device config (MHz), or None."""
+        if not self.children:
+            kerr = self._frozen("recorded_kerr_mhz")
+            return None if kerr is None else float(kerr)
         try:
             return float(np.asarray(self.children[0].cfg.device.manipulate.kerr).reshape(-1)[0])
         except (AttributeError, KeyError, IndexError, TypeError):
@@ -293,9 +316,13 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
 
         Enough for ``display_populations`` and ``display_correlations``. -> data.
         """
-        self._collect_populations(**kwargs)
+        if self.children or self.frozen_inputs is None:
+            self._collect_populations(**kwargs)
+        else:
+            self.data = AttrDict({key: np.array(value) for key, value in self.frozen_inputs.items()
+                                  if key in self.POPULATION_KEYS})
         corrected = "p_mod_corrected" in self.data
-        shots = calibration_shots(self.calibration) if corrected else None
+        shots = self._calibration_shots() if corrected else None
         if corrected and shots is None:
             warnings.warn("Calibration file not found: the AGP errors are shot-only.",
                           stacklevel=3)
@@ -307,6 +334,40 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
                          sector_dimension=np.asarray(sector_dimension(
                              self.photon_sector_number, 1 + len(self.swap_stors))))
         return self.data
+
+    def _frozen(self, key):
+        """-> a recorded value of ``frozen_inputs``, None when absent or not finite."""
+        if self.frozen_inputs is None:
+            raise ValueError(f"{type(self).__name__} has no jobs and no saved inputs")
+        value = self.frozen_inputs.get(key)
+        if value is None or not np.all(np.isfinite(value)):
+            return None
+        return np.asarray(value, dtype=float)
+
+    def _calibration_shots(self):
+        if not self.children:
+            shots = self._frozen("calibration_shots")
+            return None if shots is None or shots < 1 else int(shots)
+        return calibration_shots(self.calibration)
+
+    def analysis_inputs(self):
+        """-> what analyze() reads from the jobs: the populations in ``data`` and ``RECORDED_KEYS``.
+
+        Missing recorded values are NaN, so the scan can stack them. Needs
+        ``analyze_correlations()`` (or ``analyze()``) first.
+        """
+        if "p_mod" not in self.data:
+            raise ValueError("run analyze_correlations() first")
+        inputs = {key: np.asarray(value) for key, value in self.data.items()
+                  if key in self.POPULATION_KEYS}
+        couplings, kerr = self.recorded_couplings_mhz(), self.recorded_kerr_mhz()
+        shots = self._calibration_shots() if "p_mod_corrected" in self.data else None
+        inputs.update(
+            recorded_couplings_mhz=np.full(len(self.swap_stors), np.nan) if couplings is None
+            else np.asarray(couplings, dtype=float),
+            recorded_kerr_mhz=np.asarray(np.nan if kerr is None else kerr),
+            calibration_shots=np.asarray(np.nan if shots is None else shots))
+        return inputs
 
     # -- the analysis steps; the sequential class changes only the first four --
 
@@ -464,11 +525,15 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
     ``spectrum_theory`` (W, f), and ``direction``. The HDF5 attribute ``analysis``
     holds the settings. Displays: ``display()`` and its stages (``agp_display``),
     and ``display_agp``, the AGP against W.
+
+    The HDF5 also holds each W's ``analysis_inputs()``, stacked over W, as
+    ``inputs_<key>``, and the attributes ``parameters`` and ``part_job_ids``:
+    ``from_h5file`` makes parts from them that ``analyze()`` without the jobs.
     """
 
     child_class = CentralBosonAGPExperiment
     HAS_W_AXIS = True
-    from_h5file = classmethod(assembled_from_h5file)
+    INPUT_PREFIX = "inputs_"
     SHARED = ("photon_sector_number", "direction", "ro_stor", "swap_stors", "cycles")
     AGP_KEYS = ("agp", "agp_err", "agp_t1", "agp_t1_err", "agp_theory", "agp_theory_window")
     BACKGROUND_KEYS = ("agp_connected", "agp_connected_err", "background_amplitude",
@@ -627,7 +692,7 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
             data["time_us"] = np.asarray(parts[0]["time_us"])
         if "direction" in parts[0]:
             data["direction"] = np.asarray(parts[0]["direction"])
-        keys = ["C1", "C2", "C1_err", "C2_err", "C1_theory"]
+        keys = ["C1", "C2", "C1_err", "C2_err", "C1_theory", "coupling_mhz"]
         if all("C1_corrected" in part for part in parts):
             keys += ["C1_corrected", "C2_corrected"]
         for axis, curves in (("frequency_khz", self.SPECTRUM_KEYS),
@@ -766,13 +831,85 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
 
     # -- persistence ------------------------------------------------------
 
+    @classmethod
+    def from_h5file(cls, path):
+        """-> the scan from its HDF5 alone: one file, no job files.
+
+        With the analysis inputs (saved since 2026-11-10), the parts are made
+        from them and ``analyze()`` works with any settings; ``data`` holds the
+        curves of the saved analysis. An older file gives the saved arrays only
+        (``display()`` of what was saved); ``rewrite_h5`` saves it again.
+        """
+        arrays, attrs = read_assembled_h5(path)
+        inputs = {key[len(cls.INPUT_PREFIX):]: value for key, value in arrays.items()
+                  if key.startswith(cls.INPUT_PREFIX)}
+        if not inputs or "parameters" not in attrs:
+            return assembled_from_h5file(cls, path)
+        parameters = json.loads(attrs["parameters"])
+        job_ids = json.loads(attrs.get("part_job_ids", "[]"))
+        shared = {("direction" if name == "directions" else name): parameters[name]
+                  for name in cls.SHARED}
+        parts = []
+        for index, strength in enumerate(parameters["disorder_khz"]):
+            part = cls.child_class(detunings=np.asarray(inputs["detunings"][index]).tolist(),
+                                   disorder_khz=strength, **shared)
+            part.frozen_inputs = {key: value[index] for key, value in inputs.items()}
+            part.job_ids = list(job_ids[index]) if index < len(job_ids) else []
+            parts.append(part)
+        scan = cls(parts, notes=attrs.get("notes", ""))
+        scan.job_ids = [job for ids in job_ids for job in ids]
+        scan.data = AttrDict({key: value for key, value in arrays.items()
+                              if not key.startswith(cls.INPUT_PREFIX)})
+        scan.analysis = json.loads(attrs["analysis"]) if "analysis" in attrs else {}
+        scan.fname = str(path)
+        scan.manifest_path = Path(path).with_name(attrs["manifest"]) if "manifest" in attrs else None
+        return scan
+
+    def rewrite_h5(self, retired_dir=None):
+        """Write the HDF5 of this saved scan again, with the analysis inputs. -> its path.
+
+        For scans saved before the inputs were kept: ``from_manifest`` (reads
+        every job file once), ``analyze(...)``, ``rewrite_h5()``. The old HDF5 is
+        not deleted: it moves to ``retired_dir`` (default
+        ``<experiment>/assembled_data_old_<YYYYMMDD>``, beside ``assembled_data``),
+        and a new one of the same name takes its place. A file of that name in
+        ``retired_dir`` is never overwritten. The manifest and the parts' files are
+        not touched.
+        """
+        if self.manifest_path is None:
+            raise ValueError("not saved: use save(name)")
+        if not all(part.children for part in self.children):
+            raise ValueError("rewrite_h5 needs the jobs: load with from_manifest")
+        if not self.data:
+            self.analyze()
+        manifest = read_manifest(self.manifest_path)
+        path = Path(self.manifest_path).with_name(manifest["assembled_h5"])
+        if retired_dir is None:
+            retired_dir = path.parent.with_name(
+                f"{ASSEMBLED_DIR}_old_{datetime.now().strftime('%Y%m%d')}")
+        retired = Path(retired_dir) / path.name
+        if path.exists() and retired.exists():
+            raise FileExistsError(f"{retired} exists; give another retired_dir")
+        new = path.with_name(path.name + ".new")
+        write_assembled_h5(new, self.assembled_arrays(), {
+            "class": type(self).__name__, "manifest": Path(self.manifest_path).name,
+            "code_version": code_version(), **self.assembled_attrs()})
+        if path.exists():
+            retired.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(path, retired)
+        new.rename(path)
+        return path
+
     def save(self, name, directory=None, notes=None):
         """Save the parts that are not saved yet, then this scan. -> the manifest path.
 
         The scan is ``CentralBosonAGPDisorderScan_<name>``, a part
         ``CentralBosonAGPExperiment_<name>_W<W>kHz`` (``p`` for a decimal
-        point). All names are checked before anything is written.
+        point). All names are checked before anything is written. A scan from
+        ``from_h5file`` has no jobs and cannot be saved under a new name.
         """
+        if not all(part.children or part.manifest_path for part in self.children):
+            raise ValueError("parts without jobs cannot be saved; load with from_manifest")
         if directory is None:
             directory = experiment_root(self.children[0].children[0].fname) / ASSEMBLED_DIR
         self._check_names(name, directory)
@@ -798,11 +935,18 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
                     **{name: getattr(first, name) for name in self.SHARED})
 
     def assembled_arrays(self):
-        return dict(self.data)
+        """The stacked curves, and each W's analysis inputs as ``inputs_<key>`` (W, ...)."""
+        arrays = dict(self.data)
+        per_part = [part.analysis_inputs() for part in self.children]
+        for key in per_part[0]:
+            if all(key in inputs for inputs in per_part):
+                arrays[self.INPUT_PREFIX + key] = np.stack([inputs[key] for inputs in per_part])
+        return arrays
 
     def assembled_attrs(self):
-        """The analysis settings of the saved curves (cutoffs, window, background, T1, Kerr)."""
-        return dict(analysis=getattr(self, "analysis", {}))
+        """The analysis settings of the saved curves, the parameters and each W's job IDs."""
+        return dict(analysis=getattr(self, "analysis", {}), parameters=self.manifest_parameters(),
+                    part_job_ids=[list(part.job_ids) for part in self.children], notes=self.notes)
 
 
 ########################################################################
@@ -830,20 +974,6 @@ def scan_stem(path):
     return stem.replace("_" + SCAN_CLASS, "")
 
 
-def local_path(path):
-    """-> ``path`` on this machine: as given when it exists, else re-rooted onto the data root.
-
-    So a path copied on the measurement PC (``C:\\experiments\\...``) works off it.
-    """
-    given = Path(path)
-    if given.exists():
-        return given
-    rerooted = _reroot(str(path), data_root())
-    if rerooted is None or not rerooted.exists():
-        raise FileNotFoundError(f"{path} (data root {data_root()})")
-    return rerooted
-
-
 def registered_scans():
     """-> {key: entry} of ``analysis_notebooks/datasets/agp_scans.yaml``."""
     with open(SCAN_REGISTRY, encoding="utf-8") as handle:
@@ -859,12 +989,13 @@ def list_scans(folder):
     """-> a table (pandas DataFrame) of the disorder-scan manifests in an experiment folder.
 
     Reads only the manifests, so it is fast. ``folder`` is the experiment folder
-    or its ``assembled_data``. ``part_of`` names a scan in the same folder
-    whose jobs include all of this one's: then this one is a subset.
+    or its ``assembled_data``, below the data root or a path from any machine
+    (``experiments.data_paths.locate``). ``part_of`` names a scan in the same
+    folder whose jobs include all of this one's: then this one is a subset.
     """
     import pandas as pd
 
-    folder = local_path(folder)
+    folder = locate(folder)
     if (folder / "assembled_data").is_dir():
         folder = folder / "assembled_data"
     rows, jobs = [], {}
@@ -888,24 +1019,97 @@ def list_scans(folder):
     return pd.DataFrame(rows)
 
 
-def load_scan(source):
-    """-> a ``CentralBosonAGPDisorderScan`` from a registry key or a manifest path (loaded, not analyzed).
-
-    A path may be one from the measurement PC (``local_path``).
-    """
+def scan_manifest(source):
+    """-> the manifest of a registry key, or of a manifest path from any machine, on this one."""
     entries = registered_scans()
     if isinstance(source, str) and source in entries:
-        path = data_root() / entries[source]["manifest"]
-    else:
-        path = local_path(source)
+        return locate(entries[source]["manifest"])
+    return locate(source)
+
+
+def load_scan(source, jobs=False):
+    """-> a ``CentralBosonAGPDisorderScan`` from a registry key or a manifest path.
+
+    From the scan HDF5 alone when it holds the analysis inputs (one small file;
+    ``analyze()`` works): ``data`` has the saved analysis. Else, or with
+    ``jobs=True``, from the manifest: every job file is read (minutes over SMB),
+    and ``data`` is empty until ``analyze()``.
+    """
+    path = scan_manifest(source)
+    if not jobs:
+        h5_path = path.with_suffix(".h5")
+        if h5_path.is_file():
+            scan = CentralBosonAGPDisorderScan.from_h5file(h5_path)
+            if scan.children:
+                return scan
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Calibration file not found")
         return CentralBosonAGPDisorderScan.from_manifest(path)
 
 
-def load_scans(*keys):
-    """-> {key: scan} for registry keys (all of them when none is given)."""
-    return {key: load_scan(key) for key in (keys or registered_scans())}
+def load_scans(*keys, jobs=False):
+    """-> {key: scan} for registry keys (all of them when none is given); see ``load_scan``."""
+    return {key: load_scan(key, jobs=jobs) for key in (keys or registered_scans())}
+
+
+# Lab book Q5: the part of the decaying-DC term of C_1 left after the background subtraction.
+DC_SYSTEMATIC = 0.13
+
+
+def agp_table(scans, mu, systematic=DC_SYSTEMATIC, usable_fraction=0.3, late_us=5.):
+    """-> one row per (scan, W, mu) of analyzed scans (pandas DataFrame), measured against the models.
+
+    ``scans``: {label: scan}, each analyzed with ``background_start_us`` at every
+    ``mu`` (kHz). Columns: ``scan``, ``probe`` (M1, S5, ...), ``W``, ``mu``;
+    ``value`` (``agp_connected``) and ``noise`` (shot + calibration); ``dc_term``,
+    the kernel integral of the fitted background A e^{-rate t}; ``total`` =
+    hypot(noise, ``systematic`` x dc_term); ``usable`` when total <
+    ``usable_fraction`` x |value|; ``theory`` (closed system, infinite time, at the
+    analyzed Kerr) and ``free`` (the same at K = 0); ``signal``, std of C_1 minus
+    the background over the median shot error for t > ``late_us``; ``start``,
+    C1_corrected / C1_theory at t = 0; ``tau`` = 1 / rate (us).
+    """
+    import pandas as pd
+
+    rows = []
+    cutoffs = np.atleast_1d(np.asarray(mu, dtype=float))
+    for label, scan in scans.items():
+        data = scan.data
+        if "agp_connected" not in data:
+            raise ValueError(f"{label}: analyze with background_start_us first")
+        analyzed = np.asarray(data["agp_mu"])
+        columns = []
+        for cutoff in cutoffs:
+            match = np.flatnonzero(np.isclose(analyzed, cutoff))
+            if not match.size:
+                raise ValueError(f"{label} was not analyzed at mu = {cutoff:g} kHz")
+            columns.append(int(match[0]))
+        strengths = np.asarray(data["disorder_khz"], dtype=float)
+        free = scan.theory_agp(strengths, mu=cutoffs, kerr_mhz=0.)
+        times = np.asarray(data["time_us"])
+        late = times > late_us
+        corrected = np.asarray(data.get("C1_corrected", data["C1"]))
+        probe = mode_name(np.ravel(data["direction"])[0])
+        for i, strength in enumerate(strengths):
+            g = float(np.ravel(data["coupling_mhz"])[i])
+            amplitude = float(np.ravel(data["background_amplitude"])[i])
+            rate = float(np.ravel(data["background_rate_per_us"])[i])
+            connected = corrected[i] - amplitude * np.exp(-rate * times)
+            signal = np.std(connected[late]) / np.median(np.asarray(data["C1_err"])[i][late])
+            start = corrected[i][0] / np.asarray(data["C1_theory"])[i][0]
+            for j, (cutoff, column) in enumerate(zip(cutoffs, columns)):
+                omega = 2 * np.pi * cutoff / 1e3
+                dc_term = (2 * np.pi * g)**2 * amplitude * rate / (2 * omega * (omega + rate)**2)
+                value = float(data["agp_connected"][i, column])
+                noise = float(data["agp_connected_err"][i, column])
+                total = float(np.hypot(noise, systematic * dc_term))
+                rows.append(dict(scan=label, probe=probe, W=strength, mu=cutoff, value=value,
+                                 noise=noise, dc_term=dc_term, total=total,
+                                 usable=total < usable_fraction * abs(value),
+                                 theory=float(data["agp_theory"][i, column]), free=float(free[i, j]),
+                                 signal=signal, start=start,
+                                 tau=1 / rate if rate > 0 else np.inf))
+    return pd.DataFrame(rows)
 
 
 def display_scans(scans, mu, estimator="agp_connected", theory=True, yscale="linear"):

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from experiments.job_paths import JobPathError, data_root
+from experiments.data_paths import DataPathError
 from fitting.qsim.mbr_disorder import disorder_direction
 from fitting.qsim.poles import fft_peaks, joint_pencil, joint_refined, per_row_clustered, per_row_reconciled, pursuit
 from fitting.qsim.poles.pursuit import Poles, PursuitSettings, best_candidate
@@ -169,10 +169,10 @@ def test_the_registry_loads_and_its_manifests_exist():
     data_sets = load_registry()
     assert len({data_set.label for data_set in data_sets}) == len(data_sets)
     try:
-        root = data_root()
-    except JobPathError:
-        pytest.skip("no data tree on this machine")
-    assert all(manifest_path(data_set, root).is_file() for data_set in data_sets)
+        paths = [manifest_path(data_set) for data_set in data_sets]
+    except DataPathError:
+        pytest.skip("the data roots are not mounted on this machine")
+    assert all(path.is_file() for path in paths)
 
 
 # --- Saved results --------------------------------------------------------

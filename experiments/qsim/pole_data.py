@@ -15,9 +15,9 @@ from fitting.qsim.poles.registry import Analysis, manifest_path
 from fitting.qsim.poles.synthetic import distinct_levels
 
 
-def load_spectra(data_set, root):
+def load_spectra(data_set):
     """-> the RealSpectra of one registry entry (one per realization of an ensemble)."""
-    path = manifest_path(data_set, root)
+    path = manifest_path(data_set)
     analysis = data_set.analysis or Analysis()
     if "DisorderEnsemble" in path.name:
         ensemble = MBRDisorderEnsembleExperiment.from_manifest(path)

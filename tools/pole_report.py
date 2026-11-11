@@ -19,7 +19,7 @@ import nbformat
 from nbclient import NotebookClient
 from nbconvert import HTMLExporter
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 
 REPORT = Path(__file__).parents[1] / "analysis_notebooks" / "guan" / "pole_finding" / "report.py"
 
@@ -33,7 +33,7 @@ def main():
     args = parser.parse_args()
 
     name = f"{datetime.now():%y%m%d_%H%M%S}_{args.size}_{args.fitters.replace(',', '')}"
-    output_dir = data_root() / args.experiment / "derived_data" / "pole_finding" / name
+    output_dir = locate(args.experiment) / "derived_data" / "pole_finding" / name
     output_dir.mkdir(parents=True)
     os.environ["POLE_REPORT_RUN"] = json.dumps(dict(
         fitters=args.fitters.split(","), size=args.size, output_dir=str(output_dir), registry=args.registry))

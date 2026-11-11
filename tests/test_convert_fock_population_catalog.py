@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import yaml
 
-from experiments import job_paths
+from experiments import data_paths
 from experiments.qsim.agp import CentralBosonAGPDisorderScan, direction_sector
 from experiments.qsim.fock_population import FockPopulationExperiment, FockPopulationSetExperiment
 from tests.population_jobs import shots_from_labels
@@ -47,9 +47,8 @@ def old_job(root, job_id, occupation, ro_stor, labels, detunings, cycles, thresh
 
 @pytest.fixture
 def catalog(tmp_path, monkeypatch):
-    monkeypatch.setenv(job_paths.DATA_ROOT_ENV, str(tmp_path))
-    monkeypatch.setenv(job_paths.BACKEND_ENV, "index")
-    job_paths.clear_cache()
+    monkeypatch.setenv(data_paths.DATA_ROOTS_ENV, str(tmp_path))
+    data_paths.clear_cache()
     rng = np.random.default_rng(7)
     number = iter(range(1, 100))
 

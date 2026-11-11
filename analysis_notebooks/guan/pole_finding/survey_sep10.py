@@ -19,7 +19,7 @@ import traceback
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles import hamiltonian_fit as hf
@@ -31,7 +31,7 @@ from fitting.qsim.poles.real_benchmarks import multiplet_weights
 from fitting.qsim.poles.registry import data_set, manifest_path
 from fitting.qsim.poles.statistics import small_gap_ratio_fraction
 
-FOLDER = data_root() / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "sep10_survey"
+FOLDER = locate("260818_qsim_spectroscopy") / "derived_data" / "pole_finding" / "sep10_survey"
 FOLDER.mkdir(parents=True, exist_ok=True)
 LOG = FOLDER / "survey.log"
 STAGES = sys.argv[1].split(",") if len(sys.argv) > 1 else ["ff", "fast", "design", "merge", "diagnose", "C", "F"]
@@ -148,14 +148,14 @@ def diagnose(suffix=""):
 
 # ---------------------------------------------------------------- load
 log("survey start; stages", STAGES)
-spectra = [s for label in SETS for s in load_spectra(data_set(label), data_root())]
+spectra = [s for label in SETS for s in load_spectra(data_set(label))]
 log(len(spectra), "spectra:", [s.label for s in spectra])
 
 # ---------------------------------------------------------------- form factor (ensemble analysis, MPM default)
 if "ff" in STAGES:
     try:
         entry = data_set(SETS[0])
-        ensemble = MBRDisorderEnsembleExperiment.from_manifest(manifest_path(entry, data_root()))
+        ensemble = MBRDisorderEnsembleExperiment.from_manifest(manifest_path(entry))
         data = ensemble.analyze(phase_frame="as_acquired", on_error="skip")
         t = data.form_factor.time_us
         model = np.array([np.abs(np.exp(-2j * np.pi * np.outer(t, s.levels_MHz)) @ s.multiplicities) ** 2

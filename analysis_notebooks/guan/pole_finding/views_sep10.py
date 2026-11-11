@@ -37,7 +37,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.mbr_disorder import disorder_direction
 from theory.qsim.central_boson import fixed_n_hamiltonian
@@ -46,7 +46,7 @@ from fitting.qsim.poles.views import (MODEL_COLOR, INK, display_gap_ratio_cdfs, 
                                       display_row_heatmaps, display_sticks, pooled_ratios)
 
 LABEL = "sep10_full_K3p6_g29p2"
-SURVEY = data_root() / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "sep10_survey"
+SURVEY = locate("260818_qsim_spectroscopy") / "derived_data" / "pole_finding" / "sep10_survey"
 VAULT = Path("G:/Shared drives/SLab/Multimode/Lab/guan/qsim_analysis/pole_finding")
 FIGURES = VAULT / "figures"
 FIGURES.mkdir(parents=True, exist_ok=True)
@@ -56,7 +56,7 @@ FITTERS = ("A", "B", "C", "T1T3", "T1")
 MODEL_FIT = ("T1",)
 REFERENCE_DRAWS = 1000
 
-spectra = load_spectra(data_set(LABEL), data_root())
+spectra = load_spectra(data_set(LABEL))
 
 
 def cached_fit(spectrum, name):

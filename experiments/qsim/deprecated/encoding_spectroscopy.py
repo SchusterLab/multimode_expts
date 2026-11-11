@@ -122,7 +122,7 @@ class EncodingHamiltonianSpectroscopyExperiment(QsimExperiment):
         Load saved jobs by ID, from HDF5 alone.
 
         Resolves each ID to its file via
-        :func:`experiments.job_paths.resolve_job_paths` and reads it with
+        :func:`experiments.data_paths.resolve_job_paths` and reads it with
         :mod:`experiments.qsim.deprecated.saved_jobs`. No job server, no job database, no
         pickle and no station: the timing that only the compiled program used
         to carry is recovered from the file's own ``derived_params`` attribute

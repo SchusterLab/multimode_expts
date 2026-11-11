@@ -41,7 +41,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from fitting.qsim.mbr_disorder import disorder_direction
 from fitting.qsim.poles import hamiltonian_fit as hf
 from fitting.qsim.poles import pursuit
@@ -51,7 +51,7 @@ from fitting.qsim.poles.gap_score import gauge_shift, pooled_small_gap_fraction,
 pd.set_option("display.width", 250, "display.max_columns", 40)
 STAGES = os.environ.get("T1_STAGES", "fit,free,F,score,real").split(",")
 BUDGET_S = 480
-FOLDER = set_folder(data_root())
+FOLDER = set_folder()
 cases = load_set(FOLDER / "set.h5")
 SUBSET = [case for case in cases if case.condition.draw == 0 and case.condition.partial_rows == 10]
 SETTINGS = {"T1": hf.HamiltonianFitSettings(), "T1free": hf.HamiltonianFitSettings(amplitudes="free", starts=4)}
@@ -211,7 +211,7 @@ if "real" in STAGES:
     from fitting.qsim.poles.diagnosis import residual_excess
     from fitting.qsim.poles.registry import data_set
 
-    spectra = [s for label in ("august_N3", "august_disorder") for s in load_spectra(data_set(label), data_root())]
+    spectra = [s for label in ("august_N3", "august_disorder") for s in load_spectra(data_set(label))]
     real_rows, real_fits = [], {}
     for spectrum in spectra:
         recorded = spectrum.model_parameters

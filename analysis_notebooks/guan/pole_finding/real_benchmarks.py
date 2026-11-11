@@ -26,7 +26,7 @@
 # %%
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles import joint_pencil, per_row_reconciled
 from fitting.qsim.poles.bench_summaries import lambda_eff, resolution_curve
@@ -38,7 +38,7 @@ from fitting.qsim.poles.synthetic import Hardware, Nonideal, sample_phase_diagra
 pd.set_option("display.width", 220)
 FITTERS = {"A": (per_row_reconciled.fit, per_row_reconciled.ANALYSIS_SETTINGS),
            "B": (joint_pencil.fit, joint_pencil.JointPencilSettings())}
-spectra = [s for d in load_registry() if d.label != "july_N3" for s in load_spectra(d, data_root())]
+spectra = [s for d in load_registry() if d.label != "july_N3" for s in load_spectra(d)]
 print(len(spectra), "spectra")
 
 # %% [markdown]

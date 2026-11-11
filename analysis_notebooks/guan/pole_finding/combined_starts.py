@@ -25,12 +25,12 @@
 # %%
 import time
 
-from experiments.job_paths import data_root
+
 from fitting.qsim.poles import sparse_fit
 from fitting.qsim.poles.fixed_set import load_fits, load_set, save_fit, set_folder
 from fitting.qsim.poles.gap_score import gauge_shift, score_gaps
 
-FOLDER = set_folder(data_root())
+FOLDER = set_folder()
 cases = load_set(FOLDER / "set.h5")
 subset = [case for case in cases if case.condition.draw == 0 and case.condition.partial_rows == 10]
 fits = {name: load_fits(FOLDER / f"fits_{name}.h5", cases) for name in ("C", "F", "T1", "T3", "T3F", "T1F", "T3oracle")}

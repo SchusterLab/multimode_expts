@@ -490,7 +490,8 @@ class AGPDisplayMixin:
         """
         parts = self.children if self.HAS_W_AXIS else [self]
         part = parts[row] if row < len(parts) else None
-        if part is None or not part.children or "theory_kerr_mhz" not in part.data:
+        if part is None or not (part.children or part.frozen_inputs is not None) \
+                or "theory_kerr_mhz" not in part.data:
             return None
         kerr = float(np.ravel(part.data["theory_kerr_mhz"])[column])
         direction = self._directions()[column]

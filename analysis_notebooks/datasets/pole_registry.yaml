@@ -1,6 +1,6 @@
 # The real data sets of the pole-finding benchmarks (docs/qsim/pole_finding.md 8.2).
 # Format: fitting.qsim.poles.registry.DataSet; loaded by experiments.qsim.pole_data.
-# Manifests are relative to data_root(). Each entry's analysis is the frame its analysis
+# Manifests are below the data root (experiments/data_paths.py). Each entry's analysis is the frame its analysis
 # notebook uses (analysis_notebooks/202609_qsim_migration/mbr.py, mbr_disorder.py).
 # guan adds jonginn's further campaigns here as they are converted (tools/migrate_mbr_jobs.py,
 # driven by tools/convert_mbr_catalog.py from analysis_notebooks/datasets/mbr_datasets.yaml).

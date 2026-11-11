@@ -44,7 +44,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import migrate_mbr_jobs as mig  # noqa: E402
-from experiments.job_paths import data_root, resolve_job_paths  # noqa: E402
+from experiments.data_paths import locate, resolve_job_paths  # noqa: E402
 from legacy_saved_jobs import job_records  # noqa: E402
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment  # noqa: E402
 
@@ -160,7 +160,7 @@ def convert_disorder_pairs(name, entry, load_shots):
     notes = f"{name} ({entry['label']})"
     if entry.get("calibration_manifest"):
         calibration = MBRCalibrationSetExperiment.from_manifest(
-            data_root() / entry["calibration_manifest"])
+            locate(entry["calibration_manifest"]))
     else:
         calibration = mig.migrate_stark_cal(entry["calibration_job_ids"],
                                             load_shots=load_shots, notes=notes)

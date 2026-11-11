@@ -13,11 +13,11 @@ Plan: docs/qsim/pole_finding_explore.md, T0.
 import argparse
 import time
 
-from experiments.job_paths import data_root
+
 from fitting.qsim.poles import joint_refined, pursuit
 from fitting.qsim.poles.fixed_set import conditions, load_fits, load_set, make_case, save_fit, save_set, set_folder
 
-FOLDER = set_folder(data_root())
+FOLDER = set_folder()
 SETTINGS = {"C": joint_refined.JointRefinedSettings(), "F": pursuit.PursuitSettings()}
 
 

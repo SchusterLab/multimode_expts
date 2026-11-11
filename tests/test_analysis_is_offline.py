@@ -38,12 +38,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # the August quick-plot fragment (JOB-20260815-00009..16, 4 traces).
 A_REAL_LOAD = """
 import yaml
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment
 
 catalog = yaml.safe_load(open("analysis_notebooks/datasets/mbr_datasets.yaml", encoding="utf-8"))
 entry = catalog["datasets"]["august_quickplot"]
-expt = MBRSpectrumExperiment.from_manifest(data_root() / entry["manifest"])
+expt = MBRSpectrumExperiment.from_manifest(locate(entry["manifest"]))
 assert len(expt.children) == 4, expt.children
 expt.analyze(cycle_branches={}, fft_window="raw", zero_padding=1,
              spectrum_method="fft")
@@ -343,7 +343,7 @@ def load_h5_for_fixture():
     the flux DAC channels, the manipulate ramp sigma -- so a hand-written
     minimal config will not do.
     """
-    from experiments.job_paths import resolve_job_path
+    from experiments.data_paths import resolve_job_path
     from experiments.qsim.deprecated.saved_jobs import load_h5
 
     return load_h5(resolve_job_path("JOB-20260815-00009"))

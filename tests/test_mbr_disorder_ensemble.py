@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from experiments.characterization_runner import CharacterizationRunner
-from experiments.job_paths import resolve_job_paths
+from experiments.data_paths import resolve_job_paths
 from experiments.qsim.mbr_campaign import mbr_defaults, mock_station, pinned_config_set
 from experiments.qsim.mbr_disorder_ensemble import MBRDisorderEnsembleExperiment
 from experiments.qsim.mbr_spectrum import MBRSpectrumExperiment

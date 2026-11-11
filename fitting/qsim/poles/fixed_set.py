@@ -49,9 +49,10 @@ DIRECTION_SEED = 100
 BOUNDS = ("complex", "real")
 
 
-def set_folder(root):
-    """-> where the set and its fit caches live under the data root."""
-    return Path(root) / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "fixed_set"
+def set_folder():
+    """-> where the set and its fit caches live: derived data of the Sep 10 experiment."""
+    from experiments.data_paths import locate
+    return locate("260818_qsim_spectroscopy") / "derived_data" / "pole_finding" / "fixed_set"
 
 
 class Condition(BaseModel):

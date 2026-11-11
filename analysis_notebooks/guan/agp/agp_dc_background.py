@@ -38,7 +38,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.agp import CentralBosonAGPDisorderScan, load_scan
 from fitting.qsim.agp import agp_kernel_weights, fit_exponential_background
 from theory.qsim.agp import damped_agp, damped_correlation, spectral_agp, split_dc
@@ -53,7 +53,7 @@ RNG = np.random.default_rng(1)
 # ## 1. Data: S7 fine and coarse (10-17..23), and today's Kerr-direction run
 
 # %%
-root = data_root() / "agp_k44_first_scan"
+root = locate("agp_k44_first_scan")
 scans = {
     "S7 fine (122 us)": load_scan("s7_fine"),
     "S7 coarse (244 us)": load_scan("s7_coarse"),

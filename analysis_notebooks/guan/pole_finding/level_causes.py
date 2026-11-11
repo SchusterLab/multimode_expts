@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from experiments.job_paths import data_root
+
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles import joint_pencil, joint_refined, per_row_reconciled
 from fitting.qsim.poles.diagnosis import cause_counts, diagnose_levels, residual_excess
@@ -44,7 +44,7 @@ COLUMNS = ["level_kHz", "weight", "separation_kHz", "crb_kHz", "gap_snr", "clust
            "oracle_weight", "drop_chi2", *[f"cause_{name}" for name in FITTERS]]
 
 # %%
-spectra = [load_spectra(data_set(label), data_root())[0] for label in ("august_N3", "august_disorder", "diagonal_disorder_71")]
+spectra = [load_spectra(data_set(label))[0] for label in ("august_N3", "august_disorder", "diagonal_disorder_71")]
 results = {}
 for s in spectra:
     fits = {name: fit(s.A, s.time_us, settings) for name, (fit, settings) in FITTERS.items()}

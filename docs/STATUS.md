@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-11-03** (required names for assembled data sets; 10-28: M1 Fock prep item; 10-24: `theory/` package and the jonginn AGP item; AGP layers as of
+**Last updated: 2026-11-10** (data roots; 11-03: required names for assembled data sets; 10-28: M1 Fock prep item; 10-24: `theory/` package and the jonginn AGP item; AGP layers as of
 2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
@@ -34,6 +34,14 @@ Rules:
 
 ## Cross-theme items
 
+- **Data roots (2026-11-10, guan with Claude; branch `theory`):** old experiment folders are moved
+  from pippin's `C:\experiments` to the slabnas copy (`BF5_expts_autosync`); new data lands on
+  pippin. One module finds files in all roots: `experiments/data_paths.py` (`locate`,
+  `resolve_job_paths`), replacing `job_paths.py`, `data_root()`, `agp.local_path` and the
+  transduction `DATA_ROOTS`. Each machine sets `MULTIMODE_DATA_ROOTS` in `.env` (rename
+  `MULTIMODE_DATA_ROOT`; the old name is refused). Unset, it is `C:/experiments`. Pippin cannot
+  reach slabnas, so on pippin only its own data is found. Record:
+  `docs/log/2026-11-10_data-roots-and-scan-h5.md`.
 - **M1 Fock N >= 2 prep (2026-10-28, all users):** with photons in M1 the qubit f state decays
   to g and loses one photon (|f,n> -> |g,n-1>; ~6 us for n=1 at 0.45 mA, ~20x slower at 0.25 mA).
   Physics: vault `Lab/guan/AGP/2026/10/2026-10-28.md`; record: `docs/log/2026-10-28_fock-prep-f-decay.md`.

@@ -1,5 +1,6 @@
 """CentralBosonAGPDisorderScan: one CentralBosonAGPExperiment per W, saved as C_k(W, t) maps."""
 import json
+import shutil
 from pathlib import Path
 
 import h5py
@@ -69,19 +70,31 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     assert [Path(path).name for path in manifest["raw_files"]] == [
         f"CentralBosonAGPExperiment_s7_test_W{w}kHz.yaml" for w in (0, 30, 60)]
     assert manifest["parameters"]["disorder_khz"] == [0, 30, 60]
+    inputs = {"occupations", "ro_stor", "cycles", "swap_stors", "detunings", "time_us",
+              "shot_counts", "p_mod", "n_mean", "n2_mean", "n_err", "n2_err", "p_mod_corrected",
+              "n_mean_corrected", "n2_mean_corrected", "confusion_matrix", "direction",
+              *CentralBosonAGPExperiment.RECORDED_KEYS}
     with h5py.File(manifest_path.with_suffix(".h5"), "r") as handle:
         assert set(handle) == {"disorder_khz", "direction", "cycles", "detunings", "time_us",
-                               "C1", "C2",
+                               "C1", "C2", "coupling_mhz",
                                "C1_err", "C2_err", "C1_corrected", "C2_corrected", "C1_theory",
                                "agp_mu", *CentralBosonAGPDisorderScan.AGP_KEYS, "mu_gld_khz",
-                               "frequency_khz", "spectrum", "spectrum_err", "spectrum_theory"}
+                               "frequency_khz", "spectrum", "spectrum_err", "spectrum_theory",
+                               *(f"inputs_{key}" for key in inputs)}
         assert json.loads(handle.attrs["analysis"])["t1_us"] == 600.
 
     reloaded = CentralBosonAGPDisorderScan.from_manifest(manifest_path)
     reloaded.analyze(mu=[5.915, 10.], t1_us=600.)
     for key, value in data.items():
         np.testing.assert_allclose(reloaded.data[key], value)
-    view = CentralBosonAGPDisorderScan.from_h5file(manifest_path.with_suffix(".h5"))
+    # A file saved before the inputs were kept (2026-11-10) gives the arrays only.
+    old = tmp_path / "old.h5"
+    shutil.copy(manifest_path.with_suffix(".h5"), old)
+    with h5py.File(old, "a") as handle:
+        for key in [key for key in handle if key.startswith("inputs_")]:
+            del handle[key]
+    view = CentralBosonAGPDisorderScan.from_h5file(old)
+    assert view.children == []
     for raw in (False, True):  # maps of C_1 and C_2 against cycles and W
         fig = view.display_correlations(raw=raw)
         assert ("corrected" in fig.axes[0].get_title()) != raw

@@ -18,7 +18,7 @@ import numpy as np
 
 from common import CACHE, gap_ratios  # noqa: E402
 from q2_resolution import merge  # noqa: E402
-from experiments.job_paths import data_root  # noqa: E402
+from experiments.data_paths import locate  # noqa: E402
 from experiments.qsim.pole_data import load_spectra  # noqa: E402
 from fitting.qsim.poles.design import Design, gap_errors  # noqa: E402
 from fitting.qsim.poles.noise import row_noise  # noqa: E402
@@ -26,7 +26,7 @@ from fitting.qsim.poles.pole_fit import normalize_to_initial_return  # noqa: E40
 from fitting.qsim.poles.registry import data_set  # noqa: E402
 from theory.qsim.central_boson import fixed_n_hamiltonian  # noqa: E402
 
-SURVEY = data_root() / "260818_qsim_spectroscopy" / "derived_data" / "pole_finding" / "sep10_survey"
+SURVEY = locate("260818_qsim_spectroscopy") / "derived_data" / "pole_finding" / "sep10_survey"
 FITTERS = ("T1T3", "T1T3_merge200", "C", "B", "A")
 R0 = 0.25
 
@@ -56,7 +56,7 @@ def bootstrap(level_sets, n=4000, seed=0):
 
 
 if __name__ == "__main__":
-    spectra = load_spectra(data_set("sep10_full_K3p6_g29p2"), data_root())
+    spectra = load_spectra(data_set("sep10_full_K3p6_g29p2"))
     results = {}
     for name in FITTERS:
         counted, naive, totals = [], [], []

@@ -39,7 +39,7 @@
 # It reproduces jonginn's 10-23 notebook
 # (`agp_storage7_mu1_to10_t1_theory_ENTIERLYCODEX.ipynb`, in the
 # `multimode_thermalization_sim` repo) to 1e-12 (`docs/log/2026-10-24_theory-package-agp.md`).
-# Off the measurement PC, set `MULTIMODE_DATA_ROOT` to the mounted data tree.
+# Off the measurement PC, set `MULTIMODE_DATA_ROOTS` in `.env` to the mounted data roots.
 
 # %%
 import matplotlib.pyplot as plt

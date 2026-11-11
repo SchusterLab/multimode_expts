@@ -130,7 +130,7 @@ def test_migration_writes_the_new_layout(converted):
 
 def test_migration_keeps_the_shot_order(converted):
     """Row k of the new shots is point (cycle k // 4, ramsey phase k % 4)."""
-    from experiments.job_paths import resolve_job_paths
+    from experiments.data_paths import resolve_job_paths
     from experiments.qsim.deprecated.saved_jobs import load_h5
 
     _, calibration = converted

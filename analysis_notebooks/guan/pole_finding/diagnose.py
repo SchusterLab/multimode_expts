@@ -28,7 +28,7 @@
 # %%
 import matplotlib.pyplot as plt
 
-from experiments.job_paths import data_root
+
 from experiments.qsim.pole_data import load_spectra
 from fitting.qsim.poles import joint_pencil, joint_refined, per_row_reconciled
 from fitting.qsim.poles.pole_plots import display_pole_fit
@@ -39,7 +39,7 @@ FITTERS = {"A": (per_row_reconciled.fit, per_row_reconciled.ANALYSIS_SETTINGS),
            "C": (joint_refined.fit, joint_refined.JointRefinedSettings())}
 
 # %%
-spectra = [load_spectra(data_set(label), data_root())[0] for label in ("august_N3", "august_disorder", "diagonal_disorder_71")]
+spectra = [load_spectra(data_set(label))[0] for label in ("august_N3", "august_disorder", "diagonal_disorder_71")]
 fits = {(s.label, name): fit(s.A, s.time_us, settings) for s in spectra for name, (fit, settings) in FITTERS.items()}
 
 

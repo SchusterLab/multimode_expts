@@ -86,7 +86,7 @@ import matplotlib.pyplot as plt
 import experiments as meas
 from slab import AttrDict
 
-from experiments.job_paths import data_root
+from experiments.data_paths import locate
 from experiments.qsim.deprecated.legacy_mbr import MBRSpectrumExperiment
 from experiments.qsim.deprecated.mbr_loading import (
     job_id_generator,
@@ -129,8 +129,8 @@ sv.matrix_pencil_global_diagnostic(encspec_reprocessed)
 # %%
 dataset_to_postproc = 'Sep10 K3.6 g29.2'
 # The project subdirectory is part of the dataset; the root it sits under is
-# per-machine, so it comes from $MULTIMODE_DATA_ROOT or the repo-root .env.
-data_base_directory = data_root() / '260818_qsim_spectroscopy' / 'data'
+# per-machine, so it comes from $MULTIMODE_DATA_ROOTS or the repo-root .env.
+data_base_directory = locate('260818_qsim_spectroscopy') / 'data'
 
 dataset_dumps, hardware_by_job_id = h5only.build_dataset_manifest()
 (

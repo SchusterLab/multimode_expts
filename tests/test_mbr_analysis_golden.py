@@ -39,7 +39,7 @@ Running it
 Needs the raw HDF5 for those jobs. On the acquisition workstation that is
 automatic. Elsewhere point it at your mount::
 
-    MULTIMODE_DATA_ROOT=/Volumes/pippin/experiments \
+    MULTIMODE_DATA_ROOTS=/Volumes/slab/Multimode/BF5_expts_autosync:/Volumes/pippin/experiments \
     MULTIMODE_CONFIG_ARCHIVE=/Volumes/pippin/python/multimode_expts/configs/versions \
     pixi run python -m pytest tests/
 
@@ -378,7 +378,7 @@ def test_timing_resolver_is_not_a_constant():
     July appears only here, as a second data point. It is not a fixture.
     """
     from experiments.floquet_timing import resolve_floquet_timing
-    from experiments.job_paths import resolve_job_paths
+    from experiments.data_paths import resolve_job_paths
     from tests.mbr_reference import dataset, job_provenance, load_h5
 
     provenance = job_provenance()
@@ -404,7 +404,7 @@ def test_august_timing_reproduces_the_pickled_value():
     station gives roughly half this (gauss_sigma moved 0.04 -> 0.02 us).
     """
     from experiments.floquet_timing import resolve_floquet_timing
-    from experiments.job_paths import resolve_job_path
+    from experiments.data_paths import resolve_job_path
     from tests.mbr_reference import load_h5
 
     cfg, _ = load_h5(resolve_job_path("JOB-20260815-00009"))
