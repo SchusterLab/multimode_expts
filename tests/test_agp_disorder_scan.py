@@ -82,13 +82,13 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     for key, value in data.items():
         np.testing.assert_allclose(reloaded.data[key], value)
     view = CentralBosonAGPDisorderScan.from_h5file(manifest_path.with_suffix(".h5"))
-    for moment in (1, 2):
-        for raw in (False, True):
-            fig = view.display_correlations(style="map", moment=moment, raw=raw)
-            assert ("corrected" in fig.axes[0].get_title()) != raw
-            matplotlib.pyplot.close(fig)
+    for raw in (False, True):  # maps of C_1 and C_2 against cycles and W
+        fig = view.display_correlations(raw=raw)
+        assert ("corrected" in fig.axes[0].get_title()) != raw
+        matplotlib.pyplot.close(fig)
     # display(): every stage, raw to abstract; the arrays-only view has no populations.
-    stages = ["populations", "correlations", "spectral function", "AGP against mu", "AGP against W"]
+    stages = ["populations", "correlations", "against the models", "spectral function",
+              "AGP against mu", "AGP against W"]
     titles = [fig.get_suptitle() for fig in scan.display()]
     assert len(titles) == len(stages) and all(s in t for s, t in zip(stages, titles))
     assert [fig.get_suptitle() for fig in view.display()] == titles[1:]
@@ -101,7 +101,7 @@ def test_acquire_splits_the_jobs_into_parts_and_saves_three_layers(tmp_path):
     axes = scan.display_agp(mu=10.).axes  # with the parts: adds the infinite-time theory
     assert len(axes) == 1 and len(axes[0].lines) > len(view.display_agp(mu=10.).axes[0].lines)
     matplotlib.pyplot.close("all")
-    assert len(scan.display_correlations().axes) == 3
+    assert len(scan.display_traces().axes) == 3
     axes = scan.display_spectrum().axes[:3]  # with the parts: adds the binned theory weights
     assert len(axes[0].patches) > len(view.display_spectrum().axes[0].patches)
     axes = scan.display_spectrum(background_start_us=0.).axes
@@ -146,7 +146,7 @@ def test_display_needs_one_part_per_w(tmp_path):
         scan.acquire(FakeRunner(tmp_path / "data"), "same_w")
     scan.analyze()
     with pytest.raises(ValueError, match="one part per W"):
-        scan.display_correlations(style="map")
+        scan.display_correlations()
 
 
 def test_job_files_assemble_complete_parts_only(tmp_path):

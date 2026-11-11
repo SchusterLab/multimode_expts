@@ -124,8 +124,8 @@ def test_correlations_and_errors_from_the_moments(tmp_path, confusion, mu):
                                 for row in np.eye(len(times))])
     np.testing.assert_allclose(data["agp_err"][column], np.sqrt(weights**2 @ data["C1_err"]**2),
                                rtol=1e-8)
-    figures = agp.display()  # populations, correlations, spectrum, AGP(mu)
-    assert len(figures) == 4
+    figures = agp.display()  # populations, correlations, traces, spectrum, AGP(mu)
+    assert len(figures) == 5
     matplotlib.pyplot.close("all")
 
 
@@ -168,9 +168,13 @@ def test_acquire_save_and_reload_keep_direction_and_disorder(tmp_path):
                 "C1_theory", "agp_theory"]:
         np.testing.assert_allclose(reloaded.data[key], agp.data[key])
     view = CentralBosonAGPExperiment.from_h5file(manifest_path.with_suffix(".h5"))
-    assert len(view.display()) == 4
-    with pytest.raises(ValueError, match="analyze"):
-        CentralBosonAGPExperiment.from_manifest(manifest_path).display()
+    assert len(view.display()) == 5
+    # Not analyzed: analyze_correlations only, so no AGP and no theory.
+    unanalyzed = CentralBosonAGPExperiment.from_manifest(manifest_path)
+    figures = unanalyzed.display()
+    assert "agp" not in unanalyzed.data and "C1_corrected" in unanalyzed.data
+    assert [fig.get_suptitle().split(": ")[1][:11] for fig in figures] == [
+        "populations", "correlation", "C_1 against", "spectral fu"]
     matplotlib.pyplot.close("all")
 
 

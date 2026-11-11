@@ -338,8 +338,6 @@ for direction, scan in disorder_scans.items():
 
 # %% tags=["disorder_display"]
 for scan in disorder_scans.values():
-    moments = (1, 2) if "C2" in scan.data else (1,)
-    for moment in moments:
-        fig = scan.display_correlations(style="map", moment=moment, raw=False)
-        plt.show()
-        plt.close(fig)
+    fig = scan.display_correlations()  # C_1 and C_2 maps against cycles and W
+    plt.show()
+    plt.close(fig)

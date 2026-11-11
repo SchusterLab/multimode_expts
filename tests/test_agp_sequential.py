@@ -249,7 +249,7 @@ def test_scan_acquires_and_reloads_native_layers_and_checks_names_before_jobs(tm
         np.testing.assert_allclose(restored.data[key], value)
     arrays_only = CentralBosonAGPSequentialDisorderScan.from_h5file(
         manifest_path.with_suffix(".h5"))
-    assert len(arrays_only.display(mu=10.)) == 4  # no populations without the parts
+    assert len(arrays_only.display(mu=10.)) == 5  # no populations without the parts
     matplotlib.pyplot.close("all")
     before = len(runner.calls)
     with pytest.raises(FileExistsError):
@@ -330,10 +330,12 @@ def test_shared_directions_reuse_jobs_at_each_w_and_reload_saved_scans(tmp_path)
         np.testing.assert_allclose(restored.data[key], value)
     # The displays: one column per direction, one row per W; the theory per direction.
     figures = scan.display()
-    assert len(figures) == 5
-    populations, correlations, spectrum, agp_mu, agp_w = figures
-    assert len(correlations.axes) == 2 * len(MODES)
-    assert [ax.get_title() for ax in correlations.axes[:3]] == [
+    assert len(figures) == 6
+    populations, correlations, traces, spectrum, agp_mu, agp_w = figures
+    assert [ax.get_title() for ax in correlations.axes[:3]] == [  # the C_1 maps
+        "M1: C_1 (corrected)", "S4: C_1 (corrected)", "S7: C_1 (corrected)"]
+    assert any("no C_2" in text.get_text() for ax in correlations.axes for text in ax.texts)
+    assert [ax.get_title() for ax in traces.axes[:3]] == [
         "W = 0 kHz, M1", "W = 0 kHz, S4", "W = 0 kHz, S7"]
     assert all(ax.patches for ax in spectrum.axes[:2 * len(MODES)])  # binned closed system
     assert len(agp_mu.axes) == len(MODES) and len(agp_w.axes) == len(MODES)

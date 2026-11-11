@@ -98,11 +98,11 @@ for name, scan in scans.items():
 # The measured C_1(t) (readout corrected, shot error band) and the closed-system C_1(t).
 
 # %%
-fig = fine.display_correlations()
+fig = fine.display_traces()
 plt.show()
 
 # %%
-fig = fine.display_correlations(style="map", moment=1)
+fig = fine.display_correlations()  # C_1 and C_2 maps
 plt.show()
 
 # %% [markdown]

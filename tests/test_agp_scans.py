@@ -211,6 +211,8 @@ def test_each_w_has_its_curves_on_shared_axes(tmp_path):
     np.testing.assert_allclose(axes[1].lines[0].get_ydata(), computed[1].lines[0].get_ydata())
     assert list(scan.shown_cutoffs()) == [5., 10., 20.]
     assert scan.display_agp_mu().axes[0].get_title() == "S7: agp_connected"
+    fitted = [line.get_label() for line in scan.display_traces().axes[1].lines]
+    assert fitted == ["C_1 (corrected)", "closed system", r"fit $A e^{-\Gamma t}$"]
     matplotlib.pyplot.close("all")
 
 

@@ -43,7 +43,13 @@ from experiments.assembled_data import (
     read_manifest,
 )
 from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
-from experiments.qsim.agp_display import AGP_LABEL, AGPDisplayMixin, MissingStageData, _grid_figure
+from experiments.qsim.agp_display import (
+    AGP_LABEL,
+    AGPDisplayMixin,
+    MissingStageData,
+    _grid_figure,
+    _small_text,
+)
 from experiments.qsim.fock_population import (
     FockPopulationExperiment,
     FockPopulationSetExperiment,
@@ -603,6 +609,16 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
             part.analyze(mu=mu, t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz,
                          background_start_us=background_start_us, window=window, **kwargs)
         self.analysis = self.children[0].analysis
+        return self._stack()
+
+    def analyze_correlations(self, **kwargs):
+        """``analyze_correlations`` of every W (no settings), stacked: C_k(W, t) only. -> data."""
+        for part in self.children:
+            part.analyze_correlations(**kwargs)
+        return self._stack()
+
+    def _stack(self):
+        """Stack the parts' curves into ``data``: (W, ...) rows on the shared axes."""
         parts = [part.data for part in self.children]
         data = dict(disorder_khz=np.asarray([part.disorder_khz for part in self.children]),
                     cycles=np.asarray(parts[0]["cycles"]),
@@ -699,14 +715,15 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
         return [*super()._stages(raw, theory, mu),
                 ("agp", lambda: self.display_agp(mu=mu, theory=theory))]
 
-    def display_agp(self, mu=None, theory=True):
+    @_small_text
+    def display_agp(self, mu=None, theory=True, yscale="linear"):
         """The AGP against W, one panel per direction (rows) and cutoff (columns). -> Figure.
 
         The last stage of ``display()``. Measured with shot and calibration
         errors; T1-compensated and background-subtracted when analyzed so;
         crosses: the closed system over the same window; dashed, with the jobs
         loaded: the infinite-time closed system. ``mu`` in kHz (default
-        ``shown_cutoffs``).
+        ``shown_cutoffs``). ``yscale``: "linear" or "log".
         """
         if "agp" not in self.data and "agp_list" in self.data:  # files saved before 2026-10-24
             fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
@@ -721,7 +738,7 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
         dense = np.linspace(0, strengths.max(), 121)
         estimators = [("agp", "o-", "measured"), ("agp_t1", "s-", "local T1 compensated"),
                       ("agp_connected", "D-", "background subtracted")]
-        fig, axes = _grid_figure(len(directions), len(columns), (4, 3.6), sharex=True)
+        fig, axes = _grid_figure(len(directions), len(columns), (3., 2.4), sharex=True)
         for row, direction in enumerate(directions):
             for ax, column in zip(axes[row], columns):
                 for key, fmt, label in estimators:
@@ -741,10 +758,10 @@ class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
                         ax.plot(dense, curve[:, 0], "k--", lw=1, label="closed system, infinite time")
                 title = rf"$\mu$ = {cutoffs[column]:g} kHz"
                 ax.set(title=title if direction is None else f"{mode_name(direction)}, {title}",
-                       xlabel="Disorder RMS (kHz)")
+                       xlabel="Disorder RMS (kHz)", yscale=yscale)
             axes[row, 0].set_ylabel(AGP_LABEL)
-        axes[0, 0].legend(fontsize=7)
-        fig.suptitle(f"{type(self).__name__}: AGP against W", fontsize=10)
+        axes[0, 0].legend()
+        fig.suptitle(f"{type(self).__name__}: AGP against W")
         return fig
 
     # -- persistence ------------------------------------------------------

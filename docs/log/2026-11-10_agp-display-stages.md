@@ -40,7 +40,21 @@ guan with Claude, branch `theory`.
 - `display()` is runner-compatible (no required arguments, a list of figures). A per-W
   display inside `scan.acquire` is not added.
 
-## Open
+## Later the same day
 
-- `CentralBosonAGPSequentialExperiment._analyze_direction` is a copy of the base `analyze`
-  body. Split the base into step methods and remove the copy (agreed as the next commit).
+- `analyze` is split into step methods (commit `e239ccd`): `analyze_correlations()` (populations
+  and C_k, no settings), then `_direction_curves` per direction. The sequential class overrides
+  only `_collect_populations`, `_read_directions`, `_correlation_inputs` and `_store`; its copy
+  `_analyze_direction` is deleted. The scan has `analyze_correlations()` too.
+- Stages after guan's review: populations, `display_correlations` (C_1 and C_2 as measured, no
+  theory; maps on a scan, lines for one W; separate scales; "no C_2" for Kerr), `display_traces`
+  (only C_1, the AGP input, with the closed system and, when analyzed with
+  `background_start_us`, the fitted decay A e^{-rate t}), spectrum, AGP(mu), AGP(W).
+  `display_correlations` has no `style=`/`moment=` any more.
+- `display()` on an experiment that was not analyzed runs `analyze_correlations()` and shows
+  what that data allows (guan: the raw-ish layer must work without an analysis).
+- Smaller figures and text (`SMALL_TEXT`). Default y scales: S(f) `symlog`, linear within the
+  median shot error of S (the DC peak at f = 0 is 1000x the median of S, and S is negative by
+  noise); AGP(mu) `log` (values 1e-3 to 50 on the S5 scan); AGP(W) linear, `yscale=` to change.
+- The "modeled decay" is the exponential fit of `subtract_background`, not the Lindblad model of
+  the lab book (`theory.qsim.open_system`); guan's correction.

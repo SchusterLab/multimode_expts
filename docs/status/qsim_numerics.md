@@ -14,10 +14,11 @@ the branch rules are in `docs/STATUS.md`.
 - **AGP displays are one set of stages (2026-11-10, guan with Claude; branch `theory`).** Record:
   `docs/log/2026-11-10_agp-display-stages.md`. All four AGP classes (single and sequential,
   one W and the scan) share `experiments/qsim/agp_display.py`: `display_populations`,
-  `display_correlations(style="traces"|"map")`, `display_spectrum`, `display_agp_mu`, and on the
-  scan `display_agp`. `display()` draws all stages that have data, raw to abstract. Next
-  (agreed, not done): split `CentralBosonAGPExperiment.analyze` into step methods, so that
-  `CentralBosonAGPSequentialExperiment._analyze_direction` (a copy of it) can go.
+  `display_correlations` (as measured, no theory), `display_traces` (C_1 against the closed
+  system and the fitted decay), `display_spectrum`, `display_agp_mu`, and on the scan
+  `display_agp`. `display()` draws all stages that have data, raw to abstract; not analyzed, it
+  runs the settings-free `analyze_correlations()` first. `analyze` is split into step methods;
+  the sequential copy of it is gone.
 
 - **AGP data sets have names; jonginn's 10-29 remeasure to-dos A1-A5 done (2026-11-03, guan with
   Claude; branch `theory`).** Record: `docs/log/2026-11-03_agp-remeasure-names.md`; notebook

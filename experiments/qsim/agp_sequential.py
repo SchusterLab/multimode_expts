@@ -198,8 +198,8 @@ class CentralBosonAGPSequentialDisorderScan(CentralBosonAGPDisorderScan):
         self.analyze(**analyze_kwargs)
         return self.save(name, directory=directory)
 
-    def analyze(self, **kwargs):
-        super().analyze(**kwargs)
+    def _stack(self):
+        super()._stack()
         self.data["directions"] = self.children[0].data["directions"].copy()
         self.data["ro_stors"] = self.children[0].data["ro_stors"].copy()
         return self.data
