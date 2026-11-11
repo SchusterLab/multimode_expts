@@ -52,11 +52,10 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261029-00069',
+config_dict = {'hardware_config': 'CFG-HW-20261106-00005',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261029-00026',
- 'floquet_storage_swap': 'CFG-FL-20261029-00020'}
-
+ 'man1_storage_swap': 'CFG-M1-20261106-00001',
+ 'floquet_storage_swap': 'CFG-FL-20261105-00030'}
 
 client = JobClient()
 health = client.health_check()
@@ -148,13 +147,13 @@ swap_stors = list(STORAGE_MODES)
 meas_stors = [0] + swap_stors
 occupations = [3, 0, 0, 0, 0]
 detunings = [0.0, 0.0, 0.0, 0.0]  # MHz
-floquet_cycles = list(range(0, 100, 2))
+floquet_cycles = list(range(0, 200, 4))
 
 # %% tags=["walk_acquire"]
 walk_expts = []
 for meas_stor in meas_stors:
     walk_expt = population_runner.execute(
-        reps=300,
+        reps=1000,
         occupations=occupations,
         swap_stors=swap_stors,
         storage_reset=swap_stors,
@@ -261,11 +260,18 @@ display(walk_fig)
 # time window. The stored agp is g^2 ||A_mu||^2, without a fit or decay correction.
 
 # %% tags=["agp_settings"]
+BASE_FILE_NAME = '261106_Storage_directions'
+name_genrator = lambda string: BASE_FILE_NAME+str(string)
+
 TOTAL_PHOTONS = 3
-AGP_DIRECTIONS = [7]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
-DISORDER_RMS_KHZ = [120, 140, 160, 180, 200] #for kerr it was [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
-AGP_REPS = 300 #for Kerr it was 1000
-AGP_CYCLES = list(range(0, 800, 1)) #for Kerr it was (0, 800, 1)
+AGP_DIRECTIONS = [4, 6]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
+# DISORDER_RMS_KHZ = np.arange(0, 41, 4)# [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200] #for kerr it was [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+DISORDER_RMS_KHZ_DICT = {
+    4: [0, 4, 8, 11, 14, 18, 25, 35, 50],
+    6: [0, 4, 9, 15, 22, 29, 36, 46, 60],
+}
+AGP_REPS = 500 #for Kerr it was 1000
+AGP_CYCLES = list(range(0, 800, 4)) #for Kerr it was (0, 800, 1)
 AGP_BATCH_SIZE = 1
 AGP_MU_KHZ = 10  # None: g * L / D; set e.g. 5.915 to choose mu explicitly.
 
@@ -276,6 +282,7 @@ DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)
 # %% tags=["agp_acquire"]
 disorder_scans = {}
 for direction in AGP_DIRECTIONS:
+    DISORDER_RMS_KHZ = DISORDER_RMS_KHZ_DICT[direction]
     scan = CentralBosonAGPDisorderScan.from_pattern(
         DISORDER_RMS_KHZ, DISORDER_PATTERN,
         photon_sector_number=TOTAL_PHOTONS,
@@ -287,7 +294,9 @@ for direction in AGP_DIRECTIONS:
         notes=f"Central-boson correlations, direction {direction}",
     )
     scan.acquire(
-        population_runner, batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
+        population_runner, 
+        name = name_genrator(direction),
+        batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
         storage_reset=STORAGE_MODES, postprocess=False, show=False, log=True,
     )
     scan.analyze(mu=AGP_MU_KHZ)
@@ -295,6 +304,13 @@ for direction in AGP_DIRECTIONS:
     for part in scan.children:
         print(f"Direction {direction}, W={part.disorder_khz:g} kHz: "
               f"{len(part.children)} population JOBs, {len(part.cycles)} cycles")
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# change mu and reanalyze if needed
+REANALYZE = False
+if REANALYZE:
+    AGP_MU_KHZ = 20
+    scan.analyze(mu=AGP_MU_KHZ)
 
 # %% tags=["agp_display"]
 raw = False  # True selects uncorrected correlations.
@@ -343,3 +359,52 @@ for scan in disorder_scans.values():
         fig, axis = scan.display_correlation(moment=moment, raw=False)
         plt.show()
         plt.close(fig)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+disorder_scans[0].display_spectrum()
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# # (Optional) Debuggings
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# ## 1. Disorder Strength
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+from experiments.qsim.fock_population_2d import FockPopulation2DExperiment
+
+population_2d_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=FockPopulation2DExperiment,
+    default_expt_cfg=population_defaults,
+    job_client=client,
+    use_queue=True,
+    show=False,
+)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# the below expt config over
+mode = [4, 5, 6, 7]
+detuningss = [[detuning]*4 for detuning in np.linspace(-0.008, 0.012, 41)] 
+cycles = list(range(0, 1200, 4))
+
+population_2d_expt = population_2d_runner.execute(
+    reps=300,
+    swap_stors=mode,
+    storage_reset=mode,
+    occupations=[1, 0, 0, 0, 0],
+    ro_stor=0,
+    detuningss=detuningss,
+    floquet_cycles=cycles,
+    multiparity_confusion_matrix=CONFUSION_MATRIX_FNAME,
+    postprocess=False,
+    show=False,
+    log=True,
+)
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+population_2d_expt.display()
+plt.show()
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.update_

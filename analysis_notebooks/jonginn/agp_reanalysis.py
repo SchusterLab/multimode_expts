@@ -56,7 +56,7 @@ def import_jobs_by_w(data_dir, first_job, last_job, *, ro_stor=0, photons=3):
 
 # %%
 # DATA_DIR = Path(r"C:\experiments\agp_k44_first_scan\data")
-DATA_DIR = Path(r"C:\experiments\261027AGPlowKerr\data")
+DATA_DIR = Path(r"C:\experiments\agp_k44_first_scan\data")
 
 MU_KHZ = 10.0  # None uses the existing default g * L / D.
 T1_M_US = 221.19395791954372  # JOB-20261019-00046_T1CavityExperiment, independent calibration.
@@ -85,12 +85,48 @@ T1_M_US = 221.19395791954372  # JOB-20261019-00046_T1CavityExperiment, independe
 #     200: ["JOB-20261024-00350", "JOB-20261025-00001", "JOB-20261025-00002", "JOB-20261025-00003",
 #           "JOB-20261025-00004"],
 # }
-JOBS_BY_W = import_jobs_by_w(
-    r"C:\experiments\261027AGPlowKerr\data",
-    "JOB-20261029-00393",
-    "JOB-20261030-00035",
-    ro_stor=7,  
-)
+# JOBS_BY_W = import_jobs_by_w(
+#     r"C:\experiments\agp_k44_first_scan\data",
+#     "JOB-20261023-00253",
+#     "JOB-20261023-00294",
+#     ro_stor=7,  
+# )
+
+
+JOBS_BY_W = {
+    0: ['JOB-20261023-00253',
+ 'JOB-20261023-00255',
+ 'JOB-20261023-00257',
+ 'JOB-20261023-00258',
+ 'JOB-20261023-00259',
+ 'JOB-20261023-00260',
+ 'JOB-20261023-00261',
+ 'JOB-20261023-00262',
+ 'JOB-20261023-00263',
+ 'JOB-20261023-00264',
+ 'JOB-20261023-00266',
+ 'JOB-20261023-00268',
+ 'JOB-20261023-00270',
+ 'JOB-20261023-00272',
+ 'JOB-20261023-00274']
+,
+    20: ['JOB-20261023-00276',
+ 'JOB-20261023-00278',
+ 'JOB-20261023-00280',
+ 'JOB-20261023-00282',
+ 'JOB-20261023-00284',
+ 'JOB-20261023-00285',
+ 'JOB-20261023-00286',
+ 'JOB-20261023-00287',
+ 'JOB-20261023-00288',
+ 'JOB-20261023-00289',
+ 'JOB-20261023-00290',
+ 'JOB-20261023-00291',
+ 'JOB-20261023-00292',
+ 'JOB-20261023-00293',
+ 'JOB-20261023-00294']
+,
+}
 
 # %% [markdown]
 # ## Assemble and analyze with the existing classes
@@ -105,7 +141,6 @@ from experiments.qsim.agp import (
 )
 from experiments.qsim.fock_population import FockPopulationExperiment
 
-DATA_DIR = Path(r"C:\experiments\261027AGPlowKerr\data")
 
 parts, scan = [], None
 
