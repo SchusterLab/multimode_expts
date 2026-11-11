@@ -24,8 +24,9 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
     """One occupation and read mode; maps have shape (time, detuning).
 
     analyze() uses corrected populations when available; raw=True selects raw.
-    cycle_us defaults to the compiled/saved timing. For M1 plus one storage,
-    both frequency estimates fit coupling and an additive residual detuning.
+    cycle_us defaults to the compiled/saved timing. Both frequency estimates
+    fit coupling and an additive residual detuning. With one photon, multiple
+    storages must share the same detuning; the fitted coupling is g_eff.
     One photon uses sqrt((detuning + residual)**2 + 4*coupling**2).
     With multiple photons, Kerr defaults to the saved hardware config; the
     comparison then uses the strongest population line of the existing model.
@@ -39,6 +40,11 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
         return [(key, self.cfg.expt[key + "s"]) for key in self.cfg.expt.swept_params]
 
     def analyze(self, data=None, raw=False, fit=True, kerr_mhz=None, cycle_us=None, **kwargs):
+        if data is None:
+            data = self.data
+        # Plot against the first storage's detuning, one x value per sweep point.
+        # Full per-storage vectors remain in cfg.expt.detuningss.
+        data["xpts"] = np.asarray(self.cfg.expt.detuningss)[:, 0]
         super().analyze(data=data, **kwargs)
         data, expt = self.data, self.cfg.expt
         recorded = self.recorded_derived_params()
@@ -82,11 +88,12 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
             if key.startswith(("sine_dispersion_", "fft_dispersion_")):
                 del data[key]
                 
-        if fit and len(expt.swap_stors) == 1 and expt.ro_stor == 0:
+        if fit and expt.ro_stor == 0 and (sum(expt.occupations) == 1 or len(expt.swap_stors) == 1):
             if kerr_mhz is None:
                 kerr_mhz = 0. if sum(expt.occupations) <= 1 else float(np.asarray(self.cfg.device.manipulate.kerr).reshape(-1)[0])
             data["theory_kerr_MHz"] = np.asarray(kerr_mhz)
-            coupling = recorded["couplings_MHz"][expt.swap_stors[0] - 1]
+            # Common detuning couples M1 to one bright mode: g_eff^2 = sum(g_s^2).
+            coupling = np.sqrt(sum(recorded["couplings_MHz"][storage - 1]**2 for storage in expt.swap_stors))
             data["theory_detuning_MHz"] = np.linspace(min(data["xpts"]), max(data["xpts"]), 300)
             
             def frequency_curve(detuning, coupling, residual):
@@ -107,7 +114,7 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
         return data
 
     def two_mode_population_frequency(self, detunings, coupling, residual, kerr_mhz):
-        """Analytic one-photon frequency; strongest population line with Kerr."""
+        """One-photon bright-mode frequency; two-mode strongest line with Kerr."""
         occupations = self.cfg.expt.occupations
         if sum(occupations) == 1 or kerr_mhz == 0:
             return np.sqrt((detunings + residual)**2 + 4 * coupling**2)
@@ -129,6 +136,7 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
             data = self.data
         figure, axes = plt.subplots(2, 2, figsize=(12, 9))
         detuning_khz = 1e3 * data["detuning_MHz"]
+        coupling_label = "g_eff" if len(self.cfg.expt.swap_stors) > 1 else "g"
         image = axes[0, 0].pcolormesh(detuning_khz, data["time_us"], data["population"], shading="auto")
         figure.colorbar(image, ax=axes[0, 0], label="Mean n mod 4")
         axes[0, 0].set(title="Population", ylabel="Time (us)")
@@ -141,7 +149,7 @@ class FockPopulation2DExperiment(FockPopulationExperiment):
             if f"{source}_dispersion_curve_MHz" in data:
                 coupling, residual = 1e3 * data[f"{source}_dispersion_parameters"]
                 axis.plot(1e3 * data["theory_detuning_MHz"], 1e3 * data[f"{source}_dispersion_curve_MHz"],
-                          label=f"g = {coupling:.2f}, residual = {residual:.2f} kHz")
+                          label=f"{coupling_label} = {coupling:.2f}, residual = {residual:.2f} kHz")
             axis.axvline(0., color="gray", linestyle=":", linewidth=1)
             axis.set(title="Sine fitted frequency" if source == "sine" else "FFT peak frequency", ylabel="Frequency (kHz)")
             axis.legend(fontsize=8)
