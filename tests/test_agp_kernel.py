@@ -115,8 +115,10 @@ def test_cosine_transform_filtered_matches_the_spectral_agp():
     from fitting.qsim.agp import cosine_transform_weights
 
     cutoff_mhz, frequency_mhz = .01, .027
-    times = np.linspace(0, 3000, 30001)
-    grid = np.linspace(0, .2, 40001)
+    # 0.5 us and 0.1 kHz steps: the error is 3e-5 here, as with 0.1 us and 5 Hz
+    # (until 2026-11-10: a 40001 x 30001 matrix, 9.6 GB, and 29 GB at peak).
+    times = np.linspace(0, 3000, 6001)
+    grid = np.linspace(0, .2, 2001)
     spectrum = cosine_transform_weights(times, grid) @ np.cos(2 * np.pi * frequency_mhz * times)
     value = trapezoid(spectrum * grid**2 / (grid**2 + cutoff_mhz**2)**2, grid)
     expected = frequency_mhz**2 / (frequency_mhz**2 + cutoff_mhz**2)**2

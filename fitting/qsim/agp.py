@@ -171,8 +171,11 @@ def cosine_transform_weights(time_us, frequency_mhz, window="hann"):
         raise ValueError("window must be 'hann' or 'raw'")
     steps = np.diff(times)
     trapezoid = np.concatenate([steps, [0]]) / 2 + np.concatenate([[0], steps]) / 2
-    phases = 2 * np.pi * np.asarray(frequency_mhz, dtype=float)[:, None] * times[None, :]
-    return 4 * trapezoid * envelope * np.cos(phases)
+    # In place: one (frequency, time) array at a time, not three.
+    weights = 2 * np.pi * np.asarray(frequency_mhz, dtype=float)[:, None] * times[None, :]
+    np.cos(weights, out=weights)
+    weights *= 4 * trapezoid * envelope
+    return weights
 
 
 def spectrum_frequencies_khz(time_us):
