@@ -253,118 +253,179 @@ class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
                 background_start_us=None, window="hann", **kwargs):
         """Build C_k, its spectrum S(f) and AGP(mu) curves, and the closed-system theory.
 
-        All processed curves of this W, on axes that do not depend on it:
-        ``agp_mu`` (``mu`` in kHz, default ``DEFAULT_MU_KHZ``) and
-        ``frequency_khz`` (0 to Nyquist by 1/(4T), from the time grid). g L/D is
-        kept as ``mu_gld_khz``. S is the cosine transform of C_1 (``window``),
-        background-subtracted when ``background_start_us`` is given, with
-        ``spectrum_with_background`` and ``spectrum_theory``. ``t1_us``, ``t1_err_us``:
-        T1 of the direction mode, for ``agp_t1``. ``kerr_mhz``: the Kerr of the
-        theory (None: the recorded device Kerr). ``background_start_us``: also
-        fit A e^{-rate t} to C_1 for t >= this time and integrate C_1 minus it
-        (``agp_connected``, lab book Q5). The decaying DC part of C_1 is what
-        the kernel picks up most at small mu; the closed-system theory has no
-        such part in ``agp_theory``. ``agp_connected_err`` is shot and
-        calibration noise only: not the error of the fitted background.
+        First ``analyze_correlations`` (the jobs' populations and C_k), then
+        per direction ``_direction_curves``. All processed curves of this W, on
+        axes that do not depend on it: ``agp_mu`` (``mu`` in kHz, default
+        ``DEFAULT_MU_KHZ``) and ``frequency_khz`` (0 to Nyquist by 1/(4T), from
+        the time grid). g L/D is kept as ``mu_gld_khz``. S is the cosine
+        transform of C_1 (``window``), background-subtracted when
+        ``background_start_us`` is given, with ``spectrum_with_background`` and
+        ``spectrum_theory``. ``t1_us``, ``t1_err_us``: T1 of the direction mode,
+        for ``agp_t1``. ``kerr_mhz``: the Kerr of the theory (None: the recorded
+        device Kerr). ``background_start_us``: also fit A e^{-rate t} to C_1 for
+        t >= this time and integrate C_1 minus it (``agp_connected``, lab book
+        Q5). The decaying DC part of C_1 is what the kernel picks up most at
+        small mu; the closed-system theory has no such part in ``agp_theory``.
+        ``agp_connected_err`` is shot and calibration noise only: not the error
+        of the fitted background.
         """
-        super().analyze(**kwargs)
-        dimension = sector_dimension(self.photon_sector_number, 1 + len(self.swap_stors))
-        corrected = "p_mod_corrected" in self.data
-        confusion = self.data.get("confusion_matrix")
-        shots = calibration_shots(self.calibration) if corrected else None
-        if corrected and shots is None:
-            warnings.warn("Calibration file not found: the AGP errors are shot-only.",
-                          stacklevel=2)
-        for k, probe in self.probes:
-            weights = probe_values(self.data["occupations"], self.mode_index, probe) / dimension
-            values = probe_values(NUMBERS, 0, probe)
-            for suffix in ("", "_corrected") if corrected else ("",):
-                self.data[f"C{k}{suffix}"] = weights @ (self.data[f"p_mod{suffix}"] @ values)
-            # The errors belong to the corrected values when there are some.
-            raw = np.asarray(self.data["p_mod"])
-            row_errors = multiparity_moment_error(
-                raw.reshape(-1, 4), np.ravel(self.data["shot_counts"]), values, confusion)
-            self.data[f"C{k}_err"] = np.sqrt(weights**2 @ row_errors.reshape(raw.shape[:2])**2)
-            if k == 1 and shots is not None:
-                factors = calibration_error_factors(self.data["p_mod_corrected"], confusion,
-                                                    shots, values)
-                self.data["C1_calibration_factors"] = np.einsum("r,rta->ta", weights, factors)
-        self.data.update(disorder_khz=np.asarray(self.disorder_khz),
-                         direction=np.asarray(self.direction),
-                         photon_sector_number=np.asarray(self.photon_sector_number),
-                         sector_dimension=np.asarray(dimension))
-
+        self.analyze_correlations(**kwargs)
         self.analysis = dict(mu_khz=None if mu is None else np.atleast_1d(mu).tolist(),
                              t1_us=t1_us, t1_err_us=t1_err_us, kerr_mhz=kerr_mhz,
                              background_start_us=background_start_us, window=window)
-        if self.ro_stor != self.direction or "time_us" not in self.data:
+        for index, (direction, read_mode) in enumerate(self._read_directions()):
+            correlations = {key: self._grid(key)[0, index] for key in
+                            ("C1", "C1_corrected", "C1_err", "C1_calibration_factors")
+                            if key in self.data}
+            self._store(index, self._direction_curves(
+                direction, read_mode, correlations, mu=mu, t1_us=t1_us, t1_err_us=t1_err_us,
+                kerr_mhz=kerr_mhz, background_start_us=background_start_us, window=window))
+        return self.data
+
+    def analyze_correlations(self, **kwargs):
+        """The first step of ``analyze``, with no settings: the jobs' populations and C_k(t).
+
+        Enough for ``display_populations`` and ``display_correlations``. -> data.
+        """
+        self._collect_populations(**kwargs)
+        corrected = "p_mod_corrected" in self.data
+        shots = calibration_shots(self.calibration) if corrected else None
+        if corrected and shots is None:
+            warnings.warn("Calibration file not found: the AGP errors are shot-only.",
+                          stacklevel=3)
+        for index, (direction, read_mode) in enumerate(self._read_directions()):
+            self._store(index, self._direction_correlations(
+                direction, *self._correlation_inputs(read_mode), shots))
+        self.data.update(disorder_khz=np.asarray(self.disorder_khz),
+                         photon_sector_number=np.asarray(self.photon_sector_number),
+                         sector_dimension=np.asarray(sector_dimension(
+                             self.photon_sector_number, 1 + len(self.swap_stors))))
+        return self.data
+
+    # -- the analysis steps; the sequential class changes only the first four --
+
+    def _collect_populations(self, **kwargs):
+        """Stack the jobs' populations into ``data`` (``FockPopulationSetExperiment.analyze``)."""
+        FockPopulationSetExperiment.analyze(self, **kwargs)
+        self.data["direction"] = np.asarray(self.direction)
+
+    def _read_directions(self):
+        """-> [(direction, read mode)] of the analyzed directions."""
+        return [(self.direction, self.ro_stor)]
+
+    def _correlation_inputs(self, read_mode):
+        """-> (occupations, p_mod, p_mod_corrected or None, shot_counts, confusion or None)."""
+        return (self.data["occupations"], self.data["p_mod"], self.data.get("p_mod_corrected"),
+                self.data["shot_counts"], self.data.get("confusion_matrix"))
+
+    def _store(self, index, result):
+        """Put the curves of the ``index``-th direction into ``data``."""
+        self.data.update(result)
+
+    def _direction_correlations(self, direction, occupations, raw, corrected, counts, confusion,
+                                shots):
+        """-> C_k (and corrected, errors, calibration factors) of one direction.
+
+        Over the prepared states with a nonzero initial probe; ``raw`` and
+        ``corrected`` are (states, cycles, 4) multiparity probabilities.
+        """
+        dimension = sector_dimension(self.photon_sector_number, 1 + len(self.swap_stors))
+        mode_index = [0, *self.swap_stors].index(direction)
+        probes = [(1, "kerr")] if direction == 0 else [(1, "number"), (2, "number_squared")]
+        rows = probe_values(np.asarray(occupations), mode_index, probes[0][1]) > 0
+        occupations, raw, counts = np.asarray(occupations)[rows], np.asarray(raw)[rows], \
+            np.asarray(counts)[rows]
+        corrected = None if corrected is None else np.asarray(corrected)[rows]
+        result = {}
+        for k, probe in probes:
+            weights = probe_values(occupations, mode_index, probe) / dimension
+            values = probe_values(NUMBERS, 0, probe)
+            result[f"C{k}"] = weights @ (raw @ values)
+            if corrected is not None:
+                result[f"C{k}_corrected"] = weights @ (corrected @ values)
+            # The errors belong to the corrected values when there are some.
+            row_errors = multiparity_moment_error(raw.reshape(-1, 4), counts.reshape(-1), values,
+                                                  confusion)
+            result[f"C{k}_err"] = np.sqrt(weights**2 @ row_errors.reshape(raw.shape[:2])**2)
+            if k == 1 and shots is not None:
+                factors = calibration_error_factors(corrected, confusion, shots, values)
+                result["C1_calibration_factors"] = np.einsum("r,rta->ta", weights, factors)
+        return result
+
+    def _direction_curves(self, direction, read_mode, correlations, mu=None, t1_us=None,
+                          t1_err_us=None, kerr_mhz=None, background_start_us=None,
+                          window="hann"):
+        """-> the spectrum, AGP and closed-system curves of one direction (see ``analyze``)."""
+        result = {}
+        if read_mode != direction or "time_us" not in self.data:
             warnings.warn("AGP and spectrum skipped: need an autocorrelation and recorded timing.",
-                          stacklevel=2)
-            return self.data
-        correlation = self.data["C1_corrected" if corrected else "C1"]
+                          stacklevel=3)
+            return result
+        times = self.data["time_us"]
+        correlation = correlations.get("C1_corrected", correlations["C1"])
+        error = correlations["C1_err"]
         if background_start_us is not None:
-            connected, fit = subtract_background(self.data["time_us"], correlation,
-                                                 self.data["C1_err"], background_start_us)
-            self.data.update(background_amplitude=np.asarray(fit["amplitude"]),
-                             background_rate_per_us=np.asarray(fit["rate_per_us"]),
-                             background_start_us=np.asarray(float(background_start_us)))
-        frequency_khz = spectrum_frequencies_khz(self.data["time_us"])
+            connected, fit = subtract_background(times, correlation, error, background_start_us)
+            result.update(background_amplitude=np.asarray(fit["amplitude"]),
+                          background_rate_per_us=np.asarray(fit["rate_per_us"]),
+                          background_start_us=np.asarray(float(background_start_us)))
+        frequency_khz = spectrum_frequencies_khz(times)
         spectrum, spectrum_err = spectral_function(
-            self.data["time_us"], correlation if background_start_us is None else connected,
-            self.data["C1_err"], frequency_khz, window)
-        self.data.update(frequency_khz=frequency_khz, spectrum=spectrum, spectrum_err=spectrum_err)
+            times, correlation if background_start_us is None else connected, error,
+            frequency_khz, window)
+        result.update(frequency_khz=frequency_khz, spectrum=spectrum, spectrum_err=spectrum_err)
         if background_start_us is not None:
-            self.data["spectrum_with_background"] = spectral_function(
-                self.data["time_us"], correlation, self.data["C1_err"], frequency_khz, window)[0]
+            result["spectrum_with_background"] = spectral_function(
+                times, correlation, error, frequency_khz, window)[0]
 
         couplings = self.recorded_couplings_mhz()
         if couplings is None:
-            warnings.warn("AGP skipped: needs recorded couplings.", stacklevel=2)
-            return self.data
+            warnings.warn("AGP skipped: needs recorded couplings.", stacklevel=3)
+            return result
         g_mhz = float(np.mean(np.abs(couplings)))
         mu_khz = np.atleast_1d(np.asarray(self.DEFAULT_MU_KHZ if mu is None else mu, dtype=float))
-        factors = self.data.get("C1_calibration_factors")
+        factors = correlations.get("C1_calibration_factors")
         scale = (2 * np.pi * g_mhz)**2  # agp stores dimensionless g^2 ||A_mu||^2
+        dimension = sector_dimension(self.photon_sector_number, 1 + len(self.swap_stors))
 
         def estimate(lifetime_us):
-            weights = scale * np.array([agp_kernel_weights(self.data["time_us"], cutoff / 1000,
-                                                           lifetime_us) for cutoff in mu_khz])
-            variance = weights**2 @ self.data["C1_err"]**2
+            weights = scale * np.array([agp_kernel_weights(times, cutoff / 1000, lifetime_us)
+                                        for cutoff in mu_khz])
+            variance = weights**2 @ error**2
             if factors is not None:
                 variance = variance + ((weights @ factors)**2).sum(axis=-1)
             return weights, weights @ correlation, variance
 
         kernel, agp, variance = estimate(None)
-        self.data.update(agp_mu=mu_khz, agp=agp, agp_err=np.sqrt(variance),
-                         coupling_mhz=np.asarray(g_mhz),
-                         mu_gld_khz=np.asarray(1000 * g_mhz * (1 + len(self.swap_stors)) / dimension))
+        result.update(agp_mu=mu_khz, agp=agp, agp_err=np.sqrt(variance),
+                      coupling_mhz=np.asarray(g_mhz),
+                      mu_gld_khz=np.asarray(1000 * g_mhz * (1 + len(self.swap_stors)) / dimension))
         if background_start_us is not None:
-            self.data.update(agp_connected=kernel @ connected, agp_connected_err=np.sqrt(variance))
+            result.update(agp_connected=kernel @ connected, agp_connected_err=np.sqrt(variance))
         if t1_us is not None:
             _, value, variance = estimate(t1_us)
             if t1_err_us:
                 step = 1e-4 * t1_us
                 slope = (estimate(t1_us + step)[1] - estimate(t1_us - step)[1]) / (2 * step)
                 variance = variance + (slope * t1_err_us)**2
-            self.data.update(agp_t1=value, agp_t1_err=np.sqrt(variance),
-                             t1_us=np.asarray(float(t1_us)),
-                             t1_err_us=np.asarray(float(t1_err_us or 0)))
+            result.update(agp_t1=value, agp_t1_err=np.sqrt(variance),
+                          t1_us=np.asarray(float(t1_us)),
+                          t1_err_us=np.asarray(float(t1_err_us or 0)))
 
         kerr = self.recorded_kerr_mhz() if kerr_mhz is None else float(kerr_mhz)
         if kerr is None:
-            warnings.warn("Theory skipped: no Kerr recorded; give kerr_mhz.", stacklevel=2)
-            return self.data
-        differences, weights = self.theory_spectrum(kerr_mhz=kerr)
-        theory = two_time_correlation(differences, weights, self.data["time_us"])
+            warnings.warn("Theory skipped: no Kerr recorded; give kerr_mhz.", stacklevel=3)
+            return result
+        differences, weights = self.theory_spectrum(kerr_mhz=kerr, direction=direction)
+        theory = two_time_correlation(differences, weights, times)
         # Against a background-subtracted S, the theory without its DC part (the connected C_1).
         dc = split_dc(differences, weights)[0] if background_start_us is not None else 0.
-        self.data.update(C1_theory=theory, agp_theory_window=kernel @ theory,
-                         agp_theory=spectral_agp(differences, weights, mu_khz / 1000, g_mhz),
-                         theory_kerr_mhz=np.asarray(kerr),
-                         spectrum_theory=spectral_function(
-                             self.data["time_us"], theory - dc, np.zeros(len(theory)),
-                             frequency_khz, window)[0])
-        return self.data
+        result.update(C1_theory=theory, agp_theory_window=kernel @ theory,
+                      agp_theory=spectral_agp(differences, weights, mu_khz / 1000, g_mhz),
+                      theory_kerr_mhz=np.asarray(kerr),
+                      spectrum_theory=spectral_function(
+                          times, theory - dc, np.zeros(len(theory)), frequency_khz, window)[0])
+        return result
 
     def assembled_attrs(self):
         """The analysis settings of the saved curves (cutoffs, window, background, T1, Kerr)."""
