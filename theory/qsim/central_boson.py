@@ -92,3 +92,20 @@ def fixed_n_hamiltonian(photon_number, mode_count, detunings, couplings_MHz,
         states=states,
         basis_eigenstate_weights=np.abs(states) ** 2,
     ))
+
+
+def fock_number_traces(model, initial_states, mode_index, time_us):
+    """-> (state, time) mean photon number of one mode, closed system, from Fock states.
+
+    ``model`` is a :func:`fixed_n_hamiltonian` result; ``initial_states`` are
+    occupation lists of its sector; ``mode_index`` is the mode in (M1,
+    *storages) order; ``time_us`` in us (energies are cyclic MHz).
+    """
+    phases = np.exp(-2j * np.pi * np.outer(model.energies_MHz, np.asarray(time_us, dtype=float)))
+    numbers = np.asarray(model.fock_basis)[:, mode_index]
+    traces = []
+    for state in initial_states:
+        amplitudes = model.states[model.fock_index[tuple(state)], :].conj()
+        evolved = model.states @ (amplitudes[:, None] * phases)
+        traces.append(numbers @ np.abs(evolved) ** 2)
+    return np.asarray(traces)
