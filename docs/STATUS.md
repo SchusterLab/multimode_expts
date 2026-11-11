@@ -1,6 +1,6 @@
 # Where things stand
 
-**Last updated: 2026-11-03** (required names for assembled data sets; 10-28: M1 Fock prep item; 10-24: `theory/` package and the jonginn AGP item; AGP layers as of
+**Last updated: 2026-11-10** (`C:\experiments` emptied, test failures, branch clean-up; 11-03: required names for assembled data sets; 10-28: M1 Fock prep item; 10-24: `theory/` package and the jonginn AGP item; AGP layers as of
 2026-10-23; the rest as of 2026-10-15). This file holds only what is
 shared across themes: the branch rules and the cross-theme items. Each theme has its own status
 file under `docs/status/`; read the one for your work. What happened, and why, is in `docs/log/`.
@@ -21,6 +21,14 @@ their own status files:
 The second branch, `qsim-analysis`, was retired on 2026-10-06 (guan): the merges between the
 two cost more than the separation gave.
 
+**Branches on 2026-11-10** (record: `docs/log/2026-11-10_housekeeping-merge.md`): the branches
+`guan`, `autocal`, `tests-cleanup` and `wigner-linear-fidelity` are deleted (each had nothing
+that `main` lacks), and so is the `tests-cleanup` worktree. `theory` (worktree
+`C:\python\multimode_expts_theory`) is at `main`. The `guan` worktree is on branch `v2` (tProc V2
+migration; its status file `docs/status/v2_migration.md` is in that worktree only). The
+`autocal` worktree is on `cavity-coherence`. The rules below still name `guan`; guan to say
+which branch they name now.
+
 Rules:
 - Work on `guan`. For a parallel session, make a short-lived branch and worktree from `guan`,
   and merge it back within a day or so.
@@ -28,12 +36,23 @@ Rules:
 - At the end of a session, overwrite the status file of your theme. Change this file only for
   cross-theme items.
 - The worker runs only the code in `C:\python\multimode_expts` (`main`).
-- Other people's branches (seb: `transduction_refactor`, `wigner-linear-fidelity`; jonginn:
-  `jonginn`, `wip/ramsey-flux-excursion`) are theirs to keep or merge. seb's two are fully in
+- Other people's branches (seb: `transduction_refactor`; jonginn: `jonginn`,
+  `wip/ramsey-flux-excursion`) are theirs to keep or merge. `transduction_refactor` is fully in
   `main` and can be deleted when seb agrees.
 
 ## Cross-theme items
 
+- **Old data moved from `C:\experiments` to the NAS (2026-11-09, all users).** The disk was
+  almost full, so the data folders were moved to the Synology NAS: they were already in its
+  nightly copy `/volume1/slab/Multimode/BF5_expts_autosync` (checked file by file), and were then
+  deleted on pippin. From pippin, `ssh slabnas` reaches the NAS (key auth). On 11-10 the files
+  that the tests read were copied back to their old paths (344 files, 2.3 GB, in
+  `260818_qsim_spectroscopy`, `260526_qsim_darkmode`, `260814_qsim_encspec`). Other analysis on
+  pippin that loads old folders (data-set registries in `analysis_notebooks/datasets/`,
+  notebooks) needs its files copied back the same way. New jobs are not affected: the station
+  makes its folders again for each job. The nightly backup is paused
+  (`~/bin/pippin_backup.disabled` on slabnas, since 11-09): new data has no NAS copy until that
+  file is deleted. Record: `docs/log/2026-11-10_housekeeping-merge.md`.
 - **M1 Fock N >= 2 prep (2026-10-28, all users):** with photons in M1 the qubit f state decays
   to g and loses one photon (|f,n> -> |g,n-1>; ~6 us for n=1 at 0.45 mA, ~20x slower at 0.25 mA).
   Physics: vault `Lab/guan/AGP/2026/10/2026-10-28.md`; record: `docs/log/2026-10-28_fock-prep-f-decay.md`.
@@ -84,12 +103,11 @@ Rules:
   them. Git tag `raqm-simulation-notebooks` is the last commit with them (local; push with the
   branch). guan: FYI.
 
-- **Branches (2026-10-15):** `main` has all of `guan` and `tests-cleanup`, and `main` is
-  merged back into `guan`. The uncommitted edits in the `main` checkout (worker yoko reconnect,
-  transduction docs, jonginn's AGP work, QEC notebooks) are committed. **Users restart their
-  kernels once.** The `tests-cleanup` branch and worktree are fully merged; delete the
-  worktree only by the link-safe steps in `AGENTS.md`. Record:
-  `docs/log/2026-10-15_housekeeping-merge.md`.
+- **M1 reset with 3 dump pulses (2026-11-05, guan's decision; all users).** `MM_base.man_reset`
+  plays one M-D2 pulse per qubit state at -chi_f, -chi_ge, 0, and it is now the only copy (the
+  ones in `QsimProgram` and `SidebandScrambleDarkProgram` are deleted). The offsets need measured
+  chi in the hardware config (`CFG-HW-20261105-00040` and later); with the legacy
+  `chi_ef = 1.231` the f pulse is at no line. Record: `docs/log/2026-11-05_man-reset-trim.md`.
 - **AGP data in three layers (2026-10-23, guan's decision, on `main`):** jonginn's
   `CentralBosonAGPExperiment` and `CentralBosonAGPDisorderScan` are now assembled classes over
   one-state `FockPopulationExperiment` jobs, with no shots above the job. His
@@ -107,9 +125,12 @@ Rules:
   only converted or new job files, and the timing only from their `derived_params`
   (issue 5). Records: `docs/log/2026-10-02_dataset-catalog-and-conversion-round.md`,
   `docs/log/2026-10-06_issue5-d72-and-loaders.md`.
-- **Known test failures (3), on purpose for now:**
-  - `test_matrix_pencil_regression` (3): left as is while `qsim-analysis` compares fitting
-    methods.
+- **Known test failures (46, 2026-11-10):**
+  - 43 on the required names (the 11-03 item): 40 in the MBR files (`test_mbr_*`), whose
+    fixtures use `tools/migrate_mbr_jobs.py`, and 3 in `test_convert_fock_population_catalog`.
+  - `test_matrix_pencil_regression` (3), on purpose for now: left as is while `qsim-analysis`
+    compares fitting methods.
+  - On pippin, the MBR tests read real jobs under `C:\experiments` (see the NAS item above).
 - **Jonginn notebook migration:** the newer work is absorbed or explicitly retired using
   his issue 7 decisions. The five old notebooks and all `KEPT_UNMIGRATED` exceptions are
   gone; the stage-dispatch sweep passes. Acquisition defaults are full basis + RMS with

@@ -3,8 +3,8 @@
 **Last updated: 2026-10-29** (seb + Claude; the 10-28 version audited by an independent agent; 10-29: night 10-28/29 added). Work happens on `main`
 (`C:\python\multimode_expts`). Experiment scripts and running notes live in the sandbox
 `C:\experiments\260601_Transduction_sandbox\coherence\` (notes: `night1023/NOTES.md`, one bullet per step since 10-23;
-the repo log for 10-23 is `docs/log/2026-10-23_swap-breakdown-night.md` (written 10-23, committed 11-10 from the
-autocal worktree); the herald test, sector-3 scan, eta scan and parity fix (10-24..10-26) are in NOTES only). History: 10-01..10-12 at eta 0.35 (logs under Docs), cooldown ~10-19, recalibration 10-20/21.
+the repo log for 10-23 is `docs/log/2026-10-23_swap-breakdown-night.md`; the herald test, sector-3 scan, eta scan and
+parity fix (10-24..10-26) are in NOTES only). History: 10-01..10-12 at eta 0.35 (logs under Docs), cooldown ~10-19, recalibration 10-20/21.
 
 ## Objectives (seb + Claude, 10-28; read before proposing a measurement)
 
