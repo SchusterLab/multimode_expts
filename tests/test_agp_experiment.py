@@ -124,7 +124,9 @@ def test_correlations_and_errors_from_the_moments(tmp_path, confusion, mu):
                                 for row in np.eye(len(times))])
     np.testing.assert_allclose(data["agp_err"][column], np.sqrt(weights**2 @ data["C1_err"]**2),
                                rtol=1e-8)
-    agp.display()
+    figures = agp.display()  # populations, correlations, spectrum, AGP(mu)
+    assert len(figures) == 4
+    matplotlib.pyplot.close("all")
 
 
 def test_children_are_sorted_into_sector_order_and_must_cover_it(tmp_path):
@@ -166,7 +168,10 @@ def test_acquire_save_and_reload_keep_direction_and_disorder(tmp_path):
                 "C1_theory", "agp_theory"]:
         np.testing.assert_allclose(reloaded.data[key], agp.data[key])
     view = CentralBosonAGPExperiment.from_h5file(manifest_path.with_suffix(".h5"))
-    view.display()
+    assert len(view.display()) == 4
+    with pytest.raises(ValueError, match="analyze"):
+        CentralBosonAGPExperiment.from_manifest(manifest_path).display()
+    matplotlib.pyplot.close("all")
 
 
 def test_read_mode_may_differ_from_direction(tmp_path):

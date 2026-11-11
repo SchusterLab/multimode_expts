@@ -8,7 +8,6 @@ import warnings
 from copy import deepcopy
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from experiments.assembled_data import ASSEMBLED_DIR, experiment_root
@@ -24,7 +23,6 @@ from experiments.qsim.agp import (
 )
 from experiments.qsim.fock_population import (
     FockPopulationSetExperiment,
-    mode_name,
     multiparity_moment_error,
 )
 from experiments.qsim.fock_population_sequential import (
@@ -273,24 +271,6 @@ class CentralBosonAGPSequentialExperiment(CentralBosonAGPExperiment):
                           time_us, theory - dc, np.zeros(len(theory)), frequency_khz, window)[0])
         return result
 
-    def display(self, raw=False, **kwargs):
-        if "C1" not in self.data:
-            self.analyze()
-        key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
-        fig, axes = plt.subplots(len(self.data["directions"]), 1, squeeze=False,
-                                 figsize=(9, 3 * len(self.data["directions"])), constrained_layout=True)
-        for index, direction in enumerate(self.data["directions"]):
-            ax = axes[index, 0]
-            values, error = self.data[key][index], self.data["C1_err"][index]
-            ax.plot(self.data["cycles"], values, label="measured")
-            ax.fill_between(self.data["cycles"], values - error, values + error, alpha=.3)
-            if "C1_theory" in self.data:
-                ax.plot(self.data["cycles"], self.data["C1_theory"][index], "k--", label="closed system")
-            ax.set(title=f"{mode_name(direction)}, W={float(self.data['disorder_khz']):g} kHz",
-                   xlabel="Floquet cycles", ylabel="C1")
-            ax.legend()
-        return fig
-
     def manifest_parameters(self):
         return dict(photon_sector_number=self.photon_sector_number, directions=self.directions,
                     swap_stors=self.swap_stors, cycles=self.cycles, detunings=self.detunings,
@@ -349,42 +329,3 @@ class CentralBosonAGPSequentialDisorderScan(CentralBosonAGPDisorderScan):
         self.data["directions"] = self.children[0].data["directions"].copy()
         self.data["ro_stors"] = self.children[0].data["ro_stors"].copy()
         return self.data
-
-    def display(self, mu=None, theory=True):
-        cutoffs = self.data["agp_mu"]
-        columns = range(len(cutoffs)) if mu is None else [int(np.argmin(abs(cutoffs - mu)))]
-        directions = self.data["directions"]
-        fig, axes = plt.subplots(len(directions), len(columns), squeeze=False,
-                                 figsize=(4 * len(columns), 3 * len(directions)), constrained_layout=True)
-        for row, direction in enumerate(directions):
-            for column, cutoff in enumerate(columns):
-                ax = axes[row, column]
-                ax.errorbar(self.data["disorder_khz"], self.data["agp"][:, row, cutoff],
-                            self.data["agp_err"][:, row, cutoff], fmt="o-", label="measured")
-                if theory and "agp_theory" in self.data:
-                    ax.plot(self.data["disorder_khz"], self.data["agp_theory"][:, row, cutoff],
-                            "k--", label="closed system")
-                    ax.plot(self.data["disorder_khz"], self.data["agp_theory_window"][:, row, cutoff],
-                            "x:", label="closed system, same window")
-                ax.set(title=f"{mode_name(direction)}, cutoff {cutoffs[cutoff]:g} kHz",
-                       xlabel="Disorder RMS (kHz)", ylabel="AGP")
-                ax.legend()
-        return fig, axes
-
-    def display_traces(self, raw=False):
-        key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
-        directions = self.data["directions"]
-        strengths = self.data["disorder_khz"]
-        fig, axes = plt.subplots(len(strengths), len(directions), squeeze=False, sharex=True,
-                                 figsize=(4 * len(directions), 2.5 * len(strengths)), constrained_layout=True)
-        for row, strength in enumerate(strengths):
-            for column, direction in enumerate(directions):
-                ax = axes[row, column]
-                values, error = self.data[key][row, column], self.data["C1_err"][row, column]
-                ax.plot(self.data["cycles"], values)
-                ax.fill_between(self.data["cycles"], values - error, values + error, alpha=.3)
-                if "C1_theory" in self.data:
-                    ax.plot(self.data["cycles"], self.data["C1_theory"][row, column], "k--")
-                ax.set(title=f"{mode_name(direction)}, W={strength:g} kHz",
-                       xlabel="Floquet cycles", ylabel="C1")
-        return fig, axes

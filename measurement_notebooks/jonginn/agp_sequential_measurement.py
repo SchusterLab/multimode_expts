@@ -265,8 +265,7 @@ manifest_path = scan.acquire(
 print(manifest_path)
 
 # %% tags=["agp_display"]
-scan.display()
-scan.display_traces()
+scan.display()  # every stage, from the populations to the AGP against W
 plt.show()
 
 # %% [markdown]

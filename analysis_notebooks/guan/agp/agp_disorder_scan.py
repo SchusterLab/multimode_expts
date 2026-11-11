@@ -88,7 +88,7 @@ for name, scan in scans.items():
 
 # %%
 for name, scan in scans.items():
-    fig, axes = scan.display(mu=[1., 3., 10.])
+    fig = scan.display_agp(mu=[1., 3., 10.])
     fig.suptitle(f"{name}: {scan.data['time_us'][-1]:.0f} us window")
     plt.show()
 
@@ -98,11 +98,11 @@ for name, scan in scans.items():
 # The measured C_1(t) (readout corrected, shot error band) and the closed-system C_1(t).
 
 # %%
-fig, axes = fine.display_traces()
+fig = fine.display_correlations()
 plt.show()
 
 # %%
-fig, ax = fine.display_correlation(moment=1)
+fig = fine.display_correlations(style="map", moment=1)
 plt.show()
 
 # %% [markdown]
@@ -130,8 +130,8 @@ plt.show()
 
 # %%
 other = fine.analyze(mu=MU_KHZ, t1_us=T1_US, t1_err_us=T1_ERR_US, kerr_mhz=-0.044)
-fig, axes = fine.display(mu=[3.])
-axes[0].set_title("mu = 3 kHz, K = -44 kHz")
+fig = fine.display_agp(mu=[3.])
+fig.axes[0].set_title("mu = 3 kHz, K = -44 kHz")
 plt.show()
 
 # %% [markdown]

@@ -226,7 +226,8 @@ for part in scan.children:
     scan.data["agp_theory_list"].append(float(value))
 
 # %%
-fig, ax = scan.display()
+fig = scan.display_agp()
+ax = fig.axes[0]
 ax.lines[0].set(color="#0072B2", label="Measured: direct kernel integral")
 ax.plot(scan.data["disorder_khz"], scan.data["agp_t1_list"], "s-",
         color="#D55E00", label="Local T1 compensation (approx.)")

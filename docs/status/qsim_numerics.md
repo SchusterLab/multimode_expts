@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-03** (AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
+**Last updated: 2026-11-10** (AGP display stages; 11-03: AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,14 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **AGP displays are one set of stages (2026-11-10, guan with Claude; branch `theory`).** Record:
+  `docs/log/2026-11-10_agp-display-stages.md`. All four AGP classes (single and sequential,
+  one W and the scan) share `experiments/qsim/agp_display.py`: `display_populations`,
+  `display_correlations(style="traces"|"map")`, `display_spectrum`, `display_agp_mu`, and on the
+  scan `display_agp`. `display()` draws all stages that have data, raw to abstract. Next
+  (agreed, not done): split `CentralBosonAGPExperiment.analyze` into step methods, so that
+  `CentralBosonAGPSequentialExperiment._analyze_direction` (a copy of it) can go.
 
 - **AGP data sets have names; jonginn's 10-29 remeasure to-dos A1-A5 done (2026-11-03, guan with
   Claude; branch `theory`).** Record: `docs/log/2026-11-03_agp-remeasure-names.md`; notebook

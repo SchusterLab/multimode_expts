@@ -35,7 +35,7 @@ for scan in scans.values():
 for name, scan in scans.items():
     slug = name.lower().replace(" ", "_")
     for suffix, start in (("", None), ("_bg", FIT_START_US)):
-        fig, _ = scan.display_spectrum(max_khz=MAX_KHZ, background_start_us=start)
+        fig = scan.display_spectrum(max_khz=MAX_KHZ, background_start_us=start)
         fig.suptitle(f"{name}: " + fig.get_suptitle(), fontsize=10)
         fig.savefig(FIGURES / f"q13_spectrum_{slug}{suffix}.png", dpi=110)
         print(FIGURES / f"q13_spectrum_{slug}{suffix}.png")

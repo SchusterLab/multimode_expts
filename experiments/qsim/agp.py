@@ -43,6 +43,7 @@ from experiments.assembled_data import (
     read_manifest,
 )
 from experiments.job_paths import JOB_ID_RE, JobPathError, _reroot, data_root
+from experiments.qsim.agp_display import AGP_LABEL, AGPDisplayMixin, MissingStageData, _grid_figure
 from experiments.qsim.fock_population import (
     FockPopulationExperiment,
     FockPopulationSetExperiment,
@@ -124,7 +125,7 @@ def calibration_shots(calibration):
     return shape[1] // read_num
 
 
-class CentralBosonAGPExperiment(FockPopulationSetExperiment):
+class CentralBosonAGPExperiment(AGPDisplayMixin, FockPopulationSetExperiment):
     """The population jobs of one disorder strength, and their two-time correlations.
 
     One job per fixed-N state |i> with nonzero initial probe, all read in mode
@@ -141,7 +142,8 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
                                         cycles=range(0, 400, 4), detunings=detunings,
                                         calibration=calibration_h5)
         agp.acquire(runner)   # 15 short jobs; runner.ExptClass is FockPopulationExperiment
-        agp.analyze(mu=[2, 5, 10], t1_us=635); agp.save("s7_w30"); agp.display()
+        agp.analyze(mu=[2, 5, 10], t1_us=635); agp.save("s7_w30")
+        agp.display()         # every stage, raw to abstract (experiments.qsim.agp_display)
 
     ``data`` adds to the population set's arrays: ``C1``, ``C2`` (cycles,),
     ``C1_corrected``, ``C2_corrected`` with a correction, ``C1_err``, ``C2_err``
@@ -224,12 +226,14 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         except (AttributeError, KeyError, IndexError, TypeError):
             return None
 
-    def theory_spectrum(self, detunings=None, kerr_mhz=None):
+    def theory_spectrum(self, detunings=None, kerr_mhz=None, direction=None):
         """-> (differences_MHz, weights) of the C_1 probe, closed system.
 
         At the recorded couplings, ``detunings`` (MHz; default this W's) and
-        ``kerr_mhz`` (default the recorded Kerr). Needs the jobs.
+        ``kerr_mhz`` (default the recorded Kerr), for ``direction`` (default
+        this experiment's). Needs the jobs.
         """
+        direction = self.direction if direction is None else int(direction)
         couplings = self.recorded_couplings_mhz()
         kerr = self.recorded_kerr_mhz() if kerr_mhz is None else float(kerr_mhz)
         if couplings is None or kerr is None:
@@ -237,7 +241,8 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         model = fixed_n_hamiltonian(self.photon_sector_number, 1 + len(self.swap_stors),
                                     self.detunings if detunings is None else detunings,
                                     couplings, kerr)
-        values = probe_values(model.fock_basis, self.mode_index, self.probes[0][1])
+        values = probe_values(model.fock_basis, [0, *self.swap_stors].index(direction),
+                              "kerr" if direction == 0 else "number")
         return spectral_weights(model, values)
 
     # The default cutoff axis (kHz), the same for every W: 41 log steps from 1 to 100, and 2, 5, 20, 50.
@@ -365,45 +370,12 @@ class CentralBosonAGPExperiment(FockPopulationSetExperiment):
         """The analysis settings of the saved curves (cutoffs, window, background, T1, Kerr)."""
         return dict(analysis=getattr(self, "analysis", {}))
 
-    def display(self, raw=False, **kwargs):
-        """Top: <i|n_r(t)|i> for every |i>. Bottom: C_1(t), C_2(t) with shot errors, and theory."""
-        if "C1" not in self.data:
-            self.analyze()
-        corrected = "C1_corrected" in self.data and not raw
-        suffix, kind = ("_corrected", "corrected") if corrected else ("", "raw")
-        cycles = np.asarray(self.data["cycles"])
-        labels = [str(list(occupation)) for occupation in self.data["occupations"]]
-        fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 8), sharex=True,
-                                          constrained_layout=True)
-        mesh = top.pcolormesh(cycles, np.arange(len(labels)), self.data[f"n_mean{suffix}"],
-                              shading="auto")
-        top.set_yticks(range(len(labels)), labels, fontsize=7)
-        fig.colorbar(mesh, ax=top, label=f"<i|n_{mode_name(self.data['ro_stor'][0])}|i> ({kind})")
-        # The errors belong to the corrected values when there are some.
-        with_error = corrected == ("C1_corrected" in self.data)
-        for k in (1, 2):
-            if f"C{k}" not in self.data:
-                continue
-            values = np.asarray(self.data[f"C{k}{suffix}"])
-            bottom.plot(cycles, values, lw=1, label=f"C_{k}")
-            if with_error and f"C{k}_err" in self.data:
-                error = np.asarray(self.data[f"C{k}_err"])
-                bottom.fill_between(cycles, values - error, values + error, alpha=.3, lw=0)
-        if "C1_theory" in self.data:
-            bottom.plot(cycles, self.data["C1_theory"], "k--", lw=1, label="C_1, closed system")
-        bottom.set(xlabel="Floquet cycles", ylabel=f"Correlation ({kind})")
-        bottom.legend()
-        top.set_title(f"{type(self).__name__}: N = {int(self.data['photon_sector_number'])}, "
-                      f"direction {mode_name(self.data['direction'])}, "
-                      f"W = {float(self.data['disorder_khz']):g} kHz")
-        return fig
-
     def manifest_parameters(self):
         return dict(super().manifest_parameters(), photon_sector_number=self.photon_sector_number,
                     direction=self.direction, ro_stor=self.ro_stor, disorder_khz=self.disorder_khz)
 
 
-class CentralBosonAGPDisorderScan(AssembledExperiment):
+class CentralBosonAGPDisorderScan(AGPDisplayMixin, AssembledExperiment):
     """One ``CentralBosonAGPExperiment`` per disorder strength W, as C_k(W, t) maps.
 
     Acquire all of it with ``from_pattern(...).acquire(runner, name)``: W by W,
@@ -422,10 +394,13 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
     ``agp_err``, ``agp_t1``, ``agp_t1_err``, ``agp_connected``, ``agp_theory``,
     ``agp_theory_window`` (W, mu) and ``mu_gld_khz`` (W,); ``frequency_khz`` (f,)
     with ``spectrum``, ``spectrum_err``, ``spectrum_with_background``,
-    ``spectrum_theory`` (W, f). The HDF5 attribute ``analysis`` holds the settings.
+    ``spectrum_theory`` (W, f), and ``direction``. The HDF5 attribute ``analysis``
+    holds the settings. Displays: ``display()`` and its stages (``agp_display``),
+    and ``display_agp``, the AGP against W.
     """
 
     child_class = CentralBosonAGPExperiment
+    HAS_W_AXIS = True
     from_h5file = classmethod(assembled_from_h5file)
     SHARED = ("photon_sector_number", "direction", "ro_stor", "swap_stors", "cycles")
     AGP_KEYS = ("agp", "agp_err", "agp_t1", "agp_t1_err", "agp_theory", "agp_theory_window")
@@ -573,6 +548,8 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
                     detunings=np.asarray([part["detunings"] for part in parts]))
         if all("time_us" in part for part in parts):
             data["time_us"] = np.asarray(parts[0]["time_us"])
+        if "direction" in parts[0]:
+            data["direction"] = np.asarray(parts[0]["direction"])
         keys = ["C1", "C2", "C1_err", "C2_err", "C1_theory"]
         if all("C1_corrected" in part for part in parts):
             keys += ["C1_corrected", "C2_corrected"]
@@ -633,16 +610,19 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             raise ValueError("the parts do not share one disorder pattern")
         return patterns[0]
 
-    def theory_agp(self, disorder_khz, mu=None, kerr_mhz=None):
+    def theory_agp(self, disorder_khz, mu=None, kerr_mhz=None, direction=None):
         """-> the infinite-time closed-system AGP (W, mu) at any ``disorder_khz``.
 
-        On the scan's disorder pattern and recorded couplings. ``mu`` and
-        ``kerr_mhz`` default to those of the last ``analyze()``.
+        On the scan's disorder pattern and recorded couplings, for ``direction``
+        (default the first). ``mu`` and ``kerr_mhz`` default to those of the
+        last ``analyze()``.
         """
         cutoffs = np.atleast_1d(self.data["agp_mu"] if mu is None else mu).astype(float)
         part = self.children[0]
+        directions = self._directions()
+        direction = directions[0] if direction is None else int(direction)
         if kerr_mhz is None and "theory_kerr_mhz" in part.data:
-            kerr_mhz = float(part.data["theory_kerr_mhz"])
+            kerr_mhz = float(np.ravel(part.data["theory_kerr_mhz"])[directions.index(direction)])
         pattern = self.disorder_pattern()
         g_mhz = float(np.mean(np.abs(part.recorded_couplings_mhz())))
         values = []
@@ -650,270 +630,61 @@ class CentralBosonAGPDisorderScan(AssembledExperiment):
             if pattern is None and strength:
                 raise ValueError("the scan has only W = 0; no pattern to scale")
             detunings = np.zeros(len(part.swap_stors)) if pattern is None else 1e-3 * strength * pattern
-            differences, weights = part.theory_spectrum(detunings, kerr_mhz)
+            differences, weights = part.theory_spectrum(detunings, kerr_mhz, direction)
             values.append(spectral_agp(differences, weights, cutoffs / 1000, g_mhz))
         return np.asarray(values)
 
-    def display(self, mu=None, theory=True):
-        """AGP against W on linear axes, one panel per cutoff. -> (fig, axes).
+    def _stages(self, raw, theory, mu):
+        return [*super()._stages(raw, theory, mu),
+                ("agp", lambda: self.display_agp(mu=mu, theory=theory))]
 
-        Measured (with shot and calibration errors), T1-compensated when
-        analyzed with a T1, the closed system over the same window (crosses)
-        and, with the parts loaded, the infinite-time closed system (dashed).
+    def display_agp(self, mu=None, theory=True):
+        """The AGP against W, one panel per direction (rows) and cutoff (columns). -> Figure.
+
+        The last stage of ``display()``. Measured with shot and calibration
+        errors; T1-compensated and background-subtracted when analyzed so;
+        crosses: the closed system over the same window; dashed, with the jobs
+        loaded: the infinite-time closed system. ``mu`` in kHz (default
+        ``shown_cutoffs``).
         """
         if "agp" not in self.data and "agp_list" in self.data:  # files saved before 2026-10-24
             fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
             ax.plot(self.data["disorder_khz"], self.data["agp_list"], "o-")
-            ax.set(xlabel="Disorder RMS (kHz)", ylabel=r"$g^2\|A_\mu\|^2$")
-            return fig, np.array([ax])
+            ax.set(xlabel="Disorder RMS (kHz)", ylabel=AGP_LABEL)
+            return fig
+        if "agp" not in self.data:
+            raise MissingStageData("no agp: analyze with recorded couplings and timing")
         cutoffs = np.asarray(self.data["agp_mu"])
         columns = [int(np.argmin(abs(cutoffs - value))) for value in self.shown_cutoffs(mu)]
-        strengths = np.asarray(self.data["disorder_khz"])
+        strengths, directions = self._strengths(), self._directions()
         dense = np.linspace(0, strengths.max(), 121)
-        fig, axes = plt.subplots(1, len(columns), figsize=(4 * len(columns), 3.6),
-                                 squeeze=False, sharex=True, constrained_layout=True)
-        for ax, column in zip(axes[0], columns):
-            ax.errorbar(strengths, self.data["agp"][:, column], self.data["agp_err"][:, column],
-                        fmt="o-", ms=4, capsize=2, label="measured")
-            if "agp_t1" in self.data:
-                ax.errorbar(strengths, self.data["agp_t1"][:, column],
-                            self.data["agp_t1_err"][:, column], fmt="s-", ms=4, capsize=2,
-                            label="local T1 compensated")
-            if "agp_connected" in self.data:
-                ax.errorbar(strengths, self.data["agp_connected"][:, column],
-                            self.data["agp_connected_err"][:, column], fmt="D-", ms=4, capsize=2,
-                            label="background subtracted")
-            if "agp_theory_window" in self.data:
-                ax.plot(strengths, self.data["agp_theory_window"][:, column], "x:", color="gray",
-                        label="closed system, same window")
-            if theory and self.children and "agp_theory" in self.data:
-                ax.plot(dense, self.theory_agp(dense, mu=cutoffs[column])[:, 0], "k--", lw=1,
-                        label="closed system, infinite time")
-            ax.set(title=rf"$\mu$ = {cutoffs[column]:g} kHz", xlabel="Disorder RMS (kHz)")
-        axes[0, 0].set_ylabel(r"$g^2\|A_\mu\|^2$")
+        estimators = [("agp", "o-", "measured"), ("agp_t1", "s-", "local T1 compensated"),
+                      ("agp_connected", "D-", "background subtracted")]
+        fig, axes = _grid_figure(len(directions), len(columns), (4, 3.6), sharex=True)
+        for row, direction in enumerate(directions):
+            for ax, column in zip(axes[row], columns):
+                for key, fmt, label in estimators:
+                    if key in self.data:
+                        ax.errorbar(strengths, self._grid(key)[:, row, column],
+                                    self._grid(f"{key}_err")[:, row, column], fmt=fmt, ms=4,
+                                    capsize=2, label=label)
+                if "agp_theory_window" in self.data:
+                    ax.plot(strengths, self._grid("agp_theory_window")[:, row, column], "x:",
+                            color="gray", label="closed system, same window")
+                if theory and self.children and "agp_theory" in self.data:
+                    try:
+                        curve = self.theory_agp(dense, mu=cutoffs[column], direction=direction)
+                    except ValueError:  # no shared disorder pattern, or W = 0 only
+                        curve = None
+                    if curve is not None:
+                        ax.plot(dense, curve[:, 0], "k--", lw=1, label="closed system, infinite time")
+                title = rf"$\mu$ = {cutoffs[column]:g} kHz"
+                ax.set(title=title if direction is None else f"{mode_name(direction)}, {title}",
+                       xlabel="Disorder RMS (kHz)")
+            axes[row, 0].set_ylabel(AGP_LABEL)
         axes[0, 0].legend(fontsize=7)
-        return fig, axes[0]
-
-    def display_mu(self, estimator="agp", theory=True):
-        """AGP(mu) for every W on a log mu axis, with its error band. -> (fig, ax).
-
-        ``estimator``: "agp", "agp_connected" or "agp_t1". Dashed: the
-        infinite-time closed system; the dots mark g L/D of each W.
-        """
-        if estimator not in self.data:
-            raise ValueError(f"no {estimator}: analyze with the settings it needs")
-        cutoffs = np.asarray(self.data["agp_mu"])
-        fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
-        for row, strength in enumerate(self.data["disorder_khz"]):
-            values = np.asarray(self.data[estimator][row])
-            error = np.asarray(self.data[f"{estimator}_err"][row])
-            line, = ax.plot(cutoffs, values, lw=1.2, label=f"W = {strength:g} kHz")
-            ax.fill_between(cutoffs, values - error, values + error, color=line.get_color(),
-                            alpha=.25, lw=0)
-            if theory and "agp_theory" in self.data:
-                ax.plot(cutoffs, self.data["agp_theory"][row], "--", lw=.8, color=line.get_color())
-            if "mu_gld_khz" in self.data:
-                gld = float(self.data["mu_gld_khz"][row])
-                ax.plot(gld, np.interp(gld, cutoffs, values), "o", ms=4, color=line.get_color())
-        ax.set(xscale="log", xlabel=r"$\mu$ (kHz)", ylabel=r"$g^2\|A_\mu\|^2$")
-        ax.set_title(f"{estimator}; dashed: closed system, infinite time; dots: g L/D", fontsize=9)
-        ax.legend(fontsize=7, ncol=2)
-        return fig, ax
-
-    def display_traces(self, raw=False):
-        """C_1(t) for every W with its shot error and the closed-system C_1. -> (fig, axes)."""
-        if "C1" not in self.data:
-            self.analyze()
-        key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
-        cycles = np.asarray(self.data["cycles"])
-        count = len(self.data["disorder_khz"])
-        fig, axes = plt.subplots(count, 1, figsize=(9, 1.8 * count), sharex=True, squeeze=False,
-                                 constrained_layout=True)
-        for row, ax in enumerate(axes[:, 0]):
-            values, error = self.data[key][row], self.data["C1_err"][row]
-            ax.plot(cycles, values, lw=1, label=key.replace("_", " "))
-            ax.fill_between(cycles, values - error, values + error, alpha=.3, lw=0)
-            if "C1_theory" in self.data:
-                ax.plot(cycles, self.data["C1_theory"][row], "k--", lw=1, label="closed system")
-            ax.set_ylabel(f"W = {self.data['disorder_khz'][row]:g} kHz", fontsize=8)
-        axes[0, 0].legend(fontsize=7, ncol=2)
-        axes[-1, 0].set_xlabel("Floquet cycles")
-        return fig, axes[:, 0]
-
-    def display_spectrum(self, mu=None, window=None, background_start_us=None, max_khz=None,
-                         raw=False, theory=True, yscale="linear"):
-        """The one-sided spectral function S(f) of C_1 for every W. -> (fig, axes).
-
-        By default the analyzed curves (``spectrum``, ``spectrum_err``,
-        ``spectrum_with_background`` in grey, ``spectrum_theory`` dashed): S is
-        the cosine transform of C_1 over its window, per kHz, with the shot
-        error, background-subtracted when analyzed so. A ``window``,
-        ``background_start_us`` other than the analyzed ones, or ``raw``,
-        computes S from C_1 here instead (``fitting.qsim.agp.spectral_function``).
-        With the parts loaded: the closed-system weights in bins of 1/T
-        (steps). The AGP filters f^2 / (f^2 + mu^2)^2, scaled to a peak of 1,
-        are on the right axis (``mu`` in kHz; default ``shown_cutoffs``).
-        ``max_khz`` defaults to ``SPECTRUM_MARGIN`` times the highest
-        closed-system frequency over all W, at most the Nyquist frequency (the
-        Nyquist frequency without the parts). A W whose closed-system weight is
-        partly above the Nyquist frequency (it folds back into the measured S)
-        is marked with that fraction.
-        """
-        if "C1" not in self.data:
-            self.analyze()
-        if "time_us" not in self.data:
-            raise ValueError("a spectrum needs the times of the cycles (time_us)")
-        analysis = getattr(self, "analysis", {}) or {}
-        analyzed_window = analysis.get("window", "hann")
-        analyzed_background = analysis.get("background_start_us")
-        stored = ("spectrum" in self.data and not raw
-                  and window in (None, analyzed_window)
-                  and background_start_us in (None, analyzed_background))
-        window = window or analyzed_window
-        if stored:
-            background_start_us = analyzed_background
-        subtract = background_start_us is not None
-        key = "C1" if raw or "C1_corrected" not in self.data else "C1_corrected"
-        times = np.asarray(self.data["time_us"])
-        resolution_khz = 1000 / times[-1]
-        nyquist_khz = 1000 / (2 * np.median(np.diff(times)))
-        frequency_khz = (np.asarray(self.data["frequency_khz"]) if stored
-                         else spectrum_frequencies_khz(times))
-        model = self.model_spectra_khz() if self.children else []
-        if max_khz is None:
-            top = max((f[w > 1e-3 * w.max()].max() for f, w in model if len(f)), default=None)
-            max_khz = nyquist_khz if top is None else min(nyquist_khz, self.SPECTRUM_MARGIN * top)
-        cutoffs = self.shown_cutoffs(mu)
-        with_parts = theory and bool(self.children) and "theory_kerr_mhz" in self.children[0].data
-        count = len(self.data["disorder_khz"])
-        fig, axes = plt.subplots(count, 1, figsize=(9, 2 * count), sharex=True, squeeze=False,
-                                 constrained_layout=True)
-        for row, ax in enumerate(axes[:, 0]):
-            theory_curve = None
-            if stored:
-                spectrum = np.asarray(self.data["spectrum"][row])
-                spread = np.asarray(self.data["spectrum_err"][row])
-                unsubtracted = (np.asarray(self.data["spectrum_with_background"][row])
-                                if subtract else None)
-                if theory and "spectrum_theory" in self.data:
-                    theory_curve = np.asarray(self.data["spectrum_theory"][row])
-            else:
-                values, error = np.asarray(self.data[key][row]), np.asarray(self.data["C1_err"][row])
-                unsubtracted = spectral_function(times, values, error, frequency_khz, window)[0]
-                if subtract:
-                    values = subtract_background(times, values, error, background_start_us)[0]
-                spectrum, spread = spectral_function(times, values, error, frequency_khz, window)
-            ax.plot(frequency_khz, spectrum, lw=1,
-                    label=key.replace("_", " ") + (", background subtracted" if subtract else ""))
-            ax.fill_between(frequency_khz, spectrum - spread, spectrum + spread, alpha=.3, lw=0)
-            if with_parts:
-                part = self.children[row]
-                differences, weights = part.theory_spectrum(
-                    kerr_mhz=float(part.data["theory_kerr_mhz"]))
-                dc, mask = split_dc(differences, weights)
-                kept = ~mask if subtract else np.ones(mask.shape, dtype=bool)
-                edges = np.arange(0, max_khz + resolution_khz, resolution_khz)
-                binned, _ = np.histogram(1000 * np.abs(differences[kept]), edges,
-                                         weights=weights[kept])
-                ax.stairs(binned / resolution_khz, edges, color="0.5", lw=.8,
-                          label="closed system, weights in bins of 1/T")
-                if theory_curve is None and theory and "C1_theory" in self.data:
-                    theory_curve = spectral_function(
-                        times, self.data["C1_theory"][row] - (dc if subtract else 0.),
-                        np.zeros(len(times)), frequency_khz, window)[0]
-            elif theory_curve is None and theory and "C1_theory" in self.data and not subtract:
-                theory_curve = spectral_function(times, self.data["C1_theory"][row],
-                                                 np.zeros(len(times)), frequency_khz, window)[0]
-            if theory_curve is not None:
-                ax.plot(frequency_khz, theory_curve, "k--", lw=1, label="closed system, same window")
-            ax.set_yscale(yscale)
-            if subtract and unsubtracted is not None:  # grey, and the y range stays on the subtracted S
-                limits = ax.get_ylim()
-                ax.plot(frequency_khz, unsubtracted, color="0.7", lw=1,
-                        label=f"{key.replace('_', ' ')}, with background")
-                ax.set_ylim(limits)
-            ax.set_ylabel(f"W = {self.data['disorder_khz'][row]:g} kHz\nS (1/kHz)", fontsize=8)
-            if model:
-                f, w = model[row]
-                folded = w[f > nyquist_khz].sum() / w.sum() if w.sum() > 0 else 0.
-                if folded >= 1e-3:
-                    ax.text(.99, .95, f"{100 * folded:.1f} % of the closed-system weight is above "
-                            f"Nyquist ({nyquist_khz:.0f} kHz) and folds back", transform=ax.transAxes,
-                            ha="right", va="top", fontsize=7, color="C3")
-            if len(cutoffs):
-                filters = ax.twinx()
-                for cutoff in cutoffs:
-                    shape = 4 * cutoff**2 * frequency_khz**2 / (frequency_khz**2 + cutoff**2)**2
-                    filters.plot(frequency_khz, shape, ":", lw=1, label=rf"filter, $\mu$ = {cutoff:g} kHz")
-                low, high = ax.get_ylim()  # the zero of the filters on the zero of S
-                filters.set(ylim=(1.05 * min(low, 0) / max(high, 1e-12), 1.05), yticks=[])
-                if row == 0:
-                    handles = ax.get_legend_handles_labels()
-                    others = filters.get_legend_handles_labels()
-                    ax.legend(handles[0] + others[0], handles[1] + others[1], fontsize=7, ncol=2)
-            elif row == 0:
-                ax.legend(fontsize=7, ncol=2)
-        fig.suptitle(f"{type(self).__name__}: spectral function of C_1, {window} window, "
-                     f"1/T = {resolution_khz:.2g} kHz", fontsize=10)
-        axes[-1, 0].set(xlabel="f (kHz)", xlim=(0, max_khz))
-        return fig, axes[:, 0]
-
-    SHOWN_CUTOFFS_KHZ = (5., 10., 20.)
-
-    def shown_cutoffs(self, mu=None):
-        """-> the cutoffs (kHz) a plot shows: ``mu``; else the analyzed ones, when 4 or fewer;
-        else the analyzed ones nearest to ``SHOWN_CUTOFFS_KHZ``."""
-        if mu is not None:
-            return np.atleast_1d(mu).astype(float)
-        analyzed = np.asarray(self.data.get("agp_mu", []), dtype=float)
-        if len(analyzed) <= 4:
-            return analyzed
-        return np.unique([analyzed[np.argmin(abs(analyzed - value))]
-                          for value in self.SHOWN_CUTOFFS_KHZ])
-
-    SPECTRUM_MARGIN = 1.3
-
-    def model_spectra_khz(self):
-        """-> per W, (f_kHz, |weights|) of the closed-system C_1 without its DC terms.
-
-        At the Kerr of the last analysis (else the recorded one). ``[]`` when a
-        part has no recorded couplings or Kerr.
-        """
-        spectra = []
-        for part in self.children:
-            kerr = part.data.get("theory_kerr_mhz")
-            try:
-                differences, weights = part.theory_spectrum(
-                    kerr_mhz=None if kerr is None else float(kerr))
-            except ValueError:
-                return []
-            _, mask = split_dc(differences, weights)
-            spectra.append((1000 * np.abs(np.asarray(differences)[~mask]),
-                            np.abs(np.asarray(weights)[~mask])))
-        return spectra
-
-    def display_correlation(self, moment=1, raw=False, **kwargs):
-        """One correlation as a map: x = Floquet cycles, y = disorder W (kHz).
-
-        Corrected when every part is corrected; ``raw=True`` selects raw.
-        ``kwargs`` go to ``pcolormesh``.
-        """
-        if moment not in (1, 2):
-            raise ValueError("moment must be 1 or 2")
-        if "C1" not in self.data:
-            self.analyze()
-        if np.any(np.diff(self.data["disorder_khz"]) == 0):
-            raise ValueError("a disorder map needs one part per W")
-        key, kind = f"C{moment}", "raw"
-        if not raw and f"{key}_corrected" in self.data:
-            key, kind = f"{key}_corrected", "corrected"
-        fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
-        mesh = ax.pcolormesh(self.data["cycles"], self.data["disorder_khz"], self.data[key],
-                             shading="auto", **kwargs)
-        ax.set(xlabel="Floquet cycles", ylabel="Disorder W (kHz)",
-               title=f"{type(self).__name__}: C_{moment} ({kind})")
-        fig.colorbar(mesh, ax=ax, label=f"C_{moment} ({kind})")
-        return fig, ax
+        fig.suptitle(f"{type(self).__name__}: AGP against W", fontsize=10)
+        return fig
 
     # -- persistence ------------------------------------------------------
 

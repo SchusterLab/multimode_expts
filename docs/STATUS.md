@@ -57,7 +57,7 @@ Rules:
     (`multimode_thermalization_sim/notebooks/jonginn/agp_storage7_mu1_to10_t1_theory_ENTIERLYCODEX.ipynb`)
     is now in the classes: `CentralBosonAGPDisorderScan.analyze(mu=[...], t1_us=..., t1_err_us=...,
     kerr_mhz=...)` gives the AGP with shot + calibration errors, the local T1 compensation and
-    the closed-system theory; `display()`, `display_traces()`. It reproduces your notebook's
+    the closed-system theory; `display()` (every stage; 2026-11-10), `display_agp()`. It reproduces your notebook's
     numbers to 1e-12. Example: `analysis_notebooks/guan/agp/agp_disorder_scan.py`. Please check it,
     then work from it; analysis that lives only in a notebook has no tests and no record.
   - **New rule** (`AGENTS.md`, `docs/qsim/theory_package.md`): models go in `theory/`

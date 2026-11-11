@@ -143,7 +143,7 @@ spectrum_table
 
 # %%
 for key, scan in scans.items():
-    fig, _ = scan.display_spectrum(mu=[10., 20.])
+    fig = scan.display_spectrum(mu=[10., 20.])
     fig.suptitle(f"{key}: " + fig._suptitle.get_text(), fontsize=10)
 
 # %% [markdown]
@@ -391,9 +391,9 @@ pd.DataFrame(checks)
 exported = {}
 for key, scan in load_scans().items():
     scan.analyze(background_start_us=BACKGROUND_US)
-    figures = dict(agp=scan.display(mu=[10., 20.])[0],
-                   agp_mu=scan.display_mu(estimator="agp_connected")[0],
-                   spectrum=scan.display_spectrum(mu=[10., 20.])[0])
+    figures = dict(agp=scan.display_agp(mu=[10., 20.]),
+                   agp_mu=scan.display_agp_mu(estimator="agp_connected"),
+                   spectrum=scan.display_spectrum(mu=[10., 20.]))
     for kind, fig in figures.items():
         title = fig._suptitle.get_text() if fig._suptitle else kind
         fig.suptitle(f"{key}: {title}", fontsize=10)

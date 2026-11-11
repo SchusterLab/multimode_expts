@@ -55,7 +55,8 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
   and the raw-shot classifier
   that `tools/convert_fock_population_catalog.py` uses as a cross-check.
 - `experiments/qsim/agp.py`: `CentralBosonAGPExperiment.analyze(mu, t1_us, t1_err_us, kerr_mhz)`
-  and `CentralBosonAGPDisorderScan` (maps over W and mu, `theory_agp`, `display`, `display_traces`).
+  and `CentralBosonAGPDisorderScan` (maps over W and mu, `theory_agp`; displays in
+  `experiments/qsim/agp_display.py`).
 - Examples: `analysis_notebooks/guan/agp/agp_disorder_scan.py`; the DC-background study
   `analysis_notebooks/guan/agp/agp_dc_background.py`.
 

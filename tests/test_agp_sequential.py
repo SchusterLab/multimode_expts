@@ -165,8 +165,8 @@ def test_native_children_match_legacy_analysis_and_reload_original_files(
         np.testing.assert_allclose(restored[key], expected_value)
     arrays_only = CentralBosonAGPSequentialExperiment.from_h5file(
         manifest_path.with_suffix(".h5"))
-    fig = arrays_only.display()
-    matplotlib.pyplot.close(fig)
+    assert len(arrays_only.display()) >= 2  # populations, correlations; AGP with timing
+    matplotlib.pyplot.close("all")
 
 
 def test_job_overrides_keep_selected_probe_separate_from_physical_readout_order():
@@ -249,8 +249,8 @@ def test_scan_acquires_and_reloads_native_layers_and_checks_names_before_jobs(tm
         np.testing.assert_allclose(restored.data[key], value)
     arrays_only = CentralBosonAGPSequentialDisorderScan.from_h5file(
         manifest_path.with_suffix(".h5"))
-    fig, _ = arrays_only.display(mu=10.)
-    matplotlib.pyplot.close(fig)
+    assert len(arrays_only.display(mu=10.)) == 4  # no populations without the parts
+    matplotlib.pyplot.close("all")
     before = len(runner.calls)
     with pytest.raises(FileExistsError):
         planned_scan().acquire(runner, "native_scan", analyze_kwargs=dict(mu=10.))
@@ -328,3 +328,13 @@ def test_shared_directions_reuse_jobs_at_each_w_and_reload_saved_scans(tmp_path)
     restored.analyze(mu=10.)
     for key, value in scan.data.items():
         np.testing.assert_allclose(restored.data[key], value)
+    # The displays: one column per direction, one row per W; the theory per direction.
+    figures = scan.display()
+    assert len(figures) == 5
+    populations, correlations, spectrum, agp_mu, agp_w = figures
+    assert len(correlations.axes) == 2 * len(MODES)
+    assert [ax.get_title() for ax in correlations.axes[:3]] == [
+        "W = 0 kHz, M1", "W = 0 kHz, S4", "W = 0 kHz, S7"]
+    assert all(ax.patches for ax in spectrum.axes[:2 * len(MODES)])  # binned closed system
+    assert len(agp_mu.axes) == len(MODES) and len(agp_w.axes) == len(MODES)
+    matplotlib.pyplot.close("all")

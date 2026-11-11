@@ -340,6 +340,6 @@ for direction, scan in disorder_scans.items():
 for scan in disorder_scans.values():
     moments = (1, 2) if "C2" in scan.data else (1,)
     for moment in moments:
-        fig, axis = scan.display_correlation(moment=moment, raw=False)
+        fig = scan.display_correlations(style="map", moment=moment, raw=False)
         plt.show()
         plt.close(fig)

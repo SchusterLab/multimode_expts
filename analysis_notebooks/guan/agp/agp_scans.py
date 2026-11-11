@@ -44,8 +44,8 @@ list_scans(r"C:\experiments\261027AGPlowKerr")
 new = load_scan("s7_high_w")    # or a manifest path, also a C:\experiments\... one
 print(new.summary())
 new.analyze(mu=MU, background_start_us=BACKGROUND_US)
-new.display(mu=[10., 20.])
-new.display_traces()
+new.display_agp(mu=[10., 20.])
+new.display_correlations()
 new.display_spectrum(mu=[10., 20.], background_start_us=BACKGROUND_US)
 
 # %% [markdown]

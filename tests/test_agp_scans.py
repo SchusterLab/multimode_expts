@@ -122,11 +122,11 @@ def test_spectrum_range_follows_the_closed_system_frequencies(tmp_path):
     model = scan.model_spectra_khz()
     assert len(model) == 2 and all(len(f) == len(w) > 0 for f, w in model)
     top = max(f[w > 1e-3 * w.max()].max() for f, w in model)
-    fig, axes = scan.display_spectrum()
-    assert axes[-1].get_xlim()[1] == pytest.approx(
+    axes = scan.display_spectrum().axes
+    assert axes[1].get_xlim()[1] == pytest.approx(
         min(_nyquist_khz(scan), CentralBosonAGPDisorderScan.SPECTRUM_MARGIN * top))
-    fig, axes = scan.display_spectrum(max_khz=50.)
-    assert axes[-1].get_xlim()[1] == 50.
+    axes = scan.display_spectrum(max_khz=50.).axes
+    assert axes[1].get_xlim()[1] == 50.
     matplotlib.pyplot.close("all")
 
 
@@ -136,7 +136,7 @@ def test_spectrum_marks_closed_system_weight_above_nyquist(tmp_path):
     nyquist = _nyquist_khz(scan)
     folded = [w[f > nyquist].sum() / w.sum() for f, w in scan.model_spectra_khz()]
     assert folded[0] < 1e-3 < folded[1]
-    fig, axes = scan.display_spectrum()
+    axes = scan.display_spectrum().axes[:2]
     marked = ["folds back" in " ".join(t.get_text() for t in ax.texts) for ax in axes]
     assert marked == [False, True]
     assert axes[-1].get_xlim()[1] == pytest.approx(nyquist)
@@ -206,11 +206,11 @@ def test_each_w_has_its_curves_on_shared_axes(tmp_path):
     assert data["spectrum"].shape == (2, len(data["frequency_khz"]))
     np.testing.assert_allclose(data["spectrum"][1], part.data["spectrum"])
     # The stored S is what the plot computes from C_1 with the same settings.
-    fig, axes = scan.display_spectrum()
-    computed = scan.display_spectrum(window="hann", raw=False, background_start_us=0.)
-    np.testing.assert_allclose(axes[1].lines[0].get_ydata(), computed[1][1].lines[0].get_ydata())
+    axes = scan.display_spectrum().axes
+    computed = scan.display_spectrum(window="hann", raw=False, background_start_us=0.).axes
+    np.testing.assert_allclose(axes[1].lines[0].get_ydata(), computed[1].lines[0].get_ydata())
     assert list(scan.shown_cutoffs()) == [5., 10., 20.]
-    scan.display_mu(estimator="agp_connected")
+    assert scan.display_agp_mu().axes[0].get_title() == "S7: agp_connected"
     matplotlib.pyplot.close("all")
 
 

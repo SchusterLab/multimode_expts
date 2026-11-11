@@ -139,7 +139,7 @@ loaded.display()
 part = type(scan.children[1]).from_h5file(scan.children[1].manifest_path.with_suffix(".h5"))
 part.display()
 view = CentralBosonAGPDisorderScan.from_h5file(scan_manifest.with_suffix(".h5"))
-view.display(moment=1)
+view.display()
 calibration.display()
 save_figs("agp_layers_check")
 for path in [job.fname, part.fname, view.fname]:
