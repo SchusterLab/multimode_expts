@@ -9,9 +9,16 @@ from experiments.qsim.qsim_base import QsimProgram
 
 class ManActiveResetVerificationProgram(QsimProgram):
     """
-    Prepare one manipulate photon before optional active reset.
+    Prepare manipulate photons before optional active reset.
 
     Apply configured pre/post pulses after reset, then measure the result.
+
+    cfg.expt options:
+        prep_man_photons: photons prepared in the manipulate mode before the reset
+            (default 1; 0 prepares none, for the readout floor).
+        pre_reset_pulse: optional pulse list (``get_prepulse_creator(...).pulse.tolist()``)
+            played after the photon preparation and before the reset, e.g. a qubit
+            ge pi to test the reset with the qubit in e.
     """
 
     def __init__(self, soccfg, cfg):
@@ -42,9 +49,13 @@ class ManActiveResetVerificationProgram(QsimProgram):
 
         # phase reset
         self.reset_and_sync()
-        pulse_cfg = self.prep_man_photon(1)
-        pulse = self.get_prepulse_creator(pulse_cfg)
-        self.custom_pulse(AttrDict(self.cfg), pulse.pulse, prefix = 'prep_man_1_initializer')
+        photons = int(cfg.expt.get('prep_man_photons', 1))
+        if photons > 0:
+            pulse_cfg = self.prep_man_photon(photons)
+            pulse = self.get_prepulse_creator(pulse_cfg)
+            self.custom_pulse(AttrDict(self.cfg), pulse.pulse, prefix = 'prep_man_1_initializer')
+        if cfg.expt.get('pre_reset_pulse'):
+            self.custom_pulse(cfg, cfg.expt.pre_reset_pulse, prefix='pre_reset')
         self.sync_all()
         #do the active reset
         if cfg.expt.active_reset:

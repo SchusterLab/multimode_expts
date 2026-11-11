@@ -271,59 +271,8 @@ from experiments.qsim.qsim_base import QsimExperiment, QsimProgram
 from experiments.qsim.sideband_scramble import SidebandScrambleProgram
 
 class SidebandScrambleDarkProgram(SidebandScrambleProgram):
-    
-    def man_reset(self, man_idx=1, dump_mode_idx=2, chi_dressed=True):
-        '''
-        Reset manipulate mode by swapping it to lossy mode
+    # man_reset: MM_base.man_reset (this class had a copy of it until 2026-11-05).
 
-        chi_dressed: if man freq shifted due to pop in qubit e, f states.
-        using_qubit: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found 
-        '''
-        if self.cfg.expt.get("debug", False):
-            print("overrided man reset is called")
-        qTest = 0
-        cfg=AttrDict(self.cfg)
-
-        MiDj_freq = self.dataset.get_freq(f'M{man_idx}-D{dump_mode_idx}')
-        MiDj_gain = self.dataset.get_gain(f'M{man_idx}-D{dump_mode_idx}')
-        MiDj_length = self.dataset.get_pi(f'M{man_idx}-D{dump_mode_idx}')
-        N = 2 if chi_dressed else 0
-        chi_ge = cfg.device.manipulate.chi_ge[qTest]
-        chi_ef = cfg.device.manipulate.chi_ef[qTest]
-
-        self.sideband_sigma_high = self.us2cycles(self.cfg.device.storage.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
-        self.add_gauss(ch=self.flux_high_ch[qTest],
-                    name="ramp_high",# + str(man_idx),
-                    sigma=self.sideband_sigma_high,
-                    length=self.sideband_sigma_high*6) # M1-x flat tops use 6 sigma
-        # self.wait_all(self.us2cycles(0.1))
-        self.sync_all(self.us2cycles(0.1))
-
-        chis = [chi_ge, chi_ge+chi_ef] if chi_dressed else [0]
-        ch = self.flux_high_ch[qTest]
-        iter_num = self.cfg.expt.get("dump_reset_iter_num", 1)
-        for n in range(0, N+1): # works when MiDj freq goes down (chi<0, bare freq+chi*n)
-            for chi in chis:
-                for _ in range(iter_num):
-                    freq_chi_shifted = MiDj_freq + (n * chi)
-                    # if cfg.expt.get("man_reset_print", True):
-                    #     print(ch, freq_chi_shifted, MiDj_length, MiDj_gain)
-                    self.set_pulse_registers(
-                        ch=ch,
-                        freq=self.freq2reg(freq_chi_shifted, gen_ch=ch),
-                        style="flat_top",
-                        phase=self.deg2reg(0),
-                        length=self.us2cycles(MiDj_length, gen_ch=ch),
-                        gain=MiDj_gain,
-                        waveform="ramp_high"
-                        )
-                    self.pulse(ch=ch)
-                    self.sync_all()
-                # self.sync_all(self.us2cycles(0.025))
-        # self.wait_all(self.us2cycles(0.25))
-        self.sync_all(self.us2cycles(2))
-    
-    
     def core_pulses(self):
         super().core_pulses() #already has sync_all at the last
         if self.cfg.expt.get("swap_man_dark", False):

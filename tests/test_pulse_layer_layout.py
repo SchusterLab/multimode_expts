@@ -14,32 +14,21 @@ import pytest
 from experiments.MM_base import MM_base
 from experiments.qsim.dark_mode_encoding import DarkModeProgram
 from experiments.qsim.qsim_base import QsimProgram, QsimRProgram
+from experiments.qsim.t2_cavity_fluxexcursion import SidebandScrambleDarkProgram
 
 
-def test_averager_bases_play_the_qsim_man_reset():
-    """``QsimProgram`` overrides MM_base's reset; ``DarkModeProgram`` inherits it.
+def test_every_qsim_program_plays_the_one_mm_base_man_reset():
+    """Since 2026-11-05 there is one ``man_reset``, in MM_base.
 
-    Until step 10B only the DarkBase (and MBR) programs had the override, from
-    the ``ManipulateModePulses`` mixin; the ~25 QsimBase leaves played
-    MM_base's. The two differ only by ``dump_reset_iter_num`` (default 1: the
-    same pulses; the program golden checks it under active reset).
+    The copies in ``QsimProgram`` and ``SidebandScrambleDarkProgram`` were
+    deleted (docs/log/2026-11-05_man-reset-trim.md); ``dump_reset_iter_num``
+    moved into MM_base. A new override would again let some programs play a
+    different reset, with no failure anywhere else in the suite.
     """
-    assert "man_reset" in vars(QsimProgram)
-    assert QsimProgram.man_reset is not MM_base.man_reset
-    assert DarkModeProgram.man_reset is QsimProgram.man_reset
-
-
-def test_raverager_base_keeps_mm_base_man_reset():
-    """The asymmetry that inheriting the mixin would have destroyed.
-
-    ``QsimRProgram`` (``DarkBaseRProgram`` until 10F) borrows only two of the three manipulate-mode
-    methods, so its ``active_reset`` path plays MM_base's ``man_reset``. If
-    someone later swaps the explicit assignments for inheritance, the
-    RAverager programs silently change which reset they emit -- with no
-    failure anywhere else in the suite.
-    """
-    assert QsimRProgram.man_reset is MM_base.man_reset
-    assert QsimRProgram.man_reset is not QsimProgram.man_reset
+    assert "man_reset" not in vars(QsimProgram)
+    for program in (QsimProgram, QsimRProgram,
+                    DarkModeProgram, SidebandScrambleDarkProgram):
+        assert program.man_reset is MM_base.man_reset, program.__name__
 
 
 @pytest.mark.parametrize("method", ["prep_man_fock_state",

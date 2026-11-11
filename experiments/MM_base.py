@@ -1037,12 +1037,41 @@ class MM_base:
 
 
 
+    @staticmethod
+    def man_reset_offsets_mhz(cfg, chi_dressed=True):
+        '''
+        -> the M-dump pulse offsets (MHz) from the bare M-dump frequency, one per qubit state.
+
+        The M reset runs before the qubit reset, so the qubit may still be in e or f, and
+        the M frequency moves by the qubit's dispersive shift: chi_ge with the qubit in e,
+        chi_f = chi_ge + chi_ef in f. chi_ef is the shift of the qubit ef line per M photon
+        (measured 2026-11-05 by pulse-probe spectroscopy with M1 in |1>). The dump D2 is
+        above M1, so the M-D2 sideband (f_D - f_M) moves by MINUS that shift. The pulses
+        play in the order of the qubit decay, f, e, g: offsets -chi_f, -chi_ge, 0. Checked
+        2026-11-05 (photon left with the qubit in g / e / f: -0.3 / 0.6 / 1.9 %, against
+        -0.2 / 0.8 / 0.8 % for the legacy list); docs/log/2026-11-05_man-reset-trim.md.
+        Without chi_dressed: the bare line only. The config chi must be measured values
+        (CFG-HW-20261105-00040 and later); the legacy chi_ef = 1.231 puts the f pulse at
+        no line.
+
+        Until 2026-11-05 the reset played offsets n * chi for n = 0, 1, 2 and
+        chi in (chi_ge, chi_ge + chi_ef): six pulses, with the sign of the M1-D1 dump
+        (below M1). With D2 it worked only because 0 (twice) and +0.93 MHz are about
+        0.3 MHz from the e and f lines.
+        '''
+        if not chi_dressed:
+            return [0.]
+        chi_ge = float(cfg.device.manipulate.chi_ge[0])
+        chi_ef = float(cfg.device.manipulate.chi_ef[0])
+        return [-(chi_ge + chi_ef), -chi_ge, 0.]   # f, e, g: the order of the qubit decay
+
     def man_reset(self, man_idx=1, dump_mode_idx=2, chi_dressed=True):
         '''
         Reset manipulate mode by swapping it to lossy mode
 
-        chi_dressed: if man freq shifted due to pop in qubit e, f states.
-        using_qubit: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found 
+        One dump pulse per offset of ``man_reset_offsets_mhz`` (g, e, f lines with
+        chi_dressed, else the bare line), each repeated cfg.expt.dump_reset_iter_num
+        times (default 1).
         '''
         qTest = 0
         cfg=AttrDict(self.cfg)
@@ -1050,9 +1079,8 @@ class MM_base:
         MiDj_freq = self.dataset.get_freq(f'M{man_idx}-D{dump_mode_idx}')
         MiDj_gain = self.dataset.get_gain(f'M{man_idx}-D{dump_mode_idx}')
         MiDj_length = self.dataset.get_pi(f'M{man_idx}-D{dump_mode_idx}')
-        N = 2 if chi_dressed else 0
-        chi_ge = cfg.device.manipulate.chi_ge[qTest]
-        chi_ef = cfg.device.manipulate.chi_ef[qTest]
+        offsets_mhz = self.man_reset_offsets_mhz(cfg, chi_dressed)
+        iter_num = int(cfg.get('expt', {}).get('dump_reset_iter_num', 1))
 
         self.sideband_sigma_high = self.us2cycles(self.cfg.device.storage.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
         self.add_gauss(ch=self.flux_high_ch[qTest],
@@ -1062,16 +1090,12 @@ class MM_base:
         # self.wait_all(self.us2cycles(0.1))
         self.sync_all(self.us2cycles(0.1))
 
-        chis = [chi_ge, chi_ge+chi_ef] if chi_dressed else [0]
         ch = self.flux_high_ch[qTest]
-        for n in range(0, N+1): # works when MiDj freq goes down (chi<0, bare freq+chi*n)
-            for chi in chis:
-                freq_chi_shifted = MiDj_freq + (n * chi)
-                # if cfg.expt.get("man_reset_print", True):
-                #     print(ch, freq_chi_shifted, MiDj_length, MiDj_gain)
+        for offset_mhz in offsets_mhz:
+            for _ in range(iter_num):
                 self.set_pulse_registers(
                     ch=ch,
-                    freq=self.freq2reg(freq_chi_shifted, gen_ch=ch),
+                    freq=self.freq2reg(MiDj_freq + offset_mhz, gen_ch=ch),
                     style="flat_top",
                     phase=self.deg2reg(0),
                     length=self.us2cycles(MiDj_length, gen_ch=ch),
@@ -1080,7 +1104,6 @@ class MM_base:
                     )
                 self.pulse(ch=ch)
                 self.sync_all()
-                # self.sync_all(self.us2cycles(0.025))
         # self.wait_all(self.us2cycles(0.25))
         self.sync_all(self.us2cycles(2))
 
