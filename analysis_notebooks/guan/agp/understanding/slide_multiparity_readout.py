@@ -23,10 +23,10 @@ N_COLOR = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # n = 0..3, validated ca
 plt.rcParams.update({"font.family": "IBM Plex Sans", "font.size": 13, "text.color": INK,
                      "mathtext.fontset": "dejavusans"})
 
-fig = plt.figure(figsize=(13.3, 6.8), facecolor=SURFACE)
+fig = plt.figure(figsize=(13.3, 6.0), facecolor=SURFACE)
 ax = fig.add_axes([0, 0, 1, 1])
 ax.set_xlim(0, 13.3)
-ax.set_ylim(0, 6.8)
+ax.set_ylim(0, 6.0)
 ax.set_aspect("equal")
 ax.axis("off")
 
@@ -45,8 +45,8 @@ def arrow(p0, p1, color=INK2, rad=0.0, lw=1.6, style="-|>", ls="-", mut=14):
 
 
 # %% (a) pulse sequence
-ax.text(0.15, 6.6, "(a)  Pulse sequence for one mode", fontsize=16, weight="semibold", va="center")
-Y_M, Y_Q = 5.75, 4.45       # row centres: hub mode M1, qubit
+ax.text(0.15, 5.82, "(a)  Pulse sequence for one mode", fontsize=16, weight="semibold", va="center")
+Y_M, Y_Q = 5.15, 4.0        # row centres: hub mode M1, qubit
 ax.text(0.15, Y_M, "M1", fontsize=14, weight="semibold", va="center")
 ax.text(0.15, Y_Q, "qubit", fontsize=14, weight="semibold", va="center")
 ax.plot([0.9, 13.15], [Y_Q, Y_Q], color=MUTED, lw=1.2, zorder=1)
@@ -82,14 +82,14 @@ for x0, x1, label in [(4.1, 7.3, "bit 0: parity of n"), (8.2, 10.9, "bit 1")]:
 # real-time feedback from the first read
 arrow((6.875, Y_Q - PH), (7.6, Y_Q - PH - 0.02), rad=0.6, color=N_COLOR[1])
 arrow((6.875, Y_Q - PH), (9.65, Y_Q - PH - 0.02), rad=0.25, color=N_COLOR[1])
-ax.text(8.25, 3.5, "feedback on the FPGA: reset to g if e, and phase 180° → 90° if bit 0 = e",
+ax.text(8.25, 3.15, "feedback on the FPGA: reset to g if e, and phase 180° → 90° if bit 0 = e",
         ha="center", va="center", fontsize=12, color=INK2)
 
 # %% (b) phase wheels
-ax.text(0.15, 3.2, "(b)  Qubit phase before the last π/2: right ends in g, left in e",
+ax.text(0.15, 2.85, "(b)  Qubit phase before the last π/2: right ends in g, left in e",
         fontsize=16, weight="semibold", va="center")
-R = 0.78
-CY = 1.55
+R = 0.7
+CY = 1.3
 WHEELS = [
     (1.35, r"after $t_\pi$: phase n·π", {0: 0, 1: 180, 2: 0, 3: 180}, {}),
     (3.75, r"after $t_\pi/2$: phase n·π/2", {0: 0, 1: 90, 2: 180, 3: 270}, {}),
@@ -122,25 +122,25 @@ ax.text(1.35, CY - R - 0.22, "even → g, odd → e", ha="center", va="top", fon
 ax.text(4.95, CY - R - 0.22, "n = 0, 1 → g;  n = 2, 3 → e", ha="center", va="top", fontsize=13)
 
 # %% (c) decoding and the facts behind it
-ax.text(7.7, 3.2, "(c)  Two bits give n", fontsize=16, weight="semibold", va="center")
+ax.text(7.7, 2.85, "(c)  Two bits give n", fontsize=16, weight="semibold", va="center")
 cols = [7.95, 8.85, 9.75]
-ax.text(cols[0], 2.8, "n", ha="center", fontsize=13, weight="semibold", color=INK2)
-ax.text(cols[1], 2.8, "bit 0", ha="center", fontsize=13, weight="semibold", color=INK2)
-ax.text(cols[2], 2.8, "bit 1", ha="center", fontsize=13, weight="semibold", color=INK2)
+ax.text(cols[0], 2.5, "n", ha="center", fontsize=13, weight="semibold", color=INK2)
+ax.text(cols[1], 2.5, "bit 0", ha="center", fontsize=13, weight="semibold", color=INK2)
+ax.text(cols[2], 2.5, "bit 1", ha="center", fontsize=13, weight="semibold", color=INK2)
 for n in range(4):
-    y = 2.45 - 0.32 * n
+    y = 2.17 - 0.3 * n
     ax.add_patch(Circle((cols[0] - 0.25, y + 0.07), 0.07, fc=N_COLOR[n], ec="none"))
     ax.text(cols[0], y, str(n), ha="center", fontsize=14, weight="semibold")
     ax.text(cols[1], y, "e" if n % 2 else "g", ha="center", fontsize=14)
     ax.text(cols[2], y, "e" if n >= 2 else "g", ha="center", fontsize=14)
-ax.text(10.35, 2.3, "n = bit 0 + 2 · bit 1  (mod 4)\nN = 3 photons: mod 4 is n itself",
+ax.text(10.35, 1.95, "n = bit 0 + 2 · bit 1  (mod 4)\nN = 3 photons: mod 4 is n itself",
         ha="left", va="center", fontsize=13, linespacing=1.5)
 facts = [
     "QND: χ a†a σ$_z$ commutes with n; reading the\nqubit does not change the photon number.",
     "Confusion matrix (10-24): diagonal 0.93, 0.87, 0.85,\n0.83; populations corrected by its inverse.",
 ]
 for i, text in enumerate(facts):
-    ax.text(7.7, 1.05 - 0.62 * i, text, ha="left", va="center", fontsize=13, color=INK2, linespacing=1.35)
+    ax.text(7.7, 0.85 - 0.55 * i, text, ha="left", va="center", fontsize=13, color=INK2, linespacing=1.35)
 
 out = Path("figures")
 out.mkdir(exist_ok=True)
