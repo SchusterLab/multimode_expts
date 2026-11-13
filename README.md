@@ -38,3 +38,5 @@ No `import multimode_expts` or `import .anything` or `sys.path` hacking!
 - [ ] Migrate to tProcv2 at some point
 - [ ] Consider using pydantic for complex config dictionaries.
 - [ ] Sequencer
+- [ ] Let the worker run jobs from any worktree, not only `main`: one child process per job, started from the job's worktree env, with the code version (commit, dirty flag) in the HDF5 file. Findings, proposed design and open decisions: `docs/log/2026-11-12_worker-worktrees-and-flat-namespace.md`, part 1.
+- [ ] Replace the import-all-classes hack in `experiments/__init__.py` with a lazy name lookup that keeps `meas.SomeExperiment`. 15 class names have more than one definition and must be resolved first. Do this before, or with, the worker item above. Same doc, part 2.
