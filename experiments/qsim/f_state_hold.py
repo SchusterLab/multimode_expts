@@ -35,6 +35,7 @@ from slab import AttrDict
 from experiments.MM_base import MM_base, MMAveragerProgram
 from experiments.qsim.qsim_base import QsimExperiment
 from experiments.single_qubit.single_shot import HistogramProgram
+from fitting import plot_style
 from fitting.qsim import f_hold
 
 REFERENCES = ("g", "e", "f")
@@ -164,42 +165,30 @@ class FStateHoldExperiment(QsimExperiment):
             return None
 
         ns, waits, pop = data["hold_ns"], np.asarray(data["hold_waits"]), data["populations"]
-        colors = {"g": "#2a78d6", "e": "#eb6834", "f": "#1baf7a"}  # categorical slots 1-3
-        markers = {"g": "o", "e": "s", "f": "^"}
-        ink, muted, grid, axis = "#0b0b0b", "#52514e", "#e1e0d9", "#c3c2b7"
-
-        fig, axs = plt.subplots(1, len(ns), figsize=(4.2 * len(ns), 4.0), sharey=True,
-                                squeeze=False, facecolor="#fcfcfb")
-        for i, n in enumerate(ns):
-            ax = axs[0, i]
-            ax.set_facecolor("#fcfcfb")
-            for j, state in enumerate("gef"):
-                # P(f) gets markers only: its fit line is drawn below.
-                ax.plot(waits, pop[i, :, j], marker=markers[state], ms=6, lw=0 if state == "f" else 1,
-                        color=colors[state], mec="#fcfcfb", mew=1, label=f"P({state})")
-            title = f"hold |f,{n}>"
-            if np.isfinite(data["nu"][i]):
-                title += f", nu_{n} = {data['nu'][i]:.1f} MHz"
-            rate = data["decay_rate"][i]
-            if np.isfinite(rate):
-                tt = np.linspace(0, waits.max(), 200)
-                ax.plot(tt, data["decay_amplitude"][i] * np.exp(-rate * tt) + data["decay_offset"][i],
-                        "-", lw=1.5, color=colors["f"], label="P(f) fit")
-                title += f"\ntau {1 / rate:.1f} us, share to g {data['share_to_g'][i]:.2f}"
-                if data["share_to_g"][i] > 0.05:
-                    title += f", tau to g {1 / data['rate_to_g'][i]:.1f} us"
-            ax.set_title(title, fontsize=9, color=ink)
-            ax.set_xlabel("wait (us)", fontsize=9, color=ink)
-            ax.grid(True, color=grid, lw=0.6)
-            for side in ("top", "right"):
-                ax.spines[side].set_visible(False)
-            for side in ("left", "bottom"):
-                ax.spines[side].set_color(axis)
-            ax.tick_params(colors=muted, labelsize=8)
-        axs[0, 0].set_ylabel("population (assignment-corrected)", fontsize=9, color=ink)
-        name = os.path.basename(str(getattr(self, "fname", "")))
-        fig.suptitle(f"|f,n> hold  {name}", x=0.01, ha="left", fontsize=10, color=ink)
-        handles, labels = axs[0, 0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="upper right", ncol=len(labels), frameon=False, fontsize=9)
-        fig.tight_layout(rect=(0, 0, 1, 0.93))
+        with plot_style.context():
+            fig, axs = plt.subplots(1, len(ns), figsize=(4.2 * len(ns), 4.0), sharey=True, squeeze=False)
+            for i, n in enumerate(ns):
+                ax = axs[0, i]
+                for j, state in enumerate("gef"):
+                    # P(f) gets markers only: its fit line is drawn below.
+                    ax.plot(waits, pop[i, :, j], marker=plot_style.STATE_MARKERS[state],
+                            lw=0 if state == "f" else 1, color=plot_style.STATE_COLORS[state],
+                            mec=plot_style.SURFACE, mew=1, label=f"P({state})")
+                title = f"hold |f,{n}>"
+                if np.isfinite(data["nu"][i]):
+                    title += f", nu_{n} = {data['nu'][i]:.1f} MHz"
+                rate = data["decay_rate"][i]
+                if np.isfinite(rate):
+                    tt = np.linspace(0, waits.max(), 200)
+                    ax.plot(tt, data["decay_amplitude"][i] * np.exp(-rate * tt) + data["decay_offset"][i],
+                            color=plot_style.STATE_COLORS["f"], label="P(f) fit")
+                    title += f"\ntau {1 / rate:.1f} us, share to g {data['share_to_g'][i]:.2f}"
+                    if data["share_to_g"][i] > 0.05:
+                        title += f", tau to g {1 / data['rate_to_g'][i]:.1f} us"
+                ax.set(title=title, xlabel="wait (us)")
+            axs[0, 0].set_ylabel("population (assignment-corrected)")
+            plot_style.suptitle(fig, f"|f,n> hold  {os.path.basename(str(getattr(self, 'fname', '')))}")
+            handles, labels = axs[0, 0].get_legend_handles_labels()
+            fig.legend(handles, labels, loc="upper right", ncol=len(labels))
+            fig.tight_layout(rect=(0, 0, 1, 0.93))
         return fig

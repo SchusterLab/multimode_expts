@@ -34,6 +34,7 @@ import numpy as np
 
 from experiments import MultimodeStation
 from experiments.qsim.fock_prep_herald import labels_from_h5, select
+from fitting import plot_style
 from fitting.qsim import f_postselect
 from theory.qsim.central_boson import fixed_n_hamiltonian, fock_number_traces
 
@@ -42,7 +43,6 @@ DATA = r"C:\experiments\261111AGPlowKerr\data"
 HERALD_DIR = r"C:\experiments\261113_tls_recheck\data"
 with h5py.File(rf"{HERALD_DIR}\JOB-20261113-00259_FStateHoldExperiment.h5", "r") as f:
     CENTERS = np.array(f["blob_centers_i"]) + 1j * np.array(f["blob_centers_q"])
-MODE_COLORS = {"M1": "#2a78d6", "S1": "#eb6834", "S2": "#1baf7a", "S4": "#eda100", "S5": "#e87ba4"}
 
 
 def load(job, kind="FockPopulationExperiment", folder=DATA):
@@ -68,16 +68,6 @@ def at_m1_minima(cycles, m1, window=4):
     """-> [(cycle, M1)] at the local minima of M1 below 1.5."""
     return [(cycles[k], m1[k]) for k in range(len(m1))
             if m1[k] == m1[max(0, k - window):k + window + 1].min() and m1[k] < 1.5]
-
-
-def style(ax, title, xlabel="Floquet cycle"):
-    ax.set_title(title, fontsize=10)
-    ax.set_xlabel(xlabel, fontsize=9)
-    ax.tick_params(labelsize=8)
-    ax.set_facecolor("#fcfcfb")
-    ax.grid(True, color="#e1e0d9", lw=0.6)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
 
 
 # %% Cell 2: cycle 0 of the 11-11/12 jobs (Fock 2/3 in M1, read M1 or an empty storage).
@@ -117,20 +107,21 @@ for mode, w in walk.items():
           f" -> {w['no_f'].mean():.3f};  f fraction {w['f_fraction'].mean():.3f}")
 print(f"sum of the 5 modes: mean {total_all.mean():.3f} -> {total_nof.mean():.3f} (prepared 3)")
 
-fig, axs = plt.subplots(1, 3, figsize=(15, 4.2), facecolor="#fcfcfb")
-for mode, w in walk.items():
-    for ax, key in zip(axs, ("all", "no_f", "f_fraction")):
-        ax.plot(w["cycles"], w[key], "-", lw=1.5, color=MODE_COLORS[mode], label=mode)
-axs[0].plot(walk["M1"]["cycles"], total_all, "-", lw=2, color="#52514e", label="sum")
-axs[1].plot(walk["M1"]["cycles"], total_nof, "-", lw=2, color="#52514e", label="sum")
-for ax, title in zip(axs, ("corrected <n>, all shots", "corrected <n>, f shots removed", "fraction of f shots")):
-    style(ax, title)
-axs[0].set_ylabel("<n>", fontsize=9)
-axs[1].sharey(axs[0])
-axs[0].legend(frameon=False, fontsize=8, ncol=2)
-fig.suptitle("Fock 3 quantum walk, 0.45 mA (JOB-20261112-00178..00182): shots with f in a parity "
-             "readout removed", x=0.01, ha="left", fontsize=10)
-fig.tight_layout()
+with plot_style.context():
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4.2))
+    for mode, w in walk.items():
+        for ax, key in zip(axs, ("all", "no_f", "f_fraction")):
+            ax.plot(w["cycles"], w[key], color=plot_style.MODE_COLORS[mode], label=mode)
+    for ax, total in zip(axs, (total_all, total_nof)):
+        ax.plot(walk["M1"]["cycles"], total, lw=2, color=plot_style.INK_SECONDARY, label="sum")
+    for ax, title in zip(axs, ("corrected <n>, all shots", "corrected <n>, f shots removed", "fraction of f shots")):
+        ax.set(title=title, xlabel="Floquet cycle")
+    axs[0].set_ylabel("<n>")
+    axs[1].sharey(axs[0])
+    axs[0].legend(ncol=2)
+    plot_style.suptitle(fig, "Fock 3 quantum walk, 0.45 mA (JOB-20261112-00178..00182): shots with f in a "
+                             "parity readout removed")
+    fig.tight_layout()
 
 # %% Cell 4: vault entry (mock station: only for the vault path; no hardware).
 station = None
@@ -192,29 +183,28 @@ for (N, mode), row in results.items():
           + "    " + "  ".join(f"{row[c]['p_N']:.3f}" for c in CUTS))
 
 MODES = ("none", "end", "each", "each_reset")
-CUT_COLORS = dict(zip(CUTS, ("#2a78d6", "#eb6834", "#1baf7a")))
-fig5, axs5 = plt.subplots(1, 3, figsize=(15, 4.2), facecolor="#fcfcfb")
 x = np.arange(len(MODES))
-for ax, N in zip(axs5[:2], (3, 2)):
-    for j, cut in enumerate(CUTS):
-        ax.errorbar(x + (j - 1) * 0.08, [results[(N, m)]["excess"][j] for m in MODES],
-                    yerr=[results[(N, m)]["excess_err"][j] for m in MODES], fmt="o-", ms=6, lw=1.2,
-                    capsize=3, color=CUT_COLORS[cut], label=cut)
-    ax.axhline(0, color="#c3c2b7", lw=1)
-    ax.set_ylabel("excess <n>", fontsize=9)
-for N, marker in ((3, "o"), (2, "s")):
-    axs5[2].plot(x, [results[(N, m)]["herald + no f"]["p_N"] for m in MODES], marker + "-", ms=6, lw=1.2,
-                 color="#52514e" if N == 3 else "#898781", label=f"Fock {N}: p({N}), herald + no f")
-for ax, title in zip(axs5, ("Fock 3 in M1: empty-storage <n> minus vacuum (raw)",
-                            "Fock 2 in M1: empty-storage <n> minus vacuum (raw)", "M1 read: p(N) (raw)")):
-    style(ax, title, xlabel="")
-    ax.set_xticks(x, [f"{m}\nkept {results[(3, m)]['kept']:.2f} / {results[(2, m)]['kept']:.2f}" for m in MODES],
-                  fontsize=8)
-    ax.grid(False, axis="x")
-    ax.legend(frameon=False, fontsize=8)
-fig5.suptitle("Heralds in the M1 Fock ladder, 0.45 mA (JOB-20261113-00278..00286); kept: Fock 3 / Fock 2",
-              x=0.01, ha="left", fontsize=10)
-fig5.tight_layout()
+with plot_style.context():
+    fig5, axs5 = plt.subplots(1, 3, figsize=(15, 4.2))
+    for ax, N in zip(axs5[:2], (3, 2)):
+        for j, cut in enumerate(CUTS):  # colors: the categorical slots in order
+            ax.errorbar(x + (j - 1) * 0.08, [results[(N, m)]["excess"][j] for m in MODES],
+                        yerr=[results[(N, m)]["excess_err"][j] for m in MODES], fmt="o-", lw=1.2, label=cut)
+        ax.axhline(0, color=plot_style.AXIS, lw=1)
+        ax.set_ylabel("excess <n>")
+    for N, marker, color in ((3, "o", plot_style.INK_SECONDARY), (2, "s", plot_style.MUTED)):
+        axs5[2].plot(x, [results[(N, m)]["herald + no f"]["p_N"] for m in MODES], marker + "-", lw=1.2,
+                     color=color, label=f"Fock {N}: p({N}), herald + no f")
+    for ax, title in zip(axs5, ("Fock 3 in M1: empty-storage <n> minus vacuum (raw)",
+                                "Fock 2 in M1: empty-storage <n> minus vacuum (raw)", "M1 read: p(N) (raw)")):
+        ax.set_title(title)
+        ax.set_xticks(x, [f"{m}\nkept {results[(3, m)]['kept']:.2f} / {results[(2, m)]['kept']:.2f}"
+                          for m in MODES])
+        ax.grid(False, axis="x")
+        ax.legend()
+    plot_style.suptitle(fig5, "Heralds in the M1 Fock ladder, 0.45 mA (JOB-20261113-00278..00286); "
+                              "kept: Fock 3 / Fock 2")
+    fig5.tight_layout()
 
 # %% Cell 6: vault entry for cell 5.
 NOTE5 = (
@@ -271,21 +261,20 @@ for cut, r in walk_result.items():
           + " ".join(f"{r['modes'][m]['n'][0]:.3f}" for m in storages)
           + f"     {r['total'][0]:.3f}  {r['total'].mean():.3f}   {np.round(np.diag(r['C']), 3)}")
 
-CUT_COLORS7 = dict(zip(WALK_CUTS, ("#2a78d6", "#eb6834", "#1baf7a", "#eda100")))
-fig7, axs7 = plt.subplots(1, 3, figsize=(15, 4.2), facecolor="#fcfcfb")
-for cut, r in walk_result.items():
-    storages = [m for m in r["modes"] if m != "M1"]
-    axs7[0].plot(r["cycles"], r["total"], "-", lw=1.5, color=CUT_COLORS7[cut], label=cut)
-    axs7[1].plot(r["cycles"], r["modes"]["M1"]["n"], "-", lw=1.5, color=CUT_COLORS7[cut], label=cut)
-    axs7[2].plot(r["cycles"], np.mean([r["modes"][m]["n"] for m in storages], axis=0), "-", lw=1.5,
-                 color=CUT_COLORS7[cut], label=cut)
-for ax, title in zip(axs7, ("sum of the 5 modes (prepared 3)", "M1", "mean of S1, S2, S4, S5")):
-    style(ax, title)
-axs7[0].set_ylabel("corrected <n>", fontsize=9)
-axs7[0].legend(frameon=False, fontsize=8)
-fig7.suptitle("Fock 3 quantum walk, 0.45 mA: no herald vs prep_herald='end', with and without the f cut",
-              x=0.01, ha="left", fontsize=10)
-fig7.tight_layout()
+with plot_style.context():
+    fig7, axs7 = plt.subplots(1, 3, figsize=(15, 4.2))
+    for color, (cut, r) in zip(plot_style.CATEGORICAL, walk_result.items()):
+        storages = [m for m in r["modes"] if m != "M1"]
+        axs7[0].plot(r["cycles"], r["total"], color=color, label=cut)
+        axs7[1].plot(r["cycles"], r["modes"]["M1"]["n"], color=color, label=cut)
+        axs7[2].plot(r["cycles"], np.mean([r["modes"][m]["n"] for m in storages], axis=0), color=color, label=cut)
+    for ax, title in zip(axs7, ("sum of the 5 modes (prepared 3)", "M1", "mean of S1, S2, S4, S5")):
+        ax.set(title=title, xlabel="Floquet cycle")
+    axs7[0].set_ylabel("corrected <n>")
+    axs7[0].legend()
+    plot_style.suptitle(fig7, "Fock 3 quantum walk, 0.45 mA: no herald vs prep_herald='end', with and "
+                              "without the f cut")
+    fig7.tight_layout()
 
 # %% Cell 8: vault entry for cell 7.
 NOTE7 = (
@@ -352,27 +341,29 @@ for label, cycles, m1 in (("today, end herald", r["cycles"], today["M1"]),
                           ("model K = -28.4 kHz", model_cycles, model[-0.0284]["M1"])):
     print(f"  {label:20s} " + "  ".join(f"{c}:{v:.2f}" for c, v in at_m1_minima(np.asarray(cycles), np.asarray(m1))))
 
-fig10, axs10 = plt.subplots(1, 2, figsize=(14, 4.2), facecolor="#fcfcfb", sharey=True)
-for ax, (label, cycles, modes) in zip(axs10, (("today, end herald (JOB-20261113-00407..00422)", r["cycles"], today),
-                                              ("jonginn 11-12, f cut (JOB-20261112-00178..00182)",
-                                               walk["M1"]["cycles"], jonginn))):
-    storages = [m for m in modes if m != "M1"]
-    ax.plot(cycles, modes["M1"], "o", ms=4, color="#2a78d6", label="M1, data")
-    ax.plot(cycles, np.mean([modes[m] for m in storages], axis=0), "s", ms=4, color="#eb6834",
-            label="storage mean, data")
-    mask = model_cycles <= np.max(cycles)
-    for kerr, linestyle in ((0.0, ":"), (-0.0284, "-")):
-        tr = model[kerr]
-        ax.plot(model_cycles[mask], tr["M1"][mask], linestyle, lw=1.3, color="#2a78d6",
-                label=f"M1, model K = {kerr * 1e3:.1f} kHz")
-        ax.plot(model_cycles[mask], np.mean([tr[m] for m in ("S1", "S2", "S4", "S5")], axis=0)[mask], linestyle,
-                lw=1.3, color="#eb6834", label=f"storage mean, model K = {kerr * 1e3:.1f} kHz")
-    style(ax, label)
-axs10[0].set_ylabel("corrected <n>", fontsize=9)
-axs10[1].legend(frameon=False, fontsize=7, loc="upper right")
-fig10.suptitle("Fock 3 walk at 0.45 mA against the closed central-boson model (no loss, no dephasing, no fit)",
-               x=0.01, ha="left", fontsize=10)
-fig10.tight_layout()
+M1_COLOR, STORAGE_COLOR = plot_style.CATEGORICAL[:2]  # M1 and "storage mean" (not one storage)
+with plot_style.context():
+    fig10, axs10 = plt.subplots(1, 2, figsize=(14, 4.2), sharey=True)
+    for ax, (label, cycles, modes) in zip(axs10, (("today, end herald (JOB-20261113-00407..00422)", r["cycles"], today),
+                                                  ("jonginn 11-12, f cut (JOB-20261112-00178..00182)",
+                                                   walk["M1"]["cycles"], jonginn))):
+        storages = [m for m in modes if m != "M1"]
+        ax.plot(cycles, modes["M1"], "o", ms=4, color=M1_COLOR, label="M1, data")
+        ax.plot(cycles, np.mean([modes[m] for m in storages], axis=0), "s", ms=4, color=STORAGE_COLOR,
+                label="storage mean, data")
+        mask = model_cycles <= np.max(cycles)
+        for kerr, linestyle in ((0.0, ":"), (-0.0284, "-")):
+            tr = model[kerr]
+            ax.plot(model_cycles[mask], tr["M1"][mask], linestyle, lw=1.3, color=M1_COLOR,
+                    label=f"M1, model K = {kerr * 1e3:.1f} kHz")
+            ax.plot(model_cycles[mask], np.mean([tr[m] for m in ("S1", "S2", "S4", "S5")], axis=0)[mask],
+                    linestyle, lw=1.3, color=STORAGE_COLOR, label=f"storage mean, model K = {kerr * 1e3:.1f} kHz")
+        ax.set(title=label, xlabel="Floquet cycle")
+    axs10[0].set_ylabel("corrected <n>")
+    axs10[1].legend(fontsize=7, loc="upper right")
+    plot_style.suptitle(fig10, "Fock 3 walk at 0.45 mA against the closed central-boson model "
+                               "(no loss, no dephasing, no fit)")
+    fig10.tight_layout()
 
 # %% Cell 11: vault entry for cells 9-10.
 NOTE10 = (

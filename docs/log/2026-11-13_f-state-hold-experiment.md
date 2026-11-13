@@ -103,3 +103,11 @@ Clean-up for reuse (end of the day):
 - Not done: the herald cut inside `FockPopulationExperiment.analyze()`, and a confusion-matrix
   experiment that plays the herald (today the rows are `FockPrepHeraldExperiment` jobs).
   `fock_prep_herald` imports the private `qsim_base._herald_readouts`.
+- `fitting/plot_style.py` (guan asked for one place for plot styling): the palette, named colors
+  (`STATE_COLORS` g/e/f, `MODE_COLORS` M1, S1..S7, ink, grid, surface), one rc dict `RC`, and
+  `context()` (applies `RC` only inside a `with` block) and `suptitle()`. The displays of
+  `FStateHoldExperiment` and `FockPrepHeraldExperiment` and the analysis notebook use it; no hex
+  codes or per-axis styling are left there. Test: `tests/test_plot_style.py`.
+- Found: `fitting/fit_display.py` sets `font.size` 14 and `figure.figsize` in the global rcParams
+  on import, and the flat `experiments` namespace imports it, so every kernel gets them. Not
+  changed (other people's plots may depend on it); `plot_style.context()` overrides it inside.

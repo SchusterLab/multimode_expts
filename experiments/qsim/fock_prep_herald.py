@@ -50,6 +50,7 @@ from slab import AttrDict
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.fock_population import FockPopulationProgram
 from experiments.qsim.qsim_base import QsimExperiment, _herald_readouts
+from fitting import plot_style
 from fitting.qsim import f_postselect
 
 HERALD_MODES = ("none", "end", "each", "each_reset")
@@ -216,31 +217,25 @@ class FockPrepHeraldExperiment(QsimExperiment):
             series.append(("herald", data["p_herald"], data["kept_herald"]))
         if np.isfinite(data["kept_after_reset"]).any():
             series.append(("after reset", data["p_after_reset"], data["kept_after_reset"]))
-        colors = ("#2a78d6", "#eb6834", "#1baf7a")  # categorical slots 1-3
         reads = [int(r) for r in expt.ro_stors]
         width = 0.8 / len(series)
-        fig, axs = plt.subplots(1, len(reads), figsize=(3.2 * len(reads), 3.6), sharey=True,
-                                squeeze=False, facecolor="#fcfcfb")
-        for k, ro in enumerate(reads):
-            ax = axs[0, k]
-            ax.set_facecolor("#fcfcfb")
-            for j, (label, p, kept) in enumerate(series):
-                ax.bar(np.arange(4) + (j - (len(series) - 1) / 2) * width, p[k], width=width * 0.9,
-                       color=colors[j], label=label if kept is None else f"{label} (kept {kept[k]:.2f})")
-            means = ", ".join(f"{f_postselect.mean_n(p[k]):.2f}" for _, p, _ in series)
-            ax.set_title(f"read {'M1' if ro == 0 else f'S{ro}'}: <n> {means}", fontsize=9)
-            ax.set_xticks(range(4))
-            ax.set_xlabel("n mod 4 (raw)", fontsize=9)
-            ax.tick_params(labelsize=8, colors="#52514e")
-            ax.grid(True, axis="y", color="#e1e0d9", lw=0.6)
-            for side in ("top", "right"):
-                ax.spines[side].set_visible(False)
-            ax.legend(frameon=False, fontsize=7)
-        axs[0, 0].set_ylabel("probability", fontsize=9)
-        name = os.path.basename(str(getattr(self, "fname", "")))
-        fig.suptitle(f"prep {list(expt.occupations)}, prep_herald={expt.get('prep_herald', 'none')}  {name}",
-                     x=0.01, ha="left", fontsize=10)
-        fig.tight_layout()
+        with plot_style.context():
+            fig, axs = plt.subplots(1, len(reads), figsize=(3.2 * len(reads), 3.6), sharey=True, squeeze=False)
+            for k, ro in enumerate(reads):
+                ax = axs[0, k]
+                for j, (label, p, kept) in enumerate(series):  # colors: the categorical slots in order
+                    ax.bar(np.arange(4) + (j - (len(series) - 1) / 2) * width, p[k], width=width * 0.9,
+                           label=label if kept is None else f"{label} (kept {kept[k]:.2f})")
+                means = ", ".join(f"{f_postselect.mean_n(p[k]):.2f}" for _, p, _ in series)
+                ax.set(title=f"read {'M1' if ro == 0 else f'S{ro}'}: <n> {means}", xlabel="n mod 4 (raw)",
+                       xticks=range(4))
+                ax.grid(False, axis="x")
+                ax.legend(fontsize=7)
+            axs[0, 0].set_ylabel("probability")
+            name = os.path.basename(str(getattr(self, "fname", "")))
+            plot_style.suptitle(fig, f"prep {list(expt.occupations)}, "
+                                     f"prep_herald={expt.get('prep_herald', 'none')}  {name}")
+            fig.tight_layout()
         return fig
 
     def _analyze(self, data):
