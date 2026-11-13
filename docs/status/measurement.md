@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-11-05** (sequential readout, calibration Experiment and native multi-direction AGP; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
+**Last updated: 2026-11-13** (`FStateHoldExperiment`; sequential readout, calibration Experiment and native multi-direction AGP as of 2026-11-05; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
 2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
@@ -9,6 +9,22 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
 
+- **|f,n> hold scan in one job (2026-11-13, `docs/log/2026-11-13_f-state-hold-experiment.md`).**
+  New `experiments/qsim/f_state_hold.py` (`FStateHoldProgram`, `FStateHoldExperiment`) and
+  estimators `fitting/qsim/f_hold.py`: g/e/f reference clouds plus every (n, wait) hold point
+  in one job, nearest-cloud assignment with the 3x3 correction, one decay fit per n, and nu_n
+  from the config. It replaces the one-job-per-point holds of `yoko450ua_calibration.py`
+  (cells 8-11) and does part of that script's gap item 3 (corrected g/e/f populations after a
+  prepulse, for these points only). Tests: `tests/test_f_state_hold.py` (mock run included).
+  Notebook: `measurement_notebooks/guan/20261113_tls_recheck.py`. First device job ran
+  (JOB-20261113-00259). Same day: `fitting/qsim/f_postselect.py` (multiparity shots with the
+  qubit in f) and `experiments/qsim/fock_prep_herald.py` (`FockPrepHeraldExperiment`: heralds or
+  qubit resets in the M1 ladder); tests `tests/test_fock_prep_herald.py`; analysis notebook
+  `analysis_notebooks/guan/20261113_f_postselect.py`. Population jobs can play a herald after
+  the prep now (`ExptProgram=FockPrepHeraldProgram`, `prep_herald="end"`); the cut is offline
+  (`labels_from_h5`, `select`). **Next:** the herald cut inside `FockPopulationExperiment.analyze()`; a
+  confusion-matrix experiment that plays the herald; the f cut as an option of the multiparity
+  analysis (Q is in the files).
 - **Sequential Fock population readout (2026-11-05).** New module
   `experiments/qsim/fock_population_sequential.py`: an independent analysis mixin,
   `FockPopulationSequentialReadoutProgram` and `FockPopulationSequentialReadoutExperiment`.
