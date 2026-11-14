@@ -21,10 +21,13 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   qubit in f) and `experiments/qsim/fock_prep_herald.py` (`FockPrepHeraldExperiment`: heralds or
   qubit resets in the M1 ladder); tests `tests/test_fock_prep_herald.py`; analysis notebook
   `analysis_notebooks/guan/20261113_f_postselect.py`. Population jobs can play a herald after
-  the prep now (`ExptProgram=FockPrepHeraldProgram`, `prep_herald="end"`); the cut is offline
-  (`labels_from_h5`, `select`). **Next:** the herald cut inside `FockPopulationExperiment.analyze()`; a
-  confusion-matrix experiment that plays the herald; the f cut as an option of the multiparity
-  analysis (Q is in the files).
+  the prep now (`ExptProgram=FockPrepHeraldProgram`, `prep_herald="end"`). **Done 2026-11-14**
+  (`docs/log/2026-11-14_herald-cut-in-analysis.md`): the herald cut is in the multiparity analysis
+  (`multiparity.herald_keep`; `FockPopulationExperiment` with `prep_herald` "end" or "each" keeps
+  only the shots whose heralds read g), and `HeraldedConfusionMatrixExperiment` is the confusion
+  matrix with the same herald, as one job. Switch `HERALD` in
+  `measurement_notebooks/jonginn/agp_measurement.py`. **Next:** the first device run at 0.25 mA;
+  the f cut as an option of the multiparity analysis (Q is in the files).
 - **tProc timing check for Floquet trains (2026-11-13, `docs/log/2026-11-13_floquet-instruction-timing.md`).**
   New module `experiments/floquet_instruction_timing.py`: after a Floquet train is emitted, it
   warns if the tProc needs more clocks to issue the pulses than the slots last, so that pulses

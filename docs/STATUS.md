@@ -60,7 +60,8 @@ Rules:
   `Lab/guan/AGP/2026/11/2026-11-13_f_state_floor_report.md`; record:
   `docs/log/2026-11-13_f-state-hold-experiment.md`): code for a herald after the M1 prep
   (`experiments/qsim/fock_prep_herald.py`) and for the multiparity f cut
-  (`fitting/qsim/f_postselect.py`).
+  (`fitting/qsim/f_postselect.py`). 2026-11-14: the herald cut is in the population analysis,
+  with a heralded confusion matrix (`docs/log/2026-11-14_herald-cut-in-analysis.md`).
 - **Plot style (2026-11-13, all users):** `fitting/plot_style.py` holds the lab palette, the named colors
   (g/e/f states, M1 and S1..S7) and one rc dict. Make a figure inside `with plot_style.context():` instead
   of setting colors, fonts and spines inline. Record: `docs/log/2026-11-13_f-state-hold-experiment.md`.

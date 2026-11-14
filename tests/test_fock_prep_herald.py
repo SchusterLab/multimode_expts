@@ -3,6 +3,7 @@
 The estimators on synthetic shots; every herald mode compiled and run on the mock station with the
 expt settings of jonginn's 11-12 population jobs (JOB-20261112-00178..00182), at cycle 0.
 """
+import h5py
 import matplotlib
 import numpy as np
 import pytest
@@ -11,9 +12,13 @@ from slab import AttrDict
 matplotlib.use("Agg")
 
 from experiments.characterization_runner import CharacterizationRunner  # noqa: E402
+from experiments.qsim.agp import calibration_shots  # noqa: E402
+from experiments.qsim.fock_population import FockPopulationExperiment  # noqa: E402
 from experiments.qsim.fock_prep_herald import (  # noqa: E402
-    HERALD_MODES, FockPrepHeraldExperiment, FockPrepHeraldProgram, prep_lanes)
+    HERALD_MODES, FockPrepHeraldExperiment, FockPrepHeraldProgram, HeraldedCalibrationProgram,
+    HeraldedConfusionMatrixExperiment, prep_lanes, shot_labels)
 from experiments.qsim.mbr_campaign import mock_station  # noqa: E402
+from experiments.qsim.multiparity import herald_keep  # noqa: E402
 from fitting.qsim import f_postselect  # noqa: E402
 
 # cfg.expt of JOB-20261112-00181 without the sweep and the confusion matrix.
@@ -141,3 +146,151 @@ def test_mean_n_with_error():
     m, s = f_postselect.mean_n_with_error(n, np.array([[1, 1, 1, 1], [1, 1, 0, 0]], bool))
     assert m.tolist() == [1.5, 3.0]
     assert s[0] == pytest.approx(np.std([0, 1, 2, 3]) / 2) and s[1] == 0
+
+
+# -- the herald cut in the analysis (2026-11-14) ------------------------------------------------
+
+def _herald_shots(labels, herald_e):
+    """-> idata (points, shots * 3): lanes (herald, parity 1, parity 2) against threshold 0."""
+    labels = np.asarray(labels, int)
+    lanes = np.empty((*labels.shape, 3))
+    lanes[..., 0] = np.where(np.asarray(herald_e, bool), 100., -100.)
+    lanes[..., 1] = 2 * (labels % 2) - 1
+    lanes[..., 2] = 2 * (labels // 2) - 1
+    return lanes.reshape(len(labels), -1)
+
+
+def _herald_cfg(prep_herald, **expt):
+    """No active reset, so the shot is (herald, parity 1, parity 2): read_num 3."""
+    return AttrDict(dict(read_num=3, device=dict(readout=dict(threshold=[0.])), expt=dict(
+        qubits=[0], readout="multiparity", active_reset=False, prep_herald=prep_herald, **expt)))
+
+
+def _population_job(labels, herald_e, prep_herald="end"):
+    job = FockPopulationExperiment.__new__(FockPopulationExperiment)
+    job.cfg = _herald_cfg(prep_herald, occupations=[3, 0, 0, 0, 0], ro_stor=0,
+                          swap_stors=[1, 2, 4, 5], detunings=[0.] * 4,
+                          floquet_cycles=list(range(len(labels))), swept_params=["floquet_cycle"])
+    idata = _herald_shots(labels, herald_e)
+    job.data = dict(xpts=np.arange(len(labels)), idata=idata, qdata=np.zeros_like(idata))
+    job.fname = None
+    return job
+
+
+def test_herald_keep_reads_the_lanes_between_reset_and_parity():
+    idata = _herald_shots([[0, 1, 2]], [[False, True, False]])
+    assert herald_keep(_herald_cfg("end"), idata).tolist() == [[True, False, True]]
+    assert herald_keep(_herald_cfg("each"), idata).tolist() == [[True, False, True]]
+    for mode in ("none", "each_reset"):
+        assert herald_keep(_herald_cfg(mode), idata) is None
+    assert herald_keep(AttrDict(dict(expt=dict())), idata) is None  # no prep_herald key
+    no_herald_lane = AttrDict(dict(_herald_cfg("end"), read_num=2))  # e.g. Fock 0
+    assert herald_keep(no_herald_lane, np.zeros((1, 6))) is None
+
+
+def test_population_analysis_uses_only_the_kept_shots():
+    rng = np.random.default_rng(4)
+    labels = rng.integers(0, 4, size=(3, 60))
+    herald_e = rng.random((3, 60)) < 0.2
+    job = _population_job(labels, herald_e)
+    job.analyze()
+    kept = ~herald_e
+    for point in range(3):
+        accepted = labels[point, kept[point]]
+        np.testing.assert_allclose([job.data[f"p_mod{n}"][point] for n in range(4)],
+                                   np.bincount(accepted, minlength=4) / len(accepted))
+        assert job.data["n_err"][point] == pytest.approx(accepted.std(ddof=1) / np.sqrt(len(accepted)))
+        np.testing.assert_allclose([job.data[f"p_mod{n}_all"][point] for n in range(4)],
+                                   np.bincount(labels[point], minlength=4) / labels.shape[1])
+    np.testing.assert_array_equal(job.data["shot_counts"], kept.sum(axis=1))
+    np.testing.assert_allclose(job.data["kept_fraction"], kept.mean(axis=1))
+    np.testing.assert_allclose(job.data["nmod4_mean_all"], labels.mean(axis=1))
+
+    job.cfg.expt.prep_herald = "none"  # the same shots without the cut: all of them, as before
+    job.analyze()
+    np.testing.assert_array_equal(job.data["shot_counts"], [60, 60, 60])
+    np.testing.assert_allclose(job.data["nmod4_mean"], labels.mean(axis=1))
+    assert "kept_fraction" not in job.data and "p_mod0_all" not in job.data
+
+
+def test_heralded_confusion_matrix_rows_come_from_the_kept_shots():
+    rng = np.random.default_rng(5)
+    labels = rng.integers(0, 4, size=(4, 80))
+    herald_e = rng.random((4, 80)) < 0.3
+    calibration = HeraldedConfusionMatrixExperiment.__new__(HeraldedConfusionMatrixExperiment)
+    calibration.cfg = _herald_cfg("end", swap_stors=[1, 2, 4, 5])
+    idata = _herald_shots(labels, herald_e)
+    calibration.data = dict(xpts=np.arange(4), idata=idata, qdata=np.zeros_like(idata))
+    calibration.analyze()
+    kept = ~herald_e
+    expected = [np.bincount(labels[n, kept[n]], minlength=4) / kept[n].sum() for n in range(4)]
+    np.testing.assert_allclose(calibration.data["multiparity_confusion_matrix"], expected)
+    np.testing.assert_array_equal(calibration.data["multiparity_confusion_matrix_shot_counts"],
+                                  kept.sum(axis=1))
+
+
+def _random_lanes(rng, points, shots, read_num, herald_lanes, threshold):
+    """-> idata (points, shots * read_num): random g/e lanes; herald lanes read g 80 % of the time."""
+    reads_e = rng.random((points, shots, read_num)) < 0.5
+    reads_e[..., herald_lanes] = rng.random((points, shots, len(herald_lanes))) < 0.2
+    return np.where(reads_e, threshold + 100., threshold - 100.).reshape(points, -1)
+
+
+def test_herald_cut_matches_the_offline_labels_on_the_mock():
+    # The mock returns I = 0 in every lane (all above the threshold), so the cut is checked
+    # on random shots put into the mock job's layout.
+    station = mock_station()
+    assert station.is_mock, "refusing to acquire against real instruments"
+    defaults = AttrDict(dict(POPULATION_EXPT, reps=40, occupations=[1, 1, 1, 0, 0], ro_stor=1,
+                             floquet_cycles=[0, 4], prep_herald="end"))
+    runner = CharacterizationRunner(station=station, ExptClass=FockPopulationExperiment,
+                                    ExptProgram=FockPrepHeraldProgram, default_expt_cfg=defaults, show=False)
+    expt = runner.execute(log=False, show=False, go_kwargs=dict(analyze=False))
+    assert expt.cfg.read_num == 7  # 2 active reset + 3 heralds (S1, S2, M1 ladders) + 2 parity
+    threshold = np.ravel(expt.cfg.device.readout.threshold)[0]
+    idata = _random_lanes(np.random.default_rng(6), 2, 40, 7, [2, 3, 4], threshold)
+    expt.data.update(idata=idata, qdata=np.zeros_like(idata))
+    expt.analyze()
+    labels = shot_labels(expt.cfg, expt.data)  # guan's offline labels, from prep_lanes()
+    keep = herald_keep(expt.cfg, expt.data["idata"])
+    np.testing.assert_array_equal(keep, labels["herald"])
+    np.testing.assert_array_equal(expt.data["shot_counts"], keep.sum(axis=1))
+    np.testing.assert_allclose(np.stack([expt.data[f"p_mod{n}"] for n in range(4)], axis=-1),
+                               f_postselect.n_distribution(labels["n"], keep))
+
+
+def test_heralded_confusion_matrix_is_one_job_on_the_mock():
+    station = mock_station()
+    assert station.is_mock, "refusing to acquire against real instruments"
+    defaults = AttrDict(dict(POPULATION_EXPT, reps=40, prep_herald="end"))
+    runner = CharacterizationRunner(station=station, ExptClass=HeraldedConfusionMatrixExperiment,
+                                    default_expt_cfg=defaults, show=False)
+    expt = runner.execute(log=False, show=False, go_kwargs=dict(analyze=False))
+    assert expt.ProgramClass is HeraldedCalibrationProgram
+    assert expt.cfg.read_num == 5  # 2 active reset + 1 herald (bare for Fock 0) + 2 parity
+    np.testing.assert_array_equal(expt.data["xpts"], np.arange(4))
+    assert np.asarray(expt.data["idata"]).shape == (4, 40 * 5)
+    threshold = np.ravel(expt.cfg.device.readout.threshold)[0]
+    idata = _random_lanes(np.random.default_rng(7), 4, 40, 5, [2], threshold)
+    expt.data.update(idata=idata, qdata=np.zeros_like(idata))
+    expt.analyze()
+    np.testing.assert_allclose(expt.data["multiparity_confusion_matrix"].sum(axis=1), 1)
+    np.testing.assert_array_equal(expt.data["multiparity_confusion_matrix_shot_counts"],
+                                  herald_keep(expt.cfg, idata).sum(axis=1))
+
+
+def test_calibration_shots_reads_the_kept_shots_of_each_row(tmp_path):
+    path = tmp_path / "heralded_calibration.h5"
+    with h5py.File(path, "w") as handle:
+        handle["multiparity_confusion_matrix"] = np.eye(4)
+        handle["multiparity_confusion_matrix_shot_counts"] = [10, 9, 8, 7]
+    assert calibration_shots(dict(fname=str(path))).tolist() == [10, 9, 8, 7]
+
+
+def test_heralded_confusion_matrix_needs_the_end_herald():
+    station = mock_station()
+    defaults = AttrDict(dict(POPULATION_EXPT, prep_herald="none"))
+    runner = CharacterizationRunner(station=station, ExptClass=HeraldedConfusionMatrixExperiment,
+                                    default_expt_cfg=defaults, show=False)
+    with pytest.raises(ValueError, match="prep_herald='end'"):
+        runner.execute(log=False, show=False, go_kwargs=dict(analyze=False))

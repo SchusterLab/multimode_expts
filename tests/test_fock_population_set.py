@@ -123,6 +123,13 @@ def test_jobs_with_different_settings_are_not_combined(tmp_path, change, message
         FockPopulationSetExperiment.from_children(walk_jobs(tmp_path, **change))
 
 
+def test_jobs_with_different_prep_herald_are_not_combined(tmp_path):
+    jobs = walk_jobs(tmp_path)
+    jobs[2].cfg.expt.prep_herald = "end"
+    with pytest.raises(ValueError, match="different prep_herald"):
+        FockPopulationSetExperiment.from_children(jobs)
+
+
 def test_jobs_with_different_corrections_are_not_combined(tmp_path):
     jobs = walk_jobs(tmp_path)
     other = population_job([1, 0, 0], 4, random_labels(np.random.default_rng(3), CYCLES),
