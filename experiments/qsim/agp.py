@@ -101,7 +101,9 @@ def calibration_shots(calibration):
 
     The recorded path is re-rooted onto the local data root when it does not
     exist here (``experiments.job_paths``). None when the record names no
-    file, or the file is not found; the AGP errors are then shot-only.
+    file, or the file is not found; the AGP errors are then shot-only. A
+    heralded calibration (``HeraldedConfusionMatrixExperiment``) saves the kept
+    shots of each row as ``multiparity_confusion_matrix_shot_counts``: one count per row.
     """
     fname = (calibration or {}).get("fname")
     if not fname:
@@ -115,6 +117,8 @@ def calibration_shots(calibration):
     if not path.is_file():
         return None
     with h5py.File(path, "r") as handle:
+        if "multiparity_confusion_matrix_shot_counts" in handle:
+            return np.asarray(handle["multiparity_confusion_matrix_shot_counts"][()], dtype=float)
         if "idata" not in handle or "config" not in handle.attrs:
             return None
         read_num = int(json.loads(handle.attrs["config"]).get("read_num", 0))

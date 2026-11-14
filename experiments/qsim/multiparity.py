@@ -10,7 +10,35 @@ from pathlib import Path
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
-from experiments.qsim.qsim_base import QsimExperiment
+from experiments.qsim.qsim_base import QsimExperiment, _herald_readouts
+
+# The prep herald modes whose readouts are post-selected (FockPrepHeraldProgram).
+# In "end" and "each", every readout between the active-reset readouts and the two
+# parity readouts is a bare herald that should read g, so herald_keep() can cut on
+# "all of them read g". Not "each_reset": its readouts belong to a qubit reset, and a
+# reset readout may read e in a good shot (the reset then fixes the qubit). Not
+# "none": it has no herald readouts.
+HERALD_CUT_MODES = ("end", "each")
+
+
+def herald_keep(cfg, idata):
+    """-> (points, shots) bool: True where every prep herald readout reads g, or None.
+
+    ``cfg.expt.prep_herald`` "end" or "each" (``experiments/qsim/fock_prep_herald.py``)
+    plays bare qubit readouts after the Fock ladder steps. They sit after the
+    active-reset readouts and before the two parity readouts of each shot. A
+    shot is kept when all of them read g (I below ``device.readout.threshold``).
+    None, so no cut, for any other mode or a shot without such readouts (Fock 0).
+    """
+    if cfg.expt.get("prep_herald", "none") not in HERALD_CUT_MODES:
+        return None
+    read_num = int(cfg.read_num)
+    start, stop = _herald_readouts(cfg), read_num - 2
+    if stop <= start:
+        return None
+    threshold = np.ravel(cfg.device.readout.threshold)[cfg.expt.qubits[0]]
+    shots_i = np.asarray(idata, dtype=float).reshape(len(idata), -1, read_num)
+    return (shots_i[:, :, start:stop] < threshold).all(axis=-1)
 
 
 def multiparity_mean_error(probabilities, shot_counts, confusion_matrix=None):
@@ -83,7 +111,13 @@ class MultiparityMixin:
     This mixin owns shot classification, lane order and the label convention.
     """
 
-    def classify_two_parity_readouts(self, point_idx=0, threshold=None, e_is_high_I=True):
+    def classify_two_parity_readouts(self, point_idx=0, threshold=None, e_is_high_I=True,
+                                     keep=None):
+        """Classify the two parity readouts of each shot at one point.
+
+        ``keep`` (points, shots), optional: use only the shots where it is True
+        (the prep herald cut, ``herald_keep``).
+        """
         rn = self.cfg.read_num
         qTest = self.cfg.expt.qubits[0]
 
@@ -97,6 +131,10 @@ class MultiparityMixin:
         q_first  = qdata[rn-2::rn]
         i_second = idata[rn-1::rn]
         q_second = qdata[rn-1::rn]
+        if keep is not None:
+            kept = np.asarray(keep[point_idx], dtype=bool)
+            i_first, q_first, i_second, q_second = (
+                values[kept] for values in (i_first, q_first, i_second, q_second))
 
         if e_is_high_I:
             first_e = i_first > threshold
@@ -160,7 +198,14 @@ class MultiparityMixin:
         replace it in cfg with the numeric matrix for normal JSON saving.
         Correction solves ``C.T @ p_true = p_raw`` without clipping. The
         external ``multiparity_mean_error`` function calculates shot-only ``n_err``.
+
+        With prep herald readouts (``herald_keep``), every result comes from the
+        kept shots only; ``kept_fraction`` and the all-shot ``p_mod0_all`` ..
+        ``p_mod3_all`` and ``nmod4_mean_all`` are added for comparison. The raw
+        shots stay complete. ``shot_counts`` holds the shots used at each point.
         """
+        keep = herald_keep(self.cfg, self.data['idata'])
+        all_shot_keys = ['p_mod0', 'p_mod1', 'p_mod2', 'p_mod3', 'mean_n_mod4']
         keys = [
             'mean_parity_first', 'mean_parity_second',
             'p_first_e', 'p_second_e',
@@ -187,13 +232,24 @@ class MultiparityMixin:
             out[key] = []
 
         shot_counts = []
+        everything = {key: [] for key in all_shot_keys}
         for j in range(point_count):
-            result = self.classify_two_parity_readouts(point_idx=j)
+            result = self.classify_two_parity_readouts(point_idx=j, keep=keep)
             shot_counts.append(len(result['n_mod4']))
             for key in keys:
                 out[key].append(result[key])
+            if keep is not None:
+                result = self.classify_two_parity_readouts(point_idx=j)
+                for key in all_shot_keys:
+                    everything[key].append(result[key])
         for key in keys:
             out[key] = np.asarray(out[key]).reshape(data_shape)
+        out['shot_counts'] = np.asarray(shot_counts).reshape(data_shape)
+        if keep is not None:
+            out['kept_fraction'] = keep.mean(axis=1).reshape(data_shape)
+            for key in all_shot_keys:
+                name = 'nmod4_mean_all' if key == 'mean_n_mod4' else f'{key}_all'
+                out[name] = np.asarray(everything[key]).reshape(data_shape)
 
         out['nmod4_mean'] = out['mean_n_mod4']
         raw_probability = np.stack(
@@ -245,7 +301,8 @@ class MultiparityMixin:
         # corrected result, including fields loaded from an analyzed HDF5.
         for key in ['nmod4_mean_corrected', 'confusion_matrix',
                     'confusion_matrix_covariance', *calibration_keys,
-                    *[f'p_mod{n}_corrected' for n in range(4)]]:
+                    *[f'p_mod{n}_corrected' for n in range(4)],
+                    'kept_fraction', 'nmod4_mean_all', *[f'p_mod{n}_all' for n in range(4)]]:
             self.data.pop(key, None)
         self.data.update(out)
         return out

@@ -239,6 +239,11 @@ class FockPopulationExperiment(MultiparityQsimExperiment):
     ``shot_counts``. ``n_err`` and ``n2_err`` are shot-only errors of the
     corrected moments when a matrix is set, else of the raw ones. They are
     photon-number moments only while n <= 3.
+
+    Run with ``FockPrepHeraldProgram`` and ``prep_herald`` "end" or "each", the
+    results come from the shots whose prep heralds all read g
+    (``multiparity.herald_keep``); ``shot_counts`` is then the kept count of each
+    point, and ``kept_fraction`` and the all-shot ``*_all`` values are added.
     """
 
     default_program = FockPopulationProgram
@@ -250,10 +255,9 @@ class FockPopulationExperiment(MultiparityQsimExperiment):
         return [("floquet_cycle", self.cfg.expt.floquet_cycles)]
 
     def analyze(self, data=None, **kwargs):
-        super().analyze(data=data, **kwargs)
+        super().analyze(data=data, **kwargs)  # the herald cut, if any, is in analyze_multiparity
         shape = np.shape(self.data["nmod4_mean"])
-        shots = np.asarray(self.data["idata"]).shape[-1] // int(self.cfg.read_num)
-        shot_counts = np.full(shape, shots)
+        shot_counts = np.asarray(self.data["shot_counts"]).reshape(shape)
         raw = np.stack([self.data[f"p_mod{n}"] for n in range(4)], axis=-1)
         confusion = self.data.get("confusion_matrix")
         self.data["nmod4_second_moment"] = raw @ NUMBERS**2
@@ -384,7 +388,8 @@ class FockPopulationSetExperiment(AssembledExperiment):
         """-> (entries, cycles, swap_stors, detunings, calibration) the jobs share.
 
         Occupation and read mode may change from job to job; the cycle grid,
-        the storages, the detunings and the readout correction may not.
+        the storages, the detunings, the prep herald and the readout correction
+        may not.
         """
         children = list(children)
         if not children:
@@ -396,6 +401,8 @@ class FockPopulationSetExperiment(AssembledExperiment):
             expt = child.cfg.expt
             if [int(cycle) for cycle in expt.floquet_cycles] != cycles:
                 raise ValueError(f"{child.fname}: different Floquet cycles")
+            if expt.get("prep_herald", "none") != first.get("prep_herald", "none"):
+                raise ValueError(f"{child.fname}: different prep_herald")
             if list(expt.swap_stors) != list(first.swap_stors):
                 raise ValueError(f"{child.fname}: different swap_stors")
             if not np.allclose(expt.detunings, first.detunings, rtol=0, atol=1e-12):
@@ -467,6 +474,8 @@ class FockPopulationSetExperiment(AssembledExperiment):
                 n2_mean_corrected=stack("nmod4_second_moment_corrected"),
                 confusion_matrix=np.asarray(self.calibration["matrix"]),
             )
+        if all("kept_fraction" in child.data for child in self.children):
+            data["kept_fraction"] = stack("kept_fraction")  # prep herald cut, (job, cycle)
         cycle_us = {recorded_cycle_us(child) for child in self.children}
         if len(cycle_us) == 1 and None not in cycle_us:
             data["time_us"] = data["cycles"] * cycle_us.pop()
@@ -501,9 +510,11 @@ class FockPopulationSetExperiment(AssembledExperiment):
     # -- persistence ------------------------------------------------------
 
     def manifest_parameters(self):
+        prep_herald = (self.children[0].cfg.expt.get("prep_herald", "none")
+                       if self.children else "none")
         return dict(entries=[[list(occupation), mode] for occupation, mode in self.entries],
                     cycles=self.cycles, swap_stors=self.swap_stors, detunings=self.detunings,
-                    calibration=self.calibration)
+                    calibration=self.calibration, prep_herald=prep_herald)
 
     def assembled_arrays(self):
         return dict(self.data)

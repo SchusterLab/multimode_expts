@@ -37,6 +37,14 @@ Data of a ``FockPrepHeraldExperiment`` file (one row per read mode; ``xpts`` = `
     avgi, avgq, amps, phases: the generic ``QsimExperiment`` averages of the last readout; not
         useful here.
 Per-shot labels from a file: ``labels_from_h5(path, centers)``; a plot: ``display()``.
+
+Herald cut in the population jobs (2026-11-14): ``FockPopulationExperiment`` run with
+``FockPrepHeraldProgram`` and ``prep_herald`` "end" or "each" analyzes only the shots whose
+heralds all read g (``multiparity.herald_keep``). Its readout correction must have the same cut:
+``HeraldedConfusionMatrixExperiment`` is the multiparity confusion matrix as one job, Fock 0..3
+in M1 through the population ladder (``HeraldedCalibrationProgram``) with one herald readout per
+shot (a bare one for Fock 0, so that all points have the same readouts). Its file holds
+``multiparity_confusion_matrix`` from the kept shots and ``multiparity_confusion_matrix_shot_counts``.
 """
 import json
 import os
@@ -49,7 +57,8 @@ from slab import AttrDict
 
 from experiments.MM_base import MMAveragerProgram
 from experiments.qsim.fock_population import FockPopulationProgram
-from experiments.qsim.qsim_base import QsimExperiment, _herald_readouts
+from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
+from experiments.qsim.qsim_base import QsimExperiment, _herald_readouts, saved_readout_mode
 from fitting import plot_style
 from fitting.qsim import f_postselect
 
@@ -253,3 +262,81 @@ class FockPrepHeraldExperiment(QsimExperiment):
             step_g=(labels["step_g"].mean(axis=1) if labels["step_g"].shape[-1]
                     else np.full((points, 1), np.nan)),
         )
+
+
+class HeraldedCalibrationProgram(FockPrepHeraldProgram):
+    """Fock n in M1 (n = 0..3) with exactly one herald readout per shot.
+
+    Fock 1..3: the population ladder with the "end" herald, as the population jobs play it.
+    Fock 0 has no ladder, so it gets one bare herald readout: all points of one calibration
+    job then have the same readouts.
+    """
+
+    @classmethod
+    def readouts_per_shot(cls, cfg):
+        return FockPopulationProgram.readouts_per_shot(cfg) + 1
+
+    def _prepare_occupation(self):
+        expt = self.cfg.expt
+        if expt.get("prep_herald", "none") != "end":
+            raise ValueError("HeraldedCalibrationProgram plays the 'end' herald: set prep_herald='end'")
+        if any(int(n) for n in expt.occupations[1:]):
+            raise ValueError("the heralded calibration prepares M1 only")
+        number = int(expt.occupations[0])
+        if number == 0:
+            self.post_selection_measure(parity=False, prefix="population_prep_M1_herald0")
+        else:
+            self._play_ladder(number, "population_prep_M1")
+
+
+class HeraldedConfusionMatrixExperiment(MultiParityConfusionMatrixExperiment):
+    """The multiparity confusion matrix with the prep herald cut, as one job.
+
+    Points: Fock 0, 1, 2, 3 in M1 (``occupations`` [n, 0, ...] over ``swap_stors``), read M1,
+    no Floquet cycles, one herald readout per shot (``HeraldedCalibrationProgram``). Needs
+    ``prep_herald="end"``, the herald of the population jobs it corrects. analyze() gives
+    ``multiparity_confusion_matrix`` from the kept shots (``multiparity.herald_keep``) and
+    ``multiparity_confusion_matrix_shot_counts``, the kept shots of each row (read by
+    ``agp.calibration_shots``).
+    Give its file to the population jobs as ``multiparity_confusion_matrix``, as for
+    ``MultiParityConfusionMatrixExperiment``.
+    """
+
+    default_program = HeraldedCalibrationProgram
+
+    def acquire(self, progress=False, debug=False):
+        expt = self.cfg.expt
+        if saved_readout_mode(expt) != "multiparity":
+            raise ValueError("HeraldedConfusionMatrixExperiment requires readout='multiparity'")
+        if expt.get("cond_sec_phase", 90) != -90 or expt.get("phase_second_pulse", 180) != 180:
+            raise ValueError("HeraldedConfusionMatrixExperiment requires cond_sec_phase=-90 "
+                             "and phase_second_pulse=180 for n = b0 + 2*b1")
+        if expt.get("prep_herald", "none") != "end":
+            raise ValueError("HeraldedConfusionMatrixExperiment requires prep_herald='end'")
+        expt.prepulse = False
+        expt.postpulse = True
+        expt.ro_stor = 0
+        expt.floquet_cycle = 0
+        expt.multiparity_confusion_matrix = None
+        # Not the parent's acquire: that one sweeps the prepulse Fock states.
+        return QsimExperiment.acquire(self, progress=progress, debug=debug)
+
+    def sweep_axes(self):
+        """One axis: ``occupations`` [n, 0, ...] for n = 0, 1, 2, 3."""
+        storages = list(self.cfg.expt.swap_stors)
+        self.cfg.expt.swept_params = ["occupations"]
+        return [("occupations", [[n] + [0] * len(storages) for n in range(4)])]
+
+    def shape_data(self, axes, points):
+        data = QsimExperiment.shape_data(self, axes, points)
+        data["xpts"] = np.arange(4)  # the prepared number, as the parent's analyze() needs
+        return data
+
+    def analyze(self, data=None, **kwargs):
+        """The parent's matrix (from the kept shots), and the kept shots of each row."""
+        super().analyze(data=data, **kwargs)
+        prepared = np.asarray(self.data["xpts"]).reshape(-1).astype(int)
+        counts = np.empty(4)
+        counts[prepared] = np.asarray(self.data["shot_counts"]).reshape(-1)
+        self.data["multiparity_confusion_matrix_shot_counts"] = counts
+        return self.data

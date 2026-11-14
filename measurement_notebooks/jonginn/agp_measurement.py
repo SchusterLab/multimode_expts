@@ -39,7 +39,7 @@ from slab import AttrDict
 from experiments import CharacterizationRunner, MultimodeStation
 from experiments.qsim.agp import CentralBosonAGPDisorderScan
 from experiments.qsim.fock_population import FockPopulationExperiment
-from experiments.qsim.fock_prep_herald import FockPrepHeraldProgram
+from experiments.qsim.fock_prep_herald import FockPrepHeraldProgram, HeraldedConfusionMatrixExperiment
 from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
 from experiments.qsim.notebook_helpers.defaults import ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS
 from theory.qsim.central_boson import fixed_n_hamiltonian
@@ -78,6 +78,11 @@ station = MultimodeStation(
 FLOQUET_DEFAULTS['scramble_sync_cycles'] = 2
 
 # %% tags=["defaults"]
+# HERALD = True: one qubit readout after each Fock ladder (prep_herald="end"). The population
+# jobs and the confusion matrix then use only the shots where it reads g; all shots stay in
+# the files. HERALD = False: the measurement as before.
+HERALD = False
+
 STORAGE_MODES = [1, 2, 4, 5]
 common_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
@@ -98,11 +103,15 @@ population_defaults = AttrDict(dict(
     common_defaults, prepulse=False, occupations=[3, 0, 0, 0, 0],
     floquet_cycles=[0], swept_params=["floquet_cycle"],
 ))
+if HERALD:
+    # The heralded calibration prepares Fock 0..3 with the population ladder, not the prepulse.
+    calibration_defaults.update(prepulse=False, prep_herald="end")
+    population_defaults.prep_herald = "end"
 
 # %% tags=["runners"]
 confusion_matrix_runner = CharacterizationRunner(
     station=station,
-    ExptClass=MultiParityConfusionMatrixExperiment,
+    ExptClass=HeraldedConfusionMatrixExperiment if HERALD else MultiParityConfusionMatrixExperiment,
     default_expt_cfg=calibration_defaults,
     job_client=client,
     use_queue=True,
@@ -112,6 +121,7 @@ confusion_matrix_runner = CharacterizationRunner(
 population_runner = CharacterizationRunner(
     station=station,
     ExptClass=FockPopulationExperiment,
+    ExptProgram=FockPrepHeraldProgram if HERALD else None,  # None: FockPopulationProgram
     default_expt_cfg=population_defaults,
     job_client=client,
     use_queue=True,
@@ -123,7 +133,9 @@ population_runner = CharacterizationRunner(
 #
 # The Experiment owns the prepared-state sweep and stores C[prepared, measured]
 # in data["multiparity_confusion_matrix"]. No additional population JOBs or
-# manual matrix construction are needed.
+# manual matrix construction are needed. With HERALD, the job is
+# HeraldedConfusionMatrixExperiment: the same matrix from the shots whose herald reads g,
+# and the kept shots of each row in data["multiparity_confusion_matrix_shot_counts"].
 
 # %% tags=["calibration"]
 calibration_expt = confusion_matrix_runner.execute(reps=6000, postprocess=False)
@@ -166,10 +178,11 @@ for meas_stor in meas_stors:
         floquet_cycles=floquet_cycles,
         multiparity_confusion_matrix=CONFUSION_MATRIX_FNAME,
         postprocess=False, show=False, log=True,
-        prep_herald="end"
     )
     walk_expts.append(walk_expt)
     print(walk_expt.fname)
+    if HERALD:
+        print(f"  kept fraction (herald reads g): {np.mean(walk_expt.data['kept_fraction']):.3f}")
 
 # %% tags=["walk_display"]
 walk_fig, walk_axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
@@ -265,7 +278,7 @@ display(walk_fig)
 # time window. The stored agp is g^2 ||A_mu||^2, without a fit or decay correction.
 
 # %% tags=["agp_settings"]
-BASE_FILE_NAME = '261112_Storage_and_Kerr_directions_at_25e-3mA'
+BASE_FILE_NAME = '261112_Storage_and_Kerr_directions_at_25e-3mA' + ('_herald' if HERALD else '')
 name_genrator = lambda string: BASE_FILE_NAME+str(string)
 
 TOTAL_PHOTONS = 3
@@ -311,8 +324,10 @@ for direction in AGP_DIRECTIONS:
     scan.analyze(mu=AGP_MU_KHZ)
     disorder_scans[direction] = scan
     for part in scan.children:
+        kept = (f", kept fraction {np.mean(part.data['kept_fraction']):.3f}"
+                if "kept_fraction" in part.data else "")
         print(f"Direction {direction}, W={part.disorder_khz:g} kHz: "
-              f"{len(part.children)} population JOBs, {len(part.cycles)} cycles")
+              f"{len(part.children)} population JOBs, {len(part.cycles)} cycles{kept}")
 
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 # change mu and reanalyze if needed
@@ -379,7 +394,7 @@ disorder_scans[0].display_spectrum()
 # Second scan: higher W. It needs a new name, because the first scan's names are taken.
 # TOTAL_PHOTONS, AGP_DIRECTIONS, AGP_REPS, AGP_CYCLES, AGP_BATCH_SIZE, AGP_MU_KHZ and
 # DISORDER_PATTERN are the same as in the first scan.
-BASE_FILE_NAME_HIGH_W = '261113_Storage_and_Kerr_directions_highW_at_0p25mA'
+BASE_FILE_NAME_HIGH_W = '261113_Storage_and_Kerr_directions_highW_at_0p25mA' + ('_herald' if HERALD else '')
 name_generator_high_w = lambda direction: BASE_FILE_NAME_HIGH_W + str(direction)
 DISORDER_RMS_KHZ_DICT_HIGH_W = {
     5: [60, 80, 100, 120, 140, 160, 180, 200],
