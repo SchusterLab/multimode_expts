@@ -37,6 +37,7 @@ what they need: the swap parameters and pulse arguments (``m1s_kwargs``,
 """
 from copy import deepcopy
 
+from experiments.floquet_instruction_timing import warn_if_tproc_falls_behind_floquet_train
 from experiments.floquet_timing import floquet_cycle_us
 from experiments.qsim.floquet_phase_frame import (
     advance_floquet_offsets,
@@ -276,6 +277,7 @@ class FloquetProgram(QsimProgram):
             print("[Floquet] scramble elapsed us:", scramble_elapsed_us)
             print("[Floquet] pulse args:", all_pulse_args)
 
+        first_instruction_index = len(self.prog_list)
         if floquet_hardware_loop and floquet_cycle > 0 and swap_stors:
             self._play_floquet_hardware_loop(
                 all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
@@ -284,6 +286,9 @@ class FloquetProgram(QsimProgram):
             self._play_floquet_software_loop(
                 all_pulse_args, phase_offsets, swap_stors, floquet_cycle,
                 update_phases, scramble_sync_cycles, palindrome_scramble)
+        warn_if_tproc_falls_behind_floquet_train(
+            self, f"Floquet scramble of {swap_stors}, {floquet_cycle} cycles",
+            first_instruction_index)
 
         for j_stor, detuning_MHz in enumerate(detunings):
             disorder_phase_offsets[j_stor] = self._mod360(
@@ -667,6 +672,7 @@ class FloquetProgram(QsimProgram):
                 f"hardware_loop={hardware_loop}"
             )
 
+        first_instruction_index = len(self.prog_list)
         if hardware_loop:
             ch = pulse_args["ch"]
             page = self.ch_page(ch)
@@ -757,6 +763,8 @@ class FloquetProgram(QsimProgram):
                 else:
                     self.setup_and_pulse(**pulse_args)
                 self.sync_all(sync_cycles)
+        warn_if_tproc_falls_behind_floquet_train(
+            self, f"M1-S{stor} fractional train {label}", first_instruction_index)
 
         if update_phases:
             for _ in range(n_frac):
