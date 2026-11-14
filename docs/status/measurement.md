@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-11-13** (`FStateHoldExperiment`; sequential readout, calibration Experiment and native multi-direction AGP as of 2026-11-05; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
+**Last updated: 2026-11-13** (`FStateHoldExperiment`, Floquet tProc timing check; sequential readout, calibration Experiment and native multi-direction AGP as of 2026-11-05; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
 2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
@@ -25,6 +25,14 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   (`labels_from_h5`, `select`). **Next:** the herald cut inside `FockPopulationExperiment.analyze()`; a
   confusion-matrix experiment that plays the herald; the f cut as an option of the multiparity
   analysis (Q is in the files).
+- **tProc timing check for Floquet trains (2026-11-13, `docs/log/2026-11-13_floquet-instruction-timing.md`).**
+  New module `experiments/floquet_instruction_timing.py`: after a Floquet train is emitted, it
+  warns if the tProc needs more clocks to issue the pulses than the slots last, so that pulses
+  start late. The clock counts and the timed FIFO depth are read from the qick firmware source
+  (`../qick/firmware/ip/axis_tproc64x32_x8_v1/src/`). Called in
+  `_play_scramble_with_phase_offsets` and `_play_m1s_frac_train` (`floquet_train.py`). Not
+  checked: programs with their own Floquet loop (for example `SidebandScrambleProgram`), and
+  error amplification. Open: confirm the model on the device.
 - **Sequential Fock population readout (2026-11-05).** New module
   `experiments/qsim/fock_population_sequential.py`: an independent analysis mixin,
   `FockPopulationSequentialReadoutProgram` and `FockPopulationSequentialReadoutExperiment`.

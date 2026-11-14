@@ -56,12 +56,10 @@ from theory.qsim.central_boson import fixed_n_hamiltonian
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {
-    "hardware_config": "CFG-HW-20261029-00069",
-    "multiphoton_config": "CFG-MP-20260121-00001",
-    "man1_storage_swap": "CFG-M1-20261029-00026",
-    "floquet_storage_swap": "CFG-FL-20261029-00020",
-}
+config_dict = {'hardware_config': 'CFG-HW-20261113-00031',
+ 'multiphoton_config': 'CFG-MP-20260121-00001',
+ 'man1_storage_swap': 'CFG-M1-20261113-00018',
+ 'floquet_storage_swap': 'CFG-FL-20261111-00111'}
 
 client = JobClient()
 health = client.health_check()
@@ -80,7 +78,7 @@ station = MultimodeStation(
 )
 
 # %% tags=["defaults"]
-STORAGE_MODES = [4, 5, 6, 7]
+STORAGE_MODES = [1]
 RO_STORS = [0, *STORAGE_MODES]
 common_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
@@ -90,18 +88,18 @@ common_defaults = AttrDict(dict(
     readout="multiparity", parity_fast=False,
     cond_sec_phase=-90, phase_second_pulse=180,
     swap_stors=STORAGE_MODES, update_phases=True,
-    detunings=[0.0, 0.0, 0.0, 0.0],
+    detunings= [0]#[0.0, 0.0, 0.0, 0.0],
 ))
 common_defaults.update(ACTIVE_RESET_DEFAULTS)
 common_defaults.update(FLOQUET_DEFAULTS)
 
 population_defaults = AttrDict(dict(
-    common_defaults, prepulse=False, occupations=[3, 0, 0, 0, 0],
+    common_defaults, prepulse=False, occupations=[3,0],#[3, 0, 0, 0, 0],
     ro_stors=RO_STORS, floquet_cycles=[0], swept_params=["floquet_cycle"],
     multiparity_confusion_matrix=None, multiparity_confusion_matrices=None,
 ))
 calibration_defaults = AttrDict(dict(
-    population_defaults, background_occupations=[0, 0, 0, 0, 0],
+    population_defaults, background_occupations=[0,0]#[0, 0, 0, 0, 0],
 ))
 
 # %% tags=["runners"]
@@ -158,13 +156,13 @@ CONFUSION_MATRIX_FNAME = str(calibration_expt.fname)
 # %% tags=["walk_settings"]
 swap_stors = list(STORAGE_MODES)
 meas_stors = list(RO_STORS)
-occupations = [3, 0, 0, 0, 0]
-detunings = [0.0, 0.0, 0.0, 0.0]  # MHz
-floquet_cycles = list(range(0, 100, 2))
+occupations = [3, 0]#[3, 0, 0, 0, 0]
+detunings = [0]#[0.0, 0.0, 0.0, 0.0]  # MHz
+floquet_cycles = list(range(0, 2, 2))
 
 # %% tags=["walk_acquire"]
 walk_expt = population_runner.execute(
-    reps=300,
+    reps=1000,
     occupations=occupations,
     swap_stors=swap_stors,
     storage_reset=swap_stors,
@@ -176,6 +174,9 @@ walk_expt = population_runner.execute(
     go_kwargs=dict(analyze=True, save=True),
 )
 print(walk_expt.fname)
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+walk_expt.data['n_mean_corrected']
 
 # %% tags=["walk_display"]
 walk_expt.display(raw=True)
@@ -234,12 +235,12 @@ plt.show()
 # %% tags=["agp_settings"]
 TOTAL_PHOTONS = 3
 AGP_DIRECTIONS = [0, 4, 5, 6, 7]  # 0: M1 Kerr; storage numbers: 4, 5, 6, 7.
-DISORDER_RMS_KHZ = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
-AGP_REPS = 100
-AGP_CYCLES = list(range(0, 800, 1))
+DISORDER_RMS_KHZ = [0, 11, 18, 25]
+AGP_REPS = 500
+AGP_CYCLES = list(range(0, 800, 4))
 AGP_BATCH_SIZE = 1
 AGP_MU_KHZ = 10  # Cutoff in kHz; None uses the existing AGP default axis.
-SCAN_NAME = "sequential_n3"  # Edit for each new measurement run.
+SCAN_NAME = "20261112_sequential_n3_pilot"  # Edit for each new measurement run.
 
 DISORDER_PATTERN = np.array([-0.70675335, 0.19463085, -1.03457499, 1.54669749])
 DISORDER_PATTERN -= np.mean(DISORDER_PATTERN)

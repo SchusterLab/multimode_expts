@@ -76,10 +76,10 @@ from fitting.qsim import calibration as qsim_cal
 
 # %%
 # The config versions this campaign ran against.
-config_dict = {'hardware_config': 'CFG-HW-20261026-00031',
+config_dict = {'hardware_config': 'CFG-HW-20261112-00051',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261026-00114',
- 'floquet_storage_swap': 'CFG-FL-20261023-00002'}
+ 'man1_storage_swap': 'CFG-M1-20261112-00020',
+ 'floquet_storage_swap': 'CFG-FL-20261112-00030'}
 
 station = MultimodeStation(
     user="jonginn",
@@ -1031,6 +1031,10 @@ print('production flag:', measurement_config_default_dict['use_multiphoton_swap'
 # %%
 station.ds_floquet.df
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+flux_ch = station.hardware_cfg.hw.soc.dacs.flux_low.ch[0]
+CLOCK_US = station.soccfg.cycles2us(1, gen_ch=flux_ch)
+
 # %%
 # True reinitializes frequency/gain from ds_storage; False keeps the calibrated dataset.
 # The Floquet pulse is the preloaded flat-top (docs/qsim/mbr_step9_plan.md, 0.3); the
@@ -1038,9 +1042,9 @@ station.ds_floquet.df
 RESET_FLOQUET_DATASET = True
 
 # Requested envelope lengths below are quantized to DAC clocks; the next cell includes sync timing too.
-preload_flat_length_us = 0.06
-preload_ramp_sigma_us = 0.002
-preload_pi_frac = 40
+preload_flat_length_us = 0.01#3 * CLOCK_US#0.004
+preload_ramp_sigma_us = 0.002#1*CLOCK_US#0
+preload_pi_frac = 20
 
 if RESET_FLOQUET_DATASET:
     station.ds_floquet.import_from_swap_dataset(
@@ -1051,10 +1055,13 @@ if RESET_FLOQUET_DATASET:
         station.ds_floquet.update_ramp_sigma(f"M1-S{i+1}", preload_ramp_sigma_us)
 # station.snapshot_floquet_storage_swap(update_main=False)
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+floquet_default_dict['scramble_sync_cycles'] = 2
+
 # %%
 from experiments.floquet_timing import station_floquet_hardware
 
-TROTTER_MODES_IN_USE = [1, 4, 5, 7]  # Use the same modes as the intended scramble.
+TROTTER_MODES_IN_USE = [4, 5, 6, 7]  # Use the same modes as the intended scramble.
 # Same DAC-envelope and integer tProc sync timing as the spectroscopy program.
 floquet_timing = station_floquet_hardware(
     station, TROTTER_MODES_IN_USE, floquet_default_dict['scramble_sync_cycles'],

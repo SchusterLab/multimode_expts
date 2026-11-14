@@ -39,6 +39,7 @@ from slab import AttrDict
 from experiments import CharacterizationRunner, MultimodeStation
 from experiments.qsim.agp import CentralBosonAGPDisorderScan
 from experiments.qsim.fock_population import FockPopulationExperiment
+from experiments.qsim.fock_prep_herald import FockPrepHeraldProgram
 from experiments.qsim.multiparity_confusion_matrix import MultiParityConfusionMatrixExperiment
 from experiments.qsim.notebook_helpers.defaults import ACTIVE_RESET_DEFAULTS, FLOQUET_DEFAULTS
 from theory.qsim.central_boson import fixed_n_hamiltonian
@@ -52,10 +53,10 @@ from job_server import JobClient
 
 # %% tags=["station"]
 user = "jonginn"
-config_dict = {'hardware_config': 'CFG-HW-20261106-00005',
+config_dict = {'hardware_config': 'CFG-HW-20261113-00052',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261106-00001',
- 'floquet_storage_swap': 'CFG-FL-20261105-00030'}
+ 'man1_storage_swap': 'CFG-M1-20261113-00028',
+ 'floquet_storage_swap': 'CFG-FL-20261113-00028'}
 
 client = JobClient()
 health = client.health_check()
@@ -64,7 +65,7 @@ client.print_queue()
 
 station = MultimodeStation(
     user=user,
-    experiment_name="261027AGPlowKerr",
+    experiment_name="261111AGPlowKerr",
     project="AGP",
     log_measurements=True,
     hardware_config=config_dict["hardware_config"],
@@ -73,8 +74,11 @@ station = MultimodeStation(
     floquet_file=config_dict["floquet_storage_swap"],
 )
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+FLOQUET_DEFAULTS['scramble_sync_cycles'] = 2
+
 # %% tags=["defaults"]
-STORAGE_MODES = [4, 5, 6, 7]
+STORAGE_MODES = [1, 2, 4, 5]
 common_defaults = AttrDict(dict(
     expts=1, reps=1, rounds=1, qubits=[0], f0g1_cavity=1,
     normalize=False, active_reset=True, man_reset=True,
@@ -147,7 +151,7 @@ swap_stors = list(STORAGE_MODES)
 meas_stors = [0] + swap_stors
 occupations = [3, 0, 0, 0, 0]
 detunings = [0.0, 0.0, 0.0, 0.0]  # MHz
-floquet_cycles = list(range(0, 200, 4))
+floquet_cycles = list(range(0, 100, 4))
 
 # %% tags=["walk_acquire"]
 walk_expts = []
@@ -162,6 +166,7 @@ for meas_stor in meas_stors:
         floquet_cycles=floquet_cycles,
         multiparity_confusion_matrix=CONFUSION_MATRIX_FNAME,
         postprocess=False, show=False, log=True,
+        prep_herald="end"
     )
     walk_expts.append(walk_expt)
     print(walk_expt.fname)
@@ -260,15 +265,19 @@ display(walk_fig)
 # time window. The stored agp is g^2 ||A_mu||^2, without a fit or decay correction.
 
 # %% tags=["agp_settings"]
-BASE_FILE_NAME = '261106_Storage_directions'
+BASE_FILE_NAME = '261112_Storage_and_Kerr_directions_at_25e-3mA'
 name_genrator = lambda string: BASE_FILE_NAME+str(string)
 
 TOTAL_PHOTONS = 3
-AGP_DIRECTIONS = [4, 6]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
+AGP_DIRECTIONS = [5, 7, 0]  # 0: M1 Kerr; storage number: e.g. 7. Both: [0, 7].
 # DISORDER_RMS_KHZ = np.arange(0, 41, 4)# [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200] #for kerr it was [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
 DISORDER_RMS_KHZ_DICT = {
-    4: [0, 4, 8, 11, 14, 18, 25, 35, 50],
-    6: [0, 4, 9, 15, 22, 29, 36, 46, 60],
+    
+    5 : [0, 4, 7, 9, 10, 11, 12, 13, 15, 17, 21, 26, 33, 40],
+    7: [0, 4, 8, 11, 13, 14, 15, 16, 17, 18, 20, 22, 25, 29, 35, 40],
+    0: [0, 10, 25, 38, 48, 54, 57, 59, 60, 61, 63, 66, 72, 82, 95, 110], #[10, 30, 47, 55, 59, 61, 65, 73, 90, 110]
+    # 4: [0, 4, 8, 11, 14, 18, 25, 35, 50],
+    # 6: [0, 4, 9, 15, 22, 29, 36, 46, 60],
 }
 AGP_REPS = 500 #for Kerr it was 1000
 AGP_CYCLES = list(range(0, 800, 4)) #for Kerr it was (0, 800, 1)
@@ -349,7 +358,7 @@ for scan in disorder_scans.values():
 
 # %% tags=["assemble"]
 for direction, scan in disorder_scans.items():
-    manifest_path = scan.save()
+    manifest_path = scan.save(name_genrator(direction))
     print(f"Direction {direction}: {manifest_path}")
 
 # %% tags=["disorder_display"]
@@ -362,6 +371,77 @@ for scan in disorder_scans.values():
 
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 disorder_scans[0].display_spectrum()
+
+# %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# ## 6. Addendum
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# Second scan: higher W. It needs a new name, because the first scan's names are taken.
+# TOTAL_PHOTONS, AGP_DIRECTIONS, AGP_REPS, AGP_CYCLES, AGP_BATCH_SIZE, AGP_MU_KHZ and
+# DISORDER_PATTERN are the same as in the first scan.
+BASE_FILE_NAME_HIGH_W = '261113_Storage_and_Kerr_directions_highW_at_0p25mA'
+name_generator_high_w = lambda direction: BASE_FILE_NAME_HIGH_W + str(direction)
+DISORDER_RMS_KHZ_DICT_HIGH_W = {
+    5: [60, 80, 100, 120, 140, 160, 180, 200],
+    7: [60, 80, 100, 120, 140, 160, 180, 200],
+    0: [120, 140, 150, 160, 180, 200],
+}
+
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+disorder_scans_high_w = {}
+for direction in AGP_DIRECTIONS:
+    scan = CentralBosonAGPDisorderScan.from_pattern(
+        DISORDER_RMS_KHZ_DICT_HIGH_W[direction], DISORDER_PATTERN,
+        photon_sector_number=TOTAL_PHOTONS,
+        direction=direction,
+        ro_stor=direction,
+        swap_stors=STORAGE_MODES,
+        cycles=AGP_CYCLES,
+        calibration=CONFUSION_MATRIX_FNAME,
+        notes=f"Central-boson correlations, direction {direction}, high W",
+    )
+    # acquire() saves each W when its jobs are done, then the whole scan.
+    scan.acquire(
+        population_runner,
+        name=name_generator_high_w(direction),
+        batch_size=AGP_BATCH_SIZE, reps=AGP_REPS,
+        storage_reset=STORAGE_MODES, postprocess=False, show=False, log=True,
+    )
+    scan.analyze(mu=AGP_MU_KHZ)
+    disorder_scans_high_w[direction] = scan
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+raw = False  # True selects uncorrected correlations.
+suffix = "" if raw else "_corrected"
+for direction, scan in disorder_scans_high_w.items():
+    moments = (1, 2) if "C2" in scan.data else (1,)
+    fig, axes = plt.subplots(1, len(moments), figsize=(6 * len(moments), 4),
+                             sharex=True, squeeze=False)
+    for axis, moment in zip(axes[0], moments):
+        key = f"C{moment}"
+        for part in scan.children:
+            axis.plot(part.data["cycles"], part.data[key + suffix],
+                      label=f"W={part.disorder_khz:g} kHz")
+        axis.set(xlabel="Floquet cycles", ylabel="Ensemble-averaged correlation",
+                 title=f"Direction {direction}, moment {moment} ({'raw' if raw else 'corrected'})")
+        axis.legend()
+    fig.tight_layout()
+    plt.show()
+    scan.display()
+    plt.show()
+
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# acquire() already saved every W and each scan, and saved data is never overwritten.
+# So this cell saves only a scan that is not saved yet, and prints where each scan is.
+for direction, scan in disorder_scans_high_w.items():
+    if scan.manifest_path is None:
+        scan.save(name_generator_high_w(direction))
+    print(f"Direction {direction}: {scan.manifest_path}")
+
 
 # %% [markdown] jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
 # # (Optional) Debuggings

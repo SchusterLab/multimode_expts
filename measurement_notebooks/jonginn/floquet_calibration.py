@@ -72,16 +72,19 @@ from experiments.qsim.floquet_gain_chevron import (
 # checkout, directly on this kernel in a worktree (see run_mode.py).
 RUN = run_settings()
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+floquet_default_dict['scramble_sync_cycles'] = 3 #2
+
 # %%
 # The config versions this campaign ran against.
-config_dict = {'hardware_config': 'CFG-HW-20261027-00018',
+config_dict = {'hardware_config': 'CFG-HW-20261112-00051',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261027-00033',
- 'floquet_storage_swap': 'CFG-FL-20261027-00038'}
+ 'man1_storage_swap': 'CFG-M1-20261112-00020',
+ 'floquet_storage_swap': 'CFG-FL-20261113-00001'}
 
 station = MultimodeStation(
     user="jonginn",
-    experiment_name="261015_calibration_after_recooldown",
+    experiment_name="261111_calibration_after_recooldown",
     project="FloquetCalibration",
     log_measurements=not RUN.smoke,
     **RUN.station_configs(config_dict),
@@ -202,7 +205,7 @@ def floquet_gain_chev_postproc(station, expt):
     station.snapshot_floquet_storage_swap(update_main=False)
 
 # %%
-stor_modes_to_run = [3] #list(range(1,8))
+stor_modes_to_run = [4] #list(range(1,8))
 you_have_to_do_amp_chev = True
 if you_have_to_do_amp_chev == True:
     # Note the postprocessor is intentionally not attached here; cell 102
@@ -218,7 +221,7 @@ if you_have_to_do_amp_chev == True:
         use_queue=RUN.use_queue,
     )
 
-    detune_span = 1.0
+    detune_span = 2.0
 
     freq_len_expt = [None] * len(stor_modes_to_run)
     for i, init_stor in enumerate(stor_modes_to_run):
@@ -228,7 +231,7 @@ if you_have_to_do_amp_chev == True:
             detunes=np.linspace(-detune_span, detune_span, 21).tolist(),
             reps=50,
             gain_expts=21,
-            max_gain=4000,
+            max_gain=30000,
             relax_delay=200,  # 8000 without active reset
             active_reset=True,
             man_reset=True,
@@ -243,7 +246,7 @@ floquet_gain_chev_postproc(station, freq_len_expt[0])
 # %% tags=["suite-skip"]
 # Suite: skipped. Hand-entered values.
 # station.ds_floquet.update_gain("M1-S6", 13648)
-station.ds_floquet.update_gain("M1-S3", 2500)
+station.ds_floquet.update_gain("M1-S4", 17000)
 # station.ds_floquet.update_freq("M1-S4", 871.7731)
 
 # station.ds_floquet.update_freq("M1-S4", 873.5242589230924)
@@ -340,13 +343,16 @@ error_amp_floquet_runner = CharacterizationRunner(
 # stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
 # stor_modes_to_run = [4, 5, 6, 7] #list(range(1,8))
 
-stor_modes_to_run = [1, 3, 5, 7]
+stor_modes_to_run = [4, 5, 6, 7]
 
 # Both span lists are indexed by stor-1; None falls back to the default below.
-freq_span_list = [0.1,  0.07, 0.07, 0.1,  0.1,   0.1, 0.05] # set for the Coarse
-gain_span_list = [None, None, None, None,  0.25,  0.25, 0.25]
+freq_span_list = [0.1,  0.07, 0.07, 0.3,  0.1,   0.1, 0.1] # set for the Coarse
+gain_span_list = [None, None, None, 0.2,  0.25,  0.25, 0.25]
 freq_span_default = 0.1
 gain_span_default = 0.3
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.ds_floquet.update_freq('M1-S4', 872.77)
 
 # %%
 # Source cell 109. Unlike the flat-top coarse pass, this one derives
@@ -356,11 +362,15 @@ relax_delay = 200
 if not do_active_reset:
     relax_delay = 8000
 
-stor_modes_to_run = [3]
+stor_modes_to_run = [4]
 
 span_divisor = 1
 error_amp_freq1 = [None] * len(stor_modes_to_run)
 error_amp_gain1 = [None] * len(stor_modes_to_run)
+
+RUN_ERROR_AMP_COARSE_FREQ = False
+RUN_ERROR_AMP_COARSE_GAIN = True
+
 for i, stor_i in enumerate(stor_modes_to_run):
     stor_name = f'M1-S{stor_i}'
     freq_span = freq_span_list[stor_i - 1]
@@ -369,36 +379,36 @@ for i, stor_i in enumerate(stor_modes_to_run):
     gain_span = gain_span_list[stor_i - 1]
     if gain_span is None:
         gain_span = gain_span_default
-
-    error_amp_freq1[i] = error_amp_floquet_runner.execute(
-        stor_mode_no=stor_i,
-        parameter_to_test='frequency',
-        go_kwargs=dict(analyze=False, progress=True, display=False),
-        # 0.2 is the program default, but we are already close.
-        span=freq_span / span_divisor,
-        relax_delay=relax_delay,
-        active_reset=do_active_reset,
-        man_reset=True,
-        storage_reset=[stor_i],
-        reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
-    )
-
-    error_amp_gain1[i] = error_amp_floquet_runner.execute(
-        stor_mode_no=stor_i,
-        parameter_to_test='gain',
-        go_kwargs=dict(analyze=False, progress=True, display=False),
-        # 0.7 is the program default.
-        span=int(station.ds_floquet.get_gain(stor_name) * gain_span / span_divisor),
-        expts=60,
-        relax_delay=relax_delay,
-        active_reset=do_active_reset,
-        man_reset=True,
-        storage_reset=[stor_i],
-        reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
-    )
+    if RUN_ERROR_AMP_COARSE_FREQ:
+        error_amp_freq1[i] = error_amp_floquet_runner.execute(
+            stor_mode_no=stor_i,
+            parameter_to_test='frequency',
+            go_kwargs=dict(analyze=False, progress=True, display=False),
+            # 0.2 is the program default, but we are already close.
+            span=freq_span / span_divisor,
+            relax_delay=relax_delay,
+            active_reset=do_active_reset,
+            man_reset=True,
+            storage_reset=[stor_i],
+            reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
+        )
+    if RUN_ERROR_AMP_COARSE_GAIN:
+        error_amp_gain1[i] = error_amp_floquet_runner.execute(
+            stor_mode_no=stor_i,
+            parameter_to_test='gain',
+            go_kwargs=dict(analyze=False, progress=True, display=False),
+            # 0.7 is the program default.
+            span=int(station.ds_floquet.get_gain(stor_name) * gain_span / span_divisor),
+            expts=60,
+            relax_delay=relax_delay,
+            active_reset=do_active_reset,
+            man_reset=True,
+            storage_reset=[stor_i],
+            reset_dump_mode=active_reset_default_dict["reset_dump_mode"],
+        )
 
 # %%
-# station.ds_floquet.update_freq("M1-S3", 699.35)
+station.ds_floquet.update_freq("M1-S4", 873.4)
 
 # %%
 station.update_all_station_snapshots()
@@ -511,8 +521,8 @@ sideband_stark_error_amp_runner = CharacterizationRunner(
 
 # %%
 # Source cell 116. From here on the buffer flag and sync cycles are forwarded.
-# stor_modes_to_run = [1, 2, 5, 6, 7] #list(range(1,8))
-stor_modes_to_run = RUN.pick([1, 4, 5, 7], smoke=[1, 2]) #list(range(1,8))
+stor_modes_to_run = [1, 2, 4, 5, 7] #list(range(1,8))
+# stor_modes_to_run = RUN.pick([4, 5, 6, 7], smoke=[1, 2]) #list(range(1,8))
 
 do_active_reset = True
 relax_delay = 200
@@ -659,11 +669,11 @@ dmscramble_runner = CharacterizationRunner(
 # %%
 # One job per chunk of Floquet cycles (the tProc instruction memory).
 max_cycle = RUN.pick(300, smoke=300)
-cycles_per_job = RUN.pick(100, smoke=300)
-floquet_cycles_list = [np.arange(first, min(first + cycles_per_job, max_cycle), 2)
+cycles_per_job = RUN.pick(300, smoke=300)
+floquet_cycles_list = [np.arange(first, min(first + cycles_per_job, max_cycle), 1)
                        for first in range(0, max_cycle, cycles_per_job)]
 
-swap_stors = [1, 3,  5, 7]
+swap_stors = [4]
 # meas_stors = [0, 2, 6]
 # meas_stors = [0]
 meas_stors = RUN.pick([0] + swap_stors, smoke=[0, 1])
