@@ -117,3 +117,19 @@ def test_mismatched_table_is_not_silently_averaged(tmp_path):
     part.children[-1].data["disorder_detunings_mhz"][0, 0] += .01
     with pytest.raises(ValueError, match="same disorder_detunings_mhz"):
         part.analyze(theory=False)
+
+
+def test_notebook_plans_multiple_directions_with_the_same_patterns():
+    source = Path("measurement_notebooks/jonginn/agp_ensemble_measurement.py").read_text(
+        encoding="utf-8")
+    planning_cell = source.split('# %% tags=["agp_plan"]', 1)[1].split("# %%", 1)[0]
+    settings = dict(CentralBosonAGPEnsembleDisorderScan=CentralBosonAGPEnsembleDisorderScan,
+                    AGP_DIRECTIONS=[0, 7], DISORDER_RMS_KHZ_DICT={0: [0, 30], 7: [0, 30]},
+                    disorder_patterns=PATTERNS, TOTAL_PHOTONS=2, STORAGE_MODES=[4, 7],
+                    AGP_CYCLES=CYCLES, CONFUSION_MATRIX_FNAME=None, DISORDER_SEED=19)
+    exec(planning_cell, settings)
+    scans = settings["disorder_scans"]
+    assert list(scans) == [0, 7]
+    for direction, scan in scans.items():
+        assert [part.direction for part in scan.children] == [direction, direction]
+        np.testing.assert_array_equal(scan.children[1].disorder_detunings_mhz, .03 * PATTERNS)

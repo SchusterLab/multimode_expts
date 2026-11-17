@@ -14,6 +14,18 @@ from experiments.qsim.fock_population_sequential import (
     FockPopulationSequentialReadoutExperiment,
     readout_layout,
 )
+from experiments.qsim.fock_population_sequential_ensemble import (
+    FockPopulationSequentialHeraldProgram,
+    heralded_readout_layout,
+)
+
+
+def validate_heralded_sequential_calibration(expt):
+    """Keep one end herald in every Fock 0..3 calibration setting."""
+    if expt.get("prep_herald", "none") != "end":
+        raise ValueError("Heralded sequential calibration requires prep_herald='end'")
+    if any(expt.get("background_occupations", [])):
+        raise ValueError("Heralded sequential calibration requires vacuum background occupations")
 
 
 class MultiParityConfusionMatrixSequentialExperiment(FockPopulationSequentialReadoutExperiment):
@@ -96,3 +108,31 @@ class MultiParityConfusionMatrixSequentialExperiment(FockPopulationSequentialRea
             fig.colorbar(image, ax=axis, label="Probability")
         fig.tight_layout()
         return fig, axes
+
+
+class HeraldedSequentialCalibrationProgram(FockPopulationSequentialHeraldProgram):
+    """Add the same single herald to vacuum and occupied calibration states."""
+
+    def initialize(self):
+        validate_heralded_sequential_calibration(self.cfg.expt)
+        super().initialize()
+
+    @classmethod
+    def readouts_per_shot(cls, cfg):
+        return heralded_readout_layout(cfg, minimum_prep_heralds=1)["read_num"]
+
+    def _prepare_occupation(self):
+        if sum(self.cfg.expt.occupations) == 0:
+            self.post_selection_measure(parity=False, prefix="sequential_calibration_vacuum_herald")
+        else:
+            super()._prepare_occupation()
+
+
+class HeraldedMultiParityConfusionMatrixSequentialExperiment(
+        MultiParityConfusionMatrixSequentialExperiment):
+    """Override herald layout on one calibration parent to avoid diamond inheritance."""
+
+    default_program = HeraldedSequentialCalibrationProgram
+
+    def readout_layout(self):
+        return heralded_readout_layout(self.cfg, minimum_prep_heralds=1)
