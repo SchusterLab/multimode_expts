@@ -58,8 +58,8 @@ def readout_layout(cfg):
 class SequentialMultiparityAnalysisMixin:
     """Analyze paired readouts without using the legacy final-lane decoder."""
 
-    def decode_readouts(self, point_idx=0, threshold=None):
-        """Return accepted labels and IQ, plus the mask in the unfiltered shot axis."""
+    def decode_readouts(self, point_idx=0, threshold=None, accepted_only=True):
+        """Decode labels and IQ; optionally retain rejected shots in their original slots."""
         if threshold is None:
             threshold = self.cfg.device.readout.threshold[self.cfg.expt.qubits[0]]
         read_num = int(self.cfg.read_num)
@@ -68,7 +68,8 @@ class SequentialMultiparityAnalysisMixin:
         idata = np.asarray(self.data["idata"][point_idx]).reshape(-1, read_num)
         qdata = np.asarray(self.data["qdata"][point_idx]).reshape(-1, read_num)
         keep = np.all(idata[:, heralds] < threshold, axis=1)
-        i, q = idata[keep][:, pairs], qdata[keep][:, pairs]
+        selected = keep if accepted_only else slice(None)
+        i, q = idata[selected][:, pairs], qdata[selected][:, pairs]
         first_e = i[..., 0] > threshold
         second_e = i[..., 1] > threshold
         n_mod4 = first_e.astype(int) + 2 * second_e.astype(int)
@@ -134,8 +135,12 @@ class SequentialMultiparityAnalysisMixin:
         return self.data
 
 
-class FockPopulationSequentialReadoutProgram(FockPopulationProgram):
-    """Read each requested mode once; all measurements belong to multiparity."""
+class SequentialMultiparityProgramMixin:
+    """Sequential pulse hooks with no Program parent, to avoid diamond inheritance.
+
+    These method bodies were extracted from FockPopulationSequentialReadoutProgram
+    without changing their pulses. Each concrete class supplies one Program base.
+    """
 
     def initialize(self):
         layout = readout_layout(self.cfg)
@@ -241,16 +246,25 @@ class FockPopulationSequentialReadoutProgram(FockPopulationProgram):
         pass
 
 
+class FockPopulationSequentialReadoutProgram(SequentialMultiparityProgramMixin,
+                                          FockPopulationProgram):
+    """Attach sequential pulse hooks to one Program chain, avoiding diamond inheritance."""
+
+
 class FockPopulationSequentialReadoutExperiment(SequentialMultiparityAnalysisMixin,
                                               FockPopulationExperiment):
     """One preparation/evolution per shot, with an explicit readout-step axis."""
 
     default_program = FockPopulationSequentialReadoutProgram
 
+    def readout_layout(self):
+        """Allow preparation subclasses to insert their herald lanes."""
+        return readout_layout(self.cfg)
+
     def shape_data(self, axes, points):
         self.data = super().shape_data(axes, points)
         self.data.update({key: np.asarray(value, dtype=int)
-                          for key, value in readout_layout(self.cfg).items()})
+                          for key, value in self.readout_layout().items()})
         shape = (len(self.data["idata"]), len(self.data["ro_stors"]), 2)
         avgi, avgq = np.full(shape, np.nan), np.full(shape, np.nan)
         for point in range(shape[0]):
