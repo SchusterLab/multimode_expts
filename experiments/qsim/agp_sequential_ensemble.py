@@ -308,21 +308,23 @@ class CentralBosonAGPSequentialEnsembleDisorderScan(CentralBosonAGPEnsembleDisor
         theory_spectra = (data["C1_theory"][:, direction_indices, :] @ transform.T
                           if theory and "C1_theory" in data else None)
         cutoffs = self.shown_cutoffs(mu)
-        with plt.style.context(["default", {"font.size": 14}]):
+        with plt.style.context("default"):
             figure, axes = plt.subplots(
                 len(data["disorder_khz"]), len(selected_directions), squeeze=False, sharex=True,
-                figsize=(4 * len(selected_directions), 3.2 * len(data["disorder_khz"])),
+                figsize=(9 * len(selected_directions), 2 * len(data["disorder_khz"])),
                 constrained_layout=True)
             for row, strength in enumerate(data["disorder_khz"]):
                 for column, direction in enumerate(selected_directions):
                     axis = axes[row, column]
-                    axis.plot(frequencies, measured_spectra[row, column], label="measured")
+                    axis.plot(frequencies, measured_spectra[row, column], lw=1, label="measured")
                     if theory_spectra is not None:
                         axis.plot(frequencies, theory_spectra[row, column], "k--", lw=1,
                                   label="closed system, same window")
                     probe_name = "Kerr" if direction == 0 else f"Storage {direction}"
-                    axis.set(title=f"{probe_name}, W={strength:g} kHz", xlim=(0, frequency_limit),
-                             ylabel=r"$S(f)$ (1/kHz)")
+                    axis.set_xlim(0, frequency_limit)
+                    axis.set_ylabel(f"W = {strength:g} kHz\nS (1/kHz)", fontsize=8)
+                    if row == 0 and len(selected_directions) > 1:
+                        axis.set_title(probe_name, fontsize=10)
                     if row == len(axes) - 1:
                         axis.set_xlabel("f (kHz)")
                     if len(cutoffs):
@@ -331,15 +333,20 @@ class CentralBosonAGPSequentialEnsembleDisorderScan(CentralBosonAGPEnsembleDisor
                             shape = 4 * cutoff**2 * frequencies**2 / (frequencies**2 + cutoff**2)**2
                             filter_axis.plot(frequencies, shape, ":", lw=1,
                                              label=rf"filter, $\mu={cutoff:g}$ kHz")
-                        filter_axis.set(ylim=(0, 1.05), yticks=[0, 1], ylabel="Filter (norm.)")
+                        low, high = axis.get_ylim()
+                        filter_axis.set(
+                            ylim=(1.05 * min(low, 0) / max(high, 1e-12), 1.05), yticks=[])
                     if row == column == 0:
                         handles, labels = axis.get_legend_handles_labels()
                         if len(cutoffs):
                             other_handles, other_labels = filter_axis.get_legend_handles_labels()
                             handles, labels = handles + other_handles, labels + other_labels
-                        axis.legend(handles, labels, fontsize=7)
+                        axis.legend(handles, labels, fontsize=7, ncol=2)
             kind = "raw" if key == "C1" else "confusion corrected"
-            figure.suptitle(f"C1 spectrum ({window} window)\n{kind}", fontsize=12)
+            probe = ("Kerr" if selected_directions[0] == 0 else f"Storage {selected_directions[0]}")
+            title = f"{probe} C1" if len(selected_directions) == 1 else "C1"
+            figure.suptitle(f"{title} spectrum, {kind}, {window} window; "
+                           f"1/T = {1000 / times[-1]:.2g} kHz", fontsize=10)
         return figure, axes
 
     def display_metric(self, mu=None, theory=True):

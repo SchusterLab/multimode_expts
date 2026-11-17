@@ -16,7 +16,9 @@ the branch rules are in `docs/STATUS.md`.
   scalar-probe display failed on the additional direction axis. The override
   reuses the existing one-sided cosine-transform weights, with one panel per W
   and selected direction, matching saved theory and optional normalized AGP
-  filters. Arrays-only HDF5 views need no raw JOB reload or reanalysis. Saved
+  filters. The spectrum layout follows the legacy 9-inch columns and 2-inch
+  rows, compact W labels, hidden right-axis ticks and a single small legend.
+  Arrays-only HDF5 views need no raw JOB reload or reanalysis. Saved
   pointwise errors are not treated as a time covariance, so no spectral error
   band is inferred. Validation: all 10 joint assembly tests pass, including
   known-frequency/amplitude regressions for corrected/raw saved correlators.

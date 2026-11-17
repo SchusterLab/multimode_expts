@@ -32,3 +32,16 @@ unmeasured tails. No spectral uncertainty band is inferred: the saved pointwise
   all-direction and Kerr-only PNGs verify the default filter overlay path.
 - `git diff --check` passes. Existing notebook edits were retained. No remote
   edits, deployment, staging or commit was performed.
+
+## Follow-up: restore the legacy spectrum layout
+
+Jonginn supplied the original stacked-spectrum figure after the initial override
+used narrow, tall panels and large repeated titles. That initial layout did not
+match the requested spectrum reference. Only the spectrum display is adjusted:
+9-inch columns, 2-inch rows, thin measured lines, compact W/spectrum y labels,
+direction headings only above multiple columns, hidden filter-axis labels/ticks,
+the legacy filter zero alignment and a two-column first-panel legend. The figure
+title is a single small line. Spectral values, selected data, frequency grid,
+window, units and returned axes indexing are unchanged. The same four-cutoff
+overlay is rendered from the saved batch for visual comparison; all 10 existing
+joint assembly tests pass. No remote files are modified.
