@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-03** (AGP data sets under names, jonginn's remeasure to-dos, branch `theory`; 10-26: AGP spectral function display; level-statistics verdict; AGP overnight lab book; `theory/` package and
+**Last updated: 2026-11-16** (disorder-ensemble AGP; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,22 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Disorder-ensemble AGP (2026-11-16).** New
+  `experiments/qsim/agp_ensemble.py` assembles one population JOB per Fock
+  state and one part per W; all JOBs share the same explicit realization table.
+  `fitting/qsim/agp_ensemble.py` uses the existing kernel with joint-realization
+  bootstrap covariance and shared readout-calibration uncertainty. Single-shot
+  noise and finite-ensemble variation are not separated. The new path defaults
+  to mu = g L/D in kHz; saved AGP is dimensionless g^2 ||A_mu||^2.
+  `theory/qsim/agp_ensemble.py` averages predictions over the original saved detunings,
+  separately saving analytic finite-window and infinite-time values; the
+  Experiment also saves the sampled-window comparison. No theory correction,
+  decay fit, background subtraction, clipping, or tail completion enters the
+  measurement estimator. All implementation is in new modules; old paths remain.
+  Validation: 80 targeted tests pass, including named HDF5/manifest round trips.
+  **Next:** device validation of acquisition. Record:
+  `docs/log/2026-11-16_agp-disorder-ensemble.md`.
 
 - **AGP data sets have names; jonginn's 10-29 remeasure to-dos A1-A5 done (2026-11-03, guan with
   Claude; branch `theory`).** Record: `docs/log/2026-11-03_agp-remeasure-names.md`; notebook

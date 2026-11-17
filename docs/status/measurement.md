@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-11-13** (`FStateHoldExperiment`, Floquet tProc timing check; sequential readout, calibration Experiment and native multi-direction AGP as of 2026-11-05; single-shot g/e/f and `readout_cfg` as of 2026-10-29; M1 Fock prep and the |f,n> decay as of 2026-10-28; error amplification readout state, AGP analysis and `theory/` as of
+**Last updated: 2026-11-16** (inheritance-only disorder-ensemble AGP; `FStateHoldExperiment` and Floquet timing check as of 11-13; sequential readout as of 11-05; single-shot g/e/f and `readout_cfg` as of 10-29; M1 Fock prep as of 10-28; AGP analysis and `theory/` as of
 2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
@@ -8,6 +8,37 @@ overwritten at the end of each work session on this theme; git keeps the old ver
 Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Disorder-ensemble AGP (2026-11-16, local implementation).** New
+  `experiments/qsim/fock_population_ensemble.py` adds an inherited population
+  Program/Experiment: one DMEM frequency-table row per hardware repetition,
+  with the same ordered table reused across Fock states and time points.
+  Existing preparation, optional prep heralds, ordinary multiparity readout,
+  and Floquet modules are retained. Raw JOB HDF5s preserve the original
+  detuning vectors, frequency words, shot IDs, labels, rejection masks, and IQ.
+  Initial scope: preloaded hardware loop, one round, one table fitting DMEM.
+  Ensemble-specific checks are in validate_ensemble_config(); initialize()
+  calls it before parent setup using the attached calibration dataset and
+  board configuration. Backend resource checks remain delegated.
+  English comments trace MHz detunings through DDS words, DMEM, registers,
+  and pulse commands; DMA upload flattens the table in row order and delegates
+  buffer conversion to the existing driver.
+  Register-number selection is distinguished from runtime pointer increments.
+  Frequency-table rows call the existing _detuned_floquet_pulse_args() directly;
+  no separate frequency-addition or DDS-modulo formula is maintained here.
+  The extra frequency-to-integer-to-MHz metadata conversion was removed;
+  theory uses the original saved detuning vectors.
+  Notebook: `measurement_notebooks/jonginn/agp_ensemble_measurement.py`.
+  Before the AGP batch, separate cells display the confusion calibration and
+  acquire an ordinary M1/all-storage quantum walk with detunings zero, using
+  the existing population runner. The notebook's ordinary walk cells call the
+  existing theory functions with recorded timing/couplings and supplied Kerr.
+  Pattern generation matches occupation_chaos_mechanism: Gaussian draws,
+  storage-row mean subtraction and unit-RMS normalization; the hub is excluded.
+  Validation: 80 targeted ensemble/AGP/phase tests pass, including mock
+  acquisition and fixed-disorder pulse-parameter/scheduled-time equivalence.
+  **Next:** device pilot for runtime timing and data; no hardware jobs submitted.
+  Record: `docs/log/2026-11-16_agp-disorder-ensemble.md`.
 
 - **|f,n> hold scan in one job (2026-11-13, `docs/log/2026-11-13_f-state-hold-experiment.md`).**
   New `experiments/qsim/f_state_hold.py` (`FStateHoldProgram`, `FStateHoldExperiment`) and
