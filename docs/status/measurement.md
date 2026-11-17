@@ -1,6 +1,6 @@
 # Where things stand: qsim measurement
 
-**Last updated: 2026-11-16** (inheritance-only disorder-ensemble AGP; `FStateHoldExperiment` and Floquet timing check as of 11-13; sequential readout as of 11-05; single-shot g/e/f and `readout_cfg` as of 10-29; M1 Fock prep as of 10-28; AGP analysis and `theory/` as of
+**Last updated: 2026-11-16** (heralded sequential disorder ensembles and AGP metric; `FStateHoldExperiment` and Floquet timing check as of 11-13; sequential readout as of 11-05; single-shot g/e/f and `readout_cfg` as of 10-29; M1 Fock prep as of 10-28; AGP analysis and `theory/` as of
 2026-10-24; the others as of 2026-10-06 and not re-checked). Theme: measurement code
 (`experiments/`, `measurement_notebooks/`, calibration). Branch `guan`, worktree
 `C:\python\multimode_expts_guan`; it goes to `main` when it passes validation. This file is
@@ -8,6 +8,31 @@ overwritten at the end of each work session on this theme; git keeps the old ver
 Cross-theme items and the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Heralded sequential disorder ensemble (2026-11-16, local implementation).**
+  `experiments/qsim/fock_population_sequential_ensemble.py` composes the existing
+  preparation and DMEM Program chains with readout-only mixins. Diamond
+  inheritance was removed at jonginn's request: each concrete class has one
+  Program/Experiment family, and mixins have no Program parent. Original
+  labels retain (time, realization, mode), with a shared preparation-herald
+  mask and saved normalized patterns at W=0. Ordinary heralded sequential
+  classes provide the walk check without a DMEM table. The existing sequential
+  pulse bodies are extracted into `SequentialMultiparityProgramMixin`, alongside
+  full-shot decoding and virtual lane layout. The small ensemble acquisition/data
+  shaping methods are adapted in the sequential Experiment to avoid a second
+  Experiment parent; their docstrings name the copied source and reason.
+  `HeraldedMultiParityConfusionMatrixSequentialExperiment` adds matched heralds
+  and a vacuum dummy readout while inheriting the per-step calibration statistics.
+  `agp_sequential_ensemble.py` assembles one occupation union per W and saves
+  the local-control metric, K/W metric, eigenvectors, errors and separate theory.
+  Notebook: `measurement_notebooks/jonginn/agp_sequential_ensemble_measurement.py`,
+  with the familiar calibration/walk/acquisition/display/reload cell order.
+  The old acquisition paths and notebooks remain available. No remote files or
+  hardware were modified. Validation after removing diamonds: 94 tests pass
+  (two old missing-firmware mock tests deselected); base initialization occurs
+  once and the six extracted pulse methods have identical ASTs. Functions are
+  at most 71 lines. Record:
+  `docs/log/2026-11-16_sequential-ensemble-agp-metric.md`.
 
 - **Disorder-ensemble AGP (2026-11-16, local implementation).** New
   `experiments/qsim/fock_population_ensemble.py` adds an inherited population
@@ -29,6 +54,11 @@ Cross-theme items and the branch rules are in `docs/STATUS.md`.
   The extra frequency-to-integer-to-MHz metadata conversion was removed;
   theory uses the original saved detuning vectors.
   Notebook: `measurement_notebooks/jonginn/agp_ensemble_measurement.py`.
+  Core cells now follow agp_measurement.py's order, tags and variable names:
+  station/defaults/runners, confusion, ordinary walk/theory, AGP settings and
+  display, assemble and reload. Ensemble pattern/planning cells are the additions.
+  AGP_DIRECTIONS is a list; notebook planning, acquisition and reload iterate
+  directions separately, passing a scalar direction to each scan as before.
   Before the AGP batch, separate cells display the confusion calibration and
   acquire an ordinary M1/all-storage quantum walk with detunings zero, using
   the existing population runner. The notebook's ordinary walk cells call the

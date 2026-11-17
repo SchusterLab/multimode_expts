@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-16** (disorder-ensemble AGP; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
+**Last updated: 2026-11-16** (sequential disorder-ensemble metric; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,28 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Sequential ensemble metric (2026-11-16, local implementation).**
+  `fitting/qsim/agp_metric.py` constructs symmetric cross correlators from saved
+  per-realization labels, applies the original disorder patterns before averaging,
+  and integrates every component with the same existing time kernel. The local
+  axes are K and pulse detunings (derivatives q_M1 and -n_s); the projected axes
+  are K and W. Physical metrics use kHz^-2; scaled metrics and diagonal AGP keep
+  the existing coupling-squared convention. Original labels, preparation-herald
+  masks and patterns survive W=0 and raw-HDF5 replay. Joint realization and
+  shared-calibration bootstrap errors record requested/valid draw counts.
+  Missing metric entries remain NaN, and no positivity projection is applied.
+  `theory.qsim.agp_ensemble.ensemble_metric_prediction` supplies independent
+  infinite-time and analytic finite-window comparisons, never corrections.
+  Assembly and notebook: `experiments/qsim/agp_sequential_ensemble.py` and
+  `measurement_notebooks/jonginn/agp_sequential_ensemble_measurement.py`.
+  Both joint assembly classes now have a single ensemble parent, without
+  diamond inheritance. The small sequential occupation-union setup is adapted
+  with source/reason docstrings; plotting is explicitly delegated.
+  Validation after removing assembly diamonds: 94 tests pass, with two old
+  missing-firmware mock tests deselected. All implementation functions are at most 71 lines; the bootstrap
+  shares exact label-linear sufficient statistics rather than full score tensors.
+  Record: `docs/log/2026-11-16_sequential-ensemble-agp-metric.md`.
 
 - **Disorder-ensemble AGP (2026-11-16).** New
   `experiments/qsim/agp_ensemble.py` assembles one population JOB per Fock

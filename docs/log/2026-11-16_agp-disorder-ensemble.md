@@ -74,6 +74,14 @@ or package installations were performed.
   experimental corrections or fitted decay/background terms.
 - New English Jupytext notebook:
   measurement_notebooks/jonginn/agp_ensemble_measurement.py.
+- Aligned its core cell order, tags and variable names with agp_measurement.py
+  at jonginn's request, reusing the original station/defaults/calibration/walk
+  cells. Ensemble-only changes are the extra runner, shared pattern table and
+  scalar-per-direction scan planning/acquisition. Kept ordinary walk theory.
+  The assemble cell prints saved manifests because acquire() already saves;
+  campaign-specific addenda and single-pattern spectrum calls are not copied.
+  Notebook syntax and the actual multi-direction planning-cell check pass
+  after this layout change. No acquisition cells or remote files were executed.
 - Added the missing pre-batch quantum-walk verification requested by jonginn:
   separate calibration-display, walk-settings, walk-acquisition and walk-display
   cells precede the AGP batch. Each mode uses the same confusion calibration,
@@ -92,6 +100,13 @@ or package installations were performed.
   acquisition module has no changes from the user's committed version.
 
 ## Validation
+
+Fixed the notebook's missing multi-direction loop after a reported TypeError
+from passing a direction list to the scalar Experiment constructor. The notebook
+now uses AGP_DIRECTIONS and per-direction planning, acquisition names and reload.
+The same pattern table is reused across directions. Added a regression check
+that executes the actual planning cell with Kerr and storage directions.
+All five assembled-ensemble tests pass, including this notebook planning case.
 
 80 targeted tests passed: the three new ensemble suites plus existing AGP
 kernel, theory, Experiment, scan, population-set, and phase-frame tests.
