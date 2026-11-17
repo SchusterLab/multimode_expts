@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-17** (AGP ensemble display appearance; sequential disorder-ensemble metric; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
+**Last updated: 2026-11-17** (sequential ensemble spectrum display; AGP ensemble display appearance; sequential disorder-ensemble metric; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,17 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **Sequential ensemble spectra (2026-11-17).** The joint scan now overrides
+  `display_spectrum()` for saved `C1(W, direction, time)` arrays. The inherited
+  scalar-probe display failed on the additional direction axis. The override
+  reuses the existing one-sided cosine-transform weights, with one panel per W
+  and selected direction, matching saved theory and optional normalized AGP
+  filters. Arrays-only HDF5 views need no raw JOB reload or reanalysis. Saved
+  pointwise errors are not treated as a time covariance, so no spectral error
+  band is inferred. Validation: all 10 joint assembly tests pass, including
+  known-frequency/amplitude regressions for corrected/raw saved correlators.
+  Record: `docs/log/2026-11-17_sequential-ensemble-spectrum.md`.
 
 - **AGP ensemble display appearance (2026-11-17).** At jonginn's request, ensemble
   AGP scans use the original `CentralBosonAGPDisorderScan.display()` appearance:

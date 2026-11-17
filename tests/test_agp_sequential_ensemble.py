@@ -143,6 +143,39 @@ def test_individual_point_display_and_partial_kerr_metric(tmp_path):
     matplotlib.pyplot.close(figure)
 
 
+@pytest.mark.parametrize("raw", [False, True])
+def test_saved_scan_spectrum_resolves_each_direction_without_reanalysis(tmp_path, monkeypatch, raw):
+    times = np.arange(201, dtype=float)
+    peak_frequencies = np.array([[20., 40.], [60., 80.]])
+    correlation = np.cos(2 * np.pi * peak_frequencies[..., None] * times / 1000)
+    path = tmp_path / "saved_scan.h5"
+    with h5py.File(path, "w") as handle:
+        for key, value in dict(time_us=times, disorder_khz=[0., 10.], directions=[0, 4],
+                               agp_mu=[10.], C1=2 * correlation, C1_corrected=correlation,
+                               C1_err=np.zeros_like(correlation), C1_theory=.9 * correlation).items():
+            handle.create_dataset(key, data=value)
+    scan = CentralBosonAGPSequentialEnsembleDisorderScan.from_h5file(path)
+
+    def forbid_reanalysis(*args, **kwargs):
+        pytest.fail("Spectrum display must use saved correlators without reanalysis")
+
+    monkeypatch.setattr(scan, "analyze", forbid_reanalysis)
+    figure, axes = scan.display_spectrum(mu=[], window="raw", max_khz=100, raw=raw)
+    assert axes.shape == (2, 2)
+    for index, axis in np.ndenumerate(axes):
+        measured, theory = axis.lines[:2]
+        maximum = np.argmax(measured.get_ydata())
+        assert measured.get_xdata()[maximum] == pytest.approx(peak_frequencies[index])
+        assert measured.get_ydata()[maximum] == pytest.approx(.8 if raw else .4)
+        assert theory.get_ydata()[maximum] == pytest.approx(.36)
+        assert axis.get_xscale() == axis.get_yscale() == "linear"
+    matplotlib.pyplot.close(figure)
+    figure, axes = scan.display_spectrum(directions=[4], theory=False, mu=[], max_khz=100)
+    assert axes.shape == (2, 1)
+    assert all(len(axis.lines) == 1 for axis in axes.flat)
+    matplotlib.pyplot.close(figure)
+
+
 def test_mismatched_patterns_do_not_silently_change_disorder_direction(tmp_path):
     part = planned_scan((0,), calibrated=False).children[0]
     part.acquire(SequentialEnsembleRunner(tmp_path / "data"))

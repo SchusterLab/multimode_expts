@@ -30,7 +30,7 @@ from experiments.qsim.fock_population_sequential_ensemble import (
 )
 from experiments.qsim.fock_population import FockPopulationSetExperiment
 from fitting import plot_style
-from fitting.qsim.agp import agp_kernel_weights
+from fitting.qsim.agp import agp_kernel_weights, cosine_transform_weights, spectrum_frequencies_khz
 from fitting.qsim.agp_metric import ensemble_agp_metric
 from theory.qsim.agp_ensemble import ensemble_metric_prediction
 
@@ -280,6 +280,67 @@ class CentralBosonAGPSequentialEnsembleDisorderScan(CentralBosonAGPEnsembleDisor
             return CentralBosonAGPSequentialDisorderScan.display(self, mu=mu, theory=theory)
 
     display_correlation = CentralBosonAGPSequentialDisorderScan.display_traces
+
+    def display_spectrum(self, mu=None, directions=None, window="hann", max_khz=None,
+                         raw=False, theory=True):
+        """Transform saved C1(W, direction, time), without raw JOBs or reanalysis.
+
+        Rows are W and columns are local probe directions (0 denotes Kerr).
+        Theory uses its saved correlator with the identical window and grid.
+        Filters have unit peak; spectra retain their measured normalization and
+        DC contribution. No background subtraction or decay correction is made.
+        No uncertainty band is inferred from pointwise C1_err: the saved file
+        does not contain the time covariance required for spectral uncertainty.
+        """
+        data = self.data
+        window = window or "hann"
+        available_directions = data["directions"].tolist()
+        selected_directions = np.atleast_1d(
+            available_directions if directions is None else directions).astype(int)
+        direction_indices = [available_directions.index(direction) for direction in selected_directions]
+        times = data["time_us"]
+        frequencies = spectrum_frequencies_khz(times)
+        frequency_limit = frequencies[-1] if max_khz is None else min(max_khz, frequencies[-1])
+        frequencies = frequencies[frequencies <= frequency_limit]
+        transform = cosine_transform_weights(times, frequencies / 1000, window) / 1000
+        key = "C1" if raw or "C1_corrected" not in data else "C1_corrected"
+        measured_spectra = data[key][:, direction_indices, :] @ transform.T
+        theory_spectra = (data["C1_theory"][:, direction_indices, :] @ transform.T
+                          if theory and "C1_theory" in data else None)
+        cutoffs = self.shown_cutoffs(mu)
+        with plt.style.context(["default", {"font.size": 14}]):
+            figure, axes = plt.subplots(
+                len(data["disorder_khz"]), len(selected_directions), squeeze=False, sharex=True,
+                figsize=(4 * len(selected_directions), 3.2 * len(data["disorder_khz"])),
+                constrained_layout=True)
+            for row, strength in enumerate(data["disorder_khz"]):
+                for column, direction in enumerate(selected_directions):
+                    axis = axes[row, column]
+                    axis.plot(frequencies, measured_spectra[row, column], label="measured")
+                    if theory_spectra is not None:
+                        axis.plot(frequencies, theory_spectra[row, column], "k--", lw=1,
+                                  label="closed system, same window")
+                    probe_name = "Kerr" if direction == 0 else f"Storage {direction}"
+                    axis.set(title=f"{probe_name}, W={strength:g} kHz", xlim=(0, frequency_limit),
+                             ylabel=r"$S(f)$ (1/kHz)")
+                    if row == len(axes) - 1:
+                        axis.set_xlabel("f (kHz)")
+                    if len(cutoffs):
+                        filter_axis = axis.twinx()
+                        for cutoff in cutoffs:
+                            shape = 4 * cutoff**2 * frequencies**2 / (frequencies**2 + cutoff**2)**2
+                            filter_axis.plot(frequencies, shape, ":", lw=1,
+                                             label=rf"filter, $\mu={cutoff:g}$ kHz")
+                        filter_axis.set(ylim=(0, 1.05), yticks=[0, 1], ylabel="Filter (norm.)")
+                    if row == column == 0:
+                        handles, labels = axis.get_legend_handles_labels()
+                        if len(cutoffs):
+                            other_handles, other_labels = filter_axis.get_legend_handles_labels()
+                            handles, labels = handles + other_handles, labels + other_labels
+                        axis.legend(handles, labels, fontsize=7)
+            kind = "raw" if key == "C1" else "confusion corrected"
+            figure.suptitle(f"C1 spectrum ({window} window)\n{kind}", fontsize=12)
+        return figure, axes
 
     def display_metric(self, mu=None, theory=True):
         """Show KK, KW and WW side by side in the original AGP scan style.
