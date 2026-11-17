@@ -276,35 +276,40 @@ class CentralBosonAGPSequentialEnsembleDisorderScan(CentralBosonAGPEnsembleDisor
 
     def display(self, mu=None, theory=True):
         """Delegate the stateless sequential plot to avoid diamond inheritance."""
-        with plot_style.context():
+        with plt.style.context(["default", {"font.size": 14}]):
             return CentralBosonAGPSequentialDisorderScan.display(self, mu=mu, theory=theory)
 
     display_correlation = CentralBosonAGPSequentialDisorderScan.display_traces
 
     def display_metric(self, mu=None, theory=True):
-        """Show three independent K/W metric entries on linear axes."""
+        """Show KK, KW and WW side by side in the original AGP scan style.
+
+        Axes retain their (component, cutoff) indexing; every cutoff gets a row.
+        """
         data = self.data
         cutoffs = data["agp_mu"]
         columns = range(len(cutoffs)) if mu is None else [int(np.argmin(abs(cutoffs - mu)))]
         entries = [(0, 0, "KK"), (0, 1, "KW"), (1, 1, "WW")]
         scale = (1000 * data["coupling_mhz"])**2
-        with plot_style.context():
-            figure, axes = plt.subplots(3, len(columns), squeeze=False,
-                                        figsize=(4 * len(columns), 8), constrained_layout=True)
+        with plt.style.context(["default", {"font.size": 14}]):
+            figure, panels = plt.subplots(len(columns), 3, squeeze=False,
+                                          figsize=(12, 3.6 * len(columns)), constrained_layout=True)
+            axes = panels.T
             for row, (first, second, label) in enumerate(entries):
                 for column, cutoff in enumerate(columns):
                     axis = axes[row, column]
                     axis.errorbar(data["disorder_khz"],
                                   data["agp_metric_scaled"][:, cutoff, first, second],
                                   data["agp_metric_scaled_err"][:, cutoff, first, second],
-                                  fmt="o-", label="Measured kernel integral")
+                                  fmt="o-", ms=4, capsize=2, label="measured")
                     if theory and "agp_metric_theory" in data:
-                        for suffix, style, name in (("_window", "--", "same time window"),
-                                                    ("", ":", "infinite time")):
-                            axis.plot(data["disorder_khz"], scale * data[
-                                f"agp_metric_theory{suffix}"][:, cutoff, first, second],
-                                style, label=f"Theory: {name}")
-                    axis.set(xlabel="Disorder RMS W (kHz)", ylabel=rf"$g_{{ref}}^2 g_{{{label}}}$",
+                        axis.plot(data["disorder_khz"], scale * data[
+                            "agp_metric_theory_window"][:, cutoff, first, second],
+                            "x:", color="gray", label="closed system, same window")
+                        axis.plot(data["disorder_khz"], scale * data[
+                            "agp_metric_theory"][:, cutoff, first, second],
+                            "k--", lw=1, label="closed system, infinite time")
+                    axis.set(xlabel="Disorder RMS (kHz)", ylabel=rf"$g_{{ref}}^2 g_{{{label}}}$",
                              title=rf"$\mu = {cutoffs[cutoff]:g}$ kHz")
-                    axis.legend()
+                    axis.legend(fontsize=7)
         return figure, axes

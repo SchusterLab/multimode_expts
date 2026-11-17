@@ -227,22 +227,23 @@ class CentralBosonAGPEnsembleDisorderScan(CentralBosonAGPDisorderScan):
         return self.data
 
     def display(self, mu=None, theory=True):
-        """One linear-scale panel per saved cutoff, including W = 0."""
+        """Use the original AGP scan appearance, with one linear panel per cutoff."""
         data = self.data
         columns = (list(range(len(data["agp_mu"]))) if mu is None else
                    [int(np.argmin(abs(data["agp_mu"] - mu)))])
-        with plot_style.context():
+        with plt.style.context(["default", {"font.size": 14}]):
             figure, axes = plt.subplots(1, len(columns), squeeze=False,
-                                        figsize=(5 * len(columns), 4), constrained_layout=True)
+                                        figsize=(4 * len(columns), 3.6), constrained_layout=True)
             for axis, column in zip(axes[0], columns):
                 axis.errorbar(data["disorder_khz"], data["agp"][:, column],
-                              yerr=data["agp_err"][:, column], marker="o", label="Measured kernel integral")
+                              yerr=data["agp_err"][:, column], fmt="o-", ms=4, capsize=2,
+                              label="measured")
                 if theory and "agp_theory_window" in data:
                     axis.plot(data["disorder_khz"], data["agp_theory_window"][:, column],
-                              "--", label="Theory: same time window")
+                              "x:", color="gray", label="closed system, same window")
                     axis.plot(data["disorder_khz"], data["agp_theory"][:, column],
-                              ":", label="Theory: infinite time")
-                axis.set(xlabel="Disorder strength W (kHz)", ylabel=r"$g^2\|A_\mu\|^2$",
+                              "k--", lw=1, label="closed system, infinite time")
+                axis.set(xlabel="Disorder RMS (kHz)", ylabel=r"$g^2\|A_\mu\|^2$",
                          title=rf"$\mu = {data['agp_mu'][column]:g}$ kHz")
-                axis.legend()
+                axis.legend(fontsize=7)
         return figure, axes[0]

@@ -355,20 +355,21 @@ class CentralBosonAGPSequentialDisorderScan(CentralBosonAGPDisorderScan):
         columns = range(len(cutoffs)) if mu is None else [int(np.argmin(abs(cutoffs - mu)))]
         directions = self.data["directions"]
         fig, axes = plt.subplots(len(directions), len(columns), squeeze=False,
-                                 figsize=(4 * len(columns), 3 * len(directions)), constrained_layout=True)
+                                 figsize=(4 * len(columns), 3.6 * len(directions)), constrained_layout=True)
         for row, direction in enumerate(directions):
             for column, cutoff in enumerate(columns):
                 ax = axes[row, column]
                 ax.errorbar(self.data["disorder_khz"], self.data["agp"][:, row, cutoff],
-                            self.data["agp_err"][:, row, cutoff], fmt="o-", label="measured")
+                            self.data["agp_err"][:, row, cutoff], fmt="o-", ms=4, capsize=2,
+                            label="measured")
                 if theory and "agp_theory" in self.data:
                     ax.plot(self.data["disorder_khz"], self.data["agp_theory"][:, row, cutoff],
-                            "k--", label="closed system")
+                            "k--", lw=1, label="closed system, infinite time")
                     ax.plot(self.data["disorder_khz"], self.data["agp_theory_window"][:, row, cutoff],
-                            "x:", label="closed system, same window")
+                            "x:", color="gray", label="closed system, same window")
                 ax.set(title=f"{mode_name(direction)}, cutoff {cutoffs[cutoff]:g} kHz",
                        xlabel="Disorder RMS (kHz)", ylabel="AGP")
-                ax.legend()
+                ax.legend(fontsize=7)
         return fig, axes
 
     def display_traces(self, raw=False):

@@ -1,6 +1,6 @@
 # Where things stand: qsim analysis and numerics
 
-**Last updated: 2026-11-16** (sequential disorder-ensemble metric; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
+**Last updated: 2026-11-17** (AGP ensemble display appearance; sequential disorder-ensemble metric; named AGP data sets as of 11-03; spectral display as of 10-26; level-statistics verdict and lab book as of 10-25; `theory/` package and
 the AGP analysis of 10-24, on `main` after the `theory` branch merges; the rest as of 2026-10-06: all 25 data sets converted, the "D72" sets
 regrouped; issue 5: the library reads only the files; on `guan`).
 Theme: analysis, numerics, fitting (`fitting/`, `analysis_notebooks/`, offline tools). Branch
@@ -10,6 +10,16 @@ the end of each work session on this theme; git keeps the old versions. Cross-th
 the branch rules are in `docs/STATUS.md`.
 
 ## What is next
+
+- **AGP ensemble display appearance (2026-11-17).** At jonginn's request, ensemble
+  AGP scans use the original `CentralBosonAGPDisorderScan.display()` appearance:
+  white background, no grid, four black spines, 14-point base font, blue measured
+  points, gray `x:` same-window theory and black dashed infinite-time theory.
+  This is an explicit exception to the newer `fitting.plot_style` appearance.
+  KK/KW/WW metric panels are side by side for each cutoff; returned axes keep
+  their existing `(component, cutoff)` indexing. Estimation and acquisition are
+  unchanged. Validation: 28 existing tests pass and seven synthetic display
+  renders were checked. Record: `docs/log/2026-11-17_agp-display-appearance.md`.
 
 - **Sequential ensemble metric (2026-11-16, local implementation).**
   `fitting/qsim/agp_metric.py` constructs symmetric cross correlators from saved
