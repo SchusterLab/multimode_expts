@@ -22,11 +22,12 @@
 # Individual Fock JOB data are not reassembled. One raw metadata record per W
 # supplies the recorded couplings and Kerr; raw IQ and shot arrays are not loaded.
 #
-# Run in order: settings -> load -> integrate -> AGP -> spectrum -> flow.
-# After editing MU_KHZ, rerun from "Integrate at the selected cutoffs" downward.
+# Run in order: settings -> load -> backend analysis -> plots.
+# After editing MU_KHZ or BACKGROUND_START_US, rerun from "Analyze saved correlations" downward.
 # Measured values use the saved calibrated correlations and the finite measured
-# time window. No decay correction, background subtraction or tail completion
-# is applied. Independent closed-system theory is only a comparison.
+# time window. Original and fitted-background-subtracted K/W results are kept
+# separately. No T1/T2 inversion or tail completion is applied. Independent
+# closed-system theory is only a comparison and never determines the subtraction.
 
 # %%
 from fnmatch import fnmatch
@@ -45,11 +46,7 @@ from experiments.qsim.agp_sequential_ensemble import (
     CentralBosonAGPSequentialEnsembleDisorderScan,
     CentralBosonAGPSequentialEnsembleExperiment,
 )
-from fitting.qsim.agp import (
-    agp_kernel_weights, cosine_transform_weights, spectrum_frequencies_khz,
-)
-from fitting.qsim.agp_metric import _eigensystem, _integrate_correlations
-from theory.qsim.agp_ensemble import ensemble_metric_prediction
+from fitting.qsim.agp import cosine_transform_weights, spectrum_frequencies_khz
 
 # %% [markdown]
 # ## Settings
@@ -71,6 +68,7 @@ DATE_RANGE = ("2026-11-16", "2026-11-18")
 EXPERIMENT_NAME = "agp_sequential_disorder_ensemble*"
 
 MU_KHZ = [5.915, 10., 20., 30., 50, 70]  # Cyclic frequency: tau_us = 1000 / (2*pi*mu_kHz).
+BACKGROUND_START_US = 30.0  # Fit t >= this time; None disables background subtraction.
 ASSEMBLED_NAME = "agp_flow_reanalysis_20261118"  # Choose a new name for each save.
 SPECTRUM_MAX_KHZ = 150.
 SPECTRUM_WINDOW = "hann"
@@ -169,70 +167,55 @@ parts = [part for scan in scans for part in scan.children]
 print(f"Selected {len(parts)} completed W points in {len(scans)} scan series.")
 
 # %% [markdown]
-# ## Integrate at the selected cutoffs
+# ## Analyze saved correlations
 #
-# C_metric(t) is the already calibrated, realization-weighted K/W correlator.
-# The existing kernel weights integrate a piecewise-linear trace over its
-# measured window. Mu is supplied in kHz and converted to MHz at the kernel API.
-# Physical metric entries have units kHz^-2; plots use the existing g^2 scaling.
-#
-# This cell does not repeat bootstrap. New-mu plots show central estimates;
-# errors from an older cutoff are not reused. The independent theory uses the
-# recorded Kerr, couplings and original ordered disorder vectors, including W=0.
+# Fit A*exp(-rate*t) to the saved KK, KW and WW correlations for
+# t >= BACKGROUND_START_US through the Experiment backend, reusing subtract_background.
+# These are aggregate-correlator fits, not individual Fock-row corrections.
+# Signed amplitudes are allowed. Nondecaying or failed fits leave the corrected
+# component unavailable (NaN); they never silently fall back to the original.
+# Parameters and covariance are retained. The fitted lifetime is not a measured T1.
+# Each analysis call fits once per W, then integrates all selected cutoffs.
+# Plot controls do not repeat the fit or reload data. Results are central
+# estimates; new-cutoff and background-fit uncertainties are not propagated.
+# Independent theory is a separate comparison using the recorded parameters.
 
 # %%
-def integrate_saved_correlations(part, cutoffs_khz):
-    """Recompute kernel integrals and a separate spectral-theory comparison."""
-    data = part.data
-    # Discard old-cutoff theory arrays before adding the new independent comparison.
-    for name in list(data):
-        if "theory" in name:
-            data.pop(name)
-    weights = np.array([agp_kernel_weights(data["time_us"], cutoff / 1000)
-                        for cutoff in cutoffs_khz])
-    metric = _integrate_correlations(weights, data["C_metric"])
-    local_metric = _integrate_correlations(weights, data["C_metric_local"])
-    coupling_squared = (1000 * float(data["coupling_mhz"]))**2
-    local_agp = np.diagonal(local_metric, axis1=-2, axis2=-1).T * coupling_squared
-    eigenvalues, eigenvectors = _eigensystem(metric)
-    data.update(agp_mu=np.asarray(cutoffs_khz), agp=local_agp,
-                agp_err=np.full(local_agp.shape, np.nan),
-                agp_metric=metric, agp_metric_err=np.full(metric.shape, np.nan),
-                agp_metric_scaled=metric * coupling_squared,
-                agp_metric_scaled_err=np.full(metric.shape, np.nan),
-                agp_metric_local=local_metric,
-                agp_metric_local_err=np.full(local_metric.shape, np.nan),
-                agp_metric_eigenvalues=eigenvalues, agp_metric_eigenvectors=eigenvectors)
-    theory_directions = part.directions.copy()
-    if "agp_metric_representative_storage" in data:
-        theory_directions += [storage for storage in part.swap_stors
-                              if storage not in theory_directions]
-    # Endpoints suffice for spectral sums and analytic finite-window theory.
-    prediction = ensemble_metric_prediction(
-        part.photon_sector_number, data["disorder_detunings_mhz"],
-        data["couplings_mhz"], float(data["recorded_kerr_mhz"]), theory_directions,
-        part.swap_stors, data["disorder_patterns"], [0., float(data["time_us"][-1])],
-        cutoffs_khz)
-    data.update(agp_metric_theory=prediction["agp_metric_theory"],
-                agp_metric_theory_window=prediction["agp_metric_theory_window"],
-                agp_theory=prediction["agp_theory"][:len(part.directions)],
-                agp_theory_window=prediction["agp_theory_window"][:len(part.directions)],
-                theory_kerr_mhz=data["recorded_kerr_mhz"])
-    part.analysis = dict(mu_khz=list(cutoffs_khz), bootstrap_samples=0,
-                         estimator="Saved calibrated C_metric times finite-window kernel",
-                         uncertainty="Central estimates; new-cutoff errors not recomputed",
-                         theory="Independent spectral sum; no correction",
-                         kerr_mhz=float(data["recorded_kerr_mhz"]))
-
-
 for part in parts:
-    integrate_saved_correlations(part, MU_KHZ)
-    print(f"W = {part.disorder_khz:g} kHz: kernel and independent theory complete")
+    part.analyze_correlations(mu=MU_KHZ, background_start_us=BACKGROUND_START_US)
+    print(f"W = {part.disorder_khz:g} kHz: backend analysis complete")
 for scan in scans:
     scan._stack_parts()
     scan.data["couplings_mhz"] = np.array([part.data["couplings_mhz"] for part in scan.children])
     scan.data["recorded_kerr_mhz"] = np.array([
         part.data["recorded_kerr_mhz"] for part in scan.children])
+
+point_options = [(f"K={1000 * float(part.data['recorded_kerr_mhz']):.3f}, "
+                  f"W={part.disorder_khz:g} kHz", index) for index, part in enumerate(parts)]
+
+# %%
+def display_background_fit(point_index):
+    """Show the fitted time interval and any invalid background components."""
+    part = parts[point_index]
+    data = part.data
+    with plt.style.context(["default", {"font.size": 13}]):
+        figure, axes = plt.subplots(1, 3, figsize=(12, 3.6), constrained_layout=True)
+        for axis, (first, second, label) in zip(axes, [(0, 0, "KK"), (0, 1, "KW"), (1, 1, "WW")]):
+            axis.plot(data["time_us"], data["C_metric"][:, first, second], label="original")
+            status = "subtraction disabled"
+            if bool(data["C_metric_background_enabled"]):
+                axis.axvspan(float(data["C_metric_background_start_us"]), data["time_us"][-1], color="0.93")
+                axis.plot(data["time_us"], data["C_metric_background"][:, first, second], "k--", label="fitted background")
+                axis.plot(data["time_us"], data["C_metric_background_subtracted"][:, first, second], label="background subtracted")
+                status = "valid fit" if data["C_metric_background_fit_valid"][first, second] else "invalid fit"
+            axis.set(xlabel="Time (us)", ylabel=rf"$C_{{{label}}}(t)$", title=f"{label}: {status}")
+        axes[0].legend(fontsize=8)
+        figure.suptitle(f"Background fit: W={part.disorder_khz:g} kHz")
+        plt.show()
+
+
+display(widgets.interactive(display_background_fit,
+                            point_index=widgets.Dropdown(options=point_options, description="Point")))
 
 # %%
 # Optional: save a new combined YAML/HDF5 pair, referring to original per-W files.
@@ -245,7 +228,7 @@ if SAVE_ASSEMBLED_DATA:
 # %% [markdown]
 # ## 1. AGP versus disorder
 #
-# Select mu below. Measured points are direct kernel integrals. Gray crosses
+# Select mu below. Original and background-subtracted points use the same kernel. Gray crosses
 # show independent same-window theory; black dashes show infinite-time theory.
 # No new-mu error bars are inferred from the saved errors.
 
@@ -265,7 +248,10 @@ def display_agp(mu_khz):
                 axis.plot(data["disorder_khz"], scale * data["agp_metric_theory"][
                     :, cutoff_index, first, second], "k--", label="closed system, infinite time")
                 axis.plot(data["disorder_khz"], data["agp_metric_scaled"][
-                    :, cutoff_index, first, second], "o-", label="measured")
+                    :, cutoff_index, first, second], "o-", label="measured, original")
+                if np.any(data["C_metric_background_enabled"]):
+                    axis.plot(data["disorder_khz"], data["agp_metric_background_subtracted_scaled"][
+                        :, cutoff_index, first, second], "s-", label="background subtracted")
                 axis.set(xlabel="Disorder RMS W (kHz)", ylabel=rf"$g^2G_{{{label}}}$")
             axes[0].legend(fontsize=8)
             figure.suptitle(rf"$K={kerr_khz:.3f}$ kHz, $\mu={mu_khz:g}$ kHz")
@@ -281,6 +267,7 @@ display(widgets.interactive(display_agp, mu_khz=widgets.SelectionSlider(
 # These are one-sided cosine transforms of the same measured C_metric(t),
 # showing KK, KW and WW. The chosen window is explicit; DC and signed cross
 # weights are retained. The dotted filter has unit peak and changes with mu.
+# The second curve transforms the background-subtracted correlation; no FFT bin is zeroed.
 # Selecting a point or mu does not reload any file or repeat the theory calculation.
 
 # %%
@@ -297,7 +284,10 @@ def display_spectrum(point_index, mu_khz):
         figure, axes = plt.subplots(1, 3, figsize=(12, 3.6), constrained_layout=True)
         for axis, (first, second, label) in zip(axes, [(0, 0, "KK"), (0, 1, "KW"), (1, 1, "WW")]):
             spectrum = transform @ data["C_metric"][:, first, second]
-            axis.plot(frequencies, spectrum, label="measured")
+            axis.plot(frequencies, spectrum, label="measured, original")
+            if bool(data["C_metric_background_enabled"]):
+                axis.plot(frequencies, transform @ data["C_metric_background_subtracted"][:, first, second],
+                          label="background subtracted")
             filter_axis = axis.twinx()
             filter_axis.plot(frequencies, filter_shape, "k:", linewidth=1, label="normalized filter")
             filter_axis.set(ylim=(0, 1.05), yticks=[])
@@ -308,8 +298,6 @@ def display_spectrum(point_index, mu_khz):
         plt.show()
 
 
-point_options = [(f"K={1000 * float(part.data['recorded_kerr_mhz']):.3f}, "
-                  f"W={part.disorder_khz:g} kHz", index) for index, part in enumerate(parts)]
 display(widgets.interactive(
     display_spectrum, point_index=widgets.Dropdown(options=point_options, description="Point"),
     mu_khz=widgets.SelectionSlider(options=MU_KHZ, value=MU_KHZ[-1], description="mu (kHz)")))
@@ -323,18 +311,22 @@ display(widgets.interactive(
 # Nonpositive minimum eigenvalues are retained and shown gray. Black dashed
 # segments show independent theory at the same measured parameter points.
 # Sparse points determine local directions, not continuous measured streamlines.
+# Select original or background-subtracted metrics below. Invalid corrected fits
+# have no measured direction; the original view remains available.
 
 # %%
-def display_flow(mu_khz):
+def display_flow(mu_khz, background_subtracted=False):
     """Compare local minimum-metric directions without interpolating measured paths."""
     cutoff_index = MU_KHZ.index(mu_khz)
+    metric_key = "agp_metric_background_subtracted" if background_subtracted else "agp_metric"
     color_scale, color_map = plt.Normalize(1., 30., clip=True), plt.get_cmap("plasma_r")
     with plt.style.context(["default", {"font.size": 14}]):
         figure, (flow_axis, angle_axis) = plt.subplots(1, 2, figsize=(10, 6), constrained_layout=True)
         for series_index, scan in enumerate(scans, start=1):
             data = scan.data
-            eigenvalues, eigenvectors = _eigensystem(data["agp_metric"][:, cutoff_index])
-            _, theory_vectors = _eigensystem(data["agp_metric_theory"][:, cutoff_index])
+            eigenvalues = data[metric_key + "_eigenvalues"][:, cutoff_index]
+            eigenvectors = data[metric_key + "_eigenvectors"][:, cutoff_index]
+            theory_vectors = data["agp_metric_theory_eigenvectors"][:, cutoff_index]
             directions, theory_directions = eigenvectors[:, :, 0], theory_vectors[:, :, 0]
             angles = (np.degrees(np.arctan2(directions[:, 1], directions[:, 0])) + 90) % 180 - 90
             theory_angles = (np.degrees(np.arctan2(
@@ -361,11 +353,15 @@ def display_flow(mu_khz):
                                    ax=[flow_axis, angle_axis], ticks=[1, 5, 10, 20, 30])
         colorbar.ax.set_yticklabels(["1", "5", "10", "20", ">=30"])
         colorbar.set_label(r"Anisotropy $\lambda_{\max}/\lambda_{\min}$")
-        figure.suptitle(rf"$\mu={mu_khz:g}$ kHz; central estimates")
+        kind = "background subtracted" if background_subtracted else "original"
+        figure.suptitle(rf"$\mu={mu_khz:g}$ kHz; {kind}; central estimates")
         plt.show()
 
 
-display(widgets.interactive(display_flow, mu_khz=widgets.SelectionSlider(
-    options=MU_KHZ, value=MU_KHZ[-1], description="mu (kHz)")))
+display(widgets.interactive(
+    display_flow, mu_khz=widgets.SelectionSlider(options=MU_KHZ, value=MU_KHZ[-1], description="mu (kHz)"),
+    background_subtracted=widgets.Checkbox(value=any(bool(part.data["C_metric_background_enabled"]) for part in parts),
+                                           disabled=not any(bool(part.data["C_metric_background_enabled"]) for part in parts),
+                                           description="Subtract background")))
 
 # %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}

@@ -5,10 +5,11 @@ time kernel. Hamiltonian predictions never enter the reconstruction. Physical
 metric coordinates are cyclic kHz; the saved metric therefore has units kHz^-2.
 """
 from math import comb
+import warnings
 
 import numpy as np
 
-from fitting.qsim.agp import agp_kernel_weights
+from fitting.qsim.agp import agp_kernel_weights, subtract_background
 from theory.qsim.agp_ensemble import metric_parameter_projection, metric_probe_values
 
 
@@ -60,7 +61,8 @@ def _label_histogram(grouped_labels, shot_weights, coefficient=None):
 
 
 def _correlation_statistics(grouped_labels, accepted, initial_values, projection,
-                             directions, available, multiplicities=None):
+                             directions, available, multiplicities=None,
+                             representative_storage=None):
     """Keep exact herald denominators while reducing all label-linear statistics.
 
     Local initial probes are independent of realization, so four-bin output
@@ -79,10 +81,18 @@ def _correlation_statistics(grouped_labels, accepted, initial_values, projection
     kerr_axis = directions.index(0) if kerr_available else None
     if kerr_available:
         initial_kerr = initial_values[:, kerr_axis]
-        target_histograms[:, 0, 0, kerr_axis] = np.einsum(
-            "n,ntl->tl", initial_kerr, local_histograms[:, :, kerr_axis])
+        target_histograms[:, 0, 0, kerr_axis] = (
+            initial_kerr[:, None, None] * local_histograms[:, :, kerr_axis]).sum(axis=0)
     if disorder_available:
-        initial_disorder = initial_values @ projection[:, :, 1].T
+        if representative_storage is None:
+            initial_disorder = initial_values @ projection[:, :, 1].T
+        else:
+            representative_axis = directions.index(representative_storage)
+            storage_count = len(directions) - int(0 in directions)
+            # Permutation symmetry replaces the sum of initial storage legs.
+            # The final W leg below still uses every saved pattern coefficient.
+            initial_disorder = (storage_count * initial_values[:, representative_axis, None]
+                                * projection[:, representative_axis, 1])
         for axis, direction in enumerate(directions):
             if direction == 0:
                 histogram = _label_histogram(grouped_labels[axis], normalized_weights,
@@ -101,18 +111,27 @@ def _correlation_statistics(grouped_labels, accepted, initial_values, projection
 
 
 def _evaluate_correlations(statistics, lookup, initial_values, dimension):
-    """Apply the small calibrated label table to sufficient statistics."""
+    """Convert label histograms to calibrated local and K/W correlations."""
     local_histograms, target_histograms = statistics
-    row_means = np.einsum("ntpl,pl->ntp", local_histograms, lookup)
-    local = np.einsum("na,ntb->tab", initial_values, row_means) / dimension
-    target = np.einsum("tabpl,pl->tab", target_histograms, lookup) / dimension
+    row_means = (local_histograms * lookup).sum(axis=-1)
+    direction_count = initial_values.shape[1]
+    local = np.empty((row_means.shape[1], direction_count, direction_count))
+    for initial_direction in range(direction_count):
+        for final_direction in range(direction_count):
+            local[:, initial_direction, final_direction] = (
+                initial_values[:, initial_direction, None]
+                * row_means[:, :, final_direction]).sum(axis=0) / dimension
+    target = (target_histograms * lookup).sum(axis=(-2, -1)) / dimension
     return ((local + local.swapaxes(-1, -2)) / 2,
             (target + target.swapaxes(-1, -2)) / 2)
 
 
 def _integrate_correlations(kernel_weights, correlations):
     """Convert the rad/us kernel to derivatives with respect to cyclic kHz."""
-    return (2 * np.pi / 1000)**2 * np.einsum("ut,tab->uab", kernel_weights, correlations)
+    integrals = np.empty((len(kernel_weights), *correlations.shape[1:]))
+    for cutoff_index, weights in enumerate(kernel_weights):
+        integrals[cutoff_index] = (weights[:, None, None] * correlations).sum(axis=0)
+    return (2 * np.pi / 1000)**2 * integrals
 
 
 def _sample_calibration(confusion_matrices, calibration_shots, random_generator):
@@ -130,7 +149,7 @@ def _sample_calibration(confusion_matrices, calibration_shots, random_generator)
 
 def _bootstrap_metric_samples(grouped_labels, accepted, initial_values, projection, dimension,
                               directions, ro_stors, available, kernel_weights, confusion_matrices,
-                              calibration_shots, samples, seed):
+                              calibration_shots, samples, seed, representative_storage=None):
     """Resample whole realizations and the shared calibration, without refitting."""
     random_generator = np.random.default_rng(seed)
     realization_count = accepted.shape[2]
@@ -150,7 +169,8 @@ def _bootstrap_metric_samples(grouped_labels, accepted, initial_values, projecti
             except np.linalg.LinAlgError:
                 continue
         statistics = _correlation_statistics(grouped_labels, accepted, initial_values,
-                                              projection, directions, available, multiplicities)
+                                              projection, directions, available, multiplicities,
+                                              representative_storage)
         local, target = _evaluate_correlations(statistics, lookup, initial_values, dimension)
         if np.isfinite(local).all():
             local_samples.append(_integrate_correlations(kernel_weights, local))
@@ -175,6 +195,52 @@ def _eigensystem(metric):
     return eigenvalues, eigenvectors
 
 
+def background_subtracted_metric(time_us, correlations, mu_khz, coupling_mhz, start_us):
+    """Fit aggregate K/W backgrounds with the existing exponential estimator.
+
+    Original correlations are untouched. Signed amplitudes are allowed;
+    invalid decays leave corrected components NaN. None disables subtraction.
+    Parameter covariance is saved, but corrected-metric errors are not inferred.
+    """
+    original = np.asarray(correlations, dtype=float)
+    subtracted = original.copy() if start_us is None else np.full_like(original, np.nan)
+    background = np.zeros_like(original) if start_us is None else np.full_like(original, np.nan)
+    amplitude, rate = np.full((2, 2), np.nan), np.full((2, 2), np.nan)
+    covariance, valid = np.full((2, 2, 2, 2), np.nan), np.zeros((2, 2), dtype=bool)
+    if start_us is not None:
+        for first, second, label in [(0, 0, "KK"), (0, 1, "KW"), (1, 1, "WW")]:
+            try:
+                trace, fit = subtract_background(time_us, original[:, first, second], start_us=start_us)
+            except (RuntimeError, ValueError) as error:
+                warnings.warn(f"{label} background fit failed: {error}", stacklevel=2)
+                continue
+            amplitude[first, second] = amplitude[second, first] = fit["amplitude"]
+            rate[first, second] = rate[second, first] = fit["rate_per_us"]
+            covariance[first, second] = covariance[second, first] = fit["covariance"]
+            background[:, first, second] = background[:, second, first] = original[:, first, second] - trace
+            valid[first, second] = valid[second, first] = (
+                np.isfinite([fit["amplitude"], fit["rate_per_us"]]).all()
+                and fit["rate_per_us"] > 0 and np.isfinite(trace).all())
+            if valid[first, second]:
+                subtracted[:, first, second] = subtracted[:, second, first] = trace
+            else:
+                warnings.warn(f"{label} background fit is not a finite decay; corrected trace is unavailable",
+                              stacklevel=2)
+    weights = np.array([agp_kernel_weights(time_us, cutoff / 1000)
+                        for cutoff in np.atleast_1d(mu_khz)])
+    metric = _integrate_correlations(weights, subtracted)
+    eigenvalues, eigenvectors = _eigensystem(metric)
+    return dict(C_metric_background=background, C_metric_background_subtracted=subtracted,
+                C_metric_background_amplitude=amplitude, C_metric_background_rate_per_us=rate,
+                C_metric_background_covariance=covariance, C_metric_background_fit_valid=valid,
+                C_metric_background_enabled=np.asarray(start_us is not None),
+                C_metric_background_start_us=np.asarray(np.nan if start_us is None else start_us),
+                agp_metric_background_subtracted=metric,
+                agp_metric_background_subtracted_scaled=metric * (1000 * coupling_mhz)**2,
+                agp_metric_background_subtracted_eigenvalues=eigenvalues,
+                agp_metric_background_subtracted_eigenvectors=eigenvectors)
+
+
 def ensemble_agp_metric(time_us, labels, accepted, occupations, swap_stors, ro_stors,
                         directions, disorder_patterns, mu_khz, coupling_mhz,
                         confusion_matrices=None, calibration_shots=None,
@@ -190,6 +256,9 @@ def ensemble_agp_metric(time_us, labels, accepted, occupations, swap_stors, ro_s
     sampling when its counts are supplied; these sources are not separated.
     Requested/valid bootstrap counts expose draws lost to singular sampled
     calibrations or empty herald selections; errors use the valid draws.
+
+    One selected storage with complete final readout uses storage permutation
+    symmetry: S*(-xi_s*n_s) initially, retaining all final storage contributions.
     """
     labels, accepted = np.asarray(labels), np.asarray(accepted, dtype=bool)
     occupations = np.asarray(occupations, dtype=float)
@@ -197,27 +266,37 @@ def ensemble_agp_metric(time_us, labels, accepted, occupations, swap_stors, ro_s
     if calibration_shots is not None:
         calibration_shots = np.asarray(calibration_shots)
     validate_metric_coverage(occupations, swap_stors, ro_stors, directions, calibration_shots)
+    selected_storages = [storage for storage in swap_stors if storage in directions]
+    representative_storage = (selected_storages[0] if len(selected_storages) == 1
+                              and len(swap_stors) > 1
+                              and all(storage in ro_stors for storage in swap_stors) else None)
+    output_directions = directions.copy()
+    if representative_storage is not None:
+        output_directions += [storage for storage in swap_stors if storage not in directions]
     patterns = np.asarray(disorder_patterns, dtype=float)
-    projection, available = metric_parameter_projection(directions, swap_stors, patterns)
+    projection, available = metric_parameter_projection(output_directions, swap_stors, patterns)
     values = metric_probe_values(occupations, swap_stors, directions)
-    grouped_labels = _grouped_readout_labels(labels, directions, ro_stors)
+    grouped_labels = _grouped_readout_labels(labels, output_directions, ro_stors)
     dimension = comb(int(occupations[0].sum()) + len(swap_stors), len(swap_stors))
     cutoffs = np.atleast_1d(np.asarray(mu_khz, dtype=float))
     kernel_weights = np.array([agp_kernel_weights(time_us, cutoff / 1000) for cutoff in cutoffs])
     statistics = _correlation_statistics(grouped_labels, accepted, values, projection,
-                                          directions, available)
+                                          output_directions, available,
+                                          representative_storage=representative_storage)
     raw_local, raw_target = _evaluate_correlations(
-        statistics, _score_lookup(directions, ro_stors, None), values, dimension)
+        statistics, _score_lookup(output_directions, ro_stors, None), values, dimension)
     local, target = raw_local, raw_target
     if confusion_matrices is not None:
         confusion_matrices = np.asarray(confusion_matrices, dtype=float)
         local, target = _evaluate_correlations(
-            statistics, _score_lookup(directions, ro_stors, confusion_matrices), values, dimension)
+            statistics, _score_lookup(output_directions, ro_stors, confusion_matrices), values,
+            dimension)
     local_metric = _integrate_correlations(kernel_weights, local)
     metric = _integrate_correlations(kernel_weights, target)
     samples = _bootstrap_metric_samples(
-        grouped_labels, accepted, values, projection, dimension, directions, ro_stors,
-        available, kernel_weights, confusion_matrices, calibration_shots, bootstrap_samples, seed)
+        grouped_labels, accepted, values, projection, dimension, output_directions, ro_stors,
+        available, kernel_weights, confusion_matrices, calibration_shots, bootstrap_samples, seed,
+        representative_storage)
     local_error = _sample_error(samples[0], local_metric.shape)
     metric_error = _sample_error(samples[1], metric.shape)
     metric[:, ~available] = np.nan
@@ -245,4 +324,6 @@ def ensemble_agp_metric(time_us, labels, accepted, occupations, swap_stors, ro_s
                       confusion_matrices is not None and calibration_shots is not None))
     if confusion_matrices is not None:
         result["C1_corrected"] = np.diagonal(local, axis1=-2, axis2=-1).T
+    if representative_storage is not None:
+        result["agp_metric_representative_storage"] = np.asarray(representative_storage)
     return result

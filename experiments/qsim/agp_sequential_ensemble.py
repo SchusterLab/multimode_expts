@@ -31,7 +31,9 @@ from experiments.qsim.fock_population_sequential_ensemble import (
 from experiments.qsim.fock_population import FockPopulationSetExperiment
 from fitting import plot_style
 from fitting.qsim.agp import agp_kernel_weights, cosine_transform_weights, spectrum_frequencies_khz
-from fitting.qsim.agp_metric import ensemble_agp_metric
+from fitting.qsim.agp_metric import (
+    _eigensystem, _integrate_correlations, background_subtracted_metric, ensemble_agp_metric,
+)
 from theory.qsim.agp_ensemble import ensemble_metric_prediction
 
 
@@ -171,8 +173,13 @@ class CentralBosonAGPSequentialEnsembleExperiment(CentralBosonAGPEnsembleExperim
                 data[key] = np.stack([child.data[key] for child in self.children])
         return data
 
-    def analyze(self, mu=None, bootstrap_samples=300, seed=0, theory=True, kerr_mhz=None):
-        """Reconstruct metrics from shots; predictions never change measured arrays."""
+    def analyze(self, mu=None, bootstrap_samples=300, seed=0, theory=True, kerr_mhz=None,
+                background_start_us=None):
+        """Reconstruct metrics; optionally add fitted-background K/W results.
+
+        background_start_us fits late aggregate correlations and extrapolates
+        the fitted exponential across the window. Original metrics are retained.
+        """
         data = self._population_data()
         couplings_mhz = self.recorded_couplings_mhz()
         coupling_mhz = float(np.mean(np.abs(couplings_mhz)))
@@ -185,14 +192,21 @@ class CentralBosonAGPSequentialEnsembleExperiment(CentralBosonAGPEnsembleExperim
             self.swap_stors, self.ro_stors, self.directions, data["disorder_patterns"],
             cutoffs_khz, coupling_mhz, confusion_matrices=confusion_matrices,
             calibration_shots=counts, bootstrap_samples=bootstrap_samples, seed=seed))
-        data.update(coupling_mhz=np.asarray(coupling_mhz), mu_gld_khz=np.asarray(default_mu),
+        data.update(coupling_mhz=np.asarray(coupling_mhz), couplings_mhz=np.asarray(couplings_mhz),
+                    mu_gld_khz=np.asarray(default_mu),
                     herald_acceptance=data["herald_keep"].mean(axis=-1))
+        if background_start_us is not None:
+            data.update(background_subtracted_metric(
+                data["time_us"], data["C_metric"], cutoffs_khz, coupling_mhz, background_start_us))
         if confusion_matrices is not None:
             data["multiparity_confusion_matrices"] = np.asarray(confusion_matrices)
         if counts is not None:
             data["calibration_shot_counts"] = counts
         self.data = AttrDict(data)
-        kerr = self.recorded_kerr_mhz() if kerr_mhz is None else kerr_mhz
+        recorded_kerr = self.recorded_kerr_mhz()
+        if recorded_kerr is not None:
+            self.data["recorded_kerr_mhz"] = np.asarray(recorded_kerr)
+        kerr = recorded_kerr if kerr_mhz is None else kerr_mhz
         if theory and kerr is not None:
             self._add_metric_prediction(couplings_mhz, kerr, cutoffs_khz)
         self.analysis = dict(mu_khz=cutoffs_khz.tolist(), bootstrap_samples=bootstrap_samples,
@@ -201,20 +215,83 @@ class CentralBosonAGPSequentialEnsembleExperiment(CentralBosonAGPEnsembleExperim
                              estimator="Finite measured-window kernel integral; no tail completion",
                              metric_coordinates="K and W in cyclic kHz; metric units kHz^-2",
                              ensemble="Original patterns weighted before accepted-shot averaging",
+                             background_start_us=background_start_us,
+                             background_model="Late aggregate A exp(-rate*t), extrapolated across the window",
+                             background_uncertainty="Not propagated into background-subtracted metrics",
                              uncertainty="Joint realization and shared calibration bootstrap")
+        if "agp_metric_representative_storage" in data:
+            self.analysis["representative_storage"] = int(data["agp_metric_representative_storage"])
         return self.data
 
-    def _add_metric_prediction(self, couplings_mhz, kerr_mhz, cutoffs_khz):
+    def analyze_correlations(self, mu=None, background_start_us=None, theory=True, kerr_mhz=None):
+        """Re-integrate saved correlations without raw children or bootstrap.
+
+        Raw and background-subtracted metrics remain separate. Fits use the
+        aggregate K/W correlator, not individual Fock rows or measured T1.
+        New-cutoff and fitted-background uncertainties are not propagated.
+        """
         data = self.data
-        data.update(ensemble_metric_prediction(
+        couplings = np.asarray(data["couplings_mhz"])
+        coupling_mhz = float(np.mean(np.abs(couplings)))
+        default_mu = 1000 * coupling_mhz * (1 + len(self.swap_stors)) / data["sector_dimension"]
+        cutoffs = np.atleast_1d(np.asarray(default_mu if mu is None else mu, dtype=float))
+        weights = np.array([agp_kernel_weights(data["time_us"], cutoff / 1000) for cutoff in cutoffs])
+        metric = _integrate_correlations(weights, data["C_metric"])
+        local_metric = _integrate_correlations(weights, data["C_metric_local"])
+        scale = (1000 * coupling_mhz)**2
+        local_agp = np.diagonal(local_metric, axis1=-2, axis2=-1).T * scale
+        eigenvalues, eigenvectors = _eigensystem(metric)
+        for name in list(data):
+            if "theory" in name:
+                data.pop(name)
+        data.update(agp_mu=cutoffs, agp=local_agp, agp_err=np.full(local_agp.shape, np.nan),
+                    coupling_mhz=np.asarray(coupling_mhz), mu_gld_khz=np.asarray(default_mu),
+                    agp_metric=metric, agp_metric_err=np.full(metric.shape, np.nan),
+                    agp_metric_scaled=metric * scale, agp_metric_scaled_err=np.full(metric.shape, np.nan),
+                    agp_metric_local=local_metric, agp_metric_local_err=np.full(local_metric.shape, np.nan),
+                    agp_metric_eigenvalues=eigenvalues, agp_metric_eigenvectors=eigenvectors)
+        data.update(background_subtracted_metric(
+            data["time_us"], data["C_metric"], cutoffs, coupling_mhz, background_start_us))
+        kerr = data.get("recorded_kerr_mhz") if kerr_mhz is None else kerr_mhz
+        if theory and kerr is not None:
+            self._add_metric_prediction(couplings, float(kerr), cutoffs, correlations=False)
+        self.analysis = dict(mu_khz=cutoffs.tolist(), bootstrap_samples=0,
+                             estimator="Saved calibrated C_metric times finite-window kernel",
+                             uncertainty="Central estimates; new-cutoff errors not recomputed",
+                             background_start_us=background_start_us,
+                             background_model="Late aggregate A exp(-rate*t), extrapolated across the window",
+                             background_uncertainty="Not propagated; invalid fits remain unavailable",
+                             theory=theory, kerr_mhz=None if kerr is None else float(kerr))
+        return data
+
+    def _add_metric_prediction(self, couplings_mhz, kerr_mhz, cutoffs_khz, correlations=True):
+        data = self.data
+        prediction_directions = self.directions.copy()
+        if "agp_metric_representative_storage" in data:
+            prediction_directions += [storage for storage in self.swap_stors
+                                      if storage not in self.directions]
+        prediction = ensemble_metric_prediction(
             self.photon_sector_number, data["disorder_detunings_mhz"], couplings_mhz,
-            kerr_mhz, self.directions, self.swap_stors, data["disorder_patterns"],
-            data["time_us"], cutoffs_khz))
-        kernel = (2 * np.pi / 1000)**2 * np.asarray([
+            kerr_mhz, prediction_directions, self.swap_stors, data["disorder_patterns"],
+            data["time_us"] if correlations else [0., float(data["time_us"][-1])], cutoffs_khz)
+        local_axis_count = len(self.directions)
+        for key in ("C1_theory", "agp_theory", "agp_theory_window"):
+            prediction[key] = prediction[key][:local_axis_count]
+        for key in ("C_metric_local_theory", "agp_metric_local_theory",
+                    "agp_metric_local_theory_window"):
+            prediction[key] = prediction[key][..., :local_axis_count, :local_axis_count]
+        if not correlations:
+            prediction = {name: value for name, value in prediction.items() if not name.startswith("C")}
+        data.update(prediction)
+        data["agp_metric_theory_eigenvalues"], data["agp_metric_theory_eigenvectors"] = _eigensystem(
+            data["agp_metric_theory"])
+        if not correlations:
+            return
+        kernel = np.asarray([
             agp_kernel_weights(data["time_us"], cutoff / 1000) for cutoff in cutoffs_khz])
         for suffix in ("", "_local"):
-            data[f"agp_metric{suffix}_theory_sampled_window"] = np.einsum(
-                "ut,tab->uab", kernel, data[f"C_metric{suffix}_theory"])
+            data[f"agp_metric{suffix}_theory_sampled_window"] = _integrate_correlations(
+                kernel, data[f"C_metric{suffix}_theory"])
         data["agp_theory_sampled_window"] = (1000 * float(data["coupling_mhz"]))**2 * np.diagonal(
             data["agp_metric_local_theory_sampled_window"], axis1=-2, axis2=-1).T
 
@@ -370,6 +447,10 @@ class CentralBosonAGPSequentialEnsembleDisorderScan(CentralBosonAGPEnsembleDisor
                                   data["agp_metric_scaled"][:, cutoff, first, second],
                                   data["agp_metric_scaled_err"][:, cutoff, first, second],
                                   fmt="o-", ms=4, capsize=2, label="measured")
+                    if "agp_metric_background_subtracted_scaled" in data and np.any(
+                            data["C_metric_background_enabled"]):
+                        axis.plot(data["disorder_khz"], data["agp_metric_background_subtracted_scaled"][
+                            :, cutoff, first, second], "s-", ms=4, label="background subtracted")
                     if theory and "agp_metric_theory" in data:
                         axis.plot(data["disorder_khz"], scale * data[
                             "agp_metric_theory_window"][:, cutoff, first, second],
