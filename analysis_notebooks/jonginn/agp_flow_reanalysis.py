@@ -2,6 +2,11 @@
 # jupyter:
 #   jupytext:
 #     formats: py:percent,ipynb
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Multimode (direct remote)
 #     language: python
@@ -61,11 +66,11 @@ SAVE_ASSEMBLED_DATA = False
 BASE_DIR = Path(r"C:\experiments\agp_sequential_disorder_ensemble")
 
 SELECT_BY_JOB_ID = True
-JOB_ID_RANGES = [("JOB-20261116-00273", "JOB-20261118-00072")]
+JOB_ID_RANGES = [("JOB-20261116-00273", "JOB-20261118-00118")]
 DATE_RANGE = ("2026-11-16", "2026-11-18")
 EXPERIMENT_NAME = "agp_sequential_disorder_ensemble*"
 
-MU_KHZ = [5.915, 10., 20., 30.]  # Cyclic frequency: tau_us = 1000 / (2*pi*mu_kHz).
+MU_KHZ = [5.915, 10., 20., 30., 50, 70]  # Cyclic frequency: tau_us = 1000 / (2*pi*mu_kHz).
 ASSEMBLED_NAME = "agp_flow_reanalysis_20261118"  # Choose a new name for each save.
 SPECTRUM_MAX_KHZ = 150.
 SPECTRUM_WINDOW = "hann"
@@ -362,3 +367,5 @@ def display_flow(mu_khz):
 
 display(widgets.interactive(display_flow, mu_khz=widgets.SelectionSlider(
     options=MU_KHZ, value=MU_KHZ[-1], description="mu (kHz)")))
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
