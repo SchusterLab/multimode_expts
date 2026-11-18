@@ -199,12 +199,13 @@ def background_subtracted_metric(time_us, correlations, mu_khz, coupling_mhz, st
     """Fit aggregate K/W backgrounds with the existing exponential estimator.
 
     Original correlations are untouched. Signed amplitudes are allowed;
-    invalid decays leave corrected components NaN. None disables subtraction.
+    invalid decays retain the original component with a false fit-valid flag.
+    None disables subtraction. The saved background is only what was removed.
     Parameter covariance is saved, but corrected-metric errors are not inferred.
     """
     original = np.asarray(correlations, dtype=float)
-    subtracted = original.copy() if start_us is None else np.full_like(original, np.nan)
-    background = np.zeros_like(original) if start_us is None else np.full_like(original, np.nan)
+    subtracted = original.copy()
+    background = np.zeros_like(original)
     amplitude, rate = np.full((2, 2), np.nan), np.full((2, 2), np.nan)
     covariance, valid = np.full((2, 2, 2, 2), np.nan), np.zeros((2, 2), dtype=bool)
     if start_us is not None:
@@ -212,19 +213,19 @@ def background_subtracted_metric(time_us, correlations, mu_khz, coupling_mhz, st
             try:
                 trace, fit = subtract_background(time_us, original[:, first, second], start_us=start_us)
             except (RuntimeError, ValueError) as error:
-                warnings.warn(f"{label} background fit failed: {error}", stacklevel=2)
+                warnings.warn(f"{label} background fit failed; using original trace: {error}", stacklevel=2)
                 continue
             amplitude[first, second] = amplitude[second, first] = fit["amplitude"]
             rate[first, second] = rate[second, first] = fit["rate_per_us"]
             covariance[first, second] = covariance[second, first] = fit["covariance"]
-            background[:, first, second] = background[:, second, first] = original[:, first, second] - trace
             valid[first, second] = valid[second, first] = (
                 np.isfinite([fit["amplitude"], fit["rate_per_us"]]).all()
                 and fit["rate_per_us"] > 0 and np.isfinite(trace).all())
             if valid[first, second]:
+                background[:, first, second] = background[:, second, first] = original[:, first, second] - trace
                 subtracted[:, first, second] = subtracted[:, second, first] = trace
             else:
-                warnings.warn(f"{label} background fit is not a finite decay; corrected trace is unavailable",
+                warnings.warn(f"{label} background fit is not a finite decay; using original trace",
                               stacklevel=2)
     weights = np.array([agp_kernel_weights(time_us, cutoff / 1000)
                         for cutoff in np.atleast_1d(mu_khz)])

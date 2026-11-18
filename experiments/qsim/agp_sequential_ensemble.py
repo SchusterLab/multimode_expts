@@ -218,6 +218,7 @@ class CentralBosonAGPSequentialEnsembleExperiment(CentralBosonAGPEnsembleExperim
                              background_start_us=background_start_us,
                              background_model="Late aggregate A exp(-rate*t), extrapolated across the window",
                              background_uncertainty="Not propagated into background-subtracted metrics",
+                             background_fit_failure="Use original component; fit-valid flag remains false",
                              uncertainty="Joint realization and shared calibration bootstrap")
         if "agp_metric_representative_storage" in data:
             self.analysis["representative_storage"] = int(data["agp_metric_representative_storage"])
@@ -260,7 +261,8 @@ class CentralBosonAGPSequentialEnsembleExperiment(CentralBosonAGPEnsembleExperim
                              uncertainty="Central estimates; new-cutoff errors not recomputed",
                              background_start_us=background_start_us,
                              background_model="Late aggregate A exp(-rate*t), extrapolated across the window",
-                             background_uncertainty="Not propagated; invalid fits remain unavailable",
+                             background_uncertainty="Not propagated into background-subtracted metrics",
+                             background_fit_failure="Use original component; fit-valid flag remains false",
                              theory=theory, kerr_mhz=None if kerr is None else float(kerr))
         return data
 
