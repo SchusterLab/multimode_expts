@@ -53,8 +53,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from theory.qsim.agp import probe_values, spectral_weights
-from theory.qsim.central_boson import fixed_n_hamiltonian
+from theory.qsim.agp import probe_values, spectral_weights, two_time_correlation
+from theory.qsim.central_boson import disorder_pattern, fixed_n_hamiltonian, operator_form_hamiltonian
+from theory.qsim.spectral_ensemble import (DEFAULT_PROBES, StarSetup, disorder_proxy_comparison, ensemble_spectra,
+                                           mode_spectrum, positive_totals, zero_disorder_lines)
 
 PHOTONS = 3
 STORAGE_MODES = 4
@@ -62,59 +64,21 @@ COUPLING_MHZ = 0.02
 KERR_MHZ = -0.027
 DISORDER_RMS_MHZ = 0.06   # W: RMS of the detunings over the storage modes
 SAMPLES = 5000
+SETUP = StarSetup(photon_number=PHOTONS, storage_modes=STORAGE_MODES, coupling_mhz=COUPLING_MHZ)
 rng = np.random.default_rng(0)
 
 
-def disorder_pattern(rng, count, rms_mhz):
-    """-> ``count`` detunings: iid normal, mean removed, scaled to RMS ``rms_mhz``.
-
-    This is uniform on the sphere of fixed RMS in the zero-mean plane.
-    """
-    pattern = rng.normal(size=count)
-    pattern -= pattern.mean()
-    return pattern * rms_mhz / np.sqrt(np.mean(pattern**2))
-
-
 def build_model(detunings, kerr_mhz=KERR_MHZ):
-    return fixed_n_hamiltonian(
-        photon_number=PHOTONS,
-        mode_count=STORAGE_MODES + 1,
-        detunings=detunings,
-        couplings_MHz=[COUPLING_MHZ] * STORAGE_MODES,
-        physical_kerr_MHz=kerr_mhz,
-    )
-
-
-def stick_spectrum(model, values):
-    """-> (frequencies, weights, dc) for a probe given by its diagonal ``values`` in the Fock basis."""
-    differences, weights = spectral_weights(model, values)   # both (D, D)
-    f, w = differences.ravel(), weights.ravel()
-    keep = f > 1e-9
-    return f[keep], w[keep], w[np.abs(f) <= 1e-9].sum()
-
-
-def spectrum(model, mode_index, probe="number"):
-    """-> (frequencies, weights, dc): positive-frequency sticks and the zero-frequency weight.
-
-    ``mode_index`` 0 is the hub M1, 1 to ``STORAGE_MODES`` are the storage modes.
-    ``probe`` is ``number`` or ``kerr``. The spectrum is mirrored, so ``dc`` is
-    the whole zero-frequency weight and the sticks carry half of the rest.
-    """
-    return stick_spectrum(model, probe_values(model.fock_basis, mode_index=mode_index, probe=probe))
-
-
-def sticks(model, mode_index):
-    """-> (frequencies, weights) of the positive-frequency sticks of the probe n of one mode."""
-    return spectrum(model, mode_index)[:2]
+    return SETUP.model(detunings, kerr_mhz)
 
 
 # %% [markdown]
 # ## Q1. What does one realization look like, and the ensemble average of the hub probe?
 
 # %%
-f_one, w_one = sticks(build_model(disorder_pattern(rng, STORAGE_MODES, DISORDER_RMS_MHZ)), 0)
+f_one, w_one, _ = mode_spectrum(build_model(disorder_pattern(rng, STORAGE_MODES, DISORDER_RMS_MHZ)), 0)
 
-pooled = [sticks(build_model(disorder_pattern(rng, STORAGE_MODES, DISORDER_RMS_MHZ)), 0)
+pooled = [mode_spectrum(build_model(disorder_pattern(rng, STORAGE_MODES, DISORDER_RMS_MHZ)), 0)[:2]
           for _ in range(SAMPLES)]
 f_all = np.concatenate([f for f, _ in pooled])
 w_all = np.concatenate([w for _, w in pooled])
@@ -150,7 +114,7 @@ per_realization = np.zeros((SAMPLES, STORAGE_MODES, len(bins) - 1))   # weight p
 for r in range(SAMPLES):
     model = build_model(disorder_pattern(rng, STORAGE_MODES, DISORDER_RMS_MHZ))
     for s in range(STORAGE_MODES):
-        f, w = sticks(model, s + 1)
+        f, w, _ = mode_spectrum(model, s + 1)
         per_realization[r, s] = np.histogram(f, bins, weights=w)[0] / np.diff(bins)
 
 mean = per_realization.mean(axis=0)                                  # (modes, bins)
@@ -186,51 +150,10 @@ fig.tight_layout()
 # The title gives the zero-frequency (DC) weight and the positive-frequency total.
 
 # %%
-PROBES = {
-    "hub Kerr": (0, "kerr"),
-    "hub number": (0, "number"),
-    "storage number": (None, "number"),   # None: mean over the storage modes
-    "disorder V": (None, "disorder"),     # sum_s e_s n_s, with the unit-RMS pattern e that sets H
-}
+PROBES = DEFAULT_PROBES
 
 
-def probe_sticks(model, unit, mode, kind):
-    """-> (frequencies, weights, dc) of one probe of ``PROBES``; ``unit`` is the unit-RMS pattern of ``model``.
-
-    ``mode`` None averages the single-mode probe over the storage modes. ``disorder`` is V = sum_s e_s n_s.
-    """
-    if kind == "disorder":
-        return stick_spectrum(model, np.asarray(model.fock_basis, dtype=float)[:, 1:] @ unit)
-    modes = range(1, STORAGE_MODES + 1) if mode is None else [mode]
-    parts = [spectrum(model, m, kind) for m in modes]
-    return (np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts]) / len(modes),
-            sum(p[2] for p in parts) / len(modes))
 FREQ_EDGES = np.geomspace(1e-5, 0.5, 60)
-
-
-def ensemble_spectra(kerr_mhz, rms_mhz, samples, seed=0, edges=FREQ_EDGES):
-    """-> {probe name: dict(f, w, density, sem, dc)} for one (Kerr, disorder) point.
-
-    ``f``, ``w``: all sticks of all realizations pooled (storage probe: all modes pooled, weights / modes),
-    so the weights sum to ``samples`` times the mean positive-frequency weight. ``density``, ``sem``: mean
-    and standard error over realizations of the binned weight per MHz. ``dc``: mean zero-frequency weight.
-    """
-    rng = np.random.default_rng(seed)
-    binned = {name: np.zeros((samples, len(edges) - 1)) for name in PROBES}
-    pooled = {name: ([], []) for name in PROBES}
-    dc = {name: np.zeros(samples) for name in PROBES}
-    for r in range(samples):
-        unit = disorder_pattern(rng, STORAGE_MODES, 1.0)
-        model = build_model(rms_mhz * unit, kerr_mhz=kerr_mhz)
-        for name, (mode, kind) in PROBES.items():
-            f, w, dc[name][r] = probe_sticks(model, unit, mode, kind)
-            pooled[name][0].append(f)
-            pooled[name][1].append(w)
-            binned[name][r] = np.histogram(f, edges, weights=w)[0] / np.diff(edges)
-    return {name: dict(f=np.concatenate(pooled[name][0]), w=np.concatenate(pooled[name][1]),
-                       density=binned[name].mean(0), sem=binned[name].std(0, ddof=1) / np.sqrt(samples),
-                       dc=dc[name].mean())
-            for name in PROBES}
 
 
 def plot_point(spectra, samples, title):
@@ -256,7 +179,7 @@ def plot_point(spectra, samples, title):
 
 
 POINT_KERR_MHZ, POINT_RMS_MHZ = -0.012, 0.035
-fig = plot_point(ensemble_spectra(POINT_KERR_MHZ, POINT_RMS_MHZ, SAMPLES), SAMPLES,
+fig = plot_point(ensemble_spectra(SETUP, POINT_KERR_MHZ, POINT_RMS_MHZ, SAMPLES, FREQ_EDGES), SAMPLES,
                  f"K = {POINT_KERR_MHZ * 1e3:.0f} kHz, W = {POINT_RMS_MHZ * 1e3:.0f} kHz, "
                  f"g = {COUPLING_MHZ * 1e3:.0f} kHz, {PHOTONS} photons, {SAMPLES} patterns")
 
@@ -269,65 +192,43 @@ fig = plot_point(ensemble_spectra(POINT_KERR_MHZ, POINT_RMS_MHZ, SAMPLES), SAMPL
 # storage modes are equivalent after averaging.
 
 # %%
-from functools import reduce
-
 from scipy.linalg import expm
 
 CHECK_RNG = np.random.default_rng(11)
 check_detunings = disorder_pattern(CHECK_RNG, STORAGE_MODES, POINT_RMS_MHZ)
 check_model = build_model(check_detunings, kerr_mhz=POINT_KERR_MHZ)
 
-# Independent build: truncated boson operators on all modes (full space), then the sector of PHOTONS.
-CUT = PHOTONS + 1
-_lower = np.diag(np.sqrt(np.arange(1, CUT)), 1)
-_modes = STORAGE_MODES + 1
-
-
-def full_space_operator(single, k):
-    return reduce(np.kron, [single if j == k else np.eye(CUT) for j in range(_modes)])
-
-
-annihilate = [full_space_operator(_lower, k) for k in range(_modes)]
-number = [a.T @ a for a in annihilate]
-sector = np.where(np.isclose(sum(number).diagonal(), PHOTONS))[0]
-
-
-def independent_hamiltonian(detunings, kerr_mhz):
-    """-> H (MHz) of the sector, from the operator form H = sum -d_s n_s + K/2 n0 (n0 - 1) + g (a0^+ a_s + h.c.)."""
-    dim = CUT**_modes
-    H = kerr_mhz / 2 * number[0] @ (number[0] - np.eye(dim))
-    for s, d in enumerate(detunings, start=1):
-        H = H - d * number[s] + COUPLING_MHZ * (annihilate[0].T @ annihilate[s] + annihilate[s].T @ annihilate[0])
-    return H[np.ix_(sector, sector)]
+# Independent build: truncated boson operators on the full space of all modes, restricted to the
+# sector of PHOTONS photons (theory.qsim.central_boson.operator_form_hamiltonian).
+independent = operator_form_hamiltonian(PHOTONS, STORAGE_MODES + 1, check_detunings, [COUPLING_MHZ] * STORAGE_MODES,
+                                        POINT_KERR_MHZ)
+H_independent = independent.hamiltonian_MHz
+n_hub = independent.numbers[0]
 
 
 # %% [markdown]
 # ### C1. The Hamiltonian: eigenvalues of `fixed_n_hamiltonian` against the operator-form build
 
 # %%
-H_independent = independent_hamiltonian(check_detunings, POINT_KERR_MHZ)
 error = np.abs(np.sort(check_model.energies_MHz) - np.linalg.eigvalsh(H_independent)).max()
-print(f"sector dimension {len(sector)}; max |E_code - E_independent| = {error:.1e} MHz")
-assert len(sector) == len(check_model.energies_MHz) and error < 1e-12
+print(f"sector dimension {len(H_independent)}; max |E_code - E_independent| = {error:.1e} MHz")
+assert len(H_independent) == len(check_model.energies_MHz) and error < 1e-12
 
 # %% [markdown]
 # ### C2. The weights: $C(t) = \mathrm{Tr}[O(t)\,O]/D$ from a matrix exponential of the independent $H$, against the stick sum
 
 # %%
-from theory.qsim.agp import two_time_correlation
-
 check_times = np.linspace(0, 300, 7)   # us
-operators = {   # name: (operator in the full space, mode index, probe kind)
-    "hub Kerr": (number[0] @ (number[0] - np.eye(CUT**_modes)) / 2, 0, "kerr"),
-    "hub number": (number[0], 0, "number"),
-    "storage 2 number": (number[2], 2, "number"),
+operators = {   # name: (operator of the independent build, mode index, probe kind)
+    "hub Kerr": (np.diag(n_hub * (n_hub - 1) / 2), 0, "kerr"),
+    "hub number": (np.diag(n_hub), 0, "number"),
+    "storage 2 number": (np.diag(independent.numbers[2]), 2, "number"),
 }
-for name, (full, mode, kind) in operators.items():
-    O = full[np.ix_(sector, sector)]
+for name, (O, mode, kind) in operators.items():
     direct = []
     for t in check_times:
         U = expm(-2j * np.pi * H_independent * t)
-        direct.append(np.trace(U.conj().T @ O @ U @ O).real / len(sector))
+        direct.append(np.trace(U.conj().T @ O @ U @ O).real / len(O))
     differences, weights = spectral_weights(check_model, probe_values(check_model.fock_basis, mode, kind))
     error = np.abs(np.array(direct) - two_time_correlation(differences, weights, check_times)).max()
     print(f"{name}: max |C_direct - C_sticks| = {error:.1e}   (C(0) = {direct[0]:.4f})")
@@ -341,7 +242,7 @@ for name, (full, mode, kind) in operators.items():
 
 # %%
 for name, (mode, kind) in {"hub Kerr": (0, "kerr"), "hub number": (0, "number"), "storage 2 number": (2, "number")}.items():
-    f, w, dc = spectrum(check_model, mode, kind)
+    f, w, dc = mode_spectrum(check_model, mode, kind)
     expected = np.mean(probe_values(check_model.fock_basis, mode, kind) ** 2)
     print(f"{name}: DC {dc:.4f} + 2 x {w.sum():.4f} = {dc + 2 * w.sum():.6f}   mean O^2 = {expected:.6f}")
     assert abs(dc + 2 * w.sum() - expected) < 1e-12
@@ -360,7 +261,7 @@ for _ in range(100):
     lines = lines[lines > 1e-9]
     free_model = build_model(detunings, kerr_mhz=0.0)
     for mode in (0, 1):
-        f, w, _ = spectrum(free_model, mode, "number")
+        f, w, _ = mode_spectrum(free_model, mode, "number")
         f = f[w > 1e-10]   # sticks with weight
         worst = max(worst, np.abs(f[:, None] - lines[None, :]).min(axis=1).max())
 print(f"worst distance of a stick from a single-particle difference: {worst:.1e} MHz")
@@ -386,7 +287,7 @@ assert np.abs(np.sqrt((patterns**2).mean(axis=1)) / POINT_RMS_MHZ - 1).max() < 1
 
 # %%
 check_samples = 200
-spectra = ensemble_spectra(POINT_KERR_MHZ, POINT_RMS_MHZ, check_samples, seed=3)
+spectra = ensemble_spectra(SETUP, POINT_KERR_MHZ, POINT_RMS_MHZ, check_samples, FREQ_EDGES, seed=3)
 inside = (lambda f: (f >= FREQ_EDGES[0]) & (f < FREQ_EDGES[-1]))
 for name, s in spectra.items():
     shown = (s["density"] * np.diff(FREQ_EDGES)).sum()
@@ -458,32 +359,6 @@ CORNER_EDGES = np.geomspace(1e-5, 5, 80)
 CORNER_SAMPLES = 5000
 
 
-def exact_lines(kerr_mhz):
-    """-> {probe name: dict(f, w, dc)} at W = 0, one realization, equal frequencies summed."""
-    model = build_model(np.zeros(STORAGE_MODES), kerr_mhz=kerr_mhz)
-    out = {}
-    for name, (mode, kind) in PROBES.items():
-        if kind == "disorder":
-            continue   # below
-        modes = range(1, STORAGE_MODES + 1) if mode is None else [mode]
-        parts = [spectrum(model, m, kind) for m in modes]
-        f = np.concatenate([p[0] for p in parts])
-        w = np.concatenate([p[1] for p in parts]) / len(modes)
-        lines, inverse = np.unique(np.round(f, 9), return_inverse=True)
-        out[name] = dict(f=lines, w=np.bincount(inverse, weights=w), dc=sum(p[2] for p in parts) / len(modes))
-    # Disorder direction at W = 0: H does not depend on the pattern, so the pattern covariance
-    # (4/3)(I - J/4) gives the line weights (4/3) sum_s w_s - w_hub / 3 exactly. DC is not given (n/a).
-    hub = spectrum(model, 0, "number")
-    stor = [spectrum(model, m, "number") for m in range(1, STORAGE_MODES + 1)]
-    f = np.concatenate([p[0] for p in stor] + [hub[0]])
-    w = np.concatenate([4 / 3 * p[1] for p in stor] + [-hub[1] / 3])
-    lines, inverse = np.unique(np.round(f, 9), return_inverse=True)
-    combined = np.bincount(inverse, weights=w)
-    assert combined.min() > -1e-9   # a negative line weight would mean the covariance formula failed
-    out["disorder V"] = dict(f=lines, w=np.maximum(combined, 0), dc=np.nan)
-    return out
-
-
 def mark(ax, x, label):
     """A numbered pointer at the top of the panel, with a short tick down to the curve."""
     ax.annotate(label, (x, 1.0), xycoords=("data", "axes fraction"), xytext=(0, 9), textcoords="offset points",
@@ -498,7 +373,7 @@ def plot_corners(corners, pointers, samples, edges):
     results = {}
     for row, (label, (kerr, rms)) in enumerate(corners.items()):
         exact = rms == 0
-        results[label] = spectra = exact_lines(kerr) if exact else ensemble_spectra(kerr, rms, samples, seed=row, edges=edges)
+        results[label] = spectra = zero_disorder_lines(SETUP, kerr) if exact else ensemble_spectra(SETUP, kerr, rms, samples, edges, seed=row)
         for col, (name, s) in enumerate(spectra.items()):
             ax = axes[row, col]
             if exact:
@@ -567,20 +442,8 @@ W_SCAN = [0.1, 0.2, 0.5, 1.0, 2.0]               # MHz
 K_SCAN = [-0.1, -0.2, -0.5, -1.0, -2.0, -5.0]    # MHz
 
 
-def positive_totals(kerr_mhz, rms_mhz, samples, seed=0):
-    """-> {probe: (mean, standard error)} of the positive-frequency weight total over patterns."""
-    rng = np.random.default_rng(seed)
-    totals = {name: np.zeros(samples) for name in PROBES}
-    for r in range(samples):
-        unit = disorder_pattern(rng, STORAGE_MODES, 1.0)
-        model = build_model(rms_mhz * unit, kerr_mhz=kerr_mhz)
-        for name, (mode, kind) in PROBES.items():
-            totals[name][r] = probe_sticks(model, unit, mode, kind)[1].sum()
-    return {name: (t.mean(), t.std(ddof=1) / np.sqrt(samples)) for name, t in totals.items()}
-
-
 def scan(points):
-    return [positive_totals(kerr, rms, SCAN_SAMPLES, seed=i) for i, (kerr, rms) in enumerate(points)]
+    return [positive_totals(SETUP, kerr, rms, SCAN_SAMPLES, seed=i) for i, (kerr, rms) in enumerate(points)]
 
 
 def log_slope(x, y, err, last=3):
@@ -622,7 +485,7 @@ fig.tight_layout()
 cluster = []
 rng = np.random.default_rng(0)
 for _ in range(1500):
-    f, w, _ = spectrum(build_model(disorder_pattern(rng, STORAGE_MODES, 0.001)), 1, "number")
+    f, w, _ = mode_spectrum(build_model(disorder_pattern(rng, STORAGE_MODES, 0.001)), 1, "number")
     keep = f < 0.008   # the low cluster; the single-particle band starts above 0.01 MHz
     cluster.append((f[keep] / 0.001, w[keep]))
 ratio = np.concatenate([c[0] for c in cluster])
@@ -656,40 +519,12 @@ Q6_SAMPLES = 3000
 Q6_CORNERS = {name: kw for name, kw in CORNERS.items() if kw[1] > 0}
 
 
-def disorder_probe_spectra(kerr_mhz, rms_mhz, samples, edges, seed=0):
-    """-> dict(exact, proxy, difference) of (mean, sem) binned weight / MHz, and the mean totals.
-
-    The same patterns give both, so the paired difference has its own standard error.
-    """
-    rng = np.random.default_rng(seed)
-    bins = len(edges) - 1
-    exact, proxy = np.zeros((samples, bins)), np.zeros((samples, bins))
-    dc = np.zeros(samples)
-    for r in range(samples):
-        unit = disorder_pattern(rng, STORAGE_MODES, 1.0)
-        model = build_model(rms_mhz * unit, kerr_mhz=kerr_mhz)
-        values = np.asarray(model.fock_basis, dtype=float)[:, 1:] @ unit
-        f, w, dc[r] = stick_spectrum(model, values)
-        assert abs(dc[r] + 2 * w.sum() - np.mean(values**2)) < 1e-9   # the sum rule of C3
-        exact[r] = np.histogram(f, edges, weights=w)[0] / np.diff(edges)
-        hub = spectrum(model, 0, "number")
-        stor = [spectrum(model, m, "number") for m in range(1, STORAGE_MODES + 1)]
-        # Weighted histograms of the same sticks, combined with the covariance weights.
-        h_hub = np.histogram(hub[0], edges, weights=hub[1])[0] / np.diff(edges)
-        h_stor = np.mean([np.histogram(f, edges, weights=w)[0] for f, w, _ in stor], axis=0) / np.diff(edges)
-        proxy[r] = 4 / 3 * (4 * h_stor - h_hub / 4)
-    diff = exact - proxy
-    sem = lambda x: x.std(0, ddof=1) / np.sqrt(samples)
-    return dict(exact=(exact.mean(0), sem(exact)), proxy=(proxy.mean(0), sem(proxy)),
-                difference=(diff.mean(0), sem(diff)), dc=dc.mean(0), edges=edges)
-
-
 def plot_disorder_probe(corners, samples, edges):
     centers = np.sqrt(edges[:-1] * edges[1:])
     fig, axes = plt.subplots(len(corners), 2, figsize=(9, 2.4 * len(corners)), sharex=True, squeeze=False)
     results = {}
     for row, (label, (kerr, rms)) in enumerate(corners.items()):
-        results[label] = res = disorder_probe_spectra(kerr, rms, samples, edges, seed=row)
+        results[label] = res = disorder_proxy_comparison(SETUP, kerr, rms, samples, edges, seed=row)
         ax, ax_ratio = axes[row]
         for name, color in (("exact", "C0"), ("proxy", "C1")):
             mean, err = res[name]

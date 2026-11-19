@@ -50,6 +50,17 @@ Stated in `theory/qsim/central_boson.py` and kept by every module:
   all states with at most N photons (loss and dephasing per mode), for Fock or general starts;
   `sector_correlation` gives the open-system C(t). From guan's `WalkModel`. Used and checked
   against the data in the AGP lab book (`analysis_notebooks/guan/agp/labbook/`).
+- `theory/qsim/agp.py`, 2026-11-19: general operators and the AGP tensor (`operator_weights`,
+  `cross_weights`, `regularized_qgt`, `qgt_directions`), and spectral helpers (`positive_sticks`,
+  `binned_density`, `broadened_spectral_function`, the Gaussian smoothing of arXiv:2308.09745).
+- `theory/qsim/central_boson.py`, 2026-11-19: `disorder_pattern` (iid normal, mean removed, fixed
+  RMS), `disorder_values` (the direction V = sum_s e_s n_s), `operator_form_hamiltonian` (an
+  independent build for checks).
+- `theory/qsim/spectral_ensemble.py` (2026-11-19): spectral functions averaged over disorder
+  patterns (`StarSetup`, `ensemble_spectra`, `zero_disorder_lines`, `positive_totals`,
+  `disorder_proxy_comparison`). Moved from `analysis_notebooks/guan/agp/understanding/spectral_function.py`.
+- Tests of these live in `theory/qsim/tests/` (`pixi run pytest theory/qsim/tests`), apart from
+  `tests/` while that suite is being reworked.
 - `fitting/qsim/agp.py`: `agp_kernel_weights` (exact for piecewise-linear data, optional local
   T1 compensation), `finite_time_agp`, `calibration_error_factors`, `fit_exponential_background`;
   and the raw-shot classifier

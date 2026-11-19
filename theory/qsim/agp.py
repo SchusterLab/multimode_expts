@@ -123,3 +123,88 @@ def spectral_agp(differences_MHz, weights, cutoff_mhz, coupling_mhz):
     filters = squared[None, :] / (squared[None, :] + cutoffs[:, None]**2)**2
     values = coupling_mhz**2 * filters @ np.ravel(weights)
     return values if np.ndim(cutoff_mhz) else float(values[0])
+
+
+# General operators, the AGP tensor and spectral-function helpers (2026-11-19).
+# ``states`` are eigenstates as columns (``np.linalg.eigh``); weights are divided by D, as above.
+
+def energy_differences(energies_MHz):
+    """-> (D, D) array of E_i - E_j."""
+    energies = np.asarray(energies_MHz, dtype=float)
+    return energies[:, None] - energies[None, :]
+
+
+def operator_weights(states, operator):
+    """-> (D, D) weights |<E_i|O|E_j>|^2 / D for any operator matrix O in the basis of ``states``."""
+    states = np.asarray(states)
+    matrix = states.conj().T @ np.asarray(operator) @ states
+    return np.abs(matrix)**2 / len(states)
+
+
+def cross_weights(states, operators):
+    """-> (n, n, D, D) array Re[<E_i|A_a|E_j><E_j|A_b|E_i>] / D for Hermitian operators A_a.
+
+    The diagonal blocks ``[a, a]`` are :func:`operator_weights` of A_a.
+    """
+    states = np.asarray(states)
+    matrices = [states.conj().T @ np.asarray(op) @ states for op in operators]
+    out = np.empty((len(matrices), len(matrices)) + matrices[0].shape)
+    for a, A in enumerate(matrices):
+        for b, B in enumerate(matrices):
+            out[a, b] = np.real(A * B.conj()) / len(states)   # <j|B|i> = conj(B_ij) for Hermitian B
+    return out
+
+
+def regularized_qgt(differences_MHz, cross, cutoff_mhz):
+    """-> (n, n) regularized metric g_ab = sum_ij w^ab_ij Delta_ij^2 / (Delta_ij^2 + mu^2)^2.
+
+    ``cross`` is a :func:`cross_weights` result. With one operator and coupling 1 this is
+    :func:`spectral_agp`. Its diagonal entries are the AGP norms (fidelity susceptibilities)
+    of the directions a.
+    """
+    squared = np.asarray(differences_MHz)**2
+    kernel = squared / (squared + cutoff_mhz**2)**2
+    return np.einsum("abij,ij->ab", np.asarray(cross), kernel)
+
+
+def qgt_directions(qgt):
+    """-> dict(min_value, max_value, min_angle, max_angle) of a 2 x 2 metric.
+
+    Angles in radians, modulo pi, of the unit direction (cos phi, sin phi) in the parameter
+    plane of the two operators; the AGP norm of that direction is the eigenvalue.
+    """
+    values, vectors = np.linalg.eigh(np.asarray(qgt, dtype=float))
+    angles = np.mod(np.arctan2(vectors[1], vectors[0]), np.pi)
+    return dict(min_value=values[0], max_value=values[1], min_angle=angles[0], max_angle=angles[1])
+
+
+def positive_sticks(differences_MHz, weights, tolerance_mhz=1e-9):
+    """-> (frequencies, weights, dc): the sticks at Delta > tolerance, and the weight at |Delta| <= tolerance.
+
+    The spectrum is mirrored, so dc + 2 * weights.sum() is C(0) (the sum rule).
+    """
+    f = np.ravel(differences_MHz)
+    w = np.ravel(weights)
+    keep = f > tolerance_mhz
+    return f[keep], w[keep], float(w[np.abs(f) <= tolerance_mhz].sum())
+
+
+def binned_density(frequencies_MHz, weights, edges_MHz):
+    """-> the stick weight per MHz in each bin of ``edges_MHz``."""
+    edges = np.asarray(edges_MHz, dtype=float)
+    return np.histogram(frequencies_MHz, edges, weights=weights)[0] / np.diff(edges)
+
+
+def broadened_spectral_function(frequencies_MHz, weights, omega_MHz, width_MHz):
+    """-> sum_k w_k G(omega - f_k), with G a normalized Gaussian of standard deviation ``width_MHz``.
+
+    The smoothing of Kim and Polkovnikov (arXiv:2308.09745, Eq. 11). Pass the sticks to include
+    (for their Phi(omega): all pairs i != j, both signs).
+    """
+    f = np.ravel(np.asarray(frequencies_MHz, dtype=float))
+    w = np.ravel(np.asarray(weights, dtype=float))
+    out = np.empty(np.size(omega_MHz))
+    norm = 1 / (width_MHz * np.sqrt(2 * np.pi))
+    for k, omega in enumerate(np.ravel(omega_MHz)):
+        out[k] = norm * np.exp(-0.5 * ((omega - f) / width_MHz)**2) @ w
+    return out.reshape(np.shape(omega_MHz))

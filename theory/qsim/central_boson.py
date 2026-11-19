@@ -92,3 +92,45 @@ def fixed_n_hamiltonian(photon_number, mode_count, detunings, couplings_MHz,
         states=states,
         basis_eigenstate_weights=np.abs(states) ** 2,
     ))
+
+
+def disorder_pattern(rng, count, rms_mhz):
+    """-> ``count`` storage detunings: iid normal, mean removed, scaled to RMS ``rms_mhz``.
+
+    Uniform on the sphere of fixed RMS in the zero-mean plane. ``disorder_pattern(rng, n, 1)``
+    times W is the same draw as ``disorder_pattern(rng, n, W)``.
+    """
+    pattern = rng.normal(size=count)
+    pattern -= pattern.mean()
+    return pattern * rms_mhz / np.sqrt(np.mean(pattern**2))
+
+
+def disorder_values(fock_basis, unit_pattern):
+    """-> the diagonal of V = sum_s e_s n_s (the direction of the disorder) in ``fock_basis``."""
+    return np.asarray(fock_basis, dtype=float)[:, 1:] @ np.asarray(unit_pattern, dtype=float)
+
+
+def operator_form_hamiltonian(photon_number, mode_count, detunings, couplings_MHz, physical_kerr_MHz):
+    """An independent build of the :func:`fixed_n_hamiltonian` matrix, for checks.
+
+    Truncated boson operators (at most ``photon_number`` per mode) on the full space of all modes,
+    H = sum_s -d_s n_s + (K/2) n_0 (n_0 - 1) + sum_s g_s (a_0^+ a_s + h.c.), then restricted to the
+    states with ``photon_number`` photons. The full space has (photon_number + 1)^mode_count states.
+    Returns AttrDict with ``hamiltonian_MHz`` and ``numbers`` (the sector diagonals of n_k, per mode),
+    in the same basis order as :func:`fixed_n_hamiltonian`.
+    """
+    from functools import reduce
+
+    cut = photon_number + 1
+    lower = np.diag(np.sqrt(np.arange(1, cut)), 1)
+    full = [reduce(np.kron, [lower if j == k else np.eye(cut) for j in range(mode_count)])
+            for k in range(mode_count)]
+    number = [a.T @ a for a in full]
+    sector = np.where(np.isclose(sum(n.diagonal() for n in number), photon_number))[0]
+    H = 0.5 * physical_kerr_MHz * number[0] @ (number[0] - np.eye(cut**mode_count))
+    for s, (d, g) in enumerate(zip(detunings, couplings_MHz), start=1):
+        H = H - d * number[s] + g * (full[0].T @ full[s] + full[s].T @ full[0])
+    return AttrDict(dict(
+        hamiltonian_MHz=H[np.ix_(sector, sector)],
+        numbers=[n.diagonal()[sector] for n in number],
+    ))
