@@ -195,16 +195,21 @@ def binned_density(frequencies_MHz, weights, edges_MHz):
     return np.histogram(frequencies_MHz, edges, weights=weights)[0] / np.diff(edges)
 
 
-def broadened_spectral_function(frequencies_MHz, weights, omega_MHz, width_MHz):
+def broadened_spectral_function(frequencies_MHz, weights, omega_MHz, width_MHz, cut=10.0):
     """-> sum_k w_k G(omega - f_k), with G a normalized Gaussian of standard deviation ``width_MHz``.
 
     The smoothing of Kim and Polkovnikov (arXiv:2308.09745, Eq. 11). Pass the sticks to include
-    (for their Phi(omega): all pairs i != j, both signs).
+    (for their Phi(omega): all pairs i != j, both signs). Sticks further than ``cut`` widths from
+    omega are left out (a relative error below exp(-cut^2 / 2)).
     """
     f = np.ravel(np.asarray(frequencies_MHz, dtype=float))
     w = np.ravel(np.asarray(weights, dtype=float))
-    out = np.empty(np.size(omega_MHz))
+    order = np.argsort(f)
+    f, w = f[order], w[order]
+    omega = np.ravel(np.asarray(omega_MHz, dtype=float))
+    lo = np.searchsorted(f, omega - cut * width_MHz)
+    hi = np.searchsorted(f, omega + cut * width_MHz)
     norm = 1 / (width_MHz * np.sqrt(2 * np.pi))
-    for k, omega in enumerate(np.ravel(omega_MHz)):
-        out[k] = norm * np.exp(-0.5 * ((omega - f) / width_MHz)**2) @ w
+    out = np.array([norm * np.exp(-0.5 * ((x - f[a:b]) / width_MHz)**2) @ w[a:b]
+                    for x, a, b in zip(omega, lo, hi)])
     return out.reshape(np.shape(omega_MHz))
