@@ -61,6 +61,21 @@ class MBRRamseyProgram(FloquetProgram):
     issue), and the final half-pi method replaced it (guan, 2026-09-25). Old
     jobs taken in ``'decoder'`` mode still load and analyze; the analysis
     reads the mode from the saved config.
+
+    ``encoder_pad_us`` (default 0) is a wait before the first qubit half-pi.
+    Each Fock state's frame also moves in lab time during the encoder and
+    decoder, at a rate that the per-cycle correction does not remove. When the
+    encoder of i and the decoder of j differ (off-diagonal elements), the
+    decoder of j then starts at a time set by the encoder length L_i, and the
+    element gets a phase like omega_j L_i that no per-state (SPAM) phase can
+    remove (vault ``Lab/guan/HamTomo/2026/11/2026-11-22.md``). Set
+    ``encoder_pad_us = L_max - L_i`` over the occupations of one matrix, so
+    that the Floquet train and the decoder start at the same time for every
+    encoder; the wait is spent with the qubit in g only, the same for all i.
+    After ``body`` the program holds ``encoder_clocks`` (the scheduled tProc
+    clocks of the half-pi and encoder) and ``decoder_start_clocks`` (the
+    scheduled clocks from the start of the shot to the decoder), for planning
+    the pads and for tests.
     """
 
     @staticmethod
@@ -175,6 +190,30 @@ class MBRRamseyProgram(FloquetProgram):
             pulse[3] = (float(pulse[3]) + 180.0) % 360.0
             inverse_pulses.append(pulse)
         return inverse_pulses
+
+    def _scheduled_clocks(self, start_index):
+        """-> the scheduled tProc clocks of ``prog_list[start_index:]``: the sum of its
+        ``synci`` arguments, with each ``loopnz`` followed as the tProc does (as in
+        ``experiments.floquet_instruction_timing.tproc_steps_with_loops_unrolled``)."""
+        instructions = self.prog_list[start_index:]
+        label_index = {instruction["label"]: index
+                       for index, instruction in enumerate(instructions) if "label" in instruction}
+        registers = {}
+        clocks = 0
+        index = 0
+        while index < len(instructions):
+            name, args = instructions[index]["name"], instructions[index]["args"]
+            index += 1
+            if name == "regwi":
+                registers[(args[0], args[1])] = args[2]
+            elif name == "synci":
+                clocks += int(args[0])
+            elif name == "loopnz":
+                page, register, label = args
+                if registers.get((page, register), 0) != 0:
+                    registers[(page, register)] -= 1
+                    index = label_index[label]
+        return clocks
 
     def _add_wait_after_storage_pulses(self, pulses):
         """
@@ -328,14 +367,25 @@ class MBRRamseyProgram(FloquetProgram):
             if pre_relax_delay > 0:
                 self.sync_all(self.us2cycles(pre_relax_delay))
 
+        # Equal start times of the Floquet train and decoder for every encoder
+        # (see the class docstring): wait with the qubit in g.
+        shot_start = len(self.prog_list)
+        pad_us = float(ecfg.get("encoder_pad_us", 0.0))
+        if pad_us < 0.0:
+            raise ValueError(f"encoder_pad_us must be >= 0; got {pad_us}")
+        self.sync_all()
+        if pad_us > 0.0:
+            self.sync_all(self.us2cycles(pad_us))
+
         # (|g,0> + exp(i theta)|e,0>) / sqrt(2) ->
         # (|g,0> + exp(i theta)|g,n>) / sqrt(2)
         prepulse_cfg = [["qubit", "ge", "hpi", ecfg.spectroscopy_prep_phase],] + deepcopy(self.encoder_pulses)
         prepulse_cfg = self._add_wait_after_storage_pulses(prepulse_cfg)
         prepulse = self.get_prepulse_creator(prepulse_cfg)
-        self.sync_all()
+        encoder_start = len(self.prog_list)
         self.custom_pulse(cfg, prepulse.pulse, prefix="floquet_spec_pre_")
         self.sync_all()
+        self.encoder_clocks = self._scheduled_clocks(encoder_start)
 
         # U(t)|n>. The Floquet train tracks its own pulse phases in
         # phase_offsets; the detunings leave their phase in
@@ -362,6 +412,7 @@ class MBRRamseyProgram(FloquetProgram):
         postpulse_cfg = self._add_wait_after_storage_pulses(postpulse_cfg)
         postpulse = self.get_prepulse_creator(postpulse_cfg)
         self.sync_all()
+        self.decoder_start_clocks = self._scheduled_clocks(shot_start)
         self.custom_pulse(
             cfg, postpulse.pulse, prefix="floquet_spec_post_")
         self.sync_all()

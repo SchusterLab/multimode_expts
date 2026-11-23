@@ -302,6 +302,36 @@ def campaign_runner(campaign, station, client, ExptClass, use_queue=True):
                                   use_queue=use_queue, show=False)
 
 
+def encoder_pads_us(station, campaign, occupations):
+    """-> {occupation: encoder_pad_us} that gives every encoder the length of the longest.
+
+    Compiles one zero-cycle diagonal TimeTrace per occupation on the *mock*
+    station (local, not logged) and reads the encoder clocks that
+    ``MBRRamseyProgram.body`` records. Pass the pad of the encoder (initial)
+    occupation as ``encoder_pad_us`` in each job of one matrix or trace set, so
+    the Floquet train and the decoder start at the same time for every
+    encoder (see ``MBRRamseyProgram``). The pads depend on the swap dataset
+    and ``storage_pulse_wait_us``; plan them with the station configs you
+    submit with.
+    """
+    from experiments.qsim.mbr_time_trace import MBRTimeTraceExperiment
+
+    if not station.is_mock:
+        raise RuntimeError("encoder_pads_us compiles on the mock station; "
+                           "call station.use_mock_instruments() first")
+    occupations = [tuple(int(n) for n in occupation) for occupation in occupations]
+    runner = CharacterizationRunner(station=station, ExptClass=MBRTimeTraceExperiment,
+                                    default_expt_cfg=campaign.defaults, show=False)
+    overrides = [MBRTimeTraceExperiment.job_config(occupation, occupation, [0], campaign.modes,
+                                                   sync_cycles=campaign.sync_cycles, reps=1)
+                 for occupation in occupations]
+    jobs = runner.execute(overrides=overrides, batch_size=len(overrides), log=False, show=False)
+    clocks = [int(job.prog.encoder_clocks) for job in jobs]
+    longest = max(clocks)
+    return {occupation: float(jobs[0].prog.cycles2us(longest - count))
+            for occupation, count in zip(occupations, clocks)}
+
+
 def fixed_n_occupations(N, n_modes, descending=True):
     """-> every occupation of ``n_modes`` modes with exactly ``N`` photons, as lists."""
     occupations = [list(state) for state in product(range(N + 1), repeat=n_modes)
