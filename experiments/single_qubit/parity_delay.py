@@ -64,7 +64,8 @@ class ParityDelayProgram(MMAveragerProgram):
             f_ge_reg = self.freq2reg(f_ge, gen_ch=self.qubit_chs[qTest])
             _sigma = self.us2cycles(sigma, gen_ch=self.qubit_chs[qTest])
 
-            theta_2 =180 + cfg.expt.length_placeholder*2*np.pi*cfg.device.manipulate.revival_stark_shift[qTest]*180/np.pi # 180 degrees phase shift for the second half of the parity pulse
+            mode_index = cfg.expt.get('man_mode_no', qTest + 1) - 1
+            theta_2 =180 + cfg.expt.length_placeholder*2*np.pi*cfg.device.manipulate.revival_stark_shift[mode_index]*180/np.pi # 180 degrees phase shift for the second half of the parity pulse
             # define the angle modulo 360
             theta_2 = theta_2 % 360
             print('theta_2:', theta_2)

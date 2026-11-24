@@ -711,7 +711,7 @@ class CavityRamseyGainSweepFitting(RamseyFitting):
         if debug:
             print(f"[analyze] debug=True, track_peaks={track_peaks}, guide_window_frac={guide_window_frac}")
 
-        gain_to_alpha = self.cfg.device.manipulate.gain_to_alpha[0]
+        gain_to_alpha = self.cfg.get('expt', {}).get('gain_to_alpha', self.cfg.device.manipulate.gain_to_alpha[0])
         x = data['xpts'][0]
         y = data['gain_list']
         print('gain_to_alpha', gain_to_alpha)
