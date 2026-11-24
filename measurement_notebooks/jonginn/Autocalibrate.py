@@ -1155,7 +1155,7 @@ for man_mode_no in man_modes:
 #
 
 # %%
-chevron_defaults = AttrDict(dict(
+f0g1_chevron_defaults = AttrDict(dict(
     start=0, # time start in us
     step=0.1, # time step in us
     expts=25, # number of time points
@@ -1199,7 +1199,7 @@ def f0g1_chevron_postproc(station, mother_expt):
     best_freq = chevron_analysis.results.get('best_frequency_contrast')
         
     if best_freq is not None and np.isfinite(best_freq) and best_freq > 0:
-        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_period']['omega'])
+        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_contrast']['omega'])
         gain = expt_cfg.get('gain', station.ds_storage.get_gain(stor_name))
         if not all(np.isfinite(value) and value > 0 for value in (pi_len, gain)):
             raise ValueError(f'{stor_name} chevron requires a positive finite pi length and gain')
@@ -1239,7 +1239,7 @@ def f0g1_chevron_postproc(station, mother_expt):
 runner = SweepRunner(
     station=station,
     ExptClass=meas.LengthRabiGeneralF0g1Experiment,
-    default_expt_cfg=chevron_defaults,
+    default_expt_cfg=f0g1_chevron_defaults,
     sweep_param='freq',
     live_plot=False,
     # preprocessor=my_preproc,
@@ -1326,9 +1326,12 @@ def error_amp_preproc(station,
             expt_cfg.pulse_type = ['multiphoton', expt_cfg.sideband, 'pi', 0]
     expt_cfg.multiphoton_mode = expt_cfg.man_mode_no
     if expt_cfg.start is None:
-        photon_number = int(expt_cfg.sideband[1])
-        pulses = multiphoton_table(station.hardware_cfg, expt_cfg.man_mode_no, num_photon_levels=photon_number + 1)
-        frequency = pulses.pi['fn-gn+1'].frequency[photon_number]
+        if expt_cfg.man_mode_no == 2 and expt_cfg.sideband == 'f0-g1':
+            frequency, _, _ = f0g1_values(station, 2)
+        else:
+            photon_number = int(expt_cfg.sideband[1])
+            pulses = multiphoton_table(station.hardware_cfg, expt_cfg.man_mode_no, num_photon_levels=photon_number + 1)
+            frequency = pulses.pi['fn-gn+1'].frequency[photon_number]
         expt_cfg.start = frequency - span / 2
     return expt_cfg
 
@@ -1421,9 +1424,20 @@ lenrabi_f0g1_defaults = AttrDict(dict(
     relax_delay=5000,
 ))
 
-def lenrabi_f0g1_preproc(station, default_expt_cfg, man_mode_no=1, **kwargs):
+def lenrabi_f0g1_preproc(station, default_expt_cfg, man_mode_no=1, chevron=None, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.man_mode_no = man_mode_no  # Store for postprocessor
+    if man_mode_no == 2:
+        # Repeat the chevron's time sweep at the latest calibrated frequency.
+        settings = chevron.cfg.expt if chevron is not None else f0g1_chevron_defaults
+        for field in ('start', 'step', 'expts', 'reps', 'rounds', 'pi_ge_before', 'pi_ef_before', 'pi_ge_after'):
+            expt_cfg[field] = settings[field]
+        if chevron is None:
+            expt_cfg.gain = station.ds_storage.get_gain('M2')
+            expt_cfg.relax_delay = station.hardware_cfg.device.readout.relax_delay[0]
+        else:
+            expt_cfg.gain = settings.gain
+            expt_cfg.relax_delay = settings.get('relax_delay', chevron.cfg.device.readout.relax_delay[0])
     expt_cfg.update(kwargs)
     
     # Compute start and freq from soc and ds_storage if not provided
@@ -1458,7 +1472,13 @@ def lenrabi_f0g1_postproc(station, expt):
     # Get analysis results from the LengthRabiFitting object stored in expt
     if hasattr(expt, '_length_rabi_analysis'):
         analysis = expt._length_rabi_analysis
-        pi_length = analysis.results['pi_length']
+        pi_length = analysis.results.get('pi_length')
+        if man_mode_no == 2:
+            from experiments.autocal._checks import rabi
+            ok, info = rabi(expt.data['xpts'], expt.data['avgi'], analysis.results.get('fit_avgi'), pi_length)
+            if not ok:
+                print(f"M2 length Rabi not saved: {info['reason']}")
+                return
         pi2_length = analysis.results['pi2_length']
         gain = expt.cfg.expt.gain
         freq = expt.cfg.expt.freq
@@ -1506,11 +1526,16 @@ len_rabis_mans = {}
 for man_mode_no in man_modes:
     if expts_to_run['length_rabi'] or expts_to_run['length_rabi_sweep']:
         print(f'Running length rabi for M{man_mode_no}')
+        chevron = None
+        if man_mode_no == 2:
+            if expts_to_run['man_freq_fine_chevron']:
+                chevron = f0g1_chevron_fine.get(man_mode_no)
+            if chevron is None and expts_to_run['man_freq_coarse_chevron']:
+                chevron = f0g1_chevron_coarse.get(man_mode_no)
         len_rabis_mans[man_mode_no] = lenrabi_f0g1_runner.execute(
             man_mode_no=man_mode_no,
-            gain=lenrabi_f0g1_defaults.gain if man_mode_no == 1 else station.ds_storage.get_gain(f'M{man_mode_no}'),
+            chevron=chevron,
             go_kwargs=dict(progress=True),
-            step=0.01,
         )
         len_rabis_mans[man_mode_no].display()
 
@@ -2428,7 +2453,7 @@ if expts_to_run.get('dump_chevron', False):
             pi_len_sweep=60.0,#100.0,
             expts=20,
             reps=100,
-            gain=6000,
+            gain=6000 if man_mode_no == 1 else station.ds_storage.get_gain(dump_name),
             # coupler_current=coupler_current,
             batch=True,
         )
@@ -2508,10 +2533,12 @@ def sideband_chevron_postproc(station, mother_expt):
     best_freq = chevron_analysis.results.get('best_frequency_contrast')
         
     if best_freq and not expt_cfg.get("skip_update", False):
+        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_contrast']['omega'])
+        if not all(np.isfinite(value) and value > 0 for value in (best_freq, pi_len, expt_cfg.flux_drive[2])):
+            raise ValueError(f'{stor_name} chevron requires a positive finite frequency, pi length, and gain')
         print(f"Best frequency found: {best_freq:.4f} MHz")
         station.ds_storage.update_freq(stor_name, best_freq)
         print(f"Updated {stor_name} frequency to {best_freq:.4f} MHz")
-        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_period']['omega'])
         station.ds_storage.update_pi(stor_name, pi_len)
         print('Updated the pi length to:', pi_len)
         station.ds_storage.update_h_pi(stor_name, pi_len / 2)
@@ -2652,13 +2679,18 @@ def error_amp_stor_preproc(station, default_expt_cfg, **kwargs):
 def error_amp_stor_postproc(station, expt):
     expt.analyze(data=expt.data, state_fin='e')
 
-    opt_gain = expt.data['fit_avgi'][2]
     cfg = expt.cfg.expt
     stor_name = f'M{cfg.man_mode_no}-S{cfg.stor_mode_no}'
-    if expt.cfg.expt.parameter_to_test == 'gain':
-        station.ds_storage.update_gain(stor_name, opt_gain)
-    elif expt.cfg.expt.parameter_to_test == 'frequency':
-        station.ds_storage.update_freq(stor_name, opt_gain)
+    fit = expt.data.get('fit_avgi')
+    center = fit[2] if fit is not None else np.nan
+    x_pts = expt.data['x_pts']
+    if not (np.isfinite(center) and center > 0 and len(x_pts) and np.min(x_pts) <= center <= np.max(x_pts)):
+        print(f'{stor_name} {cfg.parameter_to_test} not saved: no positive fitted center inside the sweep')
+        return
+    if cfg.parameter_to_test == 'gain':
+        station.ds_storage.update_gain(stor_name, center)
+    elif cfg.parameter_to_test == 'frequency':
+        station.ds_storage.update_freq(stor_name, center)
     station.snapshot_man1_storage_swap(update_main=False)
 
 

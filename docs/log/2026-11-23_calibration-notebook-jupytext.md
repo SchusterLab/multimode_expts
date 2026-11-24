@@ -50,3 +50,19 @@ pixi environment was used because pixi 0.63 cannot read the version 7 lock file.
 Jonginn chose to keep the current lookup and estimation behavior. Four private
 functions in `MM_base.py` now handle photon coordinates, the M2 vacuum swap,
 saved values for one pulse field, and estimates for missing values.
+
+Jonginn requested a review of both notebooks after the manual M2 vacuum length
+Rabi ran at a different gain from its fine chevron. Both notebooks now reuse
+the selected M2 chevron's gain, time grid, averaging, preparation, readout
+mapping and relaxation delay. The frequency comes from the current M2 row.
+Without a chevron they use the stored M2 gain and a short time sweep. A failed
+M2 Rabi fit leaves the station settings intact. Explicit runner overrides still
+take precedence.
+
+Manipulate and storage chevrons now take the saved pi length from the fit at
+the selected frequency. M2 dump chevrons read the selected dump row's gain.
+The manual parity Stark check uses the fast pulse that applies the correction,
+and the storage amplitude sweep reads the gain span supplied for that run.
+Storage error amplification skips a write if its fitted center is missing or
+outside the measured sweep. Offline checks covered separate and combined mode
+selection, explicit overrides, accepted and rejected fits, and QICK compilation.
