@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.6
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Multimode (local)
 #     language: python
@@ -58,10 +58,10 @@ user = 'Jonginn'
 print(f"Welcome {user}!")
 
 # %%
-config_dict = {'hardware_config': 'CFG-HW-20261120-00001',
+config_dict = {'hardware_config': 'CFG-HW-20261123-00028',
  'multiphoton_config': 'CFG-MP-20260121-00001',
- 'man1_storage_swap': 'CFG-M1-20261119-00011',
- 'floquet_storage_swap': 'CFG-FL-20261119-00022'}
+ 'man1_storage_swap': 'CFG-M1-20261124-00032',
+ 'floquet_storage_swap': 'CFG-FL-20261120-00001'}
 
 # Initialize station to retrieve soc and configs
 station = MultimodeStation(
@@ -107,7 +107,6 @@ expts_to_run = {# readout
                 't2_ef': True,
                 'amplitude_ef': True,
                 't1_ef': True,
-
                 # manipulate 
                 'man_modes': [2], # [2] for M2, [1, 2] for both
                 'pulse_probe_f0g1': True,
@@ -115,13 +114,13 @@ expts_to_run = {# readout
                 'length_rabi':False, # this will run automatically if the length_rabi_sweep is set to True
                 'chi_ge': True, 
                 'chi_ef': True,
-                'man_parity_spectroscopy': False,
-                'man_gain_to_alpha': False,
-                'man_self_kerr': False,
+                'man_parity_spectroscopy': True,
+                'man_gain_to_alpha': True,
+                'man_self_kerr': True,
                 'RB': False,
 
                 #storage
-                'stor_modes': [1,2,3,4,5,6,7], # [1,2, .., 7] if also want to run  all modes 
+                'stor_modes': [2, 3, 4], # [1,2, .., 7] if also want to run  all modes 
                 # 'stor_modes': [3, 4, 5], # [1,2, .., 7] if also want to run  all modes 
                 'stor_spectroscopy': True,
                 'sideband_freq_sweep': True,
@@ -1731,8 +1730,8 @@ lenrabi_f0g1_defaults = AttrDict(dict(
     start=None,  # Will be computed in preprocessor (soc.cycles2us(3))
     step=0.01,
     qubits=[0],
-    expts=150,
-    reps=100,
+    expts=500,
+    reps=500,
     rounds=1,
     gain=8000,
     freq=None,  # Will be set from ds_storage in preprocessor
@@ -2301,6 +2300,9 @@ station.update_all_station_snapshots()
 # The self-Kerr sequence uses the selected mode's cavity drive frequency and
 # displacement calibration. Enable the three stages above to refresh all of them.
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+station.hardware_cfg.device.manipulate.f_ge
+
 # %%
 from fitting.fit_display_classes import Spectroscopy
 
@@ -2389,6 +2391,10 @@ if expts_to_run['man_gain_to_alpha']:
             display_kwargs=dict(fit=False),
         )
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+for _, man_gain_to_alpha_expt in man_gain_to_alpha.items():
+    man_gain_to_alpha_expt.analyze(scale = True, plot = True)
+
 # %% [markdown]
 # ## Self-Kerr from cavity Ramsey versus gain
 #
@@ -2403,7 +2409,7 @@ man_self_kerr_runner = CharacterizationRunner(
     station=station,
     ExptClass=CavityRamseyGainSweepExperiment,
     default_expt_cfg=AttrDict(dict(
-        start=0.01, step=0.02, expts=150, ramsey_freq=4, reps=100, rounds=1,
+        start=0.01, step=0.02, expts=150, ramsey_freq=2, reps=100, rounds=1,
         qubits=[0], checkEF=False, f0g1_cavity=0, init_gf=False, active_reset=True,
         man_reset=True, storage_reset=False, parity_meas=True, parity_fast=False,
         storage_ramsey=[False, 1, True], coupler_ramsey=False, echoes=[False, 0],
@@ -2413,7 +2419,7 @@ man_self_kerr_runner = CharacterizationRunner(
     job_client=client,
 )
 
-self_kerr_gains = {1: (1000, 4000, 500), 2: (1000, 4000, 500)}  # start, stop, step
+self_kerr_gains = {1: (1000, 4000, 500), 2: (500, 2000, 200)}  # start, stop, step
 self_kerr_fit_indices = {}  # Optional mode-to-index-list overrides for the g-state traces.
 # The legacy dump reset targets M1. For M2 use qubit reset and a longer wait.
 man_self_kerr = {}
@@ -2435,7 +2441,7 @@ if expts_to_run['man_self_kerr']:
             reset_dump_mode=dump, man_reset=mode == 1,
             relax_delay=200 if mode == 1 else 2500,
             go_kwargs=dict(analyze=False, display=False),
-            show=False, log=False,
+            show=False, log=True,
         )
         man_self_kerr[mode] = result
         result.data = result.analyze(track_peaks=True, fit_indices_g=self_kerr_fit_indices.get(mode))
@@ -2447,6 +2453,13 @@ if expts_to_run['man_self_kerr']:
         manipulate.kerr[index] = float(kerr)
         station.snapshot_hardware_config(update_main=False)
         print(f'M{mode} self-Kerr: {kerr * 1e3:.3f} kHz')
+
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+man_self_kerr[2].analyze(track_peaks=True, 
+                            fit_indices_g=[0,1, 2, 3, 4, 5],
+                            # fit_indices_e=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                             debug=False)
+man_self_kerr[2].display(save_fig=False)
 
 # %% [markdown]
 # ## Multiphoton calibration
@@ -2466,8 +2479,8 @@ from experiments.autocal import _checks as fit_checks
 from experiments.autocal._util import fit_line, plot_fit
 from fitting.fitting import lorfunc
 
-initial_m1_photon_number = None  # 0–9 photons in M1
-initial_m2_photon_number = None  # 0–9 photons in M2
+initial_m1_photon_number = 0  # 0–9 photons in M1
+initial_m2_photon_number = 0  # 0–9 photons in M2
 save_multiphoton_fits = True
 multiphoton_swap_modes = [mode for mode in man_modes if mode == 2 or initial_m2_photon_number in (None, 0)]
 multiphoton_qubit_modes = multiphoton_swap_modes[:1]  # The qubit transitions are shared.
@@ -2750,8 +2763,8 @@ stor_spec_runner = CharacterizationRunner(
 
 # %%
 # Execute for all storage modes
-storage_spec_gain = {(1, 1): 6000}
-save_storage_spec = False
+storage_spec_gain = {(2, 1): None} #(man_no, stor_no)
+save_storage_spec = True
 if expts_to_run.get('stor_spectroscopy', False):
     stor_specs = {}
     # for stor_mode_no in range(1, 8):  # modes 1-7
@@ -2893,7 +2906,7 @@ if expts_to_run.get('dump_spectroscopy', True):
             # step=0.05,  # bw/expts = 100/200
             # span=30.0,
             # expts=600,
-            span=40, #originally 20
+            span=10, #originally 20
             expts=200,
             # reps=300,
             # center_freq = 2265,
@@ -3119,9 +3132,9 @@ for expt in dump_chevron.values():
     dump_sideband_chevron_postproc(station, expt)
 
 # %%
-if 1 in man_modes:  # M1-only hand-tuned dump check
-    station.ds_storage.update_pi('M1-D2', 40)
-    station.ds_storage.update_h_pi('M1-D2', 20)
+# if 1 in man_modes:  # M1-only hand-tuned dump check
+# station.ds_storage.update_pi('M2-D2', 40)
+# station.ds_storage.update_h_pi('M2-D2', 20)
 
 # %%
 station.update_all_station_snapshots()
@@ -4268,8 +4281,9 @@ n_step_list_gain = [None, None, None, None,    2,    2,    2]
 do_freq_erroramp = True
 do_gain_erroramp = True
 
-stors_to_run_erramp = [1]
-
+stors_to_run_erramp = [7]
+relax_delay = 200
+active_reset=True
 dump_mode_no = 2
 
 for mode in man_modes:
@@ -4301,10 +4315,10 @@ for mode in man_modes:
                 expts=100,
                 n_step = n_step_freq,
                 n_pulses = n_pulses_freq,
-                active_reset=mode == 1,
+                active_reset=active_reset,
                 man_reset=True,
                 storage_reset=[stor_i],
-                relax_delay = 200,
+                relax_delay = relax_delay,
                 reset_dump_mode=reset_dump_modes[mode]
             )
             if not station.log_measurements:
@@ -4317,18 +4331,21 @@ for mode in man_modes:
                 span = int(station.ds_storage.get_gain(stor_name) * prefactor),
                 n_step = n_step_gain,
                 n_pulses=n_pulses_gain,
-                active_reset=mode == 1,
+                active_reset=active_reset,
                 man_reset=True,
                 storage_reset=[stor_i],
-                relax_delay = 200,
+                relax_delay = relax_delay,
                 reset_dump_mode=reset_dump_modes[mode]
             )
             if not station.log_measurements:
                 error_amp_gain1[mode, stor_i].display()
 
 
+# %% jupyterlab_notify.notify={"mode": "default", "defaultThreshold": "30s"}
+# station.ds_storage.df
+
 # %%
-station.ds_storage.df
+# station.ds_storage.update_gain('M2-S7', 13000)
 
 # %%
 station.update_all_station_snapshots()
