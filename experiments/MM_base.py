@@ -17,6 +17,207 @@ logger = logging.getLogger("qick.qick_asm")
 logger.setLevel(logging.ERROR)
 
 
+def _joint_operation(mode, 
+                     transition):
+    """Name converter, basically.
+    changing gn-en to ge and en-fn to ef is actually redundant, 
+    but left so to use AttrDict
+    """
+    
+    return {'gn-en': 'ge', 
+            'en-fn': 'ef', 
+            'fn-gn+1': f'M{mode}'}[transition] 
+
+
+def multiphoton_slot(cfg, 
+                     mode, 
+                     pulse, 
+                     transition, 
+                     field, 
+                     m1_photons=0, 
+                     m2_photons=0):
+    """Locate one pulse setting for writing at its initial (M1, M2) photon numbers."""
+    if any(not isinstance(count, (int, np.integer)) or count < 0 for count in (m1_photons, m2_photons)):
+        raise ValueError(f"Photon numbers must be nonnegative integers, got ({m1_photons}, {m2_photons})")
+    operation = _joint_operation(mode, transition)
+    if m2_photons == 0 and operation != 'M2':
+        values = cfg.device.multiphoton[pulse][transition][field]
+        values.extend([None] * (m1_photons + 1 - len(values)))
+        return values, m1_photons
+
+    joint = cfg.device.setdefault('multiphoton_joint', AttrDict())
+    fields = joint.setdefault(operation, AttrDict()).setdefault(pulse, AttrDict())
+    values = fields.setdefault(field, AttrDict())
+    key = f'{m1_photons},{m2_photons}'
+    values.setdefault(key, None)
+    return values, key
+
+def _multiphoton_table_coordinates(joint_table, 
+                                   mode, 
+                                   other_mode_photon_number, 
+                                   table_length):
+    """Return the (M1, M2) photon pair for each list index in multiphoton_table.
+
+    All fields in the rebuilt table share one list length. Scan the keys from
+    every field to find the highest saved index with the other mode fixed at
+    other_mode_photon_number. Keep at least table_length entries.
+
+    For example, with mode=2 and M1 fixed at 2, a gain key of '2,6' means
+    every field needs at least seven entries. The returned list starts with
+    (2, 0), (2, 1), ..., (2, 6), in that order, including unsaved points.
+    The caller uses each pair to look up the value for that list index.
+    """
+    saved_keys = set()
+    for operation_pulses in joint_table.values():
+        for pulse_fields in operation_pulses.values():
+            for values_by_photon_pair in pulse_fields.values():
+                saved_keys.update(values_by_photon_pair)
+
+    for key in saved_keys:
+        m1_photons, m2_photons = map(int, key.split(','))
+        if mode == 1:
+            if m2_photons == other_mode_photon_number:
+                table_length = max(table_length, m1_photons + 1)
+        elif m1_photons == other_mode_photon_number:
+            table_length = max(table_length, m2_photons + 1)
+
+    if mode == 1:
+        return [(m1_photons, other_mode_photon_number) for m1_photons in range(table_length)]
+    return [(other_mode_photon_number, m2_photons) for m2_photons in range(table_length)]
+
+def multiphoton_table(cfg, 
+                      mode=1, 
+                      *, 
+                      other_mode_photon_number=0, 
+                      resolve=True, 
+                      num_photon_levels=4,
+                      allow_scan_estimates=True):
+    """Return an AttrDict of pulse settings. table[pulse][transition][field]
+    is a list indexed by the initial photon number in the selected mode.
+
+    For example, after table = multiphoton_table(cfg, mode=2, other_mode_photon_number=2),
+    table.pi['fn-gn+1'].frequency is the list of M2 sideband frequencies with
+    two photons in M1. Its entry at index 1 is the frequency of the pi pulse
+    for |f, 2, 1> to |g, 2, 2>, with states in (qubit, M1, M2) order.
+
+    num_photon_levels requests a minimum list length. resolve=False returns
+    saved values only. allow_scan_estimates=False disables estimates for qubit
+    frequency/gain and swap frequency/length.
+    """
+    m1_table = cfg.device.multiphoton
+    table_length = num_photon_levels
+    can_return_m1_table = mode == 1 and other_mode_photon_number == 0
+    for transitions in m1_table.values():
+        for fields in transitions.values():
+            for values in fields.values():
+                table_length = max(table_length, len(values))
+                if len(values) < num_photon_levels:
+                    can_return_m1_table = False
+                if can_return_m1_table and resolve:
+                    if None in values[:num_photon_levels]:
+                        can_return_m1_table = False
+    if can_return_m1_table:
+        return m1_table
+
+    joint_table = cfg.device.get('multiphoton_joint', {})
+    coordinates = _multiphoton_table_coordinates(joint_table, 
+                                                 mode, 
+                                                 other_mode_photon_number, 
+                                                 table_length)
+    m2_vacuum_settings = _m2_vacuum_swap_settings(cfg) if resolve and mode == 2 else {}
+
+    table = AttrDict()
+    for pulse, transitions in m1_table.items():
+        table[pulse] = AttrDict()
+        for transition, m1_fields in transitions.items():
+            table[pulse][transition] = AttrDict()
+            operation = _joint_operation(mode, transition)
+            joint_fields = joint_table.get(operation, {}).get(pulse, {})
+            calibrated_fields = ('frequency', 'length') if transition == 'fn-gn+1' else ('frequency', 'gain')
+            for field, m1_values in m1_fields.items():
+                saved = _saved_multiphoton_field(operation, m1_values, joint_fields.get(field, {}))
+                if operation == 'M2' and field in m2_vacuum_settings:
+                    saved.setdefault((0, 0), m2_vacuum_settings[field])
+
+                can_estimate = resolve and (allow_scan_estimates or field not in calibrated_fields)
+                values = []
+                for m1_photons, m2_photons in coordinates:
+                    value = saved.get((m1_photons, m2_photons))
+                    if value is None and can_estimate:
+                        value = _estimate_multiphoton_field(operation, field, saved, m1_photons, m2_photons)
+                    values.append(value)
+                table[pulse][transition][field] = values
+    return table
+
+def _m2_vacuum_swap_settings(cfg):
+    """Read M2 f0-g1 settings from the storage dataset and the configured pulse ramp."""
+    settings = dict(type='flat_top', sigma=cfg.device.get('manipulate', {}).get('ramp_sigma'))
+    dataset = cfg.device.get('storage', {}).get('_ds_storage')
+    if dataset is not None and dataset.has_row('M2'):
+        for field, column in [('frequency', 'freq (MHz)'), ('gain', 'gain (DAC units)'), ('length', 'pi (mus)')]:
+            value = dataset.get_value('M2', column)
+            if value is not None and np.isfinite(value) and value > 0:
+                settings[field] = int(value) if field == 'gain' else float(value)
+    return settings
+
+
+def _saved_multiphoton_field(operation, m1_values, joint_values):
+    """Collect one pulse field by (M1, M2). At M2=0, ge, ef and M1 swap use the M1 list."""
+    saved = {}
+    for key, value in joint_values.items():
+        m1_photons, m2_photons = map(int, key.split(','))
+        if value is not None and (m2_photons != 0 or operation == 'M2'):
+            saved[(m1_photons, m2_photons)] = value
+
+    if operation != 'M2':
+        for m1_photons, value in enumerate(m1_values):
+            if value is not None:
+                saved[(m1_photons, 0)] = value
+    return saved
+
+
+def _estimate_multiphoton_field(operation, field, saved, m1_photons, m2_photons):
+    """Estimate a missing field using the nearest lower or equal photon count on each axis."""
+    m1_axis_value = None
+    for m1_index in range(m1_photons, -1, -1):
+        if (m1_index, 0) in saved:
+            m1_axis_value = saved[(m1_index, 0)]
+            break
+    if operation == 'M1':
+        return m1_axis_value
+
+    m2_axis_value = None
+    for m2_index in range(m2_photons, -1, -1):
+        if (0, m2_index) in saved:
+            m2_axis_value = saved[(0, m2_index)]
+            break
+    if operation == 'M2':
+        return m2_axis_value
+
+    # For qubit frequencies, add the two shifts relative to vacuum.
+    if field == 'frequency' and m1_axis_value is not None and m2_axis_value is not None and (0, 0) in saved:
+        return m1_axis_value + m2_axis_value - saved[(0, 0)]
+    if m1_photons and m1_axis_value is not None:
+        return m1_axis_value
+    return m2_axis_value
+
+
+def multiphoton_prep(cfg, m1_photons, m2_photons):
+    """Prepare all M1 photons first, then add the M2 photons."""
+    m2_swap = cfg.device.get('multiphoton_joint', {}).get('M2', {}).get('pi', {})
+    pulses = []
+    for drive_mode, count, other_photons in ((1, m1_photons, 0), (2, m2_photons, m1_photons)):
+        for n in range(count):
+            if drive_mode == 2 and m1_photons:
+                key = f'{m1_photons},{n}'
+                if m2_swap.get('frequency', {}).get(key) is None or m2_swap.get('length', {}).get(key) is None:
+                    raise ValueError(f'Preparing ({m1_photons}, {m2_photons}) requires the M2 swap '
+                                     f'frequency and pi length at ({m1_photons}, {n}).')
+            for transition in (f'g{n}-e{n}', f'e{n}-f{n}', f'f{n}-g{n + 1}'):
+                pulses.append(['multiphoton', transition, 'pi', 0, drive_mode, other_photons])
+    return pulses
+
+
 def print_debug():
     import inspect
     print(inspect.getfile(QickProgram))
@@ -226,6 +427,13 @@ class MM_base:
 
     def prep_man_photon(self, photon_no):
         ''' prepare a photon in the manipulate mode '''
+
+        expt = self.cfg.get('expt', {})
+        other_mode_photon_number = expt.get('multiphoton_other_mode_photon_number', 0)
+        if other_mode_photon_number:
+            if expt.get('multiphoton_mode', 1) == 2:
+                return multiphoton_prep(self.cfg, other_mode_photon_number, photon_no)
+            return multiphoton_prep(self.cfg, photon_no, other_mode_photon_number)
 
         pulse_seq = []
         for i in range(photon_no):
@@ -2042,8 +2250,10 @@ class MM_base:
             return []
 
         qubit_ef = [['qubit', 'ef', 'pi', 0]]
-        man_pi = [['man', 'M1', 'pi', 0]]
-        storage_pi = [['storage', f'M1-S{mode_no}', 'pi', 0]]
+        # Storage preparation and parity readout may use different modes.
+        man = self.cfg.get('expt', {}).get('storage_man_mode', 1)
+        man_pi = [['man', f'M{man}', 'pi', 0]]
+        storage_pi = [['storage', f'M{man}-S{mode_no}', 'pi', 0]]
 
         pulse_str = []
         if state == '1':
@@ -2096,6 +2306,10 @@ class MM_base:
         if fock_spec == 0:
             return []
 
+        expt = getattr(self, 'cfg', {}).get('expt', {})
+        explicit_mode = (man_no == 2 or expt.get('multiphoton_mode', 1) != 1
+                         or expt.get('multiphoton_other_mode_photon_number', 0) != 0)
+
         # Single Fock state |n>
         if isinstance(fock_spec, int):
             pulse_seq = []
@@ -2103,7 +2317,7 @@ class MM_base:
                 pulse_seq += [['multiphoton', f'g{i}-e{i}', 'pi', 0]]
                 pulse_seq += [['multiphoton', f'e{i}-f{i}', 'pi', 0]]
                 pulse_seq += [['multiphoton', f'f{i}-g{i + 1}', 'pi', 0]]
-            return pulse_seq
+            return [pulse + [man_no] for pulse in pulse_seq] if explicit_mode else pulse_seq
 
         # Superposition |n> + e^(i*phase)|m>
         state_1, state_2 = fock_spec
@@ -2134,7 +2348,7 @@ class MM_base:
                 ]
             shelving += 1
 
-        return pulse_seq
+        return [pulse + [man_no] for pulse in pulse_seq] if explicit_mode else pulse_seq
 
     def get_parity_str(self, man_mode_no=1, return_pulse=False, second_phase = 0, fast = False):
         '''
@@ -2590,27 +2804,29 @@ class prepulse_creator2:
 
 
     def multiphoton(self, pulse_param):
-        ''' pulse name comes from yaml file '''
-        transition_name, pulse_name, phase = pulse_param
-        # frequency
-        # pulse_full_name = pulse_name + '_' + transition_name
-        # cfg = self.multiphoton_cfg
-
-        # qubit_pulse = np.array([[cfg.pulses[pulse_full_name]['frequency']],
-        #             [cfg.pulses[pulse_full_name]['gain']],
-        #             [cfg.pulses[pulse_full_name]['length']],
-        #             [phase],
-        #             [self.channel_assign(transition_name)],
-        #             [cfg.pulses[pulse_full_name]['type']],
-        #             [cfg.pulses[pulse_full_name]['sigma']]], dtype = object)
-        # self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
-
-        cfg = self.cfg
+        """An explicit mode on a pulse defaults its other mode to vacuum."""
+        transition_name, pulse_name, phase, *mode_settings = pulse_param
+        expt = self.cfg.get('expt', {})
+        if not mode_settings:
+            mode_settings = [expt.get('multiphoton_mode', 1), expt.get('multiphoton_other_mode_photon_number', 0)]
+        elif len(mode_settings) == 1:
+            mode_settings.append(0)
+        mode, other_mode_photon_number = mode_settings
+        if mode == 1 and other_mode_photon_number == 0:
+            state_end = transition_name[3]
+            photon_number = int(transition_name[1])
+            table = self.cfg.device.multiphoton
+        else:
+            initial, final = transition_name.split('-')
+            state_end = final[0]
+            photon_number = int(initial[1:])
+            scan_target = (expt.get('parameter_to_test') in ('frequency', 'gain')
+                           and expt.get('pulse_type') == ['multiphoton', *pulse_param])
+            table = multiphoton_table(self.cfg, mode, other_mode_photon_number=other_mode_photon_number,
+                                      num_photon_levels=photon_number + 1, allow_scan_estimates=scan_target)
 
         state_start = transition_name[0]
-        state_end = transition_name[3]
-        photon_no_start = int(transition_name[1])
-        if state_start =='g':
+        if state_start == 'g':
             assert state_end == 'e', "transition name should be gn-en"
             transition = 'gn-en'
         elif state_start == 'e':
@@ -2619,22 +2835,14 @@ class prepulse_creator2:
         elif state_start == 'f':
             assert state_end == 'g', "transition name should be fn-gn+1"
             transition = 'fn-gn+1'
-            # if photon_no_start == 0:
-            #     pulse_param = ('M1', pulse_name, phase)
-            #     return self.man(pulse_param)
-
-
-        qubit_pulse = np.array([[cfg.device.multiphoton[pulse_name][transition]['frequency'][photon_no_start]],
-                               [cfg.device.multiphoton[pulse_name][transition]['gain'][photon_no_start]],
-                               [cfg.device.multiphoton[pulse_name][transition]['length'][photon_no_start]],
-                               [phase],
-                               [self.channel_assign(transition_name)],
-                               [cfg.device.multiphoton[pulse_name][transition]['type'][photon_no_start]],
-                               [cfg.device.multiphoton[pulse_name][transition]['sigma'][photon_no_start]]], dtype = object)
-
-
-        self.pulse = np.concatenate((self.pulse, qubit_pulse), axis=1)
-        return None
+        settings = table[pulse_name][transition]
+        pulse = {field: settings[field][photon_number] for field in ('frequency', 'gain', 'length', 'type', 'sigma')}
+        if (mode == 2 or other_mode_photon_number) and None in pulse.values():
+            missing = next(field for field, value in pulse.items() if value is None)
+            raise ValueError(f'Missing {missing} for M{mode} {pulse_name} {transition_name} '
+                             f'with {other_mode_photon_number} photons in M{3 - mode}')
+        self.append(np.array([[pulse['frequency']], [pulse['gain']], [pulse['length']], [phase],
+                              [self.channel_assign(transition_name)], [pulse['type']], [pulse['sigma']]], dtype=object))
 
 
     def optimal_control(self, pulse_param):
@@ -2737,6 +2945,17 @@ class prepulse_creator2:
         # while prep_man_photon and prep_man_fock exist
         # so only keeping this for backwards compatibility and single source of truth reasons
         cav_name, pulse_name, phase = pulse_param
+        if cav_name == 'M2':
+            get_length = {'pi': self.dataset.get_pi, 'hpi': self.dataset.get_h_pi}[pulse_name]
+            length = get_length(cav_name)
+            freq = self.dataset.get_freq(cav_name)
+            gain = self.dataset.get_gain(cav_name)
+            if not all(np.isfinite(value) and value > 0 for value in (freq, gain, length)):
+                raise ValueError(f'M2 {pulse_name} requires positive sideband frequency, gain, and length')
+            self.append(np.array([[freq], [gain], [length], [phase], [self.channel_assign('f0-g1')],
+                                  ['flat_top'], [self.cfg.device.manipulate.ramp_sigma]], dtype=object))
+            return
+
         assert cav_name == 'M1', f"prepulse_creator2.man can only handle pulse name M1 now, but got {cav_name}"
         mp_f0g1 = self.cfg.device.multiphoton.pi['fn-gn+1']
 
