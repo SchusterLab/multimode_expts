@@ -25,8 +25,10 @@ import matplotlib.pyplot as plt
 from tqdm.notebook import tqdm
 import qutip as qt
 from copy import deepcopy
+from itertools import product
 
 import experiments as meas
+from experiments.MM_base import multiphoton_slot, multiphoton_table
 from experiments.MM_dual_rail_base import MM_dual_rail_base
 from fitting.fit_display_classes import GeneralFitting
 from fitting.wigner import WignerAnalysis
@@ -118,7 +120,7 @@ expts_to_run = {# readout
                 'ef_gain_error_amplification': False,
                 
                 # manipulate 
-                'man_modes': [1], # [1,2] if also want to run mode 2
+                'man_modes': [1], # [2] for M2, [1, 2] for both
                 'pulse_probe_f0g1': False,
                 'man_freq_coarse_chevron': False,
                 'man_freq_fine_chevron': False,
@@ -174,6 +176,10 @@ expts_to_run = {# readout
                 'sideband_pulse_probe_spectroscopy_multiphoton' : False,
                 'sideband_quick_chevron_and_length_rabi_multiphoton': False,
                 }
+
+man_modes = tuple(expts_to_run['man_modes'])
+if any(mode not in (1, 2) for mode in man_modes):
+    raise ValueError("man_modes supports M1 and M2")
 
 # %% [markdown]
 # # Qubit characterization
@@ -1031,6 +1037,42 @@ if expts_to_run['t1_ef']:
 # %% [markdown]
 # # Manipulate
 
+# %%
+if man_modes:  # Both ladders start from the same vacuum qubit transitions.
+    mp = station.hardware_cfg.device.multiphoton
+    q = station.hardware_cfg.device.qubit
+    mp.pi['gn-en'].frequency[0] = q.f_ge[0]
+    mp.pi['gn-en'].gain[0] = q.pulses.pi_ge.gain[0]
+    mp.pi['en-fn'].frequency[0] = q.f_ef[0]
+    mp.pi['en-fn'].gain[0] = q.pulses.pi_ef.gain[0]
+
+
+def f0g1_values(station, mode):
+    if mode == 1:
+        pulse = station.hardware_cfg.device.multiphoton.pi['fn-gn+1']
+        return pulse.frequency[0], pulse.gain[0], pulse.length[0]
+    row = f'M{mode}'
+    ds = station.ds_storage
+    return ds.get_freq(row), ds.get_gain(row), ds.get_pi(row)
+
+
+def man_photon_pulses(station, mode):
+    base = MM_dual_rail_base(station.hardware_cfg, station.soccfg)
+    if mode == 1:
+        prep = base.prep_man_photon(mode)
+    else:
+        prep = [['qubit', 'ge', 'pi', 0], ['qubit', 'ef', 'pi', 0], ['man', f'M{mode}', 'pi', 0]]
+    return (
+        base.get_prepulse_creator(prep).pulse.tolist(),
+        base.get_prepulse_creator(prep[-1:-3:-1]).pulse.tolist(),
+    )
+
+
+def ensure_mode_slot(manipulate, parameter, index):
+    values = manipulate.setdefault(parameter, [])
+    if len(values) <= index:
+        values.extend([None] * (index + 1 - len(values)))
+
 # %% [markdown]
 # ## Spectroscopy
 
@@ -1057,16 +1099,26 @@ def f0g1spec_preproc(station, default_expt_cfg, man_mode_no=1, **kwargs):
     
     # Compute start frequency from dataset if not provided
     if expt_cfg.start is None:
-        expt_cfg.start = station.ds_storage.get_freq('M' + str(man_mode_no)) - 20
+        frequency, _, _ = f0g1_values(station, man_mode_no)
+        expt_cfg.start = frequency - 20
     
     return expt_cfg
 
 def f0g1spec_postproc(station, expt):
     man_mode_no = expt.cfg.expt.man_mode_no
-    station.ds_storage.update_freq('M' + str(man_mode_no), expt.data['fit_avgi'][2])
-    station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] = expt.data['fit_avgi'][2]
-    print(f"Updated man f0g1 freq to: {station.ds_storage.get_freq('M' + str(man_mode_no))}")
+    man_name = f'M{man_mode_no}'
+    frequency = float(expt.data['fit_avgi'][2])
+    if not np.isfinite(frequency) or frequency <= 0:
+        raise ValueError(f'{man_name} fitted f0-g1 frequency must be positive and finite, got {frequency}')
+    slot, key = multiphoton_slot(station.hardware_cfg, man_mode_no, 'pi', 'fn-gn+1', 'frequency', 0)
+    slot[key] = frequency
+    station.ds_storage.update_freq(man_name, frequency)
+    if man_mode_no == 1:
+        station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = frequency
+    print(f"Updated {man_name} f0g1 freq to: {station.ds_storage.get_freq(man_name)}")
     station.snapshot_hardware_config(update_main=False)
+    if man_mode_no == 1:
+        station.snapshot_multiphoton_config(update_main=False)
     station.snapshot_man1_storage_swap(update_main=False)
 
 
@@ -1085,18 +1137,17 @@ f0g1spec_runner = CharacterizationRunner(
     job_client=client,
 )
 
-man_specs = [None] * len(expts_to_run['man_modes'])
+man_specs = {}
 
-for i in range(len(expts_to_run['man_modes'])):
+for man_mode_no in man_modes:
     if expts_to_run['pulse_probe_f0g1']:
-        print(f'Running pulse probe f0g1 for mode {i+1}')
-        man_specs[i] = f0g1spec_runner.execute(
-            man_mode_no=i+1,
+        print(f'Running pulse probe f0g1 for M{man_mode_no}')
+        man_specs[man_mode_no] = f0g1spec_runner.execute(
+            man_mode_no=man_mode_no,
             go_kwargs=dict(progress=True),
             relax_delay=2500,
-            start = 1980
+            start=1980 if man_mode_no == 1 else None,
         )
-        # man_specs[i].display()
 
 
 # %% [markdown]
@@ -1130,8 +1181,8 @@ chevron_defaults = AttrDict(dict(
 
 def f0g1_chevron_postproc(station, mother_expt):
     expt_cfg = mother_expt.cfg.expt
-    expt_cfg.man_mode_no = 1
-    stor_name = f'M{expt_cfg.man_mode_no}'
+    mode = expt_cfg.man_mode_no
+    stor_name = f'M{mode}'
 
     from fitting.fit_display_classes import ChevronFitting
 
@@ -1147,28 +1198,42 @@ def f0g1_chevron_postproc(station, mother_expt):
     
     best_freq = chevron_analysis.results.get('best_frequency_contrast')
         
-    if best_freq:
+    if best_freq is not None and np.isfinite(best_freq) and best_freq > 0:
+        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_period']['omega'])
+        gain = expt_cfg.get('gain', station.ds_storage.get_gain(stor_name))
+        if not all(np.isfinite(value) and value > 0 for value in (pi_len, gain)):
+            raise ValueError(f'{stor_name} chevron requires a positive finite pi length and gain')
+        gain = int(gain)
         print(f"Best frequency found: {best_freq:.4f} MHz")
         station.ds_storage.update_freq(stor_name, best_freq)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['frequency'][0] = best_freq
-        print(f"Updated {stor_name} frequency to {best_freq:.4f} MHz (ds_storage and hardware_cfg)")
+        slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', 'fn-gn+1', 'frequency', 0)
+        slot[key] = float(best_freq)
+        if mode == 1:
+            station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = float(best_freq)
+        print(f"Updated {stor_name} frequency to {best_freq:.4f} MHz")
 
-        pi_len = abs(np.pi / chevron_analysis.results['best_fit_params_period']['omega'])
         station.ds_storage.update_pi(stor_name, pi_len)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['length'][0] = pi_len
-        print('Updated the pi length to:', pi_len, "(ds_storage and hardware_cfg)")
+        slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', 'fn-gn+1', 'length', 0)
+        slot[key] = float(pi_len)
+        if mode == 1:
+            station.multimode_cfg.pulses['pi_f0-g1']['length'] = float(pi_len)
+        print('Updated the pi length to:', pi_len)
 
         station.ds_storage.update_h_pi(stor_name, pi_len / 2)
-        print('Updated the h_pi length to:', pi_len / 2, "(ds_storage)")
+        print('Updated the h_pi length to:', pi_len / 2, '(ds_storage)')
 
-        gain = expt_cfg.get('gain', station.ds_storage.get_gain(stor_name))
         station.ds_storage.update_gain(stor_name, gain)
-        station.hardware_cfg.device.multiphoton['pi']['fn-gn+1']['gain'][0] = gain
+        slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', 'fn-gn+1', 'gain', 0)
+        slot[key] = gain
+        if mode == 1:
+            station.multimode_cfg.pulses['pi_f0-g1']['gain'] = gain
         print('Updated gain to:', gain)
+        station.snapshot_man1_storage_swap(update_main=False)
+        station.snapshot_hardware_config(update_main=False)
+        if mode == 1:
+            station.snapshot_multiphoton_config(update_main=False)
     mother_expt.analysis = chevron_analysis
     chevron_analysis.display_results()
-    station.snapshot_man1_storage_swap(update_main=False)
-    station.snapshot_hardware_config(update_main=False)
 
 
 runner = SweepRunner(
@@ -1184,30 +1249,36 @@ runner = SweepRunner(
 
 # %%
 # coarse sweep
+f0g1_chevron_coarse = {}
 if expts_to_run["man_freq_coarse_chevron"]:
-    f0g1_chevron = runner.execute(
-        sweep_start=station.ds_storage.get_freq('M1') - 3,
-        sweep_stop=station.ds_storage.get_freq('M1') + 3,
-        sweep_npts=11,
-        gain = station.ds_storage.get_gain('M1'),
-        start = 1, # time start in us
-        batch=True,
-    )
+    for man_mode_no in man_modes:
+        frequency, gain, _ = f0g1_values(station, man_mode_no)
+        f0g1_chevron_coarse[man_mode_no] = runner.execute(
+            man_mode_no=man_mode_no,
+            sweep_start=frequency - 3,
+            sweep_stop=frequency + 3,
+            sweep_npts=11,
+            gain=gain,
+            start=1,  # time start in us
+            batch=True,
+        )
 
 # %%
 # fine sweep
 
+f0g1_chevron_fine = {}
 if expts_to_run["man_freq_fine_chevron"]:
-    f0g1_chevron = runner.execute(
-        sweep_start=station.ds_storage.get_freq('M1') - 0.5,
-        sweep_stop=station.ds_storage.get_freq('M1') + 0.5,
-        sweep_npts=11,
-        gain = station.ds_storage.get_gain('M1'),
-        # start = 1, # time start in us
-        # coupler_current=coupler_current,
-        reps=75,
-        batch=True,
-    )
+    for man_mode_no in man_modes:
+        frequency, gain, _ = f0g1_values(station, man_mode_no)
+        f0g1_chevron_fine[man_mode_no] = runner.execute(
+            man_mode_no=man_mode_no,
+            sweep_start=frequency - 0.5,
+            sweep_stop=frequency + 0.5,
+            sweep_npts=11,
+            gain=gain,
+            reps=75,
+            batch=True,
+        )
 
 # %% [markdown]
 # ## Error amplification
@@ -1218,14 +1289,12 @@ span = 0.5
 expts = 40
 
 
-center_freq = station.ds_storage.get_freq('M1')
-start = center_freq - span/2
 steps = span/expts
 
 
 # Configuration defaults
 error_amp_defaults = AttrDict(dict(
-    start=start,
+    start=None,
     expts=expts,
     step=steps, # 0.025
     # start=1984,
@@ -1251,7 +1320,16 @@ def error_amp_preproc(station,
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
     if expt_cfg.pulse_type is None:
-        expt_cfg.pulse_type = ['multiphoton', expt_cfg.sideband, 'pi', 0]
+        if expt_cfg.man_mode_no == 2 and expt_cfg.sideband == 'f0-g1':
+            expt_cfg.pulse_type = ['man', 'M2', 'pi', 0]
+        else:
+            expt_cfg.pulse_type = ['multiphoton', expt_cfg.sideband, 'pi', 0]
+    expt_cfg.multiphoton_mode = expt_cfg.man_mode_no
+    if expt_cfg.start is None:
+        photon_number = int(expt_cfg.sideband[1])
+        pulses = multiphoton_table(station.hardware_cfg, expt_cfg.man_mode_no, num_photon_levels=photon_number + 1)
+        frequency = pulses.pi['fn-gn+1'].frequency[photon_number]
+        expt_cfg.start = frequency - span / 2
     return expt_cfg
 
 def error_amp_postproc(station, expt):
@@ -1259,26 +1337,31 @@ def error_amp_postproc(station, expt):
     Postprocessor for error amplification.
     Analyze with custom parameters.
     """
-    sideband = expt.cfg.expt.sideband
-    _sideband = sideband[0] + 'n' + '-' + sideband[3] + 'n+1'
-    i = int(sideband[1])
     # Perform analysis with state_fin='e' as in original code
     expt.analyze(data=expt.data, state_fin='e')
-    # expt.display(data=expt.data, state_fin='e')
     print('Error amplification analysis complete')
-
-    print(f"Man {sideband} pi frequency before update:", 
-          station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i])
-    station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i] = expt.data['fit_avgi'][2]
-    print(f"Man {sideband} pi frequency after update:", 
-          station.hardware_cfg.device.multiphoton['pi'][_sideband]['frequency'][i])
-    if i > 0:
-        print("WARNING! No update will occur! The update in this cell was meant for the csv which does not have multiphoton params. To update the multiphoton params, please run the multiphoton calibration notebook instead.")
-    else:
-        station.ds_storage.update_freq('M1', expt.data['fit_avgi'][2])
-        print("Updated the ds_storage frequency to:", station.ds_storage.get_freq('M1'))
+    cfg = expt.cfg.expt
+    man_name = f'M{cfg.man_mode_no}'
+    frequency = float(expt.data['fit_avgi'][2])
+    if not np.isfinite(frequency) or frequency <= 0:
+        raise ValueError(f'{man_name} fitted {cfg.sideband} frequency must be positive and finite, got {frequency}')
+    photon_no = int(cfg.sideband[1])
+    slot, key = multiphoton_slot(station.hardware_cfg, cfg.man_mode_no, 'pi', 'fn-gn+1', 'frequency',
+                                m1_photons=photon_no if cfg.man_mode_no == 1 else 0,
+                                m2_photons=photon_no if cfg.man_mode_no == 2 else 0)
+    print(f"{man_name} {cfg.sideband} pi frequency before update:", slot[key])
+    slot[key] = frequency
+    print(f"{man_name} {cfg.sideband} pi frequency after update:", frequency)
+    if cfg.sideband == 'f0-g1':
+        if cfg.man_mode_no == 1:
+            station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = frequency
+        station.ds_storage.update_freq(man_name, frequency)
+        print(f"Updated the {man_name} ds_storage frequency to:", station.ds_storage.get_freq(man_name))
     station.snapshot_hardware_config(update_main=False)
-    station.snapshot_multiphoton_config(update_main=False)
+    if cfg.man_mode_no == 1:
+        station.snapshot_multiphoton_config(update_main=False)
+    if cfg.sideband == 'f0-g1':
+        station.snapshot_man1_storage_swap(update_main=False)
 
 # Create runner
 error_amp_runner = CharacterizationRunner(
@@ -1295,12 +1378,15 @@ error_amp_runner = CharacterizationRunner(
 # Run with analyze=False, display=False initially
 # Postprocessor will handle custom analysis
 
+man_error_amp = {}
 if expts_to_run["man_error_amplification"]:
-    error_amp_exp = error_amp_runner.execute(
-        reps = 100, #100
-        go_kwargs = dict(analyze=False, display=False),
-        postprocess=True  # This will call postprocessor which does the custom analysis
-    )
+    for man_mode_no in man_modes:
+        man_error_amp[man_mode_no] = error_amp_runner.execute(
+            man_mode_no=man_mode_no,
+            reps = 100, #100
+            go_kwargs = dict(analyze=False, display=False),
+            postprocess=True  # This will call postprocessor which does the custom analysis
+        )
 
 
 # %% [markdown]
@@ -1344,7 +1430,7 @@ def lenrabi_f0g1_preproc(station, default_expt_cfg, man_mode_no=1, **kwargs):
     if expt_cfg.start is None:
         expt_cfg.start = station.soccfg.cycles2us(3)
     if expt_cfg.freq is None:
-        expt_cfg.freq = station.ds_storage.get_freq('M' + str(man_mode_no))
+        expt_cfg.freq, _, _ = f0g1_values(station, man_mode_no)
     
     return expt_cfg
 
@@ -1377,14 +1463,30 @@ def lenrabi_f0g1_postproc(station, expt):
         gain = expt.cfg.expt.gain
         freq = expt.cfg.expt.freq
 
-        station.ds_storage.update_freq('M' + str(man_mode_no), freq)
-        station.ds_storage.update_pi('M' + str(man_mode_no), pi_length)
-        station.ds_storage.update_h_pi('M' + str(man_mode_no), pi2_length)
-        station.ds_storage.update_gain('M' + str(man_mode_no), gain)
-        print(f'Updated dataset M{man_mode_no}: pi_length={pi_length:.4f}, pi2_length={pi2_length:.4f}, gain={gain}')
-
+        man_name = f'M{man_mode_no}'
+        if not all(np.isfinite(value) and value > 0 for value in (freq, pi_length, pi2_length, gain)):
+            raise ValueError(f'{man_name} length Rabi requires positive finite frequency, lengths, and gain')
+        gain = int(gain)
+        pulse_fields = dict(frequency=float(freq), length=float(pi_length), gain=gain)
+        if man_mode_no == 2:
+            pulse_fields.update(sigma=float(expt.cfg.device.manipulate.ramp_sigma), type='flat_top')
+        station.ds_storage.update_freq(man_name, freq)
+        station.ds_storage.update_pi(man_name, pi_length)
+        station.ds_storage.update_h_pi(man_name, pi2_length)
+        station.ds_storage.update_gain(man_name, gain)
+        for field, value in pulse_fields.items():
+            slot, key = multiphoton_slot(station.hardware_cfg, man_mode_no, 'pi', 'fn-gn+1', field, 0)
+            slot[key] = value
+        if man_mode_no == 1:
+            station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = float(freq)
+            station.multimode_cfg.pulses['pi_f0-g1']['length'] = float(pi_length)
+            station.multimode_cfg.pulses['pi_f0-g1']['gain'] = gain
+        print(f'Updated dataset {man_name}: pi_length={pi_length:.4f}, pi2_length={pi2_length:.4f}, gain={gain}')
         station.snapshot_hardware_config(update_main=False)
-        station.snapshot_multiphoton_config(update_main=False)
+        if man_mode_no == 1:
+            station.snapshot_multiphoton_config(update_main=False)
+        station.snapshot_man1_storage_swap(update_main=False)
+
 
 
 # %%
@@ -1399,194 +1501,123 @@ lenrabi_f0g1_runner = CharacterizationRunner(
     job_client=client,
 )
 
-len_rabis_mans = [None] * len(expts_to_run['man_modes'])
+len_rabis_mans = {}
 
-for i in range(len(expts_to_run['man_modes'])):
+for man_mode_no in man_modes:
     if expts_to_run['length_rabi'] or expts_to_run['length_rabi_sweep']:
-        print(f'Running length rabi for mode {i+1}')
-        len_rabis_mans[i] = lenrabi_f0g1_runner.execute(
-            man_mode_no=i+1,
+        print(f'Running length rabi for M{man_mode_no}')
+        len_rabis_mans[man_mode_no] = lenrabi_f0g1_runner.execute(
+            man_mode_no=man_mode_no,
+            gain=lenrabi_f0g1_defaults.gain if man_mode_no == 1 else station.ds_storage.get_gain(f'M{man_mode_no}'),
             go_kwargs=dict(progress=True),
             step=0.01,
         )
-        len_rabis_mans[i].display()
+        len_rabis_mans[man_mode_no].display()
 
 
 # %% [markdown]
-# ## --- Manipulate sections below not refactored ---
+# ## Chi between qubit and Manipulate
 
-# %% [markdown]
-# ## Chi between qubit and Manipulate 
+# %%
+def chi_ramsey_preproc(station, default_expt_cfg, **kwargs):
+    cfg = geramsey_preproc(station, default_expt_cfg, **kwargs)
+    cfg.prepulse = cfg.pre_sweep_pulse is not None
+    cfg.postpulse = cfg.post_sweep_pulse is not None
+    return cfg
+
+
+chi_ramsey_runner = CharacterizationRunner(
+    station=station,
+    ExptClass=meas.RamseyExperiment,
+    default_expt_cfg=geramsey_defaults,
+    preprocessor=chi_ramsey_preproc,
+    job_client=client,
+)
+
+
+def run_chi_ramsey(man_mode_no, *, if_ef=False, prepulse=None, postpulse=None, **kwargs):
+    result = chi_ramsey_runner.execute(
+        man_mode_no=man_mode_no,
+        if_ef=if_ef,
+        ef_init=prepulse is None,
+        pre_sweep_pulse=prepulse,
+        post_sweep_pulse=postpulse,
+        step=0.1,
+        expts=100,
+        relax_delay=2500,
+        go_kwargs=dict(analyze=False, display=False),
+        **kwargs,
+    )
+    result.analyze(fitparams=[300, None, None, None, None, None])
+    result.display()
+    return result
+
+
+def fitted_chi(reference, dressed):
+    return dressed.data['f_adjust_ramsey_avgi'][0] - reference.data['f_adjust_ramsey_avgi'][0]
+
 
 # %% [markdown]
 # ### ge
 
 # %%
-mm_base_dummy = MM_dual_rail_base(station.hardware_cfg, station.soccfg)
-prep_man_pi = mm_base_dummy.prep_man_photon(1)
-mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse
-
-# %%
-from experiments.MM_dual_rail_base import MM_dual_rail_base
-import numpy as np
-config_thisrun = station.hardware_cfg
-# the do function contains 2 calls to ramsey, one with no prepulse and one with prepulse 
-# that initializes manipulation mode to 1 state
-# do_t2_ramsey_ge is already defined in previous cells and can be used directly
-
-# Add active_reset, relax_delay, expts as arguments and pass them to do_t2_ramsey_ge
-def do_chi(config_thisrun, expt_path, config_path, prepulse=None, standard_ramsey=True,
-           man_mode_no=1, active_reset=False, relax_delay=2500, expts=100):
-    """
-    Run two Ramsey experiments: one standard, one with a prepulse that initializes manipulation mode 1.
-    Returns both experiment objects.
-    """
-    # Standard Ramsey (no prepulse)
-    if standard_ramsey:
-        t2ramsey_no_prepulse = do_t2_ramsey_ge(
-            config_thisrun, expt_path, config_path,
-            pre_sweep_pulse=None, post_sweep_pulse=None,
-            step_size=0.1,
-            active_reset=active_reset,
-            relax_delay=relax_delay,
-            expts=expts
-        )
-    else: 
-        t2ramsey_no_prepulse = None
-
-    # Ramsey with prepulse (initialize manipulation mode 1)
-    if prepulse is None:
-        mm_base_dummy = MM_dual_rail_base(config_thisrun, soc)
-        prep_man_pi = mm_base_dummy.prep_man_photon(man_mode_no)
-        prepulse = mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse.tolist()
-
-    t2ramsey_with_prepulse = do_t2_ramsey_ge(
-        config_thisrun, expt_path, config_path,
-        pre_sweep_pulse=prepulse, post_sweep_pulse=None,
-        step_size=0.1,
-        active_reset=active_reset,
-        relax_delay=relax_delay,
-        expts=expts
-    )
-
-    return t2ramsey_no_prepulse, t2ramsey_with_prepulse
-
-
-def update_chi(t2_ramsey_original, t2_ramsey_prepulse, config_thisrun, man_mode_no=1):
-    """
-    Update config_thisrun.device.qubit.chi for the given manipulation mode.
-    """
-    f_without_prepulse = t2_ramsey_original.data['f_adjust_ramsey_avgi'][0]
-    f_with_prepulse = t2_ramsey_prepulse.data['f_adjust_ramsey_avgi'][0]
-    chi = f_with_prepulse - f_without_prepulse
-    print('Chi:', chi)
-    config_thisrun.device.manipulate.chi_ge[man_mode_no - 1] = chi
-    config_thisrun.device.manipulate.revival_time[man_mode_no-1] = np.abs(np.pi/(2 * np.pi * chi))
-    print('Delay time (mus):', config_thisrun.device.manipulate.revival_time[man_mode_no-1] )
-
-
-
-# %%
-t2_ramsey_original, t2_ramsey_prepulse = None, None
-# Run the chi experiments/__pycache__/
+chi_ge_runs = {}
 if expts_to_run['chi_ge']:
-    t2_ramsey_original, t2_ramsey_prepulse = do_chi(config_thisrun, expt_path, config_path, standard_ramsey=True)
-    # analyze and display the results
-    t2_ramsey_original.analyze(fitparams=[300, None, None, None, None, None])
-    t2_ramsey_original.display()
-    t2_ramsey_prepulse.analyze(fitparams=[300, None, None, None, None, None])
-    t2_ramsey_prepulse.display() 
-    # update the config_thisrun with the chi value
-    update_chi(t2_ramsey_original, t2_ramsey_prepulse, config_thisrun, man_mode_no=1)
-    print('Only doing it for mode 1')
+    for man_mode_no in man_modes:
+        prepulse, _ = man_photon_pulses(station, man_mode_no)
+        reference = run_chi_ramsey(man_mode_no)
+        dressed = run_chi_ramsey(man_mode_no, prepulse=prepulse)
+        chi_ge_runs[man_mode_no] = reference, dressed
+        chi = fitted_chi(reference, dressed)
+        if not np.isfinite(chi) or chi == 0:
+            raise ValueError(f'M{man_mode_no} chi_ge fit must be finite and nonzero')
+        manipulate = station.hardware_cfg.device.manipulate
+        index = man_mode_no - 1
+        ensure_mode_slot(manipulate, 'chi_ge', index)
+        manipulate.chi_ge[index] = float(chi)
+        manipulate.revival_time[index] = float(abs(1 / (2 * chi)))
+        station.snapshot_hardware_config(update_main=False)
+
 
 # %% [markdown]
 # ### ef
 
 # %%
-from experiments.MM_dual_rail_base import MM_dual_rail_base
-
-# the do function contains 2 calls to ramsey, one with no prepulse and one with prepulse 
-# that initializes manipulation mode to 1 state
-def do_chi_f(config_thisrun, expt_path, config_path, 
-           man_mode_no=1):
-    """
-    Run two Ramsey experiments: one standard, one with a prepulse that initializes manipulation mode 1.
-    Returns both experiment objects.
-    """
-
-    
-    mm_base_dummy = MM_dual_rail_base(config_thisrun, soc)
-    prep_man_pi = mm_base_dummy.prep_man_photon(man_mode_no)
-    # Add qubit ge prepulse and postpulse for ef (ge init)
-    qubit_ge_prepulse = [['qubit', 'ge', 'pi', 0]]
-    prep_man_pi_prepulse = mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse.tolist()
-    prepulse =  mm_base_dummy.get_prepulse_creator(prep_man_pi + qubit_ge_prepulse ).pulse.tolist() 
-    postpulse  = mm_base_dummy.get_prepulse_creator(qubit_ge_prepulse).pulse.tolist()
-
-    # Add chi to frequency of qubit ge 
-    # prepulse[0][-1] += config_thisrun.device.manipulate.chi[man_mode_no - 1]
-    # postpulse[0][-1] += config_thisrun.device.manipulate.chi[man_mode_no - 1]
-
-    # Do an ef and ge ramsey with this prepulse 
-    # Run ge Ramsey 
-    
-    
-    t2ramsey_no_prepulse_ge = do_t2_ramsey_ge(config_thisrun,
-        expt_path,
-        config_path,
-        step_size=0.1,
-        pre_sweep_pulse=prep_man_pi_prepulse,
-        post_sweep_pulse=None)
-    # Run ef Ramsey with prepulse and postpulse
-    t2ramsey_with_prepulse_ef = do_t2_ramsey_ef(
-        config_thisrun,
-        expt_path,
-        config_path,
-        pre_sweep_pulse=prepulse,
-        post_sweep_pulse=postpulse,
-        step_size=0.1,
-        ef_init=False  # Do not initialize ef, we are already in ef state
-    )
-    
-
-    return t2ramsey_no_prepulse_ge, t2ramsey_with_prepulse_ef
-
-def update_chi_ef(t2_standard_ramsey, t2_prepulsed_ramsey, config_thisrun, man_mode_no=1):
-    """
-    Update config_thisrun.device.qubit.chi for the given manipulation mode.
-    """
-    f_with_prepulse = t2_prepulsed_ramsey.data['f_adjust_ramsey_avgi'][0]
-    f_without_prepulse = t2_standard_ramsey.data['f_adjust_ramsey_avgi'][0]
-    chi_ef = f_with_prepulse - f_without_prepulse
-    print('Chi:', chi_ef)
-    config_thisrun.device.manipulate.chi_ef[man_mode_no - 1] = chi_ef
-
-
-
-# %%
-man_mode_no = 1
-t2ge_ramsey_forchief, t2ef_ramsey_forchief = None, None
-t2ef_standard_ramsey_forchief = None
+chi_ef_runs = {}
 if expts_to_run['chi_ef']:
-    
-    #get standard ef ramsey 
-    t2ef_standard_ramsey_forchief = do_t2_ramsey_ef(config_thisrun, expt_path, config_path)
-    # analyze and display the results
-    t2ef_standard_ramsey_forchief.analyze(fitparams=[300, None, None, None, None, None])
-    t2ef_standard_ramsey_forchief.display(title_str='T2_ef_standard_for_chief')
+    for man_mode_no in man_modes:
+        hw = station.hardware_cfg
+        chi_ge_values = hw.device.manipulate.get('chi_ge', [])
+        index = man_mode_no - 1
+        if index >= len(chi_ge_values) or chi_ge_values[index] is None or not np.isfinite(chi_ge_values[index]):
+            raise ValueError(f'M{man_mode_no} chi_ge is required for chi_ef calibration')
 
-    # Now ramseys with man photon prepulse
-    config_thisrun_chief = deepcopy(config_thisrun)
-    config_thisrun_chief.device.qubit.f_ge[0] += config_thisrun.device.manipulate.chi_ge[man_mode_no - 1]
-    t2ge_ramsey_forchief, t2ef_ramsey_forchief = do_chi_f(config_thisrun_chief, expt_path, config_path)
-    # analyze and display the results
-    t2ge_ramsey_forchief.analyze(fitparams=[300, None, None, None, None, None])
-    t2ge_ramsey_forchief.display(title_str='T2_ge_for_chief_tocheck_this_is_correctly_at_ramsey_freq')
-    t2ef_ramsey_forchief.analyze(fitparams=[300, None, None, None, None, None])
-    t2ef_ramsey_forchief.display(title_str='T2_ef_for_chief')
-    # update the config_thisrun with the chi value
-    update_chi_ef(t2ef_standard_ramsey_forchief, t2ef_ramsey_forchief, config_thisrun)
+        prepulse, _ = man_photon_pulses(station, man_mode_no)
+        qubit = hw.device.qubit
+        dressed_ge = float(qubit.f_ge[0]) + chi_ge_values[index]
+        hpi_ge = qubit.pulses.hpi_ge
+        ge_check = run_chi_ramsey(
+            man_mode_no, prepulse=prepulse,
+            user_defined_freq=[True, dressed_ge, hpi_ge.gain[0], hpi_ge.sigma[0]],
+        )
+        base = MM_dual_rail_base(hw, station.soccfg)
+        ge_pi = base.get_prepulse_creator([['qubit', 'ge', 'pi', 0]]).pulse.tolist()
+        ge_pi[0][0] = dressed_ge
+        dressed_prep = [row + pulse for row, pulse in zip(prepulse, ge_pi)]
+
+        reference = run_chi_ramsey(man_mode_no, if_ef=True, ramsey_freq=eframsey_defaults.ramsey_freq)
+        dressed = run_chi_ramsey(
+            man_mode_no, if_ef=True, prepulse=dressed_prep, postpulse=ge_pi,
+            ramsey_freq=eframsey_defaults.ramsey_freq,
+        )
+        chi_ef_runs[man_mode_no] = reference, ge_check, dressed
+        chi_ef = fitted_chi(reference, dressed)
+        if not np.isfinite(chi_ef):
+            raise ValueError(f'M{man_mode_no} chi_ef fit is invalid: {chi_ef}')
+        manipulate = station.hardware_cfg.device.manipulate
+        ensure_mode_slot(manipulate, 'chi_ef', index)
+        manipulate.chi_ef[index] = float(chi_ef)
+        station.snapshot_hardware_config(update_main=False)
 
 
 # %% [markdown]
@@ -1625,9 +1656,7 @@ def parity_delay_preproc(station, default_expt_cfg, **kwargs):
         expt_cfg.pre_sweep_pulse = []
     elif 'param_to_calib' in expt_cfg and expt_cfg.param_to_calib =='length':
         expt_cfg.prepulse = True
-        pre_sweep_pulse = mm_base_calib.prep_man_photon(man_no=expt_cfg.man_mode_no, photon_no=1)
-        pre_sweep_pulse = mm_base_calib.get_prepulse_creator(pre_sweep_pulse, station.hardware_cfg).pulse.tolist()
-        expt_cfg.pre_sweep_pulse = pre_sweep_pulse
+        expt_cfg.pre_sweep_pulse, _ = man_photon_pulses(station, expt_cfg.man_mode_no)
     return expt_cfg
 
 def parity_delay_postproc(station, expt):
@@ -1642,21 +1671,23 @@ def parity_delay_postproc(station, expt):
     expt_cfg = expt.cfg.expt
     man_mode_no = expt_cfg.man_mode_no
     shift_sign = expt_cfg.shift_sign
+    manipulate = station.hardware_cfg.device.manipulate
 
 
     if expt_cfg.param_to_calib == 'length':
         delay = length_rabi_analysis.results['pi_length']
         print(f'Fitted revival time: {delay} us')
-        old_delay = station.hardware_cfg.device.manipulate.revival_time[man_mode_no - 1]
-        station.hardware_cfg.device.manipulate.revival_time[man_mode_no - 1] = delay
-        print(f'Updated revival time for mode {man_mode_no}: {old_delay} -> {station.hardware_cfg.device.manipulate.revival_time[man_mode_no - 1]}')
+        parameter = 'revival_time_fast' if expt_cfg.parity_fast else 'revival_time'
+        index = man_mode_no - 1
+        ensure_mode_slot(manipulate, parameter, index)
+        manipulate[parameter][index] = float(delay)
+        station.snapshot_hardware_config(update_main=False)
 
     elif expt_cfg.param_to_calib == 'ac_stark_shift': 
         freq = length_rabi_analysis.data['fit_avgi'][1]
         print(f'Fitted ac Stark shift: {freq} MHz')
-        old_freq = station.hardware_cfg.device.manipulate.revival_stark_shift[man_mode_no - 1]
-        station.hardware_cfg.device.manipulate.revival_stark_shift[man_mode_no - 1] += shift_sign * freq
-        print(f'Updated ac Stark shift for mode {man_mode_no}: {old_freq} -> {station.hardware_cfg.device.manipulate.revival_stark_shift[man_mode_no - 1]}')
+        manipulate.revival_stark_shift[man_mode_no - 1] += float(shift_sign * freq)
+        station.snapshot_hardware_config(update_main=False)
 
 
 # %% [markdown]
@@ -1677,16 +1708,19 @@ parity_delay_runner = CharacterizationRunner(
     use_queue=True,
 )
 
-if expts_to_run["parity_delay_fast"]:
-    parity_delay_ac_stark = parity_delay_runner.execute(
-        param_to_calib='ac_stark_shift', 
-        go_kwargs=dict(analyze=False, display=False),
-        step=0.2,
-        expts=100,
-        reps=100,
-        shift_sign=1,
-        # coupler_current=0.0,
-    )
+parity_delay_ac_stark = {}
+if expts_to_run['parity_delay_fast']:
+    for man_mode_no in man_modes:
+        parity_delay_ac_stark[man_mode_no] = parity_delay_runner.execute(
+            man_mode_no=man_mode_no,
+            parity_fast=True,
+            param_to_calib='ac_stark_shift',
+            go_kwargs=dict(analyze=False, display=False),
+            step=0.2,
+            expts=100,
+            reps=100,
+            shift_sign=1,
+        )
 
 # %% [markdown]
 # Confirming the correction is in the right direction
@@ -1701,17 +1735,20 @@ parity_delay_runner = CharacterizationRunner(
     use_queue=True,
 )
 
-if expts_to_run["parity_delay_fast"]:
-    parity_delay_ac_stark = parity_delay_runner.execute(
-        param_to_calib='ac_stark_shift', 
-        go_kwargs=dict(analyze=False, display=False),
-        step=0.2,
-        expts=100,
-        reps=100,
-        shift_sign=1,
-        # coupler_current=0.0,
-    )
-    parity_delay_ac_stark.display(fit=False)
+parity_delay_ac_stark_check = {}
+if expts_to_run['parity_delay_fast']:
+    for man_mode_no in man_modes:
+        parity_delay_ac_stark_check[man_mode_no] = parity_delay_runner.execute(
+            man_mode_no=man_mode_no,
+            parity_fast=True,
+            param_to_calib='ac_stark_shift',
+            go_kwargs=dict(analyze=False, display=False),
+            step=0.2,
+            expts=100,
+            reps=100,
+            shift_sign=1,
+        )
+        parity_delay_ac_stark_check[man_mode_no].display(fit=False)
 
 # %% [markdown]
 # ### Now parity length after the AC stark shift is calibrated
@@ -1727,17 +1764,18 @@ parity_delay_runner = CharacterizationRunner(
     use_queue=True,
 )
 
-if expts_to_run["parity_delay_fast"] or expts_to_run["parity_delay_slow"]:
-    parity_fast = expts_to_run["parity_delay_fast"]
-    parity_delay_ac_stark = parity_delay_runner.execute(
-        param_to_calib='length', 
-        parity_fast=parity_fast,
-        go_kwargs=dict(analyze=False, display=False),
-        step=0.04,
-        expts=100,
-        reps=100,
-        # coupler_current=0.0,
-    )
+parity_delays = {}
+if expts_to_run['parity_delay_fast'] or expts_to_run['parity_delay_slow']:
+    for man_mode_no in man_modes:
+        parity_delays[man_mode_no] = parity_delay_runner.execute(
+            man_mode_no=man_mode_no,
+            param_to_calib='length',
+            parity_fast=expts_to_run['parity_delay_fast'],
+            go_kwargs=dict(analyze=False, display=False),
+            step=0.04,
+            expts=100,
+            reps=100,
+        )
 
 # %% [markdown]
 # ## T1
@@ -1764,12 +1802,11 @@ def t1_manipulate_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg.update(kwargs)
     
     if expt_cfg.f0g1_param is None:
-        pulse_param = station.hardware_cfg.device.multiphoton.pi['fn-gn+1']
-        expt_cfg.f0g1_param = [pulse_param['frequency'][0],
-                               pulse_param['gain'][0],
-                                 pulse_param['length'][0], 
-                                 pulse_param['sigma'][0],
-        ]
+        frequency, gain, length = f0g1_values(station, expt_cfg.man_mode_no)
+        sigma = station.hardware_cfg.device.manipulate.ramp_sigma
+        if expt_cfg.man_mode_no == 1:
+            sigma = station.hardware_cfg.device.multiphoton.pi['fn-gn+1'].sigma[0]
+        expt_cfg.f0g1_param = [frequency, gain, length, sigma]
 
     expt_cfg.cavity = expt_cfg.man_mode_no
 
@@ -1784,9 +1821,11 @@ t1_manipulate_runner = CharacterizationRunner(
     job_client=client,
 )
 
-if expts_to_run["t1_man"]:
-    t1_manipulate = t1_manipulate_runner.execute()
-    t1_manipulate.analyze()
+t1_manipulate = {}
+if expts_to_run['t1_man']:
+    for man_mode_no in man_modes:
+        t1_manipulate[man_mode_no] = t1_manipulate_runner.execute(man_mode_no=man_mode_no)
+        t1_manipulate[man_mode_no].analyze()
 
 # %% [markdown]
 # ## T2
@@ -1797,21 +1836,19 @@ if expts_to_run["t1_man"]:
 cross_kerr_stor = 7
 cross_kerr_init_fock = 0
 
-prep_cross_kerr = dict(
-    parity_meas=True,
-    use_auto_prep=True, 
-    prepulse=False,
-)
-if cross_kerr_init_fock == 1:
-    prep_cross_kerr.update(dict(
-        prepulse=True,
-        pre_sweep_pulse = [
-            ['qubit', 'ge', 'pi', 0,],
-            ['qubit', 'ef', 'pi', 0,], # qubit in f
-            ['man', 'M1', 'pi', 0,], # f0-g1 --> man in 1
-            ['storage', f'M1-S{cross_kerr_stor}', 'pi', 0,],
-        ]
-    ))
+def cross_kerr_prep(man_mode_no):
+    cfg = dict(parity_meas=True, use_auto_prep=True, prepulse=False)
+    if cross_kerr_init_fock == 1:
+        stor_name = f'M{man_mode_no}-S{cross_kerr_stor}'
+        if not station.ds_storage.has_row(stor_name):
+            raise ValueError(f'Missing storage swap row {stor_name}')
+        cfg.update(prepulse=True, pre_sweep_pulse=[
+            ['qubit', 'ge', 'pi', 0],
+            ['qubit', 'ef', 'pi', 0],
+            ['man', f'M{man_mode_no}', 'pi', 0],
+            ['storage', stor_name, 'pi', 0],
+        ])
+    return cfg
 
 # %% [markdown]
 # ### First calibrate the stark shift and residual detuning on the + state during the f0-g1
@@ -1839,11 +1876,15 @@ t2_manipulate_runner = CharacterizationRunner(
 )
 
 
-if expts_to_run["t2_man"]:
-    t2_manipulate = t2_manipulate_runner.execute(**prep_cross_kerr)
-    t2_manipulate.analyze()
-    fit_ac_freq = t2_manipulate.data['f_adjust_ramsey_avgi'][0]
-    print("fit freq MHz", fit_ac_freq)
+t2_manipulate = {}
+if expts_to_run['t2_man']:
+    for man_mode_no in man_modes:
+        result = t2_manipulate_runner.execute(
+            man_mode_no=man_mode_no, man_mode_idx=man_mode_no, **cross_kerr_prep(man_mode_no),
+        )
+        t2_manipulate[man_mode_no] = result
+        result.analyze()
+        print(f'M{man_mode_no} fit freq MHz', result.data['f_adjust_ramsey_avgi'][0])
 
 
 # %% [markdown]
@@ -1866,10 +1907,7 @@ def get_storage_mode_parameters(ds_storage, config_thisrun, man_mode_no, stor_mo
     # ch = flux_low_ch if freq < 1000 else flux_high_ch
     ch = 'low' if freq < 1800 else 'high'
 
-    mm_base_dummy = MM_dual_rail_base(config_thisrun, soccfg=station.soccfg)
-    prep_man_pi = mm_base_dummy.prep_man_photon(man_mode_no)
-    prepulse = mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse.tolist()
-    postpulse = mm_base_dummy.get_prepulse_creator(prep_man_pi[-1:-3:-1]).pulse.tolist()
+    prepulse, postpulse = man_photon_pulses(station, man_mode_no)
 
     return freq, gain, pi_len, h_pi_len, ch, prepulse, postpulse
 
@@ -1938,7 +1976,10 @@ def stor_spec_postproc(station, expt):
     stor_mode_no = expt.cfg.expt.stor_mode_no
     stor_name = f'M{man_mode_no}-S{stor_mode_no}'
     new_freq = expt.data['fit_avgi'][2]
+    if not np.isfinite(new_freq) or new_freq <= 0:
+        raise ValueError(f'Invalid spectroscopy frequency for {stor_name}: {new_freq}')
     station.ds_storage.update_freq(stor_name, new_freq)
+    station.snapshot_man1_storage_swap(update_main=False)
     print(f'Updated frequency for {stor_name}: {new_freq:.4f} MHz')
 
 # Create runner
@@ -1954,25 +1995,21 @@ stor_spec_runner = CharacterizationRunner(
 
 # %%
 # Execute for all storage modes
+stor_specs = {}
 if expts_to_run.get('stor_spectroscopy', False):
-    stor_specs = {}
-    # for stor_mode_no in range(1, 8):  # modes 1-7
-    for stor_mode_no in [2]:  # modes 1-7
-        print(f'Running storage spectroscopy for mode {stor_mode_no}')
-        stor_specs[stor_mode_no] = stor_spec_runner.execute(
-            man_mode_no=1,
-            stor_mode_no=stor_mode_no,
-            # coupler_current=coupler_current,
-            flux_drive_gain=21000,
-            flux_drive_duration=1,
-            postproc=False,
-            expts = 800,
-            reps = 100,
-            relax_delay = 800,
-            bw = 40,
-            center_freq = 510
-        )
-        stor_specs[stor_mode_no].display()
+    for man_mode_no in man_modes:
+        for stor_mode_no in expts_to_run['stor_modes']:
+            pair = (man_mode_no, stor_mode_no)
+            stor_specs[pair] = stor_spec_runner.execute(
+                man_mode_no=man_mode_no,
+                stor_mode_no=stor_mode_no,
+                flux_drive_duration=1,
+                expts=800,
+                reps=100,
+                relax_delay=800,
+                bw=40,
+            )
+            stor_specs[pair].display()
 
 
 # %% [markdown]
@@ -1992,7 +2029,6 @@ def get_dump_mode_parameters(ds_storage, config_thisrun, man_mode_no, dump_mode_
     ch = 4 
     print('Flux channel manually set to 4')
 
-    mm_base_dummy = MM_dual_rail_base(config_thisrun, soccfg=station.soccfg)
     # prepulse_spec = [['multiphoton', 'g0-e0', 'pi', 0],
     #                  ['multiphoton', 'e0-f0', 'pi', 0],
     #                  ['multiphoton', 'f0-g1', 'pi', 0]]
@@ -2001,11 +2037,21 @@ def get_dump_mode_parameters(ds_storage, config_thisrun, man_mode_no, dump_mode_
     # prepulse = mm_base_dummy.get_prepulse_creator(prepulse_spec).pulse.tolist()
     # postpulse = mm_base_dummy.get_prepulse_creator(postpulse_spec).pulse.tolist()
 
-    prep_man_pi = mm_base_dummy.prep_man_photon(man_mode_no)
-    prepulse = mm_base_dummy.get_prepulse_creator(prep_man_pi).pulse.tolist()
-    postpulse = mm_base_dummy.get_prepulse_creator(prep_man_pi[-1:-3:-1]).pulse.tolist()
+    prepulse, postpulse = man_photon_pulses(station, man_mode_no)
 
     return freq, gain, pi_len, h_pi_len, ch, prepulse, postpulse
+
+
+def available_dump_pairs(station):
+    dataset = station.ds_storage
+    rows = set(dataset.df[dataset.indexing_row_name])
+    for man_mode_no in man_modes:
+        for dump_mode_no in expts_to_run['dump_modes']:
+            row = f'M{man_mode_no}-D{dump_mode_no}'
+            if row in rows:
+                yield man_mode_no, dump_mode_no
+            else:
+                print(f'Skipping {row} dump calibration. No row in the selected storage CSV.')
 
 
 # %% [markdown]
@@ -2035,6 +2081,8 @@ def dump_spec_preproc(station, default_expt_cfg, man_mode_no=1, dump_mode_no=1, 
     """Preprocessor for dump spectroscopy."""
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
+    expt_cfg.man_mode_no = man_mode_no
+    expt_cfg.dump_mode_no = dump_mode_no
     
     # Get dump mode parameters
     freq, gain, pi_len, h_pi_len, ch, prepulse, postpulse = get_dump_mode_parameters(
@@ -2042,9 +2090,7 @@ def dump_spec_preproc(station, default_expt_cfg, man_mode_no=1, dump_mode_no=1, 
     )
     print(f'Using dump mode parameters: freq={freq}, gain={gain}, pi_len={pi_len}, h_pi_len={h_pi_len}, ch={ch}')
 
-    # freq = 2313.0 # Temporary fix for testing
-    freq = 2313
-    # freq = 1426.889688
+    freq = expt_cfg.get('center_freq', freq)
     
     # Set sweep range centered on current frequency
     expt_cfg.step = expt_cfg.span / expt_cfg.expts
@@ -2060,9 +2106,10 @@ def dump_spec_preproc(station, default_expt_cfg, man_mode_no=1, dump_mode_no=1, 
     
     return expt_cfg
 
-def dump_spec_postproc(station, expt, man_mode_no=1, dump_mode_no=1):
+def dump_spec_postproc(station, expt):
     """Postprocessor for dump spectroscopy - updates frequency."""
-    dump_name = f'M{man_mode_no}-D{dump_mode_no}'
+    cfg = expt.cfg.expt
+    dump_name = f'M{cfg.man_mode_no}-D{cfg.dump_mode_no}'
     new_freq = expt.data['fit_avgi'][2]
     expt.display()
     station.ds_storage.update_freq(dump_name, new_freq)
@@ -2075,8 +2122,6 @@ def dump_sideband_chevron_preproc(station, default_expt_cfg, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
     
-    expt_cfg.man_mode_no = man_mode_no      # <- add
-    expt_cfg.dump_mode_no = dump_mode_no    # <- add
 
     # Get dump mode parameters
     freq, gain, pi_len, h_pi_len, ch, prepulse, postpulse = get_dump_mode_parameters(
@@ -2105,8 +2150,7 @@ def dump_sideband_chevron_preproc(station, default_expt_cfg, **kwargs):
 
 def dump_sideband_chevron_postproc(station, mother_expt):
     expt_cfg = mother_expt.cfg.expt
-    expt_cfg.man_mode_no = 1
-    stor_name = f'M1-D{expt_cfg.dump_mode_no}'
+    stor_name = f'M{expt_cfg.man_mode_no}-D{expt_cfg.dump_mode_no}'
 
     from fitting.fit_display_classes import ChevronFitting, Spectroscopy
     import fitting.fitting as fitter
@@ -2190,12 +2234,12 @@ dump_spec_runner = CharacterizationRunner(
 )
 
 # Execute for dump modes
+dump_specs = {}
 if expts_to_run.get('dump_spectroscopy', False):
-    dump_specs = {}
-    for dump_mode_no in expts_to_run['dump_modes']:  # specify which dump modes to run
-        print(f'Running dump spectroscopy for mode {dump_mode_no}')
-        dump_specs[dump_mode_no] = dump_spec_runner.execute(
-            man_mode_no=1,
+    for man_mode_no, dump_mode_no in available_dump_pairs(station):
+        print(f'Running dump spectroscopy for M{man_mode_no}-D{dump_mode_no}')
+        dump_specs[man_mode_no, dump_mode_no] = dump_spec_runner.execute(
+            man_mode_no=man_mode_no,
             dump_mode_no=dump_mode_no,
             flux_gain=3000,
             flux_length=60,
@@ -2245,8 +2289,6 @@ def dump_sideband_chevron_preproc(station, default_expt_cfg, **kwargs):
     
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
-    expt_cfg.man_mode_no = man_mode_no      # <- add
-    expt_cfg.dump_mode_no = dump_mode_no    # <- add
 
     
     # Get dump mode parameters
@@ -2275,8 +2317,7 @@ def dump_sideband_chevron_preproc(station, default_expt_cfg, **kwargs):
 
 def dump_sideband_chevron_postproc(station, mother_expt):
     expt_cfg = mother_expt.cfg.expt
-    expt_cfg.man_mode_no = 1
-    stor_name = f'M1-D{expt_cfg.dump_mode_no}'
+    stor_name = f'M{expt_cfg.man_mode_no}-D{expt_cfg.dump_mode_no}'
 
     from fitting.fit_display_classes import ChevronFitting, Spectroscopy
     import fitting.fitting as fitter
@@ -2363,22 +2404,22 @@ dump_sideband_chevron_runner = SweepRunner(
 
 # %%
 # Run dump chevron for specified dump mode
-man_mode_no = 1
 freq_bw_list = [3, 2]
 
 # Get current frequency for sweep range
 # center_freq = 2265.387857	
 # freq_bw = 30  # MHz bandwidth for frequency sweep
 
+dump_chevrons = {}
 if expts_to_run.get('dump_chevron', False):
-    for dump_mode_no in expts_to_run['dump_modes']: 
+    for man_mode_no, dump_mode_no in available_dump_pairs(station):
         dump_name = f'M{man_mode_no}-D{dump_mode_no}'
         dump_idx = dump_mode_no - 1
         center_freq = station.ds_storage.get_freq(dump_name)
         print(f'Running dump sideband chevron for M{man_mode_no}-D{dump_mode_no}')
          # MHz bandwidth for frequency sweep
         freq_bw = freq_bw_list[dump_idx]
-        dump_chevron = dump_sideband_chevron_runner.execute(
+        dump_chevrons[man_mode_no, dump_mode_no] = dump_sideband_chevron_runner.execute(
             dump_mode_no=dump_mode_no,
             man_mode_no=man_mode_no,
             sweep_start=center_freq - freq_bw/2,
@@ -2391,7 +2432,6 @@ if expts_to_run.get('dump_chevron', False):
             # coupler_current=coupler_current,
             batch=True,
         )
-        
 
 # %% [markdown]
 # ## Freq Chevron
@@ -2478,8 +2518,8 @@ def sideband_chevron_postproc(station, mother_expt):
         print('Updated the h_pi length to:', pi_len / 2)
         station.ds_storage.update_gain(stor_name, expt_cfg.flux_drive[2])
         print('Updated gain to:', expt_cfg.flux_drive[2])
+        station.snapshot_man1_storage_swap(update_main=False)
     mother_expt.analysis = chevron_analysis
-    # station.snapshot_man1_storage_swap(update_main=False)
 
 sideband_chevron_runner = SweepRunner(
     station=station,
@@ -2492,10 +2532,11 @@ sideband_chevron_runner = SweepRunner(
 )
 
 # %%
-for stor_i in expts_to_run['stor_modes']: #range(1,8):
-    if expts_to_run['sideband_chevron']:
-        stor_name = f'M1-S{stor_i}'
-
+storage_chevrons = {}
+storage_pairs = [(mode, storage) for mode in man_modes for storage in expts_to_run['stor_modes']]
+if expts_to_run['sideband_chevron']:
+    for man_mode_no, stor_i in storage_pairs:
+        stor_name = f'M{man_mode_no}-S{stor_i}'
         freq_span = 0.5*3  # MHz
         freq_step = 0.05*3
         pi_len_sweep = 10
@@ -2505,6 +2546,7 @@ for stor_i in expts_to_run['stor_modes']: #range(1,8):
         print(f'Running sideband chevron for {stor_name}')
         chevron_analysis = sideband_chevron_runner.execute(
             reps=50,
+            man_mode_no=man_mode_no,
             stor_mode_no=stor_i,
             sweep_start=station.ds_storage.get_freq(stor_name) - freq_span/2,
             sweep_stop=station.ds_storage.get_freq(stor_name) + freq_span/2,
@@ -2517,16 +2559,15 @@ for stor_i in expts_to_run['stor_modes']: #range(1,8):
             skip_update = False,
             batch = True
         )
+        storage_chevrons[man_mode_no, stor_i] = chevron_analysis
         chevron_analysis.analysis.display_results(title = chevron_analysis.fname)
 
 # %% [markdown]
 # ## Error amplification
 
 # %%
-error_amp_gain1 = [None] * len(expts_to_run['stor_modes'])
-error_amp_freq1 = [None] * len(expts_to_run['stor_modes'])
-error_amp_gain2 = [None] * len(expts_to_run['stor_modes'])
-error_amp_freq2 = [None] * len(expts_to_run['stor_modes'])
+storage_error_amp_gain = {}
+storage_error_amp_freq = {}
 
 # %%
 error_amp_stor_defaults = AttrDict(dict(
@@ -2612,7 +2653,8 @@ def error_amp_stor_postproc(station, expt):
     expt.analyze(data=expt.data, state_fin='e')
 
     opt_gain = expt.data['fit_avgi'][2]
-    stor_name = 'M1-S' + str(expt.cfg.expt.stor_mode_no)
+    cfg = expt.cfg.expt
+    stor_name = f'M{cfg.man_mode_no}-S{cfg.stor_mode_no}'
     if expt.cfg.expt.parameter_to_test == 'gain':
         station.ds_storage.update_gain(stor_name, opt_gain)
     elif expt.cfg.expt.parameter_to_test == 'frequency':
@@ -2645,8 +2687,8 @@ do_freq_erroramp = True
 do_gain_erroramp = True
 
 
-for i, stor_i in enumerate(expts_to_run['stor_modes']):
-    if expts_to_run['sideband_erroramp']:
+if expts_to_run['sideband_erroramp']:
+    for man_mode_no, stor_i in storage_pairs:
         stor_idx = stor_i - 1
         
         prefactor = gain_pref_list[stor_idx]
@@ -2661,25 +2703,30 @@ for i, stor_i in enumerate(expts_to_run['stor_modes']):
             n_step_gain = 1
         n_pulses_freq = 5 * n_step_freq
         n_pulses_gain = 5 * n_step_gain
-        stor_name = 'M1-S' + str(stor_i)
+        pair = (man_mode_no, stor_i)
+        stor_name = f'M{man_mode_no}-S{stor_i}'
+        # The existing active-reset sequence starts with the M1 dump.
+        use_active_reset = man_mode_no == 1
         print("Running", stor_name)
         if do_freq_erroramp == True:
-            error_amp_freq1[i] = error_amp_stor_runner.execute(
+            storage_error_amp_freq[pair] = error_amp_stor_runner.execute(
+                man_mode_no=man_mode_no,
                 stor_mode_no=stor_i,
                 parameter_to_test='frequency',
                 span=span_list[stor_idx], #0.1
                 expts=100,
                 n_step = n_step_freq,
                 n_pulses = n_pulses_freq,
-                active_reset=True,
-                man_reset=True,
-                storage_reset=[stor_i],
+                active_reset=use_active_reset,
+                man_reset=use_active_reset,
+                storage_reset=[stor_i] if use_active_reset else False,
                 relax_delay = 1000
             )
             if not station.log_measurements:
-                error_amp_freq1[i].display()
+                storage_error_amp_freq[pair].display()
         if do_gain_erroramp == True:
-            error_amp_gain1[i] = error_amp_stor_runner.execute(
+            storage_error_amp_gain[pair] = error_amp_stor_runner.execute(
+                man_mode_no=man_mode_no,
                 stor_mode_no=stor_i,
                 parameter_to_test='gain',
                 span = int(station.ds_storage.get_gain(stor_name) * prefactor), 
@@ -2689,16 +2736,28 @@ for i, stor_i in enumerate(expts_to_run['stor_modes']):
                 max_gain = max_gain_list[stor_idx], #add to autocalib nb
 
                 
-                active_reset=True,
-                man_reset=True,
-                storage_reset=[stor_i],
+                active_reset=use_active_reset,
+                man_reset=use_active_reset,
+                storage_reset=[stor_i] if use_active_reset else False,
                 relax_delay = 4000
             )
             if not station.log_measurements:
-                error_amp_gain1[i].display()
+                storage_error_amp_gain[pair].display()
 
 # %% [markdown]
 # # Floquet
+
+# %%
+floquet_storage_modes = expts_to_run['floquet_stor_modes'] if 1 in man_modes else []
+if 2 in man_modes and any(expts_to_run[flag] for flag in (
+    'floquet_chevron_coarse',
+    'floquet_chevron_fine',
+    'floquet_error_amplificaton_coarse',
+    'floquet_error_amplificaton_fine',
+    'floquet_phase_accumulation_matrix_coarse',
+    'floquet_phase_accumulation_matrix_fine',
+)):
+    print('Skipping M2 Floquet calibration. The Floquet train and phase calibration use M1.')
 
 # %%
 from experiments.MM_dual_rail_base import MM_dual_rail_base
@@ -2809,7 +2868,7 @@ def floquet_freq_chev_postproc(station, expt):
 # ### Coarse
 
 # %%
-stor_modes_to_run = expts_to_run['floquet_stor_modes'] #list(range(1,8))
+stor_modes_to_run = floquet_storage_modes
 freq_len_expt = [None] * len(stor_modes_to_run)
 
 floquet_freq_chev_runner = CharacterizationRunner(
@@ -2849,7 +2908,7 @@ for i, init_stor in enumerate(stor_modes_to_run):
 # ### Fine
 
 # %%
-stor_modes_to_run = expts_to_run['floquet_stor_modes'] #list(range(1,8))
+stor_modes_to_run = floquet_storage_modes
 freq_len_expt  = [None] * len(stor_modes_to_run)
 freq_span_expt = [ 0.5,  0.3, None, None,  0.2,  0.2,  0.2]
 
@@ -2980,7 +3039,7 @@ error_amp_floquet_runner = CharacterizationRunner(
 )
 
 # %%
-stor_modes_to_run = expts_to_run['floquet_stor_modes']
+stor_modes_to_run = floquet_storage_modes
 # stor_modes_to_run = [2, 7]
 error_amp_gain1 = [None] * len(stor_modes_to_run)
 error_amp_freq1 = [None] * len(stor_modes_to_run)
@@ -3171,7 +3230,7 @@ station.ds_floquet.df
 # ### Coarse
 
 # %%
-stor_modes_to_run =  expts_to_run['floquet_stor_modes']
+stor_modes_to_run = floquet_storage_modes
 
 
 if expts_to_run['floquet_phase_accumulation_matrix_coarse']:
@@ -3203,7 +3262,7 @@ if expts_to_run['floquet_phase_accumulation_matrix_coarse']:
 # ### Fine
 
 # %%
-stor_modes_to_run =  expts_to_run['floquet_stor_modes']
+stor_modes_to_run = floquet_storage_modes
 
 if expts_to_run['floquet_phase_accumulation_matrix_fine']:
     for iA, init_storA in enumerate(stor_modes_to_run): #range(1,8):
@@ -3263,8 +3322,10 @@ def fetch_initparam_to_mp(station):
 
 
 # %%
-if expts_to_run['multiphoton_fetch_from_singlequbit']:
+# M2 resolves unmeasured fields from the qubit and M2 sideband when building a job.
+if expts_to_run['multiphoton_fetch_from_singlequbit'] and 1 in man_modes:
     fetch_initparam_to_mp(station)
+    station.snapshot_hardware_config(update_main=False)
 
 # %% [markdown]
 # ## Error Amplification of Qubit Pulses
@@ -3300,6 +3361,7 @@ error_amp_defaults = AttrDict(dict(
 def error_amp_preproc_multiphoton(station, default_expt_cfg, **kwargs):
     expt_cfg = deepcopy(default_expt_cfg)
     expt_cfg.update(kwargs)
+    expt_cfg.man_no = expt_cfg.get('multiphoton_mode', expt_cfg.man_no)
     
     # Handle multiphoton transition
     if expt_cfg.pulse_type[0] == 'multiphoton':
@@ -3355,13 +3417,32 @@ def error_amp_postproc_multiphoton(station, expt, state_fin='g'):
     
     if hasattr(expt_cfg, '_transition_key') and expt_cfg.pulse_type[0] == 'multiphoton':
         # Multiphoton transition update
+        mode = expt_cfg.get('multiphoton_mode', 1)
         _transition = expt_cfg._transition_key
         i = expt_cfg._photon_idx
+        f0g1 = (pulse_name, _transition, i) == ('pi', 'fn-gn+1', 0)
+        if f0g1:
+            if not np.isfinite(optimal_val) or optimal_val <= 0:
+                raise ValueError(f'M{mode} fitted f0-g1 {parameter} must be positive and finite')
+            optimal_val = float(optimal_val) if parameter == 'frequency' else int(optimal_val)
         
-        old_val = station.hardware_cfg.device.multiphoton[pulse_name][_transition][parameter][i]
-        station.hardware_cfg.device.multiphoton[pulse_name][_transition][parameter][i] = optimal_val
-        print(f'Updated multiphoton {_transition} {pulse_name} {parameter} for photon {i}:')
+        slot, key = multiphoton_slot(station.hardware_cfg, mode, pulse_name, _transition, parameter,
+                                    m1_photons=i if mode == 1 else 0,
+                                    m2_photons=i if mode == 2 else 0)
+        old_val = slot[key]
+        slot[key] = optimal_val
+        print(f'Updated M{mode} multiphoton {_transition} {pulse_name} {parameter} for photon {i}:')
         print(f'  {old_val} -> {optimal_val}')
+        if f0g1:
+            if mode == 1:
+                station.multimode_cfg.pulses['pi_f0-g1'][parameter] = optimal_val
+                station.snapshot_multiphoton_config(update_main=False)
+            if parameter == 'frequency':
+                station.ds_storage.update_freq(f'M{mode}', optimal_val)
+            else:
+                station.ds_storage.update_gain(f'M{mode}', optimal_val)
+            station.snapshot_man1_storage_swap(update_main=False)
+        station.snapshot_hardware_config(update_main=False)
     else:
         # Standard qubit update
         pulse_key = f'pi_ge' if pulse_name == 'pi' else f'hpi_ge'
@@ -3410,7 +3491,9 @@ def do_length_rabi_f0g1_proproc(station, default_expt_cfg, **kwargs):
         # Build pre_sweep_pulse based on transition
         pre_sweep_pulse = mm_base_calib.prep_man_photon(man_no=expt_cfg.man_mode_no, photon_no=i)
         pre_sweep_pulse.append(['multiphoton', 'g' + str(i) + '-e' + str(i), 'pi', 0])
-        pre_sweep_pulse.append(['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0])  
+        pre_sweep_pulse.append(['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0])
+        for pulse in pre_sweep_pulse:
+            pulse.append(expt_cfg.man_mode_no)
         expt_cfg.pre_sweep_pulse = mm_base_calib.get_prepulse_creator(pre_sweep_pulse, station.hardware_cfg).pulse.tolist()
         expt_cfg.prepulse = len(expt_cfg.pre_sweep_pulse) > 0
         expt_cfg._transition_key = transition[0] + 'n' + '-' + transition[3] + 'n+1'
@@ -3421,7 +3504,8 @@ def do_length_rabi_f0g1_proproc(station, default_expt_cfg, **kwargs):
 
 
         if expt_cfg.freq is None:
-            freq = station.hardware_cfg.device.multiphoton['pi'][expt_cfg._transition_key]['frequency'][expt_cfg._photon_idx]
+            mp = multiphoton_table(station.hardware_cfg, expt_cfg.man_mode_no, num_photon_levels=i + 1)
+            freq = mp.pi[expt_cfg._transition_key]['frequency'][i]
             expt_cfg.freq = freq
 
 
@@ -3434,23 +3518,56 @@ def length_rabi_f0g1_postproc(station, expt):
     man_mode_no = expt.cfg.expt.man_mode_no
 
     # Get analysis results from the LengthRabiFitting object stored in expt
-    if hasattr(expt, '_length_rabi_analysis'):
-        analysis = expt._length_rabi_analysis
-        pi_length = analysis.results['pi_length']
-        pi2_length = analysis.results['pi2_length']
-        gain = expt.cfg.expt.gain
-        freq = expt.cfg.expt.freq
+    if not hasattr(expt, '_length_rabi_analysis'):
+        return
+    analysis = expt._length_rabi_analysis
+    pi_length = analysis.results['pi_length']
+    pi2_length = analysis.results['pi2_length']
+    gain = expt.cfg.expt.gain
+    freq = expt.cfg.expt.freq
 
     if hasattr(expt.cfg.expt, '_transition_key') and expt.cfg.expt.get('transition') is not None:
         _transition = expt.cfg.expt._transition_key
         i = expt.cfg.expt._photon_idx
+        f0g1 = (_transition, i) == ('fn-gn+1', 0)
+        pulse_fields = {}
+        if man_mode_no == 2:
+            sigma = expt.cfg.device.manipulate.ramp_sigma
+            if not all(np.isfinite(value) and value > 0 for value in (pi_length, gain, sigma)):
+                raise ValueError('M2 length Rabi requires positive finite pi length, gain, and ramp sigma')
+            pulse_fields.update(gain=int(gain), sigma=float(sigma), type='flat_top')
+        if f0g1:
+            if not all(np.isfinite(value) and value > 0 for value in (freq, pi_length, pi2_length, gain)):
+                raise ValueError(f'M{man_mode_no} length Rabi requires positive finite frequency, lengths, and gain')
+            gain = int(gain)
+            pulse_fields.update(frequency=float(freq), gain=gain)
+
+        m1_photons = i if man_mode_no == 1 else 0
+        m2_photons = i if man_mode_no == 2 else 0
+        slot, key = multiphoton_slot(station.hardware_cfg, man_mode_no, 'pi', _transition, 'length',
+                                    m1_photons, m2_photons)
+        old_pi_length = slot[key]
+        slot[key] = float(pi_length) if f0g1 else pi_length
+        for field, value in pulse_fields.items():
+            slot, key = multiphoton_slot(station.hardware_cfg, man_mode_no, 'pi', _transition, field,
+                                        m1_photons, m2_photons)
+            slot[key] = value
         
-        old_pi_length = station.hardware_cfg.device.multiphoton['pi'][_transition]['length'][i]
-        
-        station.hardware_cfg.device.multiphoton['pi'][_transition]['length'][i] = pi_length
-        
-        print(f'Updated multiphoton {_transition} pi lengths for photon {i}:')
+        print(f'Updated M{man_mode_no} multiphoton {_transition} pi lengths for photon {i}:')
         print(f'  pi length: {old_pi_length} -> {pi_length}')
+        if f0g1:
+            if man_mode_no == 1:
+                station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = float(freq)
+                station.multimode_cfg.pulses['pi_f0-g1']['length'] = float(pi_length)
+                station.multimode_cfg.pulses['pi_f0-g1']['gain'] = gain
+                station.snapshot_multiphoton_config(update_main=False)
+            station.ds_storage.update_freq(f'M{man_mode_no}', freq)
+            station.ds_storage.update_pi(f'M{man_mode_no}', pi_length)
+            station.ds_storage.update_h_pi(f'M{man_mode_no}', pi2_length)
+            station.ds_storage.update_gain(f'M{man_mode_no}', gain)
+            print(f'Updated dataset M{man_mode_no}: pi_length={pi_length:.4f}, pi2_length={pi2_length:.4f}, gain={gain}')
+            station.snapshot_man1_storage_swap(update_main=False)
+        station.snapshot_hardware_config(update_main=False)
 
 
 # %% [markdown]
@@ -3485,6 +3602,8 @@ def qspec_preproc(station, default_expt_cfg, **kwargs):
         pre_sweep_pulse = mm_base_calib.prep_man_photon(man_no=expt_cfg.man_mode_no, photon_no=i)
         pre_sweep_pulse.append(['multiphoton', 'g' + str(i) + '-' + 'e' + str(i), 'pi', 0])
         pre_sweep_pulse.append(['multiphoton', 'e' + str(i) + '-' + 'f' + str(i), 'pi', 0])
+        for pulse in pre_sweep_pulse:
+            pulse.append(expt_cfg.man_mode_no)
         expt_cfg.pre_sweep_pulse = mm_base_calib.get_prepulse_creator(pre_sweep_pulse, station.hardware_cfg).pulse.tolist()
         expt_cfg.prepulse = len(expt_cfg.pre_sweep_pulse) > 0
 
@@ -3496,7 +3615,8 @@ def qspec_preproc(station, default_expt_cfg, **kwargs):
 
     if expt_cfg.start is None: 
         band = expt_cfg.step * expt_cfg.expts / 2
-        start = station.hardware_cfg.device.multiphoton['pi'][expt_cfg._transition_key]['frequency'][expt_cfg._photon_idx] - band
+        mp = multiphoton_table(station.hardware_cfg, expt_cfg.man_mode_no, num_photon_levels=expt_cfg._photon_idx + 1)
+        start = mp.pi[expt_cfg._transition_key]['frequency'][expt_cfg._photon_idx] - band
         expt_cfg.start = start
 
     return expt_cfg
@@ -3510,12 +3630,26 @@ def qspec_postproc(station, expt):
         _transition = expt.cfg.expt._transition_key
         i = expt.cfg.expt._photon_idx
         
-        old_freq_pi = station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i]
+        mode = expt.cfg.expt.man_mode_no
+        slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', _transition, 'frequency',
+                                    m1_photons=i if mode == 1 else 0,
+                                    m2_photons=i if mode == 2 else 0)
+        old_freq_pi = slot[key]
         
         fitted_freq = qspec_analysis.data['fit_avgi'][2]
-        station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i] = fitted_freq
-    
-        print(f'  pi:  {old_freq_pi} -> {station.hardware_cfg.device.multiphoton["pi"][_transition]["frequency"][i]}')
+        if (_transition, i) == ('fn-gn+1', 0):
+            fitted_freq = float(fitted_freq)
+            if not np.isfinite(fitted_freq) or fitted_freq <= 0:
+                raise ValueError(f'M{mode} fitted f0-g1 frequency must be positive and finite')
+        slot[key] = fitted_freq
+        print(f'  M{mode} {_transition}[{i}] pi:  {old_freq_pi} -> {fitted_freq}')
+        if (_transition, i) == ('fn-gn+1', 0):
+            if mode == 1:
+                station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = fitted_freq
+                station.snapshot_multiphoton_config(update_main=False)
+            station.ds_storage.update_freq(f'M{mode}', fitted_freq)
+            station.snapshot_man1_storage_swap(update_main=False)
+        station.snapshot_hardware_config(update_main=False)
         
 qspec_runner = CharacterizationRunner(
     station=station,
@@ -3567,6 +3701,8 @@ def chevron_preproc(station, default_expt_cfg, **kwargs):
         pre_sweep_pulse = mm_base_calib.prep_man_photon(man_no=expt_cfg.man_mode_no, photon_no=i)
         pre_sweep_pulse.append(['multiphoton', 'g' + str(i) + '-e' + str(i), 'pi', 0])
         pre_sweep_pulse.append(['multiphoton', 'e' + str(i) + '-f' + str(i), 'pi', 0])
+        for pulse in pre_sweep_pulse:
+            pulse.append(expt_cfg.man_mode_no)
         expt_cfg.pre_sweep_pulse = mm_base_calib.get_prepulse_creator(pre_sweep_pulse, station.hardware_cfg).pulse.tolist()
         expt_cfg.prepulse = len(expt_cfg.pre_sweep_pulse) > 0
         expt_cfg._transition_key = transition[0] + 'n' + '-' + transition[3] + 'n+1'
@@ -3588,11 +3724,15 @@ def chevron_postproc(station, expt):
                 _transition = expt_cfg._transition_key
                 i = expt_cfg._photon_idx
                 
-                old_freq_pi = station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i]
+                mode = expt_cfg.get('man_mode_no', 1)
+                slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', _transition, 'frequency',
+                                            m1_photons=i if mode == 1 else 0,
+                                            m2_photons=i if mode == 2 else 0)
+                old_freq_pi = slot[key]
                 
-                station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i] = best_freq
+                slot[key] = best_freq
             
-                print(f'  pi:  {old_freq_pi} -> {station.hardware_cfg.device.multiphoton["pi"][_transition]["frequency"][i]}')
+                print(f'  M{mode} {_transition}[{i}] pi:  {old_freq_pi} -> {best_freq}')
     else: 
         print('No chevron analysis found in experiment.')
 
@@ -3636,14 +3776,25 @@ def chevron_postproc(station, mother_expt):
             _transition = expt_cfg._transition_key
             i = expt_cfg._photon_idx
             
-            old_freq_pi = station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i]
+            mode = expt_cfg.man_mode_no
+            slot, key = multiphoton_slot(station.hardware_cfg, mode, 'pi', _transition, 'frequency',
+                                        m1_photons=i if mode == 1 else 0,
+                                        m2_photons=i if mode == 2 else 0)
+            old_freq_pi = slot[key]
             
-            station.hardware_cfg.device.multiphoton['pi'][_transition]['frequency'][i] = best_freq
-            if i == 0: 
-                print("updating the storage mode too:")
-                station.ds_storage.update_freq('M1', best_freq)
-        
-            print(f'  pi:  {old_freq_pi} -> {station.hardware_cfg.device.multiphoton["pi"][_transition]["frequency"][i]}')
+            if (_transition, i) == ('fn-gn+1', 0):
+                best_freq = float(best_freq)
+                if not np.isfinite(best_freq) or best_freq <= 0:
+                    raise ValueError(f'M{mode} fitted f0-g1 frequency must be positive and finite')
+            slot[key] = best_freq
+            print(f'  M{mode} {_transition}[{i}] pi:  {old_freq_pi} -> {best_freq}')
+            if (_transition, i) == ('fn-gn+1', 0):
+                if mode == 1:
+                    station.multimode_cfg.pulses['pi_f0-g1']['frequency'] = best_freq
+                    station.snapshot_multiphoton_config(update_main=False)
+                station.ds_storage.update_freq(f'M{mode}', best_freq)
+                station.snapshot_man1_storage_swap(update_main=False)
+            station.snapshot_hardware_config(update_main=False)
     else: 
         print('No chevron analysis found in experiment.')
 
@@ -3664,13 +3815,19 @@ lenrabi_fog1_runner = CharacterizationRunner(
 
 # %%
 
-for transition in expts_to_run['multiphoton_transitions']:
-    transition_label = transition[0] + 'n' + '-' + transition[3] + 'n' 
-    photon_idx = int(transition[1])
+for mode, transition in product(man_modes, expts_to_run['multiphoton_transitions']):
+    if mode != man_modes[0] and transition in ('g0-e0', 'e0-f0'):
+        continue  # Both ladders share the vacuum qubit transitions.
+    print(f'Calibrating M{mode} {transition}')
+    photon_idx = int(transition.split('-')[0][1:])
+    if photon_idx > 9:
+        raise ValueError(f'Initial photon counts must be integers from 0 to 9: {transition}')
+    mp = multiphoton_table(station.hardware_cfg, mode, num_photon_levels=photon_idx + 1)
+    transition_label = transition[0] + 'n' + '-' + transition[3] + 'n'
     if transition[1] == transition[4]: #for qubit transitions
         expts = 50 #50
         band = 1 #2
-        freq_start = station.hardware_cfg.device.multiphoton['pi'][transition_label]['frequency'][photon_idx] - band
+        freq_start = mp['pi'][transition_label]['frequency'][photon_idx] - band
         # freq_start = 3420 - band
         step = 2 * band / expts
         print(f'Frequency start: {freq_start}, Step: {step}')
@@ -3685,7 +3842,7 @@ for transition in expts_to_run['multiphoton_transitions']:
         use_queue=USE_QUEUE,
         )
         error_amp = error_amp_runner.execute(
-        transition=transition,
+        transition=transition, man_mode_no=mode, multiphoton_mode=mode,
         parameter_to_test='frequency',
         step=2 * band / expts, 
         start=freq_start,
@@ -3698,13 +3855,13 @@ for transition in expts_to_run['multiphoton_transitions']:
 
         band = 500
         expts = 25
-        gain_start = station.hardware_cfg.device.multiphoton['pi'][transition_label]['gain'][photon_idx] - band
+        gain_start = mp['pi'][transition_label]['gain'][photon_idx] - band
         # gain_start = 10000
         step = 2 * band / expts
         print(f'Gain start: {gain_start}, Step: {step}')
 
         error_amp = error_amp_runner.execute(
-            transition=transition,
+            transition=transition, man_mode_no=mode, multiphoton_mode=mode,
             parameter_to_test='gain',
             step=step,
             start=gain_start,
@@ -3716,29 +3873,30 @@ for transition in expts_to_run['multiphoton_transitions']:
         sideband_label = transition[0] + 'n' + '-' + transition[3] + 'n+1' 
         expts = 50
         band = 0.6
-        freq_start = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['frequency'][photon_idx] - band
+        freq_start = mp['pi'][sideband_label]['frequency'][photon_idx] - band
         step = 2 * band / expts
         print(f'Frequency start: {freq_start}, Step: {step}')
         # create a postproc function where state_fin='e'
         if expts_to_run['sideband_pulse_probe_spectroscopy_multiphoton']:
             qspec = qspec_runner.execute(
-                transition=sideband,
-                start=1975, 
+                transition=sideband, man_mode_no=mode, multiphoton_mode=mode,
+                start=1975 if mode == 1 else None,
                 step=0.1, 
                 expts=500,
             )
             
         if expts_to_run['sideband_quick_chevron_and_length_rabi_multiphoton']:
             step = 0.2
-            freq = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['frequency'][photon_idx]
+            mp = multiphoton_table(station.hardware_cfg, mode, num_photon_levels=photon_idx + 1)
+            freq = mp['pi'][sideband_label]['frequency'][photon_idx]
             # freq = 1995
             f_start = freq - 8
             f_stop = freq + 8
             # nb_pts = int((f_stop - f_start) / step) + 1
             nb_pts = 32
-            gain = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['gain'][photon_idx]
+            gain = mp['pi'][sideband_label]['gain'][photon_idx]
             chevron = chevron_runner.execute(
-                transition=sideband,
+                transition=sideband, man_mode_no=mode, multiphoton_mode=mode,
                 sweep_start=f_start, 
                 sweep_stop=f_stop,
                 sweep_npts=nb_pts,
@@ -3747,17 +3905,19 @@ for transition in expts_to_run['multiphoton_transitions']:
                 batch = True
             )
             chevron_postproc(station, chevron)
-            gain = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['gain'][photon_idx]
-            freq = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['frequency'][photon_idx]
+            mp = multiphoton_table(station.hardware_cfg, mode, num_photon_levels=photon_idx + 1)
+            gain = mp['pi'][sideband_label]['gain'][photon_idx]
+            freq = mp['pi'][sideband_label]['frequency'][photon_idx]
             len_rabis_fog1 = lenrabi_fog1_runner.execute(
-                transition=sideband,
+                transition=sideband, man_mode_no=mode, multiphoton_mode=mode,
                 gain=gain,
                 freq=freq,
             )
             
         expts = 50
         band = 0.3
-        freq_start = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['frequency'][photon_idx] - band
+        mp = multiphoton_table(station.hardware_cfg, mode, num_photon_levels=photon_idx + 1)
+        freq_start = mp['pi'][sideband_label]['frequency'][photon_idx] - band
         step = 2 * band / expts
         print(f'Frequency start: {freq_start}, Step: {step}')
         
@@ -3774,7 +3934,7 @@ for transition in expts_to_run['multiphoton_transitions']:
         )
 
         err_amp = error_amp_runner.execute(
-            transition=sideband,
+            transition=sideband, man_mode_no=mode, multiphoton_mode=mode,
             parameter_to_test='frequency',
             step=step,
             start=freq_start,
@@ -3784,14 +3944,15 @@ for transition in expts_to_run['multiphoton_transitions']:
             go_kwargs = dict(analyze=False, display=False),
             postprocess=True
         )
-        stop = 1.5 * station.hardware_cfg.device.multiphoton['pi'][sideband_label]['length'][photon_idx] * 2
-        gain = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['gain'][photon_idx]
-        freq = station.hardware_cfg.device.multiphoton['pi'][sideband_label]['frequency'][photon_idx]
+        mp = multiphoton_table(station.hardware_cfg, mode, num_photon_levels=photon_idx + 1)
+        stop = 1.5 * mp['pi'][sideband_label]['length'][photon_idx] * 2
+        gain = mp['pi'][sideband_label]['gain'][photon_idx]
+        freq = mp['pi'][sideband_label]['frequency'][photon_idx]
         expts = 200
         step = stop / expts
 
         len_rabis_fog1 = lenrabi_fog1_runner.execute(
-            transition=sideband,
+            transition=sideband, man_mode_no=mode, multiphoton_mode=mode,
             gain=gain,
             freq=freq,
             expts=expts,
