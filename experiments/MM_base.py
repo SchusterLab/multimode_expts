@@ -1290,15 +1290,17 @@ class MM_base:
         offsets_mhz = self.man_reset_offsets_mhz(cfg, chi_dressed)
         iter_num = int(cfg.get('expt', {}).get('dump_reset_iter_num', 1))
 
-        self.sideband_sigma_high = self.us2cycles(self.cfg.device.storage.ramp_sigma, gen_ch=self.flux_high_ch[qTest])
-        self.add_gauss(ch=self.flux_high_ch[qTest],
-                    name="ramp_high",# + str(man_idx),
+        ch = self.flux_high_ch[qTest]
+        self.sideband_sigma_high = self.us2cycles(self.cfg.device.storage.ramp_sigma, gen_ch=ch)
+        # Keep every ramp address loaded when a shot contains multiple dump pulses.
+        ramp_name = f"ramp_high_{self.envelopes[ch]['next_addr']}"
+        self.add_gauss(ch=ch,
+                    name=ramp_name,
                     sigma=self.sideband_sigma_high,
                     length=self.sideband_sigma_high*6) # M1-x flat tops use 6 sigma
         # self.wait_all(self.us2cycles(0.1))
         self.sync_all(self.us2cycles(0.1))
 
-        ch = self.flux_high_ch[qTest]
         for offset_mhz in offsets_mhz:
             for _ in range(iter_num):
                 self.set_pulse_registers(
@@ -1308,7 +1310,7 @@ class MM_base:
                     phase=self.deg2reg(0),
                     length=self.us2cycles(MiDj_length, gen_ch=ch),
                     gain=MiDj_gain,
-                    waveform="ramp_high"
+                    waveform=ramp_name
                     )
                 self.pulse(ch=ch)
                 self.sync_all()
@@ -2026,6 +2028,8 @@ class MM_base:
         use_qubit_man_reset: if True, we do g1-f0/ef/qubit reset instead of using the dump, which is not indeal since it remove only the fock 1 population but can be usefull if dump cannot be found
         man_idx: manipulate mode index for parity pulse (default 1)
         parity_fast: if True, use fast parity pulse (default False)
+        cfg.expt.man_reset_modes: manipulate modes to dump in order (default [1])
+        cfg.expt.storage_man_modes: storage number to manipulate number for storage reset
         '''
         wait_fin = 2.0
         wait_after_readout = 0.10
@@ -2070,11 +2074,11 @@ class MM_base:
 
         # First Reset Manipulate Modes
         # =====================================
-        if not use_qubit_man_reset:
-            if man_reset:
-                # self.man_reset(0)
-                _dump_idx_to_use = self.cfg.expt.get('reset_dump_mode', 2)
-                self.man_reset(dump_mode_idx= _dump_idx_to_use)
+        if man_reset and not use_qubit_man_reset:
+            dump_mode_idx = cfg.expt.get('reset_dump_mode', 2)
+            man_reset_modes = cfg.expt.get('man_reset_modes', [1])
+            for reset_man_idx in man_reset_modes:
+                self.man_reset(man_idx=reset_man_idx, dump_mode_idx=dump_mode_idx)
 
         # Reset ge level
         # ======================================================
@@ -2175,14 +2179,21 @@ class MM_base:
         # Dump storage population to manipulate, then to lossy mode
         # ======================================================
         if storage_reset:
-            # for ii in range(7):
             storage_reset = np.arange(1, 8) if storage_reset == True else storage_reset
             if self.cfg.expt.get("debug", False):
                 print("resetting stor modes", storage_reset)
+            storage_man_modes = {
+                int(storage): int(manipulate)
+                for storage, manipulate in cfg.expt.get('storage_man_modes', {}).items()
+            } #custom dict to designate which man to be used to reset each stor
+            storage_reset_man_modes = cfg.expt.get('man_reset_modes', [man_idx])
             for stor_idx in storage_reset:
-                self.man_stor_swap(man_idx=man_idx, stor_idx=stor_idx) #self.man_stor_swap(1, ii+1)
-                # self.man_reset(0, chi_dressed = False)
-                self.man_reset(man_idx=man_idx, chi_dressed=False)
+                if len(storage_reset_man_modes) == 1 or not storage_man_modes:
+                    storage_man_idx = storage_man_modes.get(stor_idx, storage_reset_man_modes[0])
+                else:
+                    storage_man_idx = storage_man_modes[stor_idx]
+                self.man_stor_swap(man_idx=storage_man_idx, stor_idx=stor_idx)
+                self.man_reset(man_idx=storage_man_idx, chi_dressed=False)
 
         if coupler_reset:
             self.coup_stor_swap(man_idx=1) # M1
