@@ -41,7 +41,7 @@ def mod360(phase_deg):
     return phase_deg % 360.0
 
 
-def advance_floquet_offsets(phase_offsets, swap_stors, pulsed_stor, swap_ds):
+def advance_floquet_offsets(phase_offsets, swap_stors, pulsed_stor, swap_ds, row_names=None):
     """Advance the Floquet ledger in place after pulsing ``pulsed_stor``.
 
     Uses only the Floquet-to-Floquet pairwise calibration:
@@ -51,13 +51,14 @@ def advance_floquet_offsets(phase_offsets, swap_stors, pulsed_stor, swap_ds):
     The mode just pulsed is skipped. The directional decoder matrix must
     never be used here; see ``advance_matrix_offsets``.
     """
-    pulsed_name = f"M1-S{pulsed_stor}"
+    pulsed_name = row_names[pulsed_stor - 1] if row_names is not None else f"M1-S{pulsed_stor}"
 
     for j_stor, stor_B in enumerate(swap_stors):
         if stor_B == pulsed_stor:
             continue
 
-        phase_shift = swap_ds.get_phase_from(f"M1-S{stor_B}", pulsed_name)
+        affected_name = row_names[stor_B - 1] if row_names is not None else f"M1-S{stor_B}"
+        phase_shift = swap_ds.get_phase_from(affected_name, pulsed_name)
         phase_offsets[j_stor] = mod360(phase_offsets[j_stor] + phase_shift)
 
 

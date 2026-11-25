@@ -82,6 +82,7 @@ class FloquetProgram(QsimProgram):
             clock_ratio=lambda ch: (float(self.tproccfg["f_time"])
                                     / float(self.soccfg["gens"][ch]["f_fabric"])),
             gauss_sigma_override=ecfg.get("floquet_gauss_sigma", None),
+            row_names=getattr(self, "floquet_row_names", None),
         )
 
     def _mod360(self, phase_deg):
@@ -101,6 +102,7 @@ class FloquetProgram(QsimProgram):
             swap_stors=swap_stors,
             pulsed_stor=pulsed_stor,
             swap_ds=self.swap_ds,
+            row_names=getattr(self, "floquet_row_names", None),
         )
 
     def _play_closed_floquet_cycle_pairs(
