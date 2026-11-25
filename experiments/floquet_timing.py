@@ -61,6 +61,26 @@ DEFAULT_ARCHIVE = REPO_ROOT / "configs" / "versions"
 FLUX_HIGH_THRESHOLD_MHZ = 1800
 
 
+def floquet_row_names(storage_man_modes=None):
+    """Return the seven Floquet swap row names in S1 through S7 order.
+
+    ``storage_man_modes`` maps a storage mode number to the manipulate mode
+    number it uses. For example, ``{3: 2}`` selects the ``M2-S3`` row for S3.
+    Serialized job configs can use string keys such as ``"3"``. A storage
+    with no entry uses the M1 row for Floquet.
+
+    Floquet uses the rows for pulse settings, cycle timing, phase corrections,
+    and routing storage preparation and readout. When the mapping is sent
+    in the experiment config, active reset also uses it to choose which
+    manipulate receives each storage's photons during reset.
+    
+    if `storage_man_modes` or there is no matching pair, `M1` is automatically chosen.
+    """
+    # Job configs pass through JSON, which converts storage keys to strings.
+    assigned = {int(stor): man for stor, man in (storage_man_modes or {}).items()}
+    return [f"M{assigned.get(stor, 1)}-S{stor}" for stor in range(1, 8)]
+
+
 def floquet_cycle_us(swap_stors,
                      *,
                      swap_ds,
@@ -72,7 +92,8 @@ def floquet_cycle_us(swap_stors,
                      us2cycles,
                      cycles2us,
                      clock_ratio,
-                     gauss_sigma_override=None):
+                     gauss_sigma_override=None,
+                     row_names=None):
     """-> scheduled duration of one Floquet cycle, in microseconds.
 
     One definition, called from two places that cannot share a ``self``: the
@@ -101,7 +122,13 @@ def floquet_cycle_us(swap_stors,
         clock_ratio: ``channel -> f_time / f_fabric`` for that generator.
         gauss_sigma_override: ``cfg.expt.floquet_gauss_sigma`` when set;
             otherwise each mode's calibrated sigma is used.
+        row_names: Floquet swap dataset row names in S1 through S7 order.
+            For example, ``row_names[2]`` is ``"M2-S3"`` when S3 uses M2.
+            Used to look up Gaussian and preloaded flat-top envelope settings.
+            If omitted or ``None``, uses ``"M1-S1"`` through ``"M1-S7"``.
     """
+    if row_names is None:
+        row_names = floquet_row_names()
     cycle_tproc_cycles = 0
     for stor in swap_stors:
         index = stor - 1
@@ -110,11 +137,11 @@ def floquet_cycle_us(swap_stors,
         if mode == "gauss":
             sigma_us = gauss_sigma_override
             if sigma_us is None:
-                sigma_us = swap_ds.get_gauss_sigma(f"M1-S{stor}")
+                sigma_us = swap_ds.get_gauss_sigma(row_names[index])
             pulse_cycles = (us2cycles(sigma_us, channel)
-                            * swap_ds.get_gauss_n_sigma(f"M1-S{stor}"))
+                            * swap_ds.get_gauss_n_sigma(row_names[index]))
         elif mode == "preload_flattop":
-            ramp = us2cycles(swap_ds.get_ramp_sigma(f"M1-S{stor}"), channel)
+            ramp = us2cycles(swap_ds.get_ramp_sigma(row_names[index]), channel)
             pulse_cycles = lengths[index] + 6 * ramp
         else:
             # M1-Sx flat tops are six sigma of ramp around the plateau.
@@ -188,7 +215,7 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
     flux_high_ch = dacs["flux_high"]["ch"][qubit]
 
     # --- retrieve_swap_parameters, offline ---
-    stor_names = [f"M1-S{n}" for n in range(1, 8)]
+    stor_names = floquet_row_names(ecfg.get("storage_man_modes"))
     pi_fracs = [swap_ds.get_pi_frac(name) for name in stor_names]
     freqs_MHz = [swap_ds.get_freq(name) for name in stor_names]
     is_low = [freq < FLUX_HIGH_THRESHOLD_MHZ for freq in freqs_MHz]
@@ -228,6 +255,7 @@ def resolve_floquet_timing(cfg, floquet_version_id, archive=None, soccfg=None):
         clock_ratio=lambda ch: (float(soccfg["tprocs"][0]["f_time"])
                                 / float(soccfg["gens"][ch]["f_fabric"])),
         gauss_sigma_override=ecfg.get("floquet_gauss_sigma", None),
+        row_names=stor_names,
     )
 
     if not np.isfinite(cycle_us) or cycle_us <= 0.:
@@ -251,7 +279,8 @@ def station_floquet_hardware(station,
                         swap_stors, 
                         sync_cycles, 
                         floquet_gauss_sigma=None,
-                        floquet_waveform=None):
+                        floquet_waveform=None, 
+                        storage_man_modes=None):
     """
     Moved from ``EncodingHamiltonianSpectroscopyExperiment.hardware_parameters``
     in MBR redesign step 7e (2026-09-24), without changes. Asks the *live*
@@ -274,8 +303,9 @@ def station_floquet_hardware(station,
     pulse_us = []
     pi_fracs = []
     cycle_tproc_cycles = 0
+    row_names = floquet_row_names(storage_man_modes)
     for stor in swap_stors:
-        pulse_name = f"M1-S{stor}"
+        pulse_name = row_names[stor - 1]
         if station.ds_floquet.get_freq(pulse_name) < FLUX_HIGH_THRESHOLD_MHZ:
             gen_ch = station.hardware_cfg.hw.soc.dacs.flux_low.ch[0]
         else:
