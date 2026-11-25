@@ -19,7 +19,8 @@ from experiments.qsim.utils import (
     post_select_raverager_data,
 )
 from fitting.fit_utils import guess_freq
-from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram
+from experiments.MM_base import MMAveragerProgram, MMRAveragerProgram, multiphoton_prep
+from experiments.floquet_timing import floquet_row_names
 
 
 # The last step before the measurement, chosen by cfg.expt.readout
@@ -193,8 +194,24 @@ class QsimProgram(MMAveragerProgram):
     The qsim template (QsimBaseProgram until step 10F; DarkBaseProgram's copy
     of it merged in at step 10B).
 
-    First initialize a photon into man1 by qubit ge, qubit ef, f0g1 
-    Then (optionally) swap into init_stor
+    With ``prepulse=True``, the preparation depends on the experiment config.
+
+    - With ``init_fock=True`` and both photon counts omitted, apply GE, EF,
+      and the manipulate f0-g1 swap to load one photon. The default manipulate
+      is M1. A positive ``init_stor`` transfers the photon to that storage.
+    - With ``init_fock=False``, ``init_stor=0``, and
+      ``init_man_fock_state="2"``, use ``prep_man_fock_state()`` to load
+      two photons in one manipulate. This field takes a state string.
+    - With ``init_fock=True``, ``init_stor=0``, and explicit
+      ``initial_m1_photon_number`` and ``initial_m2_photon_number`` counts,
+      ``multiphoton_prep()`` fills M1 first and then M2. For example, counts
+      of 2 and 1 use the M2 swap at ``multiphoton_joint['M2']['pi']`` key
+      ``"2,0"`` to add the last photon. The M1 count selects this path and
+      the M2 count must also be supplied. Use zero for a mode left in vacuum.
+
+    Floquet v2 omits both counts when loading one photon into a single
+    manipulate so the original GE, EF, and f0-g1 pulse settings are used.
+
     Then do whatever in the core_pulses() that you override
     Finally swap ro_stor back into man and then man into qb and readout
     """
@@ -212,13 +229,14 @@ class QsimProgram(MMAveragerProgram):
 
     def retrieve_swap_parameters(self):
         """
-        retrieve pulse parameters for the M1-Sx swap
+        Read the selected M-S swap for each storage, defaulting to M1.
         """
         qTest = self.qubits[0]
 
         flux_high_threshold = 1800
 
-        stor_names = [f'M1-S{stor_no}' for stor_no in range(1,8)]
+        self.floquet_row_names = floquet_row_names(self.cfg.expt.get('storage_man_modes', {}))
+        stor_names = self.floquet_row_names
         self.m1s_pi_fracs = [self.swap_ds.get_pi_frac(stor_name) for stor_name in stor_names]
         self.m1s_freq_MHz = [self.swap_ds.get_freq(stor_name) for stor_name in stor_names]
         self.m1s_is_low_freq = [self.m1s_freq_MHz[i_stor] < flux_high_threshold for i_stor in range(7)]
@@ -294,8 +312,7 @@ class QsimProgram(MMAveragerProgram):
         """Register Floquet waveforms and build their pulse arguments."""
         # Register one complete arb envelope for gauss and preload_flattop modes.
         # Native flat_top modes keep reusing MM_base's pi_m1si_low/high ramps.
-        for i_stor in range(7):
-            stor_name = f"M1-S{i_stor+1}"
+        for i_stor, stor_name in enumerate(self.floquet_row_names):
             ch = self.m1s_ch[i_stor]
             waveform_mode = self.m1s_waveform_mode[i_stor]
             
@@ -366,6 +383,9 @@ class QsimProgram(MMAveragerProgram):
     def body(self):
         cfg=AttrDict(self.cfg)
         readout = readout_mode(cfg.expt)
+        # Older configs used M1 for the bare swaps even when another manipulate
+        # was selected for displacement or parity. Only routed Floquet jobs opt in.
+        bare_man_mode = cfg.expt.get('man_mode_no', 1) if 'storage_man_modes' in cfg.expt else 1
 
         # initializations as necessary
         self.reset_and_sync()
@@ -407,15 +427,23 @@ class QsimProgram(MMAveragerProgram):
 
             if cfg.expt.init_fock:
 
-                prepulse_cfg = []
-                for each_init_stor in init_stor:
-                    prepulse_cfg += [
-                        ['qubit', 'ge', 'pi', 0,],
-                        ['qubit', 'ef', 'pi', 0,], # qubit in f
-                        ['man', 'M1', 'pi', 0,], # f0-g1 --> man in 1
-                    ]
-                    if each_init_stor > 0:
-                        prepulse_cfg.append(['storage', f'M1-S{each_init_stor}', 'pi', 0,])
+                if 'initial_m1_photon_number' in cfg.expt:
+                    prepulse_cfg = multiphoton_prep(cfg, cfg.expt.initial_m1_photon_number,
+                                                   cfg.expt.initial_m2_photon_number)
+                else:
+                    prepulse_cfg = []
+                    for each_init_stor in init_stor:
+                        man = f'M{bare_man_mode}'
+                        if each_init_stor > 0:
+                            storage = self.floquet_row_names[each_init_stor - 1]
+                            man = storage.split('-')[0]
+                        prepulse_cfg += [
+                            ['qubit', 'ge', 'pi', 0],
+                            ['qubit', 'ef', 'pi', 0],
+                            ['man', man, 'pi', 0],
+                        ]
+                        if each_init_stor > 0:
+                            prepulse_cfg.append(['storage', storage, 'pi', 0])
 
                 pulse_creator = self.get_prepulse_creator(prepulse_cfg)
                 self.sync_all()
@@ -529,11 +557,16 @@ class QsimProgram(MMAveragerProgram):
         if cfg.expt.postpulse:
 
             # Move ro_stor to man
-            postpulse_cfg = [ ['storage', f'M1-S{ro_stor}', 'pi', 0,] ] if ro_stor > 0 else []
+            readout_man = f"M{cfg.expt.get('readout_man_mode', bare_man_mode)}"
+            postpulse_cfg = []
+            if ro_stor > 0:
+                storage = self.floquet_row_names[ro_stor - 1]
+                readout_man = storage.split('-')[0]
+                postpulse_cfg.append(['storage', storage, 'pi', 0])
 
             if readout == "qubit":
                 # Move man to qubit for population measurement
-                postpulse_cfg.append(['man', 'M1', 'pi', 0,])
+                postpulse_cfg.append(['man', readout_man, 'pi', 0])
                 if self.cfg.expt.get('map_to_qubit_ge', False):
                     postpulse_cfg.append(['qubit', 'ef', 'pi', 0,])
 
